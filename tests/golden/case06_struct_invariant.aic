@@ -1,0 +1,5 @@
+import std.string;
+
+struct NonEmptyString {
+    value: String,
+} invariant len(value) > 0

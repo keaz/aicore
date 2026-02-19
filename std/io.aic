@@ -1,0 +1,9 @@
+module std.io;
+
+fn print_int(x: Int) -> () effects { io } {
+    ()
+}
+
+fn print_str(x: String) -> () effects { io } {
+    ()
+}

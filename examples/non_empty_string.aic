@@ -1,0 +1,10 @@
+module examples.non_empty_string;
+import std.string;
+
+struct NonEmptyString {
+    value: String,
+} invariant len(value) > 0
+
+fn make_non_empty(s: String) -> NonEmptyString requires len(s) > 0 {
+    NonEmptyString { value: s }
+}

@@ -1,0 +1,16 @@
+module examples.option_match;
+import std.io;
+
+fn maybe_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 { Some(x) } else { None() }
+}
+
+fn main() -> Int effects { io } {
+    let v = maybe_even(42);
+    let out = match v {
+        None => 0,
+        Some(n) => n,
+    };
+    print_int(out);
+    0
+}

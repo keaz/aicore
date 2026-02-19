@@ -1,0 +1,15 @@
+module examples.effects_reject;
+import std.io;
+
+fn io_fn() -> () effects { io } {
+    print_int(1)
+}
+
+fn pure_fn() -> () {
+    io_fn()
+}
+
+fn main() -> Int {
+    pure_fn();
+    0
+}

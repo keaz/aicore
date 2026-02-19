@@ -1,0 +1,6 @@
+module std.option;
+
+enum Option[T] {
+    None,
+    Some(T),
+}

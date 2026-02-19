@@ -1,0 +1,5 @@
+module std.vec;
+
+struct Vec[T] {
+    len: Int,
+}

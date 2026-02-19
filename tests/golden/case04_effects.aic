@@ -1,0 +1,5 @@
+import std.io;
+
+fn log(x: Int) -> () effects { io } {
+    print_int(x)
+}

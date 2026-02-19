@@ -1,0 +1,264 @@
+use crate::span::Span;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Program {
+    pub module: Option<ModuleDecl>,
+    pub imports: Vec<ImportDecl>,
+    pub items: Vec<Item>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDecl {
+    pub path: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportDecl {
+    pub path: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Item {
+    Function(Function),
+    Struct(StructDef),
+    Enum(EnumDef),
+}
+
+impl Item {
+    pub fn name(&self) -> &str {
+        match self {
+            Item::Function(f) => &f.name,
+            Item::Struct(s) => &s.name,
+            Item::Enum(e) => &e.name,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Item::Function(f) => f.span,
+            Item::Struct(s) => s.span,
+            Item::Enum(e) => e.span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericParam {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Function {
+    pub name: String,
+    pub generics: Vec<GenericParam>,
+    pub params: Vec<Param>,
+    pub ret_type: TypeExpr,
+    pub effects: Vec<String>,
+    pub requires: Option<Expr>,
+    pub ensures: Option<Expr>,
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Param {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructDef {
+    pub name: String,
+    pub generics: Vec<GenericParam>,
+    pub fields: Vec<Field>,
+    pub invariant: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Field {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnumDef {
+    pub name: String,
+    pub generics: Vec<GenericParam>,
+    pub variants: Vec<VariantDef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariantDef {
+    pub name: String,
+    pub payload: Option<TypeExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeExpr {
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TypeKind {
+    Unit,
+    Named { name: String, args: Vec<TypeExpr> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    pub stmts: Vec<Stmt>,
+    pub tail: Option<Box<Expr>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Stmt {
+    Let {
+        name: String,
+        ty: Option<TypeExpr>,
+        expr: Expr,
+        span: Span,
+    },
+    Expr {
+        expr: Expr,
+        span: Span,
+    },
+    Return {
+        expr: Option<Expr>,
+        span: Span,
+    },
+    Assert {
+        expr: Expr,
+        message: String,
+        span: Span,
+    },
+}
+
+impl Stmt {
+    pub fn span(&self) -> Span {
+        match self {
+            Stmt::Let { span, .. }
+            | Stmt::Expr { span, .. }
+            | Stmt::Return { span, .. }
+            | Stmt::Assert { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ExprKind {
+    Int(i64),
+    Bool(bool),
+    String(String),
+    Unit,
+    Var(String),
+    Call {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    If {
+        cond: Box<Expr>,
+        then_block: Block,
+        else_block: Block,
+    },
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    StructInit {
+        name: String,
+        fields: Vec<(String, Expr, Span)>,
+    },
+    FieldAccess {
+        base: Box<Expr>,
+        field: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PatternKind {
+    Wildcard,
+    Var(String),
+    Int(i64),
+    Bool(bool),
+    Unit,
+    Variant { name: String, args: Vec<Pattern> },
+}
+
+impl Expr {
+    pub fn var(name: impl Into<String>, span: Span) -> Self {
+        Self {
+            kind: ExprKind::Var(name.into()),
+            span,
+        }
+    }
+
+    pub fn bool(value: bool, span: Span) -> Self {
+        Self {
+            kind: ExprKind::Bool(value),
+            span,
+        }
+    }
+}

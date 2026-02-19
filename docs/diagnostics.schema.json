@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicore.dev/schemas/diagnostics.schema.json",
+  "title": "AICore Diagnostics",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+    "properties": {
+      "code": { "type": "string", "pattern": "^[EWN][0-9]{4}$" },
+      "severity": { "type": "string", "enum": ["error", "warning", "note"] },
+      "message": { "type": "string" },
+      "spans": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["file", "start", "end", "label"],
+          "properties": {
+            "file": { "type": "string" },
+            "start": { "type": "integer", "minimum": 0 },
+            "end": { "type": "integer", "minimum": 0 },
+            "label": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "help": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "suggested_fixes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["message", "replacement", "start", "end"],
+          "properties": {
+            "message": { "type": "string" },
+            "replacement": { "type": ["string", "null"] },
+            "start": { "type": ["integer", "null"], "minimum": 0 },
+            "end": { "type": ["integer", "null"], "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  }
+}

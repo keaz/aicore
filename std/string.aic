@@ -1,0 +1,5 @@
+module std.string;
+
+fn len(s: String) -> Int {
+    0
+}

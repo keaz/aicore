@@ -1,0 +1,9 @@
+module app.main;
+
+import std.io;
+import std.string;
+
+fn main() -> Int effects { io } {
+    print_int(len("abc"));
+    0
+}
