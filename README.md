@@ -79,6 +79,7 @@ cargo run -- check examples/option_match.aic
 cargo run -- check examples/effects_reject.aic --json
 cargo run -- fmt examples/option_match.aic
 cargo run -- ir examples/option_match.aic --emit json
+cargo run -- ir-migrate old_ir.json
 cargo run -- build examples/option_match.aic -o option_match
 cargo run -- run examples/option_match.aic
 ```
@@ -90,6 +91,7 @@ Commands:
 - `aic diag --json`
 - `aic fmt`
 - `aic ir --emit json|text`
+- `aic ir-migrate`
 - `aic build`
 - `aic run`
 

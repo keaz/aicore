@@ -1,6 +1,13 @@
 use crate::ast::{BinOp, UnaryOp};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub const CURRENT_IR_SCHEMA_VERSION: u32 = 1;
+
+fn default_schema_version() -> u32 {
+    CURRENT_IR_SCHEMA_VERSION
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SymbolId(pub u32);
@@ -13,12 +20,52 @@ pub struct NodeId(pub u32);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Program {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     pub module: Option<Vec<String>>,
     pub imports: Vec<Vec<String>>,
     pub items: Vec<Item>,
     pub symbols: Vec<Symbol>,
     pub types: Vec<TypeDef>,
     pub span: Span,
+}
+
+pub fn migrate_json_to_current(input: &str) -> anyhow::Result<Program> {
+    let mut value: Value = serde_json::from_str(input)?;
+    migrate_value_to_current(&mut value)?;
+    let program: Program = serde_json::from_value(value)?;
+    if program.schema_version != CURRENT_IR_SCHEMA_VERSION {
+        anyhow::bail!(
+            "migrated schema_version {} does not match current {}",
+            program.schema_version,
+            CURRENT_IR_SCHEMA_VERSION
+        );
+    }
+    Ok(program)
+}
+
+fn migrate_value_to_current(value: &mut Value) -> anyhow::Result<()> {
+    let current = value
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+
+    match current {
+        0 => {
+            let Value::Object(map) = value else {
+                anyhow::bail!("IR JSON root must be an object");
+            };
+            map.insert(
+                "schema_version".to_string(),
+                Value::from(CURRENT_IR_SCHEMA_VERSION),
+            );
+            Ok(())
+        }
+        v if v == CURRENT_IR_SCHEMA_VERSION => Ok(()),
+        other => anyhow::bail!(
+            "unsupported IR schema_version {other}; current schema_version is {CURRENT_IR_SCHEMA_VERSION}"
+        ),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,4 +263,38 @@ pub enum PatternKind {
     Bool(bool),
     Unit,
     Variant { name: String, args: Vec<Pattern> },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{migrate_json_to_current, CURRENT_IR_SCHEMA_VERSION};
+
+    #[test]
+    fn migrate_legacy_v0_without_schema_version() {
+        let legacy = r#"{
+  "module": null,
+  "imports": [],
+  "items": [],
+  "symbols": [],
+  "types": [],
+  "span": { "start": 0, "end": 0 }
+}"#;
+        let migrated = migrate_json_to_current(legacy).expect("migrate");
+        assert_eq!(migrated.schema_version, CURRENT_IR_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn reject_unknown_schema_version() {
+        let unsupported = r#"{
+  "schema_version": 99,
+  "module": null,
+  "imports": [],
+  "items": [],
+  "symbols": [],
+  "types": [],
+  "span": { "start": 0, "end": 0 }
+}"#;
+        let err = migrate_json_to_current(unsupported).expect_err("expected error");
+        assert!(err.to_string().contains("unsupported IR schema_version"));
+    }
 }

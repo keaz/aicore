@@ -20,6 +20,7 @@ pub fn build(program: &ast::Program) -> ir::Program {
         .collect::<Vec<_>>();
 
     ir::Program {
+        schema_version: ir::CURRENT_IR_SCHEMA_VERSION,
         module: program.module.as_ref().map(|m| m.path.clone()),
         imports: program.imports.iter().map(|i| i.path.clone()).collect(),
         items,

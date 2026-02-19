@@ -90,5 +90,6 @@ docs-check:
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md
 	@grep -q "aic ir" README.md
+	@grep -q "aic ir-migrate" README.md
 	@grep -q "aic build" README.md
 	@grep -q "aic run" README.md

@@ -33,6 +33,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
     } else {
         return Ok(FrontendOutput {
             ir: ir::Program {
+                schema_version: ir::CURRENT_IR_SCHEMA_VERSION,
                 module: None,
                 imports: Vec::new(),
                 items: Vec::new(),

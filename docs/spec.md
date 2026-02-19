@@ -86,6 +86,7 @@ Top-level IR shape:
 
 ```text
 Program {
+  schema_version: u32,
   module: Option<Vec<String>>,
   imports: Vec<Vec<String>>,
   items: Vec<Item>,
@@ -95,6 +96,7 @@ Program {
 ```
 
 `aic ir --emit json` prints canonical JSON serialization.
+`aic ir-migrate <ir.json>` migrates legacy IR JSON to current schema version.
 
 ## 4. Type system
 

@@ -4,6 +4,7 @@ use aicore::codegen::{compile_with_clang, emit_llvm};
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{diagnostics_pretty, has_errors, run_frontend};
 use aicore::formatter::format_program;
+use aicore::ir::migrate_json_to_current;
 use aicore::project::init_project;
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -43,6 +44,10 @@ enum Command {
         input: PathBuf,
         #[arg(long, value_enum, default_value = "json")]
         emit: EmitKind,
+    },
+    IrMigrate {
+        #[arg(default_value = "ir.json")]
+        input: PathBuf,
     },
     Build {
         #[arg(default_value = "src/main.aic")]
@@ -114,6 +119,11 @@ fn main() -> anyhow::Result<()> {
                     println!("{}", format_program(&front.ir));
                 }
             }
+        }
+        Command::IrMigrate { input } => {
+            let raw = std::fs::read_to_string(&input)?;
+            let migrated = migrate_json_to_current(&raw)?;
+            println!("{}", serde_json::to_string_pretty(&migrated)?);
         }
         Command::Build { input, output } => {
             let front = run_frontend(&input)?;
