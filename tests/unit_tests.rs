@@ -10,6 +10,7 @@ use aicore::parser::parse;
 use aicore::project::init_project;
 use aicore::resolver::resolve;
 use aicore::typecheck::check;
+use aicore::{driver::has_errors, driver::run_frontend};
 use tempfile::tempdir;
 
 fn lower(source: &str) -> aicore::ir::Program {
@@ -228,6 +229,80 @@ fn unit_diagnostic_registry_covers_all_emitted_codes() {
             "missing registry entry for {code}"
         );
     }
+}
+
+#[test]
+fn unit_multi_file_package_loads_and_typechecks() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::create_dir_all(root.join("std")).expect("mkdir std");
+
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"demo\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.math;
+import std.io;
+
+fn main() -> Int effects { io } {
+    print_int(add(1, 2));
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/math.aic"),
+        r#"module app.math;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write math");
+
+    fs::write(
+        root.join("std/io.aic"),
+        r#"module std.io;
+
+fn print_int(x: Int) -> () effects { io } {
+    ()
+}
+"#,
+    )
+    .expect("write io");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics: {:#?}",
+        out.diagnostics
+    );
+    assert!(out.ir.items.len() >= 2);
+}
+
+#[test]
+fn unit_missing_module_reports_e2100() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        "module app.main;\nimport app.missing;\nfn main() -> Int { 0 }\n",
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2100"));
 }
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {

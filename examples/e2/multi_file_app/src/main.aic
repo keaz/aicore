@@ -1,0 +1,9 @@
+module app.main;
+import app.math;
+import std.io;
+
+fn main() -> Int effects { io } {
+    let v = add(40, 2);
+    print_int(v);
+    0
+}

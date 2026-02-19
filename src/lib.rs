@@ -9,6 +9,7 @@ pub mod formatter;
 pub mod ir;
 pub mod ir_builder;
 pub mod lexer;
+pub mod package_loader;
 pub mod parser;
 pub mod project;
 pub mod resolver;

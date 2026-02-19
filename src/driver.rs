@@ -9,7 +9,7 @@ use crate::effects::check_effect_declarations;
 use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
-use crate::parser;
+use crate::package_loader;
 use crate::resolver::{self, Resolution};
 use crate::typecheck::{self, TypecheckOutput};
 
@@ -21,14 +21,12 @@ pub struct FrontendOutput {
 }
 
 pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
-    let source = fs::read_to_string(path)?;
     let file = path.to_string_lossy().to_string();
+    let mut load = package_loader::load_entry(path)?;
     let mut diagnostics = Vec::new();
+    diagnostics.append(&mut load.diagnostics);
 
-    let (ast, parse_diags) = parser::parse(&source, &file);
-    diagnostics.extend(parse_diags);
-
-    let ast = if let Some(ast) = ast {
+    let ast = if let Some(ast) = load.program {
         ast
     } else {
         return Ok(FrontendOutput {
@@ -39,7 +37,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
                 items: Vec::new(),
                 symbols: Vec::new(),
                 types: Vec::new(),
-                span: crate::span::Span::new(0, source.len()),
+                span: crate::span::Span::new(0, 0),
             },
             resolution: Resolution {
                 functions: Default::default(),
