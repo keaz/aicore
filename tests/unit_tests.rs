@@ -491,6 +491,34 @@ enum Token {
     assert!(out.diagnostics.iter().any(|d| d.code == "E1100"));
 }
 
+#[test]
+fn unit_parser_recovery_reports_multiple_errors() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+
+fn main() -> Int {
+    let x = ;
+    let y = ;
+    return
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        out.diagnostics.len() >= 3,
+        "expected multiple diagnostics, got {:#?}",
+        out.diagnostics
+    );
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1041"));
+}
+
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {

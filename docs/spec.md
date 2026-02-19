@@ -150,6 +150,7 @@ Each diagnostic includes:
 - `suggested_fixes[]`: `{message,replacement?,start?,end?}`
 
 `aic check --json` and `aic diag --json` return JSON arrays.
+Parser recovery is enabled at item and statement boundaries, so malformed files can emit multiple diagnostics in one pass.
 Formal schema file: `docs/diagnostics.schema.json`.
 Registry and ownership: `docs/diagnostic-codes.md`.
 

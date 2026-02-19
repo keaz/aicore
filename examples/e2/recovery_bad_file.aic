@@ -1,0 +1,7 @@
+module examples.e2.recovery.bad;
+
+fn main() -> Int {
+    let x = ;
+    let y = ;
+    return
+}

@@ -405,26 +405,34 @@ impl<'a> Parser<'a> {
         let mut stmts = Vec::new();
         let mut tail = None;
 
-        while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+        while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
             if self.at_kind(|k| matches!(k, TokenKind::KwLet)) {
-                let stmt = self.parse_let_stmt()?;
-                stmts.push(stmt);
+                match self.parse_let_stmt() {
+                    Some(stmt) => stmts.push(stmt),
+                    None => self.recover_statement(),
+                }
                 continue;
             }
             if self.at_kind(|k| matches!(k, TokenKind::KwReturn)) {
-                let stmt = self.parse_return_stmt()?;
-                stmts.push(stmt);
+                match self.parse_return_stmt() {
+                    Some(stmt) => stmts.push(stmt),
+                    None => self.recover_statement(),
+                }
                 continue;
             }
 
-            let expr = self.parse_expr()?;
-            if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
-                let span = expr.span.join(self.current_span());
-                self.bump();
-                stmts.push(Stmt::Expr { expr, span });
-            } else {
-                tail = Some(Box::new(expr));
-                break;
+            match self.parse_expr() {
+                Some(expr) => {
+                    if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+                        let span = expr.span.join(self.current_span());
+                        self.bump();
+                        stmts.push(Stmt::Expr { expr, span });
+                    } else {
+                        tail = Some(Box::new(expr));
+                        break;
+                    }
+                }
+                None => self.recover_statement(),
             }
         }
 
@@ -457,16 +465,28 @@ impl<'a> Parser<'a> {
             "expected '=' in let binding",
         )?;
         let expr = self.parse_expr()?;
-        let end = self.expect(
-            |k| matches!(k, TokenKind::Semi),
-            "E1033",
-            "expected ';' after let binding",
-        )?;
+        let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let span = self.current_span();
+            self.bump();
+            span.end
+        } else {
+            let span = self.current_span();
+            self.diagnostics.push(
+                Diagnostic::error("E1033", "expected ';' after let binding", self.file, span)
+                    .with_fix(crate::diagnostics::SuggestedFix {
+                        message: "insert ';' after let binding".to_string(),
+                        replacement: Some(";".to_string()),
+                        start: Some(expr.span.end),
+                        end: Some(expr.span.end),
+                    }),
+            );
+            expr.span.end
+        };
         Some(Stmt::Let {
             name,
             ty,
             expr,
-            span: Span::new(start, end.end),
+            span: Span::new(start, end),
         })
     }
 
@@ -478,14 +498,28 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expr()?)
         };
-        let end = self.expect(
-            |k| matches!(k, TokenKind::Semi),
-            "E1034",
-            "expected ';' after return",
-        )?;
+        let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let span = self.current_span();
+            self.bump();
+            span.end
+        } else {
+            let span = self.current_span();
+            let insert_at = expr.as_ref().map(|e| e.span.end).unwrap_or(span.start);
+            self.diagnostics.push(
+                Diagnostic::error("E1034", "expected ';' after return", self.file, span).with_fix(
+                    crate::diagnostics::SuggestedFix {
+                        message: "insert ';' after return".to_string(),
+                        replacement: Some(";".to_string()),
+                        start: Some(insert_at),
+                        end: Some(insert_at),
+                    },
+                ),
+            );
+            insert_at
+        };
         Some(Stmt::Return {
             expr,
-            span: Span::new(start, end.end),
+            span: Span::new(start, end),
         })
     }
 
@@ -1026,6 +1060,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn recover_statement(&mut self) {
+        while !self.at_kind(|k| matches!(k, TokenKind::Eof | TokenKind::RBrace)) {
+            if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+                self.bump();
+                break;
+            }
+            if self.at_kind(|k| matches!(k, TokenKind::KwLet | TokenKind::KwReturn)) {
+                break;
+            }
+            self.bump();
+        }
+    }
+
     fn looks_like_struct_literal(&self) -> bool {
         // Current token is expected to be '{' after an identifier.
         if !self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
@@ -1155,5 +1202,26 @@ fn f(x: Option[Int]) -> Int {
         let src = "fn bad(x: Int) Int { x }";
         let (_program, diagnostics) = parse(src, "test.aic");
         assert!(diagnostics.iter().any(|d| d.code == "E1006"));
+    }
+
+    #[test]
+    fn recovers_multiple_statement_errors_in_single_block() {
+        let src = r#"
+fn bad() -> Int {
+    let x = ;
+    let y = ;
+    return
+}
+
+fn ok() -> Int { 1 }
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(program.is_some(), "program should still be produced");
+        assert!(
+            diagnostics.len() >= 3,
+            "expected multiple diagnostics, got {:#?}",
+            diagnostics
+        );
+        assert!(diagnostics.iter().any(|d| d.code == "E1041"));
     }
 }
