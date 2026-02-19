@@ -1,0 +1,10 @@
+module examples.e3.infer.main;
+
+fn select(flag: Bool) -> Int {
+    let value = if flag { 41 } else { 40 };
+    value + 1
+}
+
+fn main() -> Int {
+    select(true)
+}

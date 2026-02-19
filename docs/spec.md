@@ -118,6 +118,8 @@ Program {
 
 - No implicit coercions.
 - `Option[T]`/`Result[T, E]` are standard tagged ADTs.
+- Local let bindings infer from initializer expressions.
+- If inferred types remain unresolved (for example `None` as `Option[<?>]`), explicit annotations are required.
 - Match exhaustiveness is enforced for:
   - `Bool`
   - `Option[T]`

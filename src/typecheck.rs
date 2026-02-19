@@ -345,6 +345,20 @@ impl<'a> Checker<'a> {
                         }
                         scope.insert(name.clone(), ann_ty);
                     } else {
+                        if contains_unresolved_type(&expr_ty) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1204",
+                                    format!(
+                                        "cannot infer concrete type for let binding '{}' (inferred '{}')",
+                                        name, expr_ty
+                                    ),
+                                    self.file,
+                                    *span,
+                                )
+                                .with_help("add an explicit type annotation on the binding"),
+                            );
+                        }
                         scope.insert(name.clone(), expr_ty);
                     }
                 }
@@ -1419,6 +1433,10 @@ fn type_compatible(expected: &str, found: &str) -> bool {
             && (expected.contains("<?>") || found.contains("<?>")))
 }
 
+fn contains_unresolved_type(ty: &str) -> bool {
+    ty.contains("<?>")
+}
+
 fn merge_types(a: &str, b: &str) -> String {
     if a == b {
         return a.to_string();
@@ -1555,5 +1573,59 @@ fn pure_fn() -> () {
     fn split_top_level_works() {
         let parts = split_top_level("Int, Option[Int], Result[Int, Bool]");
         assert_eq!(parts.len(), 3);
+    }
+
+    #[test]
+    fn infers_annotation_free_let_binding() {
+        let src = r#"
+fn f() -> Int {
+    let x = 41;
+    x + 1
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty());
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty());
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn ambiguous_none_binding_requires_annotation() {
+        let src = r#"
+fn f() -> Int {
+    let x = None;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty());
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty());
+        let out = check(&ir, &res, "test.aic");
+        assert!(out
+            .diagnostics
+            .iter()
+            .any(|d| { d.code == "E1204" && d.message.contains("cannot infer concrete type") }));
+    }
+
+    #[test]
+    fn propagates_block_tail_type_in_let() {
+        let src = r#"
+fn f(flag: Bool) -> Int {
+    let x = if flag { 1 } else { 2 };
+    x
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty());
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty());
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
     }
 }
