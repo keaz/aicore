@@ -37,6 +37,7 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     pub fn error(code: &str, message: impl Into<String>, file: &str, span: Span) -> Self {
+        crate::diagnostic_codes::assert_registered(code);
         Self {
             code: code.to_string(),
             severity: Severity::Error,

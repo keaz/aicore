@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use aicore::contracts::verify_static;
 use aicore::effects::check_effect_declarations;
@@ -202,4 +203,62 @@ fn unit_init_project_emits_canonical_source() {
     let ir = lower(&source);
     let formatted = format_program(&ir);
     assert_eq!(source, formatted, "init project source must be canonical");
+}
+
+#[test]
+fn unit_diagnostic_registry_covers_all_emitted_codes() {
+    let mut files = Vec::new();
+    collect_rs_files(Path::new("src"), &mut files);
+    collect_rs_files(Path::new("tests"), &mut files);
+
+    let mut seen = BTreeSet::new();
+    for path in files {
+        if path.ends_with("src/diagnostic_codes.rs") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).expect("read rust file");
+        for code in extract_diag_codes(&text) {
+            seen.insert(code);
+        }
+    }
+
+    for code in &seen {
+        assert!(
+            aicore::diagnostic_codes::is_registered(code),
+            "missing registry entry for {code}"
+        );
+    }
+}
+
+fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+fn extract_diag_codes(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 5 <= bytes.len() {
+        if bytes[i] == b'E'
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+            && bytes[i + 4].is_ascii_digit()
+        {
+            out.push(text[i..i + 5].to_string());
+            i += 5;
+            continue;
+        }
+        i += 1;
+    }
+    out
 }

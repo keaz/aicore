@@ -133,6 +133,7 @@ Each diagnostic includes:
 
 `aic check --json` and `aic diag --json` return JSON arrays.
 Formal schema file: `docs/diagnostics.schema.json`.
+Registry and ownership: `docs/diagnostic-codes.md`.
 
 ## 8. LLVM backend
 

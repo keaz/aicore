@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod codegen;
 pub mod contracts;
+pub mod diagnostic_codes;
 pub mod diagnostics;
 pub mod driver;
 pub mod effects;

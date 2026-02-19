@@ -83,6 +83,7 @@ docs-check:
 	@test -f docs/type-system.md
 	@test -f docs/effect-system.md
 	@test -f docs/contracts.md
+	@test -f docs/diagnostic-codes.md
 	@test -f docs/llvm-backend.md
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@grep -q "aic init" README.md
