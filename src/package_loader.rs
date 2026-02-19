@@ -168,8 +168,8 @@ impl Loader {
                 .chain(std::iter::once(&canonical))
                 .map(|p| module_label(self.module_path_by_file.get(p), p))
                 .collect::<Vec<_>>();
-            let cycle_text = cycle.join(" -> ");
-            if self.reported_cycles.insert(cycle_text.clone()) {
+            let (cycle_key, cycle_text) = canonicalize_cycle(&cycle);
+            if self.reported_cycles.insert(cycle_key) {
                 self.diagnostics.push(
                     Diagnostic::error(
                         "E2103",
@@ -409,6 +409,45 @@ fn module_label(module: Option<&Vec<String>>, path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
+fn canonicalize_cycle(cycle: &[String]) -> (String, String) {
+    let mut nodes = cycle.to_vec();
+    if nodes.len() > 1 && nodes.first() == nodes.last() {
+        nodes.pop();
+    }
+    if nodes.is_empty() {
+        return (String::new(), String::new());
+    }
+    if nodes.len() == 1 {
+        let node = nodes[0].clone();
+        return (node.clone(), format!("{node} -> {node}"));
+    }
+
+    let mut best: Option<Vec<String>> = None;
+    for candidate_seq in [nodes.clone(), {
+        let mut rev = nodes.clone();
+        rev.reverse();
+        rev
+    }] {
+        for start in 0..candidate_seq.len() {
+            let mut rotated = candidate_seq[start..].to_vec();
+            rotated.extend_from_slice(&candidate_seq[..start]);
+            let replace = best
+                .as_ref()
+                .map(|current| rotated.join("|") < current.join("|"))
+                .unwrap_or(true);
+            if replace {
+                best = Some(rotated);
+            }
+        }
+    }
+
+    let mut best = best.unwrap_or(nodes);
+    let key = best.join("|");
+    best.push(best[0].clone());
+    let display = best.join(" -> ");
+    (key, display)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -477,5 +516,52 @@ mod tests {
             .diagnostics
             .iter()
             .any(|d| d.help.iter().any(|h| h.contains("create the module file"))));
+    }
+
+    #[test]
+    fn reports_single_canonical_cycle_diagnostic() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::write(
+            root.join("src/main.aic"),
+            r#"module app.main;
+import app.a;
+import app.b;
+
+fn main() -> Int { 0 }
+"#,
+        )
+        .expect("write main");
+
+        fs::write(
+            root.join("src/a.aic"),
+            r#"module app.a;
+import app.b;
+
+fn a() -> Int { 1 }
+"#,
+        )
+        .expect("write a");
+
+        fs::write(
+            root.join("src/b.aic"),
+            r#"module app.b;
+import app.a;
+
+fn b() -> Int { 2 }
+"#,
+        )
+        .expect("write b");
+
+        let loaded = load_entry(&root.join("src/main.aic")).expect("load package");
+        let cycle_diags = loaded
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "E2103")
+            .collect::<Vec<_>>();
+        assert_eq!(cycle_diags.len(), 1, "diags={:#?}", loaded.diagnostics);
+        assert!(cycle_diags[0].message.contains("app.a -> app.b -> app.a"));
     }
 }

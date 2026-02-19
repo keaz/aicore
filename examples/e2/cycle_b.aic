@@ -1,0 +1,6 @@
+module examples.e2.cycle.b;
+import examples.e2.cycle.a;
+
+fn b() -> Int {
+    2
+}
