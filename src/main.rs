@@ -2,9 +2,12 @@ use std::path::{Path, PathBuf};
 
 use aicore::codegen::{compile_with_clang, emit_llvm};
 use aicore::contracts::lower_runtime_asserts;
+use aicore::diagnostics::Severity;
 use aicore::driver::{diagnostics_pretty, has_errors, run_frontend};
 use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
+use aicore::ir_builder;
+use aicore::parser;
 use aicore::project::init_project;
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -89,12 +92,18 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Fmt { input, check } => {
-            let front = run_frontend(&input)?;
-            if has_errors(&front.diagnostics) {
-                print!("{}", diagnostics_pretty(&front.diagnostics));
+            let source = std::fs::read_to_string(&input)?;
+            let (ast, diags) = parser::parse(&source, &input.to_string_lossy());
+            if diags.iter().any(|d| matches!(d.severity, Severity::Error)) {
+                print!("{}", diagnostics_pretty(&diags));
                 std::process::exit(1);
             }
-            let formatted = format_program(&front.ir);
+            let Some(ast) = ast else {
+                eprintln!("format failed: parser returned no AST");
+                std::process::exit(1);
+            };
+            let ir = ir_builder::build(&ast);
+            let formatted = format_program(&ir);
             if check {
                 let current = std::fs::read_to_string(&input)?;
                 if current != formatted {

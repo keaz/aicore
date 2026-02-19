@@ -26,7 +26,6 @@ pub fn load_entry(input: &Path) -> anyhow::Result<PackageLoadResult> {
 
 #[derive(Debug, Clone)]
 struct ParsedModule {
-    source: String,
     program: Option<ast::Program>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -255,9 +254,11 @@ impl Loader {
                 String::new()
             };
             if !rest.is_empty() {
-                let candidate = self.project_root.join("std").join(format!("{rest}.aic"));
-                if candidate.exists() {
-                    return Some(candidate);
+                for std_root in self.std_roots() {
+                    let candidate = std_root.join(format!("{rest}.aic"));
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
                 }
             }
         }
@@ -276,6 +277,15 @@ impl Loader {
         None
     }
 
+    fn std_roots(&self) -> Vec<PathBuf> {
+        let mut roots = vec![self.project_root.join("std")];
+        let builtin_std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std");
+        if !roots.iter().any(|r| r == &builtin_std) {
+            roots.push(builtin_std);
+        }
+        roots
+    }
+
     fn ensure_parsed(&mut self, file: &Path) -> anyhow::Result<()> {
         if self.parse_cache.contains_key(file) {
             return Ok(());
@@ -285,7 +295,6 @@ impl Loader {
         self.parse_cache.insert(
             file.to_path_buf(),
             ParsedModule {
-                source,
                 program,
                 diagnostics,
             },
