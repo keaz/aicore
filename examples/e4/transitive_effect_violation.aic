@@ -1,0 +1,15 @@
+module examples.e4.transitive_effect_violation;
+import std.io;
+
+fn leaf() -> () effects { io } {
+    print_int(1)
+}
+
+fn middle() -> () {
+    leaf()
+}
+
+fn main() -> Int {
+    middle();
+    0
+}

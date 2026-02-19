@@ -115,6 +115,74 @@ fn unit_effect_decl_duplicate() {
 }
 
 #[test]
+fn unit_frontend_canonicalizes_effect_signature_order() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+fn main() -> Int effects { time, io, fs } {
+    0
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+    let func = out
+        .ir
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ir::Item::Function(func) if func.name == "main" => Some(func),
+            _ => None,
+        })
+        .expect("main function");
+    assert_eq!(
+        func.effects,
+        vec!["fs".to_string(), "io".to_string(), "time".to_string()]
+    );
+}
+
+#[test]
+fn unit_frontend_reports_transitive_effect_path() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+import std.io;
+
+fn leaf() -> () effects { io } {
+    print_int(1)
+}
+
+fn middle() -> () {
+    leaf()
+}
+
+fn top() -> () {
+    middle()
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "E2005")
+        .expect("missing E2005");
+    assert!(diag.message.contains("top -> middle -> leaf"));
+}
+
+#[test]
 fn unit_contract_static_false() {
     let src = "fn f() -> Int requires false { 1 }";
     let ir = lower(src);

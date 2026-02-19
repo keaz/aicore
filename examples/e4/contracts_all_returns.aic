@@ -1,0 +1,12 @@
+module examples.e4.contracts_all_returns;
+import std.io;
+
+fn normalized(x: Int) -> Int ensures result >= 0 {
+    return x;
+    x
+}
+
+fn main() -> Int effects { io } {
+    print_int(normalized(-4));
+    0
+}

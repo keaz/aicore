@@ -134,14 +134,16 @@ Program {
 - Default function effect set is empty (pure).
 - Known effects: `io`, `fs`, `net`, `time`, `rand`.
 - Calls require callee effects to be subset of caller declared effects.
+- Effect declarations are canonicalized to deterministic sorted signatures.
+- Interprocedural call-graph analysis enforces transitive effect safety with call-path diagnostics.
 - Contracts are checked as pure contexts.
 
 ## 6. Contracts
 
 - `requires` checked at function entry.
-- `ensures` checked at function exit (tail-return style in MVP).
-- `invariant` validated statically for type and as runtime obligation in planned struct codegen path.
-- Static constant simplifier flags always-false contract expressions.
+- `ensures` checked at all function exits (explicit `return` and implicit exits).
+- Struct `invariant` is validated statically for type and enforced at runtime on construction.
+- Restricted static verifier proves/discharges some integer obligations and flags statically false contracts.
 
 ## 7. Diagnostics schema
 

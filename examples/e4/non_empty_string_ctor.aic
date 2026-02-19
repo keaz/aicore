@@ -1,0 +1,11 @@
+module examples.e4.non_empty_string_ctor;
+import std.string;
+
+struct NonEmptyString {
+    value: String,
+} invariant len(value) > 0
+
+fn main() -> Int {
+    let _bad = NonEmptyString { value: "" };
+    0
+}

@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::codegen::{compile_with_clang, emit_llvm};
 use crate::contracts::{lower_runtime_asserts, verify_static};
 use crate::diagnostics::{Diagnostic, Severity};
-use crate::effects::check_effect_declarations;
+use crate::effects::normalize_effect_declarations;
 use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
@@ -58,11 +58,10 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
     };
 
     let mut ir = ir_builder::build(&ast);
+    diagnostics.extend(normalize_effect_declarations(&mut ir, &file));
     let (resolution, resolve_diags) =
         resolver::resolve_with_item_modules(&ir, &file, Some(&load.item_modules));
     diagnostics.extend(resolve_diags);
-
-    diagnostics.extend(check_effect_declarations(&ir, &file));
 
     let typecheck = typecheck::check(&ir, &resolution, &file);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();

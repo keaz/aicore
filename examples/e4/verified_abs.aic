@@ -1,0 +1,11 @@
+module examples.e4.verified_abs;
+import std.io;
+
+fn abs(x: Int) -> Int ensures result >= 0 {
+    if x >= 0 { x } else { 0 - x }
+}
+
+fn main() -> Int effects { io } {
+    print_int(abs(-7));
+    0
+}

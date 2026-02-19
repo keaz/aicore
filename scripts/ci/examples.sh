@@ -18,16 +18,23 @@ check_pass=(
   "examples/e3/result_payloads.aic"
   "examples/e3/match_exhaustive.aic"
   "examples/e3/option_only_absence.aic"
+  "examples/e4/effect_decl.aic"
+  "examples/e4/contracts_all_returns.aic"
+  "examples/e4/non_empty_string_ctor.aic"
+  "examples/e4/verified_abs.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
+  "examples/e4/transitive_effect_violation.aic"
 )
 run_pass=(
   "examples/option_match.aic"
   "examples/contracts_abs_ok.aic"
+  "examples/e4/verified_abs.aic"
 )
 run_fail=(
-  "examples/contracts_abs_fail.aic"
+  "examples/contracts_abs_fail.aic:ensures failed"
+  "examples/e4/contracts_all_returns.aic:ensures failed"
 )
 
 expect_check_fail() {
@@ -42,11 +49,12 @@ expect_check_fail() {
 
 expect_run_fail() {
   local file="$1"
+  local marker="${2:-ensures failed}"
   if "${AIC[@]}" run "$file" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
     echo "expected run failure but passed: $file" >&2
     exit 1
   fi
-  if ! grep -q "ensures failed" /tmp/aic-example.err && ! grep -q "ensures failed" /tmp/aic-example.out; then
+  if ! grep -q "$marker" /tmp/aic-example.err && ! grep -q "$marker" /tmp/aic-example.out; then
     echo "expected contract failure marker not found for: $file" >&2
     cat /tmp/aic-example.out >&2 || true
     cat /tmp/aic-example.err >&2 || true
@@ -79,8 +87,11 @@ case "$MODE" in
   run)
     expect_run_value "examples/option_match.aic" "42"
     expect_run_value "examples/contracts_abs_ok.aic" "7"
-    for f in "${run_fail[@]}"; do
-      expect_run_fail "$f"
+    expect_run_value "examples/e4/verified_abs.aic" "7"
+    for entry in "${run_fail[@]}"; do
+      file="${entry%%:*}"
+      marker="${entry#*:}"
+      expect_run_fail "$file" "$marker"
     done
     ;;
   *)

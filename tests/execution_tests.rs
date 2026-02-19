@@ -130,3 +130,23 @@ fn main() -> Int effects { io } {
     assert_ne!(code, 0);
     assert!(stderr.contains("ensures failed in bad"), "stderr={stderr}");
 }
+
+#[test]
+fn exec_contract_failure_on_explicit_return() {
+    let src = r#"
+fn bad_return(x: Int) -> Int ensures result >= 0 {
+    return x;
+    x
+}
+
+fn main() -> Int {
+    bad_return(-3)
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("ensures failed in bad_return"),
+        "stderr={stderr}"
+    );
+}

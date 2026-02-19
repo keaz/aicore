@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::BinOp;
 use crate::diagnostics::Diagnostic;
@@ -35,6 +35,8 @@ struct Checker<'a> {
     functions: BTreeMap<String, FnSig>,
     generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
+    call_graph: BTreeMap<String, Vec<CallEdge>>,
+    current_function: Option<String>,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
@@ -60,6 +62,18 @@ struct PendingInstantiation {
     symbol: Option<ir::SymbolId>,
     type_args: Vec<String>,
     mangled: String,
+}
+
+#[derive(Debug, Clone)]
+struct CallEdge {
+    callee: String,
+    span: crate::span::Span,
+}
+
+#[derive(Debug, Clone)]
+struct EffectPath {
+    nodes: Vec<String>,
+    span: crate::span::Span,
 }
 
 impl<'a> Checker<'a> {
@@ -147,6 +161,8 @@ impl<'a> Checker<'a> {
             functions,
             generic_arity,
             effect_usage: BTreeMap::new(),
+            call_graph: BTreeMap::new(),
+            current_function: None,
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
@@ -162,6 +178,7 @@ impl<'a> Checker<'a> {
                 ir::Item::Enum(enm) => self.check_enum_definition(enm),
             }
         }
+        self.check_transitive_effects();
     }
 
     fn finish(self) -> TypecheckOutput {
@@ -187,7 +204,9 @@ impl<'a> Checker<'a> {
 
     fn check_function(&mut self, func: &ir::Function) {
         let previous_enforce = self.enforce_import_visibility;
+        let previous_function = self.current_function.replace(func.name.clone());
         self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
+        self.call_graph.entry(func.name.clone()).or_default();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
         let mut locals = BTreeMap::new();
@@ -307,6 +326,7 @@ impl<'a> Checker<'a> {
             .insert(func.name.clone(), body_ctx.effects_used);
 
         self.enforce_import_visibility = previous_enforce;
+        self.current_function = previous_function;
     }
 
     fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
@@ -317,6 +337,152 @@ impl<'a> Checker<'a> {
             return true;
         };
         modules.len() == 1 && modules.contains(entry_module)
+    }
+
+    fn record_call_edge(&mut self, callee: &str, span: crate::span::Span) {
+        let Some(caller) = self.current_function.as_ref() else {
+            return;
+        };
+        self.call_graph
+            .entry(caller.clone())
+            .or_default()
+            .push(CallEdge {
+                callee: callee.to_string(),
+                span,
+            });
+    }
+
+    fn check_transitive_effects(&mut self) {
+        let user_functions = self
+            .program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ir::Item::Function(func) => Some(func.name.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let mut memo = BTreeMap::new();
+        for function in &user_functions {
+            let mut visiting = BTreeSet::new();
+            let closure = self.compute_effect_closure(function, &mut visiting, &mut memo);
+            self.effect_usage.insert(function.clone(), closure);
+        }
+
+        for function in &user_functions {
+            let declared = self
+                .functions
+                .get(function)
+                .map(|sig| sig.effects.clone())
+                .unwrap_or_default();
+            let closure = self.effect_usage.get(function).cloned().unwrap_or_default();
+            let missing = closure.difference(&declared).cloned().collect::<Vec<_>>();
+            for effect in missing {
+                let Some(path) = self.find_effect_path(function, &effect) else {
+                    continue;
+                };
+                if path.nodes.len() < 3 {
+                    continue;
+                }
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2005",
+                        format!(
+                            "function '{}' requires transitive effect '{}' via call path {}",
+                            function,
+                            effect,
+                            path.nodes.join(" -> ")
+                        ),
+                        self.file,
+                        path.span,
+                    )
+                    .with_help(format!(
+                        "declare `effects {{ {} }}` on '{}' or refactor the call chain",
+                        effect, function
+                    )),
+                );
+            }
+        }
+    }
+
+    fn compute_effect_closure(
+        &self,
+        function: &str,
+        visiting: &mut BTreeSet<String>,
+        memo: &mut BTreeMap<String, BTreeSet<String>>,
+    ) -> BTreeSet<String> {
+        if let Some(cached) = memo.get(function) {
+            return cached.clone();
+        }
+
+        if !visiting.insert(function.to_string()) {
+            return self
+                .functions
+                .get(function)
+                .map(|sig| sig.effects.clone())
+                .unwrap_or_default();
+        }
+
+        let mut required = self
+            .functions
+            .get(function)
+            .map(|sig| sig.effects.clone())
+            .unwrap_or_default();
+
+        if let Some(edges) = self.call_graph.get(function) {
+            for edge in edges {
+                if let Some(sig) = self.functions.get(&edge.callee) {
+                    required.extend(sig.effects.iter().cloned());
+                }
+                if self.resolution.functions.contains_key(&edge.callee) {
+                    required.extend(self.compute_effect_closure(&edge.callee, visiting, memo));
+                }
+            }
+        }
+
+        visiting.remove(function);
+        memo.insert(function.to_string(), required.clone());
+        required
+    }
+
+    fn find_effect_path(&self, start: &str, effect: &str) -> Option<EffectPath> {
+        let mut queue = VecDeque::new();
+        let mut visited = BTreeSet::new();
+        visited.insert(start.to_string());
+        queue.push_back((start.to_string(), vec![start.to_string()], None));
+
+        while let Some((node, path, first_span)) = queue.pop_front() {
+            let Some(edges) = self.call_graph.get(&node) else {
+                continue;
+            };
+            for edge in edges {
+                let mut next_path = path.clone();
+                next_path.push(edge.callee.clone());
+                let span = first_span.unwrap_or(edge.span);
+
+                if self
+                    .functions
+                    .get(&edge.callee)
+                    .map(|sig| sig.effects.contains(effect))
+                    .unwrap_or(false)
+                {
+                    return Some(EffectPath {
+                        nodes: next_path,
+                        span,
+                    });
+                }
+
+                if !self.resolution.functions.contains_key(&edge.callee) {
+                    continue;
+                }
+                if visited.insert(edge.callee.clone()) {
+                    queue.push_back((edge.callee.clone(), next_path, Some(span)));
+                }
+            }
+        }
+
+        None
     }
 
     fn check_struct_invariant(&mut self, strukt: &ir::StructDef) {
@@ -878,6 +1044,10 @@ impl<'a> Checker<'a> {
                                 )),
                             );
                         }
+                    }
+
+                    if !contract_mode {
+                        self.record_call_edge(&resolved_name, expr.span);
                     }
 
                     let ret_ty = substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
@@ -2314,6 +2484,8 @@ fn split_top_level(input: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use crate::{ir_builder::build, parser::parse, resolver::resolve};
 
     use super::{check, extract_generic_args, merge_types, split_top_level};
@@ -2355,6 +2527,42 @@ fn pure_fn() -> () {
         assert!(d2.is_empty());
         let out = check(&ir, &res, "test.aic");
         assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+    }
+
+    #[test]
+    fn reports_transitive_effect_path() {
+        let src = r#"
+import std.io;
+fn leaf() -> () effects { io } {
+    print_int(1)
+}
+fn middle() -> () {
+    leaf()
+}
+fn top() -> () {
+    middle()
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty());
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty());
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E2005")
+            .expect("missing transitive effect diagnostic");
+        assert!(
+            diag.message.contains("top -> middle -> leaf"),
+            "message={}",
+            diag.message
+        );
+        assert_eq!(
+            out.function_effect_usage.get("top"),
+            Some(&BTreeSet::from(["io".to_string()]))
+        );
     }
 
     #[test]
