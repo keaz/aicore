@@ -305,6 +305,133 @@ fn unit_missing_module_reports_e2100() {
     assert!(out.diagnostics.iter().any(|d| d.code == "E2100"));
 }
 
+#[test]
+fn unit_unimported_transitive_symbol_reports_e2102() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.math;
+
+fn main() -> Int {
+    hidden()
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/math.aic"),
+        r#"module app.math;
+import app.util;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write math");
+
+    fs::write(
+        root.join("src/util.aic"),
+        r#"module app.util;
+
+fn hidden() -> Int {
+    1
+}
+"#,
+    )
+    .expect("write util");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2102"));
+}
+
+#[test]
+fn unit_qualified_module_call_resolves() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.math;
+
+fn main() -> Int {
+    math.add(40, 2)
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/math.aic"),
+        r#"module app.math;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write math");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_ambiguous_imported_symbol_reports_e2104() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.math;
+import app.more;
+
+fn main() -> Int {
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/math.aic"),
+        r#"module app.math;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write math");
+
+    fs::write(
+        root.join("src/more.aic"),
+        r#"module app.more;
+
+fn add(x: Int, y: Int) -> Int {
+    x - y
+}
+"#,
+    )
+    .expect("write more");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2104"));
+}
+
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {

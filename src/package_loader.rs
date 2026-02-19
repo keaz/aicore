@@ -13,6 +13,7 @@ pub struct PackageLoadResult {
     pub diagnostics: Vec<Diagnostic>,
     pub module_order: Vec<Vec<String>>,
     pub parsed_module_count: usize,
+    pub item_modules: Vec<Option<Vec<String>>>,
 }
 
 pub fn load_entry(input: &Path) -> anyhow::Result<PackageLoadResult> {
@@ -66,7 +67,7 @@ impl Loader {
             .filter_map(|path| self.module_path_by_file.get(path).cloned())
             .collect::<Vec<_>>();
 
-        let program = self.merge_program();
+        let (program, item_modules) = self.merge_program();
         let parsed_module_count = self.parse_cache.len();
 
         PackageLoadResult {
@@ -74,6 +75,7 @@ impl Loader {
             diagnostics: self.diagnostics,
             module_order,
             parsed_module_count,
+            item_modules,
         }
     }
 
@@ -121,25 +123,36 @@ impl Loader {
         self.visit_path(self.entry_path.clone(), true)
     }
 
-    fn merge_program(&self) -> Option<ast::Program> {
-        let entry = self.parse_cache.get(&self.entry_path)?;
-        let entry_program = entry.program.as_ref()?;
+    fn merge_program(&self) -> (Option<ast::Program>, Vec<Option<Vec<String>>>) {
+        let Some(entry) = self.parse_cache.get(&self.entry_path) else {
+            return (None, Vec::new());
+        };
+        let Some(entry_program) = entry.program.as_ref() else {
+            return (None, Vec::new());
+        };
 
         let mut merged_items = Vec::new();
+        let mut item_modules = Vec::new();
         for path in &self.ordered {
             if let Some(parsed) = self.parse_cache.get(path) {
                 if let Some(program) = &parsed.program {
                     merged_items.extend(program.items.clone());
+                    for _ in &program.items {
+                        item_modules.push(program.module.as_ref().map(|m| m.path.clone()));
+                    }
                 }
             }
         }
 
-        Some(ast::Program {
-            module: entry_program.module.clone(),
-            imports: entry_program.imports.clone(),
-            items: merged_items,
-            span: entry_program.span,
-        })
+        (
+            Some(ast::Program {
+                module: entry_program.module.clone(),
+                imports: entry_program.imports.clone(),
+                items: merged_items,
+                span: entry_program.span,
+            }),
+            item_modules,
+        )
     }
 
     fn visit_path(&mut self, path: PathBuf, is_entry: bool) -> anyhow::Result<()> {

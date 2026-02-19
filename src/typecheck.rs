@@ -33,6 +33,7 @@ struct Checker<'a> {
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
+    enforce_import_visibility: bool,
 }
 
 #[derive(Default)]
@@ -121,6 +122,7 @@ impl<'a> Checker<'a> {
             types,
             functions,
             effect_usage: BTreeMap::new(),
+            enforce_import_visibility: false,
         }
     }
 
@@ -142,6 +144,9 @@ impl<'a> Checker<'a> {
     }
 
     fn check_function(&mut self, func: &ir::Function) {
+        let previous_enforce = self.enforce_import_visibility;
+        self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
+
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
         let mut locals = BTreeMap::new();
         for param in &func.params {
@@ -257,6 +262,18 @@ impl<'a> Checker<'a> {
 
         self.effect_usage
             .insert(func.name.clone(), body_ctx.effects_used);
+
+        self.enforce_import_visibility = previous_enforce;
+    }
+
+    fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
+        let Some(entry_module) = self.resolution.entry_module.as_ref() else {
+            return true;
+        };
+        let Some(modules) = self.resolution.function_modules.get(function_name) else {
+            return true;
+        };
+        modules.len() == 1 && modules.contains(entry_module)
     }
 
     fn check_struct_invariant(&mut self, strukt: &ir::StructDef) {
@@ -411,18 +428,29 @@ impl<'a> Checker<'a> {
                 "<?>".to_string()
             }
             ir::ExprKind::Call { callee, args } => {
-                let ir::ExprKind::Var(name) = &callee.kind else {
+                let Some(call_path) = self.extract_callee_path(callee) else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1209",
-                        "callee must be a function or constructor name",
+                        "callee must be a function or constructor path",
                         self.file,
                         callee.span,
                     ));
                     return "<?>".to_string();
                 };
+                let Some(name) = call_path.last().cloned() else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1209",
+                        "callee path cannot be empty",
+                        self.file,
+                        callee.span,
+                    ));
+                    return "<?>".to_string();
+                };
+                let qualified = call_path.len() > 1;
+                let rendered_path = call_path.join(".");
 
                 // Option / Result constructors.
-                if name == "Some" {
+                if !qualified && name == "Some" {
                     if args.len() != 1 {
                         self.diagnostics.push(Diagnostic::error(
                             "E1210",
@@ -436,7 +464,7 @@ impl<'a> Checker<'a> {
                         self.check_expr(&args[0], locals, allowed_effects, ctx, contract_mode);
                     return format!("Option[{}]", inner);
                 }
-                if name == "None" {
+                if !qualified && name == "None" {
                     if !args.is_empty() {
                         self.diagnostics.push(Diagnostic::error(
                             "E1211",
@@ -447,7 +475,7 @@ impl<'a> Checker<'a> {
                     }
                     return "Option[<?>]".to_string();
                 }
-                if name == "Ok" {
+                if !qualified && name == "Ok" {
                     if args.len() != 1 {
                         self.diagnostics.push(Diagnostic::error(
                             "E1210",
@@ -461,7 +489,7 @@ impl<'a> Checker<'a> {
                         self.check_expr(&args[0], locals, allowed_effects, ctx, contract_mode);
                     return format!("Result[{}, <?>]", inner);
                 }
-                if name == "Err" {
+                if !qualified && name == "Err" {
                     if args.len() != 1 {
                         self.diagnostics.push(Diagnostic::error(
                             "E1210",
@@ -476,14 +504,130 @@ impl<'a> Checker<'a> {
                     return format!("Result[<?>, {}]", err);
                 }
 
-                if let Some(sig) = self.functions.get(name).cloned() {
+                let resolved_name = if qualified {
+                    let qualifier = &call_path[..call_path.len() - 1];
+                    let Some(module) = self.resolve_qualifier_module(qualifier) else {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2102",
+                                format!(
+                                    "module qualifier '{}' is not imported",
+                                    qualifier.join(".")
+                                ),
+                                self.file,
+                                callee.span,
+                            )
+                            .with_help("add an explicit import for that module"),
+                        );
+                        return "<?>".to_string();
+                    };
+
+                    if !self.resolution.imports.contains(&module) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2102",
+                                format!("module '{}' is not directly imported", module),
+                                self.file,
+                                callee.span,
+                            )
+                            .with_help(format!("add `import {};`", module)),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    let exported = self
+                        .resolution
+                        .module_functions
+                        .get(&module)
+                        .map(|s| s.contains(&name))
+                        .unwrap_or(false);
+                    if !exported {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1218",
+                            format!("unknown callable '{}'", rendered_path),
+                            self.file,
+                            callee.span,
+                        ));
+                        return "<?>".to_string();
+                    }
+
+                    if self
+                        .resolution
+                        .function_modules
+                        .get(&name)
+                        .map(|mods| mods.len() > 1)
+                        .unwrap_or(false)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2104",
+                                format!("ambiguous callable '{}' exported by multiple modules", name),
+                                self.file,
+                                callee.span,
+                            )
+                            .with_help("rename colliding functions or import a single module exporting that name"),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    name.clone()
+                } else {
+                    if self.enforce_import_visibility
+                        && !self.resolution.visible_functions.contains(&name)
+                    {
+                        if let Some(modules) = self.resolution.function_modules.get(&name) {
+                            let mut modules = modules.iter().cloned().collect::<Vec<_>>();
+                            modules.sort();
+                            let import_hint = modules
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "module.path".to_string());
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E2102",
+                                    format!(
+                                        "symbol '{}' is not available without an explicit import",
+                                        name
+                                    ),
+                                    self.file,
+                                    callee.span,
+                                )
+                                .with_help(format!("add `import {};`", import_hint)),
+                            );
+                            return "<?>".to_string();
+                        }
+                    }
+
+                    if self
+                        .resolution
+                        .function_modules
+                        .get(&name)
+                        .map(|mods| mods.len() > 1)
+                        .unwrap_or(false)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2104",
+                                format!("ambiguous callable '{}' from multiple modules", name),
+                                self.file,
+                                callee.span,
+                            )
+                            .with_help("qualify the call (for example `module.symbol(...)`)"),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    name.clone()
+                };
+
+                if let Some(sig) = self.functions.get(&resolved_name).cloned() {
                     if sig.generics > 0 {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1212",
                                 format!(
                                     "generic function '{}' requires explicit specialization in MVP",
-                                    name
+                                    resolved_name
                                 ),
                                 self.file,
                                 expr.span,
@@ -492,7 +636,10 @@ impl<'a> Checker<'a> {
                         );
                     }
 
-                    if name == "print_int" || name == "print_str" || name == "panic" {
+                    if resolved_name == "print_int"
+                        || resolved_name == "print_str"
+                        || resolved_name == "panic"
+                    {
                         if !self.resolution.imports.contains("std.io") {
                             self.diagnostics.push(
                                 Diagnostic::error(
@@ -505,7 +652,7 @@ impl<'a> Checker<'a> {
                             );
                         }
                     }
-                    if name == "len" && !self.resolution.imports.contains("std.string") {
+                    if resolved_name == "len" && !self.resolution.imports.contains("std.string") {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1301",
@@ -522,7 +669,7 @@ impl<'a> Checker<'a> {
                             "E1213",
                             format!(
                                 "function '{}' expects {} args, got {}",
-                                name,
+                                rendered_path,
                                 sig.params.len(),
                                 args.len()
                             ),
@@ -540,7 +687,7 @@ impl<'a> Checker<'a> {
                                     format!(
                                         "argument {} to '{}' expected '{}', found '{}'",
                                         idx + 1,
-                                        name,
+                                        rendered_path,
                                         expected,
                                         arg_ty
                                     ),
@@ -577,7 +724,7 @@ impl<'a> Checker<'a> {
                                     "E2001",
                                     format!(
                                         "calling '{}' requires undeclared effects: {}",
-                                        name,
+                                        rendered_path,
                                         missing.join(", ")
                                     ),
                                     self.file,
@@ -593,49 +740,51 @@ impl<'a> Checker<'a> {
                     return sig.ret;
                 }
 
-                if let Some((enum_name, payload)) = self.find_variant(name) {
-                    if let Some(payload_ty) = payload {
-                        if args.len() != 1 {
+                if !qualified {
+                    if let Some((enum_name, payload)) = self.find_variant(&name) {
+                        if let Some(payload_ty) = payload {
+                            if args.len() != 1 {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E1215",
+                                    format!("variant '{}' expects one payload argument", name),
+                                    self.file,
+                                    expr.span,
+                                ));
+                            } else {
+                                let arg_ty = self.check_expr(
+                                    &args[0],
+                                    locals,
+                                    allowed_effects,
+                                    ctx,
+                                    contract_mode,
+                                );
+                                if !type_compatible(&payload_ty, &arg_ty) {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "E1216",
+                                        format!(
+                                            "variant '{}' payload type mismatch: expected '{}', found '{}'",
+                                            name, payload_ty, arg_ty
+                                        ),
+                                        self.file,
+                                        args[0].span,
+                                    ));
+                                }
+                            }
+                        } else if !args.is_empty() {
                             self.diagnostics.push(Diagnostic::error(
-                                "E1215",
-                                format!("variant '{}' expects one payload argument", name),
+                                "E1217",
+                                format!("variant '{}' takes no payload", name),
                                 self.file,
                                 expr.span,
                             ));
-                        } else {
-                            let arg_ty = self.check_expr(
-                                &args[0],
-                                locals,
-                                allowed_effects,
-                                ctx,
-                                contract_mode,
-                            );
-                            if !type_compatible(&payload_ty, &arg_ty) {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "E1216",
-                                    format!(
-                                        "variant '{}' payload type mismatch: expected '{}', found '{}'",
-                                        name, payload_ty, arg_ty
-                                    ),
-                                    self.file,
-                                    args[0].span,
-                                ));
-                            }
                         }
-                    } else if !args.is_empty() {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E1217",
-                            format!("variant '{}' takes no payload", name),
-                            self.file,
-                            expr.span,
-                        ));
+                        return enum_name;
                     }
-                    return enum_name;
                 }
 
                 self.diagnostics.push(Diagnostic::error(
                     "E1218",
-                    format!("unknown callable '{}'", name),
+                    format!("unknown callable '{}'", rendered_path),
                     self.file,
                     callee.span,
                 ));
@@ -856,6 +1005,55 @@ impl<'a> Checker<'a> {
                 ));
                 "<?>".to_string()
             }
+        }
+    }
+
+    fn resolve_qualifier_module(&self, qualifier: &[String]) -> Option<String> {
+        if qualifier.is_empty() {
+            return None;
+        }
+
+        if qualifier.len() == 1 {
+            let alias = &qualifier[0];
+            if self.resolution.ambiguous_import_aliases.contains(alias) {
+                return None;
+            }
+            if let Some(module) = self.resolution.import_aliases.get(alias) {
+                return Some(module.clone());
+            }
+        }
+
+        let full = qualifier.join(".");
+        if self.resolution.imports.contains(&full) {
+            return Some(full);
+        }
+
+        None
+    }
+
+    fn extract_callee_path(&self, callee: &ir::Expr) -> Option<Vec<String>> {
+        fn walk(expr: &ir::Expr, out: &mut Vec<String>) -> bool {
+            match &expr.kind {
+                ir::ExprKind::Var(name) => {
+                    out.push(name.clone());
+                    true
+                }
+                ir::ExprKind::FieldAccess { base, field } => {
+                    if !walk(base, out) {
+                        return false;
+                    }
+                    out.push(field.clone());
+                    true
+                }
+                _ => false,
+            }
+        }
+
+        let mut out = Vec::new();
+        if walk(callee, &mut out) {
+            Some(out)
+        } else {
+            None
         }
     }
 

@@ -1,0 +1,6 @@
+module examples.e2.explicit.main;
+import examples.e2.explicit.math;
+
+fn main() -> Int {
+    math.add(40, 2)
+}

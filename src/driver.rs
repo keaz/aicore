@@ -44,6 +44,12 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
                 structs: Default::default(),
                 enums: Default::default(),
                 imports: Default::default(),
+                entry_module: None,
+                function_modules: Default::default(),
+                module_functions: Default::default(),
+                visible_functions: Default::default(),
+                import_aliases: Default::default(),
+                ambiguous_import_aliases: Default::default(),
             },
             typecheck: TypecheckOutput::default(),
             diagnostics,
@@ -51,7 +57,8 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
     };
 
     let ir = ir_builder::build(&ast);
-    let (resolution, resolve_diags) = resolver::resolve(&ir, &file);
+    let (resolution, resolve_diags) =
+        resolver::resolve_with_item_modules(&ir, &file, Some(&load.item_modules));
     diagnostics.extend(resolve_diags);
 
     diagnostics.extend(check_effect_declarations(&ir, &file));

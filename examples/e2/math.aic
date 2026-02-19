@@ -1,0 +1,5 @@
+module examples.e2.explicit.math;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}

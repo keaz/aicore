@@ -503,10 +503,19 @@ impl<'a> Generator<'a> {
                 self.gen_binary(*op, lv, rv, fctx, expr.span)
             }
             ir::ExprKind::Call { callee, args } => {
-                let ir::ExprKind::Var(name) = &callee.kind else {
+                let Some(path) = extract_callee_path(callee) else {
                     self.diagnostics.push(Diagnostic::error(
                         "E5003",
-                        "codegen expects simple callee names",
+                        "codegen expects callable names or qualified paths",
+                        self.file,
+                        callee.span,
+                    ));
+                    return None;
+                };
+                let Some(name) = path.last() else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5003",
+                        "callee path cannot be empty",
                         self.file,
                         callee.span,
                     ));
@@ -1483,17 +1492,21 @@ fn infer_expr_type(
         ir::ExprKind::Unit => Some(LType::Unit),
         ir::ExprKind::Var(name) => find_local(scopes, name).map(|l| l.ty),
         ir::ExprKind::Call { callee, args } => {
-            if let ir::ExprKind::Var(name) = &callee.kind {
-                if name == "Some" {
-                    let inner = args
-                        .first()
-                        .and_then(|a| infer_expr_type(a, fns, types, scopes))
-                        .unwrap_or(LType::Int);
-                    Some(LType::Option(Box::new(inner)))
-                } else if name == "None" {
-                    Some(LType::Option(Box::new(LType::Int)))
+            if let Some(path) = extract_callee_path(callee) {
+                if let Some(name) = path.last() {
+                    if name == "Some" {
+                        let inner = args
+                            .first()
+                            .and_then(|a| infer_expr_type(a, fns, types, scopes))
+                            .unwrap_or(LType::Int);
+                        Some(LType::Option(Box::new(inner)))
+                    } else if name == "None" {
+                        Some(LType::Option(Box::new(LType::Int)))
+                    } else {
+                        fns.get(name).map(|s| s.ret.clone())
+                    }
                 } else {
-                    fns.get(name).map(|s| s.ret.clone())
+                    Some(LType::Unit)
                 }
             } else {
                 Some(LType::Unit)
@@ -1565,6 +1578,32 @@ fn find_local(scopes: &[BTreeMap<String, Local>], name: &str) -> Option<Local> {
         }
     }
     None
+}
+
+fn extract_callee_path(callee: &ir::Expr) -> Option<Vec<String>> {
+    fn walk(expr: &ir::Expr, out: &mut Vec<String>) -> bool {
+        match &expr.kind {
+            ir::ExprKind::Var(name) => {
+                out.push(name.clone());
+                true
+            }
+            ir::ExprKind::FieldAccess { base, field } => {
+                if !walk(base, out) {
+                    return false;
+                }
+                out.push(field.clone());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    let mut out = Vec::new();
+    if walk(callee, &mut out) {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 fn coerce_repr(value: &Value, expected: &LType) -> String {

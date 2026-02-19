@@ -18,10 +18,18 @@ Grammar contract version: `mvp-grammar-v1` (see `docs/syntax.md`).
 module app.main;
 import std.io;
 import std.string;
+import app.math;
+
+fn main() -> Int {
+    math.add(40, 2)
+}
 ```
 
 - `module` is optional for single-file inputs.
 - `import` is explicit and deterministic.
+- Unqualified symbol lookup is limited to the current module plus directly imported modules.
+- Qualified calls use `<module_tail>.<symbol>(...)` (e.g. `math.add(...)`).
+- Transitive imports are not implicitly re-exported.
 
 ### 2.2 Types
 
