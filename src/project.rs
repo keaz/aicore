@@ -17,18 +17,23 @@ pub fn init_project(path: &Path) -> anyhow::Result<()> {
     fs::write(
         path.join("src/main.aic"),
         r#"module sample.main;
+
 import std.io;
 
 fn maybe_even(x: Int) -> Option[Int] {
-    if x % 2 == 0 { Some(x) } else { None() }
+    if x % 2 == 0 {
+    Some(x)
+} else {
+    None()
+}
 }
 
 fn main() -> Int effects { io } {
     let v = maybe_even(10);
     let out = match v {
-        Some(n) => n,
-        None => 0,
-    };
+    Some(n) => n,
+    None => 0,
+};
     print_int(out);
     0
 }

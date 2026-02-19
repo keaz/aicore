@@ -6,8 +6,10 @@ use aicore::effects::check_effect_declarations;
 use aicore::formatter::format_program;
 use aicore::ir_builder::build;
 use aicore::parser::parse;
+use aicore::project::init_project;
 use aicore::resolver::resolve;
 use aicore::typecheck::check;
+use tempfile::tempdir;
 
 fn lower(source: &str) -> aicore::ir::Program {
     let (program, diags) = parse(source, "unit.aic");
@@ -178,4 +180,26 @@ fn beta(b: Int) -> Int { let y = b; y }
     let ids = symbol_ids(&ir);
     let expected: Vec<u32> = (1..=ids.len() as u32).collect();
     assert_eq!(ids, expected);
+}
+
+#[test]
+fn unit_formatter_idempotent_for_syntax_showcase() {
+    let path = Path::new("examples/e1/syntax_showcase.aic");
+    let source = fs::read_to_string(path).expect("read showcase");
+    let ir = lower(&source);
+    let once = format_program(&ir);
+    let ir2 = lower(&once);
+    let twice = format_program(&ir2);
+    assert_eq!(once, twice);
+}
+
+#[test]
+fn unit_init_project_emits_canonical_source() {
+    let dir = tempdir().expect("tempdir");
+    init_project(dir.path()).expect("init project");
+    let main = dir.path().join("src/main.aic");
+    let source = fs::read_to_string(&main).expect("read main");
+    let ir = lower(&source);
+    let formatted = format_program(&ir);
+    assert_eq!(source, formatted, "init project source must be canonical");
 }

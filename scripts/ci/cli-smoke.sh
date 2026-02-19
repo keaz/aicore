@@ -14,8 +14,7 @@ APP_BIN="$PROJECT_DIR/app"
 
 "${AIC[@]}" init "$PROJECT_DIR" >/dev/null
 
-# init output is intentionally not canonical; format once, then enforce stability.
-"${AIC[@]}" fmt "$MAIN_FILE"
+# init output must already be canonical.
 "${AIC[@]}" fmt --check "$MAIN_FILE"
 "${AIC[@]}" check "$MAIN_FILE" >/dev/null
 "${AIC[@]}" ir "$MAIN_FILE" --emit json >/dev/null
