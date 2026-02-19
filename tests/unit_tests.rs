@@ -432,6 +432,65 @@ fn add(x: Int, y: Int) -> Int {
     assert!(out.diagnostics.iter().any(|d| d.code == "E2104"));
 }
 
+#[test]
+fn unit_namespace_type_value_shadowing_passes() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+
+struct Token {
+    x: Int,
+}
+
+fn Token(x: Int) -> Int {
+    x
+}
+
+fn main() -> Int {
+    let t = Token { x: 7 };
+    Token(t.x)
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_namespace_type_collision_reports_e1100() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+
+struct Token {
+    x: Int,
+}
+
+enum Token {
+    A,
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1100"));
+}
+
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {

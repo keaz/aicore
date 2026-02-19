@@ -82,6 +82,14 @@ match maybe {
 }
 ```
 
+### 2.6 Namespaces
+
+- Value namespace: functions.
+- Type namespace: `struct` and `enum` names.
+- Module namespace: imported module aliases.
+- Value/type shadowing with the same identifier is legal.
+- Duplicate declarations within the same namespace and module are errors.
+
 ## 3. Canonical IR
 
 IR entities use stable IDs:

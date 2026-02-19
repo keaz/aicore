@@ -85,15 +85,22 @@ pub fn resolve_with_item_modules(
     let mut function_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut module_functions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
-    let mut decl_kind_by_module_name: BTreeMap<(String, String), &'static str> = BTreeMap::new();
+    // Namespace model:
+    // - Value namespace: functions
+    // - Type namespace: structs, enums
+    // - Module namespace: import aliases (tracked separately)
+    let mut value_decl_kind_by_module_name: BTreeMap<(String, String), &'static str> =
+        BTreeMap::new();
+    let mut type_decl_kind_by_module_name: BTreeMap<(String, String), &'static str> =
+        BTreeMap::new();
 
     for (index, item) in program.items.iter().enumerate() {
         let module_name = module_for_item(program, item_modules, index);
 
         match item {
             ir::Item::Function(f) => {
-                if let Some(existing_kind) =
-                    decl_kind_by_module_name.insert((module_name.clone(), f.name.clone()), "fn")
+                if let Some(existing_kind) = value_decl_kind_by_module_name
+                    .insert((module_name.clone(), f.name.clone()), "fn")
                 {
                     diagnostics.push(
                         Diagnostic::error(
@@ -130,8 +137,8 @@ pub fn resolve_with_item_modules(
                     });
             }
             ir::Item::Struct(s) => {
-                if let Some(existing_kind) =
-                    decl_kind_by_module_name.insert((module_name.clone(), s.name.clone()), "struct")
+                if let Some(existing_kind) = type_decl_kind_by_module_name
+                    .insert((module_name.clone(), s.name.clone()), "struct")
                 {
                     diagnostics.push(
                         Diagnostic::error(
@@ -169,7 +176,7 @@ pub fn resolve_with_item_modules(
             }
             ir::Item::Enum(e) => {
                 if let Some(existing_kind) =
-                    decl_kind_by_module_name.insert((module_name, e.name.clone()), "enum")
+                    type_decl_kind_by_module_name.insert((module_name, e.name.clone()), "enum")
                 {
                     diagnostics.push(
                         Diagnostic::error(
@@ -337,6 +344,30 @@ mod tests {
     #[test]
     fn duplicate_symbol_is_diagnostic() {
         let src = "fn a() -> Int { 1 }\nfn a() -> Int { 2 }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let (_res, diags) = resolve(&ir, "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E1100"));
+    }
+
+    #[test]
+    fn allows_type_and_value_name_shadowing() {
+        let src = "struct Token { x: Int }\nfn Token(x: Int) -> Int { x }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let (_res, diags) = resolve(&ir, "test.aic");
+        assert!(
+            !diags.iter().any(|d| d.code == "E1100"),
+            "diags={:#?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn duplicate_type_namespace_symbol_is_diagnostic() {
+        let src = "struct Token { x: Int }\nenum Token { A }";
         let (program, d) = parse(src, "test.aic");
         assert!(d.is_empty());
         let ir = build(&program.expect("program"));

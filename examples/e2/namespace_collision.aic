@@ -1,0 +1,14 @@
+module examples.e2.namespace.main;
+
+struct Token {
+    x: Int,
+}
+
+fn Token(x: Int) -> Int {
+    x
+}
+
+fn main() -> Int {
+    let t = Token { x: 7 };
+    Token(t.x)
+}
