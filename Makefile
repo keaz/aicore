@@ -79,6 +79,7 @@ docs-check:
 	@test -f docs/spec.md
 	@test -f docs/syntax.md
 	@test -f docs/ir-schema.md
+	@test -f docs/id-allocation.md
 	@test -f docs/type-system.md
 	@test -f docs/effect-system.md
 	@test -f docs/contracts.md

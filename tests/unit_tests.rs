@@ -15,6 +15,14 @@ fn lower(source: &str) -> aicore::ir::Program {
     build(&program.expect("program"))
 }
 
+fn symbol_ids(ir: &aicore::ir::Program) -> Vec<u32> {
+    ir.symbols.iter().map(|s| s.id.0).collect()
+}
+
+fn type_ids(ir: &aicore::ir::Program) -> Vec<u32> {
+    ir.types.iter().map(|t| t.id.0).collect()
+}
+
 #[test]
 fn unit_parse_module_and_imports() {
     let src = "module a.b; import std.io; fn main() -> Int { 0 }";
@@ -142,4 +150,32 @@ fn unit_undocumented_function_form_fails_with_stable_code() {
     let src = "fn missing_arrow() { 0 }";
     let (_program, diags) = parse(src, "unit.aic");
     assert!(diags.iter().any(|d| d.code == "E1006"), "diags={diags:#?}");
+}
+
+#[test]
+fn unit_ir_ids_are_stable_after_format_roundtrip() {
+    let src = r#"
+fn pick(x: Int, y: Int) -> Int {
+    let z = if x > y { x } else { y };
+    z
+}
+"#;
+    let ir1 = lower(src);
+    let canonical = format_program(&ir1);
+    let ir2 = lower(&canonical);
+
+    assert_eq!(symbol_ids(&ir1), symbol_ids(&ir2));
+    assert_eq!(type_ids(&ir1), type_ids(&ir2));
+}
+
+#[test]
+fn unit_symbol_ids_are_dense_from_one() {
+    let src = r#"
+fn alpha(a: Int) -> Int { let x = a; x }
+fn beta(b: Int) -> Int { let y = b; y }
+"#;
+    let ir = lower(src);
+    let ids = symbol_ids(&ir);
+    let expected: Vec<u32> = (1..=ids.len() as u32).collect();
+    assert_eq!(ids, expected);
 }

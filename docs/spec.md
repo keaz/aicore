@@ -149,3 +149,4 @@ Formal schema file: `docs/diagnostics.schema.json`.
 - Stable parse/lower traversal.
 - Stable format output from IR.
 - Stable diagnostic sort order.
+- Stable ID allocation policy version `id-policy-v1` (`docs/id-allocation.md`).

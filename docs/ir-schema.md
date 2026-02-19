@@ -21,3 +21,5 @@ Invariants:
 - IDs are allocated by deterministic source traversal.
 - `types` is interned by canonical textual `repr`.
 - printer operates on IR, not source text.
+
+See `docs/id-allocation.md` for the full deterministic ID policy.
