@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec examples-check examples-run cli-smoke docs-check
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec examples-check examples-run cli-smoke docs-check no-null-lint
 
 help:
 	@echo "AICore developer commands"
@@ -21,6 +21,7 @@ help:
 	@echo "  make test-exec     Run LLVM execution tests"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
+	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
 	@echo "  make cli-smoke     End-to-end CLI smoke test"
 	@echo "  make docs-check    Validate docs and schema artifacts"
 
@@ -42,7 +43,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec examples-check examples-run cli-smoke docs-check
+check: build test-unit test-golden test-exec examples-check examples-run no-null-lint cli-smoke docs-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -93,3 +94,10 @@ docs-check:
 	@grep -q "aic ir-migrate" README.md
 	@grep -q "aic build" README.md
 	@grep -q "aic run" README.md
+
+no-null-lint:
+	@if rg -n --glob '*.aic' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \
+		echo "forbidden 'null' token found in AIC source files:" >&2; \
+		cat /tmp/aic-no-null-lint.out >&2; \
+		exit 1; \
+	fi

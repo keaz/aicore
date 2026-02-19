@@ -783,6 +783,22 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
+            TokenKind::KwNull => {
+                self.bump();
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1051",
+                        "null is not a language value; use Option and None/Some instead",
+                        self.file,
+                        token.span,
+                    )
+                    .with_help("replace `null` with `None` or a concrete `Some(...)` value"),
+                );
+                Some(Expr {
+                    kind: ExprKind::Unit,
+                    span: token.span,
+                })
+            }
             TokenKind::LParen => {
                 self.bump();
                 if self.at_kind(|k| matches!(k, TokenKind::RParen)) {

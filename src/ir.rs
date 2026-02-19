@@ -27,6 +27,8 @@ pub struct Program {
     pub items: Vec<Item>,
     pub symbols: Vec<Symbol>,
     pub types: Vec<TypeDef>,
+    #[serde(default)]
+    pub generic_instantiations: Vec<GenericInstantiation>,
     pub span: Span,
 }
 
@@ -92,6 +94,24 @@ pub enum SymbolKind {
 pub struct TypeDef {
     pub id: TypeId,
     pub repr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GenericInstantiationKind {
+    Function,
+    Struct,
+    Enum,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GenericInstantiation {
+    pub id: u32,
+    pub kind: GenericInstantiationKind,
+    pub name: String,
+    pub symbol: Option<SymbolId>,
+    pub type_args: Vec<String>,
+    pub mangled: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

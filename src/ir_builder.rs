@@ -26,6 +26,7 @@ pub fn build(program: &ast::Program) -> ir::Program {
         items,
         symbols: builder.symbols,
         types: builder.types,
+        generic_instantiations: Vec::new(),
         span: program.span,
     }
 }

@@ -1,0 +1,12 @@
+module examples.e3.option_only_absence;
+
+fn maybe_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 { Some(x) } else { None() }
+}
+
+fn main() -> Int {
+    match maybe_even(41) {
+        Some(v) => v,
+        None => 0,
+    }
+}

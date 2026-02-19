@@ -1,0 +1,20 @@
+module examples.e3.generic_option_map;
+import std.io;
+
+fn map_option[T](x: Option[T]) -> Option[T] {
+    match x {
+        Some(v) => Some(v),
+        None => None(),
+    }
+}
+
+fn main() -> Int effects { io } {
+    let first = map_option(Some(41));
+    let second = map_option(first);
+    let out = match second {
+        Some(v) => v + 1,
+        None => 0,
+    };
+    print_int(out);
+    0
+}

@@ -29,6 +29,7 @@ pub enum TokenKind {
     KwEnsures,
     KwInvariant,
     KwEffects,
+    KwNull,
 
     LParen,
     RParen,
@@ -270,6 +271,7 @@ impl<'a> Lexer<'a> {
             "ensures" => TokenKind::KwEnsures,
             "invariant" => TokenKind::KwInvariant,
             "effects" => TokenKind::KwEffects,
+            "null" => TokenKind::KwNull,
             _ => TokenKind::Ident(text.to_string()),
         };
         self.push(kind, Span::new(start, self.offset));

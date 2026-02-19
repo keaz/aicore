@@ -575,6 +575,255 @@ fn main() -> Int {
     assert!(out.diagnostics.iter().any(|d| d.code == "E1250"));
 }
 
+#[test]
+fn unit_generic_instantiation_metadata_is_deduped_and_stable() {
+    let src = r#"
+fn map_option[T](x: Option[T]) -> Option[T] {
+    match x {
+        Some(v) => Some(v),
+        None => None(),
+    }
+}
+
+fn main() -> Int {
+    let first = map_option(Some(41));
+    let second = map_option(first);
+    match second {
+        Some(v) => v,
+        None => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+
+    let out1 = check(&ir, &res, "unit.aic");
+    assert!(
+        out1.diagnostics.is_empty(),
+        "type diags={:#?}",
+        out1.diagnostics
+    );
+    let out2 = check(&ir, &res, "unit.aic");
+    assert_eq!(
+        out1.generic_instantiations, out2.generic_instantiations,
+        "instantiation metadata must be deterministic"
+    );
+
+    let map_option_instantiations = out1
+        .generic_instantiations
+        .iter()
+        .filter(|inst| {
+            inst.kind == aicore::ir::GenericInstantiationKind::Function && inst.name == "map_option"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        map_option_instantiations.len(),
+        1,
+        "expected deduplicated instantiation"
+    );
+    assert_eq!(
+        map_option_instantiations[0].type_args,
+        vec!["Int".to_string()]
+    );
+}
+
+#[test]
+fn unit_frontend_ir_contains_generic_instantiation_metadata() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+fn id[T](x: T) -> T { x }
+
+fn main() -> Int {
+    id(41)
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.ir
+            .generic_instantiations
+            .iter()
+            .any(|inst| inst.name == "id" && inst.type_args == vec!["Int".to_string()]),
+        "expected concrete generic instantiation in IR"
+    );
+}
+
+#[test]
+fn unit_struct_literal_duplicate_field_reports_e1254() {
+    let src = r#"
+struct Pair {
+    x: Int,
+}
+
+fn main() -> Int {
+    let p = Pair { x: 1, x: 2 };
+    p.x
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1254"));
+}
+
+#[test]
+fn unit_variant_payload_mismatch_reports_e1216() {
+    let src = r#"
+enum Response {
+    Success(Int),
+}
+
+fn main() -> Int {
+    let resp = Success(true);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1216"));
+}
+
+#[test]
+fn unit_variant_arity_mismatch_reports_e1215() {
+    let src = r#"
+enum Response {
+    Success(Int),
+}
+
+fn main() -> Int {
+    let resp = Success();
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1215"));
+}
+
+#[test]
+fn unit_field_access_unknown_member_reports_e1228() {
+    let src = r#"
+struct Pair {
+    x: Int,
+}
+
+fn main() -> Int {
+    let p = Pair { x: 1 };
+    p.y
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1228"));
+}
+
+#[test]
+fn unit_bool_match_non_exhaustive_reports_e1246() {
+    let src = r#"
+fn f(x: Bool) -> Int {
+    match x {
+        true => 1,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1246"));
+}
+
+#[test]
+fn unit_result_match_non_exhaustive_reports_e1248() {
+    let src = r#"
+fn f(x: Result[Int, Int]) -> Int {
+    match x {
+        Ok(v) => v,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1248"));
+}
+
+#[test]
+fn unit_unreachable_match_arm_reports_e1251() {
+    let src = r#"
+fn f(x: Bool) -> Int {
+    match x {
+        _ => 1,
+        true => 2,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1251"));
+}
+
+#[test]
+fn unit_duplicate_pattern_binding_reports_e1252() {
+    let src = r#"
+fn f(x: Option[Int]) -> Int {
+    match x {
+        Some(v, v) => v,
+        None => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1252"));
+}
+
+#[test]
+fn unit_parser_rejects_null_literal_with_e1051() {
+    let src = "fn main() -> Int { null }";
+    let (_program, diags) = parse(src, "unit.aic");
+    assert!(diags.iter().any(|d| d.code == "E1051"));
+}
+
+#[test]
+fn unit_typecheck_rejects_null_symbol_at_ir_boundary() {
+    let mut ir = lower("fn main() -> Int { 0 }");
+    let symbol = ir
+        .symbols
+        .iter_mut()
+        .find(|s| matches!(s.kind, aicore::ir::SymbolKind::Function))
+        .expect("function symbol");
+    symbol.name = "null".to_string();
+
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1253"));
+}
+
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {

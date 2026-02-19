@@ -77,3 +77,8 @@ fn golden_case09_module_import() {
 fn golden_case10_match_bool() {
     run_golden_case("case10_match_bool.aic");
 }
+
+#[test]
+fn golden_case11_result_match() {
+    run_golden_case("case11_result_match.aic");
+}

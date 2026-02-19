@@ -15,6 +15,7 @@ Core entities:
 - `Program`
 - `Symbol { id, name, kind, span }`
 - `TypeDef { id, repr }`
+- `GenericInstantiation { id, kind, name, symbol, type_args, mangled }`
 - `Item::{Function,Struct,Enum}`
 - `Expr` / `Stmt` / `Pattern`
 
@@ -22,6 +23,7 @@ Invariants:
 
 - IDs are allocated by deterministic source traversal.
 - `types` is interned by canonical textual `repr`.
+- `generic_instantiations` is deduplicated and stably ordered by canonical instantiation key.
 - printer operates on IR, not source text.
 - `Program.schema_version` is always emitted.
 - legacy unversioned JSON (v0) is migrated by `aic ir-migrate`.

@@ -14,6 +14,10 @@ check_pass=(
   "examples/non_empty_string.aic"
   "examples/e3/infer_let.aic"
   "examples/e3/generic_id.aic"
+  "examples/e3/generic_option_map.aic"
+  "examples/e3/result_payloads.aic"
+  "examples/e3/match_exhaustive.aic"
+  "examples/e3/option_only_absence.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"

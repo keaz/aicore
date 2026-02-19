@@ -1,0 +1,23 @@
+module examples.e3.result_payloads;
+
+struct Box[T] {
+    value: T,
+}
+
+enum Response[T] {
+    Success(T),
+    Failure(String),
+}
+
+fn handle(resp: Response[Box[Int]]) -> Int {
+    match resp {
+        Success(boxed) => boxed.value,
+        Failure(_) => 0,
+    }
+}
+
+fn main() -> Int {
+    let boxed = Box { value: 42 };
+    let resp = Success(boxed);
+    handle(resp)
+}

@@ -37,6 +37,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
                 items: Vec::new(),
                 symbols: Vec::new(),
                 types: Vec::new(),
+                generic_instantiations: Vec::new(),
                 span: crate::span::Span::new(0, 0),
             },
             resolution: Resolution {
@@ -56,7 +57,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
         });
     };
 
-    let ir = ir_builder::build(&ast);
+    let mut ir = ir_builder::build(&ast);
     let (resolution, resolve_diags) =
         resolver::resolve_with_item_modules(&ir, &file, Some(&load.item_modules));
     diagnostics.extend(resolve_diags);
@@ -64,6 +65,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
     diagnostics.extend(check_effect_declarations(&ir, &file));
 
     let typecheck = typecheck::check(&ir, &resolution, &file);
+    ir.generic_instantiations = typecheck.generic_instantiations.clone();
     diagnostics.extend(typecheck.diagnostics.iter().cloned());
 
     diagnostics.extend(verify_static(&ir, &file));

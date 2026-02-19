@@ -1,0 +1,40 @@
+module examples.e3.match_exhaustive;
+
+enum Signal {
+    Start,
+    Stop,
+    Pause,
+}
+
+fn bool_to_int(b: Bool) -> Int {
+    match b {
+        true => 1,
+        false => 0,
+    }
+}
+
+fn option_to_int(x: Option[Int]) -> Int {
+    match x {
+        Some(v) => v,
+        None => 0,
+    }
+}
+
+fn result_to_int(r: Result[Int, Int]) -> Int {
+    match r {
+        Ok(v) => v,
+        Err(e) => e,
+    }
+}
+
+fn signal_to_int(s: Signal) -> Int {
+    match s {
+        Start => 1,
+        Stop => 2,
+        Pause => 3,
+    }
+}
+
+fn main() -> Int {
+    bool_to_int(true) + option_to_int(Some(2)) + result_to_int(Ok(3)) + signal_to_int(Start())
+}

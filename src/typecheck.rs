@@ -9,6 +9,7 @@ use crate::resolver::{EnumInfo, Resolution, StructInfo};
 pub struct TypecheckOutput {
     pub diagnostics: Vec<Diagnostic>,
     pub function_effect_usage: BTreeMap<String, BTreeSet<String>>,
+    pub generic_instantiations: Vec<ir::GenericInstantiation>,
 }
 
 pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> TypecheckOutput {
@@ -34,6 +35,8 @@ struct Checker<'a> {
     functions: BTreeMap<String, FnSig>,
     generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
+    instantiation_seen: BTreeMap<String, PendingInstantiation>,
+    mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
 }
 
@@ -46,7 +49,17 @@ struct ExprContext {
 struct VariantMatch {
     enum_name: String,
     generic_params: Vec<String>,
+    enum_symbol: ir::SymbolId,
     payload: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingInstantiation {
+    kind: ir::GenericInstantiationKind,
+    name: String,
+    symbol: Option<ir::SymbolId>,
+    type_args: Vec<String>,
+    mangled: String,
 }
 
 impl<'a> Checker<'a> {
@@ -134,11 +147,14 @@ impl<'a> Checker<'a> {
             functions,
             generic_arity,
             effect_usage: BTreeMap::new(),
+            instantiation_seen: BTreeMap::new(),
+            mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
         }
     }
 
     fn run(&mut self) {
+        self.check_no_null_boundary();
         for item in &self.program.items {
             match item {
                 ir::Item::Function(func) => self.check_function(func),
@@ -149,9 +165,23 @@ impl<'a> Checker<'a> {
     }
 
     fn finish(self) -> TypecheckOutput {
+        let generic_instantiations = self
+            .instantiation_seen
+            .into_values()
+            .enumerate()
+            .map(|(idx, pending)| ir::GenericInstantiation {
+                id: (idx + 1) as u32,
+                kind: pending.kind,
+                name: pending.name,
+                symbol: pending.symbol,
+                type_args: pending.type_args,
+                mangled: pending.mangled,
+            })
+            .collect::<Vec<_>>();
         TypecheckOutput {
             diagnostics: self.diagnostics,
             function_effect_usage: self.effect_usage,
+            generic_instantiations,
         }
     }
 
@@ -512,6 +542,15 @@ impl<'a> Checker<'a> {
                     }
                     let inner =
                         self.check_expr(&args[0], locals, allowed_effects, ctx, contract_mode);
+                    if !contains_unresolved_type(&inner) {
+                        self.record_instantiation(
+                            ir::GenericInstantiationKind::Enum,
+                            "Option",
+                            None,
+                            std::slice::from_ref(&inner),
+                            expr.span,
+                        );
+                    }
                     return format!("Option[{}]", inner);
                 }
                 if !qualified && name == "None" {
@@ -856,6 +895,32 @@ impl<'a> Checker<'a> {
                             .with_help("add explicit type annotations to constrain generic inference"),
                         );
                     }
+                    if !sig.generic_params.is_empty() {
+                        let applied = sig
+                            .generic_params
+                            .iter()
+                            .map(|g| {
+                                generic_bindings
+                                    .get(g)
+                                    .cloned()
+                                    .unwrap_or_else(|| "<?>".to_string())
+                            })
+                            .collect::<Vec<_>>();
+                        if applied.iter().all(|arg| !contains_unresolved_type(arg)) {
+                            let symbol = self
+                                .resolution
+                                .functions
+                                .get(&resolved_name)
+                                .map(|f| f.symbol);
+                            self.record_instantiation(
+                                ir::GenericInstantiationKind::Function,
+                                &resolved_name,
+                                symbol,
+                                &applied,
+                                expr.span,
+                            );
+                        }
+                    }
                     return ret_ty;
                 }
 
@@ -962,6 +1027,14 @@ impl<'a> Checker<'a> {
                                 )
                                 .with_help("add a type annotation at the call site"),
                             );
+                        } else {
+                            self.record_instantiation(
+                                ir::GenericInstantiationKind::Enum,
+                                &candidate.enum_name,
+                                Some(candidate.enum_symbol),
+                                &applied,
+                                expr.span,
+                            );
                         }
                         return format!("{}[{}]", candidate.enum_name, applied.join(", "));
                     }
@@ -1026,18 +1099,36 @@ impl<'a> Checker<'a> {
             } => {
                 let scrutinee_ty =
                     self.check_expr(scrutinee, locals, allowed_effects, ctx, contract_mode);
+                self.record_instantiation_from_applied_type(&scrutinee_ty, expr.span);
                 let mut arm_types = Vec::new();
                 let mut seen = BTreeSet::new();
                 let mut wildcard_seen = false;
 
                 for arm in arms {
+                    if self.coverage_is_complete(&scrutinee_ty, &seen, wildcard_seen)
+                        || self.arm_is_redundant(&arm.pattern, &scrutinee_ty, &seen, wildcard_seen)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1251",
+                                "unreachable match arm",
+                                self.file,
+                                arm.span,
+                            )
+                            .with_help(
+                                "remove this arm or place it before earlier overlapping patterns",
+                            ),
+                        );
+                    }
                     let mut arm_scope = locals.clone();
+                    let mut bound_names = BTreeSet::new();
                     self.check_pattern(
                         &arm.pattern,
                         &scrutinee_ty,
                         &mut arm_scope,
                         &mut seen,
                         &mut wildcard_seen,
+                        &mut bound_names,
                     );
                     let body_ty = self.check_expr(
                         &arm.body,
@@ -1120,12 +1211,26 @@ impl<'a> Checker<'a> {
 
                 let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
                 let mut generic_bindings = BTreeMap::new();
+                let mut seen_fields = BTreeSet::new();
 
                 for (field_name, value, span) in fields {
+                    if !seen_fields.insert(field_name.clone()) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1254",
+                            format!(
+                                "duplicate field '{}.{}' in struct literal",
+                                name, field_name
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                        continue;
+                    }
+
                     let Some(expected) = info.fields.get(field_name) else {
                         self.diagnostics.push(Diagnostic::error(
                             "E1225",
-                            format!("struct '{}' has no field '{}'", name, field_name),
+                            format!("struct member '{}.{}' does not exist", name, field_name),
                             self.file,
                             *span,
                         ));
@@ -1139,12 +1244,24 @@ impl<'a> Checker<'a> {
                     let found_ty =
                         self.check_expr(value, locals, allowed_effects, ctx, contract_mode);
 
-                    let _ = infer_generic_bindings(
+                    let inferred = infer_generic_bindings(
                         &expected_ty,
                         &found_ty,
                         &generic_set,
                         &mut generic_bindings,
                     );
+                    if !inferred {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1226",
+                            format!(
+                                "field '{}.{}' expects '{}', found '{}'",
+                                name, field_name, expected_ty, found_ty
+                            ),
+                            self.file,
+                            value.span,
+                        ));
+                        continue;
+                    }
                     let expected_inst =
                         substitute_type_vars(&expected_ty, &generic_bindings, &generic_set);
 
@@ -1198,6 +1315,14 @@ impl<'a> Checker<'a> {
                             expr.span,
                         )
                         .with_help("add a type annotation to constrain the struct type"),
+                    );
+                } else {
+                    self.record_instantiation(
+                        ir::GenericInstantiationKind::Struct,
+                        name,
+                        Some(info.symbol),
+                        &applied,
+                        expr.span,
                     );
                 }
                 format!("{}[{}]", name, applied.join(", "))
@@ -1394,16 +1519,28 @@ impl<'a> Checker<'a> {
         locals: &mut BTreeMap<String, String>,
         seen: &mut BTreeSet<String>,
         wildcard_seen: &mut bool,
+        bound_names: &mut BTreeSet<String>,
     ) {
         match &pattern.kind {
             ir::PatternKind::Wildcard => {
                 *wildcard_seen = true;
             }
             ir::PatternKind::Var(name) => {
+                if !bound_names.insert(name.clone()) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1252",
+                            format!("duplicate binding '{}' in pattern", name),
+                            self.file,
+                            pattern.span,
+                        )
+                        .with_help("each variable name may be bound at most once per pattern"),
+                    );
+                }
                 locals.insert(name.clone(), scrutinee_ty.to_string());
                 *wildcard_seen = true;
             }
-            ir::PatternKind::Int(_) => {
+            ir::PatternKind::Int(v) => {
                 if scrutinee_ty != "Int" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1234",
@@ -1415,7 +1552,7 @@ impl<'a> Checker<'a> {
                         pattern.span,
                     ));
                 }
-                seen.insert("_int_literal".to_string());
+                seen.insert(format!("int:{v}"));
             }
             ir::PatternKind::Bool(v) => {
                 if scrutinee_ty != "Bool" {
@@ -1456,10 +1593,31 @@ impl<'a> Checker<'a> {
                                     self.file,
                                     pattern.span,
                                 ));
+                                for arg in args {
+                                    let mut nested_seen = BTreeSet::new();
+                                    let mut nested_wildcard_seen = false;
+                                    self.check_pattern(
+                                        arg,
+                                        "<?>",
+                                        locals,
+                                        &mut nested_seen,
+                                        &mut nested_wildcard_seen,
+                                        bound_names,
+                                    );
+                                }
                             }
                             seen.insert("None".to_string());
                         }
                         "Some" => {
+                            let inner = extract_generic_args(scrutinee_ty)
+                                .and_then(|mut v| {
+                                    if v.len() == 1 {
+                                        Some(v.remove(0))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "<?>".to_string());
                             if args.len() != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1238",
@@ -1467,22 +1625,17 @@ impl<'a> Checker<'a> {
                                     self.file,
                                     pattern.span,
                                 ));
-                            } else {
-                                let inner = extract_generic_args(scrutinee_ty)
-                                    .and_then(|mut v| {
-                                        if v.len() == 1 {
-                                            Some(v.remove(0))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .unwrap_or_else(|| "<?>".to_string());
+                            }
+                            for arg in args {
+                                let mut nested_seen = BTreeSet::new();
+                                let mut nested_wildcard_seen = false;
                                 self.check_pattern(
-                                    &args[0],
+                                    arg,
                                     &inner,
                                     locals,
-                                    &mut BTreeSet::new(),
-                                    &mut false,
+                                    &mut nested_seen,
+                                    &mut nested_wildcard_seen,
+                                    bound_names,
                                 );
                             }
                             seen.insert("Some".to_string());
@@ -1502,6 +1655,12 @@ impl<'a> Checker<'a> {
                 if scrutinee_ty.starts_with("Result[") {
                     match name.as_str() {
                         "Ok" | "Err" => {
+                            let vars = extract_generic_args(scrutinee_ty).unwrap_or_default();
+                            let payload_ty = if name == "Ok" {
+                                vars.get(0).cloned().unwrap_or_else(|| "<?>".to_string())
+                            } else {
+                                vars.get(1).cloned().unwrap_or_else(|| "<?>".to_string())
+                            };
                             if args.len() != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1240",
@@ -1509,19 +1668,17 @@ impl<'a> Checker<'a> {
                                     self.file,
                                     pattern.span,
                                 ));
-                            } else {
-                                let vars = extract_generic_args(scrutinee_ty).unwrap_or_default();
-                                let payload_ty = if name == "Ok" {
-                                    vars.get(0).cloned().unwrap_or_else(|| "<?>".to_string())
-                                } else {
-                                    vars.get(1).cloned().unwrap_or_else(|| "<?>".to_string())
-                                };
+                            }
+                            for arg in args {
+                                let mut nested_seen = BTreeSet::new();
+                                let mut nested_wildcard_seen = false;
                                 self.check_pattern(
-                                    &args[0],
+                                    arg,
                                     &payload_ty,
                                     locals,
-                                    &mut BTreeSet::new(),
-                                    &mut false,
+                                    &mut nested_seen,
+                                    &mut nested_wildcard_seen,
+                                    bound_names,
                                 );
                             }
                             seen.insert(name.clone());
@@ -1579,13 +1736,17 @@ impl<'a> Checker<'a> {
                                     self.file,
                                     pattern.span,
                                 ));
-                            } else {
+                            }
+                            for arg in args {
+                                let mut nested_seen = BTreeSet::new();
+                                let mut nested_wildcard_seen = false;
                                 self.check_pattern(
-                                    &args[0],
+                                    arg,
                                     &payload,
                                     locals,
-                                    &mut BTreeSet::new(),
-                                    &mut false,
+                                    &mut nested_seen,
+                                    &mut nested_wildcard_seen,
+                                    bound_names,
                                 );
                             }
                         } else if !args.is_empty() {
@@ -1595,6 +1756,18 @@ impl<'a> Checker<'a> {
                                 self.file,
                                 pattern.span,
                             ));
+                            for arg in args {
+                                let mut nested_seen = BTreeSet::new();
+                                let mut nested_wildcard_seen = false;
+                                self.check_pattern(
+                                    arg,
+                                    "<?>",
+                                    locals,
+                                    &mut nested_seen,
+                                    &mut nested_wildcard_seen,
+                                    bound_names,
+                                );
+                            }
                         }
                         seen.insert(name.clone());
                     } else {
@@ -1633,30 +1806,72 @@ impl<'a> Checker<'a> {
         }
 
         if scrutinee_ty == "Bool" {
-            if !(seen.contains("true") && seen.contains("false")) {
+            let mut missing = Vec::new();
+            if !seen.contains("true") {
+                missing.push("true");
+            }
+            if !seen.contains("false") {
+                missing.push("false");
+            }
+            if !missing.is_empty() {
                 self.diagnostics.push(
-                    Diagnostic::error("E1246", "non-exhaustive bool match", self.file, span)
-                        .with_help("add missing `true` or `false` arm, or `_` wildcard"),
+                    Diagnostic::error(
+                        "E1246",
+                        format!("non-exhaustive bool match; missing: {}", missing.join(", ")),
+                        self.file,
+                        span,
+                    )
+                    .with_help("add missing `true` or `false` arm, or `_` wildcard"),
                 );
             }
             return;
         }
 
         if scrutinee_ty.starts_with("Option[") {
-            if !(seen.contains("None") && seen.contains("Some")) {
+            let mut missing = Vec::new();
+            if !seen.contains("None") {
+                missing.push("None");
+            }
+            if !seen.contains("Some") {
+                missing.push("Some");
+            }
+            if !missing.is_empty() {
                 self.diagnostics.push(
-                    Diagnostic::error("E1247", "non-exhaustive Option match", self.file, span)
-                        .with_help("add both `None` and `Some(...)` arms, or `_` wildcard"),
+                    Diagnostic::error(
+                        "E1247",
+                        format!(
+                            "non-exhaustive Option match; missing: {}",
+                            missing.join(", ")
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("add both `None` and `Some(...)` arms, or `_` wildcard"),
                 );
             }
             return;
         }
 
         if scrutinee_ty.starts_with("Result[") {
-            if !(seen.contains("Ok") && seen.contains("Err")) {
+            let mut missing = Vec::new();
+            if !seen.contains("Ok") {
+                missing.push("Ok");
+            }
+            if !seen.contains("Err") {
+                missing.push("Err");
+            }
+            if !missing.is_empty() {
                 self.diagnostics.push(
-                    Diagnostic::error("E1248", "non-exhaustive Result match", self.file, span)
-                        .with_help("add both `Ok(...)` and `Err(...)` arms, or `_` wildcard"),
+                    Diagnostic::error(
+                        "E1248",
+                        format!(
+                            "non-exhaustive Result match; missing: {}",
+                            missing.join(", ")
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("add both `Ok(...)` and `Err(...)` arms, or `_` wildcard"),
                 );
             }
             return;
@@ -1687,6 +1902,181 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn arm_is_redundant(
+        &self,
+        pattern: &ir::Pattern,
+        scrutinee_ty: &str,
+        seen: &BTreeSet<String>,
+        wildcard_seen: bool,
+    ) -> bool {
+        if wildcard_seen {
+            return true;
+        }
+
+        match &pattern.kind {
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => {
+                self.coverage_is_complete(scrutinee_ty, seen, wildcard_seen)
+            }
+            ir::PatternKind::Int(v) => seen.contains(&format!("int:{v}")),
+            ir::PatternKind::Bool(v) => seen.contains(if *v { "true" } else { "false" }),
+            ir::PatternKind::Unit => seen.contains("()"),
+            ir::PatternKind::Variant { name, .. } => {
+                if scrutinee_ty.starts_with("Option[") {
+                    return (name == "None" || name == "Some") && seen.contains(name);
+                }
+                if scrutinee_ty.starts_with("Result[") {
+                    return (name == "Ok" || name == "Err") && seen.contains(name);
+                }
+                if self.find_enum(scrutinee_ty).is_some() {
+                    return seen.contains(name);
+                }
+                false
+            }
+        }
+    }
+
+    fn coverage_is_complete(
+        &self,
+        scrutinee_ty: &str,
+        seen: &BTreeSet<String>,
+        wildcard_seen: bool,
+    ) -> bool {
+        if wildcard_seen {
+            return true;
+        }
+        if scrutinee_ty == "Bool" {
+            return seen.contains("true") && seen.contains("false");
+        }
+        if scrutinee_ty.starts_with("Option[") {
+            return seen.contains("None") && seen.contains("Some");
+        }
+        if scrutinee_ty.starts_with("Result[") {
+            return seen.contains("Ok") && seen.contains("Err");
+        }
+        if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+            return enum_info.variants.keys().all(|name| seen.contains(name));
+        }
+        false
+    }
+
+    fn check_no_null_boundary(&mut self) {
+        for symbol in &self.program.symbols {
+            if symbol.name.eq_ignore_ascii_case("null") {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1253",
+                        "null is not a valid language construct; use Option for absence",
+                        self.file,
+                        symbol.span,
+                    )
+                    .with_help("replace `null` with `None`/`Some(...)` modeling"),
+                );
+            }
+        }
+        for ty in &self.program.types {
+            if contains_null_token(&ty.repr) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1253",
+                        format!("type '{}' exposes forbidden null semantics", ty.repr),
+                        self.file,
+                        self.program.span,
+                    )
+                    .with_help("model absence with Option[T] only"),
+                );
+            }
+        }
+    }
+
+    fn record_instantiation(
+        &mut self,
+        kind: ir::GenericInstantiationKind,
+        name: &str,
+        symbol: Option<ir::SymbolId>,
+        type_args: &[String],
+        span: crate::span::Span,
+    ) {
+        if type_args.is_empty() || type_args.iter().any(|arg| contains_unresolved_type(arg)) {
+            return;
+        }
+
+        let kind_tag = instantiation_kind_tag(&kind);
+        let key = format!("{}::{}[{}]", kind_tag, name, type_args.join(", "));
+        let mangled = mangle_instantiation(kind_tag, name, type_args);
+
+        if let Some(existing_key) = self.mangled_keys.get(&mangled) {
+            if existing_key != &key {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1255",
+                        format!(
+                            "generic instantiation mangling collision: '{}' conflicts with '{}'",
+                            key, existing_key
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("refine mangling strategy to keep instantiation keys unique"),
+                );
+                return;
+            }
+        } else {
+            self.mangled_keys.insert(mangled.clone(), key.clone());
+        }
+
+        self.instantiation_seen
+            .entry(key)
+            .or_insert_with(|| PendingInstantiation {
+                kind,
+                name: name.to_string(),
+                symbol,
+                type_args: type_args.to_vec(),
+                mangled,
+            });
+    }
+
+    fn record_instantiation_from_applied_type(&mut self, ty: &str, span: crate::span::Span) {
+        let Some(args) = extract_generic_args(ty) else {
+            return;
+        };
+        if args.is_empty() || args.iter().any(|arg| contains_unresolved_type(arg)) {
+            return;
+        }
+
+        for arg in &args {
+            self.record_instantiation_from_applied_type(arg, span);
+        }
+
+        let base = base_type_name(ty);
+        if base == "Option" || base == "Result" {
+            self.record_instantiation(ir::GenericInstantiationKind::Enum, base, None, &args, span);
+            return;
+        }
+        if let Some(info) = self.resolution.enums.get(base) {
+            if info.generics.len() == args.len() {
+                self.record_instantiation(
+                    ir::GenericInstantiationKind::Enum,
+                    base,
+                    Some(info.symbol),
+                    &args,
+                    span,
+                );
+            }
+            return;
+        }
+        if let Some(info) = self.resolution.structs.get(base) {
+            if info.generics.len() == args.len() {
+                self.record_instantiation(
+                    ir::GenericInstantiationKind::Struct,
+                    base,
+                    Some(info.symbol),
+                    &args,
+                    span,
+                );
+            }
+        }
+    }
+
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
         let mut out = Vec::new();
         for (enum_name, info) in &self.resolution.enums {
@@ -1695,6 +2085,7 @@ impl<'a> Checker<'a> {
                 out.push(VariantMatch {
                     enum_name: enum_name.clone(),
                     generic_params: info.generics.clone(),
+                    enum_symbol: info.symbol,
                     payload: payload_ty,
                 });
             }
@@ -1723,6 +2114,47 @@ fn type_compatible(expected: &str, found: &str) -> bool {
         || (expected.starts_with("Result[")
             && found.starts_with("Result[")
             && (expected.contains("<?>") || found.contains("<?>")))
+}
+
+fn instantiation_kind_tag(kind: &ir::GenericInstantiationKind) -> &'static str {
+    match kind {
+        ir::GenericInstantiationKind::Function => "fn",
+        ir::GenericInstantiationKind::Struct => "struct",
+        ir::GenericInstantiationKind::Enum => "enum",
+    }
+}
+
+fn mangle_instantiation(kind_tag: &str, name: &str, type_args: &[String]) -> String {
+    let mut out = String::new();
+    out.push_str(kind_tag);
+    out.push('_');
+    out.push_str(&mangle_component(name));
+    for arg in type_args {
+        out.push('_');
+        out.push_str(&mangle_component(arg));
+    }
+    out
+}
+
+fn mangle_component(input: &str) -> String {
+    let mut out = String::new();
+    for ch in input.chars() {
+        match ch {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => out.push(ch),
+            '[' => out.push_str("_lb_"),
+            ']' => out.push_str("_rb_"),
+            ',' => out.push_str("_c_"),
+            ' ' => {}
+            other => out.push_str(&format!("_x{:02X}_", other as u32)),
+        }
+    }
+    out
+}
+
+fn contains_null_token(input: &str) -> bool {
+    input
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|segment| segment.eq_ignore_ascii_case("null"))
 }
 
 fn contains_unresolved_type(ty: &str) -> bool {

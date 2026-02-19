@@ -48,7 +48,7 @@ impl Loader {
     fn new(project_root: PathBuf, entry_path: PathBuf) -> Self {
         Self {
             project_root,
-            entry_path,
+            entry_path: canonical_or_self(entry_path),
             parse_cache: BTreeMap::new(),
             module_index: BTreeMap::new(),
             module_path_by_file: BTreeMap::new(),
@@ -84,8 +84,9 @@ impl Loader {
         collect_aic_files(&self.project_root, &mut files)?;
 
         for file in files {
-            self.ensure_parsed(&file)?;
-            let Some(parsed) = self.parse_cache.get(&file) else {
+            let canonical = canonical_or_self(file);
+            self.ensure_parsed(&canonical)?;
+            let Some(parsed) = self.parse_cache.get(&canonical) else {
                 continue;
             };
             let Some(program) = &parsed.program else {
@@ -101,7 +102,7 @@ impl Loader {
                     Diagnostic::error(
                         "E2105",
                         format!("duplicate module declaration '{}'", key),
-                        &file.to_string_lossy(),
+                        &canonical.to_string_lossy(),
                         module.span,
                     )
                     .with_help(format!(
@@ -112,8 +113,9 @@ impl Loader {
                 );
                 continue;
             }
-            self.module_index.insert(key, file.clone());
-            self.module_path_by_file.insert(file, module.path.clone());
+            self.module_index.insert(key, canonical.clone());
+            self.module_path_by_file
+                .insert(canonical, module.path.clone());
         }
 
         Ok(())
@@ -300,13 +302,14 @@ impl Loader {
     }
 
     fn ensure_parsed(&mut self, file: &Path) -> anyhow::Result<()> {
-        if self.parse_cache.contains_key(file) {
+        let canonical = canonical_or_self(file.to_path_buf());
+        if self.parse_cache.contains_key(&canonical) {
             return Ok(());
         }
-        let source = fs::read_to_string(file)?;
-        let (program, diagnostics) = parser::parse(&source, &file.to_string_lossy());
+        let source = fs::read_to_string(&canonical)?;
+        let (program, diagnostics) = parser::parse(&source, &canonical.to_string_lossy());
         self.parse_cache.insert(
-            file.to_path_buf(),
+            canonical,
             ParsedModule {
                 program,
                 diagnostics,
