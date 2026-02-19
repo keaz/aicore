@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use aicore::codegen::{compile_with_clang, emit_llvm};
+use aicore::codegen::{
+    compile_with_clang, compile_with_clang_artifact_with_options, emit_llvm,
+    emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions,
+};
 use aicore::contracts::lower_runtime_asserts;
 use aicore::diagnostics::Severity;
 use aicore::driver::{diagnostics_pretty, has_errors, run_frontend};
@@ -57,6 +60,10 @@ enum Command {
         input: PathBuf,
         #[arg(short, long)]
         output: Option<PathBuf>,
+        #[arg(long, value_enum, default_value = "exe")]
+        artifact: BuildArtifact,
+        #[arg(long)]
+        debug_info: bool,
     },
     Run {
         #[arg(default_value = "src/main.aic")]
@@ -68,6 +75,13 @@ enum Command {
 enum EmitKind {
     Json,
     Text,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum BuildArtifact {
+    Exe,
+    Obj,
+    Lib,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -134,7 +148,12 @@ fn main() -> anyhow::Result<()> {
             let migrated = migrate_json_to_current(&raw)?;
             println!("{}", serde_json::to_string_pretty(&migrated)?);
         }
-        Command::Build { input, output } => {
+        Command::Build {
+            input,
+            output,
+            artifact,
+            debug_info,
+        } => {
             let front = run_frontend(&input)?;
             if has_errors(&front.diagnostics) {
                 print!("{}", diagnostics_pretty(&front.diagnostics));
@@ -142,7 +161,11 @@ fn main() -> anyhow::Result<()> {
             }
 
             let lowered = lower_runtime_asserts(&front.ir);
-            let llvm = match emit_llvm(&lowered, &input.to_string_lossy()) {
+            let llvm = match emit_llvm_with_options(
+                &lowered,
+                &input.to_string_lossy(),
+                CodegenOptions { debug_info },
+            ) {
                 Ok(v) => v,
                 Err(diags) => {
                     if let Ok(text) = serde_json::to_string_pretty(&diags) {
@@ -152,9 +175,15 @@ fn main() -> anyhow::Result<()> {
                 }
             };
 
-            let out = output.unwrap_or_else(|| default_binary_name(&input));
+            let out = output.unwrap_or_else(|| default_build_output_name(&input, artifact));
             let work = std::env::temp_dir().join("aicore_build");
-            compile_with_clang(&llvm.llvm_ir, &out, &work)?;
+            compile_with_clang_artifact_with_options(
+                &llvm.llvm_ir,
+                &out,
+                &work,
+                artifact.to_codegen(),
+                CompileOptions { debug_info },
+            )?;
             println!("built {}", out.display());
         }
         Command::Run { input } => {
@@ -186,10 +215,24 @@ fn build_file(input: &Path, output: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn default_binary_name(input: &Path) -> PathBuf {
+fn default_build_output_name(input: &Path, artifact: BuildArtifact) -> PathBuf {
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("a.out");
-    PathBuf::from(stem)
+    match artifact {
+        BuildArtifact::Exe => PathBuf::from(stem),
+        BuildArtifact::Obj => PathBuf::from(format!("{stem}.o")),
+        BuildArtifact::Lib => PathBuf::from(format!("lib{stem}.a")),
+    }
+}
+
+impl BuildArtifact {
+    fn to_codegen(self) -> ArtifactKind {
+        match self {
+            BuildArtifact::Exe => ArtifactKind::Exe,
+            BuildArtifact::Obj => ArtifactKind::Obj,
+            BuildArtifact::Lib => ArtifactKind::Lib,
+        }
+    }
 }

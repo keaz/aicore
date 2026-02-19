@@ -1,98 +1,149 @@
-# AI Agent Implementation Guide (E4)
+# AI Agent Implementation Guide (E4 + E5)
 
-This document explains the EPIC E4 implementation in a code-oriented way for autonomous contributors.
+This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime changes.
 
-## Compiler pipeline touch points
+## Pipeline Touch Points
 
 - Frontend orchestration: `src/driver.rs`
-- Effect normalization/validation: `src/effects.rs`
-- Effect + type checking (including call graph): `src/typecheck.rs`
+- Effects normalization + validation: `src/effects.rs`
+- Type/effect checking + generic instantiation recording: `src/typecheck.rs`
 - Contract static verification + runtime lowering: `src/contracts.rs`
-- Runtime behavior tests: `tests/execution_tests.rs`
+- LLVM backend + runtime ABI: `src/codegen.rs`
+- CLI command surface: `src/main.rs`
+- Runtime and backend execution validation: `tests/execution_tests.rs`
 
-## E4-T1 and E4-T2 (Effects)
+## E4 Summary (Effects + Contracts)
 
-### Declaration normalization
+### Effects
 
-`src/effects.rs`
+- Canonical pass: `normalize_effect_declarations(program, file)` in `src/effects.rs`
+- Known taxonomy: `io`, `fs`, `net`, `time`, `rand`
+- Diagnostics:
+  - unknown effect: `E2003`
+  - duplicate declaration: `E2004`
+  - direct undeclared use: `E2001`
+  - transitive missing effect path: `E2005`
 
-- `normalize_effect_declarations(program, file)` is the canonical pass.
-- Known taxonomy: `io`, `fs`, `net`, `time`, `rand`.
-- Behavior:
-  - rejects unknown effects (`E2003`)
-  - rejects duplicates (`E2004`)
-  - canonicalizes each function signature to sorted unique known effects
+### Contracts
 
-`src/driver.rs` runs this pass before resolver/typecheck so downstream signatures are deterministic.
+- Static verifier: `verify_static(program, file)` in `src/contracts.rs`
+- Runtime lowering: `lower_runtime_asserts(program)`
+- Guarantees:
+  - `requires` checks at function entry
+  - `ensures` checks on every explicit return and implicit tail return
+  - struct invariants via synthesized helper constructors (`__aic_invariant_ctor_*`)
 
-### Transitive effect checking
+## E5 Summary (LLVM Backend + Runtime ABI)
 
-`src/typecheck.rs`
+### Toolchain contract (E5-T1)
 
-- Checker records interprocedural call edges while typechecking function bodies.
-- A closure pass computes transitive required effects per function.
-- Direct undeclared usage remains `E2001`.
-- New transitive call-path diagnostic:
-  - `E2005`: caller missing effect that appears only through deeper call chain
-  - message includes path like `a -> b -> c`
+In `src/codegen.rs`:
 
-## E4-T3, E4-T4, E4-T5 (Contracts + invariants)
+- `probe_toolchain()` inspects `clang --version`
+- `MIN_SUPPORTED_LLVM_MAJOR = 14`
+- optional pin `AIC_LLVM_PIN_MAJOR`
+- deterministic actionable errors for missing/unsupported/mismatched toolchains
 
-### Static verifier
+### ADT lowering (E5-T2)
 
-`src/contracts.rs`
+Lowering model:
 
-- `verify_static(program, file)` now uses tri-state proof (`True | False | Unknown`).
-- Supported proof domain: restricted integer logic with simple interval reasoning and boolean composition.
-- Outcomes:
-  - proven false contracts => compile-time errors (`E4001`, `E4002`, `E4004`)
-  - proven true contracts => discharge note (`E4005`)
-  - unknown => runtime checks remain
+- Struct: LLVM aggregate in field order
+- Enum: `{ i32 tag, <payload slot per variant> }`
+- Built-in templates synthesized in backend metadata:
+  - `Option[T]`
+  - `Result[T, E]`
 
-### Runtime lowering for all exits
+Code paths:
 
-`src/contracts.rs`
+- Template collection: `collect_type_templates(...)`
+- Type lowering: `parse_type_repr(...)`
+- Constructors: `gen_struct_init(...)`, `gen_variant_constructor(...)`
+- Match lowering: `gen_match_enum(...)`
 
-- `lower_runtime_asserts(program)` now enforces:
-  - `requires` once at function entry
-  - `ensures` at every explicit `return` and at implicit function exit
-- Implementation strategy:
-  - rewrites return sites into `let __aic_result_*; assert ensures(result); return __aic_result_*`
-  - traverses nested `if`/`match` blocks to instrument embedded explicit returns
+### Generic monomorphization (E5-T3)
 
-### Struct invariant runtime enforcement
+- Typecheck records `program.generic_instantiations` with stable mangles.
+- Backend builds `generic_fn_instances` and emits one function per concrete mangle.
+- Dedupe key is mangled symbol (deterministic sort + `dedup_by`).
+- Generic call dispatch selects the matching concrete instance by argument type.
 
-`src/contracts.rs`
+### Runtime ABI (E5-T4)
 
-- Invariants are enforced by rewriting struct literals to synthesized helper constructors:
-  - helper name: `__aic_invariant_ctor_<StructName>`
-  - helper performs invariant assert, then returns the struct value
-- Existing function bodies are rewritten so `StructInit` expressions call the helper.
-- This avoids requiring block expressions in IR and works for nested construction sites.
+`String` ABI is ptr-len-cap:
 
-## Determinism and IDs
+- AIC type: `{ i8*, i64, i64 }`
+- runtime signatures pass scalar `(ptr, len, cap)`
 
-`src/contracts.rs`
+Helpers:
 
-- `IdAlloc` now allocates symbol IDs, node IDs, and type IDs (`next_type`) for synthesized helpers.
-- `intern_type(...)` ensures generated helper return types are present in `Program.types`.
+- `aic_rt_print_str`
+- `aic_rt_strlen`
+- `aic_rt_vec_len`
+- `aic_rt_vec_cap`
 
-## Tests and examples to update when changing E4
+Panic ABI is source-aware:
 
-- Unit/integration:
-  - `src/contracts.rs` tests
-  - `src/typecheck.rs` tests
-  - `tests/unit_tests.rs`
-- Runtime:
-  - `tests/execution_tests.rs`
-- Examples:
-  - `examples/e4/*`
-  - CI hook: `scripts/ci/examples.sh`
+- `aic_rt_panic(ptr, len, cap, line, column)`
 
-## Safe extension checklist for agents
+### Artifact modes (E5-T5)
 
-1. Keep diagnostics stable and register new codes in `src/diagnostic_codes.rs`.
-2. Preserve lowering determinism (stable helper naming and ID allocation).
-3. Add both static and runtime tests for any verifier/lowering change.
-4. If proof logic expands, keep unknown paths conservative (fallback runtime assert).
-5. Re-run `make ci` before commit.
+CLI and driver support:
+
+- `exe`
+- `obj`
+- `lib`
+
+Key APIs:
+
+- `compile_with_clang_artifact_with_options(...)`
+- `build_with_artifact(...)`
+- `build_with_artifact_options(...)`
+
+### Debug metadata + panic mapping (E5-T6)
+
+- CLI flag: `aic build --debug-info`
+- Codegen option: `CodegenOptions { debug_info: true }`
+- Compile option: `CompileOptions { debug_info: true }`
+
+When enabled:
+
+- emits `!DICompileUnit`, `!DISubprogram`, `!DILocation`
+- panic/assert callsites are tagged with debug locations
+- runtime panic prints mapped line/column
+
+## E5 Validation Inventory
+
+### Tests
+
+- Codegen unit coverage in `src/codegen.rs` tests:
+  - toolchain parsing/pinning
+  - ADT layout snapshot
+  - monomorphization dedupe/determinism
+  - debug metadata + panic line mapping
+  - panic ABI declaration/runtime signature consistency
+- Runtime execution coverage in `tests/execution_tests.rs`:
+  - nested ADT match execution
+  - multi-concrete generic execution
+  - object/library external linkage
+  - debug panic line mapping behavior
+
+### Examples
+
+- `examples/e5/hello_int.aic`
+- `examples/e5/enum_match.aic`
+- `examples/e5/generic_pair.aic`
+- `examples/e5/string_len.aic`
+- `examples/e5/object_link_main.aic`
+- `examples/e5/panic_line_map.aic`
+
+Examples are wired into `scripts/ci/examples.sh`.
+
+## Safe Extension Checklist
+
+1. Keep ABI changes explicit and documented in `docs/llvm-backend.md`.
+2. Preserve deterministic output ordering (metadata, symbol names, instantiations).
+3. Add both unit and execution tests for any backend/ABI change.
+4. Do not change panic/runtime signatures without updating declarations and runtime C together.
+5. Keep default build mode unaffected; gate debug-only behavior behind explicit options.
+6. Run `make ci` before commit.

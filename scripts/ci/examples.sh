@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 AIC=(cargo run --quiet --bin aic --)
+ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aic-examples.XXXXXX")"
+trap 'rm -rf "$ARTIFACT_DIR"' EXIT
 
 check_pass=(
   "examples/option_match.aic"
@@ -22,6 +24,12 @@ check_pass=(
   "examples/e4/contracts_all_returns.aic"
   "examples/e4/non_empty_string_ctor.aic"
   "examples/e4/verified_abs.aic"
+  "examples/e5/hello_int.aic"
+  "examples/e5/enum_match.aic"
+  "examples/e5/generic_pair.aic"
+  "examples/e5/string_len.aic"
+  "examples/e5/object_link_main.aic"
+  "examples/e5/panic_line_map.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -31,10 +39,15 @@ run_pass=(
   "examples/option_match.aic"
   "examples/contracts_abs_ok.aic"
   "examples/e4/verified_abs.aic"
+  "examples/e5/hello_int.aic"
+  "examples/e5/enum_match.aic"
+  "examples/e5/generic_pair.aic"
+  "examples/e5/string_len.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
   "examples/e4/contracts_all_returns.aic:ensures failed"
+  "examples/e5/panic_line_map.aic:AICore panic at"
 )
 
 expect_check_fail() {
@@ -75,6 +88,17 @@ expect_run_value() {
   fi
 }
 
+expect_build_artifact() {
+  local file="$1"
+  local artifact="$2"
+  local out="$3"
+  "${AIC[@]}" build "$file" --artifact "$artifact" -o "$out" >/dev/null
+  if [[ ! -f "$out" ]]; then
+    echo "expected artifact missing: $out" >&2
+    exit 1
+  fi
+}
+
 case "$MODE" in
   check)
     for f in "${check_pass[@]}"; do
@@ -88,6 +112,12 @@ case "$MODE" in
     expect_run_value "examples/option_match.aic" "42"
     expect_run_value "examples/contracts_abs_ok.aic" "7"
     expect_run_value "examples/e4/verified_abs.aic" "7"
+    expect_run_value "examples/e5/hello_int.aic" "42"
+    expect_run_value "examples/e5/enum_match.aic" "42"
+    expect_run_value "examples/e5/generic_pair.aic" "42"
+    expect_run_value "examples/e5/string_len.aic" "5"
+    expect_build_artifact "examples/e5/object_link_main.aic" "obj" "$ARTIFACT_DIR/object_link_main.o"
+    expect_build_artifact "examples/e5/object_link_main.aic" "lib" "$ARTIFACT_DIR/libobject_link_main.a"
     for entry in "${run_fail[@]}"; do
       file="${entry%%:*}"
       marker="${entry#*:}"

@@ -2,7 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::codegen::{compile_with_clang, emit_llvm};
+use crate::codegen::{
+    compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
+    CompileOptions,
+};
 use crate::contracts::{lower_runtime_asserts, verify_static};
 use crate::diagnostics::{Diagnostic, Severity};
 use crate::effects::normalize_effect_declarations;
@@ -18,6 +21,13 @@ pub struct FrontendOutput {
     pub resolution: Resolution,
     pub typecheck: TypecheckOutput,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildArtifact {
+    Exe,
+    Obj,
+    Lib,
 }
 
 pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
@@ -112,23 +122,50 @@ pub fn emit_ir_json(path: &Path) -> anyhow::Result<String> {
 }
 
 pub fn build(path: &Path, output: &Path) -> anyhow::Result<PathBuf> {
+    build_with_artifact(path, output, BuildArtifact::Exe)
+}
+
+pub fn build_with_artifact(
+    path: &Path,
+    output: &Path,
+    artifact: BuildArtifact,
+) -> anyhow::Result<PathBuf> {
+    build_with_artifact_options(path, output, artifact, false)
+}
+
+pub fn build_with_artifact_options(
+    path: &Path,
+    output: &Path,
+    artifact: BuildArtifact,
+    debug_info: bool,
+) -> anyhow::Result<PathBuf> {
     let front = run_frontend(path)?;
     if has_errors(&front.diagnostics) {
         anyhow::bail!("build failed due to diagnostics")
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &path.to_string_lossy())
-        .map_err(|_| anyhow::anyhow!("llvm codegen failed"))?;
+    let llvm = emit_llvm_with_options(
+        &lowered,
+        &path.to_string_lossy(),
+        CodegenOptions { debug_info },
+    )
+    .map_err(|_| anyhow::anyhow!("llvm codegen failed"))?;
 
     let work_dir = std::env::temp_dir().join("aicore_build");
-    let output = compile_with_clang(&llvm.llvm_ir, output, &work_dir)?;
+    let output = compile_with_clang_artifact_with_options(
+        &llvm.llvm_ir,
+        output,
+        &work_dir,
+        artifact.to_codegen(),
+        CompileOptions { debug_info },
+    )?;
     Ok(output)
 }
 
 pub fn run(path: &Path) -> anyhow::Result<i32> {
     let exe = std::env::temp_dir().join("aicore_run_bin");
-    let output = build(path, &exe)?;
+    let output = build_with_artifact(path, &exe, BuildArtifact::Exe)?;
     let status = Command::new(output).status()?;
     Ok(status.code().unwrap_or(1))
 }
@@ -161,4 +198,14 @@ pub fn diagnostics_pretty(diags: &[Diagnostic]) -> String {
         }
     }
     out
+}
+
+impl BuildArtifact {
+    fn to_codegen(self) -> ArtifactKind {
+        match self {
+            BuildArtifact::Exe => ArtifactKind::Exe,
+            BuildArtifact::Obj => ArtifactKind::Obj,
+            BuildArtifact::Lib => ArtifactKind::Lib,
+        }
+    }
 }

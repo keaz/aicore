@@ -15,9 +15,10 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Effect checker (`io`, `fs`, `net`, `time`, `rand`) | Implemented |
 | Contracts (`requires`, `ensures`, `invariant`) | Implemented (runtime lowering + static constant checks) |
 | Match + exhaustiveness (Bool/Option/Result + enums) | Implemented |
-| LLVM backend (native executable via clang) | Implemented for core subset |
-| Generics | Parsed + basic handling (full generic codegen pending) |
-| Struct runtime codegen | Planned (frontend support implemented) |
+| LLVM backend (native via clang) | Implemented (toolchain checks + ADT lowering + monomorphization) |
+| Generics | Implemented (deterministic instantiation + codegen) |
+| Artifact emission | Implemented (`exe`, `obj`, `lib`) |
+| Debug info + panic source mapping | Implemented (`aic build --debug-info`) |
 
 ## Prerequisites
 
@@ -81,6 +82,8 @@ cargo run -- fmt examples/option_match.aic
 cargo run -- ir examples/option_match.aic --emit json
 cargo run -- ir-migrate old_ir.json
 cargo run -- build examples/option_match.aic -o option_match
+cargo run -- build examples/e5/object_link_main.aic --artifact obj -o object_link_main.o
+cargo run -- build examples/e5/panic_line_map.aic --debug-info -o panic_dbg
 cargo run -- run examples/option_match.aic
 ```
 
@@ -105,9 +108,9 @@ Commands:
 
 ## Test suite
 
-- Unit tests: 32 (`src/*` + `tests/unit_tests.rs`)
+- Unit tests: 50 (`src/*` + `tests/unit_tests.rs`)
 - Golden tests: 10 (`tests/golden_tests.rs`)
-- Execution tests: 5 (`tests/execution_tests.rs`)
+- Execution tests: 11 (`tests/execution_tests.rs`)
 
 ## Determinism guarantees (MVP)
 

@@ -1,0 +1,23 @@
+import std.io;
+
+struct Pair {
+    left: Int,
+    right: Int,
+}
+
+enum Wrap[T] {
+    Empty,
+    Full(T),
+}
+
+fn fold(x: Wrap[Pair]) -> Int {
+    match x {
+        Empty => 0,
+        Full(p) => p.left + p.right,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(fold(Full(Pair { left: 20, right: 22 })));
+    0
+}

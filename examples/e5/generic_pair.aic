@@ -1,0 +1,16 @@
+import std.io;
+
+struct Pair[T, U] {
+    left: T,
+    right: U,
+}
+
+fn first[T, U](x: Pair[T, U]) -> T {
+    x.left
+}
+
+fn main() -> Int effects { io } {
+    let pair = Pair { left: 42, right: true };
+    print_int(first(pair));
+    0
+}
