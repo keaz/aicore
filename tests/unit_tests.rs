@@ -519,6 +519,62 @@ fn main() -> Int {
     assert!(out.diagnostics.iter().any(|d| d.code == "E1041"));
 }
 
+#[test]
+fn unit_generic_function_and_struct_inference_passes() {
+    let src = r#"
+struct Box[T] { value: T }
+
+fn id[T](x: T) -> T { x }
+
+fn unbox[T](b: Box[T]) -> T { b.value }
+
+fn main() -> Int {
+    let b = Box { value: id(41) };
+    unbox(b) + 1
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.is_empty(),
+        "type diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_generic_constraint_mismatch_reports_e1214() {
+    let src = r#"
+fn pair_first[T](x: T, y: T) -> T { x }
+
+fn main() -> Int {
+    pair_first(1, true)
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1214"));
+}
+
+#[test]
+fn unit_wrong_generic_arity_reports_e1250() {
+    let src = r#"
+fn main() -> Int {
+    let x: Option[Int, Int] = None;
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1250"));
+}
+
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {

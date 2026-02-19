@@ -1,0 +1,18 @@
+module examples.e3.generic_id;
+
+struct Box[T] {
+    value: T,
+}
+
+fn id[T](x: T) -> T {
+    x
+}
+
+fn unbox[T](b: Box[T]) -> T {
+    b.value
+}
+
+fn main() -> Int {
+    let b = Box { value: id(41) };
+    unbox(b) + 1
+}

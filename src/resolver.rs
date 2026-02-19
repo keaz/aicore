@@ -22,6 +22,7 @@ pub struct Resolution {
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
     pub symbol: ir::SymbolId,
+    pub generics: Vec<String>,
     pub param_types: Vec<ir::TypeId>,
     pub ret_type: ir::TypeId,
     pub effects: BTreeSet<String>,
@@ -31,6 +32,7 @@ pub struct FunctionInfo {
 #[derive(Debug, Clone)]
 pub struct StructInfo {
     pub symbol: ir::SymbolId,
+    pub generics: Vec<String>,
     pub fields: BTreeMap<String, ir::TypeId>,
     pub invariant: Option<ir::Expr>,
     pub span: crate::span::Span,
@@ -39,6 +41,7 @@ pub struct StructInfo {
 #[derive(Debug, Clone)]
 pub struct EnumInfo {
     pub symbol: ir::SymbolId,
+    pub generics: Vec<String>,
     pub variants: BTreeMap<String, Option<ir::TypeId>>,
     pub span: crate::span::Span,
 }
@@ -130,6 +133,7 @@ pub fn resolve_with_item_modules(
                     .entry(f.name.clone())
                     .or_insert_with(|| FunctionInfo {
                         symbol: f.symbol,
+                        generics: f.generics.iter().map(|g| g.name.clone()).collect(),
                         param_types: f.params.iter().map(|p| p.ty).collect(),
                         ret_type: f.ret_type,
                         effects: f.effects.iter().cloned().collect(),
@@ -169,6 +173,7 @@ pub fn resolve_with_item_modules(
 
                 structs.entry(s.name.clone()).or_insert_with(|| StructInfo {
                     symbol: s.symbol,
+                    generics: s.generics.iter().map(|g| g.name.clone()).collect(),
                     fields,
                     invariant: s.invariant.clone(),
                     span: s.span,
@@ -210,6 +215,7 @@ pub fn resolve_with_item_modules(
 
                 enums.entry(e.name.clone()).or_insert_with(|| EnumInfo {
                     symbol: e.symbol,
+                    generics: e.generics.iter().map(|g| g.name.clone()).collect(),
                     variants,
                     span: e.span,
                 });

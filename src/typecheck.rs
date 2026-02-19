@@ -22,7 +22,7 @@ struct FnSig {
     params: Vec<String>,
     ret: String,
     effects: BTreeSet<String>,
-    generics: usize,
+    generic_params: Vec<String>,
 }
 
 struct Checker<'a> {
@@ -32,6 +32,7 @@ struct Checker<'a> {
     diagnostics: Vec<Diagnostic>,
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
+    generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
     enforce_import_visibility: bool,
 }
@@ -39,6 +40,13 @@ struct Checker<'a> {
 #[derive(Default)]
 struct ExprContext {
     effects_used: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone)]
+struct VariantMatch {
+    enum_name: String,
+    generic_params: Vec<String>,
+    payload: Option<String>,
 }
 
 impl<'a> Checker<'a> {
@@ -49,6 +57,9 @@ impl<'a> Checker<'a> {
         }
 
         let mut functions = BTreeMap::new();
+        let mut generic_arity = BTreeMap::new();
+        generic_arity.insert("Option".to_string(), 1);
+        generic_arity.insert("Result".to_string(), 2);
 
         for (name, info) in &resolution.functions {
             let mut params = Vec::new();
@@ -64,16 +75,16 @@ impl<'a> Checker<'a> {
                         .cloned()
                         .unwrap_or_else(|| "<?>".to_string()),
                     effects: info.effects.clone(),
-                    generics: program
-                        .items
-                        .iter()
-                        .find_map(|item| match item {
-                            ir::Item::Function(f) if f.name == *name => Some(f.generics.len()),
-                            _ => None,
-                        })
-                        .unwrap_or(0),
+                    generic_params: info.generics.clone(),
                 },
             );
+        }
+
+        for (name, info) in &resolution.structs {
+            generic_arity.insert(name.clone(), info.generics.len());
+        }
+        for (name, info) in &resolution.enums {
+            generic_arity.insert(name.clone(), info.generics.len());
         }
 
         // Minimal std signatures.
@@ -83,7 +94,7 @@ impl<'a> Checker<'a> {
                 params: vec!["Int".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
-                generics: 0,
+                generic_params: Vec::new(),
             },
         );
         functions.insert(
@@ -92,7 +103,7 @@ impl<'a> Checker<'a> {
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
-                generics: 0,
+                generic_params: Vec::new(),
             },
         );
         functions.insert(
@@ -101,7 +112,7 @@ impl<'a> Checker<'a> {
                 params: vec!["String".to_string()],
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
-                generics: 0,
+                generic_params: Vec::new(),
             },
         );
         functions.insert(
@@ -110,7 +121,7 @@ impl<'a> Checker<'a> {
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
-                generics: 0,
+                generic_params: Vec::new(),
             },
         );
 
@@ -121,6 +132,7 @@ impl<'a> Checker<'a> {
             diagnostics: Vec::new(),
             types,
             functions,
+            generic_arity,
             effect_usage: BTreeMap::new(),
             enforce_import_visibility: false,
         }
@@ -131,7 +143,7 @@ impl<'a> Checker<'a> {
             match item {
                 ir::Item::Function(func) => self.check_function(func),
                 ir::Item::Struct(strukt) => self.check_struct_invariant(strukt),
-                ir::Item::Enum(_) => {}
+                ir::Item::Enum(enm) => self.check_enum_definition(enm),
             }
         }
     }
@@ -150,13 +162,13 @@ impl<'a> Checker<'a> {
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
         let mut locals = BTreeMap::new();
         for param in &func.params {
-            locals.insert(
-                param.name.clone(),
-                self.types
-                    .get(&param.ty)
-                    .cloned()
-                    .unwrap_or_else(|| "<?>".to_string()),
-            );
+            let param_ty = self
+                .types
+                .get(&param.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.check_generic_arity(&param_ty, param.span);
+            locals.insert(param.name.clone(), param_ty);
         }
 
         let ret_type = self
@@ -164,6 +176,7 @@ impl<'a> Checker<'a> {
             .get(&func.ret_type)
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
+        self.check_generic_arity(&ret_type, func.span);
 
         if let Some(requires) = &func.requires {
             let mut contract_ctx = ExprContext::default();
@@ -277,6 +290,15 @@ impl<'a> Checker<'a> {
     }
 
     fn check_struct_invariant(&mut self, strukt: &ir::StructDef) {
+        for field in &strukt.fields {
+            let ty = self
+                .types
+                .get(&field.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.check_generic_arity(&ty, field.span);
+        }
+
         if let Some(inv) = &strukt.invariant {
             let mut locals = BTreeMap::new();
             for field in &strukt.fields {
@@ -297,6 +319,19 @@ impl<'a> Checker<'a> {
                     self.file,
                     inv.span,
                 ));
+            }
+        }
+    }
+
+    fn check_enum_definition(&mut self, enm: &ir::EnumDef) {
+        for variant in &enm.variants {
+            if let Some(payload) = variant.payload {
+                let ty = self
+                    .types
+                    .get(&payload)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                self.check_generic_arity(&ty, variant.span);
             }
         }
     }
@@ -329,6 +364,7 @@ impl<'a> Checker<'a> {
                             .get(ann)
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string());
+                        self.check_generic_arity(&ann_ty, *span);
                         if ann_ty != expr_ty {
                             self.diagnostics.push(
                                 Diagnostic::error(
@@ -635,21 +671,6 @@ impl<'a> Checker<'a> {
                 };
 
                 if let Some(sig) = self.functions.get(&resolved_name).cloned() {
-                    if sig.generics > 0 {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E1212",
-                                format!(
-                                    "generic function '{}' requires explicit specialization in MVP",
-                                    resolved_name
-                                ),
-                                self.file,
-                                expr.span,
-                            )
-                            .with_help("for MVP, use non-generic functions at call sites"),
-                        );
-                    }
-
                     if resolved_name == "print_int"
                         || resolved_name == "print_str"
                         || resolved_name == "panic"
@@ -678,6 +699,13 @@ impl<'a> Checker<'a> {
                         );
                     }
 
+                    let arg_types = args
+                        .iter()
+                        .map(|arg| {
+                            self.check_expr(arg, locals, allowed_effects, ctx, contract_mode)
+                        })
+                        .collect::<Vec<_>>();
+
                     if args.len() != sig.params.len() {
                         self.diagnostics.push(Diagnostic::error(
                             "E1213",
@@ -691,24 +719,85 @@ impl<'a> Checker<'a> {
                             expr.span,
                         ));
                     }
-                    for (idx, arg) in args.iter().enumerate() {
-                        let arg_ty =
-                            self.check_expr(arg, locals, allowed_effects, ctx, contract_mode);
-                        if let Some(expected) = sig.params.get(idx) {
-                            if !type_compatible(expected, &arg_ty) {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "E1214",
+
+                    let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
+                    let mut generic_bindings = BTreeMap::new();
+
+                    for (idx, arg_ty) in arg_types.iter().enumerate() {
+                        let Some(expected_raw) = sig.params.get(idx) else {
+                            continue;
+                        };
+                        let inferred = infer_generic_bindings(
+                            expected_raw,
+                            arg_ty,
+                            &generic_set,
+                            &mut generic_bindings,
+                        );
+                        if !inferred {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1214",
+                                format!(
+                                    "argument {} to '{}' expected '{}', found '{}'",
+                                    idx + 1,
+                                    rendered_path,
+                                    expected_raw,
+                                    arg_ty
+                                ),
+                                self.file,
+                                args[idx].span,
+                            ));
+                        }
+                    }
+
+                    if !sig.generic_params.is_empty() {
+                        let unresolved = sig
+                            .generic_params
+                            .iter()
+                            .filter(|g| !generic_bindings.contains_key(*g))
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        if !unresolved.is_empty() {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1212",
                                     format!(
-                                        "argument {} to '{}' expected '{}', found '{}'",
-                                        idx + 1,
+                                        "cannot infer generic parameters for '{}': {}",
                                         rendered_path,
-                                        expected,
-                                        arg_ty
+                                        unresolved.join(", ")
                                     ),
                                     self.file,
-                                    arg.span,
-                                ));
-                            }
+                                    expr.span,
+                                )
+                                .with_help(
+                                    "provide argument values with concrete types or annotate intermediates",
+                                ),
+                            );
+                        }
+                    }
+
+                    let instantiated_params = sig
+                        .params
+                        .iter()
+                        .map(|param| substitute_type_vars(param, &generic_bindings, &generic_set))
+                        .collect::<Vec<_>>();
+
+                    for (idx, arg_ty) in arg_types.iter().enumerate() {
+                        let Some(expected) = instantiated_params.get(idx) else {
+                            continue;
+                        };
+                        if !type_compatible(expected, arg_ty) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1214",
+                                format!(
+                                    "argument {} to '{}' expected '{}', found '{}'",
+                                    idx + 1,
+                                    rendered_path,
+                                    expected,
+                                    arg_ty
+                                ),
+                                self.file,
+                                args[idx].span,
+                            ));
                         }
                     }
 
@@ -751,12 +840,59 @@ impl<'a> Checker<'a> {
                             );
                         }
                     }
-                    return sig.ret;
+
+                    let ret_ty = substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+                    if !sig.generic_params.is_empty() && contains_unresolved_type(&ret_ty) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1212",
+                                format!(
+                                    "cannot fully resolve return type for generic call '{}': inferred '{}'",
+                                    rendered_path, ret_ty
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help("add explicit type annotations to constrain generic inference"),
+                        );
+                    }
+                    return ret_ty;
                 }
 
                 if !qualified {
-                    if let Some((enum_name, payload)) = self.find_variant(&name) {
-                        if let Some(payload_ty) = payload {
+                    let candidates = self.find_variants(&name);
+                    if candidates.len() > 1 {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2104",
+                                format!(
+                                    "ambiguous variant '{}' found in enums: {}",
+                                    name,
+                                    candidates
+                                        .iter()
+                                        .map(|c| c.enum_name.clone())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help(
+                                "use a typed context (annotation) to disambiguate the variant",
+                            ),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    if let Some(candidate) = candidates.first() {
+                        let generic_set = candidate
+                            .generic_params
+                            .iter()
+                            .cloned()
+                            .collect::<BTreeSet<_>>();
+                        let mut generic_bindings = BTreeMap::new();
+
+                        if let Some(payload_ty) = &candidate.payload {
                             if args.len() != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1215",
@@ -772,7 +908,13 @@ impl<'a> Checker<'a> {
                                     ctx,
                                     contract_mode,
                                 );
-                                if !type_compatible(&payload_ty, &arg_ty) {
+                                let inferred = infer_generic_bindings(
+                                    payload_ty,
+                                    &arg_ty,
+                                    &generic_set,
+                                    &mut generic_bindings,
+                                );
+                                if !inferred {
                                     self.diagnostics.push(Diagnostic::error(
                                         "E1216",
                                         format!(
@@ -792,7 +934,36 @@ impl<'a> Checker<'a> {
                                 expr.span,
                             ));
                         }
-                        return enum_name;
+
+                        if candidate.generic_params.is_empty() {
+                            return candidate.enum_name.clone();
+                        }
+
+                        let applied = candidate
+                            .generic_params
+                            .iter()
+                            .map(|g| {
+                                generic_bindings
+                                    .get(g)
+                                    .cloned()
+                                    .unwrap_or_else(|| "<?>".to_string())
+                            })
+                            .collect::<Vec<_>>();
+                        if applied.iter().any(|ty| contains_unresolved_type(ty)) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1212",
+                                    format!(
+                                        "cannot infer generic parameters for enum '{}'",
+                                        candidate.enum_name
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("add a type annotation at the call site"),
+                            );
+                        }
+                        return format!("{}[{}]", candidate.enum_name, applied.join(", "));
                     }
                 }
 
@@ -947,6 +1118,9 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 };
 
+                let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                let mut generic_bindings = BTreeMap::new();
+
                 for (field_name, value, span) in fields {
                     let Some(expected) = info.fields.get(field_name) else {
                         self.diagnostics.push(Diagnostic::error(
@@ -964,12 +1138,22 @@ impl<'a> Checker<'a> {
                         .unwrap_or_else(|| "<?>".to_string());
                     let found_ty =
                         self.check_expr(value, locals, allowed_effects, ctx, contract_mode);
-                    if !type_compatible(&expected_ty, &found_ty) {
+
+                    let _ = infer_generic_bindings(
+                        &expected_ty,
+                        &found_ty,
+                        &generic_set,
+                        &mut generic_bindings,
+                    );
+                    let expected_inst =
+                        substitute_type_vars(&expected_ty, &generic_bindings, &generic_set);
+
+                    if !type_compatible(&expected_inst, &found_ty) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1226",
                             format!(
                                 "field '{}.{}' expects '{}', found '{}'",
-                                name, field_name, expected_ty, found_ty
+                                name, field_name, expected_inst, found_ty
                             ),
                             self.file,
                             value.span,
@@ -991,17 +1175,67 @@ impl<'a> Checker<'a> {
                     }
                 }
 
-                name.clone()
+                if info.generics.is_empty() {
+                    return name.clone();
+                }
+
+                let applied = info
+                    .generics
+                    .iter()
+                    .map(|g| {
+                        generic_bindings
+                            .get(g)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string())
+                    })
+                    .collect::<Vec<_>>();
+                if applied.iter().any(|ty| contains_unresolved_type(ty)) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1212",
+                            format!("cannot infer generic parameters for struct '{}'", name),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("add a type annotation to constrain the struct type"),
+                    );
+                }
+                format!("{}[{}]", name, applied.join(", "))
             }
             ir::ExprKind::FieldAccess { base, field } => {
                 let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
                 if let Some(info) = self.find_struct(&base_ty) {
                     if let Some(field_ty_id) = info.fields.get(field) {
-                        return self
+                        let field_ty = self
                             .types
                             .get(field_ty_id)
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string());
+                        if info.generics.is_empty() {
+                            return field_ty;
+                        }
+
+                        if let Some(bindings) = bindings_from_applied_type(&base_ty, &info.generics)
+                        {
+                            let generic_set =
+                                info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                            return substitute_type_vars(&field_ty, &bindings, &generic_set);
+                        }
+
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1250",
+                                format!(
+                                    "generic arity mismatch for struct type '{}': expected {} arguments",
+                                    base_type_name(&base_ty),
+                                    info.generics.len()
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help("provide the correct number of generic arguments"),
+                        );
+                        return "<?>".to_string();
                     }
                     self.diagnostics.push(Diagnostic::error(
                         "E1228",
@@ -1068,6 +1302,33 @@ impl<'a> Checker<'a> {
             Some(out)
         } else {
             None
+        }
+    }
+
+    fn check_generic_arity(&mut self, ty: &str, span: crate::span::Span) {
+        let base = base_type_name(ty).to_string();
+        if let Some(expected) = self.generic_arity.get(&base).copied() {
+            let provided = extract_generic_args(ty).map(|a| a.len()).unwrap_or(0);
+            if provided != expected {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1250",
+                        format!(
+                            "generic arity mismatch for '{}': expected {}, found {}",
+                            base, expected, provided
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("adjust the number of generic type arguments"),
+                );
+            }
+        }
+
+        if let Some(args) = extract_generic_args(ty) {
+            for arg in args {
+                self.check_generic_arity(&arg, span);
+            }
         }
     }
 
@@ -1277,14 +1538,40 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
-                if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+                if let Some(enum_info) = self.find_enum(scrutinee_ty).cloned() {
+                    let enum_bindings =
+                        bindings_from_applied_type(scrutinee_ty, &enum_info.generics);
+                    if enum_bindings.is_none() && !enum_info.generics.is_empty() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1250",
+                                format!(
+                                    "generic arity mismatch for enum '{}': expected {} arguments",
+                                    base_type_name(scrutinee_ty),
+                                    enum_info.generics.len()
+                                ),
+                                self.file,
+                                pattern.span,
+                            )
+                            .with_help("fix the generic arguments on the scrutinee type"),
+                        );
+                    }
+                    let enum_bindings = enum_bindings.unwrap_or_default();
+                    let enum_generic_set =
+                        enum_info.generics.iter().cloned().collect::<BTreeSet<_>>();
+
                     if let Some(payload_ty_id) = enum_info.variants.get(name) {
                         if let Some(payload_ty_id) = payload_ty_id {
-                            let payload = self
+                            let payload_raw = self
                                 .types
                                 .get(payload_ty_id)
                                 .cloned()
                                 .unwrap_or_else(|| "<?>".to_string());
+                            let payload = substitute_type_vars(
+                                &payload_raw,
+                                &enum_bindings,
+                                &enum_generic_set,
+                            );
                             if args.len() != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1242",
@@ -1400,14 +1687,19 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn find_variant(&self, name: &str) -> Option<(String, Option<String>)> {
+    fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
+        let mut out = Vec::new();
         for (enum_name, info) in &self.resolution.enums {
             if let Some(payload) = info.variants.get(name) {
                 let payload_ty = payload.and_then(|id| self.types.get(&id).cloned());
-                return Some((enum_name.clone(), payload_ty));
+                out.push(VariantMatch {
+                    enum_name: enum_name.clone(),
+                    generic_params: info.generics.clone(),
+                    payload: payload_ty,
+                });
             }
         }
-        None
+        out
     }
 
     fn find_enum(&self, ty: &str) -> Option<&EnumInfo> {
@@ -1435,6 +1727,82 @@ fn type_compatible(expected: &str, found: &str) -> bool {
 
 fn contains_unresolved_type(ty: &str) -> bool {
     ty.contains("<?>")
+}
+
+fn infer_generic_bindings(
+    expected: &str,
+    found: &str,
+    generic_params: &BTreeSet<String>,
+    bindings: &mut BTreeMap<String, String>,
+) -> bool {
+    if generic_params.contains(expected) {
+        if let Some(bound) = bindings.get(expected) {
+            return type_compatible(bound, found);
+        }
+        bindings.insert(expected.to_string(), found.to_string());
+        return true;
+    }
+
+    let expected_args = extract_generic_args(expected).unwrap_or_default();
+    let found_args = extract_generic_args(found).unwrap_or_default();
+    if expected_args.is_empty() || found_args.is_empty() {
+        return type_compatible(expected, found);
+    }
+
+    if base_type_name(expected) != base_type_name(found) || expected_args.len() != found_args.len()
+    {
+        return false;
+    }
+
+    for (expected_arg, found_arg) in expected_args.iter().zip(found_args.iter()) {
+        if !infer_generic_bindings(expected_arg, found_arg, generic_params, bindings) {
+            return false;
+        }
+    }
+    true
+}
+
+fn substitute_type_vars(
+    ty: &str,
+    bindings: &BTreeMap<String, String>,
+    generic_params: &BTreeSet<String>,
+) -> String {
+    if generic_params.contains(ty) {
+        return bindings
+            .get(ty)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+    }
+
+    let Some(args) = extract_generic_args(ty) else {
+        return ty.to_string();
+    };
+
+    let substituted = args
+        .iter()
+        .map(|arg| substitute_type_vars(arg, bindings, generic_params))
+        .collect::<Vec<_>>();
+    format!("{}[{}]", base_type_name(ty), substituted.join(", "))
+}
+
+fn bindings_from_applied_type(
+    applied_ty: &str,
+    generic_params: &[String],
+) -> Option<BTreeMap<String, String>> {
+    if generic_params.is_empty() {
+        return Some(BTreeMap::new());
+    }
+
+    let args = extract_generic_args(applied_ty)?;
+    if args.len() != generic_params.len() {
+        return None;
+    }
+
+    let mut out = BTreeMap::new();
+    for (param, arg) in generic_params.iter().zip(args.into_iter()) {
+        out.insert(param.clone(), arg);
+    }
+    Some(out)
 }
 
 fn merge_types(a: &str, b: &str) -> String {

@@ -36,6 +36,7 @@ fn main() -> Int {
 - Builtins: `Int`, `Bool`, `String`, `()`
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
+- Generic arity is checked statically (`Option[Int, Int]` is invalid).
 
 ### 2.3 Functions
 
@@ -51,6 +52,7 @@ fn read_line() -> String effects { io } {
 
 - Functions are pure by default.
 - Effects are explicit: `effects { io, fs, net, time, rand }`.
+- Generic function parameters are inferred from call arguments.
 - Contracts:
   - `requires <bool-expr>`
   - `ensures <bool-expr>`
@@ -120,6 +122,7 @@ Program {
 - `Option[T]`/`Result[T, E]` are standard tagged ADTs.
 - Local let bindings infer from initializer expressions.
 - If inferred types remain unresolved (for example `None` as `Option[<?>]`), explicit annotations are required.
+- Generic substitution is enforced across function calls, struct literals, field access, and enum variants.
 - Match exhaustiveness is enforced for:
   - `Bool`
   - `Option[T]`

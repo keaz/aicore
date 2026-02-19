@@ -12,6 +12,8 @@ check_pass=(
   "examples/contracts_abs_ok.aic"
   "examples/contracts_abs_fail.aic"
   "examples/non_empty_string.aic"
+  "examples/e3/infer_let.aic"
+  "examples/e3/generic_id.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"

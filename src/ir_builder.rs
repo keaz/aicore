@@ -348,4 +348,42 @@ mod tests {
         let int_count = ir.types.iter().filter(|t| t.repr == "Int").count();
         assert_eq!(int_count, 1);
     }
+
+    #[test]
+    fn preserves_generic_metadata_in_ir() {
+        let src = r#"
+fn id[T](x: T) -> T { x }
+struct Box[T] { value: T }
+enum Pair[T, U] { Mk(Result[T, U]) }
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty());
+        let ir = build(&program.expect("program"));
+
+        let mut saw_fn = false;
+        let mut saw_struct = false;
+        let mut saw_enum = false;
+        for item in &ir.items {
+            match item {
+                crate::ir::Item::Function(f) if f.name == "id" => {
+                    saw_fn = true;
+                    assert_eq!(f.generics.len(), 1);
+                    assert_eq!(f.generics[0].name, "T");
+                }
+                crate::ir::Item::Struct(s) if s.name == "Box" => {
+                    saw_struct = true;
+                    assert_eq!(s.generics.len(), 1);
+                    assert_eq!(s.generics[0].name, "T");
+                }
+                crate::ir::Item::Enum(e) if e.name == "Pair" => {
+                    saw_enum = true;
+                    assert_eq!(e.generics.len(), 2);
+                    assert_eq!(e.generics[0].name, "T");
+                    assert_eq!(e.generics[1].name, "U");
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_fn && saw_struct && saw_enum);
+    }
 }
