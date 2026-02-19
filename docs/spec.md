@@ -10,6 +10,8 @@
 
 ## 2. Concrete syntax
 
+Grammar contract version: `mvp-grammar-v1` (see `docs/syntax.md`).
+
 ### 2.1 Modules and imports
 
 ```aic

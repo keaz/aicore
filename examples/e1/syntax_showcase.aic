@@ -1,0 +1,31 @@
+module examples.e1.syntax_showcase;
+import std.io;
+
+struct Pair[T, U] {
+    left: T,
+    right: U,
+} invariant true
+
+enum Maybe[T] {
+    None,
+    Some(T),
+}
+
+fn id[T](x: T) -> T {
+    x
+}
+
+fn classify(x: Int) -> Int effects { io } requires x >= 0 ensures result >= 0 {
+    let y = if x > 0 { x } else { 0 };
+    let tagged = Some(y);
+    let out = match tagged {
+        Some(v) => v,
+        None => 0,
+    };
+    print_int(out);
+    out
+}
+
+fn main() -> Int effects { io } {
+    classify(7)
+}

@@ -1,4 +1,20 @@
-# Syntax Reference (MVP)
+# Syntax Reference (Frozen MVP)
+
+This file is the frozen grammar contract for the current parser implementation.
+If parser behavior changes, this file must be updated in the same change.
+
+Version: `mvp-grammar-v1`
+
+## Lexical tokens
+
+- `ident`: `[A-Za-z_][A-Za-z0-9_]*`
+- `int`: decimal integer literal (`0`, `1`, `42`, ...)
+- `string`: double-quoted UTF-8 string with escape support
+- `bool`: `true | false`
+- punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
+- operators: `+ - * / % == != < <= > >= && || ! =`
+
+## Top-level grammar
 
 ```ebnf
 program        = module_decl? import_decl* item* EOF ;
@@ -7,28 +23,114 @@ import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
 item           = fn_decl | struct_decl | enum_decl ;
-fn_decl        = "fn" ident generics? "(" params? ")" "->" type effects? contract* block ;
-struct_decl    = "struct" ident generics? "{" fields? "}" invariant? ;
-enum_decl      = "enum" ident generics? "{" variants? "}" ;
 
-generics       = "[" ident ("," ident)* "]" ;
-params         = param ("," param)* ;
-param          = ident ":" type ;
-fields         = field ("," field)* ;
-field          = ident ":" type ;
-variants       = variant ("," variant)* ;
+fn_decl        = "fn" ident generics? "(" params? ")" "->" type
+                 effects? contracts? block ;
+effects        = "effects" "{" effect_list? "}" ;
+effect_list    = ident ("," ident)* ","? ;
+contracts      = (requires_clause | ensures_clause)* ;
+requires_clause = "requires" expr ;
+ensures_clause  = "ensures" expr ;
+
+struct_decl    = "struct" ident generics? "{" fields? "}" invariant_clause? ;
+invariant_clause = "invariant" expr ;
+
+enum_decl      = "enum" ident generics? "{" variants? "}" ;
+variants       = variant ("," variant)* ","? ;
 variant        = ident ("(" type ")")? ;
 
-effects        = "effects" "{" ident ("," ident)* "}" ;
-contract       = ("requires" expr) | ("ensures" expr) ;
-invariant      = "invariant" expr ;
+generics       = "[" ident ("," ident)* ","? "]" ;
+params         = param ("," param)* ","? ;
+param          = ident ":" type ;
+fields         = field ("," field)* ","? ;
+field          = ident ":" type ;
+```
 
-type           = "()" | ident ("[" type ("," type)* "]")? ;
-block          = "{" stmt* expr? "}" ;
-stmt           = let_stmt | return_stmt | expr ";" ;
+## Type grammar
+
+```ebnf
+type           = unit_type | named_type ;
+unit_type      = "(" ")" ;
+named_type     = type_name type_args? ;
+type_name      = ident ("::" ident)* ;
+type_args      = "[" type ("," type)* ","? "]" ;
+```
+
+## Statement grammar
+
+```ebnf
+block          = "{" stmt* tail_expr? "}" ;
+tail_expr      = expr ;
+
+stmt           = let_stmt | return_stmt | expr_stmt ;
 let_stmt       = "let" ident (":" type)? "=" expr ";" ;
 return_stmt    = "return" expr? ";" ;
-
-expr           = logical_or ;
-pattern        = "_" | ident | int | bool | "()" | ident "(" pattern ("," pattern)* ")" ;
+expr_stmt      = expr ";" ;
 ```
+
+## Expression grammar and precedence
+
+Highest precedence appears lowest in the tree below.
+
+```ebnf
+expr           = or_expr ;
+or_expr        = and_expr ("||" and_expr)* ;
+and_expr       = equality_expr ("&&" equality_expr)* ;
+equality_expr  = compare_expr (("==" | "!=") compare_expr)* ;
+compare_expr   = term_expr (("<" | "<=" | ">" | ">=") term_expr)* ;
+term_expr      = factor_expr (("+" | "-") factor_expr)* ;
+factor_expr    = unary_expr (("*" | "/" | "%") unary_expr)* ;
+unary_expr     = ("-" | "!") unary_expr | postfix_expr ;
+
+postfix_expr   = primary_expr (call_suffix | field_suffix)* ;
+call_suffix    = "(" arg_list? ")" ;
+arg_list       = expr ("," expr)* ","? ;
+field_suffix   = "." ident ;
+
+primary_expr   = int
+               | string
+               | bool
+               | unit_lit
+               | ident
+               | struct_init
+               | grouped_expr
+               | if_expr
+               | match_expr ;
+
+grouped_expr   = "(" expr ")" ;
+unit_lit       = "(" ")" ;
+
+if_expr        = "if" expr block "else" (block | if_expr) ;
+match_expr     = "match" expr "{" match_arms? "}" ;
+match_arms     = match_arm ("," match_arm)* ","? ;
+match_arm      = pattern "=>" expr ;
+
+struct_init    = ident "{" struct_init_fields? "}" ;
+struct_init_fields = struct_init_field ("," struct_init_field)* ","? ;
+struct_init_field = ident ":" expr ;
+```
+
+## Pattern grammar
+
+```ebnf
+pattern        = "_"
+               | ident_pattern
+               | int
+               | bool
+               | unit_pattern
+               | variant_pattern ;
+
+unit_pattern   = "(" ")" ;
+ident_pattern  = ident ;
+variant_pattern = ident ("(" pattern ("," pattern)* ","? ")")? ;
+```
+
+Pattern disambiguation:
+- bare uppercase identifier is treated as a zero-arg variant pattern
+- bare lowercase identifier is treated as a variable binding pattern
+
+## Canonical formatting contract
+
+- Formatting is IR-driven (not token-preserving).
+- `aic fmt` output is deterministic for equivalent IR.
+- Formatting is idempotent: applying formatter to formatter output must produce byte-identical text.

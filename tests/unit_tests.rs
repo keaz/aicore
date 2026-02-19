@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use aicore::contracts::verify_static;
 use aicore::effects::check_effect_declarations;
 use aicore::formatter::format_program;
@@ -122,4 +125,21 @@ fn unit_ir_interns_single_int_type() {
     let ir = lower(src);
     let count = ir.types.iter().filter(|t| t.repr == "Int").count();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn unit_syntax_showcase_parses_cleanly() {
+    let path = Path::new("examples/e1/syntax_showcase.aic");
+    let source = fs::read_to_string(path).expect("read syntax showcase");
+    let (program, diags) = parse(&source, &path.to_string_lossy());
+    assert!(diags.is_empty(), "diags={diags:#?}");
+    assert!(program.is_some());
+}
+
+#[test]
+fn unit_undocumented_function_form_fails_with_stable_code() {
+    // Return type arrow is mandatory in frozen grammar v1.
+    let src = "fn missing_arrow() { 0 }";
+    let (_program, diags) = parse(src, "unit.aic");
+    assert!(diags.iter().any(|d| d.code == "E1006"), "diags={diags:#?}");
 }
