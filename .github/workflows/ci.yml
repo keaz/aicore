@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: make fmt-check
+
+      - name: Lint
+        run: make lint
+
+      - name: Build
+        run: make build
+
+  tests-linux-full:
+    name: Linux Full Validation
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Unit tests
+        run: make test-unit
+
+      - name: Golden tests
+        run: make test-golden
+
+      - name: Execution tests
+        run: make test-exec
+
+      - name: Example checks
+        run: make examples-check
+
+      - name: Example runs
+        run: make examples-run
+
+      - name: CLI smoke
+        run: make cli-smoke
+
+      - name: Docs checks
+        run: make docs-check
+
+  cross-platform-build:
+    name: Cross Platform Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Library tests
+        run: cargo test --locked --lib
+
+  status-summary:
+    name: CI Status Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - quality
+      - tests-linux-full
+      - cross-platform-build
+    steps:
+      - name: Validate job outcomes
+        run: |
+          set -euo pipefail
+          echo "quality=${{ needs.quality.result }}"
+          echo "tests-linux-full=${{ needs.tests-linux-full.result }}"
+          echo "cross-platform-build=${{ needs.cross-platform-build.result }}"
+
+          [[ "${{ needs.quality.result }}" == "success" ]]
+          [[ "${{ needs.tests-linux-full.result }}" == "success" ]]
+          [[ "${{ needs.cross-platform-build.result }}" == "success" ]]

@@ -23,12 +23,53 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 
 - Rust (stable)
 - `clang` in `PATH` (used to compile emitted LLVM IR + runtime C shim)
+- `make` (for local CI orchestration)
+- `python3` (used by docs/schema checks)
 
 ## Build
 
 ```bash
 cargo build
 ```
+
+## Local CI With Make
+
+Run the same checks as GitHub Actions locally:
+
+```bash
+make ci
+```
+
+Useful targets:
+
+- `make ci-fast` (quick pre-commit loop)
+- `make check` (full validation except fmt/lint)
+- `make examples-check`
+- `make examples-run`
+- `make cli-smoke`
+- `make docs-check`
+
+Install git hooks:
+
+```bash
+make init
+```
+
+This installs:
+
+- `.git/hooks/pre-commit` -> runs `make ci-fast`
+- `.git/hooks/pre-push` -> runs `make ci`
+
+## GitHub Actions
+
+- `CI` (`.github/workflows/ci.yml`):
+  - quality checks (`fmt`, `clippy`, build)
+  - Linux full validation (unit/golden/execution tests, examples, CLI smoke, docs/schema checks)
+  - cross-platform build matrix (Linux/macOS/Windows build + library tests)
+- `Release` (`.github/workflows/release.yml`):
+  - runs on tags `v*`
+  - builds release binaries on Linux/macOS/Windows
+  - uploads archives + checksums and publishes a GitHub Release
 
 ## CLI
 
