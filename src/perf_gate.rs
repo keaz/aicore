@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -182,7 +182,7 @@ pub fn benchmark_dataset(dataset_root: &Path, iterations: usize) -> anyhow::Resu
         codegen_ns += start.elapsed().as_nanos() as f64;
     }
 
-    let fingerprint = dataset_fingerprint(&files);
+    let fingerprint = dataset_fingerprint(dataset_root, &files);
     let total_bytes = files.iter().map(|(_, source)| source.len()).sum::<usize>();
 
     Ok(PerfMetrics {
@@ -222,15 +222,36 @@ fn check_regression(metric: &str, observed: f64, max_allowed: f64, violations: &
     }
 }
 
-fn dataset_fingerprint(files: &[(PathBuf, String)]) -> String {
+fn dataset_fingerprint(dataset_root: &Path, files: &[(PathBuf, String)]) -> String {
     let mut hasher = Sha256::new();
     for (path, source) in files {
-        hasher.update(path.to_string_lossy().as_bytes());
+        let relative = path.strip_prefix(dataset_root).unwrap_or(path.as_path());
+        let stable_key = stable_path_key(relative);
+        hasher.update(stable_key.as_bytes());
         hasher.update([0]);
         hasher.update(source.as_bytes());
         hasher.update([0]);
     }
     format!("{:x}", hasher.finalize())
+}
+
+fn stable_path_key(path: &Path) -> String {
+    let mut key = String::new();
+    for component in path.components() {
+        let part = match component {
+            Component::RootDir => continue,
+            Component::Prefix(prefix) => prefix.as_os_str().to_string_lossy().into_owned(),
+            Component::CurDir => ".".to_string(),
+            Component::ParentDir => "..".to_string(),
+            Component::Normal(segment) => segment.to_string_lossy().into_owned(),
+        };
+
+        if !key.is_empty() {
+            key.push('/');
+        }
+        key.push_str(&part);
+    }
+    key
 }
 
 fn collect_dataset_files(root: &Path) -> anyhow::Result<Vec<(PathBuf, String)>> {
@@ -279,7 +300,9 @@ fn default_regression_tolerance_pct() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_budget_max, check_regression};
+    use std::path::PathBuf;
+
+    use super::{check_budget_max, check_regression, dataset_fingerprint};
 
     #[test]
     fn reports_budget_violation_when_metric_exceeds_cap() {
@@ -293,5 +316,24 @@ mod tests {
         let mut violations = Vec::new();
         check_regression("typecheck_ms", 21.0, 20.0, &mut violations);
         assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    fn dataset_fingerprint_is_root_independent() {
+        let root_a = PathBuf::from("/tmp/bench-a");
+        let root_b = PathBuf::from("/tmp/bench-b");
+
+        let files_a = vec![(
+            root_a.join("pkg/main.aic"),
+            "fn main() -> Int { 0 }\n".to_string(),
+        )];
+        let files_b = vec![(
+            root_b.join("pkg/main.aic"),
+            "fn main() -> Int { 0 }\n".to_string(),
+        )];
+
+        let hash_a = dataset_fingerprint(&root_a, &files_a);
+        let hash_b = dataset_fingerprint(&root_b, &files_b);
+        assert_eq!(hash_a, hash_b);
     }
 }
