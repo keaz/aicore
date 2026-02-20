@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v1` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v2` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -48,10 +48,21 @@ fn abs(x: Int) -> Int requires true ensures result >= 0 {
 fn read_line() -> String effects { io } {
     "todo"
 }
+
+async fn fetch_plus_one(x: Int) -> Int {
+    x + 1
+}
+
+async fn use_fetch() -> Int {
+    await fetch_plus_one(41)
+}
 ```
 
 - Functions are pure by default.
+- `async fn` declares asynchronous call boundaries.
 - Effects are explicit: `effects { io, fs, net, time, rand }`.
+- Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
+- `await` is only valid inside `async fn`.
 - Generic function parameters are inferred from call arguments.
 - Contracts:
   - `requires <bool-expr>`
@@ -120,6 +131,7 @@ Program {
 
 - No implicit coercions.
 - `Option[T]`/`Result[T, E]` are standard tagged ADTs.
+- `Async[T]` is a compiler-managed type wrapper produced by async calls.
 - Local let bindings infer from initializer expressions.
 - If inferred types remain unresolved (for example `None` as `Option[<?>]`), explicit annotations are required.
 - Generic substitution is enforced across function calls, struct literals, field access, and enum variants.
@@ -134,6 +146,7 @@ Program {
 - Default function effect set is empty (pure).
 - Known effects: `io`, `fs`, `net`, `time`, `rand`.
 - Calls require callee effects to be subset of caller declared effects.
+- Async calls participate in the same explicit effect accounting and transitive effect analysis.
 - Effect declarations are canonicalized to deterministic sorted signatures.
 - Interprocedural call-graph analysis enforces transitive effect safety with call-path diagnostics.
 - Contracts are checked as pure contexts.

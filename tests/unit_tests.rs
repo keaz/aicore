@@ -76,6 +76,54 @@ fn unit_typecheck_unknown_symbol() {
 }
 
 #[test]
+fn unit_async_call_requires_await_for_value_use() {
+    let src = r#"
+async fn ping() -> Int {
+    41
+}
+
+async fn main() -> Int {
+    await ping() + 1
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1256" || d.code == "E1257"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_await_outside_async_function_is_rejected() {
+    let src = r#"
+async fn ping() -> Int { 1 }
+fn bad() -> Int { await ping() }
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1256"));
+}
+
+#[test]
+fn unit_await_non_async_value_is_rejected() {
+    let src = r#"
+async fn main() -> Int {
+    await 1
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1257"));
+}
+
+#[test]
 fn unit_typecheck_non_exhaustive_option_match() {
     let src = r#"
 fn f(x: Option[Int]) -> Int {

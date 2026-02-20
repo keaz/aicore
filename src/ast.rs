@@ -55,6 +55,8 @@ pub struct GenericParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Function {
     pub name: String,
+    #[serde(default)]
+    pub is_async: bool,
     pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret_type: TypeExpr,
@@ -189,6 +191,9 @@ pub enum ExprKind {
     },
     Unary {
         op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Await {
         expr: Box<Expr>,
     },
     StructInit {

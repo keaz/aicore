@@ -82,3 +82,8 @@ fn golden_case10_match_bool() {
 fn golden_case11_result_match() {
     run_golden_case("case11_result_match.aic");
 }
+
+#[test]
+fn golden_case12_async_await() {
+    run_golden_case("case12_async_await.aic");
+}

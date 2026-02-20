@@ -6,8 +6,10 @@
   - `Int`, `Bool`, `String`, `()`
   - named structs/enums
   - parametric surface syntax for ADTs (`Option[T]`, `Result[T,E]`)
+  - compiler-managed async wrapper `Async[T]` for `async fn` call results
 - Match exhaustiveness checking for Bool/Option/Result/enums.
 - Match overlap/dead-arm detection with deterministic diagnostics.
 - Pattern bindings are unique within a single pattern tree.
+- `await` requires `Async[T]` and is valid only inside `async fn`.
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.

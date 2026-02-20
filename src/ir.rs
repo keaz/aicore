@@ -130,6 +130,8 @@ pub struct GenericParam {
 pub struct Function {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default)]
+    pub is_async: bool,
     pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret_type: TypeId,
@@ -249,6 +251,9 @@ pub enum ExprKind {
     },
     Unary {
         op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Await {
         expr: Box<Expr>,
     },
     StructInit {

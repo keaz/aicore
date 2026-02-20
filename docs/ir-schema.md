@@ -19,6 +19,11 @@ Core entities:
 - `Item::{Function,Struct,Enum}`
 - `Expr` / `Stmt` / `Pattern`
 
+Notable function/expression fields:
+
+- `Function.is_async: bool`
+- `ExprKind::Await { expr }`
+
 Invariants:
 
 - IDs are allocated by deterministic source traversal.

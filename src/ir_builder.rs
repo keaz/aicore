@@ -67,6 +67,7 @@ impl Builder {
         ir::Function {
             symbol,
             name: func.name.clone(),
+            is_async: func.is_async,
             generics: func
                 .generics
                 .iter()
@@ -245,6 +246,9 @@ impl Builder {
             },
             ast::ExprKind::Unary { op, expr } => ir::ExprKind::Unary {
                 op: *op,
+                expr: Box::new(self.lower_expr(expr)),
+            },
+            ast::ExprKind::Await { expr } => ir::ExprKind::Await {
                 expr: Box::new(self.lower_expr(expr)),
             },
             ast::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {

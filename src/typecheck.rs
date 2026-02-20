@@ -21,6 +21,7 @@ pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> Type
 
 #[derive(Debug, Clone)]
 struct FnSig {
+    is_async: bool,
     params: Vec<String>,
     ret: String,
     effects: BTreeSet<String>,
@@ -38,6 +39,7 @@ struct Checker<'a> {
     effect_usage: BTreeMap<String, BTreeSet<String>>,
     call_graph: BTreeMap<String, Vec<CallEdge>>,
     current_function: Option<String>,
+    current_function_is_async: bool,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
@@ -88,6 +90,7 @@ impl<'a> Checker<'a> {
         let mut generic_arity = BTreeMap::new();
         generic_arity.insert("Option".to_string(), 1);
         generic_arity.insert("Result".to_string(), 2);
+        generic_arity.insert("Async".to_string(), 1);
 
         for (name, info) in &resolution.functions {
             let mut params = Vec::new();
@@ -97,6 +100,7 @@ impl<'a> Checker<'a> {
             functions.insert(
                 name.clone(),
                 FnSig {
+                    is_async: info.is_async,
                     params,
                     ret: types
                         .get(&info.ret_type)
@@ -119,6 +123,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "print_int".to_string(),
             FnSig {
+                is_async: false,
                 params: vec!["Int".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -128,6 +133,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "print_str".to_string(),
             FnSig {
+                is_async: false,
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -137,6 +143,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "len".to_string(),
             FnSig {
+                is_async: false,
                 params: vec!["String".to_string()],
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
@@ -146,6 +153,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "panic".to_string(),
             FnSig {
+                is_async: false,
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -164,6 +172,7 @@ impl<'a> Checker<'a> {
             effect_usage: BTreeMap::new(),
             call_graph: BTreeMap::new(),
             current_function: None,
+            current_function_is_async: false,
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
@@ -206,7 +215,9 @@ impl<'a> Checker<'a> {
     fn check_function(&mut self, func: &ir::Function) {
         let previous_enforce = self.enforce_import_visibility;
         let previous_function = self.current_function.replace(func.name.clone());
+        let previous_async = self.current_function_is_async;
         self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
+        self.current_function_is_async = func.is_async;
         self.call_graph.entry(func.name.clone()).or_default();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
@@ -328,6 +339,7 @@ impl<'a> Checker<'a> {
 
         self.enforce_import_visibility = previous_enforce;
         self.current_function = previous_function;
+        self.current_function_is_async = previous_async;
     }
 
     fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
@@ -1079,7 +1091,11 @@ impl<'a> Checker<'a> {
                         self.record_call_edge(&resolved_name, expr.span);
                     }
 
-                    let ret_ty = substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+                    let mut ret_ty =
+                        substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+                    if sig.is_async {
+                        ret_ty = format!("Async[{ret_ty}]");
+                    }
                     if !sig.generic_params.is_empty() && contains_unresolved_type(&ret_ty) {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -1396,6 +1412,45 @@ impl<'a> Checker<'a> {
                         "Bool".to_string()
                     }
                 }
+            }
+            ir::ExprKind::Await { expr: inner } => {
+                let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
+                if !self.current_function_is_async {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1256",
+                            "await can only be used inside async functions",
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("mark the enclosing function as `async fn`"),
+                    );
+                }
+
+                if base_type_name(&ty) != "Async" {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1257",
+                            format!("await expects Async[T], found '{}'", ty),
+                            self.file,
+                            inner.span,
+                        )
+                        .with_help("await values returned from async function calls"),
+                    );
+                    return "<?>".to_string();
+                }
+
+                let args = extract_generic_args(&ty).unwrap_or_default();
+                if args.len() != 1 {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1257",
+                        format!("await expects Async[T], found '{}'", ty),
+                        self.file,
+                        inner.span,
+                    ));
+                    return "<?>".to_string();
+                }
+                args[0].clone()
             }
             ir::ExprKind::StructInit { name, fields } => {
                 let Some(info) = self.resolution.structs.get(name).cloned() else {
@@ -2313,6 +2368,9 @@ fn type_compatible(expected: &str, found: &str) -> bool {
         || (expected.starts_with("Result[")
             && found.starts_with("Result[")
             && (expected.contains("<?>") || found.contains("<?>")))
+        || (expected.starts_with("Async[")
+            && found.starts_with("Async[")
+            && (expected.contains("<?>") || found.contains("<?>")))
 }
 
 fn instantiation_kind_tag(kind: &ir::GenericInstantiationKind) -> &'static str {
@@ -2464,6 +2522,14 @@ fn merge_types(a: &str, b: &str) -> String {
                 merge_types(&args_a[0], &args_b[0]),
                 merge_types(&args_a[1], &args_b[1])
             );
+        }
+    }
+
+    if a.starts_with("Async[") && b.starts_with("Async[") {
+        let args_a = extract_generic_args(a).unwrap_or_default();
+        let args_b = extract_generic_args(b).unwrap_or_default();
+        if args_a.len() == 1 && args_b.len() == 1 {
+            return format!("Async[{}]", merge_types(&args_a[0], &args_b[0]));
         }
     }
 

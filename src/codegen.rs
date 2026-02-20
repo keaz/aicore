@@ -1189,6 +1189,7 @@ impl<'a> Generator<'a> {
                     }
                 }
             }
+            ir::ExprKind::Await { expr: inner } => self.gen_expr(inner, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {
                 let lv = self.gen_expr(lhs, fctx)?;
                 let rv = self.gen_expr(rhs, fctx)?;

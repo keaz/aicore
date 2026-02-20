@@ -217,9 +217,10 @@ fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, S
         format!(" effects {{ {} }}", func.effects.join(", "))
     };
 
+    let async_prefix = if func.is_async { "async " } else { "" };
     format!(
-        "fn {}{}({}) -> {}{}",
-        func.name, generics, params, ret, effects
+        "{}fn {}{}({}) -> {}{}",
+        async_prefix, func.name, generics, params, ret, effects
     )
 }
 
@@ -318,6 +319,7 @@ fn render_expr(expr: &ir::Expr) -> String {
             };
             format!("{}{}", op, render_expr(expr))
         }
+        ir::ExprKind::Await { expr } => format!("await {}", render_expr(expr)),
         ir::ExprKind::StructInit { name, fields } => {
             let rendered = fields
                 .iter()

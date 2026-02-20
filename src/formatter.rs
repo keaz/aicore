@@ -39,6 +39,9 @@ pub fn format_program(program: &ir::Program) -> String {
 }
 
 fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::TypeId, String>) {
+    if f.is_async {
+        out.push_str("async ");
+    }
     out.push_str("fn ");
     out.push_str(&f.name);
     if !f.generics.is_empty() {
@@ -280,6 +283,20 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             };
             out.push_str(token);
             format_expr(out, expr, 9);
+        }
+        ir::ExprKind::Await { expr } => {
+            let needs_paren = matches!(
+                expr.kind,
+                ir::ExprKind::Binary { .. } | ir::ExprKind::If { .. } | ir::ExprKind::Match { .. }
+            );
+            out.push_str("await ");
+            if needs_paren {
+                out.push('(');
+            }
+            format_expr(out, expr, 9);
+            if needs_paren {
+                out.push(')');
+            }
         }
         ir::ExprKind::StructInit { name, fields } => {
             out.push_str(name);

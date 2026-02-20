@@ -15,6 +15,7 @@ pub enum TokenKind {
 
     KwModule,
     KwImport,
+    KwAsync,
     KwFn,
     KwStruct,
     KwEnum,
@@ -30,6 +31,7 @@ pub enum TokenKind {
     KwInvariant,
     KwEffects,
     KwNull,
+    KwAwait,
 
     LParen,
     RParen,
@@ -257,6 +259,7 @@ impl<'a> Lexer<'a> {
         let kind = match text {
             "module" => TokenKind::KwModule,
             "import" => TokenKind::KwImport,
+            "async" => TokenKind::KwAsync,
             "fn" => TokenKind::KwFn,
             "struct" => TokenKind::KwStruct,
             "enum" => TokenKind::KwEnum,
@@ -272,6 +275,7 @@ impl<'a> Lexer<'a> {
             "invariant" => TokenKind::KwInvariant,
             "effects" => TokenKind::KwEffects,
             "null" => TokenKind::KwNull,
+            "await" => TokenKind::KwAwait,
             _ => TokenKind::Ident(text.to_string()),
         };
         self.push(kind, Span::new(start, self.offset));
@@ -403,15 +407,16 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "fn main() -> Int effects { io } { let x = 1; x }";
+        let src = "async fn main() -> Int effects { io } { let x = await ping(); x }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
-        assert!(matches!(tokens[0].kind, TokenKind::KwFn));
-        assert!(matches!(tokens[1].kind, TokenKind::Ident(_)));
+        assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
+        assert!(matches!(tokens[1].kind, TokenKind::KwFn));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Arrow)));
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwEffects)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAwait)));
     }
 
     #[test]

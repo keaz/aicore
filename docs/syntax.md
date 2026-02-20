@@ -3,7 +3,7 @@
 This file is the frozen grammar contract for the current parser implementation.
 If parser behavior changes, this file must be updated in the same change.
 
-Version: `mvp-grammar-v1`
+Version: `mvp-grammar-v2`
 
 ## Lexical tokens
 
@@ -24,8 +24,9 @@ path           = ident ("." ident)* ;
 
 item           = fn_decl | struct_decl | enum_decl ;
 
-fn_decl        = "fn" ident generics? "(" params? ")" "->" type
+fn_decl        = async_prefix? "fn" ident generics? "(" params? ")" "->" type
                  effects? contracts? block ;
+async_prefix   = "async" ;
 effects        = "effects" "{" effect_list? "}" ;
 effect_list    = ident ("," ident)* ","? ;
 contracts      = (requires_clause | ensures_clause)* ;
@@ -80,7 +81,7 @@ equality_expr  = compare_expr (("==" | "!=") compare_expr)* ;
 compare_expr   = term_expr (("<" | "<=" | ">" | ">=") term_expr)* ;
 term_expr      = factor_expr (("+" | "-") factor_expr)* ;
 factor_expr    = unary_expr (("*" | "/" | "%") unary_expr)* ;
-unary_expr     = ("-" | "!") unary_expr | postfix_expr ;
+unary_expr     = ("await" | "-" | "!") unary_expr | postfix_expr ;
 
 postfix_expr   = primary_expr (call_suffix | field_suffix)* ;
 call_suffix    = "(" arg_list? ")" ;

@@ -15,6 +15,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Effect checker (`io`, `fs`, `net`, `time`, `rand`) | Implemented |
 | Contracts (`requires`, `ensures`, `invariant`) | Implemented (runtime lowering + static constant checks) |
 | Match + exhaustiveness (Bool/Option/Result + enums) | Implemented |
+| Async/await core model (`async fn`, `await`, `Async[T]`) | Implemented (deterministic typing + diagnostics + execution path) |
 | LLVM backend (native via clang) | Implemented (toolchain checks + ADT lowering + monomorphization) |
 | Generics | Implemented (deterministic instantiation + codegen) |
 | Artifact emission | Implemented (`exe`, `obj`, `lib`) |
@@ -153,10 +154,10 @@ Commands:
 
 ## Test suite
 
-- Core unit tests: 76 (`src/*` library tests)
-- Unit integration tests: 47 (`tests/unit_tests.rs`)
-- Golden tests: 11 (`tests/golden_tests.rs`)
-- Execution tests: 11 (`tests/execution_tests.rs`)
+- Core unit tests: 86 (`src/*` library tests)
+- Unit integration tests: 50 (`tests/unit_tests.rs`)
+- Golden tests: 12 (`tests/golden_tests.rs`)
+- Execution tests: 12 (`tests/execution_tests.rs`)
 - CLI contract tests: 5 (`tests/e7_cli_tests.rs`)
 - LSP smoke tests: 2 (`tests/lsp_smoke_tests.rs`)
 - E8 verification tests: 11 total / 10 active (`tests/e8_*`)

@@ -72,6 +72,26 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_async_ping_flow() {
+    let src = r#"
+import std.io;
+
+async fn ping(x: Int) -> Int {
+    x + 1
+}
+
+async fn main() -> Int effects { io } {
+    let value = await ping(41);
+    print_int(value);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_abs_if_expression() {
     let src = r#"
 import std.io;

@@ -25,6 +25,12 @@ Registry source of truth:
 - Unit tests fail if emitted codes are not registered.
 - `aic explain <CODE>` provides deterministic remediation guidance for all registered codes.
 
+Recent core-language additions:
+
+- `E1052`: invalid `async` item form (expected `async fn`).
+- `E1256`: `await` used outside an async function.
+- `E1257`: `await` operand is not `Async[T]`.
+
 ## Change policy
 
 - Never reuse a retired code for a different semantic error.

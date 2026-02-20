@@ -78,8 +78,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> Option<Item> {
-        if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
-            self.parse_function().map(Item::Function)
+        if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
+            let start = self.current_span().start;
+            self.bump();
+            if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1052",
+                    "expected `fn` after `async`",
+                    self.file,
+                    self.current_span(),
+                ));
+                return None;
+            }
+            self.parse_function(true, start).map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+            let start = self.current_span().start;
+            self.parse_function(false, start).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
             self.parse_struct().map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
@@ -89,7 +103,7 @@ impl<'a> Parser<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1003",
-                    "expected item declaration (`fn`, `struct`, `enum`)",
+                    "expected item declaration (`fn`, `async fn`, `struct`, `enum`)",
                     self.file,
                     span,
                 )
@@ -99,8 +113,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_function(&mut self) -> Option<Function> {
-        let start = self.current_span().start;
+    fn parse_function(&mut self, is_async: bool, start: usize) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
         let generics = self.parse_generics();
@@ -163,6 +176,7 @@ impl<'a> Parser<'a> {
         let span = Span::new(start, body.span.end);
         Some(Function {
             name,
+            is_async,
             generics,
             params,
             ret_type,
@@ -674,6 +688,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary(&mut self) -> Option<Expr> {
+        if self.at_kind(|k| matches!(k, TokenKind::KwAwait)) {
+            let start = self.current_span().start;
+            self.bump();
+            let expr = self.parse_unary()?;
+            return Some(Expr {
+                span: Span::new(start, expr.span.end),
+                kind: ExprKind::Await {
+                    expr: Box::new(expr),
+                },
+            });
+        }
         if self.at_kind(|k| matches!(k, TokenKind::Minus)) {
             let start = self.current_span().start;
             self.bump();
@@ -1067,9 +1092,12 @@ impl<'a> Parser<'a> {
 
     fn recover_item(&mut self) {
         while !self.at_kind(|k| matches!(k, TokenKind::Eof)) {
-            if self
-                .at_kind(|k| matches!(k, TokenKind::KwFn | TokenKind::KwStruct | TokenKind::KwEnum))
-            {
+            if self.at_kind(|k| {
+                matches!(
+                    k,
+                    TokenKind::KwAsync | TokenKind::KwFn | TokenKind::KwStruct | TokenKind::KwEnum
+                )
+            }) {
                 break;
             }
             self.bump();
@@ -1239,5 +1267,32 @@ fn ok() -> Int { 1 }
             diagnostics
         );
         assert!(diagnostics.iter().any(|d| d.code == "E1041"));
+    }
+
+    #[test]
+    fn parses_async_function_and_await() {
+        let src = r#"
+async fn ping() -> Int {
+    41
+}
+
+async fn main() -> Int {
+    await ping() + 1
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        match &program.items[0] {
+            Item::Function(f) => assert!(f.is_async),
+            _ => panic!("expected function"),
+        }
+    }
+
+    #[test]
+    fn reports_async_without_fn_keyword() {
+        let src = "async struct Bad { x: Int }";
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.iter().any(|d| d.code == "E1052"));
     }
 }

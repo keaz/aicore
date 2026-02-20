@@ -22,6 +22,7 @@ pub struct Resolution {
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
     pub symbol: ir::SymbolId,
+    pub is_async: bool,
     pub generics: Vec<String>,
     pub param_types: Vec<ir::TypeId>,
     pub ret_type: ir::TypeId,
@@ -133,6 +134,7 @@ pub fn resolve_with_item_modules(
                     .entry(f.name.clone())
                     .or_insert_with(|| FunctionInfo {
                         symbol: f.symbol,
+                        is_async: f.is_async,
                         generics: f.generics.iter().map(|g| g.name.clone()).collect(),
                         param_types: f.params.iter().map(|p| p.ty).collect(),
                         ret_type: f.ret_type,

@@ -1,0 +1,7 @@
+async fn ping() -> Int {
+    41
+}
+
+async fn main() -> Int {
+    await ping() + 1
+}
