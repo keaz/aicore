@@ -1,0 +1,67 @@
+module example.io.fs_all_ops;
+
+import std.io;
+import std.fs;
+import std.string;
+import std.vec;
+
+fn bool_ok(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote = bool_ok(write_text("io_all_a.txt", "ab"));
+    let appended = bool_ok(append_text("io_all_a.txt", "cd"));
+
+    let read_len = match read_text("io_all_a.txt") {
+        Ok(text) => len(text),
+        Err(_) => 0,
+    };
+
+    let copied = bool_ok(copy("io_all_a.txt", "io_all_b.txt"));
+    let moved = bool_ok(move("io_all_b.txt", "io_all_c.txt"));
+
+    let size = match metadata("io_all_a.txt") {
+        Ok(m) => m.size,
+        Err(_) => 0,
+    };
+
+    let moved_exists = if exists("io_all_c.txt") { 1 } else { 0 };
+
+    let walked = match walk_dir(".") {
+        Ok(entries) => if vec_len(entries) >= 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let tmp_file = match temp_file("aic_io_all_ops_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let tmp_dir = match temp_dir("aic_io_all_ops_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+
+    let tmp_file_exists = if exists(tmp_file) { 1 } else { 0 };
+    let tmp_dir_exists = if exists(tmp_dir) { 1 } else { 0 };
+
+    let deleted_tmp_file = bool_ok(delete(tmp_file));
+    let deleted_tmp_dir = bool_ok(delete(tmp_dir));
+    let deleted_a = bool_ok(delete("io_all_a.txt"));
+    let deleted_c = bool_ok(delete("io_all_c.txt"));
+
+    let ok_score = wrote + appended + copied + moved + moved_exists + walked
+        + tmp_file_exists + tmp_dir_exists + deleted_tmp_file + deleted_tmp_dir
+        + deleted_a + deleted_c;
+
+    if ok_score == 12 && read_len == 4 && size == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+
+    0
+}

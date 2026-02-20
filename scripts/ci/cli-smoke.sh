@@ -8,6 +8,12 @@ AIC=(cargo run --quiet --bin aic --)
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aic-smoke.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+if [[ "$(uname -s)" == "Linux" ]]; then
+  SANDBOX_PROFILE="ci"
+else
+  SANDBOX_PROFILE="none"
+fi
+
 PROJECT_DIR="$TMP_DIR/demo"
 MAIN_FILE="$PROJECT_DIR/src/main.aic"
 APP_BIN="$PROJECT_DIR/app"
@@ -74,9 +80,9 @@ if [[ "$RUN_RESULT" != "10" ]]; then
   exit 1
 fi
 
-"${AIC[@]}" run "$MAIN_FILE" --sandbox ci >"$TMP_DIR/run-sandbox.out"
+"${AIC[@]}" run "$MAIN_FILE" --sandbox "$SANDBOX_PROFILE" >"$TMP_DIR/run-sandbox.out"
 SANDBOX_RESULT="$(tr -d '\r' <"$TMP_DIR/run-sandbox.out" | tail -n 1)"
 if [[ "$SANDBOX_RESULT" != "10" ]]; then
-  echo "unexpected 'aic run --sandbox ci' output: '$SANDBOX_RESULT'" >&2
+  echo "unexpected 'aic run --sandbox $SANDBOX_PROFILE' output: '$SANDBOX_RESULT'" >&2
   exit 1
 fi

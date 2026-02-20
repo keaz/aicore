@@ -28,6 +28,53 @@ fn type_ids(ir: &aicore::ir::Program) -> Vec<u32> {
     ir.types.iter().map(|t| t.id.0).collect()
 }
 
+fn assert_fs_delegate_call(source: &str, function_name: &str, delegate_name: &str, arity: usize) {
+    let (program, diags) = parse(source, "std/fs.aic");
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+    let program = program.expect("program");
+
+    let function = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ast::Item::Function(function) if function.name == function_name => {
+                Some(function)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing function `{function_name}`"));
+
+    assert!(
+        function.body.stmts.is_empty(),
+        "`{function_name}` should be a direct delegation wrapper"
+    );
+    let tail = function
+        .body
+        .tail
+        .as_ref()
+        .unwrap_or_else(|| panic!("`{function_name}` should have a tail expression"));
+
+    match &tail.kind {
+        aicore::ast::ExprKind::Call { callee, args } => {
+            match &callee.kind {
+                aicore::ast::ExprKind::Var(name) => {
+                    assert_eq!(
+                        name, delegate_name,
+                        "`{function_name}` should call `{delegate_name}`"
+                    );
+                }
+                _ => panic!("`{function_name}` delegate callee must be a variable name"),
+            }
+            assert_eq!(
+                args.len(),
+                arity,
+                "`{function_name}` should forward {arity} arguments"
+            );
+        }
+        _ => panic!("`{function_name}` tail must be a call expression"),
+    }
+}
+
 #[test]
 fn unit_parse_module_and_imports() {
     let src = "module a.b; import std.io; fn main() -> Int { 0 }";
@@ -603,6 +650,23 @@ fn unit_init_project_emits_canonical_source() {
     let ir = lower(&source);
     let formatted = format_program(&ir);
     assert_eq!(source, formatted, "init project source must be canonical");
+}
+
+#[test]
+fn unit_std_fs_public_apis_delegate_to_runtime_intrinsics() {
+    let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
+
+    assert_fs_delegate_call(&fs_source, "exists", "aic_fs_exists_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "read_text", "aic_fs_read_text_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "write_text", "aic_fs_write_text_intrinsic", 2);
+    assert_fs_delegate_call(&fs_source, "append_text", "aic_fs_append_text_intrinsic", 2);
+    assert_fs_delegate_call(&fs_source, "copy", "aic_fs_copy_intrinsic", 2);
+    assert_fs_delegate_call(&fs_source, "move", "aic_fs_move_intrinsic", 2);
+    assert_fs_delegate_call(&fs_source, "delete", "aic_fs_delete_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "metadata", "aic_fs_metadata_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "walk_dir", "aic_fs_walk_dir_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "temp_file", "aic_fs_temp_file_intrinsic", 1);
+    assert_fs_delegate_call(&fs_source, "temp_dir", "aic_fs_temp_dir_intrinsic", 1);
 }
 
 #[test]

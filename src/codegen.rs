@@ -1701,99 +1701,69 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
-        if name == "exists" && self.sig_matches_shape(name, &["String"], "Bool") {
-            return Some(self.gen_fs_exists_call(args, span, fctx));
-        }
+        let canonical = match name {
+            "exists" | "aic_fs_exists_intrinsic" => "exists",
+            "read_text" | "aic_fs_read_text_intrinsic" => "read_text",
+            "write_text" | "aic_fs_write_text_intrinsic" => "write_text",
+            "append_text" | "aic_fs_append_text_intrinsic" => "append_text",
+            "copy" | "aic_fs_copy_intrinsic" => "copy",
+            "move" | "aic_fs_move_intrinsic" => "move",
+            "delete" | "aic_fs_delete_intrinsic" => "delete",
+            "metadata" | "aic_fs_metadata_intrinsic" => "metadata",
+            "walk_dir" | "aic_fs_walk_dir_intrinsic" => "walk_dir",
+            "temp_file" | "aic_fs_temp_file_intrinsic" => "temp_file",
+            "temp_dir" | "aic_fs_temp_dir_intrinsic" => "temp_dir",
+            _ => return None,
+        };
 
-        if name == "read_text"
-            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
-        {
-            return Some(self.gen_fs_string_result_call(
-                name,
-                "aic_rt_fs_read_text",
-                args,
-                span,
-                fctx,
-            ));
+        match canonical {
+            "exists" if self.sig_matches_shape(name, &["String"], "Bool") => {
+                Some(self.gen_fs_exists_call(args, span, fctx))
+            }
+            "read_text" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
+                Some(self.gen_fs_string_result_call(name, "aic_rt_fs_read_text", args, span, fctx))
+            }
+            "temp_file" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
+                Some(self.gen_fs_string_result_call(name, "aic_rt_fs_temp_file", args, span, fctx))
+            }
+            "temp_dir" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
+                Some(self.gen_fs_string_result_call(name, "aic_rt_fs_temp_dir", args, span, fctx))
+            }
+            "write_text"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_write_text", args, span, fctx))
+            }
+            "append_text"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_append_text", args, span, fctx))
+            }
+            "copy"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_copy", args, span, fctx))
+            }
+            "move"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_move", args, span, fctx))
+            }
+            "delete" if self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") => {
+                Some(self.gen_fs_delete_call(name, args, span, fctx))
+            }
+            "metadata"
+                if self.sig_matches_shape(name, &["String"], "Result[FsMetadata, FsError]") =>
+            {
+                Some(self.gen_fs_metadata_call(name, args, span, fctx))
+            }
+            "walk_dir"
+                if self.sig_matches_shape(name, &["String"], "Result[Vec[String], FsError]") =>
+            {
+                Some(self.gen_fs_walk_dir_call(name, args, span, fctx))
+            }
+            _ => None,
         }
-
-        if name == "temp_file"
-            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
-        {
-            return Some(self.gen_fs_string_result_call(
-                name,
-                "aic_rt_fs_temp_file",
-                args,
-                span,
-                fctx,
-            ));
-        }
-
-        if name == "temp_dir"
-            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
-        {
-            return Some(self.gen_fs_string_result_call(
-                name,
-                "aic_rt_fs_temp_dir",
-                args,
-                span,
-                fctx,
-            ));
-        }
-
-        if name == "write_text"
-            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
-        {
-            return Some(self.gen_fs_write_like_call(
-                name,
-                "aic_rt_fs_write_text",
-                args,
-                span,
-                fctx,
-            ));
-        }
-
-        if name == "append_text"
-            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
-        {
-            return Some(self.gen_fs_write_like_call(
-                name,
-                "aic_rt_fs_append_text",
-                args,
-                span,
-                fctx,
-            ));
-        }
-
-        if name == "copy"
-            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
-        {
-            return Some(self.gen_fs_write_like_call(name, "aic_rt_fs_copy", args, span, fctx));
-        }
-
-        if name == "move"
-            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
-        {
-            return Some(self.gen_fs_write_like_call(name, "aic_rt_fs_move", args, span, fctx));
-        }
-
-        if name == "delete" && self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") {
-            return Some(self.gen_fs_delete_call(name, args, span, fctx));
-        }
-
-        if name == "metadata"
-            && self.sig_matches_shape(name, &["String"], "Result[FsMetadata, FsError]")
-        {
-            return Some(self.gen_fs_metadata_call(name, args, span, fctx));
-        }
-
-        if name == "walk_dir"
-            && self.sig_matches_shape(name, &["String"], "Result[Vec[String], FsError]")
-        {
-            return Some(self.gen_fs_walk_dir_call(name, args, span, fctx));
-        }
-
-        None
     }
 
     fn gen_fs_exists_call(

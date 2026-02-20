@@ -17,41 +17,43 @@ struct FsMetadata {
     size: Int,
 }
 
-fn exists(path: String) -> Bool effects { fs } {
+// Internal compiler/runtime intrinsics lowered by the LLVM backend.
+// Public APIs below delegate to these entrypoints.
+fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs } {
     false
 }
 
-fn read_text(path: String) -> Result[String, FsError] effects { fs } {
+fn aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
-fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+fn aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
-fn append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+fn aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
-fn copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+fn aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
-fn move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+fn aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
-fn delete(path: String) -> Result[Bool, FsError] effects { fs } {
+fn aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
-fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs } {
+fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs } {
     let out: Result[FsMetadata, FsError] = Ok(FsMetadata {
         is_file: false,
         is_dir: false,
@@ -60,7 +62,7 @@ fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs } {
     out
 }
 
-fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
+fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
     let out: Result[Vec[String], FsError] = Ok(Vec {
         ptr: 0,
         len: 0,
@@ -69,12 +71,56 @@ fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
     out
 }
 
-fn temp_file(prefix: String) -> Result[String, FsError] effects { fs } {
+fn aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
-fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
+fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
+}
+
+fn exists(path: String) -> Bool effects { fs } {
+    aic_fs_exists_intrinsic(path)
+}
+
+fn read_text(path: String) -> Result[String, FsError] effects { fs } {
+    aic_fs_read_text_intrinsic(path)
+}
+
+fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_write_text_intrinsic(path, content)
+}
+
+fn append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_append_text_intrinsic(path, content)
+}
+
+fn copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_copy_intrinsic(from_path, to_path)
+}
+
+fn move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_move_intrinsic(from_path, to_path)
+}
+
+fn delete(path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_delete_intrinsic(path)
+}
+
+fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs } {
+    aic_fs_metadata_intrinsic(path)
+}
+
+fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
+    aic_fs_walk_dir_intrinsic(path)
+}
+
+fn temp_file(prefix: String) -> Result[String, FsError] effects { fs } {
+    aic_fs_temp_file_intrinsic(prefix)
+}
+
+fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
+    aic_fs_temp_dir_intrinsic(prefix)
 }
