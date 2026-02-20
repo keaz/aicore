@@ -504,6 +504,13 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
+            if self.at_assignment_stmt_start() {
+                match self.parse_assign_stmt() {
+                    Some(stmt) => stmts.push(stmt),
+                    None => self.recover_statement(),
+                }
+                continue;
+            }
             if self.at_kind(|k| matches!(k, TokenKind::KwReturn)) {
                 match self.parse_return_stmt() {
                     Some(stmt) => stmts.push(stmt),
@@ -543,6 +550,12 @@ impl<'a> Parser<'a> {
     fn parse_let_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
         self.bump(); // let
+        let mutable = if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
+            self.bump();
+            true
+        } else {
+            false
+        };
         let (name, _) = self.expect_ident("E1031", "expected binding name after let")?;
         let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
             self.bump();
@@ -575,7 +588,41 @@ impl<'a> Parser<'a> {
         };
         Some(Stmt::Let {
             name,
+            mutable,
             ty,
+            expr,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_assign_stmt(&mut self) -> Option<Stmt> {
+        let start = self.current_span().start;
+        let (target, _) = self.expect_ident("E1060", "expected assignment target")?;
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1061",
+            "expected '=' in assignment",
+        )?;
+        let expr = self.parse_expr()?;
+        let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let span = self.current_span();
+            self.bump();
+            span.end
+        } else {
+            let span = self.current_span();
+            self.diagnostics.push(
+                Diagnostic::error("E1062", "expected ';' after assignment", self.file, span)
+                    .with_fix(crate::diagnostics::SuggestedFix {
+                        message: "insert ';' after assignment".to_string(),
+                        replacement: Some(";".to_string()),
+                        start: Some(expr.span.end),
+                        end: Some(expr.span.end),
+                    }),
+            );
+            expr.span.end
+        };
+        Some(Stmt::Assign {
+            target,
             expr,
             span: Span::new(start, end),
         })
@@ -765,6 +812,24 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary(&mut self) -> Option<Expr> {
+        if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
+            let start = self.current_span().start;
+            self.bump();
+            let mutable = if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
+                self.bump();
+                true
+            } else {
+                false
+            };
+            let expr = self.parse_unary()?;
+            return Some(Expr {
+                span: Span::new(start, expr.span.end),
+                kind: ExprKind::Borrow {
+                    mutable,
+                    expr: Box::new(expr),
+                },
+            });
+        }
         if self.at_kind(|k| matches!(k, TokenKind::KwAwait)) {
             let start = self.current_span().start;
             self.bump();
@@ -1211,6 +1276,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn at_assignment_stmt_start(&self) -> bool {
+        matches!(self.current().kind, TokenKind::Ident(_))
+            && self
+                .peek(1)
+                .map(|token| matches!(token.kind, TokenKind::Eq))
+                .unwrap_or(false)
+    }
+
     fn looks_like_struct_literal(&self) -> bool {
         // Current token is expected to be '{' after an identifier.
         if !self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
@@ -1437,5 +1510,45 @@ fn bump(x: Int) -> Result[Int, Int] {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_mutable_binding_assignment_and_borrow() {
+        let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    let r = &x;
+    x = x + 1;
+    x
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(matches!(
+            function.body.stmts[0],
+            crate::ast::Stmt::Let { mutable: true, .. }
+        ));
+        assert!(matches!(
+            function.body.stmts[2],
+            crate::ast::Stmt::Assign { .. }
+        ));
+    }
+
+    #[test]
+    fn reports_missing_assignment_semicolon() {
+        let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    x = 2
+    x
+}
+"#;
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.iter().any(|d| d.code == "E1062"));
     }
 }

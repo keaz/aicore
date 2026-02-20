@@ -22,6 +22,7 @@ pub enum TokenKind {
     KwTrait,
     KwImpl,
     KwLet,
+    KwMut,
     KwReturn,
     KwIf,
     KwElse,
@@ -62,6 +63,7 @@ pub enum TokenKind {
     Gt,
     Ge,
     AndAnd,
+    Ampersand,
     OrOr,
     Bang,
     Question,
@@ -206,11 +208,7 @@ impl<'a> Lexer<'a> {
                         self.bump();
                         self.push(TokenKind::AndAnd, Span::new(start, self.offset));
                     } else {
-                        self.error(
-                            "E0002",
-                            "expected '&' for logical and",
-                            Span::new(start, self.offset),
-                        );
+                        self.push(TokenKind::Ampersand, Span::new(start, self.offset));
                     }
                 }
                 '|' => {
@@ -270,6 +268,7 @@ impl<'a> Lexer<'a> {
             "trait" => TokenKind::KwTrait,
             "impl" => TokenKind::KwImpl,
             "let" => TokenKind::KwLet,
+            "mut" => TokenKind::KwMut,
             "return" => TokenKind::KwReturn,
             "if" => TokenKind::KwIf,
             "else" => TokenKind::KwElse,
@@ -413,7 +412,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "async fn main() -> Int effects { io } { let x = await ping()?; x }";
+        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; y }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
@@ -422,6 +421,10 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwEffects)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwMut)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Ampersand)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAwait)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Question)));
     }

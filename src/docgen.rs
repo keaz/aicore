@@ -340,6 +340,13 @@ fn render_expr(expr: &ir::Expr) -> String {
             };
             format!("{}{}", op, render_expr(expr))
         }
+        ir::ExprKind::Borrow { mutable, expr } => {
+            if *mutable {
+                format!("&mut {}", render_expr(expr))
+            } else {
+                format!("&{}", render_expr(expr))
+            }
+        }
         ir::ExprKind::Await { expr } => format!("await {}", render_expr(expr)),
         ir::ExprKind::Try { expr } => format!("{}?", render_expr(expr)),
         ir::ExprKind::StructInit { name, fields } => {

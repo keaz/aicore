@@ -220,7 +220,14 @@ pub enum Stmt {
     Let {
         symbol: SymbolId,
         name: String,
+        #[serde(default)]
+        mutable: bool,
         ty: Option<TypeId>,
+        expr: Expr,
+        span: Span,
+    },
+    Assign {
+        target: String,
         expr: Expr,
         span: Span,
     },
@@ -273,6 +280,11 @@ pub enum ExprKind {
     },
     Unary {
         op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Borrow {
+        #[serde(default)]
+        mutable: bool,
         expr: Box<Expr>,
     },
     Await {

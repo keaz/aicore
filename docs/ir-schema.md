@@ -24,6 +24,9 @@ Notable function/expression fields:
 
 - `Function.is_async: bool`
 - `GenericParam.bounds: Vec<String>`
+- `Stmt::Let.mutable: bool`
+- `Stmt::Assign { target, expr, span }`
+- `ExprKind::Borrow { mutable, expr }`
 - `ExprKind::Await { expr }`
 - `ExprKind::Try { expr }`
 

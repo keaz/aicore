@@ -150,7 +150,14 @@ pub struct Block {
 pub enum Stmt {
     Let {
         name: String,
+        #[serde(default)]
+        mutable: bool,
         ty: Option<TypeExpr>,
+        expr: Expr,
+        span: Span,
+    },
+    Assign {
+        target: String,
         expr: Expr,
         span: Span,
     },
@@ -173,6 +180,7 @@ impl Stmt {
     pub fn span(&self) -> Span {
         match self {
             Stmt::Let { span, .. }
+            | Stmt::Assign { span, .. }
             | Stmt::Expr { span, .. }
             | Stmt::Return { span, .. }
             | Stmt::Assert { span, .. } => *span,
@@ -213,6 +221,11 @@ pub enum ExprKind {
     },
     Unary {
         op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    Borrow {
+        #[serde(default)]
+        mutable: bool,
         expr: Box<Expr>,
     },
     Await {

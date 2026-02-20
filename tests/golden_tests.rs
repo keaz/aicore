@@ -97,3 +97,8 @@ fn golden_case13_trait_impl() {
 fn golden_case14_result_propagation() {
     run_golden_case("case14_result_propagation.aic");
 }
+
+#[test]
+fn golden_case15_mutability_borrow() {
+    run_golden_case("case15_mutability_borrow.aic");
+}

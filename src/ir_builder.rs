@@ -211,6 +211,7 @@ impl Builder {
         match stmt {
             ast::Stmt::Let {
                 name,
+                mutable,
                 ty,
                 expr,
                 span,
@@ -219,11 +220,17 @@ impl Builder {
                 ir::Stmt::Let {
                     symbol,
                     name: name.clone(),
+                    mutable: *mutable,
                     ty: ty.as_ref().map(|t| self.lower_type(t)),
                     expr: self.lower_expr(expr),
                     span: *span,
                 }
             }
+            ast::Stmt::Assign { target, expr, span } => ir::Stmt::Assign {
+                target: target.clone(),
+                expr: self.lower_expr(expr),
+                span: *span,
+            },
             ast::Stmt::Expr { expr, span } => ir::Stmt::Expr {
                 expr: self.lower_expr(expr),
                 span: *span,
@@ -282,6 +289,10 @@ impl Builder {
             },
             ast::ExprKind::Unary { op, expr } => ir::ExprKind::Unary {
                 op: *op,
+                expr: Box::new(self.lower_expr(expr)),
+            },
+            ast::ExprKind::Borrow { mutable, expr } => ir::ExprKind::Borrow {
+                mutable: *mutable,
                 expr: Box::new(self.lower_expr(expr)),
             },
             ast::ExprKind::Await { expr } => ir::ExprKind::Await {

@@ -253,6 +253,159 @@ fn bad(x: Int) -> Result[Int, Int] {
 }
 
 #[test]
+fn unit_mutable_assignment_succeeds_for_mut_binding() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    x = x + 1;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1266" || d.code == "E1269"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_assignment_to_immutable_binding_reports_e1266() {
+    let src = r#"
+fn main() -> Int {
+    let x = 1;
+    x = 2;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1266"));
+}
+
+#[test]
+fn unit_assignment_type_mismatch_reports_e1269() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    x = true;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1269"));
+}
+
+#[test]
+fn unit_conflicting_mutable_borrow_reports_e1263() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    let a = &mut x;
+    let b = &mut x;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1263"));
+}
+
+#[test]
+fn unit_shared_borrow_while_mutable_borrow_active_reports_e1264() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    let m = &mut x;
+    let s = &x;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1264"));
+}
+
+#[test]
+fn unit_assignment_while_borrowed_reports_e1265() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    let r = &x;
+    x = 2;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1265"));
+}
+
+#[test]
+fn unit_mutable_borrow_of_immutable_binding_reports_e1267() {
+    let src = r#"
+fn main() -> Int {
+    let x = 1;
+    let r = &mut x;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1267"));
+}
+
+#[test]
+fn unit_borrow_target_must_be_local_variable_e1268() {
+    let src = r#"
+fn main() -> Int {
+    let r = &(1 + 2);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1268"));
+}
+
+#[test]
+fn unit_borrow_scope_does_not_leak_from_branch() {
+    let src = r#"
+fn main() -> Int {
+    let mut x = 1;
+    if true {
+        let r = &x;
+        0
+    } else {
+        0
+    };
+    x = 2;
+    x
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1265"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_typecheck_non_exhaustive_option_match() {
     let src = r#"
 fn f(x: Option[Int]) -> Int {

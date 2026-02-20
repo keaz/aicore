@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::BinOp;
-use crate::diagnostics::Diagnostic;
+use crate::diagnostics::{Diagnostic, DiagnosticSpan};
 use crate::ir;
 use crate::resolver::{EnumInfo, Resolution, StructInfo};
 use crate::std_policy::find_deprecated_api;
@@ -81,6 +81,33 @@ struct EffectPath {
     span: crate::span::Span,
 }
 
+#[derive(Debug, Clone, Default)]
+struct BorrowState {
+    active_by_target: BTreeMap<String, Vec<ActiveBorrow>>,
+    persistent_by_owner: BTreeMap<ir::SymbolId, PersistentBorrow>,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveBorrow {
+    mutable: bool,
+    span: crate::span::Span,
+    owner: Option<ir::SymbolId>,
+}
+
+#[derive(Debug, Clone)]
+struct PersistentBorrow {
+    target: String,
+    mutable: bool,
+    span: crate::span::Span,
+}
+
+#[derive(Debug, Clone)]
+struct TempBorrow {
+    target: String,
+    mutable: bool,
+    span: crate::span::Span,
+}
+
 impl<'a> Checker<'a> {
     fn new(program: &'a ir::Program, resolution: &'a Resolution, file: &'a str) -> Self {
         let mut types = BTreeMap::new();
@@ -93,6 +120,8 @@ impl<'a> Checker<'a> {
         generic_arity.insert("Option".to_string(), 1);
         generic_arity.insert("Result".to_string(), 2);
         generic_arity.insert("Async".to_string(), 1);
+        generic_arity.insert("Ref".to_string(), 1);
+        generic_arity.insert("RefMut".to_string(), 1);
 
         for (name, info) in &resolution.functions {
             let mut params = Vec::new();
@@ -340,8 +369,9 @@ impl<'a> Checker<'a> {
             &mut body_ctx,
             false,
         );
+        self.check_mutability_and_borrows(func);
 
-        if body_ty != ret_type {
+        if !type_compatible(&ret_type, &body_ty) {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1202",
@@ -545,6 +575,385 @@ impl<'a> Checker<'a> {
         None
     }
 
+    fn check_mutability_and_borrows(&mut self, func: &ir::Function) {
+        let mut mutability = BTreeMap::new();
+        for param in &func.params {
+            mutability.insert(param.name.clone(), false);
+        }
+        let mut borrow_state = BorrowState::default();
+        self.check_borrow_block(&func.body, &mut mutability, &mut borrow_state);
+    }
+
+    fn check_borrow_block(
+        &mut self,
+        block: &ir::Block,
+        mutability: &mut BTreeMap<String, bool>,
+        state: &mut BorrowState,
+    ) {
+        let mut introduced_bindings: Vec<(String, Option<bool>)> = Vec::new();
+        let mut introduced_persistent_borrows: Vec<ir::SymbolId> = Vec::new();
+
+        for stmt in &block.stmts {
+            match stmt {
+                ir::Stmt::Let {
+                    symbol,
+                    name,
+                    mutable,
+                    expr,
+                    ..
+                } => {
+                    if let Some((target, is_mutable, borrow_span)) =
+                        self.extract_direct_borrow(expr)
+                    {
+                        if self.acquire_borrow(
+                            &target,
+                            is_mutable,
+                            borrow_span,
+                            Some(*symbol),
+                            mutability,
+                            state,
+                        ) {
+                            introduced_persistent_borrows.push(*symbol);
+                        }
+                    } else {
+                        let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                        self.release_temp_borrows(&temp_borrows, state);
+                    }
+                    let previous = mutability.insert(name.clone(), *mutable);
+                    introduced_bindings.push((name.clone(), previous));
+                }
+                ir::Stmt::Assign { target, expr, span } => {
+                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    self.release_temp_borrows(&temp_borrows, state);
+
+                    let Some(is_mutable_binding) = mutability.get(target).copied() else {
+                        continue;
+                    };
+                    if !is_mutable_binding {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1266",
+                                format!(
+                                    "cannot assign to immutable binding '{}'; declare it as `let mut {}`",
+                                    target, target
+                                ),
+                                self.file,
+                                *span,
+                            )
+                            .with_help("use `let mut` for bindings that are reassigned"),
+                        );
+                    }
+                    if let Some(conflict) = state
+                        .active_by_target
+                        .get(target)
+                        .and_then(|borrows| borrows.first())
+                    {
+                        let mut diag = Diagnostic::error(
+                            "E1265",
+                            format!(
+                                "cannot assign to '{}' while it is actively borrowed",
+                                target
+                            ),
+                            self.file,
+                            *span,
+                        )
+                        .with_label("assignment while borrowed");
+                        diag.spans.push(DiagnosticSpan {
+                            file: self.file.to_string(),
+                            start: conflict.span.start,
+                            end: conflict.span.end,
+                            label: Some("active borrow starts here".to_string()),
+                        });
+                        diag.help.push(
+                            "release or narrow the borrow scope before mutating this binding"
+                                .to_string(),
+                        );
+                        self.diagnostics.push(diag);
+                    }
+                }
+                ir::Stmt::Expr { expr, .. } => {
+                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    self.release_temp_borrows(&temp_borrows, state);
+                }
+                ir::Stmt::Return { expr, .. } => {
+                    if let Some(expr) = expr {
+                        let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                        self.release_temp_borrows(&temp_borrows, state);
+                    }
+                }
+                ir::Stmt::Assert { expr, .. } => {
+                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    self.release_temp_borrows(&temp_borrows, state);
+                }
+            }
+        }
+
+        if let Some(tail) = &block.tail {
+            let temp_borrows = self.check_borrow_expr(tail, mutability, state);
+            self.release_temp_borrows(&temp_borrows, state);
+        }
+
+        for owner in introduced_persistent_borrows.into_iter().rev() {
+            self.release_persistent_borrow(owner, state);
+        }
+        for (name, previous) in introduced_bindings.into_iter().rev() {
+            if let Some(previous) = previous {
+                mutability.insert(name, previous);
+            } else {
+                mutability.remove(&name);
+            }
+        }
+    }
+
+    fn check_borrow_expr(
+        &mut self,
+        expr: &ir::Expr,
+        mutability: &mut BTreeMap<String, bool>,
+        state: &mut BorrowState,
+    ) -> Vec<TempBorrow> {
+        match &expr.kind {
+            ir::ExprKind::Borrow {
+                mutable,
+                expr: inner,
+            } => {
+                if let ir::ExprKind::Var(target) = &inner.kind {
+                    if self.acquire_borrow(target, *mutable, expr.span, None, mutability, state) {
+                        return vec![TempBorrow {
+                            target: target.clone(),
+                            mutable: *mutable,
+                            span: expr.span,
+                        }];
+                    }
+                    return Vec::new();
+                }
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1268",
+                        "borrow target must be a local variable name",
+                        self.file,
+                        expr.span,
+                    )
+                    .with_help("use `&name` or `&mut name` on a local binding"),
+                );
+                self.check_borrow_expr(inner, mutability, state)
+            }
+            ir::ExprKind::Call { callee, args } => {
+                let mut borrows = self.check_borrow_expr(callee, mutability, state);
+                for arg in args {
+                    borrows.extend(self.check_borrow_expr(arg, mutability, state));
+                }
+                borrows
+            }
+            ir::ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                let cond_borrows = self.check_borrow_expr(cond, mutability, state);
+                self.release_temp_borrows(&cond_borrows, state);
+
+                let mut then_mutability = mutability.clone();
+                let mut then_state = state.clone();
+                self.check_borrow_block(then_block, &mut then_mutability, &mut then_state);
+
+                let mut else_mutability = mutability.clone();
+                let mut else_state = state.clone();
+                self.check_borrow_block(else_block, &mut else_mutability, &mut else_state);
+                Vec::new()
+            }
+            ir::ExprKind::Match {
+                expr: scrutinee,
+                arms,
+            } => {
+                let scrutinee_borrows = self.check_borrow_expr(scrutinee, mutability, state);
+                self.release_temp_borrows(&scrutinee_borrows, state);
+                for arm in arms {
+                    let mut arm_mutability = mutability.clone();
+                    let mut arm_state = state.clone();
+                    let arm_borrows =
+                        self.check_borrow_expr(&arm.body, &mut arm_mutability, &mut arm_state);
+                    self.release_temp_borrows(&arm_borrows, &mut arm_state);
+                }
+                Vec::new()
+            }
+            ir::ExprKind::Binary { lhs, rhs, .. } => {
+                let mut borrows = self.check_borrow_expr(lhs, mutability, state);
+                borrows.extend(self.check_borrow_expr(rhs, mutability, state));
+                borrows
+            }
+            ir::ExprKind::Unary { expr, .. }
+            | ir::ExprKind::Await { expr }
+            | ir::ExprKind::Try { expr } => self.check_borrow_expr(expr, mutability, state),
+            ir::ExprKind::StructInit { fields, .. } => {
+                let mut borrows = Vec::new();
+                for (_, value, _) in fields {
+                    borrows.extend(self.check_borrow_expr(value, mutability, state));
+                }
+                borrows
+            }
+            ir::ExprKind::FieldAccess { base, .. } => {
+                self.check_borrow_expr(base, mutability, state)
+            }
+            ir::ExprKind::Int(_)
+            | ir::ExprKind::Bool(_)
+            | ir::ExprKind::String(_)
+            | ir::ExprKind::Unit
+            | ir::ExprKind::Var(_) => Vec::new(),
+        }
+    }
+
+    fn release_temp_borrows(&self, borrows: &[TempBorrow], state: &mut BorrowState) {
+        for borrow in borrows {
+            Self::release_borrow(&borrow.target, borrow.mutable, borrow.span, None, state);
+        }
+    }
+
+    fn extract_direct_borrow(&self, expr: &ir::Expr) -> Option<(String, bool, crate::span::Span)> {
+        let ir::ExprKind::Borrow {
+            mutable,
+            expr: inner,
+        } = &expr.kind
+        else {
+            return None;
+        };
+        let ir::ExprKind::Var(target) = &inner.kind else {
+            return None;
+        };
+        Some((target.clone(), *mutable, expr.span))
+    }
+
+    fn acquire_borrow(
+        &mut self,
+        target: &str,
+        mutable: bool,
+        span: crate::span::Span,
+        owner: Option<ir::SymbolId>,
+        mutability: &BTreeMap<String, bool>,
+        state: &mut BorrowState,
+    ) -> bool {
+        if mutable && !mutability.get(target).copied().unwrap_or(false) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1267",
+                    format!(
+                        "cannot take mutable borrow of immutable binding '{}'",
+                        target
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help(format!("declare `{}` as `let mut {}`", target, target)),
+            );
+            return false;
+        }
+
+        let active = state
+            .active_by_target
+            .get(target)
+            .cloned()
+            .unwrap_or_default();
+        if mutable {
+            if let Some(conflict) = active.first() {
+                let mut diag = Diagnostic::error(
+                    "E1263",
+                    format!(
+                        "cannot take mutable borrow of '{}' because it is already borrowed",
+                        target
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_label("new mutable borrow");
+                diag.spans.push(DiagnosticSpan {
+                    file: self.file.to_string(),
+                    start: conflict.span.start,
+                    end: conflict.span.end,
+                    label: Some("conflicting borrow starts here".to_string()),
+                });
+                diag.help
+                    .push("release the previous borrow before taking a mutable borrow".to_string());
+                self.diagnostics.push(diag);
+                return false;
+            }
+        } else if let Some(conflict) = active.iter().find(|borrow| borrow.mutable) {
+            let mut diag = Diagnostic::error(
+                "E1264",
+                format!(
+                    "cannot take immutable borrow of '{}' while a mutable borrow is active",
+                    target
+                ),
+                self.file,
+                span,
+            )
+            .with_label("new immutable borrow");
+            diag.spans.push(DiagnosticSpan {
+                file: self.file.to_string(),
+                start: conflict.span.start,
+                end: conflict.span.end,
+                label: Some("active mutable borrow starts here".to_string()),
+            });
+            diag.help
+                .push("end the mutable borrow before taking shared borrows".to_string());
+            self.diagnostics.push(diag);
+            return false;
+        }
+
+        state
+            .active_by_target
+            .entry(target.to_string())
+            .or_default()
+            .push(ActiveBorrow {
+                mutable,
+                span,
+                owner,
+            });
+        if let Some(owner) = owner {
+            state.persistent_by_owner.insert(
+                owner,
+                PersistentBorrow {
+                    target: target.to_string(),
+                    mutable,
+                    span,
+                },
+            );
+        }
+        true
+    }
+
+    fn release_persistent_borrow(&self, owner: ir::SymbolId, state: &mut BorrowState) {
+        let Some(binding) = state.persistent_by_owner.remove(&owner) else {
+            return;
+        };
+        Self::release_borrow(
+            &binding.target,
+            binding.mutable,
+            binding.span,
+            Some(owner),
+            state,
+        );
+    }
+
+    fn release_borrow(
+        target: &str,
+        mutable: bool,
+        span: crate::span::Span,
+        owner: Option<ir::SymbolId>,
+        state: &mut BorrowState,
+    ) {
+        let mut remove_target = false;
+        if let Some(list) = state.active_by_target.get_mut(target) {
+            if let Some(index) = list.iter().position(|borrow| {
+                borrow.mutable == mutable && borrow.span == span && borrow.owner == owner
+            }) {
+                list.remove(index);
+            }
+            remove_target = list.is_empty();
+        }
+        if remove_target {
+            state.active_by_target.remove(target);
+        }
+    }
+
     fn check_struct_invariant(&mut self, strukt: &ir::StructDef) {
         for field in &strukt.fields {
             let ty = self
@@ -621,7 +1030,7 @@ impl<'a> Checker<'a> {
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string());
                         self.check_generic_arity(&ann_ty, *span);
-                        if ann_ty != expr_ty {
+                        if !type_compatible(&ann_ty, &expr_ty) {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1204",
@@ -654,6 +1063,33 @@ impl<'a> Checker<'a> {
                         scope.insert(name.clone(), expr_ty);
                     }
                 }
+                ir::Stmt::Assign { target, expr, span } => {
+                    let expr_ty =
+                        self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
+                    let Some(target_ty) = scope.get(target).cloned() else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1208",
+                            format!("unknown symbol '{}'", target),
+                            self.file,
+                            *span,
+                        ));
+                        continue;
+                    };
+                    if !type_compatible(&target_ty, &expr_ty) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1269",
+                                format!(
+                                    "assignment to '{}' expects '{}', found '{}'",
+                                    target, target_ty, expr_ty
+                                ),
+                                self.file,
+                                *span,
+                            )
+                            .with_help("ensure assignment value matches the binding type"),
+                        );
+                    }
+                }
                 ir::Stmt::Expr { expr, .. } => {
                     self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                 }
@@ -663,7 +1099,7 @@ impl<'a> Checker<'a> {
                     } else {
                         "()".to_string()
                     };
-                    if ty != ret_type {
+                    if !type_compatible(ret_type, &ty) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1205",
                             format!(
@@ -1494,6 +1930,17 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            ir::ExprKind::Borrow {
+                mutable,
+                expr: inner,
+            } => {
+                let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
+                if *mutable {
+                    format!("RefMut[{}]", ty)
+                } else {
+                    format!("Ref[{}]", ty)
+                }
+            }
             ir::ExprKind::Await { expr: inner } => {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
                 if !self.current_function_is_async {
@@ -1728,17 +2175,7 @@ impl<'a> Checker<'a> {
                             .unwrap_or_else(|| "<?>".to_string())
                     })
                     .collect::<Vec<_>>();
-                if applied.iter().any(|ty| contains_unresolved_type(ty)) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            "E1212",
-                            format!("cannot infer generic parameters for struct '{}'", name),
-                            self.file,
-                            expr.span,
-                        )
-                        .with_help("add a type annotation to constrain the struct type"),
-                    );
-                } else {
+                if applied.iter().all(|ty| !contains_unresolved_type(ty)) {
                     self.record_instantiation(
                         ir::GenericInstantiationKind::Struct,
                         name,
@@ -2527,7 +2964,7 @@ impl<'a> Checker<'a> {
 }
 
 fn type_compatible(expected: &str, found: &str) -> bool {
-    expected == found
+    if expected == found
         || expected == "<?>"
         || found == "<?>"
         || (expected.starts_with("Option[")
@@ -2539,6 +2976,23 @@ fn type_compatible(expected: &str, found: &str) -> bool {
         || (expected.starts_with("Async[")
             && found.starts_with("Async[")
             && (expected.contains("<?>") || found.contains("<?>")))
+    {
+        return true;
+    }
+
+    let expected_args = extract_generic_args(expected).unwrap_or_default();
+    let found_args = extract_generic_args(found).unwrap_or_default();
+    if expected_args.is_empty() || found_args.is_empty() {
+        return false;
+    }
+    if base_type_name(expected) != base_type_name(found) || expected_args.len() != found_args.len()
+    {
+        return false;
+    }
+    expected_args
+        .iter()
+        .zip(found_args.iter())
+        .all(|(exp, got)| type_compatible(exp, got))
 }
 
 fn instantiation_kind_tag(kind: &ir::GenericInstantiationKind) -> &'static str {

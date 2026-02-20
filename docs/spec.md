@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v3` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v4` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -71,6 +71,7 @@ fn pick[T: Sortable](a: T, b: T) -> T {
 - Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
 - `await` is only valid inside `async fn`.
 - Result propagation uses postfix `?` and requires explicit `Result[_, E]` compatibility.
+- Bindings are immutable unless declared with `let mut`.
 - Generic function parameters are inferred from call arguments.
 - Generic parameters may include explicit trait bounds: `T: TraitA + TraitB`.
 - Contracts:
@@ -121,6 +122,24 @@ fn bump(x: Int) -> Result[Int, Int] {
     if true { Ok(value + 1) } else { Err(0) }
 }
 ```
+
+- Mutability and borrow model (MVP):
+
+```aic
+fn counter() -> Int {
+    let mut x = 1;
+    let r = &x;
+    x = x + 1;
+    x
+}
+```
+
+Rules:
+- `let mut` is required for reassignment.
+- `&mut x` requires `x` to be mutable.
+- Multiple mutable borrows of the same binding are rejected.
+- Assignments while active borrows exist are rejected.
+- Borrows are lexical: borrows introduced in nested blocks do not escape that block.
 
 ### 2.6 Namespaces
 

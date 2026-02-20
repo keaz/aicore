@@ -191,13 +191,28 @@ fn format_block(
     for stmt in &block.stmts {
         out.push_str(&" ".repeat(indent + 4));
         match stmt {
-            ir::Stmt::Let { name, ty, expr, .. } => {
+            ir::Stmt::Let {
+                name,
+                mutable,
+                ty,
+                expr,
+                ..
+            } => {
                 out.push_str("let ");
+                if *mutable {
+                    out.push_str("mut ");
+                }
                 out.push_str(name);
                 if let Some(ty) = ty {
                     out.push_str(": ");
                     out.push_str(type_map.get(ty).map(|s| s.as_str()).unwrap_or("<?>"));
                 }
+                out.push_str(" = ");
+                format_expr(out, expr, 0);
+                out.push_str(";\n");
+            }
+            ir::Stmt::Assign { target, expr, .. } => {
+                out.push_str(target);
                 out.push_str(" = ");
                 format_expr(out, expr, 0);
                 out.push_str(";\n");
@@ -301,6 +316,13 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
                 UnaryOp::Not => "!",
             };
             out.push_str(token);
+            format_expr(out, expr, 9);
+        }
+        ir::ExprKind::Borrow { mutable, expr } => {
+            out.push('&');
+            if *mutable {
+                out.push_str("mut ");
+            }
             format_expr(out, expr, 9);
         }
         ir::ExprKind::Await { expr } => {

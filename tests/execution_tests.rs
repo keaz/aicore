@@ -145,6 +145,29 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_mutable_vec_update_flow() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn grow(v: Vec[Int]) -> Vec[Int] {
+    let next: Vec[Int] = Vec { ptr: v.ptr, len: v.len + 1, cap: v.cap };
+    next
+}
+
+fn main() -> Int effects { io } {
+    let mut v: Vec[Int] = Vec { ptr: 0, len: 1, cap: 4 };
+    v = grow(v);
+    print_int(vec_len(v));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n");
+}
+
+#[test]
 fn exec_abs_if_expression() {
     let src = r#"
 import std.io;

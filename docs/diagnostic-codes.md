@@ -29,6 +29,7 @@ Recent core-language additions:
 
 - `E1052`: invalid `async` item form (expected `async fn`).
 - `E1053-E1059`: trait/impl declaration syntax errors.
+- `E1060-E1062`: assignment statement parsing errors.
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.
@@ -39,6 +40,13 @@ Recent core-language additions:
 - `E1260`: `?` operand is not `Result[T, E]`.
 - `E1261`: `?` used in function without `Result` return type.
 - `E1262`: `?` error type mismatch (`Result[_, E1]` in `Result[_, E2]` function).
+- `E1263`: conflicting mutable borrow.
+- `E1264`: immutable borrow while mutable borrow is active.
+- `E1265`: assignment while borrow is active.
+- `E1266`: assignment to immutable binding.
+- `E1267`: mutable borrow of immutable binding.
+- `E1268`: invalid borrow target (non-local expression).
+- `E1269`: assignment type mismatch.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 

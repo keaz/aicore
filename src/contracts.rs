@@ -821,6 +821,7 @@ fn rewrite_struct_inits_in_block(
     for stmt in &mut block.stmts {
         match stmt {
             ir::Stmt::Let { expr, .. }
+            | ir::Stmt::Assign { expr, .. }
             | ir::Stmt::Expr { expr, .. }
             | ir::Stmt::Assert { expr, .. } => {
                 rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
@@ -869,6 +870,9 @@ fn rewrite_struct_inits_in_expr(
             rewrite_struct_inits_in_expr(rhs, helper_names, field_orders, alloc);
         }
         ir::ExprKind::Unary { expr, .. } => {
+            rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
+        }
+        ir::ExprKind::Borrow { expr, .. } => {
             rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
         }
         ir::ExprKind::Await { expr } => {
@@ -929,6 +933,7 @@ fn lower_ensures_in_block(
             ir::Stmt::Let {
                 symbol,
                 name,
+                mutable,
                 ty,
                 mut expr,
                 span,
@@ -937,10 +942,19 @@ fn lower_ensures_in_block(
                 lowered_stmts.push(ir::Stmt::Let {
                     symbol,
                     name,
+                    mutable,
                     ty,
                     expr,
                     span,
                 });
+            }
+            ir::Stmt::Assign {
+                target,
+                mut expr,
+                span,
+            } => {
+                lower_ensures_in_expr(&mut expr, ensures, ret_type, function_name, alloc);
+                lowered_stmts.push(ir::Stmt::Assign { target, expr, span });
             }
             ir::Stmt::Expr { mut expr, span } => {
                 lower_ensures_in_expr(&mut expr, ensures, ret_type, function_name, alloc);
@@ -1020,6 +1034,9 @@ fn lower_ensures_in_expr(
         ir::ExprKind::Unary { expr, .. } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
         }
+        ir::ExprKind::Borrow { expr, .. } => {
+            lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
+        }
         ir::ExprKind::Await { expr } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
         }
@@ -1062,6 +1079,7 @@ fn lower_exit_with_ensures(
     let let_stmt = ir::Stmt::Let {
         symbol: result_symbol,
         name: result_name.clone(),
+        mutable: false,
         ty: Some(ret_type),
         expr: exit_expr,
         span,
@@ -1202,6 +1220,7 @@ fn max_node_block(block: &ir::Block) -> u32 {
     for stmt in &block.stmts {
         match stmt {
             ir::Stmt::Let { expr, .. } => max = max.max(max_node_expr(expr)),
+            ir::Stmt::Assign { expr, .. } => max = max.max(max_node_expr(expr)),
             ir::Stmt::Expr { expr, .. } => max = max.max(max_node_expr(expr)),
             ir::Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {
@@ -1247,6 +1266,9 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
             max = max.max(max_node_expr(rhs));
         }
         ir::ExprKind::Unary { expr, .. } => {
+            max = max.max(max_node_expr(expr));
+        }
+        ir::ExprKind::Borrow { expr, .. } => {
             max = max.max(max_node_expr(expr));
         }
         ir::ExprKind::StructInit { fields, .. } => {
@@ -1312,6 +1334,10 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             op: *op,
             expr: Box::new(clone_expr(expr, alloc)),
         },
+        ir::ExprKind::Borrow { mutable, expr } => ir::ExprKind::Borrow {
+            mutable: *mutable,
+            expr: Box::new(clone_expr(expr, alloc)),
+        },
         ir::ExprKind::Await { expr } => ir::ExprKind::Await {
             expr: Box::new(clone_expr(expr, alloc)),
         },
@@ -1348,13 +1374,20 @@ fn clone_block(block: &ir::Block, alloc: &mut IdAlloc) -> ir::Block {
                 ir::Stmt::Let {
                     symbol,
                     name,
+                    mutable,
                     ty,
                     expr,
                     span,
                 } => ir::Stmt::Let {
                     symbol: *symbol,
                     name: name.clone(),
+                    mutable: *mutable,
                     ty: *ty,
+                    expr: clone_expr(expr, alloc),
+                    span: *span,
+                },
+                ir::Stmt::Assign { target, expr, span } => ir::Stmt::Assign {
+                    target: target.clone(),
                     expr: clone_expr(expr, alloc),
                     span: *span,
                 },
@@ -1443,6 +1476,10 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
         },
         ir::ExprKind::Unary { op, expr } => ir::ExprKind::Unary {
             op: *op,
+            expr: Box::new(substitute_result_var(expr, result_name, alloc)),
+        },
+        ir::ExprKind::Borrow { mutable, expr } => ir::ExprKind::Borrow {
+            mutable: *mutable,
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
         },
         ir::ExprKind::Await { expr } => ir::ExprKind::Await {
@@ -1643,7 +1680,9 @@ fn make(x: Int) -> NonEmpty {
         for stmt in &block.stmts {
             match stmt {
                 ir::Stmt::Assert { .. } => count += 1,
-                ir::Stmt::Let { expr, .. } | ir::Stmt::Expr { expr, .. } => {
+                ir::Stmt::Let { expr, .. }
+                | ir::Stmt::Assign { expr, .. }
+                | ir::Stmt::Expr { expr, .. } => {
                     count += count_asserts_in_expr(expr);
                 }
                 ir::Stmt::Return {
@@ -1686,6 +1725,7 @@ fn make(x: Int) -> NonEmpty {
                 count_asserts_in_expr(lhs) + count_asserts_in_expr(rhs)
             }
             ir::ExprKind::Unary { expr, .. } => count_asserts_in_expr(expr),
+            ir::ExprKind::Borrow { expr, .. } => count_asserts_in_expr(expr),
             ir::ExprKind::Await { expr } => count_asserts_in_expr(expr),
             ir::ExprKind::Try { expr } => count_asserts_in_expr(expr),
             ir::ExprKind::StructInit { fields, .. } => fields

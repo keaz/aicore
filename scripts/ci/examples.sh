@@ -50,6 +50,7 @@ check_pass=(
   "examples/core/async_ping.aic"
   "examples/core/trait_sort.aic"
   "examples/core/result_propagation.aic"
+  "examples/core/mut_vec.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -77,6 +78,7 @@ run_pass=(
   "examples/core/async_ping.aic"
   "examples/core/trait_sort.aic"
   "examples/core/result_propagation.aic"
+  "examples/core/mut_vec.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -170,6 +172,7 @@ case "$MODE" in
     expect_run_value "examples/core/async_ping.aic" "42"
     expect_run_value "examples/core/trait_sort.aic" "42"
     expect_run_value "examples/core/result_propagation.aic" "42"
+    expect_run_value "examples/core/mut_vec.aic" "2"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then

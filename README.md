@@ -18,6 +18,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Async/await core model (`async fn`, `await`, `Async[T]`) | Implemented (deterministic typing + diagnostics + execution path) |
 | Trait/interface MVP (`trait`/`impl` + bounded generics) | Implemented (coherence checks + deterministic bound enforcement) |
 | Result propagation operator (`expr?`) | Implemented (typed error propagation with no implicit conversion) |
+| Mutability + borrow discipline MVP (`let mut`, assignment, `&`/`&mut`) | Implemented (alias checks + conflict diagnostics + mutable Vec flow) |
 | LLVM backend (native via clang) | Implemented (toolchain checks + ADT lowering + monomorphization) |
 | Generics | Implemented (deterministic instantiation + codegen) |
 | Artifact emission | Implemented (`exe`, `obj`, `lib`) |

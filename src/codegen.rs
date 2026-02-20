@@ -1054,6 +1054,44 @@ impl<'a> Generator<'a> {
                         .expect("scope")
                         .insert(name.clone(), Local { ty: expected, ptr });
                 }
+                ir::Stmt::Assign { target, expr, span } => {
+                    let Some(local) = find_local(&fctx.vars, target) else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5001",
+                            format!(
+                                "unknown local variable '{}' during assignment codegen",
+                                target
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                        continue;
+                    };
+                    let Some(value) = self.gen_expr(expr, fctx) else {
+                        continue;
+                    };
+                    if value.ty != local.ty {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5007",
+                            format!(
+                                "assignment codegen type mismatch for '{}': expected '{}', found '{}'",
+                                target,
+                                render_type(&local.ty),
+                                render_type(&value.ty)
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                    }
+                    let repr = coerce_repr(&value, &local.ty);
+                    fctx.lines.push(format!(
+                        "  store {} {}, {}* {}",
+                        llvm_type(&local.ty),
+                        repr,
+                        llvm_type(&local.ty),
+                        local.ptr
+                    ));
+                }
                 ir::Stmt::Expr { expr, .. } => {
                     let _ = self.gen_expr(expr, fctx);
                 }
@@ -1190,6 +1228,7 @@ impl<'a> Generator<'a> {
                     }
                 }
             }
+            ir::ExprKind::Borrow { expr: inner, .. } => self.gen_expr(inner, fctx),
             ir::ExprKind::Await { expr: inner } => self.gen_expr(inner, fctx),
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {

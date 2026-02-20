@@ -15,5 +15,15 @@
 - `await` requires `Async[T]` and is valid only inside `async fn`.
 - Result propagation `expr?` requires `expr: Result[T, E]` and enclosing return type `Result[U, E]`.
 - `?` never performs implicit error conversion; mismatched `E` types are diagnostics.
+- Borrow expressions produce reference wrapper types:
+  - `&x` => `Ref[T]`
+  - `&mut x` => `RefMut[T]`
+- Assignment is type-checked (`name = expr`) and must match binding type.
+- Borrow/alias checks (MVP):
+  - mutable borrow requires mutable binding (`E1267`)
+  - conflicting mutable/immutable borrows are rejected (`E1263`, `E1264`)
+  - assignment while borrowed is rejected (`E1265`)
+  - assignment to immutable binding is rejected (`E1266`)
+  - borrow target must be a local variable (`E1268`)
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.
