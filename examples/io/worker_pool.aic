@@ -1,0 +1,71 @@
+import std.io;
+import std.concurrent;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+    match v {
+        Ok(task) => task,
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn unwrap_mutex(v: Result[IntMutex, ConcurrencyError]) -> IntMutex {
+    match v {
+        Ok(m) => m,
+        Err(_) => IntMutex { handle: 0 },
+    }
+}
+
+fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let t1 = unwrap_task(spawn_task(10, 20));
+    let t2 = unwrap_task(spawn_task(11, 5));
+    let ch = unwrap_channel(channel_int(4));
+    let m = unwrap_mutex(mutex_int(0));
+
+    let r1 = unwrap_int(join_task(t1));
+    let r2 = unwrap_int(join_task(t2));
+
+    let sent1 = match send_int(ch, r1, 1000) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let sent2 = match send_int(ch, r2, 1000) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    let a = unwrap_int(recv_int(ch, 1000));
+    let b = unwrap_int(recv_int(ch, 1000));
+
+    let current = unwrap_int(lock_int(m, 1000));
+    let _release = unlock_int(m, current + a + b);
+    let total = unwrap_int(lock_int(m, 1000));
+    let _release_final = unlock_int(m, total);
+
+    let _close_ch = close_channel(ch);
+    let _close_m = close_mutex(m);
+
+    if sent1 + sent2 == 2 && total == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

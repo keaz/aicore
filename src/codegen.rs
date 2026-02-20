@@ -320,12 +320,11 @@ pub fn compile_with_clang_artifact_with_options(
             if options.debug_info {
                 command.arg("-g");
             }
-            command
-                .arg("-O0")
-                .arg(&ll_path)
-                .arg(&runtime_path)
-                .arg("-o")
-                .arg(output_path);
+            command.arg("-O0").arg(&ll_path).arg(&runtime_path);
+            if cfg!(not(target_os = "windows")) {
+                command.arg("-pthread");
+            }
+            command.arg("-o").arg(output_path);
             run_checked_command(command, "clang", "building executable artifact")?;
         }
         ArtifactKind::Obj => {
@@ -681,6 +680,17 @@ impl<'a> Generator<'a> {
         text.push_str("declare void @aic_rt_rand_seed(i64)\n");
         text.push_str("declare i64 @aic_rt_rand_next()\n");
         text.push_str("declare i64 @aic_rt_rand_range(i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_conc_spawn(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_join(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_cancel(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_channel_int(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_send_int(i64, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_recv_int(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_close_channel(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_mutex_int(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_mutex_unlock(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_mutex_close(i64)\n\n");
         text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
@@ -1582,6 +1592,9 @@ impl<'a> Generator<'a> {
         if let Some(result) = self.gen_rand_builtin_call(name, args, span, fctx) {
             return result;
         }
+        if let Some(result) = self.gen_concurrency_builtin_call(name, args, span, fctx) {
+            return result;
+        }
         if let Some(result) = self.gen_fs_builtin_call(name, args, span, fctx) {
             return result;
         }
@@ -1950,6 +1963,812 @@ impl<'a> Generator<'a> {
         ));
         Some(Value {
             ty: LType::Int,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_concurrency_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "spawn_task" | "aic_conc_spawn_intrinsic" => "spawn_task",
+            "join_task" | "aic_conc_join_intrinsic" => "join_task",
+            "cancel_task" | "aic_conc_cancel_intrinsic" => "cancel_task",
+            "channel_int" | "aic_conc_channel_int_intrinsic" => "channel_int",
+            "send_int" | "aic_conc_send_int_intrinsic" => "send_int",
+            "recv_int" | "aic_conc_recv_int_intrinsic" => "recv_int",
+            "close_channel" | "aic_conc_close_channel_intrinsic" => "close_channel",
+            "mutex_int" | "aic_conc_mutex_int_intrinsic" => "mutex_int",
+            "lock_int" | "aic_conc_mutex_lock_intrinsic" => "lock_int",
+            "unlock_int" | "aic_conc_mutex_unlock_intrinsic" => "unlock_int",
+            "close_mutex" | "aic_conc_mutex_close_intrinsic" => "close_mutex",
+            _ => return None,
+        };
+
+        match canonical {
+            "spawn_task"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[Task, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_spawn_task_call(name, args, span, fctx))
+            }
+            "join_task"
+                if self.sig_matches_shape(name, &["Task"], "Result[Int, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_join_task_call(name, args, span, fctx))
+            }
+            "cancel_task"
+                if self.sig_matches_shape(name, &["Task"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_cancel_task_call(name, args, span, fctx))
+            }
+            "channel_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int"],
+                    "Result[IntChannel, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_channel_int_call(name, args, span, fctx))
+            }
+            "send_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntChannel", "Int", "Int"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_send_int_call(name, args, span, fctx))
+            }
+            "recv_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntChannel", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_recv_int_call(name, args, span, fctx))
+            }
+            "close_channel"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntChannel"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_close_channel_call(name, args, span, fctx))
+            }
+            "mutex_int"
+                if self.sig_matches_shape(name, &["Int"], "Result[IntMutex, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_mutex_int_call(name, args, span, fctx))
+            }
+            "lock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntMutex", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_lock_int_call(name, args, span, fctx))
+            }
+            "unlock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntMutex", "Int"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_unlock_int_call(name, args, span, fctx))
+            }
+            "close_mutex"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntMutex"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_close_mutex_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn concurrency_result_ty(&mut self, name: &str, span: crate::span::Span) -> Option<LType> {
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some(result_ty)
+    }
+
+    fn extract_named_handle_from_value(
+        &mut self,
+        value: &Value,
+        expected_name: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let LType::Struct(layout) = &value.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects {expected_name}"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != expected_name
+            || layout.fields.len() != 1
+            || layout.fields[0].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects {expected_name}"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            handle,
+            llvm_type(&value.ty),
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&value.ty))
+        ));
+        Some(handle)
+    }
+
+    fn build_concurrency_ok_handle_payload(
+        &mut self,
+        result_ty: &LType,
+        expected_name: &str,
+        handle: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "concurrency builtin expects Result[{expected_name}, ConcurrencyError] return type"
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != expected_name
+            || layout.fields.len() != 1
+            || layout.fields[0].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "concurrency builtin expects Result[{expected_name}, ConcurrencyError] return type"
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.build_struct_value(
+            &layout,
+            &[Value {
+                ty: LType::Int,
+                repr: Some(handle.to_string()),
+            }],
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_concurrency_spawn_task_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "spawn_task expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let delay_ms = self.gen_expr(&args[1], fctx)?;
+        if value.ty != LType::Int || delay_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_task expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_spawn(i64 {}, i64 {}, i64* {})",
+            err,
+            value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            delay_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Task", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_join_task_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "join_task expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task = self.gen_expr(&args[0], fctx)?;
+        let handle =
+            self.extract_named_handle_from_value(&task, "Task", "join_task", args[0].span, fctx)?;
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_join(i64 {}, i64* {})",
+            err, handle, value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_cancel_task_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "cancel_task expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task = self.gen_expr(&args[0], fctx)?;
+        let handle =
+            self.extract_named_handle_from_value(&task, "Task", "cancel_task", args[0].span, fctx)?;
+        let cancelled_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", cancelled_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_cancel(i64 {}, i64* {})",
+            err, handle, cancelled_slot
+        ));
+        let cancelled_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            cancelled_raw, cancelled_slot
+        ));
+        let cancelled = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            cancelled, cancelled_raw
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(cancelled),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_channel_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "channel_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let capacity = self.gen_expr(&args[0], fctx)?;
+        if capacity.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "channel_int expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_channel_int(i64 {}, i64* {})",
+            err,
+            capacity.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = self.build_concurrency_ok_handle_payload(
+            &result_ty,
+            "IntChannel",
+            &handle,
+            span,
+            fctx,
+        )?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_send_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "send_int expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let channel = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &channel,
+            "IntChannel",
+            "send_int",
+            args[0].span,
+            fctx,
+        )?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if value.ty != LType::Int || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "send_int expects (IntChannel, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_send_int(i64 {}, i64 {}, i64 {})",
+            err,
+            handle,
+            value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_recv_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "recv_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let channel = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &channel,
+            "IntChannel",
+            "recv_int",
+            args[0].span,
+            fctx,
+        )?;
+        let timeout_ms = self.gen_expr(&args[1], fctx)?;
+        if timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "recv_int expects (IntChannel, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_recv_int(i64 {}, i64 {}, i64* {})",
+            err,
+            handle,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_close_channel_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "close_channel expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let channel = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &channel,
+            "IntChannel",
+            "close_channel",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_close_channel(i64 {})",
+            err, handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_mutex_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "mutex_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let initial = self.gen_expr(&args[0], fctx)?;
+        if initial.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "mutex_int expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_mutex_int(i64 {}, i64* {})",
+            err,
+            initial.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "IntMutex", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_lock_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "lock_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mutex = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &mutex,
+            "IntMutex",
+            "lock_int",
+            args[0].span,
+            fctx,
+        )?;
+        let timeout_ms = self.gen_expr(&args[1], fctx)?;
+        if timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "lock_int expects (IntMutex, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_mutex_lock(i64 {}, i64 {}, i64* {})",
+            err,
+            handle,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_unlock_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "unlock_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mutex = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &mutex,
+            "IntMutex",
+            "unlock_int",
+            args[0].span,
+            fctx,
+        )?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "unlock_int expects (IntMutex, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_mutex_unlock(i64 {}, i64 {})",
+            err,
+            handle,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_close_mutex_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "close_mutex expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mutex = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &mutex,
+            "IntMutex",
+            "close_mutex",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_mutex_close(i64 {})",
+            err, handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn wrap_concurrency_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "concurrency builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_concurrency_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("conc_ok");
+        let err_label = self.new_label("conc_err");
+        let cont_label = self.new_label("conc_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
             repr: Some(reg),
         })
     }
@@ -4811,6 +5630,33 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn build_concurrency_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "ConcurrencyError",
+            "concurrency",
+            &[
+                (1, "NotFound"),
+                (2, "Timeout"),
+                (3, "Cancelled"),
+                (4, "InvalidInput"),
+                (5, "Panic"),
+                (6, "Closed"),
+                (7, "Io"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
     fn build_no_payload_enum_with_tag(
         &mut self,
         layout: &EnumLayoutType,
@@ -6665,6 +7511,7 @@ fn runtime_c_source() -> &'static str {
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
@@ -8348,6 +9195,670 @@ long aic_rt_proc_pipe(
 }
 
 #ifdef _WIN32
+long aic_rt_conc_spawn(long value, long delay_ms, long* out_handle) {
+    (void)value;
+    (void)delay_ms;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_join(long handle, long* out_value) {
+    (void)handle;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_cancel(long handle, long* out_cancelled) {
+    (void)handle;
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_channel_int(long capacity, long* out_handle) {
+    (void)capacity;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_send_int(long handle, long value, long timeout_ms) {
+    (void)handle;
+    (void)value;
+    (void)timeout_ms;
+    return 7;
+}
+
+long aic_rt_conc_recv_int(long handle, long timeout_ms, long* out_value) {
+    (void)handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_close_channel(long handle) {
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_conc_mutex_int(long initial, long* out_handle) {
+    (void)initial;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value) {
+    (void)handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_mutex_unlock(long handle, long value) {
+    (void)handle;
+    (void)value;
+    return 7;
+}
+
+long aic_rt_conc_mutex_close(long handle) {
+    (void)handle;
+    return 7;
+}
+#else
+#define AIC_RT_CONC_TASK_CAP 128
+#define AIC_RT_CONC_CHANNEL_CAP 128
+#define AIC_RT_CONC_MUTEX_CAP 128
+
+typedef struct {
+    int active;
+    int finished;
+    int cancelled;
+    int panic;
+    long input_value;
+    long delay_ms;
+    long result;
+    pthread_t thread;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} AicConcTaskSlot;
+
+typedef struct {
+    int active;
+    int closed;
+    long* values;
+    long cap;
+    long len;
+    long head;
+    long tail;
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+} AicConcChannelSlot;
+
+typedef struct {
+    int active;
+    int closed;
+    int locked;
+    long value;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} AicConcMutexSlot;
+
+static AicConcTaskSlot aic_rt_conc_tasks[AIC_RT_CONC_TASK_CAP];
+static AicConcChannelSlot aic_rt_conc_channels[AIC_RT_CONC_CHANNEL_CAP];
+static AicConcMutexSlot aic_rt_conc_mutexes[AIC_RT_CONC_MUTEX_CAP];
+
+static long aic_rt_conc_map_errno(int err) {
+    switch (err) {
+#ifdef ETIMEDOUT
+        case ETIMEDOUT:
+            return 2;  // Timeout
+#endif
+#ifdef ECANCELED
+        case ECANCELED:
+            return 3;  // Cancelled
+#endif
+        case EINVAL:
+            return 4;  // InvalidInput
+        default:
+            return 7;  // Io
+    }
+}
+
+static int aic_rt_conc_make_deadline(long timeout_ms, struct timespec* out_deadline) {
+    if (timeout_ms < 0 || out_deadline == NULL) {
+        return EINVAL;
+    }
+    if (clock_gettime(CLOCK_REALTIME, out_deadline) != 0) {
+        return errno;
+    }
+    out_deadline->tv_sec += (time_t)(timeout_ms / 1000);
+    out_deadline->tv_nsec += (long)((timeout_ms % 1000) * 1000000L);
+    if (out_deadline->tv_nsec >= 1000000000L) {
+        out_deadline->tv_sec += out_deadline->tv_nsec / 1000000000L;
+        out_deadline->tv_nsec = out_deadline->tv_nsec % 1000000000L;
+    }
+    return 0;
+}
+
+static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_TASK_CAP) {
+        return NULL;
+    }
+    AicConcTaskSlot* slot = &aic_rt_conc_tasks[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static AicConcChannelSlot* aic_rt_conc_get_channel(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_CHANNEL_CAP) {
+        return NULL;
+    }
+    AicConcChannelSlot* slot = &aic_rt_conc_channels[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_MUTEX_CAP) {
+        return NULL;
+    }
+    AicConcMutexSlot* slot = &aic_rt_conc_mutexes[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static void* aic_rt_conc_task_main(void* raw_slot) {
+    long slot_index = -1;
+    if (raw_slot != NULL) {
+        slot_index = *(long*)raw_slot;
+    }
+    free(raw_slot);
+    if (slot_index < 0 || slot_index >= AIC_RT_CONC_TASK_CAP) {
+        return NULL;
+    }
+    AicConcTaskSlot* slot = &aic_rt_conc_tasks[slot_index];
+
+    long remaining = slot->delay_ms;
+    while (remaining > 0) {
+        long step = remaining > 10 ? 10 : remaining;
+        aic_rt_time_sleep_ms(step);
+        remaining -= step;
+
+        pthread_mutex_lock(&slot->mutex);
+        int cancelled = slot->cancelled;
+        pthread_mutex_unlock(&slot->mutex);
+        if (cancelled) {
+            pthread_mutex_lock(&slot->mutex);
+            slot->finished = 1;
+            pthread_cond_broadcast(&slot->cond);
+            pthread_mutex_unlock(&slot->mutex);
+            return NULL;
+        }
+    }
+
+    pthread_mutex_lock(&slot->mutex);
+    if (slot->cancelled) {
+        slot->finished = 1;
+        pthread_cond_broadcast(&slot->cond);
+        pthread_mutex_unlock(&slot->mutex);
+        return NULL;
+    }
+    if (slot->input_value < 0) {
+        slot->panic = 1;
+    } else {
+        slot->result = slot->input_value * 2;
+    }
+    slot->finished = 1;
+    pthread_cond_broadcast(&slot->cond);
+    pthread_mutex_unlock(&slot->mutex);
+    return NULL;
+}
+
+long aic_rt_conc_spawn(long value, long delay_ms, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (delay_ms < 0) {
+        return 4;
+    }
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+        if (!aic_rt_conc_tasks[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        return 7;
+    }
+
+    AicConcTaskSlot* slot = &aic_rt_conc_tasks[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    slot->active = 1;
+    slot->input_value = value;
+    slot->delay_ms = delay_ms;
+    if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_cond_init(&slot->cond, NULL) != 0) {
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+
+    long* arg = (long*)malloc(sizeof(long));
+    if (arg == NULL) {
+        pthread_cond_destroy(&slot->cond);
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    *arg = slot_index;
+    int create_rc = pthread_create(&slot->thread, NULL, aic_rt_conc_task_main, arg);
+    if (create_rc != 0) {
+        free(arg);
+        pthread_cond_destroy(&slot->cond);
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (out_handle != NULL) {
+        *out_handle = slot_index + 1;
+    }
+    return 0;
+}
+
+long aic_rt_conc_join(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicConcTaskSlot* slot = aic_rt_conc_get_task(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    while (!slot->finished) {
+        int wait_rc = pthread_cond_wait(&slot->cond, &slot->mutex);
+        if (wait_rc != 0) {
+            pthread_mutex_unlock(&slot->mutex);
+            return aic_rt_conc_map_errno(wait_rc);
+        }
+    }
+
+    int cancelled = slot->cancelled;
+    int panic = slot->panic;
+    long result = slot->result;
+    pthread_mutex_unlock(&slot->mutex);
+
+    int join_rc = pthread_join(slot->thread, NULL);
+    if (join_rc != 0) {
+        return 7;
+    }
+    pthread_cond_destroy(&slot->cond);
+    pthread_mutex_destroy(&slot->mutex);
+    memset(slot, 0, sizeof(*slot));
+
+    if (cancelled) {
+        return 3;
+    }
+    if (panic) {
+        return 5;
+    }
+    if (out_value != NULL) {
+        *out_value = result;
+    }
+    return 0;
+}
+
+long aic_rt_conc_cancel(long handle, long* out_cancelled) {
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
+    }
+    AicConcTaskSlot* slot = aic_rt_conc_get_task(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    if (!slot->finished) {
+        slot->cancelled = 1;
+        if (out_cancelled != NULL) {
+            *out_cancelled = 1;
+        }
+    }
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_channel_int(long capacity, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (capacity <= 0 || capacity > 1048576) {
+        return 4;
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_CHANNEL_CAP; ++i) {
+        if (!aic_rt_conc_channels[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        return 7;
+    }
+
+    AicConcChannelSlot* slot = &aic_rt_conc_channels[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    slot->values = (long*)malloc((size_t)capacity * sizeof(long));
+    if (slot->values == NULL) {
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
+        free(slot->values);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_cond_init(&slot->not_empty, NULL) != 0) {
+        pthread_mutex_destroy(&slot->mutex);
+        free(slot->values);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_cond_init(&slot->not_full, NULL) != 0) {
+        pthread_cond_destroy(&slot->not_empty);
+        pthread_mutex_destroy(&slot->mutex);
+        free(slot->values);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    slot->active = 1;
+    slot->cap = capacity;
+    slot->len = 0;
+    slot->head = 0;
+    slot->tail = 0;
+    slot->closed = 0;
+
+    if (out_handle != NULL) {
+        *out_handle = slot_index + 1;
+    }
+    return 0;
+}
+
+long aic_rt_conc_send_int(long handle, long value, long timeout_ms) {
+    if (timeout_ms < 0) {
+        return 4;
+    }
+    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    struct timespec deadline;
+    int deadline_rc = aic_rt_conc_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        pthread_mutex_unlock(&slot->mutex);
+        return aic_rt_conc_map_errno(deadline_rc);
+    }
+
+    while (slot->len >= slot->cap) {
+        if (slot->closed) {
+            pthread_mutex_unlock(&slot->mutex);
+            return 6;
+        }
+        int wait_rc = pthread_cond_timedwait(&slot->not_full, &slot->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&slot->mutex);
+            return 2;
+        }
+#endif
+        if (wait_rc != 0) {
+            pthread_mutex_unlock(&slot->mutex);
+            return aic_rt_conc_map_errno(wait_rc);
+        }
+    }
+    if (slot->closed) {
+        pthread_mutex_unlock(&slot->mutex);
+        return 6;
+    }
+
+    slot->values[slot->tail] = value;
+    slot->tail = (slot->tail + 1) % slot->cap;
+    slot->len += 1;
+    pthread_cond_signal(&slot->not_empty);
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_recv_int(long handle, long timeout_ms, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0) {
+        return 4;
+    }
+    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    struct timespec deadline;
+    int deadline_rc = aic_rt_conc_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        pthread_mutex_unlock(&slot->mutex);
+        return aic_rt_conc_map_errno(deadline_rc);
+    }
+
+    while (slot->len == 0) {
+        if (slot->closed) {
+            pthread_mutex_unlock(&slot->mutex);
+            return 6;
+        }
+        int wait_rc = pthread_cond_timedwait(&slot->not_empty, &slot->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&slot->mutex);
+            return 2;
+        }
+#endif
+        if (wait_rc != 0) {
+            pthread_mutex_unlock(&slot->mutex);
+            return aic_rt_conc_map_errno(wait_rc);
+        }
+    }
+
+    long value = slot->values[slot->head];
+    slot->head = (slot->head + 1) % slot->cap;
+    slot->len -= 1;
+    pthread_cond_signal(&slot->not_full);
+    pthread_mutex_unlock(&slot->mutex);
+    if (out_value != NULL) {
+        *out_value = value;
+    }
+    return 0;
+}
+
+long aic_rt_conc_close_channel(long handle) {
+    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    slot->closed = 1;
+    pthread_cond_broadcast(&slot->not_empty);
+    pthread_cond_broadcast(&slot->not_full);
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_mutex_int(long initial, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_MUTEX_CAP; ++i) {
+        if (!aic_rt_conc_mutexes[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        return 7;
+    }
+
+    AicConcMutexSlot* slot = &aic_rt_conc_mutexes[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_cond_init(&slot->cond, NULL) != 0) {
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    slot->active = 1;
+    slot->closed = 0;
+    slot->locked = 0;
+    slot->value = initial;
+
+    if (out_handle != NULL) {
+        *out_handle = slot_index + 1;
+    }
+    return 0;
+}
+
+long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0) {
+        return 4;
+    }
+    AicConcMutexSlot* slot = aic_rt_conc_get_mutex(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    struct timespec deadline;
+    int deadline_rc = aic_rt_conc_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        pthread_mutex_unlock(&slot->mutex);
+        return aic_rt_conc_map_errno(deadline_rc);
+    }
+
+    while (slot->locked && !slot->closed) {
+        int wait_rc = pthread_cond_timedwait(&slot->cond, &slot->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&slot->mutex);
+            return 2;
+        }
+#endif
+        if (wait_rc != 0) {
+            pthread_mutex_unlock(&slot->mutex);
+            return aic_rt_conc_map_errno(wait_rc);
+        }
+    }
+    if (slot->closed) {
+        pthread_mutex_unlock(&slot->mutex);
+        return 6;
+    }
+    slot->locked = 1;
+    if (out_value != NULL) {
+        *out_value = slot->value;
+    }
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_mutex_unlock(long handle, long value) {
+    AicConcMutexSlot* slot = aic_rt_conc_get_mutex(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    if (slot->closed) {
+        pthread_mutex_unlock(&slot->mutex);
+        return 6;
+    }
+    if (!slot->locked) {
+        pthread_mutex_unlock(&slot->mutex);
+        return 4;
+    }
+    slot->value = value;
+    slot->locked = 0;
+    pthread_cond_signal(&slot->cond);
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_mutex_close(long handle) {
+    AicConcMutexSlot* slot = aic_rt_conc_get_mutex(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+    slot->closed = 1;
+    slot->locked = 0;
+    pthread_cond_broadcast(&slot->cond);
+    pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+#endif
+
+#ifdef _WIN32
 long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
     (void)addr_ptr;
     (void)addr_len;
@@ -9830,6 +11341,18 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_rand_range(i64, i64)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_conc_spawn(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_join(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_channel_int(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_net_udp_recv_from(i64, i64, i64, i8**, i64*, i8**, i64*)"
@@ -9848,6 +11371,13 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("void aic_rt_rand_seed(long seed)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
+        assert!(runtime_c_source().contains("long aic_rt_conc_spawn(long value, long delay_ms"));
+        assert!(runtime_c_source().contains("long aic_rt_conc_join(long handle, long* out_value)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_channel_int(long capacity, long* out_handle)"));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value)"
+        ));
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));

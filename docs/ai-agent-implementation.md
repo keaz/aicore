@@ -33,7 +33,7 @@ Core language-specific deep dive:
 ### Effects
 
 - Canonical pass: `normalize_effect_declarations(program, file)` in `src/effects.rs`
-- Known taxonomy: `io`, `fs`, `net`, `time`, `rand`
+- Known taxonomy: `io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`
 - Diagnostics:
   - unknown effect: `E2003`
   - duplicate declaration: `E2004`
@@ -83,7 +83,7 @@ In `src/codegen.rs`:
 
 Current std set under `std/`:
 
-- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`
+- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `concurrent`, `string`, `vec`, `option`, `result`
 
 Notes:
 
@@ -101,6 +101,9 @@ Notes:
 - Process/env/path API contract and examples:
   - `docs/io-process-env-path.md`
   - `examples/io/process_pipeline.aic`
+- Concurrency runtime contract and examples:
+  - `docs/io-concurrency-runtime.md`
+  - `examples/io/worker_pool.aic`
 
 ### Manifest + lockfile workflow (E6-T2)
 

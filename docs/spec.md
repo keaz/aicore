@@ -197,7 +197,7 @@ Program {
 ## 5. Effect system
 
 - Default function effect set is empty (pure).
-- Known effects: `io`, `fs`, `net`, `time`, `rand`.
+- Known effects: `io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`.
 - Calls require callee effects to be subset of caller declared effects.
 - Async calls participate in the same explicit effect accounting and transitive effect analysis.
 - Effect declarations are canonicalized to deterministic sorted signatures.

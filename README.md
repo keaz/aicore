@@ -12,7 +12,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Deterministic parser/formatter | Implemented |
 | Structured diagnostics JSON (`code`, spans, fixes) | Implemented |
 | Type checker (Int/Bool/String/Unit, functions, enums, structs) | Implemented |
-| Effect checker (`io`, `fs`, `net`, `time`, `rand`) | Implemented |
+| Effect checker (`io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`) | Implemented |
 | Contracts (`requires`, `ensures`, `invariant`) | Implemented (runtime lowering + static constant checks) |
 | Match + exhaustiveness (Bool/Option/Result + enums) | Implemented |
 | Pattern matching 1.0 (`|` alternatives + guard typing/coverage checks) | Implemented (guarded arms are frontend-only for now; backend emits `E5023`) |
@@ -24,7 +24,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Generics | Implemented (deterministic instantiation + codegen) |
 | Artifact emission | Implemented (`exe`, `obj`, `lib`) |
 | Debug info + panic source mapping | Implemented (`aic build --debug-info`) |
-| Standard library modules (`io`, `fs`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`) | Implemented |
+| Standard library modules (`io`, `fs`, `net`, `time`, `rand`, `concurrent`, `string`, `vec`, `option`, `result`) | Implemented |
 | Package lock/checksum/offline cache workflow | Implemented (`aic lock`, `--offline`) |
 | API docs generation | Implemented (`aic doc`) |
 | Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |

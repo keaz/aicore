@@ -653,6 +653,203 @@ fn main() -> Int effects { io, rand } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_worker_pool_is_deterministic() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+    match v {
+        Ok(task) => task,
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn unwrap_mutex(v: Result[IntMutex, ConcurrencyError]) -> IntMutex {
+    match v {
+        Ok(m) => m,
+        Err(_) => IntMutex { handle: 0 },
+    }
+}
+
+fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let t1 = unwrap_task(spawn_task(10, 20));
+    let t2 = unwrap_task(spawn_task(11, 5));
+    let ch = unwrap_channel(channel_int(4));
+    let m = unwrap_mutex(mutex_int(0));
+
+    let r1 = unwrap_int(join_task(t1));
+    let r2 = unwrap_int(join_task(t2));
+
+    let sent1 = match send_int(ch, r1, 1000) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let sent2 = match send_int(ch, r2, 1000) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    let a = unwrap_int(recv_int(ch, 1000));
+    let b = unwrap_int(recv_int(ch, 1000));
+
+    let base = unwrap_int(lock_int(m, 1000));
+    let _release = unlock_int(m, base + a + b);
+    let total = unwrap_int(lock_int(m, 1000));
+    let _release_final = unlock_int(m, total);
+
+    let closed_ch = match close_channel(ch) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let closed_m = match close_mutex(m) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if sent1 + sent2 + closed_ch + closed_m == 4 && total == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_cancellation_timeout_and_panic_are_stable() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn err_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+    match v {
+        Ok(task) => task,
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn unwrap_mutex(v: Result[IntMutex, ConcurrencyError]) -> IntMutex {
+    match v {
+        Ok(m) => m,
+        Err(_) => IntMutex { handle: 0 },
+    }
+}
+
+fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let to_cancel = unwrap_task(spawn_task(9, 80));
+    let cancelled = match cancel_task(to_cancel) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let join_cancel = match join_task(to_cancel) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let panic_task = unwrap_task(spawn_task(-1, 1));
+    let panic_code = match join_task(panic_task) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let ch = unwrap_channel(channel_int(1));
+    let recv_timeout = match recv_int(ch, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let close_ch = match close_channel(ch) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let recv_closed = match recv_int(ch, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let m = unwrap_mutex(mutex_int(7));
+    let first = unwrap_int(lock_int(m, 20));
+    let lock_timeout = match lock_int(m, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let _unlock = unlock_int(m, first);
+    let close_m = match close_mutex(m) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if cancelled == 1 && join_cancel == 3 && panic_code == 5 &&
+        recv_timeout == 2 && recv_closed == 6 &&
+        first == 7 && lock_timeout == 2 &&
+        close_ch == 1 && close_m == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_proc_run_pipe_spawn_wait_and_kill() {
     let src = r#"
 import std.io;

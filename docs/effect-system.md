@@ -13,7 +13,7 @@ Rules:
 - Callee effects must be subset of caller declared effects.
 - Async callees follow the same rule; `await` does not erase effect obligations.
 - Result propagation `?` preserves the effects of its operand expression.
-- Standard effect set: `io`, `fs`, `net`, `time`, `rand`, `env`, `proc`.
+- Standard effect set: `io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`.
 - Effect declarations are canonicalized (sorted, deduplicated known effects) during frontend loading.
 - Unknown/duplicate effects are diagnostics.
 - Interprocedural call-graph analysis computes transitive required effects.

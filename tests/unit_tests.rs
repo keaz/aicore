@@ -1011,6 +1011,89 @@ fn unit_std_rand_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
+    let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
+
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "spawn_task",
+        "aic_conc_spawn_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "join_task",
+        "aic_conc_join_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "cancel_task",
+        "aic_conc_cancel_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "channel_int",
+        "aic_conc_channel_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "send_int",
+        "aic_conc_send_int_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "recv_int",
+        "aic_conc_recv_int_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "close_channel",
+        "aic_conc_close_channel_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "mutex_int",
+        "aic_conc_mutex_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "lock_int",
+        "aic_conc_mutex_lock_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "unlock_int",
+        "aic_conc_mutex_unlock_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "close_mutex",
+        "aic_conc_mutex_close_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_diagnostic_registry_covers_all_emitted_codes() {
     let mut files = Vec::new();
     collect_rs_files(Path::new("src"), &mut files);
@@ -1114,8 +1197,9 @@ import std.string;
 import std.vec;
 import std.option;
 import std.result;
+import std.concurrent;
 
-fn main() -> Int effects { io, fs, net, time, rand, env, proc } {
+fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _exists = exists("foo.txt");
     let _read = read_text("foo.txt");
     let _write = write_text("foo.txt", "ok");
@@ -1166,6 +1250,17 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc } {
     let _r = random_int();
     let _rr = random_range(1, 5);
     let _rb = random_bool();
+    let _spawn_task = spawn_task(21, 1);
+    let _join_task = join_task(Task { handle: 1 });
+    let _cancel_task = cancel_task(Task { handle: 1 });
+    let _chan = channel_int(2);
+    let _send = send_int(IntChannel { handle: 1 }, 1, 1);
+    let _recv = recv_int(IntChannel { handle: 1 }, 1);
+    let _close_chan = close_channel(IntChannel { handle: 1 });
+    let _mutex = mutex_int(0);
+    let _lock = lock_int(IntMutex { handle: 1 }, 1);
+    let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
+    let _close_mutex = close_mutex(IntMutex { handle: 1 });
     let _n = len("abc");
     print_int(1);
     0
@@ -1308,6 +1403,29 @@ import std.rand;
 
 fn main() -> Int {
     random_int()
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_concurrency_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.concurrent;
+
+fn main() -> Int {
+    let _task = spawn_task(1, 1);
+    0
 }
 "#,
     )

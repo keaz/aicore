@@ -1,0 +1,124 @@
+module std.concurrent;
+
+import std.result;
+
+enum ConcurrencyError {
+    NotFound,
+    Timeout,
+    Cancelled,
+    InvalidInput,
+    Panic,
+    Closed,
+    Io,
+}
+
+struct Task {
+    handle: Int,
+}
+
+struct IntChannel {
+    handle: Int,
+}
+
+struct IntMutex {
+    handle: Int,
+}
+
+fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
+    let out: Result[Task, ConcurrencyError] = Ok(Task { handle: 0 });
+    out
+}
+
+fn aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    let out: Result[Int, ConcurrencyError] = Ok(0);
+    out
+}
+
+fn aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    let out: Result[IntChannel, ConcurrencyError] = Ok(IntChannel { handle: 0 });
+    out
+}
+
+fn aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn aic_conc_recv_int_intrinsic(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    let out: Result[Int, ConcurrencyError] = Ok(0);
+    out
+}
+
+fn aic_conc_close_channel_intrinsic(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn aic_conc_mutex_int_intrinsic(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency } {
+    let out: Result[IntMutex, ConcurrencyError] = Ok(IntMutex { handle: 0 });
+    out
+}
+
+fn aic_conc_mutex_lock_intrinsic(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    let out: Result[Int, ConcurrencyError] = Ok(0);
+    out
+}
+
+fn aic_conc_mutex_unlock_intrinsic(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
+    aic_conc_spawn_intrinsic(value, delay_ms)
+}
+
+fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    aic_conc_join_intrinsic(task)
+}
+
+fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_cancel_intrinsic(task)
+}
+
+fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    aic_conc_channel_int_intrinsic(capacity)
+}
+
+fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_send_int_intrinsic(ch, value, timeout_ms)
+}
+
+fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    aic_conc_recv_int_intrinsic(ch, timeout_ms)
+}
+
+fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_close_channel_intrinsic(ch)
+}
+
+fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency } {
+    aic_conc_mutex_int_intrinsic(initial)
+}
+
+fn lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    aic_conc_mutex_lock_intrinsic(mutex, timeout_ms)
+}
+
+fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_mutex_unlock_intrinsic(mutex, value)
+}
+
+fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_mutex_close_intrinsic(mutex)
+}

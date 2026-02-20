@@ -3,7 +3,16 @@ use std::collections::BTreeSet;
 use crate::diagnostics::Diagnostic;
 use crate::ir;
 
-pub const KNOWN_EFFECTS: &[&str] = &["io", "fs", "net", "time", "rand", "env", "proc"];
+pub const KNOWN_EFFECTS: &[&str] = &[
+    "io",
+    "fs",
+    "net",
+    "time",
+    "rand",
+    "env",
+    "proc",
+    "concurrency",
+];
 
 pub fn normalize_effect_declarations(program: &mut ir::Program, file: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();

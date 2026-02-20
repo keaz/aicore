@@ -5,12 +5,13 @@ import std.fs;
 import std.net;
 import std.time;
 import std.rand;
+import std.concurrent;
 import std.string;
 import std.vec;
 import std.option;
 import std.result;
 
-fn main() -> Int effects { io, fs, net, time, rand } {
+fn main() -> Int effects { io, fs, net, time, rand, concurrency } {
     let _a = exists("data.txt");
     let _b = read_text("data.txt");
     write_text("out.txt", "ok");
@@ -47,6 +48,17 @@ fn main() -> Int effects { io, fs, net, time, rand } {
     let _r = random_int();
     let _rr = random_range(1, 4);
     let _rb = random_bool();
+    let _task = spawn_task(1, 1);
+    let _join = join_task(Task { handle: 1 });
+    let _cancel = cancel_task(Task { handle: 1 });
+    let _chan = channel_int(2);
+    let _send_int = send_int(IntChannel { handle: 1 }, 7, 1);
+    let _recv_int = recv_int(IntChannel { handle: 1 }, 1);
+    let _close_chan = close_channel(IntChannel { handle: 1 });
+    let _mutex = mutex_int(0);
+    let _lock = lock_int(IntMutex { handle: 1 }, 1);
+    let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
+    let _close_mutex = close_mutex(IntMutex { handle: 1 });
     let _s = len("abc");
     print_int(1);
     0
