@@ -180,6 +180,79 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_result_propagation_accepts_matching_result_types() {
+    let src = r#"
+fn parse_num(x: Int) -> Result[Int, Int] {
+    Ok(x)
+}
+
+fn bump(x: Int) -> Result[Int, Int] {
+    let v = parse_num(x)?;
+    if true { Ok(v + 1) } else { Err(0) }
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1260" || d.code == "E1261" || d.code == "E1262"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_result_propagation_rejects_non_result_operand() {
+    let src = r#"
+fn bad() -> Result[Int, Int] {
+    let x = 1?;
+    Ok(x)
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1260"));
+}
+
+#[test]
+fn unit_result_propagation_requires_result_return_type() {
+    let src = r#"
+fn parse_num(x: Int) -> Result[Int, Int] {
+    Ok(x)
+}
+
+fn bad(x: Int) -> Int {
+    parse_num(x)?
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1261"));
+}
+
+#[test]
+fn unit_result_propagation_reports_error_type_mismatch() {
+    let src = r#"
+fn parse_num(x: Int) -> Result[Int, Bool] {
+    if x > 0 { Ok(x) } else { Err(false) }
+}
+
+fn bad(x: Int) -> Result[Int, Int] {
+    let v = parse_num(x)?;
+    Ok(v)
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1262"));
+}
+
+#[test]
 fn unit_typecheck_non_exhaustive_option_match() {
     let src = r#"
 fn f(x: Option[Int]) -> Int {

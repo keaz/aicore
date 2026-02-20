@@ -849,6 +849,18 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            if self.at_kind(|k| matches!(k, TokenKind::Question)) {
+                let end = self.current_span().end;
+                self.bump();
+                expr = Expr {
+                    span: Span::new(expr.span.start, end),
+                    kind: ExprKind::Try {
+                        expr: Box::new(expr),
+                    },
+                };
+                continue;
+            }
+
             break;
         }
         Some(expr)
@@ -1278,7 +1290,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{ExprKind, Item};
+    use crate::ast::{Expr, ExprKind, Item};
 
     #[test]
     fn parses_simple_function() {
@@ -1392,5 +1404,38 @@ fn pick[T: Order](a: T, b: T) -> T {
         assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
         let program = program.expect("program");
         assert_eq!(program.items.len(), 3);
+    }
+
+    #[test]
+    fn parses_result_propagation_operator() {
+        let src = r#"
+fn parse(x: Int) -> Result[Int, Int] {
+    Ok(x)
+}
+
+fn bump(x: Int) -> Result[Int, Int] {
+    let v = parse(x)?;
+    Ok(v + 1)
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        assert!(matches!(tail.kind, ExprKind::Call { .. }));
+        assert!(matches!(
+            function.body.stmts[0],
+            crate::ast::Stmt::Let {
+                expr: Expr {
+                    kind: ExprKind::Try { .. },
+                    ..
+                },
+                ..
+            }
+        ));
     }
 }

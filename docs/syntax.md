@@ -3,7 +3,7 @@
 This file is the frozen grammar contract for the current parser implementation.
 If parser behavior changes, this file must be updated in the same change.
 
-Version: `mvp-grammar-v2`
+Version: `mvp-grammar-v3`
 
 ## Lexical tokens
 
@@ -12,7 +12,7 @@ Version: `mvp-grammar-v2`
 - `string`: double-quoted UTF-8 string with escape support
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
-- operators: `+ - * / % == != < <= > >= && || ! =`
+- operators: `+ - * / % == != < <= > >= && || ! ? =`
 
 ## Top-level grammar
 
@@ -88,10 +88,11 @@ term_expr      = factor_expr (("+" | "-") factor_expr)* ;
 factor_expr    = unary_expr (("*" | "/" | "%") unary_expr)* ;
 unary_expr     = ("await" | "-" | "!") unary_expr | postfix_expr ;
 
-postfix_expr   = primary_expr (call_suffix | field_suffix)* ;
+postfix_expr   = primary_expr (call_suffix | field_suffix | try_suffix)* ;
 call_suffix    = "(" arg_list? ")" ;
 arg_list       = expr ("," expr)* ","? ;
 field_suffix   = "." ident ;
+try_suffix     = "?" ;
 
 primary_expr   = int
                | string
@@ -134,6 +135,10 @@ variant_pattern = ident ("(" pattern ("," pattern)* ","? ")")? ;
 Pattern disambiguation:
 - bare uppercase identifier is treated as a zero-arg variant pattern
 - bare lowercase identifier is treated as a variable binding pattern
+
+Result propagation:
+- `expr?` is a postfix propagation operator.
+- `expr?` requires `expr: Result[T, E]` and an enclosing function return type `Result[U, E]`.
 
 ## Canonical formatting contract
 

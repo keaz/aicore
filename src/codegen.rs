@@ -906,6 +906,7 @@ impl<'a> Generator<'a> {
             vars: vec![BTreeMap::new()],
             terminated: false,
             current_label: "entry".to_string(),
+            ret_ty: sig.ret.clone(),
             debug_scope,
         };
         fctx.lines.push("entry:".to_string());
@@ -1190,6 +1191,7 @@ impl<'a> Generator<'a> {
                 }
             }
             ir::ExprKind::Await { expr: inner } => self.gen_expr(inner, fctx),
+            ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {
                 let lv = self.gen_expr(lhs, fctx)?;
                 let rv = self.gen_expr(rhs, fctx)?;
@@ -1956,6 +1958,274 @@ impl<'a> Generator<'a> {
             ty,
             repr: Some(acc),
         }))
+    }
+
+    fn gen_try(
+        &mut self,
+        inner_expr: &ir::Expr,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let result = self.gen_expr(inner_expr, fctx)?;
+        let LType::Enum(result_layout) = result.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                format!(
+                    "`?` expects Result[T, E] in codegen, found '{}'",
+                    render_type(&result.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&result_layout.repr) != "Result" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                format!(
+                    "`?` expects Result[T, E] in codegen, found '{}'",
+                    result_layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(ok_idx) = result_layout.variants.iter().position(|v| v.name == "Ok") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Result layout missing Ok variant for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(err_idx) = result_layout.variants.iter().position(|v| v.name == "Err") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Result layout missing Err variant for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(ok_payload_ty) = result_layout.variants[ok_idx].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Result Ok variant must carry a payload for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(err_payload_ty) = result_layout.variants[err_idx].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Result Err variant must carry a payload for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        let LType::Enum(fn_ret_layout) = fctx.ret_ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                format!(
+                    "`?` requires Result return type in enclosing function, found '{}'",
+                    render_type(&fctx.ret_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&fn_ret_layout.repr) != "Result" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                format!(
+                    "`?` requires Result return type in enclosing function, found '{}'",
+                    fn_ret_layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(fn_err_idx) = fn_ret_layout.variants.iter().position(|v| v.name == "Err") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                "enclosing Result return type missing Err variant for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(fn_err_payload_ty) = fn_ret_layout.variants[fn_err_idx].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                "enclosing Result Err variant must carry a payload for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if err_payload_ty != fn_err_payload_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                format!(
+                    "`?` error type mismatch in codegen: expression has '{}', function expects '{}'",
+                    render_type(&err_payload_ty),
+                    render_type(&fn_err_payload_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let result_repr = result
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&result.ty));
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&result.ty),
+            result_repr.as_str()
+        ));
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i32 {}, {}", is_ok, tag, ok_idx));
+        let ok_label = self.new_label("try_ok");
+        let err_label = self.new_label("try_err");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", err_label));
+        let err_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            err_payload,
+            llvm_type(&result.ty),
+            result_repr.as_str(),
+            err_idx + 1
+        ));
+        let err_value = Value {
+            ty: err_payload_ty,
+            repr: Some(err_payload),
+        };
+        let ret_enum = self.build_enum_variant_value(
+            &fn_ret_layout,
+            fn_err_idx,
+            Some(&err_value),
+            span,
+            fctx,
+        )?;
+        fctx.lines
+            .push(format!("  ret {} {}", llvm_type(&fctx.ret_ty), ret_enum));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.current_label = ok_label;
+        if ok_payload_ty == LType::Unit {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        let ok_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            ok_payload,
+            llvm_type(&result.ty),
+            result_repr.as_str(),
+            ok_idx + 1
+        ));
+        Some(Value {
+            ty: ok_payload_ty,
+            repr: Some(ok_payload),
+        })
+    }
+
+    fn build_enum_variant_value(
+        &mut self,
+        layout: &EnumLayoutType,
+        variant_index: usize,
+        payload: Option<&Value>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let ty = LType::Enum(layout.clone());
+        let mut acc = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i32 {}, 0",
+            acc,
+            llvm_type(&ty),
+            variant_index
+        ));
+
+        for (idx, variant) in layout.variants.iter().enumerate() {
+            let (slot_ty, slot_repr) = if let Some(payload_ty) = &variant.payload {
+                if idx == variant_index {
+                    if let Some(value) = payload {
+                        if value.ty == *payload_ty {
+                            (
+                                llvm_type(payload_ty),
+                                value
+                                    .repr
+                                    .clone()
+                                    .unwrap_or_else(|| default_value(payload_ty)),
+                            )
+                        } else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E5022",
+                                format!(
+                                    "variant '{}' payload expects '{}', found '{}'",
+                                    variant.name,
+                                    render_type(payload_ty),
+                                    render_type(&value.ty)
+                                ),
+                                self.file,
+                                span,
+                            ));
+                            return None;
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5022",
+                            format!(
+                                "variant '{}' requires payload in `?` lowering",
+                                variant.name
+                            ),
+                            self.file,
+                            span,
+                        ));
+                        return None;
+                    }
+                } else {
+                    (llvm_type(payload_ty), default_value(payload_ty))
+                }
+            } else {
+                ("i8".to_string(), "0".to_string())
+            };
+
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, {} {}, {}",
+                reg,
+                llvm_type(&ty),
+                acc,
+                slot_ty,
+                slot_repr,
+                idx + 1
+            ));
+            acc = reg;
+        }
+        Some(acc)
     }
 
     fn gen_if(
@@ -2788,6 +3058,7 @@ struct FnCtx {
     vars: Vec<BTreeMap<String, Local>>,
     terminated: bool,
     current_label: String,
+    ret_ty: LType,
     debug_scope: Option<usize>,
 }
 

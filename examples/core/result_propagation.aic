@@ -1,0 +1,22 @@
+import std.io;
+
+fn parse_positive(x: Int) -> Result[Int, Int] {
+    if x >= 0 { Ok(x) } else { Err(0 - x) }
+}
+
+fn double_checked(x: Int) -> Result[Int, Int] {
+    let n = parse_positive(x)?;
+    if true { Ok(n * 2) } else { Err(0) }
+}
+
+fn render(v: Result[Int, Int]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(err) => 0 - err,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(render(double_checked(21)));
+    0
+}

@@ -874,6 +874,9 @@ fn rewrite_struct_inits_in_expr(
         ir::ExprKind::Await { expr } => {
             rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
         }
+        ir::ExprKind::Try { expr } => {
+            rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
+        }
         ir::ExprKind::StructInit { name, fields } => {
             for (_, value, _) in fields.iter_mut() {
                 rewrite_struct_inits_in_expr(value, helper_names, field_orders, alloc);
@@ -1018,6 +1021,9 @@ fn lower_ensures_in_expr(
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
         }
         ir::ExprKind::Await { expr } => {
+            lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
+        }
+        ir::ExprKind::Try { expr } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
         }
         ir::ExprKind::StructInit { fields, .. } => {
@@ -1309,6 +1315,9 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
         ir::ExprKind::Await { expr } => ir::ExprKind::Await {
             expr: Box::new(clone_expr(expr, alloc)),
         },
+        ir::ExprKind::Try { expr } => ir::ExprKind::Try {
+            expr: Box::new(clone_expr(expr, alloc)),
+        },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
             name: name.clone(),
             fields: fields
@@ -1437,6 +1446,9 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
         },
         ir::ExprKind::Await { expr } => ir::ExprKind::Await {
+            expr: Box::new(substitute_result_var(expr, result_name, alloc)),
+        },
+        ir::ExprKind::Try { expr } => ir::ExprKind::Try {
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
         },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
@@ -1675,6 +1687,7 @@ fn make(x: Int) -> NonEmpty {
             }
             ir::ExprKind::Unary { expr, .. } => count_asserts_in_expr(expr),
             ir::ExprKind::Await { expr } => count_asserts_in_expr(expr),
+            ir::ExprKind::Try { expr } => count_asserts_in_expr(expr),
             ir::ExprKind::StructInit { fields, .. } => fields
                 .iter()
                 .map(|(_, value, _)| count_asserts_in_expr(value))

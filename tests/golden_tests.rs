@@ -92,3 +92,8 @@ fn golden_case12_async_await() {
 fn golden_case13_trait_impl() {
     run_golden_case("case13_trait_impl.aic");
 }
+
+#[test]
+fn golden_case14_result_propagation() {
+    run_golden_case("case14_result_propagation.aic");
+}

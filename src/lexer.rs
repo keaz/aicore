@@ -64,6 +64,7 @@ pub enum TokenKind {
     AndAnd,
     OrOr,
     Bang,
+    Question,
     Underscore,
 
     Eof,
@@ -177,6 +178,7 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Bang, Span::new(start, self.offset));
                     }
                 }
+                '?' => self.single(TokenKind::Question),
                 '<' => {
                     let start = self.offset;
                     self.bump();
@@ -411,7 +413,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "async fn main() -> Int effects { io } { let x = await ping(); x }";
+        let src = "async fn main() -> Int effects { io } { let x = await ping()?; x }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
@@ -421,6 +423,7 @@ mod tests {
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwEffects)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAwait)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Question)));
     }
 
     #[test]

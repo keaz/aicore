@@ -25,6 +25,7 @@ Notable function/expression fields:
 - `Function.is_async: bool`
 - `GenericParam.bounds: Vec<String>`
 - `ExprKind::Await { expr }`
+- `ExprKind::Try { expr }`
 
 Invariants:
 

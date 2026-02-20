@@ -36,6 +36,11 @@ Recent core-language additions:
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.
+- `E1260`: `?` operand is not `Result[T, E]`.
+- `E1261`: `?` used in function without `Result` return type.
+- `E1262`: `?` error type mismatch (`Result[_, E1]` in `Result[_, E2]` function).
+- `E5021`: backend lowering failure for invalid `?` operand/result layout.
+- `E5022`: backend lowering failure for incompatible function `Result` return layout.
 
 ## Change policy
 

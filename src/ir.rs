@@ -278,6 +278,9 @@ pub enum ExprKind {
     Await {
         expr: Box<Expr>,
     },
+    Try {
+        expr: Box<Expr>,
+    },
     StructInit {
         name: String,
         fields: Vec<(String, Expr, Span)>,

@@ -287,6 +287,9 @@ impl Builder {
             ast::ExprKind::Await { expr } => ir::ExprKind::Await {
                 expr: Box::new(self.lower_expr(expr)),
             },
+            ast::ExprKind::Try { expr } => ir::ExprKind::Try {
+                expr: Box::new(self.lower_expr(expr)),
+            },
             ast::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
                 name: name.clone(),
                 fields: fields

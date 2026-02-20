@@ -341,6 +341,7 @@ fn render_expr(expr: &ir::Expr) -> String {
             format!("{}{}", op, render_expr(expr))
         }
         ir::ExprKind::Await { expr } => format!("await {}", render_expr(expr)),
+        ir::ExprKind::Try { expr } => format!("{}?", render_expr(expr)),
         ir::ExprKind::StructInit { name, fields } => {
             let rendered = fields
                 .iter()

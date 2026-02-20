@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v2` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v3` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -70,6 +70,7 @@ fn pick[T: Sortable](a: T, b: T) -> T {
 - Effects are explicit: `effects { io, fs, net, time, rand }`.
 - Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
 - `await` is only valid inside `async fn`.
+- Result propagation uses postfix `?` and requires explicit `Result[_, E]` compatibility.
 - Generic function parameters are inferred from call arguments.
 - Generic parameters may include explicit trait bounds: `T: TraitA + TraitB`.
 - Contracts:
@@ -107,6 +108,17 @@ enum Option[T] {
 match maybe {
     None => 0,
     Some(v) => v,
+}
+```
+
+- Result propagation:
+
+```aic
+fn parse_num(x: Int) -> Result[Int, Int] { Ok(x) }
+
+fn bump(x: Int) -> Result[Int, Int] {
+    let value = parse_num(x)?;
+    if true { Ok(value + 1) } else { Err(0) }
 }
 ```
 

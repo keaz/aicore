@@ -41,6 +41,7 @@ struct Checker<'a> {
     call_graph: BTreeMap<String, Vec<CallEdge>>,
     current_function: Option<String>,
     current_function_is_async: bool,
+    current_function_ret_type: Option<String>,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
@@ -179,6 +180,7 @@ impl<'a> Checker<'a> {
             call_graph: BTreeMap::new(),
             current_function: None,
             current_function_is_async: false,
+            current_function_ret_type: None,
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
@@ -223,6 +225,7 @@ impl<'a> Checker<'a> {
         let previous_enforce = self.enforce_import_visibility;
         let previous_function = self.current_function.replace(func.name.clone());
         let previous_async = self.current_function_is_async;
+        let previous_ret = self.current_function_ret_type.clone();
         self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
         self.current_function_is_async = func.is_async;
         self.call_graph.entry(func.name.clone()).or_default();
@@ -244,6 +247,7 @@ impl<'a> Checker<'a> {
             .get(&func.ret_type)
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
+        self.current_function_ret_type = Some(ret_type.clone());
         self.check_generic_arity(&ret_type, func.span);
 
         for generic in &func.generics {
@@ -382,6 +386,7 @@ impl<'a> Checker<'a> {
         self.enforce_import_visibility = previous_enforce;
         self.current_function = previous_function;
         self.current_function_is_async = previous_async;
+        self.current_function_ret_type = previous_ret;
     }
 
     fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
@@ -1526,6 +1531,93 @@ impl<'a> Checker<'a> {
                     ));
                     return "<?>".to_string();
                 }
+                args[0].clone()
+            }
+            ir::ExprKind::Try { expr: inner } => {
+                let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
+                if base_type_name(&ty) != "Result" {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1260",
+                            format!("`?` expects Result[T, E], found '{}'", ty),
+                            self.file,
+                            inner.span,
+                        )
+                        .with_help("use `?` only on Result-returning expressions"),
+                    );
+                    return "<?>".to_string();
+                }
+
+                let args = extract_generic_args(&ty).unwrap_or_default();
+                if args.len() != 2 {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1260",
+                        format!("`?` expects Result[T, E], found '{}'", ty),
+                        self.file,
+                        inner.span,
+                    ));
+                    return "<?>".to_string();
+                }
+
+                let Some(function_ret) = self.current_function_ret_type.clone() else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1261",
+                        "`?` cannot be used outside of a function body",
+                        self.file,
+                        expr.span,
+                    ));
+                    return "<?>".to_string();
+                };
+
+                if base_type_name(&function_ret) != "Result" {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1261",
+                            format!(
+                                "`?` requires enclosing function return type Result[_, E], found '{}'",
+                                function_ret
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("change the function return type to Result[T, E] or handle Err explicitly"),
+                    );
+                    return "<?>".to_string();
+                }
+
+                let fn_args = extract_generic_args(&function_ret).unwrap_or_default();
+                if fn_args.len() != 2 {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1261",
+                        format!(
+                            "`?` requires enclosing function return type Result[_, E], found '{}'",
+                            function_ret
+                        ),
+                        self.file,
+                        expr.span,
+                    ));
+                    return "<?>".to_string();
+                }
+
+                let expr_err = &args[1];
+                let fn_err = &fn_args[1];
+                if !type_compatible(fn_err, expr_err) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1262",
+                            format!(
+                                "`?` error type mismatch: expression has '{}', function expects '{}'",
+                                expr_err, fn_err
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help(
+                            "align Result error types explicitly; implicit error conversions are not allowed",
+                        ),
+                    );
+                }
+
                 args[0].clone()
             }
             ir::ExprKind::StructInit { name, fields } => {

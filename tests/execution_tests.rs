@@ -114,6 +114,37 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_result_propagation_short_circuits_err() {
+    let src = r#"
+import std.io;
+
+fn ensure_non_negative(x: Int) -> Result[Int, Int] {
+    if x >= 0 { Ok(x) } else { Err(0 - x) }
+}
+
+fn bump_checked(x: Int) -> Result[Int, Int] {
+    let base = ensure_non_negative(x)?;
+    if true { Ok(base + 1) } else { Err(0) }
+}
+
+fn unwrap_or_neg(v: Result[Int, Int]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(err) => 0 - err,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(unwrap_or_neg(bump_checked(-42)));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "-42\n");
+}
+
+#[test]
 fn exec_abs_if_expression() {
     let src = r#"
 import std.io;

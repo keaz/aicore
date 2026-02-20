@@ -317,6 +317,20 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
                 out.push(')');
             }
         }
+        ir::ExprKind::Try { expr } => {
+            let needs_paren = matches!(
+                expr.kind,
+                ir::ExprKind::Binary { .. } | ir::ExprKind::If { .. } | ir::ExprKind::Match { .. }
+            );
+            if needs_paren {
+                out.push('(');
+            }
+            format_expr(out, expr, 10);
+            if needs_paren {
+                out.push(')');
+            }
+            out.push('?');
+        }
         ir::ExprKind::StructInit { name, fields } => {
             out.push_str(name);
             out.push_str(" {");
