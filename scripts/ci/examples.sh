@@ -35,10 +35,14 @@ check_pass=(
   "examples/e6/doc_sample.aic"
   "examples/e6/deprecated_api_use.aic"
   "examples/e6/pkg_app"
+  "examples/e7/cli_smoke.aic"
+  "examples/e7/test_harness_sample.aic"
+  "examples/e7/lsp_project"
 )
 check_fail=(
   "examples/effects_reject.aic"
   "examples/e4/transitive_effect_violation.aic"
+  "examples/e7/diag_errors.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -51,6 +55,7 @@ run_pass=(
   "examples/e6/std_smoke.aic"
   "examples/e6/deps_checksum.aic"
   "examples/e6/pkg_app"
+  "examples/e7/cli_smoke.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -135,8 +140,24 @@ case "$MODE" in
     expect_run_value "examples/e6/std_smoke.aic" "1"
     expect_run_value "examples/e6/deps_checksum.aic" "42"
     expect_run_value "examples/e6/pkg_app" "42"
+    expect_run_value "examples/e7/cli_smoke.aic" "42"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
+    if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then
+      echo "expected sarif check failure but passed: examples/e7/diag_errors.aic" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/diag_errors.sarif" >/dev/null
+    "${AIC[@]}" explain "E2001" >/dev/null
+    if "${AIC[@]}" explain "E9999" >/tmp/aic-example.out; then
+      echo "expected explain unknown-code failure but passed" >&2
+      exit 1
+    fi
+    "${AIC[@]}" contract --json >/tmp/aic-example.out
+    python3 -m json.tool /tmp/aic-example.out >/dev/null
+    "${AIC[@]}" test "examples/e7/harness" --json >"$ARTIFACT_DIR/harness_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/harness_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/harness_report.json"
     DOC_DIR="$ARTIFACT_DIR/doc_sample"
     "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
     expect_file_exists "$DOC_DIR/index.md"

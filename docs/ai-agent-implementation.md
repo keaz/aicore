@@ -1,4 +1,4 @@
-# AI Agent Implementation Guide (E4 + E5 + E6)
+# AI Agent Implementation Guide (E4 + E5 + E6 + E7)
 
 This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
@@ -13,6 +13,10 @@ This document is implementation-oriented and intended for autonomous contributor
 - LLVM backend + runtime ABI: `src/codegen.rs`
 - API doc generation: `src/docgen.rs`
 - Std compatibility/deprecation policy: `src/std_policy.rs`
+- SARIF diagnostics export: `src/sarif.rs`
+- Diagnostic explain metadata: `src/diagnostic_explain.rs`
+- LSP server: `src/lsp.rs`
+- Built-in fixture harness: `src/test_harness.rs`
 - CLI command surface: `src/main.rs`
 
 ## E4 Summary (Effects + Contracts)
@@ -131,6 +135,63 @@ Diagnostics:
 
 - `E6002`: std compatibility check failure (CLI policy lint output).
 
+## E7 Summary (CLI + Diagnostics + IDE Tooling)
+
+### CLI contract and deterministic exits (E7-T1)
+
+- Command/flag/exit contract metadata: `src/cli_contract.rs`
+- CLI contract command: `aic contract --json`
+- Exit code mapping:
+  - `0`: success
+  - `1`: diagnostic/runtime failure
+  - `2`: command-line usage error
+  - `3`: internal/tooling failure
+- Contract doc: `docs/cli-contract.md`
+
+### SARIF export (E7-T2)
+
+- SARIF emitter: `diagnostics_to_sarif(diags, tool_name, tool_version)` in `src/sarif.rs`
+- CLI support:
+  - `aic check --sarif`
+  - `aic diag --sarif`
+- SARIF docs:
+  - `docs/sarif.md`
+
+### Explain command (E7-T3)
+
+- Explanation engine: `src/diagnostic_explain.rs`
+- Commands:
+  - `aic explain E####`
+  - `aic explain E#### --json`
+- Coverage guarantee:
+  - `registry_explain_coverage()` test ensures all registered codes have explain metadata/range mapping.
+
+### LSP support and IDE integration (E7-T4)
+
+- Server entrypoint: `aic lsp` (`src/lsp.rs`)
+- Implemented methods:
+  - `initialize`, `shutdown`
+  - `textDocument/didOpen`, `textDocument/didChange`, `textDocument/didSave`
+  - `textDocument/hover`, `textDocument/definition`, `textDocument/formatting`
+- Diagnostics parity:
+  - LSP diagnostics are built from frontend diagnostics and filtered by file.
+- IDE docs:
+  - `docs/ide-integration.md`
+- Sample workspace:
+  - `examples/e7/lsp_project/`
+
+### Built-in fixture harness (E7-T5)
+
+- Harness module: `src/test_harness.rs`
+- Command:
+  - `aic test [path] --mode all|run-pass|compile-fail|golden [--json]`
+- Fixture categories discovered by directory segment:
+  - `run-pass`
+  - `compile-fail`
+  - `golden`
+- Sample fixtures:
+  - `examples/e7/harness/`
+
 ## Validation Inventory
 
 ### Tests
@@ -150,6 +211,11 @@ Diagnostics:
 - `examples/e6/deps_checksum.aic`
 - `examples/e6/doc_sample.aic`
 - `examples/e6/deprecated_api_use.aic`
+- `examples/e7/cli_smoke.aic`
+- `examples/e7/diag_errors.aic`
+- `examples/e7/explain_trigger.aic`
+- `examples/e7/lsp_project/`
+- `examples/e7/harness/`
 
 Examples are integrated into `scripts/ci/examples.sh`.
 

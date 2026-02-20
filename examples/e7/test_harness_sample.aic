@@ -1,0 +1,2 @@
+// This file exists as a simple E7 harness-related compile sample.
+fn main() -> Int { 1 }

@@ -1,0 +1,9 @@
+// expect-error: E2001
+fn io_side_effect() -> Unit effects { io } {
+  print_int(1)
+}
+
+fn main() -> Int {
+  io_side_effect();
+  0
+}

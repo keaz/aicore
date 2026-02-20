@@ -1,0 +1,3 @@
+[package]
+name = "lsp_project"
+main = "src/main.aic"

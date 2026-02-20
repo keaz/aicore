@@ -1,0 +1,7 @@
+// expect: 42
+import std.io;
+
+fn main() -> Int effects { io } {
+  print_int(42);
+  0
+}

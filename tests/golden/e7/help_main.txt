@@ -1,0 +1,25 @@
+AICore compiler
+
+Usage: aic <COMMAND>
+
+Commands:
+  init        
+  check       
+  diag        
+  explain     
+  fmt         
+  ir          
+  ir-migrate  
+  lock        
+  build       
+  doc         
+  std-compat  
+  lsp         
+  test        
+  contract    
+  run         
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version

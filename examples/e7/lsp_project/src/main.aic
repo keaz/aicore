@@ -1,0 +1,6 @@
+module e7.lsp.main;
+import e7.lsp.math;
+
+fn main() -> Int {
+  add(40, 2)
+}

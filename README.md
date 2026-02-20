@@ -23,6 +23,11 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Package lock/checksum/offline cache workflow | Implemented (`aic lock`, `--offline`) |
 | API docs generation | Implemented (`aic doc`) |
 | Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |
+| CLI contract + deterministic exits | Implemented (`aic contract`) |
+| SARIF diagnostics export | Implemented (`aic check --sarif`) |
+| Diagnostic explain command | Implemented (`aic explain`) |
+| LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
+| Built-in fixture harness | Implemented (`aic test`) |
 
 ## Prerequisites
 
@@ -92,6 +97,11 @@ cargo run -- lock examples/e6/pkg_app
 cargo run -- check examples/e6/pkg_app --offline
 cargo run -- doc examples/e6/doc_sample.aic -o docs/api
 cargo run -- std-compat --check --baseline docs/std-api-baseline.json
+cargo run -- check examples/e7/diag_errors.aic --sarif
+cargo run -- explain E2001
+cargo run -- lsp
+cargo run -- test examples/e7/harness --json
+cargo run -- contract --json
 cargo run -- run examples/option_match.aic
 ```
 
@@ -107,6 +117,10 @@ Commands:
 - `aic build`
 - `aic doc`
 - `aic std-compat`
+- `aic explain`
+- `aic lsp`
+- `aic test`
+- `aic contract`
 - `aic run`
 
 ## Project layout
@@ -119,9 +133,12 @@ Commands:
 
 ## Test suite
 
-- Unit tests: 60 (`src/*` + `tests/unit_tests.rs`)
-- Golden tests: 10 (`tests/golden_tests.rs`)
+- Core unit tests: 70 (`src/*` library tests)
+- Unit integration tests: 47 (`tests/unit_tests.rs`)
+- Golden tests: 11 (`tests/golden_tests.rs`)
 - Execution tests: 11 (`tests/execution_tests.rs`)
+- CLI contract tests: 5 (`tests/e7_cli_tests.rs`)
+- LSP smoke tests: 2 (`tests/lsp_smoke_tests.rs`)
 
 ## Determinism guarantees (MVP)
 

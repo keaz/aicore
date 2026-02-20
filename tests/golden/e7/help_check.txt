@@ -1,0 +1,10 @@
+Usage: aic check [OPTIONS] [INPUT]
+
+Arguments:
+  [INPUT]  [default: src/main.aic]
+
+Options:
+      --json     
+      --sarif    
+      --offline  
+  -h, --help     Print help

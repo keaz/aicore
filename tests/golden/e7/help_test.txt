@@ -1,0 +1,9 @@
+Usage: aic test [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  [default: .]
+
+Options:
+      --mode <MODE>  [default: all] [possible values: all, run-pass, compile-fail, golden]
+      --json         
+  -h, --help         Print help

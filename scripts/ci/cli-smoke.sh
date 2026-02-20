@@ -22,6 +22,10 @@ DOC_DIR="$PROJECT_DIR/docs/api"
 "${AIC[@]}" fmt --check "$MAIN_FILE"
 "${AIC[@]}" check "$MAIN_FILE" >/dev/null
 "${AIC[@]}" ir "$MAIN_FILE" --emit json >/dev/null
+if "${AIC[@]}" check "$MAIN_FILE" --json --sarif >/dev/null 2>&1; then
+  echo "expected usage error for --json + --sarif conflict" >&2
+  exit 1
+fi
 "${AIC[@]}" build "$MAIN_FILE" -o "$APP_BIN" >/dev/null
 "${AIC[@]}" build "$MAIN_FILE" --artifact obj -o "$OBJ_ARTIFACT" >/dev/null
 "${AIC[@]}" build "$MAIN_FILE" --artifact lib -o "$LIB_ARTIFACT" >/dev/null
@@ -30,6 +34,14 @@ DOC_DIR="$PROJECT_DIR/docs/api"
 "${AIC[@]}" check "$PROJECT_DIR" --offline >/dev/null
 "${AIC[@]}" doc "$MAIN_FILE" -o "$DOC_DIR" >/dev/null
 "${AIC[@]}" std-compat --check >/dev/null
+"${AIC[@]}" explain E2001 >/dev/null
+"${AIC[@]}" contract --json >/dev/null
+"${AIC[@]}" test examples/e7/harness --json >/dev/null
+if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$TMP_DIR/diag.sarif"; then
+  echo "expected diagnostics failure for diag_errors.aic" >&2
+  exit 1
+fi
+python3 -m json.tool "$TMP_DIR/diag.sarif" >/dev/null
 
 [[ -f "$OBJ_ARTIFACT" ]]
 [[ -f "$LIB_ARTIFACT" ]]

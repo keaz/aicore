@@ -1,0 +1,7 @@
+fn use_io() -> Unit {
+  print_int(1)
+}
+
+fn main() -> Int {
+  0
+}

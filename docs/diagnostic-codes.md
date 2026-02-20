@@ -23,6 +23,7 @@ Registry source of truth:
 - `Diagnostic::error` validates code format and registry membership.
 - New diagnostics must add a code to `src/diagnostic_codes.rs`.
 - Unit tests fail if emitted codes are not registered.
+- `aic explain <CODE>` provides deterministic remediation guidance for all registered codes.
 
 ## Change policy
 
