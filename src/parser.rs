@@ -98,12 +98,16 @@ impl<'a> Parser<'a> {
             self.parse_struct().map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
             self.parse_enum().map(Item::Enum)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwTrait)) {
+            self.parse_trait().map(Item::Trait)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwImpl)) {
+            self.parse_impl().map(Item::Impl)
         } else {
             let span = self.current_span();
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1003",
-                    "expected item declaration (`fn`, `async fn`, `struct`, `enum`)",
+                    "expected item declaration (`fn`, `async fn`, `struct`, `enum`, `trait`, `impl`)",
                     self.file,
                     span,
                 )
@@ -295,6 +299,62 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_trait(&mut self) -> Option<TraitDef> {
+        let start = self.current_span().start;
+        self.bump(); // trait
+        let (name, _) = self.expect_ident("E1053", "expected trait name")?;
+        let generics = self.parse_generics();
+        let end = self
+            .expect(
+                |k| matches!(k, TokenKind::Semi),
+                "E1054",
+                "expected ';' after trait declaration",
+            )?
+            .end;
+        Some(TraitDef {
+            name,
+            generics,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_impl(&mut self) -> Option<ImplDef> {
+        let start = self.current_span().start;
+        self.bump(); // impl
+        let (trait_name, _) = self.expect_ident("E1055", "expected trait name after impl")?;
+        self.expect(
+            |k| matches!(k, TokenKind::LBracket),
+            "E1056",
+            "expected '[' after trait name in impl",
+        )?;
+        let mut trait_args = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
+            trait_args.push(self.parse_type()?);
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        self.expect(
+            |k| matches!(k, TokenKind::RBracket),
+            "E1057",
+            "expected ']' after impl type arguments",
+        )?;
+        let end = self
+            .expect(
+                |k| matches!(k, TokenKind::Semi),
+                "E1058",
+                "expected ';' after impl declaration",
+            )?
+            .end;
+        Some(ImplDef {
+            trait_name,
+            trait_args,
+            span: Span::new(start, end),
+        })
+    }
+
     fn parse_generics(&mut self) -> Vec<GenericParam> {
         if !self.at_kind(|k| matches!(k, TokenKind::LBracket)) {
             return Vec::new();
@@ -303,7 +363,24 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
             if let Some((name, span)) = self.expect_ident("E1020", "expected generic parameter") {
-                params.push(GenericParam { name, span });
+                let mut bounds = Vec::new();
+                if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
+                    self.bump();
+                    loop {
+                        let Some((bound, _)) =
+                            self.expect_ident("E1059", "expected trait bound after ':'")
+                        else {
+                            break;
+                        };
+                        bounds.push(bound);
+                        if self.at_kind(|k| matches!(k, TokenKind::Plus)) {
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                params.push(GenericParam { name, bounds, span });
             } else {
                 break;
             }
@@ -1095,7 +1172,12 @@ impl<'a> Parser<'a> {
             if self.at_kind(|k| {
                 matches!(
                     k,
-                    TokenKind::KwAsync | TokenKind::KwFn | TokenKind::KwStruct | TokenKind::KwEnum
+                    TokenKind::KwAsync
+                        | TokenKind::KwFn
+                        | TokenKind::KwStruct
+                        | TokenKind::KwEnum
+                        | TokenKind::KwTrait
+                        | TokenKind::KwImpl
                 )
             }) {
                 break;
@@ -1294,5 +1376,21 @@ async fn main() -> Int {
         let src = "async struct Bad { x: Int }";
         let (_program, diagnostics) = parse(src, "test.aic");
         assert!(diagnostics.iter().any(|d| d.code == "E1052"));
+    }
+
+    #[test]
+    fn parses_trait_impl_and_generic_bounds() {
+        let src = r#"
+trait Order[T];
+impl Order[Int];
+
+fn pick[T: Order](a: T, b: T) -> T {
+    a
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        assert_eq!(program.items.len(), 3);
     }
 }

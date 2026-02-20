@@ -149,7 +149,7 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                     }
                 }
             }
-            ir::Item::Enum(_) => {}
+            ir::Item::Enum(_) | ir::Item::Trait(_) | ir::Item::Impl(_) => {}
         }
     }
 

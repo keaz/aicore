@@ -76,6 +76,62 @@ fn unit_typecheck_unknown_symbol() {
 }
 
 #[test]
+fn unit_trait_bounded_generic_accepts_multiple_impl_types() {
+    let src = r#"
+trait Order[T];
+impl Order[Int];
+impl Order[Bool];
+
+fn pick[T: Order](a: T, b: T) -> T {
+    a
+}
+
+fn as_int(v: Bool) -> Int {
+    match v {
+        true => 1,
+        false => 0,
+    }
+}
+
+fn demo() -> Int {
+    let x = pick(41, 42);
+    let y = pick(true, false);
+    x + as_int(y)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1258"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_trait_bounded_generic_reports_missing_impl() {
+    let src = r#"
+trait Order[T];
+impl Order[Int];
+
+fn pick[T: Order](a: T, b: T) -> T {
+    a
+}
+
+fn demo() -> Bool {
+    pick(true, false)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1258"));
+}
+
+#[test]
 fn unit_async_call_requires_await_for_value_use() {
     let src = r#"
 async fn ping() -> Int {

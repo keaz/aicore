@@ -92,6 +92,16 @@ pub fn collect_std_api_snapshot(std_root: &Path) -> anyhow::Result<StdApiSnapsho
                     kind: "enum".to_string(),
                     signature: render_enum_signature(&enm),
                 }),
+                ast::Item::Trait(trait_def) => symbols.push(StdApiSymbol {
+                    module: module.clone(),
+                    kind: "trait".to_string(),
+                    signature: render_trait_signature(&trait_def),
+                }),
+                ast::Item::Impl(impl_def) => symbols.push(StdApiSymbol {
+                    module: module.clone(),
+                    kind: "impl".to_string(),
+                    signature: render_impl_signature(&impl_def),
+                }),
             }
         }
     }
@@ -197,6 +207,21 @@ fn render_enum_signature(enm: &ast::EnumDef) -> String {
     format!("{}{} {{ {} }}", enm.name, generics, variants)
 }
 
+fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
+    let generics = render_generics(&trait_def.generics);
+    format!("{}{};", trait_def.name, generics)
+}
+
+fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
+    let args = impl_def
+        .trait_args
+        .iter()
+        .map(render_type)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{}[{}];", impl_def.trait_name, args)
+}
+
 fn render_generics(generics: &[ast::GenericParam]) -> String {
     if generics.is_empty() {
         String::new()
@@ -205,7 +230,13 @@ fn render_generics(generics: &[ast::GenericParam]) -> String {
             "[{}]",
             generics
                 .iter()
-                .map(|g| g.name.clone())
+                .map(|g| {
+                    if g.bounds.is_empty() {
+                        g.name.clone()
+                    } else {
+                        format!("{}: {}", g.name, g.bounds.join(" + "))
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         )

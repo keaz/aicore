@@ -1,0 +1,7 @@
+trait Order[T];
+
+impl Order[Int];
+
+fn pick[T: Order](a: T, b: T) -> T {
+    a
+}

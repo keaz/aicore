@@ -87,3 +87,8 @@ fn golden_case11_result_match() {
 fn golden_case12_async_await() {
     run_golden_case("case12_async_await.aic");
 }
+
+#[test]
+fn golden_case13_trait_impl() {
+    run_golden_case("case13_trait_impl.aic");
+}

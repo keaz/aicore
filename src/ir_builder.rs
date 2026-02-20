@@ -46,6 +46,8 @@ impl Builder {
             ast::Item::Function(func) => ir::Item::Function(self.lower_function(func)),
             ast::Item::Struct(def) => ir::Item::Struct(self.lower_struct(def)),
             ast::Item::Enum(def) => ir::Item::Enum(self.lower_enum(def)),
+            ast::Item::Trait(def) => ir::Item::Trait(self.lower_trait(def)),
+            ast::Item::Impl(def) => ir::Item::Impl(self.lower_impl(def)),
         }
     }
 
@@ -73,6 +75,7 @@ impl Builder {
                 .iter()
                 .map(|g| ir::GenericParam {
                     name: g.name.clone(),
+                    bounds: g.bounds.clone(),
                 })
                 .collect(),
             params,
@@ -108,6 +111,7 @@ impl Builder {
                 .iter()
                 .map(|g| ir::GenericParam {
                     name: g.name.clone(),
+                    bounds: g.bounds.clone(),
                 })
                 .collect(),
             fields,
@@ -139,9 +143,41 @@ impl Builder {
                 .iter()
                 .map(|g| ir::GenericParam {
                     name: g.name.clone(),
+                    bounds: g.bounds.clone(),
                 })
                 .collect(),
             variants,
+            span: def.span,
+        }
+    }
+
+    fn lower_trait(&mut self, def: &ast::TraitDef) -> ir::TraitDef {
+        let symbol = self.push_symbol(&def.name, ir::SymbolKind::Trait, def.span);
+        ir::TraitDef {
+            symbol,
+            name: def.name.clone(),
+            generics: def
+                .generics
+                .iter()
+                .map(|g| ir::GenericParam {
+                    name: g.name.clone(),
+                    bounds: g.bounds.clone(),
+                })
+                .collect(),
+            span: def.span,
+        }
+    }
+
+    fn lower_impl(&mut self, def: &ast::ImplDef) -> ir::ImplDef {
+        let symbol = self.push_symbol(&def.trait_name, ir::SymbolKind::Impl, def.span);
+        ir::ImplDef {
+            symbol,
+            trait_name: def.trait_name.clone(),
+            trait_args: def
+                .trait_args
+                .iter()
+                .map(|arg| self.lower_type(arg))
+                .collect(),
             span: def.span,
         }
     }

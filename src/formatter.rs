@@ -32,6 +32,8 @@ pub fn format_program(program: &ir::Program) -> String {
             ir::Item::Function(f) => format_function(&mut out, f, &type_map),
             ir::Item::Struct(s) => format_struct(&mut out, s, &type_map),
             ir::Item::Enum(e) => format_enum(&mut out, e, &type_map),
+            ir::Item::Trait(t) => format_trait(&mut out, t),
+            ir::Item::Impl(i) => format_impl(&mut out, i, &type_map),
         }
     }
 
@@ -44,17 +46,7 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
     }
     out.push_str("fn ");
     out.push_str(&f.name);
-    if !f.generics.is_empty() {
-        out.push('[');
-        out.push_str(
-            &f.generics
-                .iter()
-                .map(|g| g.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        out.push(']');
-    }
+    format_generic_params(out, &f.generics);
     out.push('(');
     out.push_str(
         &f.params
@@ -107,17 +99,7 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
 fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::TypeId, String>) {
     out.push_str("struct ");
     out.push_str(&s.name);
-    if !s.generics.is_empty() {
-        out.push('[');
-        out.push_str(
-            &s.generics
-                .iter()
-                .map(|g| g.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        out.push(']');
-    }
+    format_generic_params(out, &s.generics);
     out.push_str(" {\n");
     for field in &s.fields {
         out.push_str("    ");
@@ -137,17 +119,7 @@ fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::Ty
 fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId, String>) {
     out.push_str("enum ");
     out.push_str(&e.name);
-    if !e.generics.is_empty() {
-        out.push('[');
-        out.push_str(
-            &e.generics
-                .iter()
-                .map(|g| g.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        out.push(']');
-    }
+    format_generic_params(out, &e.generics);
     out.push_str(" {\n");
     for variant in &e.variants {
         out.push_str("    ");
@@ -160,6 +132,53 @@ fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId
         out.push_str(",\n");
     }
     out.push_str("}\n");
+}
+
+fn format_trait(out: &mut String, t: &ir::TraitDef) {
+    out.push_str("trait ");
+    out.push_str(&t.name);
+    format_generic_params(out, &t.generics);
+    out.push_str(";\n");
+}
+
+fn format_impl(out: &mut String, i: &ir::ImplDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    out.push_str("impl ");
+    out.push_str(&i.trait_name);
+    out.push('[');
+    out.push_str(
+        &i.trait_args
+            .iter()
+            .map(|ty| {
+                type_map
+                    .get(ty)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string())
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    out.push_str("];\n");
+}
+
+fn format_generic_params(out: &mut String, generics: &[ir::GenericParam]) {
+    if generics.is_empty() {
+        return;
+    }
+    out.push('[');
+    out.push_str(
+        &generics
+            .iter()
+            .map(|g| {
+                if g.bounds.is_empty() {
+                    g.name.clone()
+                } else {
+                    format!("{}: {}", g.name, g.bounds.join(" + "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    out.push(']');
 }
 
 fn format_block(

@@ -73,6 +73,8 @@ pub fn run_frontend_with_options(
                 functions: Default::default(),
                 structs: Default::default(),
                 enums: Default::default(),
+                traits: Default::default(),
+                trait_impls: Default::default(),
                 imports: Default::default(),
                 entry_module: None,
                 function_modules: Default::default(),

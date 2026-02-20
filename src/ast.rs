@@ -26,6 +26,8 @@ pub enum Item {
     Function(Function),
     Struct(StructDef),
     Enum(EnumDef),
+    Trait(TraitDef),
+    Impl(ImplDef),
 }
 
 impl Item {
@@ -34,6 +36,8 @@ impl Item {
             Item::Function(f) => &f.name,
             Item::Struct(s) => &s.name,
             Item::Enum(e) => &e.name,
+            Item::Trait(t) => &t.name,
+            Item::Impl(i) => &i.trait_name,
         }
     }
 
@@ -42,6 +46,8 @@ impl Item {
             Item::Function(f) => f.span,
             Item::Struct(s) => s.span,
             Item::Enum(e) => e.span,
+            Item::Trait(t) => t.span,
+            Item::Impl(i) => i.span,
         }
     }
 }
@@ -49,6 +55,8 @@ impl Item {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericParam {
     pub name: String,
+    #[serde(default)]
+    pub bounds: Vec<String>,
     pub span: Span,
 }
 
@@ -95,6 +103,20 @@ pub struct EnumDef {
     pub name: String,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraitDef {
+    pub name: String,
+    pub generics: Vec<GenericParam>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImplDef {
+    pub trait_name: String,
+    pub trait_args: Vec<TypeExpr>,
     pub span: Span,
 }
 

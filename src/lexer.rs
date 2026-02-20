@@ -19,6 +19,8 @@ pub enum TokenKind {
     KwFn,
     KwStruct,
     KwEnum,
+    KwTrait,
+    KwImpl,
     KwLet,
     KwReturn,
     KwIf,
@@ -263,6 +265,8 @@ impl<'a> Lexer<'a> {
             "fn" => TokenKind::KwFn,
             "struct" => TokenKind::KwStruct,
             "enum" => TokenKind::KwEnum,
+            "trait" => TokenKind::KwTrait,
+            "impl" => TokenKind::KwImpl,
             "let" => TokenKind::KwLet,
             "return" => TokenKind::KwReturn,
             "if" => TokenKind::KwIf,
@@ -427,5 +431,14 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(&t.kind, TokenKind::String(s) if s == "hello")));
+    }
+
+    #[test]
+    fn lexes_trait_and_impl_keywords() {
+        let src = "trait Order[T]; impl Order[Int];";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty());
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwTrait)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwImpl)));
     }
 }

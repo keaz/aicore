@@ -108,6 +108,26 @@ pub fn generate_docs(front: &FrontendOutput, output_dir: &Path) -> anyhow::Resul
                 invariant: None,
                 deprecated: None,
             },
+            ir::Item::Trait(trait_def) => DocItem {
+                kind: "trait".to_string(),
+                name: trait_def.name.clone(),
+                signature: render_trait_signature(trait_def),
+                effects: Vec::new(),
+                requires: None,
+                ensures: None,
+                invariant: None,
+                deprecated: None,
+            },
+            ir::Item::Impl(impl_def) => DocItem {
+                kind: "impl".to_string(),
+                name: impl_def.trait_name.clone(),
+                signature: render_impl_signature(impl_def, &type_map),
+                effects: Vec::new(),
+                requires: None,
+                ensures: None,
+                invariant: None,
+                deprecated: None,
+            },
         };
 
         modules.entry(module).or_default().push(doc_item);
@@ -180,18 +200,7 @@ fn render_markdown(index: &DocIndex) -> String {
 }
 
 fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, String>) -> String {
-    let generics = if func.generics.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "[{}]",
-            func.generics
-                .iter()
-                .map(|g| g.name.clone())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
+    let generics = render_generic_params(&func.generics);
 
     let params = func
         .params
@@ -225,19 +234,7 @@ fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, S
 }
 
 fn render_struct_signature(strukt: &ir::StructDef, types: &BTreeMap<ir::TypeId, String>) -> String {
-    let generics = if strukt.generics.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "[{}]",
-            strukt
-                .generics
-                .iter()
-                .map(|g| g.name.clone())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
+    let generics = render_generic_params(&strukt.generics);
 
     let fields = strukt
         .fields
@@ -256,18 +253,7 @@ fn render_struct_signature(strukt: &ir::StructDef, types: &BTreeMap<ir::TypeId, 
 }
 
 fn render_enum_signature(enm: &ir::EnumDef, types: &BTreeMap<ir::TypeId, String>) -> String {
-    let generics = if enm.generics.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "[{}]",
-            enm.generics
-                .iter()
-                .map(|g| g.name.clone())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
+    let generics = render_generic_params(&enm.generics);
 
     let variants = enm
         .variants
@@ -287,6 +273,41 @@ fn render_enum_signature(enm: &ir::EnumDef, types: &BTreeMap<ir::TypeId, String>
         .join(", ");
 
     format!("enum {}{} {{ {} }}", enm.name, generics, variants)
+}
+
+fn render_trait_signature(trait_def: &ir::TraitDef) -> String {
+    let generics = render_generic_params(&trait_def.generics);
+    format!("trait {}{};", trait_def.name, generics)
+}
+
+fn render_impl_signature(impl_def: &ir::ImplDef, types: &BTreeMap<ir::TypeId, String>) -> String {
+    let args = impl_def
+        .trait_args
+        .iter()
+        .map(|ty| types.get(ty).cloned().unwrap_or_else(|| "<?>".to_string()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("impl {}[{}];", impl_def.trait_name, args)
+}
+
+fn render_generic_params(generics: &[ir::GenericParam]) -> String {
+    if generics.is_empty() {
+        return String::new();
+    }
+    format!(
+        "[{}]",
+        generics
+            .iter()
+            .map(|g| {
+                if g.bounds.is_empty() {
+                    g.name.clone()
+                } else {
+                    format!("{}: {}", g.name, g.bounds.join(" + "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn render_expr(expr: &ir::Expr) -> String {

@@ -84,6 +84,8 @@ pub enum SymbolKind {
     Function,
     Struct,
     Enum,
+    Trait,
+    Impl,
     Variant,
     Field,
     Parameter,
@@ -119,11 +121,15 @@ pub enum Item {
     Function(Function),
     Struct(StructDef),
     Enum(EnumDef),
+    Trait(TraitDef),
+    Impl(ImplDef),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericParam {
     pub name: String,
+    #[serde(default)]
+    pub bounds: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +180,22 @@ pub struct EnumDef {
     pub name: String,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraitDef {
+    pub symbol: SymbolId,
+    pub name: String,
+    pub generics: Vec<GenericParam>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImplDef {
+    pub symbol: SymbolId,
+    pub trait_name: String,
+    pub trait_args: Vec<TypeId>,
     pub span: Span,
 }
 

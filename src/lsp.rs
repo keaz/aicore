@@ -421,6 +421,20 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     file: file.clone(),
                     span: enm.span,
                 },
+                ast::Item::Trait(trait_def) => SymbolDecl {
+                    name: trait_def.name.clone(),
+                    kind: "trait".to_string(),
+                    signature: render_trait_signature(&trait_def),
+                    file: file.clone(),
+                    span: trait_def.span,
+                },
+                ast::Item::Impl(impl_def) => SymbolDecl {
+                    name: impl_def.trait_name.clone(),
+                    kind: "impl".to_string(),
+                    signature: render_impl_signature(&impl_def),
+                    file: file.clone(),
+                    span: impl_def.span,
+                },
             };
             map.entry(decl.name.clone()).or_default().push(decl);
         }
@@ -434,18 +448,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
 }
 
 fn render_function_signature(func: &ast::Function) -> String {
-    let generics = if func.generics.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<{}>",
-            func.generics
-                .iter()
-                .map(|g| g.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
+    let generics = render_generic_params(&func.generics, "<", ">");
 
     let params = func
         .params
@@ -471,16 +474,18 @@ fn render_function_signature(func: &ast::Function) -> String {
 }
 
 fn render_struct_signature(strukt: &ast::StructDef) -> String {
+    let generics = render_generic_params(&strukt.generics, "<", ">");
     let fields = strukt
         .fields
         .iter()
         .map(|f| format!("{}: {}", f.name, render_type_expr(&f.ty)))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("struct {} {{ {} }}", strukt.name, fields)
+    format!("struct {}{} {{ {} }}", strukt.name, generics, fields)
 }
 
 fn render_enum_signature(enm: &ast::EnumDef) -> String {
+    let generics = render_generic_params(&enm.generics, "<", ">");
     let variants = enm
         .variants
         .iter()
@@ -493,7 +498,44 @@ fn render_enum_signature(enm: &ast::EnumDef) -> String {
         })
         .collect::<Vec<_>>()
         .join(" | ");
-    format!("enum {} {{ {} }}", enm.name, variants)
+    format!("enum {}{} {{ {} }}", enm.name, generics, variants)
+}
+
+fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
+    let generics = render_generic_params(&trait_def.generics, "<", ">");
+    format!("trait {}{};", trait_def.name, generics)
+}
+
+fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
+    let args = impl_def
+        .trait_args
+        .iter()
+        .map(render_type_expr)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("impl {}<{}>;", impl_def.trait_name, args)
+}
+
+fn render_generic_params(generics: &[ast::GenericParam], open: &str, close: &str) -> String {
+    if generics.is_empty() {
+        return String::new();
+    }
+    format!(
+        "{}{}{}",
+        open,
+        generics
+            .iter()
+            .map(|g| {
+                if g.bounds.is_empty() {
+                    g.name.clone()
+                } else {
+                    format!("{}: {}", g.name, g.bounds.join(" + "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        close
+    )
 }
 
 fn render_type_expr(ty: &ast::TypeExpr) -> String {

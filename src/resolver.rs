@@ -10,6 +10,8 @@ pub struct Resolution {
     pub functions: BTreeMap<String, FunctionInfo>,
     pub structs: BTreeMap<String, StructInfo>,
     pub enums: BTreeMap<String, EnumInfo>,
+    pub traits: BTreeMap<String, TraitInfo>,
+    pub trait_impls: BTreeMap<String, BTreeSet<String>>,
     pub imports: BTreeSet<String>,
     pub entry_module: Option<String>,
     pub function_modules: BTreeMap<String, BTreeSet<String>>,
@@ -24,6 +26,7 @@ pub struct FunctionInfo {
     pub symbol: ir::SymbolId,
     pub is_async: bool,
     pub generics: Vec<String>,
+    pub generic_bounds: BTreeMap<String, Vec<String>>,
     pub param_types: Vec<ir::TypeId>,
     pub ret_type: ir::TypeId,
     pub effects: BTreeSet<String>,
@@ -47,6 +50,13 @@ pub struct EnumInfo {
     pub span: crate::span::Span,
 }
 
+#[derive(Debug, Clone)]
+pub struct TraitInfo {
+    pub symbol: ir::SymbolId,
+    pub generics: Vec<String>,
+    pub span: crate::span::Span,
+}
+
 pub fn resolve(program: &ir::Program, file: &str) -> (Resolution, Vec<Diagnostic>) {
     resolve_with_item_modules(program, file, None)
 }
@@ -61,6 +71,13 @@ pub fn resolve_with_item_modules(
     let mut functions = BTreeMap::new();
     let mut structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
+    let mut traits = BTreeMap::new();
+    let mut trait_impls: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let type_repr_by_id = program
+        .types
+        .iter()
+        .map(|ty| (ty.id, ty.repr.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     let mut imports = BTreeSet::new();
     for path in &program.imports {
@@ -136,6 +153,11 @@ pub fn resolve_with_item_modules(
                         symbol: f.symbol,
                         is_async: f.is_async,
                         generics: f.generics.iter().map(|g| g.name.clone()).collect(),
+                        generic_bounds: f
+                            .generics
+                            .iter()
+                            .map(|g| (g.name.clone(), g.bounds.clone()))
+                            .collect(),
                         param_types: f.params.iter().map(|p| p.ty).collect(),
                         ret_type: f.ret_type,
                         effects: f.effects.iter().cloned().collect(),
@@ -222,6 +244,98 @@ pub fn resolve_with_item_modules(
                     span: e.span,
                 });
             }
+            ir::Item::Trait(t) => {
+                if let Some(existing_kind) =
+                    type_decl_kind_by_module_name.insert((module_name, t.name.clone()), "trait")
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E1100",
+                            format!(
+                                "duplicate symbol '{}', kinds '{}' and 'trait'",
+                                t.name, existing_kind
+                            ),
+                            file,
+                            t.span,
+                        )
+                        .with_help("rename one declaration to keep symbol names unique per module"),
+                    );
+                    continue;
+                }
+                traits.entry(t.name.clone()).or_insert_with(|| TraitInfo {
+                    symbol: t.symbol,
+                    generics: t.generics.iter().map(|g| g.name.clone()).collect(),
+                    span: t.span,
+                });
+            }
+            ir::Item::Impl(impl_def) => {
+                let trait_arity = traits
+                    .get(&impl_def.trait_name)
+                    .map(|info| info.generics.len())
+                    .or_else(|| {
+                        program.items.iter().find_map(|item| match item {
+                            ir::Item::Trait(t) if t.name == impl_def.trait_name => {
+                                Some(t.generics.len())
+                            }
+                            _ => None,
+                        })
+                    });
+
+                let Some(trait_arity) = trait_arity else {
+                    diagnostics.push(Diagnostic::error(
+                        "E1103",
+                        format!("unknown trait '{}' in impl", impl_def.trait_name),
+                        file,
+                        impl_def.span,
+                    ));
+                    continue;
+                };
+
+                if impl_def.trait_args.len() != trait_arity {
+                    diagnostics.push(Diagnostic::error(
+                        "E1104",
+                        format!(
+                            "impl for trait '{}' expects {} type arguments, found {}",
+                            impl_def.trait_name,
+                            trait_arity,
+                            impl_def.trait_args.len()
+                        ),
+                        file,
+                        impl_def.span,
+                    ));
+                    continue;
+                }
+
+                let key = impl_def
+                    .trait_args
+                    .iter()
+                    .map(|arg| {
+                        type_repr_by_id
+                            .get(arg)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !trait_impls
+                    .entry(impl_def.trait_name.clone())
+                    .or_default()
+                    .insert(key.clone())
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E1105",
+                            format!(
+                                "conflicting impl for trait '{}' with type arguments [{}]",
+                                impl_def.trait_name, key
+                            ),
+                            file,
+                            impl_def.span,
+                        )
+                        .with_help("remove duplicate impl or use a different concrete type"),
+                    );
+                }
+            }
         }
     }
 
@@ -298,6 +412,8 @@ pub fn resolve_with_item_modules(
             functions,
             structs,
             enums,
+            traits,
+            trait_impls,
             imports,
             entry_module,
             function_modules,
@@ -381,5 +497,31 @@ mod tests {
         let ir = build(&program.expect("program"));
         let (_res, diags) = resolve(&ir, "test.aic");
         assert!(diags.iter().any(|d| d.code == "E1100"));
+    }
+
+    #[test]
+    fn collects_trait_impl_capabilities() {
+        let src = "trait Order[T]; impl Order[Int];";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let (res, diags) = resolve(&ir, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(res.traits.contains_key("Order"));
+        assert!(res
+            .trait_impls
+            .get("Order")
+            .map(|impls| impls.contains("Int"))
+            .unwrap_or(false));
+    }
+
+    #[test]
+    fn conflicting_trait_impl_is_diagnostic() {
+        let src = "trait Order[T]; impl Order[Int]; impl Order[Int];";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let (_res, diags) = resolve(&ir, "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E1105"));
     }
 }

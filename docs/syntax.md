@@ -22,7 +22,7 @@ module_decl    = "module" path ";" ;
 import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
-item           = fn_decl | struct_decl | enum_decl ;
+item           = fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
 
 fn_decl        = async_prefix? "fn" ident generics? "(" params? ")" "->" type
                  effects? contracts? block ;
@@ -40,7 +40,12 @@ enum_decl      = "enum" ident generics? "{" variants? "}" ;
 variants       = variant ("," variant)* ","? ;
 variant        = ident ("(" type ")")? ;
 
-generics       = "[" ident ("," ident)* ","? "]" ;
+trait_decl     = "trait" ident generics? ";" ;
+impl_decl      = "impl" ident "[" type ("," type)* ","? "]" ";" ;
+
+generics       = "[" generic_param ("," generic_param)* ","? "]" ;
+generic_param  = ident trait_bounds? ;
+trait_bounds   = ":" ident ("+" ident)* ;
 params         = param ("," param)* ","? ;
 param          = ident ":" type ;
 fields         = field ("," field)* ","? ;

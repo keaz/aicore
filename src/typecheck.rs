@@ -26,6 +26,7 @@ struct FnSig {
     ret: String,
     effects: BTreeSet<String>,
     generic_params: Vec<String>,
+    generic_bounds: BTreeMap<String, Vec<String>>,
 }
 
 struct Checker<'a> {
@@ -108,6 +109,7 @@ impl<'a> Checker<'a> {
                         .unwrap_or_else(|| "<?>".to_string()),
                     effects: info.effects.clone(),
                     generic_params: info.generics.clone(),
+                    generic_bounds: info.generic_bounds.clone(),
                 },
             );
         }
@@ -128,6 +130,7 @@ impl<'a> Checker<'a> {
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
+                generic_bounds: BTreeMap::new(),
             },
         );
         functions.insert(
@@ -138,6 +141,7 @@ impl<'a> Checker<'a> {
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
+                generic_bounds: BTreeMap::new(),
             },
         );
         functions.insert(
@@ -148,6 +152,7 @@ impl<'a> Checker<'a> {
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
                 generic_params: Vec::new(),
+                generic_bounds: BTreeMap::new(),
             },
         );
         functions.insert(
@@ -158,6 +163,7 @@ impl<'a> Checker<'a> {
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
+                generic_bounds: BTreeMap::new(),
             },
         );
 
@@ -186,6 +192,7 @@ impl<'a> Checker<'a> {
                 ir::Item::Function(func) => self.check_function(func),
                 ir::Item::Struct(strukt) => self.check_struct_invariant(strukt),
                 ir::Item::Enum(enm) => self.check_enum_definition(enm),
+                ir::Item::Trait(_) | ir::Item::Impl(_) => {}
             }
         }
         self.check_transitive_effects();
@@ -238,6 +245,41 @@ impl<'a> Checker<'a> {
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
         self.check_generic_arity(&ret_type, func.span);
+
+        for generic in &func.generics {
+            for bound in &generic.bounds {
+                let Some(trait_info) = self.resolution.traits.get(bound) else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1259",
+                        format!(
+                            "unknown trait bound '{}' on generic parameter '{}'",
+                            bound, generic.name
+                        ),
+                        self.file,
+                        func.span,
+                    ));
+                    continue;
+                };
+                if trait_info.generics.len() != 1 {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1259",
+                            format!(
+                                "trait bound '{}' on '{}' expects trait arity 1 for `T: Trait` syntax",
+                                bound, generic.name
+                            ),
+                            self.file,
+                            func.span,
+                        )
+                        .with_help(format!(
+                            "trait '{}' currently declares {} generic parameter(s)",
+                            bound,
+                            trait_info.generics.len()
+                        )),
+                    );
+                }
+            }
+        }
 
         if let Some(requires) = &func.requires {
             let mut contract_ctx = ExprContext::default();
@@ -1018,6 +1060,40 @@ impl<'a> Checker<'a> {
                                     "provide argument values with concrete types or annotate intermediates",
                                 ),
                             );
+                        }
+                    }
+
+                    for (generic_name, bounds) in &sig.generic_bounds {
+                        let Some(bound_ty) = generic_bindings.get(generic_name) else {
+                            continue;
+                        };
+                        if contains_unresolved_type(bound_ty) {
+                            continue;
+                        }
+                        for bound_trait in bounds {
+                            let implemented = self
+                                .resolution
+                                .trait_impls
+                                .get(bound_trait)
+                                .map(|impls| impls.contains(bound_ty))
+                                .unwrap_or(false);
+                            if !implemented {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E1258",
+                                        format!(
+                                            "type '{}' does not satisfy trait bound '{}: {}'",
+                                            bound_ty, generic_name, bound_trait
+                                        ),
+                                        self.file,
+                                        expr.span,
+                                    )
+                                    .with_help(format!(
+                                        "add `impl {}[{}];` or use a type that implements '{}'",
+                                        bound_trait, bound_ty, bound_trait
+                                    )),
+                                );
+                            }
                         }
                     }
 

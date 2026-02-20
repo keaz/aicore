@@ -17,11 +17,13 @@ Core entities:
 - `TypeDef { id, repr }`
 - `GenericInstantiation { id, kind, name, symbol, type_args, mangled }`
 - `Item::{Function,Struct,Enum}`
+- `Item::{Function,Struct,Enum,Trait,Impl}`
 - `Expr` / `Stmt` / `Pattern`
 
 Notable function/expression fields:
 
 - `Function.is_async: bool`
+- `GenericParam.bounds: Vec<String>`
 - `ExprKind::Await { expr }`
 
 Invariants:

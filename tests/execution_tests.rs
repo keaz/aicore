@@ -92,6 +92,28 @@ async fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_trait_bounded_generic_dispatch() {
+    let src = r#"
+import std.io;
+
+trait Order[T];
+impl Order[Int];
+
+fn pick[T: Order](a: T, b: T) -> T {
+    a
+}
+
+fn main() -> Int effects { io } {
+    print_int(pick(42, 7));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_abs_if_expression() {
     let src = r#"
 import std.io;

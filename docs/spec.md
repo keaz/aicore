@@ -56,6 +56,13 @@ async fn fetch_plus_one(x: Int) -> Int {
 async fn use_fetch() -> Int {
     await fetch_plus_one(41)
 }
+
+trait Sortable[T];
+impl Sortable[Int];
+
+fn pick[T: Sortable](a: T, b: T) -> T {
+    a
+}
 ```
 
 - Functions are pure by default.
@@ -64,6 +71,7 @@ async fn use_fetch() -> Int {
 - Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
 - `await` is only valid inside `async fn`.
 - Generic function parameters are inferred from call arguments.
+- Generic parameters may include explicit trait bounds: `T: TraitA + TraitB`.
 - Contracts:
   - `requires <bool-expr>`
   - `ensures <bool-expr>`
@@ -80,6 +88,13 @@ enum Option[T] {
     Some(T),
 }
 ```
+
+### 2.5 Traits and impls
+
+- Marker traits are declared with `trait Name[T, ...];`.
+- Concrete implementations are declared with `impl Name[ConcreteType, ...];`.
+- Bounded generics are validated at call sites; missing impls are diagnostics.
+- Conflicting duplicate impls for the same `(trait, type args)` are rejected deterministically.
 
 ### 2.5 Expressions
 
@@ -132,6 +147,7 @@ Program {
 - No implicit coercions.
 - `Option[T]`/`Result[T, E]` are standard tagged ADTs.
 - `Async[T]` is a compiler-managed type wrapper produced by async calls.
+- Trait-bounded generics are checked with explicit impl lookup; no implicit trait satisfaction.
 - Local let bindings infer from initializer expressions.
 - If inferred types remain unresolved (for example `None` as `Option[<?>]`), explicit annotations are required.
 - Generic substitution is enforced across function calls, struct literals, field access, and enum variants.
