@@ -28,8 +28,14 @@ fn type_ids(ir: &aicore::ir::Program) -> Vec<u32> {
     ir.types.iter().map(|t| t.id.0).collect()
 }
 
-fn assert_fs_delegate_call(source: &str, function_name: &str, delegate_name: &str, arity: usize) {
-    let (program, diags) = parse(source, "std/fs.aic");
+fn assert_delegate_call(
+    source: &str,
+    file: &str,
+    function_name: &str,
+    delegate_name: &str,
+    arity: usize,
+) {
+    let (program, diags) = parse(source, file);
     assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
     let program = program.expect("program");
 
@@ -656,17 +662,194 @@ fn unit_init_project_emits_canonical_source() {
 fn unit_std_fs_public_apis_delegate_to_runtime_intrinsics() {
     let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
 
-    assert_fs_delegate_call(&fs_source, "exists", "aic_fs_exists_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "read_text", "aic_fs_read_text_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "write_text", "aic_fs_write_text_intrinsic", 2);
-    assert_fs_delegate_call(&fs_source, "append_text", "aic_fs_append_text_intrinsic", 2);
-    assert_fs_delegate_call(&fs_source, "copy", "aic_fs_copy_intrinsic", 2);
-    assert_fs_delegate_call(&fs_source, "move", "aic_fs_move_intrinsic", 2);
-    assert_fs_delegate_call(&fs_source, "delete", "aic_fs_delete_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "metadata", "aic_fs_metadata_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "walk_dir", "aic_fs_walk_dir_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "temp_file", "aic_fs_temp_file_intrinsic", 1);
-    assert_fs_delegate_call(&fs_source, "temp_dir", "aic_fs_temp_dir_intrinsic", 1);
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "exists",
+        "aic_fs_exists_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "read_text",
+        "aic_fs_read_text_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "write_text",
+        "aic_fs_write_text_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "append_text",
+        "aic_fs_append_text_intrinsic",
+        2,
+    );
+    assert_delegate_call(&fs_source, "std/fs.aic", "copy", "aic_fs_copy_intrinsic", 2);
+    assert_delegate_call(&fs_source, "std/fs.aic", "move", "aic_fs_move_intrinsic", 2);
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "delete",
+        "aic_fs_delete_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "metadata",
+        "aic_fs_metadata_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "walk_dir",
+        "aic_fs_walk_dir_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "temp_file",
+        "aic_fs_temp_file_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &fs_source,
+        "std/fs.aic",
+        "temp_dir",
+        "aic_fs_temp_dir_intrinsic",
+        1,
+    );
+}
+
+#[test]
+fn unit_std_env_public_apis_delegate_to_runtime_intrinsics() {
+    let env_source = fs::read_to_string("std/env.aic").expect("read std/env.aic");
+
+    assert_delegate_call(
+        &env_source,
+        "std/env.aic",
+        "get",
+        "aic_env_get_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &env_source,
+        "std/env.aic",
+        "set",
+        "aic_env_set_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &env_source,
+        "std/env.aic",
+        "remove",
+        "aic_env_remove_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &env_source,
+        "std/env.aic",
+        "cwd",
+        "aic_env_cwd_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &env_source,
+        "std/env.aic",
+        "set_cwd",
+        "aic_env_set_cwd_intrinsic",
+        1,
+    );
+}
+
+#[test]
+fn unit_std_path_public_apis_delegate_to_runtime_intrinsics() {
+    let path_source = fs::read_to_string("std/path.aic").expect("read std/path.aic");
+
+    assert_delegate_call(
+        &path_source,
+        "std/path.aic",
+        "join",
+        "aic_path_join_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &path_source,
+        "std/path.aic",
+        "basename",
+        "aic_path_basename_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &path_source,
+        "std/path.aic",
+        "dirname",
+        "aic_path_dirname_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &path_source,
+        "std/path.aic",
+        "extension",
+        "aic_path_extension_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &path_source,
+        "std/path.aic",
+        "is_abs",
+        "aic_path_is_abs_intrinsic",
+        1,
+    );
+}
+
+#[test]
+fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
+    let proc_source = fs::read_to_string("std/proc.aic").expect("read std/proc.aic");
+
+    assert_delegate_call(
+        &proc_source,
+        "std/proc.aic",
+        "spawn",
+        "aic_proc_spawn_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &proc_source,
+        "std/proc.aic",
+        "wait",
+        "aic_proc_wait_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &proc_source,
+        "std/proc.aic",
+        "kill",
+        "aic_proc_kill_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &proc_source,
+        "std/proc.aic",
+        "run",
+        "aic_proc_run_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &proc_source,
+        "std/proc.aic",
+        "pipe",
+        "aic_proc_pipe_intrinsic",
+        2,
+    );
 }
 
 #[test]
@@ -766,12 +949,15 @@ import std.fs;
 import std.net;
 import std.time;
 import std.rand;
+import std.env;
+import std.path;
+import std.proc;
 import std.string;
 import std.vec;
 import std.option;
 import std.result;
 
-fn main() -> Int effects { io, fs, net, time, rand } {
+fn main() -> Int effects { io, fs, net, time, rand, env, proc } {
     let _exists = exists("foo.txt");
     let _read = read_text("foo.txt");
     let _write = write_text("foo.txt", "ok");
@@ -783,6 +969,21 @@ fn main() -> Int effects { io, fs, net, time, rand } {
     let _walk = walk_dir(".");
     let _tmp_file = temp_file("unit_");
     let _tmp_dir = temp_dir("unit_");
+    let _env_get = get("HOME");
+    let _env_set = set("AIC_UNIT_TMP", "1");
+    let _env_rm = remove("AIC_UNIT_TMP");
+    let _cwd = cwd();
+    let _set_cwd = set_cwd(".");
+    let _join = join("foo", "bar.txt");
+    let _base = basename(_join);
+    let _dir = dirname(_join);
+    let _ext = extension(_join);
+    let _abs = is_abs(_join);
+    let _spawn = spawn("echo smoke");
+    let _wait = wait(1);
+    let _kill = kill(1);
+    let _run = run("echo smoke");
+    let _pipe = pipe("echo smoke", "cat");
     let _handle = tcp_connect("localhost:80");
     let _ts = now_ms();
     let _r = random_int();
@@ -837,6 +1038,75 @@ import std.fs;
 
 fn main() -> Int {
     read_text("foo.txt");
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_env_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.env;
+
+fn main() -> Int {
+    get("HOME");
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_proc_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.proc;
+
+fn main() -> Int {
+    run("echo hi");
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_env_cwd_requires_fs_effect() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.env;
+
+fn main() -> Int effects { env } {
+    cwd();
     0
 }
 "#,

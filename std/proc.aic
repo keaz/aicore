@@ -1,0 +1,70 @@
+module std.proc;
+
+import std.result;
+
+enum ProcError {
+    NotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+    UnknownProcess,
+}
+
+struct ProcOutput {
+    status: Int,
+    stdout: String,
+    stderr: String,
+}
+
+fn aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env } {
+    let out: Result[Int, ProcError] = Ok(0);
+    out
+}
+
+fn aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc } {
+    let out: Result[Int, ProcError] = Ok(0);
+    out
+}
+
+fn aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc } {
+    let out: Result[Bool, ProcError] = Ok(true);
+    out
+}
+
+fn aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
+        status: 0,
+        stdout: "",
+        stderr: "",
+    });
+    out
+}
+
+fn aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
+        status: 0,
+        stdout: "",
+        stderr: "",
+    });
+    out
+}
+
+fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
+    aic_proc_spawn_intrinsic(command)
+}
+
+fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } {
+    aic_proc_wait_intrinsic(handle)
+}
+
+fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc } {
+    aic_proc_kill_intrinsic(handle)
+}
+
+fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    aic_proc_run_intrinsic(command)
+}
+
+fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    aic_proc_pipe_intrinsic(left, right)
+}

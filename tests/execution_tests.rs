@@ -523,6 +523,117 @@ fn main() -> Int effects { io, fs } {
 }
 
 #[test]
+fn exec_env_and_path_apis_roundtrip() {
+    let src = r#"
+import std.io;
+import std.env;
+import std.path;
+import std.string;
+
+fn ok_bool(v: Result[Bool, EnvError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, env, fs } {
+    let original = match cwd() {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let set_ok = ok_bool(set("AIC_EXEC_ENV_KEY", "value-xyz"));
+    let got_len = match get("AIC_EXEC_ENV_KEY") {
+        Ok(value) => len(value),
+        Err(_) => 0,
+    };
+    let rm_ok = ok_bool(remove("AIC_EXEC_ENV_KEY"));
+    let missing_ok = match get("AIC_EXEC_ENV_KEY") {
+        Ok(_) => 0,
+        Err(err) => match err {
+            NotFound => 1,
+            _ => 0,
+        },
+    };
+    let cwd_set_ok = ok_bool(set_cwd("."));
+    let now = match cwd() {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let joined = join(now, "alpha.txt");
+    let base_len = len(basename(joined));
+    let dir_len = len(dirname(joined));
+    let ext_len = len(extension(joined));
+    let abs_ok = if is_abs(now) { 1 } else { 0 };
+    let restore_ok = ok_bool(set_cwd(original));
+
+    let score = set_ok + rm_ok + missing_ok + cwd_set_ok + abs_ok + restore_ok;
+    if score == 6 && got_len == 9 && base_len == 9 && dir_len > 0 && ext_len == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_proc_run_pipe_spawn_wait_and_kill() {
+    let src = r#"
+import std.io;
+import std.proc;
+import std.string;
+
+fn main() -> Int effects { io, proc, env } {
+    let run_out = match run("echo out; echo err 1>&2; exit 7") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let pipe_out = match pipe("echo 42", "cat") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let spawned = match spawn("exit 5") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let waited = match wait(spawned) {
+        Ok(code) => code,
+        Err(_) => -1,
+    };
+    let kill_missing = match kill(999999) {
+        Ok(_) => 0,
+        Err(err) => match err {
+            UnknownProcess => 1,
+            _ => 0,
+        },
+    };
+
+    let run_status_ok = if run_out.status == 7 { 1 } else { 0 };
+    let run_stdout_ok = if len(run_out.stdout) > 0 { 1 } else { 0 };
+    let run_stderr_ok = if len(run_out.stderr) > 0 { 1 } else { 0 };
+    let pipe_ok = if pipe_out.status == 0 && len(pipe_out.stdout) > 0 { 1 } else { 0 };
+    let wait_ok = if waited == 5 { 1 } else { 0 };
+
+    if run_status_ok + run_stdout_ok + run_stderr_ok + pipe_ok + wait_ok + kill_missing == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_debug_build_reports_panic_source_line() {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("panic_line_map.aic");

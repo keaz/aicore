@@ -1,0 +1,62 @@
+module example.io.process_pipeline;
+
+import std.io;
+import std.proc;
+import std.env;
+import std.path;
+import std.string;
+
+fn ok_bool(v: Result[Bool, EnvError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, proc, env, fs } {
+    let run_out = match run("echo out; echo err 1>&2; exit 7") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+
+    let pipe_out = match pipe("echo 42", "cat") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+
+    let waited = match spawn("exit 5") {
+        Ok(handle) => match wait(handle) {
+            Ok(code) => if code == 5 { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let current = match cwd() {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let joined = join(current, "process_pipeline.log");
+
+    let env_set = ok_bool(set("AIC_PROCESS_PIPELINE_TMP", "ok"));
+    let env_remove = ok_bool(remove("AIC_PROCESS_PIPELINE_TMP"));
+
+    let status_ok = if run_out.status == 7 && pipe_out.status == 0 { 1 } else { 0 };
+    let output_ok = if len(run_out.stdout) > 0 && len(run_out.stderr) > 0 && len(pipe_out.stdout) > 0 {
+        1
+    } else {
+        0
+    };
+    let path_ok = if is_abs(current) && len(dirname(joined)) > 0 && len(extension(joined)) == 3 {
+        1
+    } else {
+        0
+    };
+
+    if status_ok + output_ok + waited + env_set + env_remove + path_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

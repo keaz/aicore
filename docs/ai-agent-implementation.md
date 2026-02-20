@@ -83,7 +83,7 @@ In `src/codegen.rs`:
 
 Current std set under `std/`:
 
-- `io`, `fs`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`
+- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`
 
 Notes:
 
@@ -98,6 +98,9 @@ Notes:
   - `docs/io-filesystem.md`
   - `examples/io/fs_backup.aic`
   - `examples/io/fs_all_ops.aic`
+- Process/env/path API contract and examples:
+  - `docs/io-process-env-path.md`
+  - `examples/io/process_pipeline.aic`
 
 ### Manifest + lockfile workflow (E6-T2)
 

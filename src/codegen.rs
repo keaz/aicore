@@ -686,6 +686,25 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_fs_walk_dir(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_temp_file(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_temp_dir(i8*, i64, i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_env_get(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_env_set(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_env_remove(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_env_cwd(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_env_set_cwd(i8*, i64, i64)\n\n");
+        text.push_str("declare void @aic_rt_path_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_path_basename(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_path_dirname(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_path_extension(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_path_is_abs(i8*, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_proc_spawn(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_proc_wait(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_proc_kill(i64)\n");
+        text.push_str(
+            "declare i64 @aic_rt_proc_run(i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_proc_pipe(i8*, i64, i64, i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n\n",
+        );
 
         for global in &self.globals {
             text.push_str(global);
@@ -1536,6 +1555,15 @@ impl<'a> Generator<'a> {
         if let Some(result) = self.gen_fs_builtin_call(name, args, span, fctx) {
             return result;
         }
+        if let Some(result) = self.gen_env_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_path_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_proc_builtin_call(name, args, span, fctx) {
+            return result;
+        }
 
         if let Some(instances) = self.generic_fn_instances.get(name).cloned() {
             let mut values = Vec::new();
@@ -2230,6 +2258,1035 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_env_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "get" | "aic_env_get_intrinsic" => "get",
+            "set" | "aic_env_set_intrinsic" => "set",
+            "remove" | "aic_env_remove_intrinsic" => "remove",
+            "cwd" | "aic_env_cwd_intrinsic" => "cwd",
+            "set_cwd" | "aic_env_set_cwd_intrinsic" => "set_cwd",
+            _ => return None,
+        };
+
+        match canonical {
+            "get" if self.sig_matches_shape(name, &["String"], "Result[String, EnvError]") => {
+                Some(self.gen_env_get_call(name, args, span, fctx))
+            }
+            "set"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[Bool, EnvError]",
+                ) =>
+            {
+                Some(self.gen_env_set_call(name, args, span, fctx))
+            }
+            "remove" if self.sig_matches_shape(name, &["String"], "Result[Bool, EnvError]") => {
+                Some(self.gen_env_remove_call(name, args, span, fctx))
+            }
+            "cwd" if self.sig_matches_shape(name, &[], "Result[String, EnvError]") => {
+                Some(self.gen_env_cwd_call(name, args, span, fctx))
+            }
+            "set_cwd" if self.sig_matches_shape(name, &["String"], "Result[Bool, EnvError]") => {
+                Some(self.gen_env_set_cwd_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_env_get_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "get expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let key = self.gen_expr(&args[0], fctx)?;
+        if key.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "get expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&key, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_get(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_env_set_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "set expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let key = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if key.ty != LType::String || value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "set expects String arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (kptr, klen, kcap) = self.string_parts(&key, args[0].span, fctx)?;
+        let (vptr, vlen, vcap) = self.string_parts(&value, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_set(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            err, kptr, klen, kcap, vptr, vlen, vcap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_env_remove_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "remove expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let key = self.gen_expr(&args[0], fctx)?;
+        if key.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "remove expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&key, args[0].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_remove(i8* {}, i64 {}, i64 {})",
+            err, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_env_cwd_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "cwd expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_cwd(i8** {}, i64* {})",
+            err, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_env_set_cwd_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "set_cwd expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "set_cwd expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_set_cwd(i8* {}, i64 {}, i64 {})",
+            err, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn wrap_env_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "env builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_env_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("env_ok");
+        let err_label = self.new_label("env_err");
+        let cont_label = self.new_label("env_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_path_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "join" | "aic_path_join_intrinsic" => "join",
+            "basename" | "aic_path_basename_intrinsic" => "basename",
+            "dirname" | "aic_path_dirname_intrinsic" => "dirname",
+            "extension" | "aic_path_extension_intrinsic" => "extension",
+            "is_abs" | "aic_path_is_abs_intrinsic" => "is_abs",
+            _ => return None,
+        };
+
+        match canonical {
+            "join" if self.sig_matches_shape(name, &["String", "String"], "String") => {
+                Some(self.gen_path_join_call(args, span, fctx))
+            }
+            "basename" if self.sig_matches_shape(name, &["String"], "String") => {
+                Some(self.gen_path_string_unary_call(
+                    "basename",
+                    "aic_rt_path_basename",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "dirname" if self.sig_matches_shape(name, &["String"], "String") => Some(
+                self.gen_path_string_unary_call("dirname", "aic_rt_path_dirname", args, span, fctx),
+            ),
+            "extension" if self.sig_matches_shape(name, &["String"], "String") => {
+                Some(self.gen_path_string_unary_call(
+                    "extension",
+                    "aic_rt_path_extension",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "is_abs" if self.sig_matches_shape(name, &["String"], "Bool") => {
+                Some(self.gen_path_is_abs_call(args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_path_join_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "join expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let left = self.gen_expr(&args[0], fctx)?;
+        let right = self.gen_expr(&args[1], fctx)?;
+        if left.ty != LType::String || right.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "join expects String arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (lptr, llen, lcap) = self.string_parts(&left, args[0].span, fctx)?;
+        let (rptr, rlen, rcap) = self.string_parts(&right, args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_path_join(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            lptr, llen, lcap, rptr, rlen, rcap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        Some(self.build_string_value(&out_ptr, &out_len, &out_len, fctx))
+    }
+
+    fn gen_path_string_unary_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        if input.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&input, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        Some(self.build_string_value(&out_ptr, &out_len, &out_len, fctx))
+    }
+
+    fn gen_path_is_abs_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "is_abs expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        if input.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "is_abs expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&input, args[0].span, fctx)?;
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_path_is_abs(i8* {}, i64 {}, i64 {})",
+            raw, ptr, len, cap
+        ));
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", reg, raw));
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_proc_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "spawn" | "aic_proc_spawn_intrinsic" => "spawn",
+            "wait" | "aic_proc_wait_intrinsic" => "wait",
+            "kill" | "aic_proc_kill_intrinsic" => "kill",
+            "run" | "aic_proc_run_intrinsic" => "run",
+            "pipe" | "aic_proc_pipe_intrinsic" => "pipe",
+            _ => return None,
+        };
+
+        match canonical {
+            "spawn" if self.sig_matches_shape(name, &["String"], "Result[Int, ProcError]") => {
+                Some(self.gen_proc_spawn_call(name, args, span, fctx))
+            }
+            "wait" if self.sig_matches_shape(name, &["Int"], "Result[Int, ProcError]") => {
+                Some(self.gen_proc_wait_call(name, args, span, fctx))
+            }
+            "kill" if self.sig_matches_shape(name, &["Int"], "Result[Bool, ProcError]") => {
+                Some(self.gen_proc_kill_call(name, args, span, fctx))
+            }
+            "run" if self.sig_matches_shape(name, &["String"], "Result[ProcOutput, ProcError]") => {
+                Some(self.gen_proc_run_call(name, args, span, fctx))
+            }
+            "pipe"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[ProcOutput, ProcError]",
+                ) =>
+            {
+                Some(self.gen_proc_pipe_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_proc_spawn_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "spawn expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let command = self.gen_expr(&args[0], fctx)?;
+        if command.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&command, args[0].span, fctx)?;
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_spawn(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_proc_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_proc_wait_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "wait expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "wait expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_wait(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            status_slot
+        ));
+        let status = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", status, status_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(status),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_proc_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_proc_kill_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "kill expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "kill expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_kill(i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_proc_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_proc_run_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "run expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let command = self.gen_expr(&args[0], fctx)?;
+        if command.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "run expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&command, args[0].span, fctx)?;
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let stdout_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stdout_ptr_slot));
+        let stdout_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stdout_len_slot));
+        let stderr_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stderr_ptr_slot));
+        let stderr_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stderr_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_run(i8* {}, i64 {}, i64 {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err, ptr, len, cap, status_slot, stdout_ptr_slot, stdout_len_slot, stderr_ptr_slot, stderr_len_slot
+        ));
+        self.build_proc_output_result(
+            name,
+            &err,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_proc_pipe_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "pipe expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let left = self.gen_expr(&args[0], fctx)?;
+        let right = self.gen_expr(&args[1], fctx)?;
+        if left.ty != LType::String || right.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "pipe expects String arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (lptr, llen, lcap) = self.string_parts(&left, args[0].span, fctx)?;
+        let (rptr, rlen, rcap) = self.string_parts(&right, args[1].span, fctx)?;
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let stdout_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stdout_ptr_slot));
+        let stdout_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stdout_len_slot));
+        let stderr_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stderr_ptr_slot));
+        let stderr_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stderr_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_pipe(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err, lptr, llen, lcap, rptr, rlen, rcap, status_slot, stdout_ptr_slot, stdout_len_slot, stderr_ptr_slot, stderr_len_slot
+        ));
+        self.build_proc_output_result(
+            name,
+            &err,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_proc_output_result(
+        &mut self,
+        name: &str,
+        err: &str,
+        status_slot: String,
+        stdout_ptr_slot: String,
+        stdout_len_slot: String,
+        stderr_ptr_slot: String,
+        stderr_len_slot: String,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let status = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", status, status_slot));
+        let stdout_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            stdout_ptr, stdout_ptr_slot
+        ));
+        let stdout_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            stdout_len, stdout_len_slot
+        ));
+        let stderr_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            stderr_ptr, stderr_ptr_slot
+        ));
+        let stderr_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            stderr_len, stderr_len_slot
+        ));
+
+        let stdout_value = self.build_string_value(&stdout_ptr, &stdout_len, &stdout_len, fctx);
+        let stderr_value = self.build_string_value(&stderr_ptr, &stderr_len, &stderr_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "process builtin expects Result[ProcOutput, ProcError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_struct_value(
+            &ok_layout,
+            &[
+                Value {
+                    ty: LType::Int,
+                    repr: Some(status),
+                },
+                stdout_value,
+                stderr_value,
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_proc_result(&result_ty, ok_payload, err, span, fctx)
+    }
+
+    fn wrap_proc_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "proc builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_proc_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("proc_ok");
+        let err_label = self.new_label("proc_err");
+        let cont_label = self.new_label("proc_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn result_layout_parts(
         &mut self,
         result_ty: &LType,
@@ -2238,7 +3295,7 @@ impl<'a> Generator<'a> {
         let LType::Enum(layout) = result_ty else {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "filesystem builtin expects Result return type",
+                "builtin expects Result return type",
                 self.file,
                 span,
             ));
@@ -2248,7 +3305,7 @@ impl<'a> Generator<'a> {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(
-                    "filesystem builtin expects Result return type, found '{}'",
+                    "builtin expects Result return type, found '{}'",
                     layout.repr
                 ),
                 self.file,
@@ -2499,9 +3556,13 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn build_fs_error_from_code(
+    fn build_error_from_code(
         &mut self,
         err_ty: &LType,
+        enum_name: &str,
+        context: &str,
+        mappings: &[(i64, &str)],
+        fallback_variant: &str,
         err_code: &str,
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -2510,7 +3571,7 @@ impl<'a> Generator<'a> {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(
-                    "filesystem builtin expects FsError payload, found '{}'",
+                    "{context} builtin expects {enum_name} payload, found '{}'",
                     render_type(err_ty)
                 ),
                 self.file,
@@ -2518,11 +3579,11 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
-        if base_type_name(&layout.repr) != "FsError" {
+        if base_type_name(&layout.repr) != enum_name {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(
-                    "filesystem builtin expects FsError payload, found '{}'",
+                    "{context} builtin expects {enum_name} payload, found '{}'",
                     layout.repr
                 ),
                 self.file,
@@ -2538,7 +3599,7 @@ impl<'a> Generator<'a> {
         {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "FsError variants must not have payloads",
+                format!("{enum_name} variants must not have payloads"),
                 self.file,
                 span,
             ));
@@ -2547,60 +3608,32 @@ impl<'a> Generator<'a> {
 
         let variant_index =
             |name: &str| -> Option<usize> { layout.variants.iter().position(|v| v.name == name) };
-        let Some(not_found_idx) = variant_index("NotFound") else {
+        let Some(fallback_idx) = variant_index(fallback_variant) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "FsError is missing NotFound variant",
-                self.file,
-                span,
-            ));
-            return None;
-        };
-        let Some(permission_idx) = variant_index("PermissionDenied") else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5011",
-                "FsError is missing PermissionDenied variant",
-                self.file,
-                span,
-            ));
-            return None;
-        };
-        let Some(exists_idx) = variant_index("AlreadyExists") else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5011",
-                "FsError is missing AlreadyExists variant",
-                self.file,
-                span,
-            ));
-            return None;
-        };
-        let Some(invalid_idx) = variant_index("InvalidInput") else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5011",
-                "FsError is missing InvalidInput variant",
-                self.file,
-                span,
-            ));
-            return None;
-        };
-        let Some(io_idx) = variant_index("Io") else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5011",
-                "FsError is missing Io variant",
+                format!("{enum_name} is missing {fallback_variant} variant"),
                 self.file,
                 span,
             ));
             return None;
         };
 
-        let mut tag = format!("{}", io_idx as i32);
-        for (code, index) in [
-            (1i64, not_found_idx),
-            (2i64, permission_idx),
-            (3i64, exists_idx),
-            (4i64, invalid_idx),
-            (5i64, io_idx),
-        ] {
+        let mut mapping_indices = Vec::new();
+        for (code, variant_name) in mappings {
+            let Some(index) = variant_index(variant_name) else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5011",
+                    format!("{enum_name} is missing {variant_name} variant"),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+            mapping_indices.push((*code, index));
+        }
+
+        let mut tag = format!("{}", fallback_idx as i32);
+        for (code, index) in mapping_indices {
             let is_match = self.new_temp();
             fctx.lines.push(format!(
                 "  {} = icmp eq i64 {}, {}",
@@ -2615,6 +3648,80 @@ impl<'a> Generator<'a> {
         }
 
         self.build_no_payload_enum_with_tag(layout, &tag, span, fctx)
+    }
+
+    fn build_fs_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "FsError",
+            "filesystem",
+            &[
+                (1, "NotFound"),
+                (2, "PermissionDenied"),
+                (3, "AlreadyExists"),
+                (4, "InvalidInput"),
+                (5, "Io"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_env_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "EnvError",
+            "env",
+            &[
+                (1, "NotFound"),
+                (2, "PermissionDenied"),
+                (3, "InvalidInput"),
+                (4, "Io"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_proc_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "ProcError",
+            "proc",
+            &[
+                (1, "NotFound"),
+                (2, "PermissionDenied"),
+                (3, "InvalidInput"),
+                (4, "Io"),
+                (5, "UnknownProcess"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
     }
 
     fn build_no_payload_enum_with_tag(
@@ -4468,6 +5575,9 @@ fn runtime_c_source() -> &'static str {
 #else
 #include <dirent.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #endif
 
 typedef struct {
@@ -5175,6 +6285,863 @@ long aic_rt_fs_temp_dir(
     }
     return 0;
 #endif
+}
+
+static long aic_rt_env_map_errno(int err) {
+    switch (err) {
+        case ENOENT:
+            return 1;  // NotFound
+        case EACCES:
+        case EPERM:
+            return 2;  // PermissionDenied
+        case EINVAL:
+        #ifdef ENAMETOOLONG
+        case ENAMETOOLONG:
+        #endif
+            return 3;  // InvalidInput
+        default:
+            return 4;  // Io
+    }
+}
+
+static int aic_rt_env_invalid_name(const char* key) {
+    if (key == NULL || key[0] == '\0') {
+        return 1;
+    }
+    for (const char* p = key; *p != '\0'; ++p) {
+        if (*p == '=') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_env_get(
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)key_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    char* key = aic_rt_fs_copy_slice(key_ptr, key_len);
+    if (aic_rt_env_invalid_name(key)) {
+        free(key);
+        return 3;
+    }
+    const char* value = getenv(key);
+    free(key);
+    if (value == NULL) {
+        return 1;
+    }
+    size_t n = strlen(value);
+    char* owned = (char*)malloc(n + 1);
+    if (owned == NULL) {
+        return 4;
+    }
+    memcpy(owned, value, n + 1);
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    } else {
+        free(owned);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)n;
+    }
+    return 0;
+}
+
+long aic_rt_env_set(
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    const char* value_ptr,
+    long value_len,
+    long value_cap
+) {
+    (void)key_cap;
+    (void)value_cap;
+    if (value_len < 0 || (value_len > 0 && value_ptr == NULL)) {
+        return 3;
+    }
+    char* key = aic_rt_fs_copy_slice(key_ptr, key_len);
+    char* value = aic_rt_fs_copy_slice(value_ptr, value_len);
+    if (aic_rt_env_invalid_name(key) || value == NULL) {
+        free(key);
+        free(value);
+        return 3;
+    }
+#ifdef _WIN32
+    if (_putenv_s(key, value) != 0) {
+        long mapped = aic_rt_env_map_errno(errno);
+        free(key);
+        free(value);
+        return mapped;
+    }
+#else
+    if (setenv(key, value, 1) != 0) {
+        long mapped = aic_rt_env_map_errno(errno);
+        free(key);
+        free(value);
+        return mapped;
+    }
+#endif
+    free(key);
+    free(value);
+    return 0;
+}
+
+long aic_rt_env_remove(const char* key_ptr, long key_len, long key_cap) {
+    (void)key_cap;
+    char* key = aic_rt_fs_copy_slice(key_ptr, key_len);
+    if (aic_rt_env_invalid_name(key)) {
+        free(key);
+        return 3;
+    }
+#ifdef _WIN32
+    if (_putenv_s(key, "") != 0) {
+        long mapped = aic_rt_env_map_errno(errno);
+        free(key);
+        return mapped;
+    }
+#else
+    if (unsetenv(key) != 0) {
+        long mapped = aic_rt_env_map_errno(errno);
+        free(key);
+        return mapped;
+    }
+#endif
+    free(key);
+    return 0;
+}
+
+long aic_rt_env_cwd(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+#ifdef _WIN32
+    char buffer[MAX_PATH + 1];
+    DWORD n = GetCurrentDirectoryA(MAX_PATH, buffer);
+    if (n == 0 || n > MAX_PATH) {
+        return aic_rt_env_map_errno(errno);
+    }
+#else
+    char buffer[PATH_MAX];
+    if (getcwd(buffer, sizeof(buffer)) == NULL) {
+        return aic_rt_env_map_errno(errno);
+    }
+#endif
+    size_t len = strlen(buffer);
+    char* owned = (char*)malloc(len + 1);
+    if (owned == NULL) {
+        return 4;
+    }
+    memcpy(owned, buffer, len + 1);
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    } else {
+        free(owned);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)len;
+    }
+    return 0;
+}
+
+long aic_rt_env_set_cwd(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 3;
+    }
+#ifdef _WIN32
+    int rc = _chdir(path);
+#else
+    int rc = chdir(path);
+#endif
+    int err = errno;
+    free(path);
+    if (rc != 0) {
+        return aic_rt_env_map_errno(err);
+    }
+    return 0;
+}
+
+static char* aic_rt_copy_bytes(const char* src, size_t len) {
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (len > 0 && src != NULL) {
+        memcpy(out, src, len);
+    }
+    out[len] = '\0';
+    return out;
+}
+
+static int aic_rt_path_is_sep(char ch) {
+    return ch == '/' || ch == '\\';
+}
+
+static int aic_rt_path_is_abs_cstr(const char* path) {
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+#ifdef _WIN32
+    if (aic_rt_path_is_sep(path[0])) {
+        return 1;
+    }
+    if (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':') {
+        return 1;
+    }
+    return 0;
+#else
+    return path[0] == '/';
+#endif
+}
+
+static void aic_rt_write_string_out(char** out_ptr, long* out_len, char* owned) {
+    long len = 0;
+    if (owned != NULL) {
+        len = (long)strlen(owned);
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    } else {
+        free(owned);
+    }
+}
+
+void aic_rt_path_join(
+    const char* left_ptr,
+    long left_len,
+    long left_cap,
+    const char* right_ptr,
+    long right_len,
+    long right_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)left_cap;
+    (void)right_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* left = aic_rt_fs_copy_slice(left_ptr, left_len);
+    char* right = aic_rt_fs_copy_slice(right_ptr, right_len);
+    if (left == NULL || right == NULL) {
+        free(left);
+        free(right);
+        return;
+    }
+    if (right[0] == '\0') {
+        aic_rt_write_string_out(out_ptr, out_len, left);
+        free(right);
+        return;
+    }
+    if (left[0] == '\0' || aic_rt_path_is_abs_cstr(right)) {
+        aic_rt_write_string_out(out_ptr, out_len, right);
+        free(left);
+        return;
+    }
+    size_t left_n = strlen(left);
+    size_t right_n = strlen(right);
+    int need_sep = !(aic_rt_path_is_sep(left[left_n - 1]) || aic_rt_path_is_sep(right[0]));
+#ifdef _WIN32
+    char sep = '\\';
+#else
+    char sep = '/';
+#endif
+    size_t out_n = left_n + (need_sep ? 1 : 0) + right_n;
+    char* out = (char*)malloc(out_n + 1);
+    if (out == NULL) {
+        free(left);
+        free(right);
+        return;
+    }
+    size_t pos = 0;
+    memcpy(out + pos, left, left_n);
+    pos += left_n;
+    if (need_sep) {
+        out[pos++] = sep;
+    }
+    memcpy(out + pos, right, right_n);
+    out[out_n] = '\0';
+    free(left);
+    free(right);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_path_basename(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)path_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return;
+    }
+    size_t n = strlen(path);
+    while (n > 0 && aic_rt_path_is_sep(path[n - 1])) {
+        n -= 1;
+    }
+    if (n == 0) {
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    size_t start = n;
+    while (start > 0 && !aic_rt_path_is_sep(path[start - 1])) {
+        start -= 1;
+    }
+    char* out = aic_rt_copy_bytes(path + start, n - start);
+    free(path);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_path_dirname(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)path_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return;
+    }
+    size_t n = strlen(path);
+    while (n > 0 && aic_rt_path_is_sep(path[n - 1])) {
+        n -= 1;
+    }
+    if (n == 0) {
+#ifdef _WIN32
+        char* root = aic_rt_copy_bytes("\\", 1);
+#else
+        char* root = aic_rt_copy_bytes("/", 1);
+#endif
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, root);
+        return;
+    }
+    size_t end = n;
+    while (end > 0 && !aic_rt_path_is_sep(path[end - 1])) {
+        end -= 1;
+    }
+    if (end == 0) {
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes(".", 1));
+        return;
+    }
+    if (end == 1 && aic_rt_path_is_sep(path[0])) {
+        char* root = aic_rt_copy_bytes(path, 1);
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, root);
+        return;
+    }
+    char* out = aic_rt_copy_bytes(path, end - 1);
+    free(path);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_path_extension(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)path_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return;
+    }
+    size_t n = strlen(path);
+    while (n > 0 && aic_rt_path_is_sep(path[n - 1])) {
+        n -= 1;
+    }
+    if (n == 0) {
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    size_t start = n;
+    while (start > 0 && !aic_rt_path_is_sep(path[start - 1])) {
+        start -= 1;
+    }
+    const char* name = path + start;
+    size_t name_n = n - start;
+    const char* dot = NULL;
+    for (size_t i = 0; i < name_n; ++i) {
+        if (name[i] == '.') {
+            dot = &name[i];
+        }
+    }
+    if (dot == NULL || dot == name) {
+        free(path);
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    size_t ext_n = (size_t)(name + name_n - (dot + 1));
+    char* out = aic_rt_copy_bytes(dot + 1, ext_n);
+    free(path);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+long aic_rt_path_is_abs(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 0;
+    }
+    long out = aic_rt_path_is_abs_cstr(path) ? 1 : 0;
+    free(path);
+    return out;
+}
+
+static long aic_rt_proc_map_errno(int err) {
+    switch (err) {
+        case ENOENT:
+            return 1;  // NotFound
+        case EACCES:
+        case EPERM:
+            return 2;  // PermissionDenied
+        case EINVAL:
+        #ifdef ENAMETOOLONG
+        case ENAMETOOLONG:
+        #endif
+            return 3;  // InvalidInput
+        #ifdef ESRCH
+        case ESRCH:
+            return 5;  // UnknownProcess
+        #endif
+        #ifdef ECHILD
+        case ECHILD:
+            return 5;  // UnknownProcess
+        #endif
+        default:
+            return 4;  // Io
+    }
+}
+
+static char* aic_rt_proc_read_text_file(const char* path, long* out_len) {
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long size = ftell(f);
+    if (size < 0) {
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    char* buffer = (char*)malloc((size_t)size + 1);
+    if (buffer == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    size_t read_n = fread(buffer, 1, (size_t)size, f);
+    fclose(f);
+    buffer[read_n] = '\0';
+    if (out_len != NULL) {
+        *out_len = (long)read_n;
+    }
+    return buffer;
+}
+
+static long aic_rt_proc_make_temp_file_path(const char* prefix, char** out_path) {
+    if (out_path == NULL) {
+        return 3;
+    }
+    *out_path = NULL;
+#ifdef _WIN32
+    char tmp[L_tmpnam];
+    if (tmpnam_s(tmp, sizeof(tmp)) != 0) {
+        return 4;
+    }
+    size_t n = strlen(tmp);
+    char* out = (char*)malloc(n + 1);
+    if (out == NULL) {
+        return 4;
+    }
+    memcpy(out, tmp, n + 1);
+    FILE* f = fopen(out, "wb");
+    if (f != NULL) {
+        fclose(f);
+    }
+    *out_path = out;
+    return 0;
+#else
+    const char* tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+    const char* eff = (prefix != NULL && prefix[0] != '\0') ? prefix : "aic_proc_";
+    size_t needed = strlen(tmp) + 1 + strlen(eff) + 6 + 1;
+    char* tmpl = (char*)malloc(needed);
+    if (tmpl == NULL) {
+        return 4;
+    }
+    snprintf(tmpl, needed, "%s/%sXXXXXX", tmp, eff);
+    int fd = mkstemp(tmpl);
+    if (fd < 0) {
+        int err = errno;
+        free(tmpl);
+        return aic_rt_proc_map_errno(err);
+    }
+    close(fd);
+    *out_path = tmpl;
+    return 0;
+#endif
+}
+
+static long aic_rt_proc_decode_wait_status(int status) {
+#ifdef _WIN32
+    return (long)status;
+#else
+    if (WIFEXITED(status)) {
+        return (long)WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + (long)WTERMSIG(status);
+    }
+    return 1;
+#endif
+}
+
+static long aic_rt_proc_run_shell(
+    const char* command,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = NULL;
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = 0;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = NULL;
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = 0;
+    }
+    if (command == NULL || command[0] == '\0') {
+        return 3;
+    }
+
+    char* stdout_path = NULL;
+    char* stderr_path = NULL;
+    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    if (mk_out != 0) {
+        free(stdout_path);
+        return mk_out;
+    }
+    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    if (mk_err != 0) {
+        free(stdout_path);
+        free(stderr_path);
+        return mk_err;
+    }
+
+    size_t wrapped_n = strlen(command) + strlen(stdout_path) + strlen(stderr_path) + 40;
+    char* wrapped = (char*)malloc(wrapped_n);
+    if (wrapped == NULL) {
+        remove(stdout_path);
+        remove(stderr_path);
+        free(stdout_path);
+        free(stderr_path);
+        return 4;
+    }
+    snprintf(
+        wrapped,
+        wrapped_n,
+        "( %s ) >\"%s\" 2>\"%s\"",
+        command,
+        stdout_path,
+        stderr_path
+    );
+
+    int rc = system(wrapped);
+    free(wrapped);
+    if (rc == -1) {
+        int err = errno;
+        remove(stdout_path);
+        remove(stderr_path);
+        free(stdout_path);
+        free(stderr_path);
+        return aic_rt_proc_map_errno(err);
+    }
+
+    long stdout_n = 0;
+    long stderr_n = 0;
+    char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
+    char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
+    remove(stdout_path);
+    remove(stderr_path);
+    free(stdout_path);
+    free(stderr_path);
+    if (stdout_text == NULL || stderr_text == NULL) {
+        free(stdout_text);
+        free(stderr_text);
+        return 4;
+    }
+
+    if (out_status != NULL) {
+        *out_status = aic_rt_proc_decode_wait_status(rc);
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = stdout_text;
+    } else {
+        free(stdout_text);
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = stdout_n;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = stderr_text;
+    } else {
+        free(stderr_text);
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = stderr_n;
+    }
+    return 0;
+}
+
+#define AIC_RT_PROC_TABLE_CAP 64
+typedef struct {
+    int active;
+#ifdef _WIN32
+    long pid;
+#else
+    pid_t pid;
+#endif
+} AicProcSlot;
+static AicProcSlot aic_rt_proc_table[AIC_RT_PROC_TABLE_CAP];
+
+long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_cap, long* out_handle) {
+    (void)command_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    char* command = aic_rt_fs_copy_slice(command_ptr, command_len);
+    if (command == NULL || command[0] == '\0') {
+        free(command);
+        return 3;
+    }
+#ifdef _WIN32
+    free(command);
+    return 4;
+#else
+    pid_t pid = fork();
+    if (pid < 0) {
+        long mapped = aic_rt_proc_map_errno(errno);
+        free(command);
+        return mapped;
+    }
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", command, (char*)NULL);
+        _exit(127);
+    }
+    free(command);
+
+    long slot = -1;
+    for (long i = 0; i < AIC_RT_PROC_TABLE_CAP; ++i) {
+        if (!aic_rt_proc_table[i].active) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return 4;
+    }
+    aic_rt_proc_table[slot].active = 1;
+    aic_rt_proc_table[slot].pid = pid;
+    if (out_handle != NULL) {
+        *out_handle = slot + 1;
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_proc_wait(long handle, long* out_status) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+#ifdef _WIN32
+    (void)handle;
+    return 5;
+#else
+    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    int status = 0;
+    pid_t rc = waitpid(aic_rt_proc_table[slot].pid, &status, 0);
+    if (rc < 0) {
+        return aic_rt_proc_map_errno(errno);
+    }
+    aic_rt_proc_table[slot].active = 0;
+    if (out_status != NULL) {
+        *out_status = aic_rt_proc_decode_wait_status(status);
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_proc_kill(long handle) {
+#ifdef _WIN32
+    (void)handle;
+    return 5;
+#else
+    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    if (kill(aic_rt_proc_table[slot].pid, SIGTERM) != 0) {
+        return aic_rt_proc_map_errno(errno);
+    }
+    waitpid(aic_rt_proc_table[slot].pid, NULL, 0);
+    aic_rt_proc_table[slot].active = 0;
+    return 0;
+#endif
+}
+
+long aic_rt_proc_run(
+    const char* command_ptr,
+    long command_len,
+    long command_cap,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    (void)command_cap;
+    char* command = aic_rt_fs_copy_slice(command_ptr, command_len);
+    if (command == NULL || command[0] == '\0') {
+        free(command);
+        return 3;
+    }
+    long result = aic_rt_proc_run_shell(
+        command,
+        out_status,
+        out_stdout_ptr,
+        out_stdout_len,
+        out_stderr_ptr,
+        out_stderr_len
+    );
+    free(command);
+    return result;
+}
+
+long aic_rt_proc_pipe(
+    const char* left_ptr,
+    long left_len,
+    long left_cap,
+    const char* right_ptr,
+    long right_len,
+    long right_cap,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    (void)left_cap;
+    (void)right_cap;
+    char* left = aic_rt_fs_copy_slice(left_ptr, left_len);
+    char* right = aic_rt_fs_copy_slice(right_ptr, right_len);
+    if (left == NULL || right == NULL || left[0] == '\0' || right[0] == '\0') {
+        free(left);
+        free(right);
+        return 3;
+    }
+    size_t command_n = strlen(left) + strlen(right) + 8;
+    char* command = (char*)malloc(command_n);
+    if (command == NULL) {
+        free(left);
+        free(right);
+        return 4;
+    }
+    snprintf(command, command_n, "%s | %s", left, right);
+    free(left);
+    free(right);
+    long result = aic_rt_proc_run_shell(
+        command,
+        out_status,
+        out_stdout_ptr,
+        out_stdout_len,
+        out_stderr_ptr,
+        out_stderr_len
+    );
+    free(command);
+    return result;
 }
 
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {

@@ -2,9 +2,119 @@
   "schema_version": 1,
   "symbols": [
     {
+      "module": "std.env",
+      "kind": "enum",
+      "signature": "EnvError { NotFound, PermissionDenied, InvalidInput, Io }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_cwd_intrinsic() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_get_intrinsic(key: String) -> Result[String, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_remove_intrinsic(key: String) -> Result[Bool, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_set_cwd_intrinsic(path: String) -> Result[Bool, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_set_intrinsic(key: String, value: String) -> Result[Bool, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "cwd() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "get(key: String) -> Result[String, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "remove(key: String) -> Result[Bool, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "set(key: String, value: String) -> Result[Bool, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs }"
+    },
+    {
       "module": "std.fs",
       "kind": "enum",
       "signature": "FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Io }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_exists_intrinsic(path: String) -> Bool effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -95,6 +205,116 @@
       "module": "std.option",
       "kind": "enum",
       "signature": "Option[T] { None, Some(T) }"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "aic_path_basename_intrinsic(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "aic_path_dirname_intrinsic(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "aic_path_extension_intrinsic(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "aic_path_is_abs_intrinsic(path: String) -> Bool"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "aic_path_join_intrinsic(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "basename(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "dirname(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "extension(path: String) -> String"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "is_abs(path: String) -> Bool"
+    },
+    {
+      "module": "std.path",
+      "kind": "fn",
+      "signature": "join(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.proc",
+      "kind": "enum",
+      "signature": "ProcError { NotFound, PermissionDenied, InvalidInput, Io, UnknownProcess }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "kill(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "spawn(command: String) -> Result[Int, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "wait(handle: Int) -> Result[Int, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "struct",
+      "signature": "ProcOutput { status: Int, stdout: String, stderr: String }"
     },
     {
       "module": "std.rand",

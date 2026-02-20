@@ -1,0 +1,41 @@
+module std.path;
+
+fn aic_path_join_intrinsic(left: String, right: String) -> String {
+    ""
+}
+
+fn aic_path_basename_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_dirname_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_extension_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_is_abs_intrinsic(path: String) -> Bool {
+    false
+}
+
+fn join(left: String, right: String) -> String {
+    aic_path_join_intrinsic(left, right)
+}
+
+fn basename(path: String) -> String {
+    aic_path_basename_intrinsic(path)
+}
+
+fn dirname(path: String) -> String {
+    aic_path_dirname_intrinsic(path)
+}
+
+fn extension(path: String) -> String {
+    aic_path_extension_intrinsic(path)
+}
+
+fn is_abs(path: String) -> Bool {
+    aic_path_is_abs_intrinsic(path)
+}

@@ -244,6 +244,187 @@ fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
     )?;
 
     fs::write(
+        path.join("std/env.aic"),
+        r#"module std.env;
+
+import std.result;
+
+enum EnvError {
+    NotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+}
+
+fn aic_env_get_intrinsic(key: String) -> Result[String, EnvError] effects { env } {
+    let out: Result[String, EnvError] = Ok("");
+    out
+}
+
+fn aic_env_set_intrinsic(key: String, value: String) -> Result[Bool, EnvError] effects { env } {
+    let out: Result[Bool, EnvError] = Ok(true);
+    out
+}
+
+fn aic_env_remove_intrinsic(key: String) -> Result[Bool, EnvError] effects { env } {
+    let out: Result[Bool, EnvError] = Ok(true);
+    out
+}
+
+fn aic_env_cwd_intrinsic() -> Result[String, EnvError] effects { env, fs } {
+    let out: Result[String, EnvError] = Ok("");
+    out
+}
+
+fn aic_env_set_cwd_intrinsic(path: String) -> Result[Bool, EnvError] effects { env, fs } {
+    let out: Result[Bool, EnvError] = Ok(true);
+    out
+}
+
+fn get(key: String) -> Result[String, EnvError] effects { env } {
+    aic_env_get_intrinsic(key)
+}
+
+fn set(key: String, value: String) -> Result[Bool, EnvError] effects { env } {
+    aic_env_set_intrinsic(key, value)
+}
+
+fn remove(key: String) -> Result[Bool, EnvError] effects { env } {
+    aic_env_remove_intrinsic(key)
+}
+
+fn cwd() -> Result[String, EnvError] effects { env, fs } {
+    aic_env_cwd_intrinsic()
+}
+
+fn set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs } {
+    aic_env_set_cwd_intrinsic(path)
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/path.aic"),
+        r#"module std.path;
+
+fn aic_path_join_intrinsic(left: String, right: String) -> String {
+    ""
+}
+
+fn aic_path_basename_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_dirname_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_extension_intrinsic(path: String) -> String {
+    ""
+}
+
+fn aic_path_is_abs_intrinsic(path: String) -> Bool {
+    false
+}
+
+fn join(left: String, right: String) -> String {
+    aic_path_join_intrinsic(left, right)
+}
+
+fn basename(path: String) -> String {
+    aic_path_basename_intrinsic(path)
+}
+
+fn dirname(path: String) -> String {
+    aic_path_dirname_intrinsic(path)
+}
+
+fn extension(path: String) -> String {
+    aic_path_extension_intrinsic(path)
+}
+
+fn is_abs(path: String) -> Bool {
+    aic_path_is_abs_intrinsic(path)
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/proc.aic"),
+        r#"module std.proc;
+
+import std.result;
+
+enum ProcError {
+    NotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+    UnknownProcess,
+}
+
+struct ProcOutput {
+    status: Int,
+    stdout: String,
+    stderr: String,
+}
+
+fn aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env } {
+    let out: Result[Int, ProcError] = Ok(0);
+    out
+}
+
+fn aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc } {
+    let out: Result[Int, ProcError] = Ok(0);
+    out
+}
+
+fn aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc } {
+    let out: Result[Bool, ProcError] = Ok(true);
+    out
+}
+
+fn aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
+        status: 0,
+        stdout: "",
+        stderr: "",
+    });
+    out
+}
+
+fn aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
+        status: 0,
+        stdout: "",
+        stderr: "",
+    });
+    out
+}
+
+fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
+    aic_proc_spawn_intrinsic(command)
+}
+
+fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } {
+    aic_proc_wait_intrinsic(handle)
+}
+
+fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc } {
+    aic_proc_kill_intrinsic(handle)
+}
+
+fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    aic_proc_run_intrinsic(command)
+}
+
+fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
+    aic_proc_pipe_intrinsic(left, right)
+}
+"#,
+    )?;
+
+    fs::write(
         path.join("std/net.aic"),
         r#"module std.net;
 
