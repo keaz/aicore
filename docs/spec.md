@@ -177,3 +177,12 @@ Registry and ownership: `docs/diagnostic-codes.md`.
 - Stable format output from IR.
 - Stable diagnostic sort order.
 - Stable ID allocation policy version `id-policy-v1` (`docs/id-allocation.md`).
+- Stable reproducibility manifest output (`aic release manifest`) for identical source trees.
+
+## 10. Release and Security Ops
+
+- `aic release manifest` / `aic release verify-manifest`: deterministic source-input lock.
+- `aic release sbom`: lockfile-derived SBOM generation.
+- `aic release provenance` / `aic release verify-provenance`: signed artifact provenance checks.
+- `aic release security-audit`: threat-model and workflow hardening checks.
+- `aic run --sandbox none|ci|strict`: runtime profile-based resource limits (Linux via `prlimit`).

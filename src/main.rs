@@ -19,6 +19,13 @@ use aicore::lsp;
 use aicore::package_workflow::generate_and_write_lockfile;
 use aicore::parser;
 use aicore::project::init_project;
+use aicore::release_ops::{
+    check_compatibility_policy, compatibility_policy, effective_source_date_epoch,
+    generate_provenance, generate_repro_manifest, generate_sbom, read_provenance,
+    read_repro_manifest, run_security_audit, verify_provenance, verify_repro_manifest,
+    write_provenance, write_repro_manifest, write_sbom,
+};
+use aicore::sandbox::{run_with_limits, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
@@ -125,11 +132,17 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
     Run {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
         #[arg(long)]
         offline: bool,
+        #[arg(long, value_enum, default_value = "none")]
+        sandbox: SandboxProfileArg,
     },
 }
 
@@ -154,6 +167,77 @@ enum TestModeArg {
     Golden,
 }
 
+#[derive(Debug, Clone, Subcommand)]
+enum ReleaseCommand {
+    Manifest {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(short, long, default_value = "target/release/repro-manifest.json")]
+        output: PathBuf,
+        #[arg(long)]
+        source_date_epoch: Option<u64>,
+    },
+    VerifyManifest {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long, default_value = "target/release/repro-manifest.json")]
+        manifest: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Sbom {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(short, long, default_value = "target/release/sbom.json")]
+        output: PathBuf,
+        #[arg(long)]
+        source_date_epoch: Option<u64>,
+    },
+    Provenance {
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        sbom: PathBuf,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        #[arg(short, long, default_value = "target/release/provenance.json")]
+        output: PathBuf,
+        #[arg(long, default_value = "AIC_SIGNING_KEY")]
+        key_env: String,
+        #[arg(long)]
+        key_id: Option<String>,
+    },
+    VerifyProvenance {
+        #[arg(long)]
+        provenance: PathBuf,
+        #[arg(long, default_value = "AIC_SIGNING_KEY")]
+        key_env: String,
+        #[arg(long)]
+        json: bool,
+    },
+    SecurityAudit {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Policy {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SandboxProfileArg {
+    None,
+    Ci,
+    Strict,
+}
+
 impl TestModeArg {
     fn to_harness_mode(self) -> HarnessMode {
         match self {
@@ -161,6 +245,16 @@ impl TestModeArg {
             TestModeArg::RunPass => HarnessMode::RunPass,
             TestModeArg::CompileFail => HarnessMode::CompileFail,
             TestModeArg::Golden => HarnessMode::Golden,
+        }
+    }
+}
+
+impl SandboxProfileArg {
+    fn to_profile(self) -> SandboxProfile {
+        match self {
+            SandboxProfileArg::None => SandboxProfile::None,
+            SandboxProfileArg::Ci => SandboxProfile::Ci,
+            SandboxProfileArg::Strict => SandboxProfile::Strict,
         }
     }
 }
@@ -399,13 +493,177 @@ fn run_cli() -> anyhow::Result<i32> {
             }
             EXIT_OK
         }
-        Command::Run { input, offline } => {
+        Command::Release { command } => match command {
+            ReleaseCommand::Manifest {
+                root,
+                output,
+                source_date_epoch,
+            } => {
+                let epoch = effective_source_date_epoch(source_date_epoch);
+                let manifest = generate_repro_manifest(&root, epoch)?;
+                write_repro_manifest(&output, &manifest)?;
+                println!(
+                    "generated reproducibility manifest {} (digest={})",
+                    output.display(),
+                    manifest.digest
+                );
+                EXIT_OK
+            }
+            ReleaseCommand::VerifyManifest {
+                root,
+                manifest,
+                json,
+            } => {
+                let expected = read_repro_manifest(&manifest)?;
+                let mismatches = verify_repro_manifest(&root, &expected)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&mismatches)?);
+                } else if mismatches.is_empty() {
+                    println!("reproducibility manifest verification: ok");
+                } else {
+                    eprintln!("reproducibility manifest verification failed:");
+                    for mismatch in &mismatches {
+                        eprintln!("  - {}", mismatch);
+                    }
+                }
+                if mismatches.is_empty() {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::Sbom {
+                root,
+                output,
+                source_date_epoch,
+            } => {
+                let epoch = effective_source_date_epoch(source_date_epoch);
+                let sbom = generate_sbom(&root, epoch)?;
+                write_sbom(&output, &sbom)?;
+                println!(
+                    "generated SBOM {} (digest={})",
+                    output.display(),
+                    sbom.digest
+                );
+                EXIT_OK
+            }
+            ReleaseCommand::Provenance {
+                artifact,
+                sbom,
+                manifest,
+                output,
+                key_env,
+                key_id,
+            } => {
+                let key = read_signing_key(&key_env)?;
+                let provenance =
+                    generate_provenance(&artifact, &sbom, manifest.as_deref(), &key, key_id)?;
+                write_provenance(&output, &provenance)?;
+                println!(
+                    "generated provenance {} (artifact_sha256={})",
+                    output.display(),
+                    provenance.artifact_sha256
+                );
+                EXIT_OK
+            }
+            ReleaseCommand::VerifyProvenance {
+                provenance,
+                key_env,
+                json,
+            } => {
+                let statement = read_provenance(&provenance)?;
+                let key = read_signing_key(&key_env)?;
+                let errors = verify_provenance(&statement, &key)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&errors)?);
+                } else if errors.is_empty() {
+                    println!("provenance verification: ok");
+                } else {
+                    eprintln!("provenance verification failed:");
+                    for error in &errors {
+                        eprintln!("  - {}", error);
+                    }
+                }
+                if errors.is_empty() {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::SecurityAudit { root, json } => {
+                let report = run_security_audit(&root)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else if report.ok {
+                    println!("security audit: ok");
+                } else {
+                    eprintln!("security audit failed:");
+                    for issue in &report.issues {
+                        eprintln!("  - {}", issue);
+                    }
+                }
+                if report.ok {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::Policy { root, json, check } => {
+                let policy = compatibility_policy();
+                let problems = if check {
+                    check_compatibility_policy(&root, &policy)
+                } else {
+                    Vec::new()
+                };
+
+                if json {
+                    let payload = serde_json::json!({
+                        "policy": policy,
+                        "problems": problems,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&payload)?);
+                } else if check {
+                    if problems.is_empty() {
+                        println!("compatibility policy check: ok");
+                    } else {
+                        eprintln!("compatibility policy check failed:");
+                        for problem in &problems {
+                            eprintln!("  - {}", problem);
+                        }
+                    }
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&policy)?);
+                }
+
+                if problems.is_empty() {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+        },
+        Command::Run {
+            input,
+            offline,
+            sandbox,
+        } => {
             let out = std::env::temp_dir().join("aicore_run_bin");
             let build_code = build_file(&input, &out, offline)?;
             if build_code != EXIT_OK {
                 build_code
             } else {
-                let status = std::process::Command::new(&out).status()?;
+                if !cfg!(target_os = "linux") && !matches!(sandbox, SandboxProfileArg::None) {
+                    eprintln!(
+                        "sandbox profile '{}' requires Linux `prlimit`; use --sandbox none",
+                        sandbox.to_profile().as_str()
+                    );
+                    return Ok(EXIT_USAGE_ERROR);
+                }
+
+                let profile = sandbox.to_profile();
+                let limits = profile.limits();
+                let run_args: Vec<String> = Vec::new();
+                let status = run_with_limits(&out, &run_args, limits.as_ref())?;
                 if status.success() {
                     EXIT_OK
                 } else {
@@ -500,4 +758,17 @@ fn resolve_project_root(path: &Path) -> PathBuf {
         };
         dir = parent.to_path_buf();
     }
+}
+
+fn read_signing_key(env_name: &str) -> anyhow::Result<String> {
+    let key = std::env::var(env_name).map_err(|_| {
+        anyhow::anyhow!(
+            "missing signing key in environment variable `{}`; set it before invoking release provenance commands",
+            env_name
+        )
+    })?;
+    if key.trim().is_empty() {
+        anyhow::bail!("environment variable `{}` is empty", env_name);
+    }
+    Ok(key)
 }

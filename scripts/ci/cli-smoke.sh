@@ -15,6 +15,9 @@ OBJ_ARTIFACT="$PROJECT_DIR/app.o"
 LIB_ARTIFACT="$PROJECT_DIR/libapp.a"
 DBG_BIN="$PROJECT_DIR/app-debug"
 DOC_DIR="$PROJECT_DIR/docs/api"
+REPRO_MANIFEST="$TMP_DIR/repro-manifest.json"
+SBOM_JSON="$TMP_DIR/sbom.json"
+PROVENANCE_JSON="$TMP_DIR/provenance.json"
 
 "${AIC[@]}" init "$PROJECT_DIR" >/dev/null
 
@@ -34,6 +37,13 @@ fi
 "${AIC[@]}" check "$PROJECT_DIR" --offline >/dev/null
 "${AIC[@]}" doc "$MAIN_FILE" -o "$DOC_DIR" >/dev/null
 "${AIC[@]}" std-compat --check >/dev/null
+"${AIC[@]}" release manifest --root "$ROOT_DIR" --output "$REPRO_MANIFEST" --source-date-epoch 1700000000 >/dev/null
+"${AIC[@]}" release verify-manifest --root "$ROOT_DIR" --manifest "$REPRO_MANIFEST" >/dev/null
+"${AIC[@]}" release sbom --root "$ROOT_DIR" --output "$SBOM_JSON" --source-date-epoch 1700000000 >/dev/null
+AIC_SIGNING_KEY="cli-smoke-signing-key" "${AIC[@]}" release provenance --artifact "$APP_BIN" --sbom "$SBOM_JSON" --manifest "$REPRO_MANIFEST" --output "$PROVENANCE_JSON" --key-env AIC_SIGNING_KEY --key-id cli-smoke >/dev/null
+AIC_SIGNING_KEY="cli-smoke-signing-key" "${AIC[@]}" release verify-provenance --provenance "$PROVENANCE_JSON" --key-env AIC_SIGNING_KEY >/dev/null
+"${AIC[@]}" release policy --check >/dev/null
+"${AIC[@]}" release security-audit --json >/dev/null
 "${AIC[@]}" explain E2001 >/dev/null
 "${AIC[@]}" contract --json >/dev/null
 "${AIC[@]}" test examples/e7/harness --json >/dev/null
@@ -61,5 +71,12 @@ fi
 RUN_RESULT="$(tr -d '\r' <"$TMP_DIR/run.out" | tail -n 1)"
 if [[ "$RUN_RESULT" != "10" ]]; then
   echo "unexpected 'aic run' output: '$RUN_RESULT'" >&2
+  exit 1
+fi
+
+"${AIC[@]}" run "$MAIN_FILE" --sandbox ci >"$TMP_DIR/run-sandbox.out"
+SANDBOX_RESULT="$(tr -d '\r' <"$TMP_DIR/run-sandbox.out" | tail -n 1)"
+if [[ "$SANDBOX_RESULT" != "10" ]]; then
+  echo "unexpected 'aic run --sandbox ci' output: '$SANDBOX_RESULT'" >&2
   exit 1
 fi

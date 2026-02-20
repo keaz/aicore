@@ -78,7 +78,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "run",
         description: "Build and execute entry program",
-        stable_flags: &["--offline"],
+        stable_flags: &["--offline", "--sandbox"],
         output_modes: &["text"],
     },
     CommandContract {
@@ -97,6 +97,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         name: "test",
         description: "Run AIC fixture harness categories",
         stable_flags: &["--mode", "--json"],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
+        name: "release",
+        description: "Release security and operations workflows",
+        stable_flags: &["subcommands"],
         output_modes: &["text", "json"],
     },
 ];

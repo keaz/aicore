@@ -31,7 +31,13 @@ Current contract version: `1.0`
 - `aic lsp`
 - `aic test`
 - `aic contract`
+- `aic release`
 - `aic run`
+
+Stable `run` flags include:
+
+- `--offline`
+- `--sandbox` (`none|ci|strict`)
 
 ## Diagnostics output modes
 

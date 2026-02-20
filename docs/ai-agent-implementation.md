@@ -1,4 +1,4 @@
-# AI Agent Implementation Guide (E4 + E5 + E6 + E7 + E8)
+# AI Agent Implementation Guide (E4 + E5 + E6 + E7 + E8 + E9)
 
 This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
@@ -270,6 +270,66 @@ Diagnostics:
 - CI:
   - `make test-e8` in Linux full validation job; report uploaded as artifact.
 
+## E9 Summary (Release Security + Operations)
+
+### Reproducibility pipeline (E9-T1)
+
+- Core module:
+  - `src/release_ops.rs`
+- Commands:
+  - `aic release manifest`
+  - `aic release verify-manifest`
+- Local CI:
+  - `scripts/ci/repro-build-check.sh`
+  - `make repro-check`
+
+### Release automation (E9-T2)
+
+- Workflow:
+  - `.github/workflows/release.yml`
+- CI integration:
+  - `.github/workflows/ci.yml` includes E9 checks in Linux full validation.
+- Local preflight:
+  - `make release-preflight`
+
+### SBOM and provenance (E9-T3)
+
+- Commands:
+  - `aic release sbom`
+  - `aic release provenance`
+  - `aic release verify-provenance`
+- Data model:
+  - `SbomDocument` and `ProvenanceStatement` in `src/release_ops.rs`
+
+### Security audit and threat model (E9-T4)
+
+- Threat model:
+  - `docs/security-threat-model.md`
+- Audit command:
+  - `aic release security-audit --json`
+- Scripted gate:
+  - `scripts/ci/security-audit.sh`
+  - `make security-audit`
+
+### Sandboxed resource limits (E9-T5)
+
+- Runtime limits module:
+  - `src/sandbox.rs`
+- CLI:
+  - `aic run ... --sandbox none|ci|strict`
+- Linux implementation:
+  - `prlimit` wrapper in `run_with_limits(...)`
+
+### Compatibility and migration policy (E9-T6)
+
+- Policy doc:
+  - `docs/compatibility-migration-policy.md`
+- CLI:
+  - `aic release policy --check`
+  - `aic release policy --check --json`
+- Policy model:
+  - `CompatibilityPolicy` in `src/release_ops.rs`
+
 ## Validation Inventory
 
 ### Tests
@@ -290,6 +350,7 @@ Diagnostics:
   - `tests/e8_fuzz_tests.rs`
   - `tests/e8_differential_tests.rs`
   - `tests/e8_perf_tests.rs`
+  - `tests/e9_release_ops_tests.rs`
 
 ### Examples
 
@@ -307,6 +368,7 @@ Diagnostics:
 - `examples/e8/roundtrip_random_seed.aic`
 - `examples/e8/matrix_program.aic`
 - `examples/e8/large_project_bench/`
+- `examples/e9/sandbox_smoke.aic`
 
 Examples are integrated into `scripts/ci/examples.sh`.
 
@@ -319,3 +381,4 @@ Examples are integrated into `scripts/ci/examples.sh`.
 5. Keep new diagnostics registered in `src/diagnostic_codes.rs`.
 6. Run `make ci` before commit.
 7. For E8 changes, update corpus/budget docs and ensure `make test-e8` remains deterministic.
+8. For E9 changes, run `make test-e9`, `make security-audit`, and `make repro-check`.

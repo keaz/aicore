@@ -14,9 +14,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-preflight:
+    name: Release Preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Full CI gate
+        run: make ci
+
+      - name: Release policy gate
+        run: cargo run --quiet --bin aic -- release policy --check
+
+      - name: Security audit gate
+        run: cargo run --quiet --bin aic -- release security-audit --json
+
   release-build:
     name: Build Release (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: release-preflight
+    env:
+      AIC_SIGNING_KEY: ${{ secrets.AIC_SIGNING_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +73,15 @@ jobs:
 
       - name: Build binary
         run: cargo build --release --locked --bin aic
+
+      - name: Generate release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cargo run --quiet --bin aic -- release manifest --root . --output dist/repro-manifest.json --source-date-epoch 1700000000
+          cargo run --quiet --bin aic -- release sbom --root . --output dist/sbom.json --source-date-epoch 1700000000
+          cargo run --quiet --bin aic -- release policy --check
 
       - name: Package (Unix)
         if: matrix.archive_ext == 'tar.gz'
@@ -76,6 +115,19 @@ jobs:
           "$hash  $archive" | Out-File -FilePath "$archive.sha256" -Encoding ascii
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Sign provenance metadata
+        if: env.AIC_SIGNING_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --bin aic -- release provenance \
+            --artifact "dist/${{ matrix.bin_name }}" \
+            --sbom dist/sbom.json \
+            --manifest dist/repro-manifest.json \
+            --output dist/provenance.json \
+            --key-env AIC_SIGNING_KEY \
+            --key-id "github-actions-${{ runner.os }}-${{ runner.arch }}"
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
@@ -83,6 +135,9 @@ jobs:
           path: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
+            dist/repro-manifest.json
+            dist/sbom.json
+            dist/provenance.json
 
   release-publish:
     name: Publish GitHub Release
@@ -109,4 +164,5 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*.sha256
+            dist/*.json
           generate_release_notes: true

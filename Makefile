@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz examples-check examples-run cli-smoke docs-check no-null-lint
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz test-e9 examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -22,11 +22,15 @@ help:
 	@echo "  make test-e7       Run E7 CLI + LSP integration tests"
 	@echo "  make test-e8       Run E8 verification/fuzz/diff/matrix/perf tests"
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
+	@echo "  make test-e9       Run E9 release/security operations tests"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
 	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
 	@echo "  make cli-smoke     End-to-end CLI smoke test"
 	@echo "  make docs-check    Validate docs and schema artifacts"
+	@echo "  make repro-check   Verify deterministic reproducibility manifest pipeline"
+	@echo "  make security-audit Run release security audit checks"
+	@echo "  make release-preflight Run all release readiness checks"
 
 init: hooks-install
 	@echo "hooks installed"
@@ -46,7 +50,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 examples-check examples-run no-null-lint cli-smoke docs-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -84,6 +88,9 @@ test-e8:
 test-e8-nightly-fuzz:
 	$(CARGO) test --locked --test e8_fuzz_tests -- --ignored
 
+test-e9:
+	$(CARGO) test --locked --test e9_release_ops_tests
+
 examples-check:
 	./scripts/ci/examples.sh check
 
@@ -92,6 +99,14 @@ examples-run:
 
 cli-smoke:
 	./scripts/ci/cli-smoke.sh
+
+repro-check:
+	./scripts/ci/repro-build-check.sh
+
+security-audit:
+	./scripts/ci/security-audit.sh
+
+release-preflight: ci repro-check security-audit
 
 docs-check:
 	@test -f docs/spec.md
@@ -109,6 +124,9 @@ docs-check:
 	@test -f docs/package-workflow.md
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
+	@test -f docs/release-security-ops.md
+	@test -f docs/security-threat-model.md
+	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@grep -q "aic init" README.md
@@ -123,8 +141,10 @@ docs-check:
 	@grep -q "aic lsp" README.md
 	@grep -q "aic test" README.md
 	@grep -q "aic run" README.md
+	@grep -q "aic release" README.md
 	@grep -q "aic contract" README.md
 	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
+	@cargo run --quiet --bin aic -- release policy --check >/dev/null
 
 no-null-lint:
 	@if rg -n --glob '*.aic' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \

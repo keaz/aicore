@@ -46,6 +46,7 @@ check_pass=(
   "examples/e8/large_project_bench/bench01_math.aic"
   "examples/e8/large_project_bench/bench02_adt.aic"
   "examples/e8/large_project_bench/bench03_effects_contracts.aic"
+  "examples/e9/sandbox_smoke.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -69,6 +70,7 @@ run_pass=(
   "examples/e8/roundtrip_random_seed.aic"
   "examples/e8/matrix_program.aic"
   "examples/e8/large_project_bench/bench03_effects_contracts.aic"
+  "examples/e9/sandbox_smoke.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -158,6 +160,7 @@ case "$MODE" in
     expect_run_value "examples/e8/roundtrip_random_seed.aic" "42"
     expect_run_value "examples/e8/matrix_program.aic" "42"
     expect_run_value "examples/e8/large_project_bench/bench03_effects_contracts.aic" "42"
+    expect_run_value "examples/e9/sandbox_smoke.aic" "42"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then

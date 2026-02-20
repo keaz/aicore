@@ -29,6 +29,11 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
 | Built-in fixture harness | Implemented (`aic test`) |
 | Verification/fuzzing/performance gates | Implemented (E8 conformance + differential + matrix + perf budgets) |
+| Release reproducibility manifest pipeline | Implemented (`aic release manifest`, `verify-manifest`) |
+| SBOM + signed provenance flow | Implemented (`aic release sbom`, `provenance`, `verify-provenance`) |
+| Security audit + threat model checks | Implemented (`aic release security-audit`) |
+| Sandboxed run profiles | Implemented (`aic run --sandbox`) |
+| Compatibility + migration policy check | Implemented (`aic release policy --check`) |
 
 ## Prerequisites
 
@@ -87,6 +92,9 @@ This installs:
   - runs on tags `v*`
   - builds release binaries on Linux/macOS/Windows
   - uploads archives + checksums and publishes a GitHub Release
+- `Security` (`.github/workflows/security.yml`):
+  - runs security audit checks on push/PR/schedule
+  - enforces threat-model and workflow hardening checks
 
 ## CLI
 
@@ -109,6 +117,9 @@ cargo run -- explain E2001
 cargo run -- lsp
 cargo run -- test examples/e7/harness --json
 cargo run -- contract --json
+cargo run -- release manifest --output target/release/repro-manifest.json
+cargo run -- release sbom --output target/release/sbom.json
+cargo run -- release policy --check
 cargo run -- run examples/option_match.aic
 ```
 
@@ -128,6 +139,7 @@ Commands:
 - `aic lsp`
 - `aic test`
 - `aic contract`
+- `aic release`
 - `aic run`
 
 ## Project layout

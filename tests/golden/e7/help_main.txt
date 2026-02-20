@@ -17,6 +17,7 @@ Commands:
   lsp         
   test        
   contract    
+  release     
   run         
   help        Print this message or the help of the given subcommand(s)
 

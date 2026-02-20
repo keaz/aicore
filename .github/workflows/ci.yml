@@ -72,6 +72,9 @@ jobs:
       - name: E8 verification gates
         run: make test-e8
 
+      - name: E9 release and security tests
+        run: make test-e9
+
       - name: Example checks
         run: make examples-check
 
@@ -83,6 +86,12 @@ jobs:
 
       - name: Docs checks
         run: make docs-check
+
+      - name: Security audit
+        run: make security-audit
+
+      - name: Reproducibility manifest check
+        run: make repro-check
 
       - name: Upload E8 perf report
         if: always()
