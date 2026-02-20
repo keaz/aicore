@@ -1,5 +1,7 @@
 # Concurrency Runtime (IO-T5)
 
+See also the complete IO runtime guide: `docs/io-runtime/README.md`.
+
 This document defines `std.concurrent` behavior, runtime ABI, and operational guarantees.
 
 ## Overview

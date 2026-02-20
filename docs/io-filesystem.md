@@ -1,5 +1,7 @@
 # Filesystem API (IO-T1)
 
+See also the complete IO runtime guide: `docs/io-runtime/README.md`.
+
 This document is the implementation and usage contract for `std.fs`.
 
 ## Overview

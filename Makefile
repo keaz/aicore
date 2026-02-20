@@ -125,6 +125,10 @@ docs-check:
 	@test -f docs/io-filesystem.md
 	@test -f docs/io-process-env-path.md
 	@test -f docs/io-concurrency-runtime.md
+	@test -f docs/io-runtime/README.md
+	@test -f docs/io-runtime/net-time-rand.md
+	@test -f docs/io-runtime/error-model.md
+	@test -f docs/io-runtime/lifecycle-playbook.md
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
 	@test -f docs/release-security-ops.md

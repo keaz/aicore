@@ -1,0 +1,7 @@
+module example.io.effect_misuse_fs;
+
+import std.fs;
+
+fn main() -> Int {
+    if exists("missing.txt") { 1 } else { 0 }
+}

@@ -104,6 +104,11 @@ Notes:
 - Concurrency runtime contract and examples:
   - `docs/io-concurrency-runtime.md`
   - `examples/io/worker_pool.aic`
+- Complete IO agent playbooks:
+  - `docs/io-runtime/README.md`
+  - `docs/io-runtime/net-time-rand.md`
+  - `docs/io-runtime/error-model.md`
+  - `docs/io-runtime/lifecycle-playbook.md`
 
 ### Manifest + lockfile workflow (E6-T2)
 

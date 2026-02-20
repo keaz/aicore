@@ -1,5 +1,7 @@
 # Process, Environment, and Path APIs (IO-T2)
 
+See also the complete IO runtime guide: `docs/io-runtime/README.md`.
+
 This document describes `std.proc`, `std.env`, and `std.path`.
 
 ## Overview
