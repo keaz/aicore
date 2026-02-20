@@ -193,13 +193,153 @@
     },
     {
       "module": "std.net",
-      "kind": "fn",
-      "signature": "tcp_connect(addr: String) -> Int effects { net }"
+      "kind": "enum",
+      "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io }"
     },
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "tcp_send(handle: Int, payload: String) -> () effects { net }"
+      "signature": "aic_net_dns_lookup_intrinsic(host: String) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_dns_reverse_intrinsic(addr: String) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_listen_intrinsic(addr: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_udp_bind_intrinsic(addr: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_udp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_udp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_udp_recv_from_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_udp_send_to_intrinsic(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "dns_lookup(host: String) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "dns_reverse(addr: String) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_listen(addr: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_bind(addr: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_close(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "UdpPacket { from: String, payload: String }"
     },
     {
       "module": "std.option",

@@ -1,11 +1,147 @@
 module std.net;
 
-/// Open TCP connection and return handle id.
-fn tcp_connect(addr: String) -> Int effects { net } {
-    0
+import std.result;
+
+enum NetError {
+    NotFound,
+    PermissionDenied,
+    Refused,
+    Timeout,
+    AddressInUse,
+    InvalidInput,
+    Io,
 }
 
-/// Send payload over a connection handle.
-fn tcp_send(handle: Int, payload: String) -> () effects { net } {
-    ()
+struct UdpPacket {
+    from: String,
+    payload: String,
+}
+
+fn aic_net_tcp_listen_intrinsic(addr: String) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_tcp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn aic_net_tcp_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn aic_net_tcp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net } {
+    let out: Result[Bool, NetError] = Ok(true);
+    out
+}
+
+fn aic_net_udp_bind_intrinsic(addr: String) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_udp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn aic_net_udp_send_to_intrinsic(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_udp_recv_from_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net } {
+    let out: Result[UdpPacket, NetError] = Ok(UdpPacket {
+        from: "",
+        payload: "",
+    });
+    out
+}
+
+fn aic_net_udp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net } {
+    let out: Result[Bool, NetError] = Ok(true);
+    out
+}
+
+fn aic_net_dns_lookup_intrinsic(host: String) -> Result[String, NetError] effects { net } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn aic_net_dns_reverse_intrinsic(addr: String) -> Result[String, NetError] effects { net } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_listen_intrinsic(addr)
+}
+
+fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net } {
+    aic_net_tcp_local_addr_intrinsic(handle)
+}
+
+fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_accept_intrinsic(listener, timeout_ms)
+}
+
+fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_connect_intrinsic(addr, timeout_ms)
+}
+
+fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_send_intrinsic(handle, payload)
+}
+
+fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net } {
+    aic_net_tcp_recv_intrinsic(handle, max_bytes, timeout_ms)
+}
+
+fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_close_intrinsic(handle)
+}
+
+fn udp_bind(addr: String) -> Result[Int, NetError] effects { net } {
+    aic_net_udp_bind_intrinsic(addr)
+}
+
+fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net } {
+    aic_net_udp_local_addr_intrinsic(handle)
+}
+
+fn udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net } {
+    aic_net_udp_send_to_intrinsic(handle, addr, payload)
+}
+
+fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net } {
+    aic_net_udp_recv_from_intrinsic(handle, max_bytes, timeout_ms)
+}
+
+fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_udp_close_intrinsic(handle)
+}
+
+fn dns_lookup(host: String) -> Result[String, NetError] effects { net } {
+    aic_net_dns_lookup_intrinsic(host)
+}
+
+fn dns_reverse(addr: String) -> Result[String, NetError] effects { net } {
+    aic_net_dns_reverse_intrinsic(addr)
 }

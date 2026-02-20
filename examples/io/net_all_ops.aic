@@ -1,0 +1,118 @@
+module example.io.net_all_ops;
+
+import std.io;
+import std.net;
+import std.string;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let tcp_sent = match tcp_send(client, "ping") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let tcp_recv_len = match tcp_recv(server, 32, 1000) {
+        Ok(text) => len(text),
+        Err(_) => 0,
+    };
+    let tcp_close_ok = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let udp_receiver = match udp_bind("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let udp_addr = match udp_local_addr(udp_receiver) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let udp_sender = match udp_bind("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let udp_sent = match udp_send_to(udp_sender, udp_addr, "pong") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let udp_payload_len = match udp_recv_from(udp_receiver, 32, 1000) {
+        Ok(packet) => len(packet.payload),
+        Err(_) => 0,
+    };
+    let udp_close_ok = match udp_close(udp_sender) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match udp_close(udp_receiver) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let lookup_len = match dns_lookup("localhost") {
+        Ok(ip) => len(ip),
+        Err(_) => 0,
+    };
+    let reverse_checked = match dns_reverse("127.0.0.1") {
+        Ok(name) => if len(name) > 0 { 1 } else { 0 },
+        Err(err) => match err {
+            NotFound => 1,
+            _ => 0,
+        },
+    };
+
+    let timeout_code = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => {
+            let code = match tcp_accept(h, 0) {
+                Ok(_) => 0,
+                Err(err) => err_code(err),
+            };
+            tcp_close(h);
+            code
+        },
+        Err(_) => 0,
+    };
+
+    if tcp_sent == 4 && tcp_recv_len == 4 && tcp_close_ok == 3 &&
+        udp_sent == 4 && udp_payload_len == 4 && udp_close_ok == 2 &&
+        lookup_len > 0 && reverse_checked == 1 && timeout_code == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+
+    0
+}

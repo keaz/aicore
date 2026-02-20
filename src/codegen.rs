@@ -705,6 +705,24 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare i64 @aic_rt_proc_pipe(i8*, i64, i64, i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n\n",
         );
+        text.push_str("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_local_addr(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_accept(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_connect(i8*, i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_send(i64, i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_recv(i64, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_net_udp_bind(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_udp_local_addr(i64, i8**, i64*)\n");
+        text.push_str(
+            "declare i64 @aic_rt_net_udp_send_to(i64, i8*, i64, i64, i8*, i64, i64, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_net_udp_recv_from(i64, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str("declare i64 @aic_rt_net_udp_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_dns_reverse(i8*, i64, i64, i8**, i64*)\n\n");
 
         for global in &self.globals {
             text.push_str(global);
@@ -1562,6 +1580,9 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_proc_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_net_builtin_call(name, args, span, fctx) {
             return result;
         }
 
@@ -3287,6 +3308,834 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_net_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "tcp_listen" | "aic_net_tcp_listen_intrinsic" => "tcp_listen",
+            "tcp_local_addr" | "aic_net_tcp_local_addr_intrinsic" => "tcp_local_addr",
+            "tcp_accept" | "aic_net_tcp_accept_intrinsic" => "tcp_accept",
+            "tcp_connect" | "aic_net_tcp_connect_intrinsic" => "tcp_connect",
+            "tcp_send" | "aic_net_tcp_send_intrinsic" => "tcp_send",
+            "tcp_recv" | "aic_net_tcp_recv_intrinsic" => "tcp_recv",
+            "tcp_close" | "aic_net_tcp_close_intrinsic" => "tcp_close",
+            "udp_bind" | "aic_net_udp_bind_intrinsic" => "udp_bind",
+            "udp_local_addr" | "aic_net_udp_local_addr_intrinsic" => "udp_local_addr",
+            "udp_send_to" | "aic_net_udp_send_to_intrinsic" => "udp_send_to",
+            "udp_recv_from" | "aic_net_udp_recv_from_intrinsic" => "udp_recv_from",
+            "udp_close" | "aic_net_udp_close_intrinsic" => "udp_close",
+            "dns_lookup" | "aic_net_dns_lookup_intrinsic" => "dns_lookup",
+            "dns_reverse" | "aic_net_dns_reverse_intrinsic" => "dns_reverse",
+            _ => return None,
+        };
+
+        match canonical {
+            "tcp_listen" if self.sig_matches_shape(name, &["String"], "Result[Int, NetError]") => {
+                Some(self.gen_net_listen_or_bind_call(
+                    name,
+                    "aic_rt_net_tcp_listen",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "udp_bind" if self.sig_matches_shape(name, &["String"], "Result[Int, NetError]") => {
+                Some(self.gen_net_listen_or_bind_call(
+                    name,
+                    "aic_rt_net_udp_bind",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_local_addr"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, NetError]") =>
+            {
+                Some(self.gen_net_local_addr_call(
+                    name,
+                    "aic_rt_net_tcp_local_addr",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "udp_local_addr"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, NetError]") =>
+            {
+                Some(self.gen_net_local_addr_call(
+                    name,
+                    "aic_rt_net_udp_local_addr",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_accept"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_tcp_accept_call(name, args, span, fctx))
+            }
+            "tcp_connect"
+                if self.sig_matches_shape(name, &["String", "Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_tcp_connect_call(name, args, span, fctx))
+            }
+            "tcp_send"
+                if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_tcp_send_call(name, args, span, fctx))
+            }
+            "tcp_recv"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[String, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_tcp_recv_call(name, args, span, fctx))
+            }
+            "tcp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") => {
+                Some(self.gen_net_close_call(name, "aic_rt_net_tcp_close", args, span, fctx))
+            }
+            "udp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") => {
+                Some(self.gen_net_close_call(name, "aic_rt_net_udp_close", args, span, fctx))
+            }
+            "udp_send_to"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "String", "String"],
+                    "Result[Int, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_udp_send_to_call(name, args, span, fctx))
+            }
+            "udp_recv_from"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[UdpPacket, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_udp_recv_from_call(name, args, span, fctx))
+            }
+            "dns_lookup"
+                if self.sig_matches_shape(name, &["String"], "Result[String, NetError]") =>
+            {
+                Some(self.gen_net_dns_call(name, "aic_rt_net_dns_lookup", args, span, fctx))
+            }
+            "dns_reverse"
+                if self.sig_matches_shape(name, &["String"], "Result[String, NetError]") =>
+            {
+                Some(self.gen_net_dns_call(name, "aic_rt_net_dns_reverse", args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_net_listen_or_bind_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let addr = self.gen_expr(&args[0], fctx)?;
+        if addr.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&addr, args[0].span, fctx)?;
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_local_addr_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i8** {}, i64* {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_tcp_accept_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "tcp_accept expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let listener = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if listener.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "tcp_accept expects Int arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_accept(i64 {}, i64 {}, i64* {})",
+            err,
+            listener.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_tcp_connect_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "tcp_connect expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let addr = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if addr.ty != LType::String || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "tcp_connect expects (String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&addr, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_connect(i8* {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            ptr,
+            len,
+            cap,
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_tcp_send_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "tcp_send expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "tcp_send expects (Int, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pptr, plen, pcap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_send(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            pptr,
+            plen,
+            pcap,
+            sent_slot
+        ));
+        let sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", sent, sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_tcp_recv_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "tcp_recv expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "tcp_recv expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_recv(i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_close_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_udp_send_to_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "udp_send_to expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let addr = self.gen_expr(&args[1], fctx)?;
+        let payload = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || addr.ty != LType::String || payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "udp_send_to expects (Int, String, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (aptr, alen, acap) = self.string_parts(&addr, args[1].span, fctx)?;
+        let (pptr, plen, pcap) = self.string_parts(&payload, args[2].span, fctx)?;
+        let sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_udp_send_to(i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            aptr,
+            alen,
+            acap,
+            pptr,
+            plen,
+            pcap,
+            sent_slot
+        ));
+        let sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", sent, sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_udp_recv_from_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "udp_recv_from expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "udp_recv_from expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let from_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", from_ptr_slot));
+        let from_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", from_len_slot));
+        let payload_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", payload_ptr_slot));
+        let payload_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", payload_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_udp_recv_from(i64 {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            from_ptr_slot,
+            from_len_slot,
+            payload_ptr_slot,
+            payload_len_slot
+        ));
+
+        let from_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", from_ptr, from_ptr_slot));
+        let from_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", from_len, from_len_slot));
+        let payload_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            payload_ptr, payload_ptr_slot
+        ));
+        let payload_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            payload_len, payload_len_slot
+        ));
+
+        let from_value = self.build_string_value(&from_ptr, &from_len, &from_len, fctx);
+        let payload_value = self.build_string_value(&payload_ptr, &payload_len, &payload_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "udp_recv_from expects Result[UdpPacket, NetError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_struct_value(&ok_layout, &[from_value, payload_value], span, fctx)?;
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_dns_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        if input.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&input, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn wrap_net_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "net builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_net_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("net_ok");
+        let err_label = self.new_label("net_err");
+        let cont_label = self.new_label("net_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn result_layout_parts(
         &mut self,
         result_ty: &LType,
@@ -3716,6 +4565,33 @@ impl<'a> Generator<'a> {
                 (3, "InvalidInput"),
                 (4, "Io"),
                 (5, "UnknownProcess"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_net_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "NetError",
+            "net",
+            &[
+                (1, "NotFound"),
+                (2, "PermissionDenied"),
+                (3, "Refused"),
+                (4, "Timeout"),
+                (5, "AddressInUse"),
+                (6, "InvalidInput"),
+                (7, "Io"),
             ],
             "Io",
             err_code,
@@ -5573,9 +6449,16 @@ fn runtime_c_source() -> &'static str {
 #include <io.h>
 #include <windows.h>
 #else
+#include <arpa/inet.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #endif
@@ -7144,6 +8027,1221 @@ long aic_rt_proc_pipe(
     return result;
 }
 
+#ifdef _WIN32
+long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
+    (void)handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
+    (void)listener;
+    (void)timeout_ms;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_connect(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    long timeout_ms,
+    long* out_handle
+) {
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    (void)timeout_ms;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_send(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    (void)handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_recv(
+    long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)handle;
+    (void)max_bytes;
+    (void)timeout_ms;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_close(long handle) {
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
+    (void)handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_udp_send_to(
+    long handle,
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    (void)handle;
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_udp_recv_from(
+    long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_from_ptr,
+    long* out_from_len,
+    char** out_payload_ptr,
+    long* out_payload_len
+) {
+    (void)handle;
+    (void)max_bytes;
+    (void)timeout_ms;
+    if (out_from_ptr != NULL) {
+        *out_from_ptr = NULL;
+    }
+    if (out_from_len != NULL) {
+        *out_from_len = 0;
+    }
+    if (out_payload_ptr != NULL) {
+        *out_payload_ptr = NULL;
+    }
+    if (out_payload_len != NULL) {
+        *out_payload_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_udp_close(long handle) {
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_net_dns_lookup(
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)host_ptr;
+    (void)host_len;
+    (void)host_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_dns_reverse(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+#else
+static long aic_rt_net_map_errno(int err) {
+    switch (err) {
+        case ENOENT:
+            return 1;  // NotFound
+        case EACCES:
+        case EPERM:
+            return 2;  // PermissionDenied
+#ifdef ECONNREFUSED
+        case ECONNREFUSED:
+            return 3;  // Refused
+#endif
+#ifdef ETIMEDOUT
+        case ETIMEDOUT:
+            return 4;  // Timeout
+#endif
+#ifdef EAGAIN
+        case EAGAIN:
+            return 4;  // Timeout
+#endif
+#ifdef EWOULDBLOCK
+#if !defined(EAGAIN) || EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+            return 4;  // Timeout
+#endif
+#endif
+#ifdef EADDRINUSE
+        case EADDRINUSE:
+            return 5;  // AddressInUse
+#endif
+        case EINVAL:
+#ifdef ENAMETOOLONG
+        case ENAMETOOLONG:
+#endif
+#ifdef EAFNOSUPPORT
+        case EAFNOSUPPORT:
+#endif
+#ifdef ENOTSOCK
+        case ENOTSOCK:
+#endif
+#ifdef EDESTADDRREQ
+        case EDESTADDRREQ:
+#endif
+#ifdef EPROTOTYPE
+        case EPROTOTYPE:
+#endif
+            return 6;  // InvalidInput
+        default:
+            return 7;  // Io
+    }
+}
+
+static long aic_rt_net_map_gai_error(int err) {
+    switch (err) {
+#ifdef EAI_NONAME
+        case EAI_NONAME:
+            return 1;  // NotFound
+#endif
+#ifdef EAI_NODATA
+        case EAI_NODATA:
+            return 1;  // NotFound
+#endif
+#ifdef EAI_AGAIN
+        case EAI_AGAIN:
+            return 4;  // Timeout
+#endif
+#ifdef EAI_BADFLAGS
+        case EAI_BADFLAGS:
+            return 6;  // InvalidInput
+#endif
+#ifdef EAI_FAMILY
+        case EAI_FAMILY:
+            return 6;  // InvalidInput
+#endif
+#ifdef EAI_SOCKTYPE
+        case EAI_SOCKTYPE:
+            return 6;  // InvalidInput
+#endif
+#ifdef EAI_SERVICE
+        case EAI_SERVICE:
+            return 6;  // InvalidInput
+#endif
+#ifdef EAI_SYSTEM
+        case EAI_SYSTEM:
+            return aic_rt_net_map_errno(errno);
+#endif
+        default:
+            return 7;  // Io
+    }
+}
+
+#define AIC_RT_NET_TABLE_CAP 128
+#define AIC_RT_NET_KIND_TCP_LISTENER 1
+#define AIC_RT_NET_KIND_TCP_STREAM 2
+#define AIC_RT_NET_KIND_UDP 3
+
+typedef struct {
+    int active;
+    int fd;
+    int kind;
+} AicNetSlot;
+
+static AicNetSlot aic_rt_net_table[AIC_RT_NET_TABLE_CAP];
+
+static void aic_rt_net_reset_slot(AicNetSlot* slot) {
+    if (slot == NULL) {
+        return;
+    }
+    slot->active = 0;
+    slot->fd = -1;
+    slot->kind = 0;
+}
+
+static long aic_rt_net_close_fd(int fd) {
+    if (close(fd) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+}
+
+static AicNetSlot* aic_rt_net_get_slot(long handle) {
+    if (handle <= 0 || handle > AIC_RT_NET_TABLE_CAP) {
+        return NULL;
+    }
+    AicNetSlot* slot = &aic_rt_net_table[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static long aic_rt_net_alloc_handle(int fd, int kind, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    for (long i = 0; i < AIC_RT_NET_TABLE_CAP; ++i) {
+        if (!aic_rt_net_table[i].active) {
+            aic_rt_net_table[i].active = 1;
+            aic_rt_net_table[i].fd = fd;
+            aic_rt_net_table[i].kind = kind;
+            if (out_handle != NULL) {
+                *out_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    aic_rt_net_close_fd(fd);
+    return 7;
+}
+
+static long aic_rt_net_wait_fd(int fd, int want_read, long timeout_ms) {
+    if (timeout_ms < 0) {
+        return 6;
+    }
+
+    fd_set read_set;
+    fd_set write_set;
+    FD_ZERO(&read_set);
+    FD_ZERO(&write_set);
+    if (want_read) {
+        FD_SET(fd, &read_set);
+    } else {
+        FD_SET(fd, &write_set);
+    }
+
+    struct timeval tv;
+    tv.tv_sec = (time_t)(timeout_ms / 1000);
+    tv.tv_usec = (suseconds_t)((timeout_ms % 1000) * 1000);
+
+    int rc = select(fd + 1, want_read ? &read_set : NULL, want_read ? NULL : &write_set, NULL, &tv);
+    if (rc == 0) {
+        return 4;
+    }
+    if (rc < 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+}
+
+static long aic_rt_net_split_host_port(const char* addr, char** out_host, char** out_port) {
+    if (out_host != NULL) {
+        *out_host = NULL;
+    }
+    if (out_port != NULL) {
+        *out_port = NULL;
+    }
+    if (addr == NULL || addr[0] == '\0' || out_host == NULL || out_port == NULL) {
+        return 6;
+    }
+
+    const char* host_ptr = addr;
+    size_t host_len = 0;
+    const char* port_ptr = NULL;
+    if (addr[0] == '[') {
+        const char* close = strchr(addr, ']');
+        if (close == NULL || close[1] != ':') {
+            return 6;
+        }
+        host_ptr = addr + 1;
+        host_len = (size_t)(close - host_ptr);
+        port_ptr = close + 2;
+    } else {
+        const char* first_colon = strchr(addr, ':');
+        const char* last_colon = strrchr(addr, ':');
+        if (last_colon == NULL) {
+            return 6;
+        }
+        if (first_colon != last_colon) {
+            return 6;
+        }
+        host_ptr = addr;
+        host_len = (size_t)(last_colon - addr);
+        port_ptr = last_colon + 1;
+    }
+
+    if (port_ptr == NULL || port_ptr[0] == '\0') {
+        return 6;
+    }
+
+    char* host = aic_rt_copy_bytes(host_ptr, host_len);
+    if (host == NULL) {
+        return 7;
+    }
+    char* port = aic_rt_copy_bytes(port_ptr, strlen(port_ptr));
+    if (port == NULL) {
+        free(host);
+        return 7;
+    }
+    *out_host = host;
+    *out_port = port;
+    return 0;
+}
+
+static long aic_rt_net_resolve(
+    const char* host,
+    const char* port,
+    int socktype,
+    int flags,
+    int allow_wildcard,
+    struct addrinfo** out
+) {
+    if (out == NULL) {
+        return 6;
+    }
+    *out = NULL;
+    if (port == NULL || port[0] == '\0') {
+        return 6;
+    }
+    if (!allow_wildcard && (host == NULL || host[0] == '\0')) {
+        return 6;
+    }
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = socktype;
+    hints.ai_flags = flags;
+    const char* host_arg = (host != NULL && host[0] != '\0') ? host : NULL;
+    int rc = getaddrinfo(host_arg, port, &hints, out);
+    if (rc != 0) {
+        return aic_rt_net_map_gai_error(rc);
+    }
+    if (*out == NULL) {
+        return 1;
+    }
+    return 0;
+}
+
+static char* aic_rt_net_format_sockaddr(const struct sockaddr* addr, socklen_t addr_len) {
+    if (addr == NULL) {
+        return NULL;
+    }
+    char host[NI_MAXHOST];
+    char serv[NI_MAXSERV];
+    int rc = getnameinfo(
+        addr,
+        addr_len,
+        host,
+        sizeof(host),
+        serv,
+        sizeof(serv),
+        NI_NUMERICHOST | NI_NUMERICSERV
+    );
+    if (rc != 0) {
+        return NULL;
+    }
+    size_t host_n = strlen(host);
+    size_t serv_n = strlen(serv);
+    int need_brackets = strchr(host, ':') != NULL;
+    size_t out_n = host_n + serv_n + (need_brackets ? 3 : 1);
+    char* out = (char*)malloc(out_n + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (need_brackets) {
+        snprintf(out, out_n + 1, "[%s]:%s", host, serv);
+    } else {
+        snprintf(out, out_n + 1, "%s:%s", host, serv);
+    }
+    return out;
+}
+
+long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    (void)addr_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    char* addr = aic_rt_fs_copy_slice(addr_ptr, addr_len);
+    if (addr == NULL) {
+        return 6;
+    }
+
+    char* host = NULL;
+    char* port = NULL;
+    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    free(addr);
+    if (split != 0) {
+        free(host);
+        free(port);
+        return split;
+    }
+
+    struct addrinfo* infos = NULL;
+    long resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, AI_PASSIVE, 1, &infos);
+    free(host);
+    free(port);
+    if (resolved != 0) {
+        return resolved;
+    }
+
+    long result = 7;
+    for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
+        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) {
+            result = aic_rt_net_map_errno(errno);
+            continue;
+        }
+        int one = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        if (bind(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen) != 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+        if (listen(fd, 128) != 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+        result = aic_rt_net_alloc_handle(fd, AIC_RT_NET_KIND_TCP_LISTENER, out_handle);
+        if (result == 0) {
+            break;
+        }
+    }
+    freeaddrinfo(infos);
+    return result;
+}
+
+long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || (slot->kind != AIC_RT_NET_KIND_TCP_LISTENER && slot->kind != AIC_RT_NET_KIND_TCP_STREAM)) {
+        return 6;
+    }
+
+    struct sockaddr_storage addr;
+    socklen_t addr_len = (socklen_t)sizeof(addr);
+    if (getsockname(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
+    if (text == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = text;
+    } else {
+        free(text);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(text);
+    }
+    return 0;
+}
+
+long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(listener);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_LISTENER) {
+        return 6;
+    }
+    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    if (waited != 0) {
+        return waited;
+    }
+    struct sockaddr_storage peer;
+    socklen_t peer_len = (socklen_t)sizeof(peer);
+    int client_fd = (int)accept(slot->fd, (struct sockaddr*)&peer, &peer_len);
+    if (client_fd < 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return aic_rt_net_alloc_handle(client_fd, AIC_RT_NET_KIND_TCP_STREAM, out_handle);
+}
+
+long aic_rt_net_tcp_connect(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    long timeout_ms,
+    long* out_handle
+) {
+    (void)addr_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (timeout_ms < 0) {
+        return 6;
+    }
+    char* addr = aic_rt_fs_copy_slice(addr_ptr, addr_len);
+    if (addr == NULL) {
+        return 6;
+    }
+    char* host = NULL;
+    char* port = NULL;
+    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    free(addr);
+    if (split != 0) {
+        free(host);
+        free(port);
+        return split;
+    }
+
+    struct addrinfo* infos = NULL;
+    long resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, 0, 0, &infos);
+    free(host);
+    free(port);
+    if (resolved != 0) {
+        return resolved;
+    }
+
+    long result = 7;
+    for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
+        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) {
+            result = aic_rt_net_map_errno(errno);
+            continue;
+        }
+
+        int prev_flags = fcntl(fd, F_GETFL, 0);
+        if (prev_flags < 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+        if (fcntl(fd, F_SETFL, prev_flags | O_NONBLOCK) != 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+
+        int rc = connect(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen);
+        if (rc != 0) {
+            int err = errno;
+            int in_progress = 0;
+#ifdef EINPROGRESS
+            if (err == EINPROGRESS) {
+                in_progress = 1;
+            }
+#endif
+#ifdef EWOULDBLOCK
+            if (err == EWOULDBLOCK) {
+                in_progress = 1;
+            }
+#endif
+            if (in_progress) {
+                long waited = aic_rt_net_wait_fd(fd, 0, timeout_ms);
+                if (waited != 0) {
+                    result = waited;
+                    aic_rt_net_close_fd(fd);
+                    continue;
+                }
+                int so_err = 0;
+                socklen_t so_len = (socklen_t)sizeof(so_err);
+                if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err, &so_len) != 0) {
+                    result = aic_rt_net_map_errno(errno);
+                    aic_rt_net_close_fd(fd);
+                    continue;
+                }
+                if (so_err != 0) {
+                    result = aic_rt_net_map_errno(so_err);
+                    aic_rt_net_close_fd(fd);
+                    continue;
+                }
+            } else {
+                result = aic_rt_net_map_errno(err);
+                aic_rt_net_close_fd(fd);
+                continue;
+            }
+        }
+
+        if (fcntl(fd, F_SETFL, prev_flags) != 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+
+        result = aic_rt_net_alloc_handle(fd, AIC_RT_NET_KIND_TCP_STREAM, out_handle);
+        if (result == 0) {
+            break;
+        }
+    }
+    freeaddrinfo(infos);
+    return result;
+}
+
+long aic_rt_net_tcp_send(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    (void)payload_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (payload_len < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+    size_t remaining = (size_t)payload_len;
+    const char* cursor = payload_ptr;
+    size_t total = 0;
+    while (remaining > 0) {
+#ifdef MSG_NOSIGNAL
+        int flags = MSG_NOSIGNAL;
+#else
+        int flags = 0;
+#endif
+        ssize_t n = send(slot->fd, cursor, remaining, flags);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return aic_rt_net_map_errno(errno);
+        }
+        if (n == 0) {
+            break;
+        }
+        cursor += (size_t)n;
+        remaining -= (size_t)n;
+        total += (size_t)n;
+    }
+    if (out_sent != NULL) {
+        *out_sent = (long)total;
+    }
+    return 0;
+}
+
+long aic_rt_net_tcp_recv(
+    long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (max_bytes < 0 || timeout_ms < 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    if (waited != 0) {
+        return waited;
+    }
+    size_t cap = (size_t)max_bytes;
+    char* buffer = (char*)malloc(cap + 1);
+    if (buffer == NULL) {
+        return 7;
+    }
+    ssize_t n = recv(slot->fd, buffer, cap, 0);
+    if (n < 0) {
+        int err = errno;
+        free(buffer);
+        return aic_rt_net_map_errno(err);
+    }
+    buffer[(size_t)n] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = buffer;
+    } else {
+        free(buffer);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)n;
+    }
+    return 0;
+}
+
+long aic_rt_net_tcp_close(long handle) {
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || (slot->kind != AIC_RT_NET_KIND_TCP_LISTENER && slot->kind != AIC_RT_NET_KIND_TCP_STREAM)) {
+        return 6;
+    }
+    int fd = slot->fd;
+    aic_rt_net_reset_slot(slot);
+    return aic_rt_net_close_fd(fd);
+}
+
+long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    (void)addr_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    char* addr = aic_rt_fs_copy_slice(addr_ptr, addr_len);
+    if (addr == NULL) {
+        return 6;
+    }
+
+    char* host = NULL;
+    char* port = NULL;
+    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    free(addr);
+    if (split != 0) {
+        free(host);
+        free(port);
+        return split;
+    }
+
+    struct addrinfo* infos = NULL;
+    long resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, AI_PASSIVE, 1, &infos);
+    free(host);
+    free(port);
+    if (resolved != 0) {
+        return resolved;
+    }
+
+    long result = 7;
+    for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
+        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) {
+            result = aic_rt_net_map_errno(errno);
+            continue;
+        }
+        if (bind(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen) != 0) {
+            result = aic_rt_net_map_errno(errno);
+            aic_rt_net_close_fd(fd);
+            continue;
+        }
+        result = aic_rt_net_alloc_handle(fd, AIC_RT_NET_KIND_UDP, out_handle);
+        if (result == 0) {
+            break;
+        }
+    }
+    freeaddrinfo(infos);
+    return result;
+}
+
+long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
+        return 6;
+    }
+    struct sockaddr_storage addr;
+    socklen_t addr_len = (socklen_t)sizeof(addr);
+    if (getsockname(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
+    if (text == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = text;
+    } else {
+        free(text);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(text);
+    }
+    return 0;
+}
+
+long aic_rt_net_udp_send_to(
+    long handle,
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    (void)addr_cap;
+    (void)payload_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (payload_len < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
+        return 6;
+    }
+
+    char* addr = aic_rt_fs_copy_slice(addr_ptr, addr_len);
+    if (addr == NULL) {
+        return 6;
+    }
+    char* host = NULL;
+    char* port = NULL;
+    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    free(addr);
+    if (split != 0) {
+        free(host);
+        free(port);
+        return split;
+    }
+    if (host[0] == '\0') {
+        free(host);
+        free(port);
+        return 6;
+    }
+
+    struct addrinfo* infos = NULL;
+    long resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, 0, 0, &infos);
+    free(host);
+    free(port);
+    if (resolved != 0) {
+        return resolved;
+    }
+
+    long result = 7;
+    for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
+        ssize_t sent = sendto(
+            slot->fd,
+            payload_ptr,
+            (size_t)payload_len,
+            0,
+            ai->ai_addr,
+            (socklen_t)ai->ai_addrlen
+        );
+        if (sent >= 0) {
+            if (out_sent != NULL) {
+                *out_sent = (long)sent;
+            }
+            result = 0;
+            break;
+        }
+        result = aic_rt_net_map_errno(errno);
+    }
+    freeaddrinfo(infos);
+    return result;
+}
+
+long aic_rt_net_udp_recv_from(
+    long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_from_ptr,
+    long* out_from_len,
+    char** out_payload_ptr,
+    long* out_payload_len
+) {
+    if (out_from_ptr != NULL) {
+        *out_from_ptr = NULL;
+    }
+    if (out_from_len != NULL) {
+        *out_from_len = 0;
+    }
+    if (out_payload_ptr != NULL) {
+        *out_payload_ptr = NULL;
+    }
+    if (out_payload_len != NULL) {
+        *out_payload_len = 0;
+    }
+    if (max_bytes < 0 || timeout_ms < 0) {
+        return 6;
+    }
+
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
+        return 6;
+    }
+
+    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    if (waited != 0) {
+        return waited;
+    }
+
+    size_t cap = (size_t)max_bytes;
+    char* payload = (char*)malloc(cap + 1);
+    if (payload == NULL) {
+        return 7;
+    }
+    struct sockaddr_storage from;
+    socklen_t from_len = (socklen_t)sizeof(from);
+    ssize_t got = recvfrom(
+        slot->fd,
+        payload,
+        cap,
+        0,
+        (struct sockaddr*)&from,
+        &from_len
+    );
+    if (got < 0) {
+        int err = errno;
+        free(payload);
+        return aic_rt_net_map_errno(err);
+    }
+    payload[(size_t)got] = '\0';
+
+    char* from_text = aic_rt_net_format_sockaddr((struct sockaddr*)&from, from_len);
+    if (from_text == NULL) {
+        free(payload);
+        return 7;
+    }
+
+    if (out_from_ptr != NULL) {
+        *out_from_ptr = from_text;
+    } else {
+        free(from_text);
+    }
+    if (out_from_len != NULL) {
+        *out_from_len = (long)strlen(from_text);
+    }
+
+    if (out_payload_ptr != NULL) {
+        *out_payload_ptr = payload;
+    } else {
+        free(payload);
+    }
+    if (out_payload_len != NULL) {
+        *out_payload_len = (long)got;
+    }
+    return 0;
+}
+
+long aic_rt_net_udp_close(long handle) {
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
+        return 6;
+    }
+    int fd = slot->fd;
+    aic_rt_net_reset_slot(slot);
+    return aic_rt_net_close_fd(fd);
+}
+
+long aic_rt_net_dns_lookup(
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)host_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* host = aic_rt_fs_copy_slice(host_ptr, host_len);
+    if (host == NULL || host[0] == '\0') {
+        free(host);
+        return 6;
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo* infos = NULL;
+    int rc = getaddrinfo(host, NULL, &hints, &infos);
+    free(host);
+    if (rc != 0) {
+        return aic_rt_net_map_gai_error(rc);
+    }
+
+    long result = 1;
+    int last_name_rc = 0;
+    for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
+        char numeric[NI_MAXHOST];
+        int name_rc = getnameinfo(
+            ai->ai_addr,
+            (socklen_t)ai->ai_addrlen,
+            numeric,
+            sizeof(numeric),
+            NULL,
+            0,
+            NI_NUMERICHOST
+        );
+        if (name_rc == 0) {
+            char* out = aic_rt_copy_bytes(numeric, strlen(numeric));
+            if (out == NULL) {
+                result = 7;
+            } else {
+                if (out_ptr != NULL) {
+                    *out_ptr = out;
+                } else {
+                    free(out);
+                }
+                if (out_len != NULL) {
+                    *out_len = (long)strlen(numeric);
+                }
+                result = 0;
+            }
+            break;
+        }
+        last_name_rc = name_rc;
+    }
+    freeaddrinfo(infos);
+    if (result != 0 && last_name_rc != 0) {
+        return aic_rt_net_map_gai_error(last_name_rc);
+    }
+    return result;
+}
+
+long aic_rt_net_dns_reverse(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)addr_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* addr = aic_rt_fs_copy_slice(addr_ptr, addr_len);
+    if (addr == NULL || addr[0] == '\0') {
+        free(addr);
+        return 6;
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICHOST;
+    struct addrinfo* infos = NULL;
+    int rc = getaddrinfo(addr, NULL, &hints, &infos);
+    free(addr);
+    if (rc != 0) {
+        return aic_rt_net_map_gai_error(rc);
+    }
+    if (infos == NULL) {
+        return 1;
+    }
+
+    char name[NI_MAXHOST];
+    int flags = 0;
+#ifdef NI_NAMEREQD
+    flags |= NI_NAMEREQD;
+#endif
+    int name_rc = getnameinfo(
+        infos->ai_addr,
+        (socklen_t)infos->ai_addrlen,
+        name,
+        sizeof(name),
+        NULL,
+        0,
+        flags
+    );
+    if (name_rc != 0) {
+        freeaddrinfo(infos);
+        return aic_rt_net_map_gai_error(name_rc);
+    }
+    char* out = aic_rt_copy_bytes(name, strlen(name));
+    if (out == NULL) {
+        freeaddrinfo(infos);
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(name);
+    }
+    freeaddrinfo(infos);
+    return 0;
+}
+#endif
+
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
     (void)cap;
     if (ptr == NULL) {
@@ -7396,10 +9494,22 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_fs_metadata(i8*, i64, i64, i64*, i64*, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_net_udp_recv_from(i64, i64, i64, i8**, i64*, i8**, i64*)"
+        ));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)"));
         assert!(runtime_c_source().contains(
             "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
         ));
         assert!(runtime_c_source().contains("long aic_rt_fs_read_text("));
         assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
+        assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
+        assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
+        assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
     }
 }

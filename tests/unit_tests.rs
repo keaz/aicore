@@ -853,6 +853,110 @@ fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
+    let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_listen",
+        "aic_net_tcp_listen_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_local_addr",
+        "aic_net_tcp_local_addr_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_accept",
+        "aic_net_tcp_accept_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_connect",
+        "aic_net_tcp_connect_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_send",
+        "aic_net_tcp_send_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_recv",
+        "aic_net_tcp_recv_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_close",
+        "aic_net_tcp_close_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "udp_bind",
+        "aic_net_udp_bind_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "udp_local_addr",
+        "aic_net_udp_local_addr_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "udp_send_to",
+        "aic_net_udp_send_to_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "udp_recv_from",
+        "aic_net_udp_recv_from_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "udp_close",
+        "aic_net_udp_close_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "dns_lookup",
+        "aic_net_dns_lookup_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "dns_reverse",
+        "aic_net_dns_reverse_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_diagnostic_registry_covers_all_emitted_codes() {
     let mut files = Vec::new();
     collect_rs_files(Path::new("src"), &mut files);
@@ -984,7 +1088,20 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc } {
     let _kill = kill(1);
     let _run = run("echo smoke");
     let _pipe = pipe("echo smoke", "cat");
-    let _handle = tcp_connect("localhost:80");
+    let _listen = tcp_listen("127.0.0.1:0");
+    let _local = tcp_local_addr(1);
+    let _accept = tcp_accept(1, 1);
+    let _connect = tcp_connect("127.0.0.1:80", 1);
+    let _send = tcp_send(1, "ping");
+    let _recv = tcp_recv(1, 16, 1);
+    let _close = tcp_close(1);
+    let _udp = udp_bind("127.0.0.1:0");
+    let _udp_local = udp_local_addr(1);
+    let _udp_send = udp_send_to(1, "127.0.0.1:9", "ping");
+    let _udp_recv = udp_recv_from(1, 16, 1);
+    let _udp_close = udp_close(1);
+    let _dns = dns_lookup("localhost");
+    let _dns_rev = dns_reverse("127.0.0.1");
     let _ts = now_ms();
     let _r = random_int();
     let _n = len("abc");

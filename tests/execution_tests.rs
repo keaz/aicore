@@ -633,6 +633,171 @@ fn main() -> Int effects { io, proc, env } {
     assert_eq!(stdout, "42\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_tcp_loopback_echo() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.string;
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let sent = match tcp_send(client, "ping") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let received = match tcp_recv(server, 16, 1000) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match tcp_close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent == 4 && len(received) == 4 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_udp_and_dns_helpers() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.string;
+
+fn main() -> Int effects { io, net } {
+    let receiver = match udp_bind("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let receiver_addr = match udp_local_addr(receiver) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let sender = match udp_bind("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let sent = match udp_send_to(sender, receiver_addr, "pong") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let packet = match udp_recv_from(receiver, 64, 1000) {
+        Ok(value) => value,
+        Err(_) => UdpPacket { from: "", payload: "" },
+    };
+    let closed_sender = match udp_close(sender) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_receiver = match udp_close(receiver) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let lookup = match dns_lookup("localhost") {
+        Ok(ip) => ip,
+        Err(_) => "",
+    };
+    let reverse_checked = match dns_reverse("127.0.0.1") {
+        Ok(name) => if len(name) > 0 { 1 } else { 0 },
+        Err(err) => match err {
+            NotFound => 1,
+            _ => 0,
+        },
+    };
+
+    if sent == 4 && len(packet.payload) == 4 && len(packet.from) > 0 &&
+        len(lookup) > 0 && reverse_checked == 1 && closed_sender + closed_receiver == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_timeout_and_invalid_input_errors_are_stable() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let timeout = match tcp_accept(listener, 0) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let invalid = match tcp_connect("", 10) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    tcp_close(listener);
+    print_int(timeout * 10 + invalid);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "46\n");
+}
+
 #[test]
 fn exec_debug_build_reports_panic_source_line() {
     let dir = tempdir().expect("tempdir");
