@@ -4,6 +4,7 @@ use crate::ast::BinOp;
 use crate::diagnostics::Diagnostic;
 use crate::ir;
 use crate::resolver::{EnumInfo, Resolution, StructInfo};
+use crate::std_policy::find_deprecated_api;
 
 #[derive(Debug, Clone, Default)]
 pub struct TypecheckOutput {
@@ -759,6 +760,7 @@ impl<'a> Checker<'a> {
                     return format!("Result[<?>, {}]", err);
                 }
 
+                let mut resolved_module: Option<String> = None;
                 let resolved_name = if qualified {
                     let qualifier = &call_path[..call_path.len() - 1];
                     let Some(module) = self.resolve_qualifier_module(qualifier) else {
@@ -825,6 +827,7 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
+                    resolved_module = Some(module.clone());
                     name.clone()
                 } else {
                     if self.enforce_import_visibility
@@ -872,10 +875,36 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
+                    if let Some(modules) = self.resolution.function_modules.get(&name) {
+                        if modules.len() == 1 {
+                            resolved_module = modules.iter().next().cloned();
+                        }
+                    }
+
                     name.clone()
                 };
 
                 if let Some(sig) = self.functions.get(&resolved_name).cloned() {
+                    if let Some(module_name) = resolved_module.as_deref() {
+                        if let Some(entry) = find_deprecated_api(module_name, &resolved_name) {
+                            self.diagnostics.push(
+                                Diagnostic::warning(
+                                    "E6001",
+                                    format!(
+                                        "deprecated API '{}.{}' is used",
+                                        entry.module, entry.symbol
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help(format!(
+                                    "replace with '{}' (deprecated since {}, {})",
+                                    entry.replacement, entry.since, entry.note
+                                )),
+                            );
+                        }
+                    }
+
                     if resolved_name == "print_int"
                         || resolved_name == "print_str"
                         || resolved_name == "panic"

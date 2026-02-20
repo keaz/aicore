@@ -13,8 +13,10 @@ Registry source of truth:
 - `E1100-E1199`: resolver
 - `E1200-E1399`: type checker and exhaustiveness
 - `E2001-E2099`: effect checker
+- `E2100-E2199`: package/module loading and lockfile workflow
 - `E4001-E4099`: contracts
 - `E5001-E5099`: LLVM/codegen/runtime lowering
+- `E6001-E6099`: std compatibility and deprecation policy
 
 ## Enforcement
 

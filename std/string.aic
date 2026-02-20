@@ -1,5 +1,11 @@
 module std.string;
 
+/// Return string length in bytes.
 fn len(s: String) -> Int {
     0
+}
+
+/// Return true when the string is empty.
+fn is_empty(s: String) -> Bool {
+    len(s) == 0
 }

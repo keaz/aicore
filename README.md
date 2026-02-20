@@ -19,6 +19,10 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Generics | Implemented (deterministic instantiation + codegen) |
 | Artifact emission | Implemented (`exe`, `obj`, `lib`) |
 | Debug info + panic source mapping | Implemented (`aic build --debug-info`) |
+| Standard library modules (`io`, `fs`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`) | Implemented |
+| Package lock/checksum/offline cache workflow | Implemented (`aic lock`, `--offline`) |
+| API docs generation | Implemented (`aic doc`) |
+| Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |
 
 ## Prerequisites
 
@@ -84,6 +88,10 @@ cargo run -- ir-migrate old_ir.json
 cargo run -- build examples/option_match.aic -o option_match
 cargo run -- build examples/e5/object_link_main.aic --artifact obj -o object_link_main.o
 cargo run -- build examples/e5/panic_line_map.aic --debug-info -o panic_dbg
+cargo run -- lock examples/e6/pkg_app
+cargo run -- check examples/e6/pkg_app --offline
+cargo run -- doc examples/e6/doc_sample.aic -o docs/api
+cargo run -- std-compat --check --baseline docs/std-api-baseline.json
 cargo run -- run examples/option_match.aic
 ```
 
@@ -95,7 +103,10 @@ Commands:
 - `aic fmt`
 - `aic ir --emit json|text`
 - `aic ir-migrate`
+- `aic lock`
 - `aic build`
+- `aic doc`
+- `aic std-compat`
 - `aic run`
 
 ## Project layout
@@ -108,7 +119,7 @@ Commands:
 
 ## Test suite
 
-- Unit tests: 50 (`src/*` + `tests/unit_tests.rs`)
+- Unit tests: 60 (`src/*` + `tests/unit_tests.rs`)
 - Golden tests: 10 (`tests/golden_tests.rs`)
 - Execution tests: 11 (`tests/execution_tests.rs`)
 

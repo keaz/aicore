@@ -1,5 +1,18 @@
 module std.vec;
 
+/// Minimal Vec representation for typechecking and ABI docs.
 struct Vec[T] {
+    ptr: Int,
     len: Int,
+    cap: Int,
+}
+
+/// Return vector length.
+fn vec_len[T](v: Vec[T]) -> Int {
+    v.len
+}
+
+/// Return vector capacity.
+fn vec_cap[T](v: Vec[T]) -> Int {
+    v.cap
 }

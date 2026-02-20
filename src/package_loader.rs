@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast;
 use crate::diagnostics::Diagnostic;
+use crate::package_workflow::{resolve_dependency_context, PackageOptions};
 use crate::parser;
 use crate::span::Span;
 
@@ -16,10 +17,34 @@ pub struct PackageLoadResult {
     pub item_modules: Vec<Option<Vec<String>>>,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoadOptions {
+    pub offline: bool,
+}
+
 pub fn load_entry(input: &Path) -> anyhow::Result<PackageLoadResult> {
+    load_entry_with_options(input, LoadOptions::default())
+}
+
+pub fn load_entry_with_options(
+    input: &Path,
+    options: LoadOptions,
+) -> anyhow::Result<PackageLoadResult> {
     let entry = resolve_entry_path(input)?;
     let project_root = find_project_root(&entry);
-    let mut loader = Loader::new(project_root, entry);
+    let dependency_context = resolve_dependency_context(
+        &project_root,
+        PackageOptions {
+            offline: options.offline,
+        },
+    )?;
+    let mut loader = Loader::new(
+        project_root,
+        entry,
+        dependency_context.roots,
+        dependency_context.source_roots,
+    );
+    loader.diagnostics.extend(dependency_context.diagnostics);
     loader.build_module_index()?;
     loader.visit_entry()?;
     Ok(loader.finish())
@@ -34,6 +59,8 @@ struct ParsedModule {
 struct Loader {
     project_root: PathBuf,
     entry_path: PathBuf,
+    module_roots: Vec<PathBuf>,
+    project_excluded_roots: Vec<PathBuf>,
     parse_cache: BTreeMap<PathBuf, ParsedModule>,
     module_index: BTreeMap<String, PathBuf>,
     module_path_by_file: BTreeMap<PathBuf, Vec<String>>,
@@ -45,10 +72,24 @@ struct Loader {
 }
 
 impl Loader {
-    fn new(project_root: PathBuf, entry_path: PathBuf) -> Self {
+    fn new(
+        project_root: PathBuf,
+        entry_path: PathBuf,
+        module_roots: Vec<PathBuf>,
+        project_excluded_roots: Vec<PathBuf>,
+    ) -> Self {
+        let mut project_excluded_roots = project_excluded_roots
+            .into_iter()
+            .map(canonical_or_self)
+            .collect::<Vec<_>>();
+        project_excluded_roots.sort();
+        project_excluded_roots.dedup();
+
         Self {
             project_root,
             entry_path: canonical_or_self(entry_path),
+            module_roots: module_roots.into_iter().map(canonical_or_self).collect(),
+            project_excluded_roots,
             parse_cache: BTreeMap::new(),
             module_index: BTreeMap::new(),
             module_path_by_file: BTreeMap::new(),
@@ -80,11 +121,38 @@ impl Loader {
     }
 
     fn build_module_index(&mut self) -> anyhow::Result<()> {
+        let mut search_roots = Vec::new();
+        search_roots.push(self.project_root.clone());
+        search_roots.extend(self.module_roots.clone());
+        search_roots.sort();
+        search_roots.dedup();
+
         let mut files = Vec::new();
-        collect_aic_files(&self.project_root, &mut files)?;
+        for root in search_roots {
+            let exclusions = if root == self.project_root {
+                self.project_excluded_roots.as_slice()
+            } else {
+                &[]
+            };
+            let mut root_files = Vec::new();
+            collect_aic_files(&root, &mut root_files)?;
+            if !exclusions.is_empty() {
+                root_files.retain(|file| {
+                    let canonical = canonical_or_self(file.clone());
+                    !path_matches_any_root(&canonical, exclusions)
+                });
+            }
+            files.extend(root_files);
+        }
+        let files = files
+            .into_iter()
+            .map(canonical_or_self)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
 
         for file in files {
-            let canonical = canonical_or_self(file);
+            let canonical = file;
             self.ensure_parsed(&canonical)?;
             let Some(parsed) = self.parse_cache.get(&canonical) else {
                 continue;
@@ -321,35 +389,12 @@ impl Loader {
 
 fn resolve_entry_path(input: &Path) -> anyhow::Result<PathBuf> {
     if input.is_dir() {
-        let manifest = input.join("aic.toml");
-        if manifest.exists() {
-            if let Some(main) = manifest_main(&manifest)? {
-                return Ok(input.join(main));
-            }
+        if let Some(manifest) = crate::package_workflow::read_manifest(input)? {
+            return Ok(input.join(manifest.main));
         }
         return Ok(input.join("src/main.aic"));
     }
     Ok(input.to_path_buf())
-}
-
-fn manifest_main(path: &Path) -> anyhow::Result<Option<String>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let text = fs::read_to_string(path)?;
-    for raw in text.lines() {
-        let line = raw.trim();
-        if let Some(rest) = line.strip_prefix("main") {
-            let rest = rest.trim_start();
-            if let Some(value) = rest.strip_prefix('=') {
-                let value = value.trim();
-                if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
-                    return Ok(Some(value[1..value.len() - 1].to_string()));
-                }
-            }
-        }
-    }
-    Ok(None)
 }
 
 fn find_project_root(entry: &Path) -> PathBuf {
@@ -388,7 +433,7 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
             .to_string();
 
         if path.is_dir() {
-            if name == ".git" || name == "target" {
+            if name == ".git" || name == "target" || name == ".aic-cache" {
                 continue;
             }
             collect_aic_files(&path, out)?;
@@ -400,6 +445,12 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
         }
     }
     Ok(())
+}
+
+fn path_matches_any_root(path: &Path, roots: &[PathBuf]) -> bool {
+    roots
+        .iter()
+        .any(|root| path == root || path.starts_with(root))
 }
 
 fn canonical_or_self(path: PathBuf) -> PathBuf {
@@ -457,7 +508,9 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::load_entry;
+    use crate::package_workflow::generate_and_write_lockfile;
+
+    use super::{load_entry, load_entry_with_options, LoadOptions};
 
     #[test]
     fn loads_multi_file_package_deterministically() {
@@ -566,5 +619,56 @@ fn b() -> Int { 2 }
             .collect::<Vec<_>>();
         assert_eq!(cycle_diags.len(), 1, "diags={:#?}", loaded.diagnostics);
         assert!(cycle_diags[0].message.contains("app.a -> app.b -> app.a"));
+    }
+
+    #[test]
+    fn offline_load_uses_cache_without_duplicate_modules() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::create_dir_all(root.join("deps/util/src")).expect("mkdir dep src");
+
+        fs::write(
+            root.join("aic.toml"),
+            r#"[package]
+name = "app"
+main = "src/main.aic"
+
+[dependencies]
+util = { path = "deps/util" }
+"#,
+        )
+        .expect("write app manifest");
+
+        fs::write(
+            root.join("src/main.aic"),
+            "module app.main;\nimport util.math;\nfn main() -> Int { util_answer() }\n",
+        )
+        .expect("write app main");
+
+        fs::write(
+            root.join("deps/util/aic.toml"),
+            r#"[package]
+name = "util"
+main = "src/math.aic"
+"#,
+        )
+        .expect("write dep manifest");
+
+        fs::write(
+            root.join("deps/util/src/math.aic"),
+            "module util.math;\nfn util_answer() -> Int { 42 }\n",
+        )
+        .expect("write dep source");
+
+        generate_and_write_lockfile(root).expect("write lockfile");
+
+        let loaded = load_entry_with_options(root, LoadOptions { offline: true }).expect("load");
+        assert!(
+            loaded.diagnostics.is_empty(),
+            "unexpected diagnostics: {:#?}",
+            loaded.diagnostics
+        );
     }
 }

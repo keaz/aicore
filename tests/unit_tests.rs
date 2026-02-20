@@ -3,6 +3,7 @@ use std::path::Path;
 use std::{collections::BTreeSet, path::PathBuf};
 
 use aicore::contracts::verify_static;
+use aicore::diagnostics::Severity;
 use aicore::effects::check_effect_declarations;
 use aicore::formatter::format_program;
 use aicore::ir_builder::build;
@@ -355,6 +356,98 @@ fn print_int(x: Int) -> () effects { io } {
         out.diagnostics
     );
     assert!(out.ir.items.len() >= 2);
+}
+
+#[test]
+fn unit_std_module_smoke_compiles_with_effects() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+import std.fs;
+import std.net;
+import std.time;
+import std.rand;
+import std.string;
+import std.vec;
+import std.option;
+import std.result;
+
+fn main() -> Int effects { io, fs, net, time, rand } {
+    let _exists = exists("foo.txt");
+    let _handle = tcp_connect("localhost:80");
+    let _ts = now_ms();
+    let _r = random_int();
+    let _n = len("abc");
+    print_int(1);
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_std_effects_are_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.fs;
+
+fn main() -> Int {
+    if exists("foo.txt") { 1 } else { 0 }
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_deprecated_std_api_emits_warning() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.time;
+
+fn main() -> Int effects { time } {
+    now()
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "unexpected errors: {:#?}",
+        out.diagnostics
+    );
+    assert!(out
+        .diagnostics
+        .iter()
+        .any(|d| { d.code == "E6001" && matches!(d.severity, Severity::Warning) }));
 }
 
 #[test]

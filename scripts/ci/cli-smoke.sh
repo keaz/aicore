@@ -14,6 +14,7 @@ APP_BIN="$PROJECT_DIR/app"
 OBJ_ARTIFACT="$PROJECT_DIR/app.o"
 LIB_ARTIFACT="$PROJECT_DIR/libapp.a"
 DBG_BIN="$PROJECT_DIR/app-debug"
+DOC_DIR="$PROJECT_DIR/docs/api"
 
 "${AIC[@]}" init "$PROJECT_DIR" >/dev/null
 
@@ -25,10 +26,17 @@ DBG_BIN="$PROJECT_DIR/app-debug"
 "${AIC[@]}" build "$MAIN_FILE" --artifact obj -o "$OBJ_ARTIFACT" >/dev/null
 "${AIC[@]}" build "$MAIN_FILE" --artifact lib -o "$LIB_ARTIFACT" >/dev/null
 "${AIC[@]}" build "$MAIN_FILE" --debug-info -o "$DBG_BIN" >/dev/null
+"${AIC[@]}" lock "$PROJECT_DIR" >/dev/null
+"${AIC[@]}" check "$PROJECT_DIR" --offline >/dev/null
+"${AIC[@]}" doc "$MAIN_FILE" -o "$DOC_DIR" >/dev/null
+"${AIC[@]}" std-compat --check >/dev/null
 
 [[ -f "$OBJ_ARTIFACT" ]]
 [[ -f "$LIB_ARTIFACT" ]]
 [[ -f "$DBG_BIN" ]]
+[[ -f "$PROJECT_DIR/aic.lock" ]]
+[[ -f "$DOC_DIR/index.md" ]]
+[[ -f "$DOC_DIR/api.json" ]]
 
 "$APP_BIN" >"$TMP_DIR/direct.out"
 DIRECT_RESULT="$(tr -d '\r' <"$TMP_DIR/direct.out" | tail -n 1)"

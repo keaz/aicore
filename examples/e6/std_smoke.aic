@@ -1,0 +1,26 @@
+module example.std_smoke;
+
+import std.io;
+import std.fs;
+import std.net;
+import std.time;
+import std.rand;
+import std.string;
+import std.vec;
+import std.option;
+import std.result;
+
+fn main() -> Int effects { io, fs, net, time, rand } {
+    let _a = exists("data.txt");
+    let _b = read_text("data.txt");
+    write_text("out.txt", "ok");
+    let handle = tcp_connect("localhost:80");
+    tcp_send(handle, "ping");
+    let _t = now_ms();
+    sleep_ms(0);
+    let _r = random_int();
+    let _rb = random_bool();
+    let _s = len("abc");
+    print_int(1);
+    0
+}

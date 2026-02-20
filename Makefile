@@ -86,6 +86,9 @@ docs-check:
 	@test -f docs/contracts.md
 	@test -f docs/diagnostic-codes.md
 	@test -f docs/llvm-backend.md
+	@test -f docs/package-workflow.md
+	@test -f docs/std-compatibility.md
+	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
@@ -93,7 +96,10 @@ docs-check:
 	@grep -q "aic ir" README.md
 	@grep -q "aic ir-migrate" README.md
 	@grep -q "aic build" README.md
+	@grep -q "aic lock" README.md
+	@grep -q "aic doc" README.md
 	@grep -q "aic run" README.md
+	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
 
 no-null-lint:
 	@if rg -n --glob '*.aic' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \

@@ -73,6 +73,108 @@ fn print_int(x: Int) -> () effects { io } {
 fn print_str(x: String) -> () effects { io } {
     ()
 }
+
+fn panic(message: String) -> () effects { io } {
+    ()
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/string.aic"),
+        r#"module std.string;
+
+fn len(s: String) -> Int {
+    0
+}
+
+fn is_empty(s: String) -> Bool {
+    len(s) == 0
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/vec.aic"),
+        r#"module std.vec;
+
+struct Vec[T] {
+    ptr: Int,
+    len: Int,
+    cap: Int,
+}
+
+fn vec_len[T](v: Vec[T]) -> Int {
+    v.len
+}
+
+fn vec_cap[T](v: Vec[T]) -> Int {
+    v.cap
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/fs.aic"),
+        r#"module std.fs;
+
+fn exists(path: String) -> Bool effects { fs } {
+    false
+}
+
+fn read_text(path: String) -> String effects { fs } {
+    ""
+}
+
+fn write_text(path: String, content: String) -> () effects { fs } {
+    ()
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/net.aic"),
+        r#"module std.net;
+
+fn tcp_connect(addr: String) -> Int effects { net } {
+    0
+}
+
+fn tcp_send(handle: Int, payload: String) -> () effects { net } {
+    ()
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/time.aic"),
+        r#"module std.time;
+
+fn now_ms() -> Int effects { time } {
+    0
+}
+
+fn now() -> Int effects { time } {
+    now_ms()
+}
+
+fn sleep_ms(ms: Int) -> () effects { time } {
+    ()
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/rand.aic"),
+        r#"module std.rand;
+
+fn random_int() -> Int effects { rand } {
+    4
+}
+
+fn random_bool() -> Bool effects { rand } {
+    true
+}
 "#,
     )?;
 

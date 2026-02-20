@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "symbols": [
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "exists(path: String) -> Bool effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "read_text(path: String) -> String effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "write_text(path: String, content: String) -> () effects { fs }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "panic(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "print_int(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "print_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_connect(addr: String) -> Int effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_send(handle: Int, payload: String) -> () effects { net }"
+    },
+    {
+      "module": "std.option",
+      "kind": "enum",
+      "signature": "Option[T] { None, Some(T) }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "random_bool() -> Bool effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "random_int() -> Int effects { rand }"
+    },
+    {
+      "module": "std.result",
+      "kind": "enum",
+      "signature": "Result[T, E] { Ok(T), Err(E) }"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "is_empty(s: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "len(s: String) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "now() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "now_ms() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "sleep_ms(ms: Int) -> () effects { time }"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "vec_cap[T](v: Vec[T]) -> Int"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "vec_len[T](v: Vec[T]) -> Int"
+    },
+    {
+      "module": "std.vec",
+      "kind": "struct",
+      "signature": "Vec[T] { ptr: Int, len: Int, cap: Int }"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "package": "pkg_app",
+  "dependencies": [
+    {
+      "name": "util",
+      "path": "deps/util",
+      "checksum": "sha256:e88cb393aceb553fb411433d60bf0f3c15d66c467b286be717b94bf3b59e230c"
+    }
+  ]
+}

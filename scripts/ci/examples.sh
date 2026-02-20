@@ -30,6 +30,11 @@ check_pass=(
   "examples/e5/string_len.aic"
   "examples/e5/object_link_main.aic"
   "examples/e5/panic_line_map.aic"
+  "examples/e6/std_smoke.aic"
+  "examples/e6/deps_checksum.aic"
+  "examples/e6/doc_sample.aic"
+  "examples/e6/deprecated_api_use.aic"
+  "examples/e6/pkg_app"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -43,6 +48,9 @@ run_pass=(
   "examples/e5/enum_match.aic"
   "examples/e5/generic_pair.aic"
   "examples/e5/string_len.aic"
+  "examples/e6/std_smoke.aic"
+  "examples/e6/deps_checksum.aic"
+  "examples/e6/pkg_app"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -99,6 +107,14 @@ expect_build_artifact() {
   fi
 }
 
+expect_file_exists() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo "expected file missing: $path" >&2
+    exit 1
+  fi
+}
+
 case "$MODE" in
   check)
     for f in "${check_pass[@]}"; do
@@ -116,6 +132,15 @@ case "$MODE" in
     expect_run_value "examples/e5/enum_match.aic" "42"
     expect_run_value "examples/e5/generic_pair.aic" "42"
     expect_run_value "examples/e5/string_len.aic" "5"
+    expect_run_value "examples/e6/std_smoke.aic" "1"
+    expect_run_value "examples/e6/deps_checksum.aic" "42"
+    expect_run_value "examples/e6/pkg_app" "42"
+    "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
+    "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
+    DOC_DIR="$ARTIFACT_DIR/doc_sample"
+    "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
+    expect_file_exists "$DOC_DIR/index.md"
+    expect_file_exists "$DOC_DIR/api.json"
     expect_build_artifact "examples/e5/object_link_main.aic" "obj" "$ARTIFACT_DIR/object_link_main.o"
     expect_build_artifact "examples/e5/object_link_main.aic" "lib" "$ARTIFACT_DIR/libobject_link_main.a"
     for entry in "${run_fail[@]}"; do

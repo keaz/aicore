@@ -1,9 +1,16 @@
 module std.io;
 
+/// Print integer value to stdout.
 fn print_int(x: Int) -> () effects { io } {
     ()
 }
 
+/// Print string value to stdout.
 fn print_str(x: String) -> () effects { io } {
+    ()
+}
+
+/// Abort execution with panic message.
+fn panic(message: String) -> () effects { io } {
     ()
 }

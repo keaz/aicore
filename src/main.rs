@@ -6,12 +6,17 @@ use aicore::codegen::{
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::diagnostics::Severity;
-use aicore::driver::{diagnostics_pretty, has_errors, run_frontend};
+use aicore::docgen::generate_docs;
+use aicore::driver::{diagnostics_pretty, has_errors, run_frontend_with_options, FrontendOptions};
 use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
+use aicore::package_workflow::generate_and_write_lockfile;
 use aicore::parser;
 use aicore::project::init_project;
+use aicore::std_policy::{
+    collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
+};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -32,12 +37,16 @@ enum Command {
         input: PathBuf,
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        offline: bool,
     },
     Diag {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        offline: bool,
     },
     Fmt {
         #[arg(default_value = "src/main.aic")]
@@ -50,10 +59,16 @@ enum Command {
         input: PathBuf,
         #[arg(long, value_enum, default_value = "json")]
         emit: EmitKind,
+        #[arg(long)]
+        offline: bool,
     },
     IrMigrate {
         #[arg(default_value = "ir.json")]
         input: PathBuf,
+    },
+    Lock {
+        #[arg(default_value = ".")]
+        path: PathBuf,
     },
     Build {
         #[arg(default_value = "src/main.aic")]
@@ -64,10 +79,28 @@ enum Command {
         artifact: BuildArtifact,
         #[arg(long)]
         debug_info: bool,
+        #[arg(long)]
+        offline: bool,
+    },
+    Doc {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(short, long, default_value = "docs/api")]
+        output: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
+    StdCompat {
+        #[arg(long)]
+        check: bool,
+        #[arg(long, default_value = "docs/std-api-baseline.json")]
+        baseline: PathBuf,
     },
     Run {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
+        #[arg(long)]
+        offline: bool,
     },
 }
 
@@ -92,8 +125,17 @@ fn main() -> anyhow::Result<()> {
             init_project(&path)?;
             println!("initialized AICore project at {}", path.display());
         }
-        Command::Check { input, json } | Command::Diag { input, json } => {
-            let front = run_frontend(&input)?;
+        Command::Check {
+            input,
+            json,
+            offline,
+        }
+        | Command::Diag {
+            input,
+            json,
+            offline,
+        } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&front.diagnostics)?);
             } else if front.diagnostics.is_empty() {
@@ -128,8 +170,12 @@ fn main() -> anyhow::Result<()> {
                 std::fs::write(&input, formatted)?;
             }
         }
-        Command::Ir { input, emit } => {
-            let front = run_frontend(&input)?;
+        Command::Ir {
+            input,
+            emit,
+            offline,
+        } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
             if has_errors(&front.diagnostics) {
                 print!("{}", diagnostics_pretty(&front.diagnostics));
                 std::process::exit(1);
@@ -148,13 +194,19 @@ fn main() -> anyhow::Result<()> {
             let migrated = migrate_json_to_current(&raw)?;
             println!("{}", serde_json::to_string_pretty(&migrated)?);
         }
+        Command::Lock { path } => {
+            let root = resolve_project_root(&path);
+            let lock_path = generate_and_write_lockfile(&root)?;
+            println!("generated {}", lock_path.display());
+        }
         Command::Build {
             input,
             output,
             artifact,
             debug_info,
+            offline,
         } => {
-            let front = run_frontend(&input)?;
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
             if has_errors(&front.diagnostics) {
                 print!("{}", diagnostics_pretty(&front.diagnostics));
                 std::process::exit(1);
@@ -186,9 +238,47 @@ fn main() -> anyhow::Result<()> {
             )?;
             println!("built {}", out.display());
         }
-        Command::Run { input } => {
+        Command::Doc {
+            input,
+            output,
+            offline,
+        } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            if has_errors(&front.diagnostics) {
+                print!("{}", diagnostics_pretty(&front.diagnostics));
+                std::process::exit(1);
+            }
+            let out = generate_docs(&front, &output)?;
+            println!("generated {}", out.index_path.display());
+        }
+        Command::StdCompat { check, baseline } => {
+            let current = collect_std_api_snapshot(&default_std_root())?;
+            if check {
+                let baseline_text = std::fs::read_to_string(&baseline)?;
+                let baseline_snapshot = serde_json::from_str::<StdApiSnapshot>(&baseline_text)?;
+                let report = compare_snapshots(&current, &baseline_snapshot);
+                if !report.breaking.is_empty() {
+                    eprintln!("error[E6002]: std compatibility check failed");
+                    for item in &report.breaking {
+                        eprintln!(
+                            "  removed or changed: {} {} {}",
+                            item.module, item.kind, item.signature
+                        );
+                    }
+                    eprintln!("  help: keep APIs compatible or deprecate first before removal");
+                    std::process::exit(1);
+                }
+                println!(
+                    "std compatibility check: ok ({} additions)",
+                    report.additions.len()
+                );
+            } else {
+                println!("{}", serde_json::to_string_pretty(&current)?);
+            }
+        }
+        Command::Run { input, offline } => {
             let out = std::env::temp_dir().join("aicore_run_bin");
-            build_file(&input, &out)?;
+            build_file(&input, &out, offline)?;
             let status = std::process::Command::new(&out).status()?;
             if !status.success() {
                 std::process::exit(status.code().unwrap_or(1));
@@ -199,8 +289,8 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_file(input: &Path, output: &Path) -> anyhow::Result<()> {
-    let front = run_frontend(input)?;
+fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<()> {
+    let front = run_frontend_with_options(input, FrontendOptions { offline })?;
     if has_errors(&front.diagnostics) {
         print!("{}", diagnostics_pretty(&front.diagnostics));
         anyhow::bail!("build failed")
@@ -234,5 +324,26 @@ impl BuildArtifact {
             BuildArtifact::Obj => ArtifactKind::Obj,
             BuildArtifact::Lib => ArtifactKind::Lib,
         }
+    }
+}
+
+fn resolve_project_root(path: &Path) -> PathBuf {
+    let fallback = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    let mut dir = fallback.clone();
+
+    loop {
+        if dir.join("aic.toml").exists() {
+            return dir;
+        }
+        let Some(parent) = dir.parent() else {
+            return fallback;
+        };
+        dir = parent.to_path_buf();
     }
 }

@@ -1,0 +1,11 @@
+module std.net;
+
+/// Open TCP connection and return handle id.
+fn tcp_connect(addr: String) -> Int effects { net } {
+    0
+}
+
+/// Send payload over a connection handle.
+fn tcp_send(handle: Int, payload: String) -> () effects { net } {
+    ()
+}

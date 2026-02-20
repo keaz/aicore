@@ -53,6 +53,23 @@ impl Diagnostic {
         }
     }
 
+    pub fn warning(code: &str, message: impl Into<String>, file: &str, span: Span) -> Self {
+        crate::diagnostic_codes::assert_registered(code);
+        Self {
+            code: code.to_string(),
+            severity: Severity::Warning,
+            message: message.into(),
+            spans: vec![DiagnosticSpan {
+                file: file.to_string(),
+                start: span.start,
+                end: span.end,
+                label: None,
+            }],
+            help: Vec::new(),
+            suggested_fixes: Vec::new(),
+        }
+    }
+
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         if let Some(first) = self.spans.first_mut() {
             first.label = Some(label.into());

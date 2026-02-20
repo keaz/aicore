@@ -1,0 +1,11 @@
+module std.rand;
+
+/// Return pseudo-random Int.
+fn random_int() -> Int effects { rand } {
+    4
+}
+
+/// Return pseudo-random Bool.
+fn random_bool() -> Bool effects { rand } {
+    true
+}

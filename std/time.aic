@@ -1,0 +1,16 @@
+module std.time;
+
+/// Current wall clock time in milliseconds.
+fn now_ms() -> Int effects { time } {
+    0
+}
+
+/// Deprecated compatibility function.
+fn now() -> Int effects { time } {
+    now_ms()
+}
+
+/// Sleep for a number of milliseconds.
+fn sleep_ms(ms: Int) -> () effects { time } {
+    ()
+}

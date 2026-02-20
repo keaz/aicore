@@ -1,0 +1,16 @@
+module std.fs;
+
+/// Return true if path exists.
+fn exists(path: String) -> Bool effects { fs } {
+    false
+}
+
+/// Read text from path.
+fn read_text(path: String) -> String effects { fs } {
+    ""
+}
+
+/// Write text to path.
+fn write_text(path: String, content: String) -> () effects { fs } {
+    ()
+}

@@ -1,0 +1,6 @@
+[package]
+name = "pkg_app"
+main = "src/main.aic"
+
+[dependencies]
+util = { path = "deps/util" }

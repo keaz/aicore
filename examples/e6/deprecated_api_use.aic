@@ -1,0 +1,7 @@
+module example.deprecated_api_use;
+
+import std.time;
+
+fn main() -> Int effects { time } {
+    now()
+}

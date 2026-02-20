@@ -1,0 +1,9 @@
+module pkg.main;
+
+import std.io;
+import util.math;
+
+fn main() -> Int effects { io } {
+    print_int(add(40, 2));
+    0
+}

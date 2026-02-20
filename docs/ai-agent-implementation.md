@@ -1,16 +1,19 @@
-# AI Agent Implementation Guide (E4 + E5)
+# AI Agent Implementation Guide (E4 + E5 + E6)
 
-This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime changes.
+This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
 ## Pipeline Touch Points
 
 - Frontend orchestration: `src/driver.rs`
+- Package loading and imports: `src/package_loader.rs`
+- Manifest/lock/checksum/cache: `src/package_workflow.rs`
 - Effects normalization + validation: `src/effects.rs`
 - Type/effect checking + generic instantiation recording: `src/typecheck.rs`
 - Contract static verification + runtime lowering: `src/contracts.rs`
 - LLVM backend + runtime ABI: `src/codegen.rs`
+- API doc generation: `src/docgen.rs`
+- Std compatibility/deprecation policy: `src/std_policy.rs`
 - CLI command surface: `src/main.rs`
-- Runtime and backend execution validation: `tests/execution_tests.rs`
 
 ## E4 Summary (Effects + Contracts)
 
@@ -35,7 +38,7 @@ This document is implementation-oriented and intended for autonomous contributor
 
 ## E5 Summary (LLVM Backend + Runtime ABI)
 
-### Toolchain contract (E5-T1)
+### Toolchain contract
 
 In `src/codegen.rs`:
 
@@ -44,106 +47,117 @@ In `src/codegen.rs`:
 - optional pin `AIC_LLVM_PIN_MAJOR`
 - deterministic actionable errors for missing/unsupported/mismatched toolchains
 
-### ADT lowering (E5-T2)
-
-Lowering model:
+### ADT lowering and generics
 
 - Struct: LLVM aggregate in field order
-- Enum: `{ i32 tag, <payload slot per variant> }`
-- Built-in templates synthesized in backend metadata:
-  - `Option[T]`
-  - `Result[T, E]`
+- Enum: `{ i32 tag, payload-slots... }`
+- Built-in enum templates: `Option[T]`, `Result[T, E]`
+- Generic monomorphization emitted from frontend instantiation metadata with stable symbols
 
-Code paths:
+### Runtime ABI and debug mapping
 
-- Template collection: `collect_type_templates(...)`
-- Type lowering: `parse_type_repr(...)`
-- Constructors: `gen_struct_init(...)`, `gen_variant_constructor(...)`
-- Match lowering: `gen_match_enum(...)`
+- `String` lowered as `{ i8*, i64, i64 }` (ptr-len-cap)
+- runtime panic ABI: `aic_rt_panic(ptr, len, cap, line, column)`
+- `aic build --debug-info` emits debug metadata and source-mapped panic locations
 
-### Generic monomorphization (E5-T3)
+### Artifact modes
 
-- Typecheck records `program.generic_instantiations` with stable mangles.
-- Backend builds `generic_fn_instances` and emits one function per concrete mangle.
-- Dedupe key is mangled symbol (deterministic sort + `dedup_by`).
-- Generic call dispatch selects the matching concrete instance by argument type.
+- `aic build --artifact exe|obj|lib`
 
-### Runtime ABI (E5-T4)
+## E6 Summary (Std + Package Ecosystem)
 
-`String` ABI is ptr-len-cap:
+### Standard library modules (E6-T1)
 
-- AIC type: `{ i8*, i64, i64 }`
-- runtime signatures pass scalar `(ptr, len, cap)`
+Current std set under `std/`:
 
-Helpers:
+- `io`, `fs`, `net`, `time`, `rand`, `string`, `vec`, `option`, `result`
 
-- `aic_rt_print_str`
-- `aic_rt_strlen`
-- `aic_rt_vec_len`
-- `aic_rt_vec_cap`
+Notes:
 
-Panic ABI is source-aware:
+- Effects are declared on side-effecting std APIs.
+- `std.time.now` is compatibility API and intentionally deprecated in policy metadata.
 
-- `aic_rt_panic(ptr, len, cap, line, column)`
+### Manifest + lockfile workflow (E6-T2)
 
-### Artifact modes (E5-T5)
+`src/package_workflow.rs`:
 
-CLI and driver support:
+- Parses `aic.toml` package/dependency metadata.
+- Generates deterministic `aic.lock` via `aic lock`.
+- Lockfile entries include dependency name, resolved path, checksum.
+- Build/check/run consume lockfile through package loader when present.
 
-- `exe`
-- `obj`
-- `lib`
+Diagnostics:
 
-Key APIs:
+- `E2106`: lockfile drift (`aic.toml` vs `aic.lock`).
 
-- `compile_with_clang_artifact_with_options(...)`
-- `build_with_artifact(...)`
-- `build_with_artifact_options(...)`
+### Checksum verification + offline cache (E6-T3)
 
-### Debug metadata + panic mapping (E5-T6)
+`src/package_workflow.rs`:
 
-- CLI flag: `aic build --debug-info`
-- Codegen option: `CodegenOptions { debug_info: true }`
-- Compile option: `CompileOptions { debug_info: true }`
+- Computes deterministic package checksum from `aic.toml` + `.aic` files.
+- Verifies dependency checksums before compilation.
+- Maintains `.aic-cache/` copies for offline builds.
+- Supports offline mode via CLI flag `--offline` on check/build/run/ir/diag.
 
-When enabled:
+Diagnostics:
 
-- emits `!DICompileUnit`, `!DISubprogram`, `!DILocation`
-- panic/assert callsites are tagged with debug locations
-- runtime panic prints mapped line/column
+- `E2107`: dependency checksum/source mismatch.
+- `E2108`: missing offline lock/cache prerequisites.
+- `E2109`: corrupted offline cache entry.
 
-## E5 Validation Inventory
+### API doc command (E6-T4)
+
+`src/docgen.rs` + CLI `aic doc`:
+
+- Emits deterministic docs to output directory (default `docs/api`).
+- Produces:
+  - `index.md`
+  - `api.json`
+- Includes signatures, effects, contracts, invariants, and deprecation metadata.
+
+### Compatibility + deprecation policy (E6-T5)
+
+`src/std_policy.rs`:
+
+- Deprecated APIs declared in static policy table.
+- Typecheck emits warning diagnostics for deprecated API usage.
+  - `E6001` warning with replacement guidance.
+- Compatibility baseline:
+  - `docs/std-api-baseline.json`
+- Policy lint command:
+  - `aic std-compat --check --baseline docs/std-api-baseline.json`
+
+Diagnostics:
+
+- `E6002`: std compatibility check failure (CLI policy lint output).
+
+## Validation Inventory
 
 ### Tests
 
-- Codegen unit coverage in `src/codegen.rs` tests:
-  - toolchain parsing/pinning
-  - ADT layout snapshot
-  - monomorphization dedupe/determinism
-  - debug metadata + panic line mapping
-  - panic ABI declaration/runtime signature consistency
-- Runtime execution coverage in `tests/execution_tests.rs`:
-  - nested ADT match execution
-  - multi-concrete generic execution
-  - object/library external linkage
-  - debug panic line mapping behavior
+- Library/unit tests in:
+  - `src/package_workflow.rs`
+  - `src/docgen.rs`
+  - `src/std_policy.rs`
+  - `tests/unit_tests.rs`
+- Runtime/execution tests in:
+  - `tests/execution_tests.rs`
 
 ### Examples
 
-- `examples/e5/hello_int.aic`
-- `examples/e5/enum_match.aic`
-- `examples/e5/generic_pair.aic`
-- `examples/e5/string_len.aic`
-- `examples/e5/object_link_main.aic`
-- `examples/e5/panic_line_map.aic`
+- `examples/e6/std_smoke.aic`
+- `examples/e6/pkg_app/`
+- `examples/e6/deps_checksum.aic`
+- `examples/e6/doc_sample.aic`
+- `examples/e6/deprecated_api_use.aic`
 
-Examples are wired into `scripts/ci/examples.sh`.
+Examples are integrated into `scripts/ci/examples.sh`.
 
 ## Safe Extension Checklist
 
-1. Keep ABI changes explicit and documented in `docs/llvm-backend.md`.
-2. Preserve deterministic output ordering (metadata, symbol names, instantiations).
-3. Add both unit and execution tests for any backend/ABI change.
-4. Do not change panic/runtime signatures without updating declarations and runtime C together.
-5. Keep default build mode unaffected; gate debug-only behavior behind explicit options.
+1. Keep lockfile schema deterministic; sort dependencies and outputs.
+2. Do not bypass checksum validation when lockfile is present.
+3. Keep offline mode conservative: fail fast on missing/corrupted cache.
+4. When changing std API surface, update baseline intentionally and review deprecations.
+5. Keep new diagnostics registered in `src/diagnostic_codes.rs`.
 6. Run `make ci` before commit.

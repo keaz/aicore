@@ -1,0 +1,12 @@
+module example.doc_sample;
+
+import std.time;
+
+fn abs(x: Int) -> Int effects { time } requires x >= 0 ensures result >= 0 {
+    x
+}
+
+fn main() -> Int effects { time } {
+    now_ms();
+    abs(5)
+}

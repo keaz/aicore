@@ -13,6 +13,7 @@ use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
 use crate::package_loader;
+use crate::package_loader::LoadOptions;
 use crate::resolver::{self, Resolution};
 use crate::typecheck::{self, TypecheckOutput};
 
@@ -21,6 +22,7 @@ pub struct FrontendOutput {
     pub resolution: Resolution,
     pub typecheck: TypecheckOutput,
     pub diagnostics: Vec<Diagnostic>,
+    pub item_modules: Vec<Option<Vec<String>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,9 +32,26 @@ pub enum BuildArtifact {
     Lib,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrontendOptions {
+    pub offline: bool,
+}
+
 pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
+    run_frontend_with_options(path, FrontendOptions::default())
+}
+
+pub fn run_frontend_with_options(
+    path: &Path,
+    options: FrontendOptions,
+) -> anyhow::Result<FrontendOutput> {
     let file = path.to_string_lossy().to_string();
-    let mut load = package_loader::load_entry(path)?;
+    let mut load = package_loader::load_entry_with_options(
+        path,
+        LoadOptions {
+            offline: options.offline,
+        },
+    )?;
     let mut diagnostics = Vec::new();
     diagnostics.append(&mut load.diagnostics);
 
@@ -64,6 +83,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
             },
             typecheck: TypecheckOutput::default(),
             diagnostics,
+            item_modules: Vec::new(),
         });
     };
 
@@ -93,6 +113,7 @@ pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
         resolution,
         typecheck,
         diagnostics,
+        item_modules: load.item_modules,
     })
 }
 
