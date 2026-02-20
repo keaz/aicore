@@ -1,4 +1,4 @@
-# AI Agent Implementation Guide (E4 + E5 + E6 + E7)
+# AI Agent Implementation Guide (E4 + E5 + E6 + E7 + E8)
 
 This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
@@ -17,6 +17,11 @@ This document is implementation-oriented and intended for autonomous contributor
 - Diagnostic explain metadata: `src/diagnostic_explain.rs`
 - LSP server: `src/lsp.rs`
 - Built-in fixture harness: `src/test_harness.rs`
+- Conformance suite runner: `src/conformance.rs`
+- Fuzzing engine + corpus replay: `src/fuzzing.rs`
+- Differential roundtrip engine: `src/differential.rs`
+- Cross-target execution matrix runner: `src/execution_matrix.rs`
+- Performance budget runner: `src/perf_gate.rs`
 - CLI command surface: `src/main.rs`
 
 ## E4 Summary (Effects + Contracts)
@@ -192,6 +197,79 @@ Diagnostics:
 - Sample fixtures:
   - `examples/e7/harness/`
 
+## E8 Summary (Verification + Fuzzing + Performance Gates)
+
+### Conformance suites (E8-T1)
+
+- Conformance catalog (expected behavior source of truth):
+  - `examples/e8/conformance_pack/catalog.json`
+- Categories:
+  - `syntax`
+  - `typing`
+  - `diagnostics`
+  - `codegen`
+- Runner API:
+  - `load_catalog(path)` and `run_catalog(root, catalog)` in `src/conformance.rs`
+- Test:
+  - `tests/e8_conformance_tests.rs`
+
+### Lexer/parser/typechecker fuzzing (E8-T2)
+
+- Engine:
+  - `src/fuzzing.rs`
+- Targets:
+  - `FuzzTarget::Lexer`
+  - `FuzzTarget::Parser`
+  - `FuzzTarget::Typecheck`
+- Seed corpus:
+  - `tests/fuzz/corpus/*`
+- Regression replay corpus:
+  - `tests/fuzz/regressions/*`
+- Nightly stress gate:
+  - ignored test in `tests/e8_fuzz_tests.rs`
+  - workflow `.github/workflows/nightly-fuzz.yml`
+
+### Differential roundtrip validation (E8-T3)
+
+- Engine:
+  - `src/differential.rs`
+- Flow:
+  - parse -> IR build -> format -> parse -> IR build -> semantic snapshot compare
+- Report includes first divergence line when mismatch exists.
+- Tests:
+  - `tests/e8_differential_tests.rs`
+- Reference file:
+  - `examples/e8/roundtrip_random_seed.aic`
+
+### Execution matrix across targets (E8-T4)
+
+- Matrix definition:
+  - `examples/e8/execution-matrix.json`
+- Runner:
+  - `run_host_matrix(root, matrix)` in `src/execution_matrix.rs`
+- Modes:
+  - `debug`
+  - `release`
+- CI:
+  - dedicated `execution-matrix` job in `.github/workflows/ci.yml` (Linux + macOS).
+- Platform policy:
+  - Windows target is explicitly marked build-only (`execute=false`) with a documented note.
+
+### Performance budgets (E8-T5)
+
+- Budget policy:
+  - `docs/perf-budget.json`
+- Baseline:
+  - `docs/perf-baseline.json`
+- Dataset stability lock:
+  - `docs/perf-dataset-fingerprint.txt`
+- Runner:
+  - `run_perf_gate(...)` in `src/perf_gate.rs`
+- Report artifact:
+  - `target/e8/perf-report.json`
+- CI:
+  - `make test-e8` in Linux full validation job; report uploaded as artifact.
+
 ## Validation Inventory
 
 ### Tests
@@ -200,9 +278,18 @@ Diagnostics:
   - `src/package_workflow.rs`
   - `src/docgen.rs`
   - `src/std_policy.rs`
+  - `src/fuzzing.rs`
+  - `src/differential.rs`
+  - `src/execution_matrix.rs`
+  - `src/perf_gate.rs`
   - `tests/unit_tests.rs`
 - Runtime/execution tests in:
   - `tests/execution_tests.rs`
+  - `tests/e8_matrix_tests.rs`
+  - `tests/e8_conformance_tests.rs`
+  - `tests/e8_fuzz_tests.rs`
+  - `tests/e8_differential_tests.rs`
+  - `tests/e8_perf_tests.rs`
 
 ### Examples
 
@@ -216,6 +303,10 @@ Diagnostics:
 - `examples/e7/explain_trigger.aic`
 - `examples/e7/lsp_project/`
 - `examples/e7/harness/`
+- `examples/e8/conformance_pack/`
+- `examples/e8/roundtrip_random_seed.aic`
+- `examples/e8/matrix_program.aic`
+- `examples/e8/large_project_bench/`
 
 Examples are integrated into `scripts/ci/examples.sh`.
 
@@ -227,3 +318,4 @@ Examples are integrated into `scripts/ci/examples.sh`.
 4. When changing std API surface, update baseline intentionally and review deprecations.
 5. Keep new diagnostics registered in `src/diagnostic_codes.rs`.
 6. Run `make ci` before commit.
+7. For E8 changes, update corpus/budget docs and ensure `make test-e8` remains deterministic.

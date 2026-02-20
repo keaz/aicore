@@ -1,0 +1,10 @@
+import std.io;
+
+fn use_io() -> () effects { io } {
+    print_int(1)
+}
+
+fn main() -> Int {
+    use_io();
+    0
+}

@@ -1,0 +1,3 @@
+fn plus_one(x: Int) -> Int {
+    x + 1
+}

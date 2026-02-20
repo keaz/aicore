@@ -1,0 +1,15 @@
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+fn sub(x: Int, y: Int) -> Int {
+    x - y
+}
+
+fn mul_accumulate(x: Int, y: Int, z: Int) -> Int {
+    add(x * y, z)
+}
+
+fn main() -> Int {
+    mul_accumulate(6, 7, 0)
+}

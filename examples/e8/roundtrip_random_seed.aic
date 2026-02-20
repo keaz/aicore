@@ -1,0 +1,23 @@
+import std.io;
+
+struct Pair {
+    left: Int,
+    right: Int,
+}
+
+enum Wrap[T] {
+    Empty,
+    Full(T),
+}
+
+fn normalize(x: Wrap[Pair]) -> Int {
+    match x {
+        Empty => 0,
+        Full(pair) => pair.left + pair.right,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(normalize(Full(Pair { left: 19, right: 23 })));
+    0
+}

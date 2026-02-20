@@ -1,0 +1,10 @@
+import std.io;
+
+fn bump(x: Int) -> Int {
+    x + 1
+}
+
+fn main() -> Int effects { io } {
+    print_int(bump(41));
+    0
+}

@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "id": "syntax-module-import-match",
+      "category": "syntax",
+      "path": "syntax/module_import_match.aic"
+    },
+    {
+      "id": "typing-generics-inference",
+      "category": "typing",
+      "path": "typing/generics_inference.aic"
+    },
+    {
+      "id": "diagnostics-missing-effect",
+      "category": "diagnostics",
+      "path": "diagnostics/missing_effect.aic",
+      "expect_error_codes": ["E2001"]
+    },
+    {
+      "id": "codegen-option-like-enum",
+      "category": "codegen",
+      "path": "codegen/enum_codegen.aic",
+      "expect_output": "42"
+    }
+  ]
+}

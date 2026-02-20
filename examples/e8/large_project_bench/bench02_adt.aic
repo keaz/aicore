@@ -1,0 +1,24 @@
+enum Maybe[T] {
+    Empty,
+    Present(T),
+}
+
+struct Vec2 {
+    x: Int,
+    y: Int,
+}
+
+fn norm(v: Vec2) -> Int {
+    v.x + v.y
+}
+
+fn maybe_norm(v: Maybe[Vec2]) -> Int {
+    match v {
+        Empty => 0,
+        Present(value) => norm(value),
+    }
+}
+
+fn main() -> Int {
+    maybe_norm(Present(Vec2 { x: 20, y: 22 }))
+}

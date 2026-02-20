@@ -1,0 +1,6 @@
+{
+  "dataset": "examples/e8/large_project_bench",
+  "parser_ms": 40.0,
+  "typecheck_ms": 70.0,
+  "codegen_ms": 90.0
+}

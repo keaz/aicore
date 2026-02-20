@@ -38,11 +38,20 @@ check_pass=(
   "examples/e7/cli_smoke.aic"
   "examples/e7/test_harness_sample.aic"
   "examples/e7/lsp_project"
+  "examples/e8/conformance_pack/syntax/module_import_match.aic"
+  "examples/e8/conformance_pack/typing/generics_inference.aic"
+  "examples/e8/conformance_pack/codegen/enum_codegen.aic"
+  "examples/e8/roundtrip_random_seed.aic"
+  "examples/e8/matrix_program.aic"
+  "examples/e8/large_project_bench/bench01_math.aic"
+  "examples/e8/large_project_bench/bench02_adt.aic"
+  "examples/e8/large_project_bench/bench03_effects_contracts.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
   "examples/e4/transitive_effect_violation.aic"
   "examples/e7/diag_errors.aic"
+  "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -56,6 +65,10 @@ run_pass=(
   "examples/e6/deps_checksum.aic"
   "examples/e6/pkg_app"
   "examples/e7/cli_smoke.aic"
+  "examples/e8/conformance_pack/codegen/enum_codegen.aic"
+  "examples/e8/roundtrip_random_seed.aic"
+  "examples/e8/matrix_program.aic"
+  "examples/e8/large_project_bench/bench03_effects_contracts.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -141,6 +154,10 @@ case "$MODE" in
     expect_run_value "examples/e6/deps_checksum.aic" "42"
     expect_run_value "examples/e6/pkg_app" "42"
     expect_run_value "examples/e7/cli_smoke.aic" "42"
+    expect_run_value "examples/e8/conformance_pack/codegen/enum_codegen.aic" "42"
+    expect_run_value "examples/e8/roundtrip_random_seed.aic" "42"
+    expect_run_value "examples/e8/matrix_program.aic" "42"
+    expect_run_value "examples/e8/large_project_bench/bench03_effects_contracts.aic" "42"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then

@@ -66,6 +66,12 @@ jobs:
       - name: Execution tests
         run: make test-exec
 
+      - name: E7 tests
+        run: make test-e7
+
+      - name: E8 verification gates
+        run: make test-e8
+
       - name: Example checks
         run: make examples-check
 
@@ -77,6 +83,41 @@ jobs:
 
       - name: Docs checks
         run: make docs-check
+
+      - name: Upload E8 perf report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e8-perf-report-linux
+          path: target/e8/perf-report.json
+          if-no-files-found: ignore
+
+  execution-matrix:
+    name: Execution Matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install clang (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Run host execution matrix suite
+        run: cargo test --locked --test e8_matrix_tests
 
   cross-platform-build:
     name: Cross Platform Build (${{ matrix.os }})
@@ -132,6 +173,7 @@ jobs:
     needs:
       - quality
       - tests-linux-full
+      - execution-matrix
       - cross-platform-build
       - vscode-extension
     steps:
@@ -140,10 +182,12 @@ jobs:
           set -euo pipefail
           echo "quality=${{ needs.quality.result }}"
           echo "tests-linux-full=${{ needs.tests-linux-full.result }}"
+          echo "execution-matrix=${{ needs.execution-matrix.result }}"
           echo "cross-platform-build=${{ needs.cross-platform-build.result }}"
           echo "vscode-extension=${{ needs.vscode-extension.result }}"
 
           [[ "${{ needs.quality.result }}" == "success" ]]
           [[ "${{ needs.tests-linux-full.result }}" == "success" ]]
+          [[ "${{ needs.execution-matrix.result }}" == "success" ]]
           [[ "${{ needs.cross-platform-build.result }}" == "success" ]]
           [[ "${{ needs.vscode-extension.result }}" == "success" ]]

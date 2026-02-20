@@ -1,0 +1,1 @@
+struct Pair { left: Int, right: Int }

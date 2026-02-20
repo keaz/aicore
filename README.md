@@ -28,6 +28,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Diagnostic explain command | Implemented (`aic explain`) |
 | LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
 | Built-in fixture harness | Implemented (`aic test`) |
+| Verification/fuzzing/performance gates | Implemented (E8 conformance + differential + matrix + perf budgets) |
 
 ## Prerequisites
 
@@ -58,6 +59,8 @@ Useful targets:
 - `make examples-run`
 - `make cli-smoke`
 - `make docs-check`
+- `make test-e8`
+- `make test-e8-nightly-fuzz`
 
 Install git hooks:
 
@@ -74,8 +77,12 @@ This installs:
 
 - `CI` (`.github/workflows/ci.yml`):
   - quality checks (`fmt`, `clippy`, build)
-  - Linux full validation (unit/golden/execution tests, examples, CLI smoke, docs/schema checks)
+  - Linux full validation (unit/golden/execution/E7/E8 tests, examples, CLI smoke, docs/schema checks)
+  - host execution matrix suite on Linux/macOS (`tests/e8_matrix_tests.rs`)
   - cross-platform build matrix (Linux/macOS/Windows build + library tests)
+- `Nightly Fuzz` (`.github/workflows/nightly-fuzz.yml`):
+  - scheduled lexer/parser/typechecker fuzz stress suite
+  - uploads nightly fuzz report artifacts
 - `Release` (`.github/workflows/release.yml`):
   - runs on tags `v*`
   - builds release binaries on Linux/macOS/Windows
@@ -134,12 +141,13 @@ Commands:
 
 ## Test suite
 
-- Core unit tests: 70 (`src/*` library tests)
+- Core unit tests: 76 (`src/*` library tests)
 - Unit integration tests: 47 (`tests/unit_tests.rs`)
 - Golden tests: 11 (`tests/golden_tests.rs`)
 - Execution tests: 11 (`tests/execution_tests.rs`)
 - CLI contract tests: 5 (`tests/e7_cli_tests.rs`)
 - LSP smoke tests: 2 (`tests/lsp_smoke_tests.rs`)
+- E8 verification tests: 11 total / 10 active (`tests/e8_*`)
 
 ## Determinism guarantees (MVP)
 

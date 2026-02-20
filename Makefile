@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 examples-check examples-run cli-smoke docs-check no-null-lint
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz examples-check examples-run cli-smoke docs-check no-null-lint
 
 help:
 	@echo "AICore developer commands"
@@ -20,6 +20,8 @@ help:
 	@echo "  make test-golden   Run parser/formatter golden tests"
 	@echo "  make test-exec     Run LLVM execution tests"
 	@echo "  make test-e7       Run E7 CLI + LSP integration tests"
+	@echo "  make test-e8       Run E8 verification/fuzz/diff/matrix/perf tests"
+	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
 	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
@@ -44,7 +46,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 examples-check examples-run no-null-lint cli-smoke docs-check
+check: build test-unit test-golden test-exec test-e7 test-e8 examples-check examples-run no-null-lint cli-smoke docs-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -72,6 +74,16 @@ test-e7:
 	$(CARGO) test --locked --test e7_cli_tests
 	$(CARGO) test --locked --test lsp_smoke_tests
 
+test-e8:
+	$(CARGO) test --locked --test e8_conformance_tests
+	$(CARGO) test --locked --test e8_fuzz_tests
+	$(CARGO) test --locked --test e8_differential_tests
+	$(CARGO) test --locked --test e8_matrix_tests
+	$(CARGO) test --locked --test e8_perf_tests
+
+test-e8-nightly-fuzz:
+	$(CARGO) test --locked --test e8_fuzz_tests -- --ignored
+
 examples-check:
 	./scripts/ci/examples.sh check
 
@@ -96,6 +108,7 @@ docs-check:
 	@test -f docs/llvm-backend.md
 	@test -f docs/package-workflow.md
 	@test -f docs/std-compatibility.md
+	@test -f docs/e8-verification-gates.md
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@grep -q "aic init" README.md

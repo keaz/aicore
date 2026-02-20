@@ -1,0 +1,8 @@
+{
+  "dataset": "examples/e8/large_project_bench",
+  "iterations": 3,
+  "parser_ms_max": 300.0,
+  "typecheck_ms_max": 500.0,
+  "codegen_ms_max": 700.0,
+  "regression_tolerance_pct": 35.0
+}

@@ -1,0 +1,18 @@
+import std.io;
+
+enum Maybe[T] {
+    Empty,
+    Has(T),
+}
+
+fn unwrap_or_zero(value: Maybe[Int]) -> Int {
+    match value {
+        Empty => 0,
+        Has(x) => x,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(unwrap_or_zero(Has(42)));
+    0
+}

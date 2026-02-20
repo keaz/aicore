@@ -1,0 +1,35 @@
+name: Nightly Fuzz
+
+on:
+  schedule:
+    - cron: "15 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz-nightly:
+    name: Nightly Lexer/Parser/Typecheck Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run nightly fuzz stress suite
+        run: make test-e8-nightly-fuzz
+
+      - name: Upload nightly fuzz report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-fuzz-report
+          path: target/e8/nightly-fuzz-report.json
+          if-no-files-found: ignore

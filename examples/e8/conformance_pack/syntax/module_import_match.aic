@@ -1,0 +1,15 @@
+module e8.syntax;
+import std.option;
+
+enum Flag {
+    On,
+    Off,
+}
+
+fn pick(x: Bool) -> Int {
+    if x { 1 } else { 0 }
+}
+
+fn main() -> Int {
+    pick(true)
+}

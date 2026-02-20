@@ -1,0 +1,32 @@
+{
+  "targets": [
+    {
+      "id": "linux-x64",
+      "os": "linux",
+      "execute": true,
+      "modes": ["debug", "release"],
+      "notes": null
+    },
+    {
+      "id": "macos-universal",
+      "os": "macos",
+      "execute": true,
+      "modes": ["debug", "release"],
+      "notes": null
+    },
+    {
+      "id": "windows-x64",
+      "os": "windows",
+      "execute": false,
+      "modes": ["debug", "release"],
+      "notes": "Execution is skipped in CI because Windows runners are build-only for the LLVM/clang runtime path."
+    }
+  ],
+  "cases": [
+    {
+      "name": "matrix-program",
+      "path": "examples/e8/matrix_program.aic",
+      "expected_stdout": "42"
+    }
+  ]
+}

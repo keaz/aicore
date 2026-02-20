@@ -1,0 +1,10 @@
+import std.io;
+
+fn noisy() -> () effects { io } {
+    print_int(1)
+}
+
+fn main() -> Int {
+    noisy();
+    0
+}
