@@ -64,8 +64,8 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
       break;
   }
 
-  context.subscriptions.push(client.start());
-  await client.onReady();
+  context.subscriptions.push(client);
+  await client.start();
 }
 
 async function stopClient(): Promise<void> {
