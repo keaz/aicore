@@ -1,0 +1,80 @@
+module std.regex;
+
+import std.result;
+
+enum RegexError {
+    InvalidPattern,
+    InvalidInput,
+    NoMatch,
+    UnsupportedFeature,
+    TooComplex,
+    Internal,
+}
+
+struct Regex {
+    pattern: String,
+    flags: Int,
+}
+
+fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError] {
+    let out: Result[Regex, RegexError] = Ok(Regex {
+        pattern: pattern,
+        flags: flags,
+    });
+    out
+}
+
+fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError] {
+    let out: Result[Bool, RegexError] = Ok(false);
+    out
+}
+
+fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError] {
+    let out: Result[String, RegexError] = Ok("");
+    out
+}
+
+fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
+    let out: Result[String, RegexError] = Ok(text);
+    out
+}
+
+/// No regex flags.
+fn no_flags() -> Int {
+    0
+}
+
+/// Case-insensitive matching (ASCII semantics from the runtime regex engine).
+fn flag_case_insensitive() -> Int {
+    1
+}
+
+/// Multi-line mode: ^ and $ match line boundaries.
+fn flag_multiline() -> Int {
+    2
+}
+
+/// Dot matches newline. Unsupported together with multi-line mode in this runtime.
+fn flag_dot_matches_newline() -> Int {
+    4
+}
+
+fn compile(pattern: String) -> Result[Regex, RegexError] {
+    compile_with_flags(pattern, no_flags())
+}
+
+fn compile_with_flags(pattern: String, flags: Int) -> Result[Regex, RegexError] {
+    aic_regex_compile_intrinsic(pattern, flags)
+}
+
+fn is_match(regex: Regex, text: String) -> Result[Bool, RegexError] {
+    aic_regex_is_match_intrinsic(regex, text)
+}
+
+fn find(regex: Regex, text: String) -> Result[String, RegexError] {
+    aic_regex_find_intrinsic(regex, text)
+}
+
+fn replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
+    aic_regex_replace_intrinsic(regex, text, replacement)
+}

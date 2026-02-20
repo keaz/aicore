@@ -24,7 +24,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Generics | Implemented (deterministic instantiation + codegen) |
 | Artifact emission | Implemented (`exe`, `obj`, `lib`) |
 | Debug info + panic source mapping | Implemented (`aic build --debug-info`) |
-| Standard library modules (`io`, `fs`, `net`, `time`, `rand`, `concurrent`, `string`, `vec`, `option`, `result`) | Implemented |
+| Standard library modules (`io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`) | Implemented |
 | Package lock/checksum/offline cache workflow | Implemented (`aic lock`, `--offline`) |
 | API docs generation | Implemented (`aic doc`) |
 | Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |

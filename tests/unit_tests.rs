@@ -1011,6 +1011,40 @@ fn unit_std_rand_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_regex_public_apis_delegate_to_runtime_intrinsics() {
+    let regex_source = fs::read_to_string("std/regex.aic").expect("read std/regex.aic");
+
+    assert_delegate_call(
+        &regex_source,
+        "std/regex.aic",
+        "compile_with_flags",
+        "aic_regex_compile_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &regex_source,
+        "std/regex.aic",
+        "is_match",
+        "aic_regex_is_match_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &regex_source,
+        "std/regex.aic",
+        "find",
+        "aic_regex_find_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &regex_source,
+        "std/regex.aic",
+        "replace",
+        "aic_regex_replace_intrinsic",
+        3,
+    );
+}
+
+#[test]
 fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
 

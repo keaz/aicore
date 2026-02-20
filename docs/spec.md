@@ -204,6 +204,7 @@ Program {
 - Interprocedural call-graph analysis enforces transitive effect safety with call-path diagnostics.
 - Contracts are checked as pure contexts.
 - `std.fs` uses stable `FsError` categories (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`) and returns `Result` for fallible operations.
+- `std.regex` provides `compile/match/find/replace` APIs with stable `RegexError` categories.
 
 ## 6. Contracts
 

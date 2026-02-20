@@ -1,0 +1,45 @@
+module example.data.log_parse_regex;
+
+import std.io;
+import std.regex;
+import std.string;
+
+fn bool_result(v: Result[Bool, RegexError]) -> Int {
+    match v {
+        Ok(flag) => if flag { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn string_len(v: Result[String, RegexError]) -> Int {
+    match v {
+        Ok(text) => len(text),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let event_re = match compile_with_flags("^ERROR [0-9]+ user=[a-z]+$", no_flags()) {
+        Ok(value) => value,
+        Err(_) => Regex { pattern: "", flags: 0 },
+    };
+    let search_re = match compile("ERROR [0-9]+ user=[a-z]+") {
+        Ok(value) => value,
+        Err(_) => Regex { pattern: "", flags: 0 },
+    };
+
+    let line_ok = bool_result(is_match(event_re, "ERROR 503 user=alice"));
+    let found_ok = if string_len(find(search_re, "ts=1 ERROR 503 user=alice path=/pay")) == 20 { 1 } else { 0 };
+    let replaced_ok = if string_len(replace(search_re, "ts=1 ERROR 503 user=alice path=/pay", "<redacted>")) == 25 {
+        1
+    } else {
+        0
+    };
+
+    if line_ok + found_ok + replaced_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

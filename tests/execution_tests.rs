@@ -377,6 +377,119 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_regex_compile_match_find_replace() {
+    let src = r#"
+import std.io;
+import std.regex;
+import std.string;
+
+fn bool_result(v: Result[Bool, RegexError]) -> Int {
+    match v {
+        Ok(flag) => if flag { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn string_len(v: Result[String, RegexError]) -> Int {
+    match v {
+        Ok(text) => len(text),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let re = match compile_with_flags("^error [0-9]+$", flag_case_insensitive() + flag_multiline()) {
+        Ok(value) => value,
+        Err(_) => Regex { pattern: "", flags: 0 },
+    };
+
+    let match_yes = bool_result(is_match(re, "ERROR 42"));
+    let match_no = bool_result(is_match(re, "info 42"));
+    let found_len = string_len(find(re, "warn\nerror 17\nok"));
+    let replaced_len = string_len(replace(re, "warn\nERROR 17\nok", "<redacted>"));
+    let replace_nomatch_len = string_len(replace(re, "all good", "<x>"));
+
+    if match_yes == 1
+        && match_no == 0
+        && found_len == 8
+        && replaced_len == 18
+        && replace_nomatch_len == 8
+    {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_regex_reports_structured_errors() {
+    let src = r#"
+import std.io;
+import std.regex;
+
+fn regex_error_code(err: RegexError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidInput => 2,
+        NoMatch => 3,
+        UnsupportedFeature => 4,
+        TooComplex => 5,
+        Internal => 6,
+    }
+}
+
+fn invalid_pattern(v: Result[Regex, RegexError]) -> Int {
+    match v {
+        Err(err) => if regex_error_code(err) == 1 { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+fn unsupported_flags(v: Result[Regex, RegexError]) -> Int {
+    match v {
+        Err(err) => if regex_error_code(err) == 4 { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+fn no_match(v: Result[String, RegexError]) -> Int {
+    match v {
+        Err(err) => if regex_error_code(err) == 3 { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let bad = invalid_pattern(compile_with_flags("[unterminated", no_flags()));
+    let unsupported = unsupported_flags(
+        compile_with_flags("a.*b", flag_multiline() + flag_dot_matches_newline())
+    );
+    let re = match compile("error") {
+        Ok(value) => value,
+        Err(_) => Regex { pattern: "error", flags: 0 },
+    };
+    let miss = no_match(find(re, "all good"));
+
+    if bad + unsupported + miss == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_fs_roundtrip_and_metadata() {
     let src = r#"
 import std.io;

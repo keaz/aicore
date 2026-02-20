@@ -83,7 +83,7 @@ In `src/codegen.rs`:
 
 Current std set under `std/`:
 
-- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `concurrent`, `string`, `vec`, `option`, `result`
+- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`
 
 Notes:
 
@@ -109,6 +109,9 @@ Notes:
   - `docs/io-runtime/net-time-rand.md`
   - `docs/io-runtime/error-model.md`
   - `docs/io-runtime/lifecycle-playbook.md`
+- Data/regex contract and example:
+  - `docs/data-regex.md`
+  - `examples/data/log_parse_regex.aic`
 
 ### Manifest + lockfile workflow (E6-T2)
 

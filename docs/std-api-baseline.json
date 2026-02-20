@@ -2,6 +2,136 @@
   "schema_version": 1,
   "symbols": [
     {
+      "module": "std.concurrent",
+      "kind": "enum",
+      "signature": "ConcurrencyError { NotFound, Timeout, Cancelled, InvalidInput, Panic, Closed, Io }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_close_channel_intrinsic(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_mutex_int_intrinsic(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_mutex_lock_intrinsic(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_mutex_unlock_intrinsic(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_recv_int_intrinsic(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "IntChannel { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "IntMutex { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "Task { handle: Int }"
+    },
+    {
       "module": "std.env",
       "kind": "enum",
       "signature": "EnvError { NotFound, PermissionDenied, InvalidInput, Io }"
@@ -459,12 +589,112 @@
     {
       "module": "std.rand",
       "kind": "fn",
+      "signature": "aic_rand_int_intrinsic() -> Int effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
       "signature": "random_bool() -> Bool effects { rand }"
     },
     {
       "module": "std.rand",
       "kind": "fn",
       "signature": "random_int() -> Int effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand }"
+    },
+    {
+      "module": "std.rand",
+      "kind": "fn",
+      "signature": "seed(seed_value: Int) -> () effects { rand }"
+    },
+    {
+      "module": "std.regex",
+      "kind": "enum",
+      "signature": "RegexError { InvalidPattern, InvalidInput, NoMatch, UnsupportedFeature, TooComplex, Internal }"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "compile(pattern: String) -> Result[Regex, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "compile_with_flags(pattern: String, flags: Int) -> Result[Regex, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "find(regex: Regex, text: String) -> Result[String, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "flag_case_insensitive() -> Int"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "flag_dot_matches_newline() -> Int"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "flag_multiline() -> Int"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "is_match(regex: Regex, text: String) -> Result[Bool, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "no_flags() -> Int"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "struct",
+      "signature": "Regex { pattern: String, flags: Int }"
     },
     {
       "module": "std.result",
@@ -484,6 +714,31 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "aic_time_monotonic_ms_intrinsic() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "aic_time_now_ms_intrinsic() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "deadline_after_ms(timeout_ms: Int) -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "monotonic_ms() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "now() -> Int effects { time }"
     },
     {
@@ -494,7 +749,22 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "remaining_ms(deadline_ms: Int) -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "sleep_ms(ms: Int) -> () effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "sleep_until(deadline_ms: Int) -> () effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "timeout_expired(deadline_ms: Int) -> Bool effects { time }"
     },
     {
       "module": "std.vec",

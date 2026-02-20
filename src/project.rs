@@ -672,6 +672,87 @@ fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } 
     )?;
 
     fs::write(
+        path.join("std/regex.aic"),
+        r#"module std.regex;
+
+import std.result;
+
+enum RegexError {
+    InvalidPattern,
+    InvalidInput,
+    NoMatch,
+    UnsupportedFeature,
+    TooComplex,
+    Internal,
+}
+
+struct Regex {
+    pattern: String,
+    flags: Int,
+}
+
+fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError] {
+    let out: Result[Regex, RegexError] = Ok(Regex {
+        pattern: pattern,
+        flags: flags,
+    });
+    out
+}
+
+fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError] {
+    let out: Result[Bool, RegexError] = Ok(false);
+    out
+}
+
+fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError] {
+    let out: Result[String, RegexError] = Ok("");
+    out
+}
+
+fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
+    let out: Result[String, RegexError] = Ok(text);
+    out
+}
+
+fn no_flags() -> Int {
+    0
+}
+
+fn flag_case_insensitive() -> Int {
+    1
+}
+
+fn flag_multiline() -> Int {
+    2
+}
+
+fn flag_dot_matches_newline() -> Int {
+    4
+}
+
+fn compile(pattern: String) -> Result[Regex, RegexError] {
+    compile_with_flags(pattern, no_flags())
+}
+
+fn compile_with_flags(pattern: String, flags: Int) -> Result[Regex, RegexError] {
+    aic_regex_compile_intrinsic(pattern, flags)
+}
+
+fn is_match(regex: Regex, text: String) -> Result[Bool, RegexError] {
+    aic_regex_is_match_intrinsic(regex, text)
+}
+
+fn find(regex: Regex, text: String) -> Result[String, RegexError] {
+    aic_regex_find_intrinsic(regex, text)
+}
+
+fn replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
+    aic_regex_replace_intrinsic(regex, text, replacement)
+}
+"#,
+    )?;
+
+    fs::write(
         path.join("std/concurrent.aic"),
         r#"module std.concurrent;
 

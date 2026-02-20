@@ -739,6 +739,16 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_udp_close(i64)\n");
         text.push_str("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_dns_reverse(i8*, i64, i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_regex_compile(i8*, i64, i64, i64)\n");
+        text.push_str(
+            "declare i64 @aic_rt_regex_is_match(i8*, i64, i64, i64, i8*, i64, i64, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_regex_find(i8*, i64, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n\n",
+        );
 
         for global in &self.globals {
             text.push_str(global);
@@ -1608,6 +1618,9 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_net_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_regex_builtin_call(name, args, span, fctx) {
             return result;
         }
 
@@ -5166,6 +5179,498 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_regex_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "compile_with_flags" | "aic_regex_compile_intrinsic" => "compile_with_flags",
+            "is_match" | "aic_regex_is_match_intrinsic" => "is_match",
+            "find" | "aic_regex_find_intrinsic" => "find",
+            "replace" | "aic_regex_replace_intrinsic" => "replace",
+            _ => return None,
+        };
+
+        match canonical {
+            "compile_with_flags"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "Int"],
+                    "Result[Regex, RegexError]",
+                ) =>
+            {
+                Some(self.gen_regex_compile_call(name, args, span, fctx))
+            }
+            "is_match"
+                if self.sig_matches_shape(
+                    name,
+                    &["Regex", "String"],
+                    "Result[Bool, RegexError]",
+                ) =>
+            {
+                Some(self.gen_regex_is_match_call(name, args, span, fctx))
+            }
+            "find"
+                if self.sig_matches_shape(
+                    name,
+                    &["Regex", "String"],
+                    "Result[String, RegexError]",
+                ) =>
+            {
+                Some(self.gen_regex_find_call(name, args, span, fctx))
+            }
+            "replace"
+                if self.sig_matches_shape(
+                    name,
+                    &["Regex", "String", "String"],
+                    "Result[String, RegexError]",
+                ) =>
+            {
+                Some(self.gen_regex_replace_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_regex_compile_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "compile_with_flags expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let pattern = self.gen_expr(&args[0], fctx)?;
+        let flags = self.gen_expr(&args[1], fctx)?;
+        if pattern.ty != LType::String || flags.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "compile_with_flags expects (String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pattern_ptr, pattern_len, pattern_cap) =
+            self.string_parts(&pattern, args[0].span, fctx)?;
+        let flags_repr = flags.repr.clone().unwrap_or_else(|| "0".to_string());
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_regex_compile(i8* {}, i64 {}, i64 {}, i64 {})",
+            err, pattern_ptr, pattern_len, pattern_cap, flags_repr
+        ));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "compile_with_flags expects Result[Regex, RegexError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_struct_value(&ok_layout, &[pattern, flags], span, fctx)?;
+        self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_regex_is_match_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "is_match expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let regex = self.gen_expr(&args[0], fctx)?;
+        let text = self.gen_expr(&args[1], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "is_match expects Regex and String",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pattern_ptr, pattern_len, pattern_cap, flags_repr) =
+            self.regex_parts(&regex, args[0].span, fctx)?;
+        let (text_ptr, text_len, text_cap) = self.string_parts(&text, args[1].span, fctx)?;
+        let out_match_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_match_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_regex_is_match(i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err, pattern_ptr, pattern_len, pattern_cap, flags_repr, text_ptr, text_len, text_cap, out_match_slot
+        ));
+        let out_match = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_match, out_match_slot
+        ));
+        let is_match = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", is_match, out_match));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(is_match),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_regex_find_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "find expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let regex = self.gen_expr(&args[0], fctx)?;
+        let text = self.gen_expr(&args[1], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "find expects Regex and String",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pattern_ptr, pattern_len, pattern_cap, flags_repr) =
+            self.regex_parts(&regex, args[0].span, fctx)?;
+        let (text_ptr, text_len, text_cap) = self.string_parts(&text, args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_regex_find(i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            pattern_ptr,
+            pattern_len,
+            pattern_cap,
+            flags_repr,
+            text_ptr,
+            text_len,
+            text_cap,
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_regex_replace_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "replace expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let regex = self.gen_expr(&args[0], fctx)?;
+        let text = self.gen_expr(&args[1], fctx)?;
+        let replacement = self.gen_expr(&args[2], fctx)?;
+        if text.ty != LType::String || replacement.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "replace expects (Regex, String, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pattern_ptr, pattern_len, pattern_cap, flags_repr) =
+            self.regex_parts(&regex, args[0].span, fctx)?;
+        let (text_ptr, text_len, text_cap) = self.string_parts(&text, args[1].span, fctx)?;
+        let (repl_ptr, repl_len, repl_cap) = self.string_parts(&replacement, args[2].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_regex_replace(i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            pattern_ptr,
+            pattern_len,
+            pattern_cap,
+            flags_repr,
+            text_ptr,
+            text_len,
+            text_cap,
+            repl_ptr,
+            repl_len,
+            repl_cap,
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn regex_parts(
+        &mut self,
+        regex: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String, String)> {
+        let LType::Struct(layout) = regex.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected Regex struct value",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((pattern_index, pattern_field)) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name == "pattern")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Regex struct is missing `pattern` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((flags_index, flags_field)) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name == "flags")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Regex struct is missing `flags` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if pattern_field.ty != LType::String || flags_field.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Regex struct fields must be `pattern: String` and `flags: Int`",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let regex_repr = regex
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&regex.ty));
+
+        let pattern_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            pattern_reg,
+            llvm_type(&regex.ty),
+            regex_repr,
+            pattern_index
+        ));
+        let pattern_value = Value {
+            ty: LType::String,
+            repr: Some(pattern_reg),
+        };
+        let (pattern_ptr, pattern_len, pattern_cap) =
+            self.string_parts(&pattern_value, span, fctx)?;
+
+        let flags_reg = self.new_temp();
+        let regex_repr = regex
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&regex.ty));
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            flags_reg,
+            llvm_type(&regex.ty),
+            regex_repr,
+            flags_index
+        ));
+
+        Some((pattern_ptr, pattern_len, pattern_cap, flags_reg))
+    }
+
+    fn wrap_regex_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "regex builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_regex_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("regex_ok");
+        let err_label = self.new_label("regex_err");
+        let cont_label = self.new_label("regex_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn result_layout_parts(
         &mut self,
         result_ty: &LType,
@@ -5624,6 +6129,32 @@ impl<'a> Generator<'a> {
                 (7, "Io"),
             ],
             "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_regex_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "RegexError",
+            "regex",
+            &[
+                (1, "InvalidPattern"),
+                (2, "InvalidInput"),
+                (3, "NoMatch"),
+                (4, "UnsupportedFeature"),
+                (5, "TooComplex"),
+                (6, "Internal"),
+            ],
+            "Internal",
             err_code,
             span,
             fctx,
@@ -7499,6 +8030,7 @@ fn runtime_c_source() -> &'static str {
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -7512,6 +8044,7 @@ fn runtime_c_source() -> &'static str {
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <regex.h>
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
@@ -11073,6 +11606,449 @@ long aic_rt_net_dns_reverse(
 }
 #endif
 
+#define AIC_RT_REGEX_FLAG_CASE_INSENSITIVE 1L
+#define AIC_RT_REGEX_FLAG_MULTILINE 2L
+#define AIC_RT_REGEX_FLAG_DOT_MATCHES_NEWLINE 4L
+#define AIC_RT_REGEX_SUPPORTED_FLAGS \
+    (AIC_RT_REGEX_FLAG_CASE_INSENSITIVE | AIC_RT_REGEX_FLAG_MULTILINE | AIC_RT_REGEX_FLAG_DOT_MATCHES_NEWLINE)
+
+static long aic_rt_regex_validate_flags(long flags) {
+    if (flags < 0) {
+        return 2;  // InvalidInput
+    }
+    if ((flags & ~AIC_RT_REGEX_SUPPORTED_FLAGS) != 0) {
+        return 2;  // InvalidInput
+    }
+    if ((flags & AIC_RT_REGEX_FLAG_MULTILINE) != 0 &&
+        (flags & AIC_RT_REGEX_FLAG_DOT_MATCHES_NEWLINE) != 0) {
+        return 4;  // UnsupportedFeature
+    }
+    return 0;
+}
+
+#ifdef _WIN32
+long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long pattern_cap, long flags) {
+    (void)pattern_ptr;
+    (void)pattern_len;
+    (void)pattern_cap;
+    (void)flags;
+    return 4;
+}
+
+long aic_rt_regex_is_match(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    long* out_is_match
+) {
+    (void)pattern_ptr;
+    (void)pattern_len;
+    (void)pattern_cap;
+    (void)flags;
+    (void)text_ptr;
+    (void)text_len;
+    (void)text_cap;
+    if (out_is_match != NULL) {
+        *out_is_match = 0;
+    }
+    return 4;
+}
+
+long aic_rt_regex_find(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)pattern_ptr;
+    (void)pattern_len;
+    (void)pattern_cap;
+    (void)flags;
+    (void)text_ptr;
+    (void)text_len;
+    (void)text_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 4;
+}
+
+long aic_rt_regex_replace(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    const char* replacement_ptr,
+    long replacement_len,
+    long replacement_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)pattern_ptr;
+    (void)pattern_len;
+    (void)pattern_cap;
+    (void)flags;
+    (void)text_ptr;
+    (void)text_len;
+    (void)text_cap;
+    (void)replacement_ptr;
+    (void)replacement_len;
+    (void)replacement_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 4;
+}
+#else
+static long aic_rt_regex_map_compile_error(int err) {
+    switch (err) {
+#ifdef REG_ESPACE
+        case REG_ESPACE:
+            return 5;  // TooComplex
+#endif
+        default:
+            return 1;  // InvalidPattern
+    }
+}
+
+static long aic_rt_regex_map_exec_error(int err) {
+    switch (err) {
+#ifdef REG_NOMATCH
+        case REG_NOMATCH:
+            return 3;  // NoMatch
+#endif
+#ifdef REG_ESPACE
+        case REG_ESPACE:
+            return 5;  // TooComplex
+#endif
+        default:
+            return 6;  // Internal
+    }
+}
+
+static long aic_rt_regex_compile_pattern(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    regex_t* out_regex
+) {
+    (void)pattern_cap;
+    if (out_regex == NULL) {
+        return 6;
+    }
+    long flag_check = aic_rt_regex_validate_flags(flags);
+    if (flag_check != 0) {
+        return flag_check;
+    }
+    if (pattern_len < 0 || (pattern_len > 0 && pattern_ptr == NULL)) {
+        return 2;
+    }
+    char* pattern = aic_rt_fs_copy_slice(pattern_ptr, pattern_len);
+    if (pattern == NULL) {
+        return 6;
+    }
+
+    int cflags = REG_EXTENDED;
+    if ((flags & AIC_RT_REGEX_FLAG_CASE_INSENSITIVE) != 0) {
+        cflags |= REG_ICASE;
+    }
+    if ((flags & AIC_RT_REGEX_FLAG_MULTILINE) != 0) {
+        cflags |= REG_NEWLINE;
+    }
+
+    int rc = regcomp(out_regex, pattern, cflags);
+    free(pattern);
+    if (rc != 0) {
+        return aic_rt_regex_map_compile_error(rc);
+    }
+    return 0;
+}
+
+long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long pattern_cap, long flags) {
+    regex_t compiled;
+    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    if (err != 0) {
+        return err;
+    }
+    regfree(&compiled);
+    return 0;
+}
+
+long aic_rt_regex_is_match(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    long* out_is_match
+) {
+    (void)text_cap;
+    if (out_is_match != NULL) {
+        *out_is_match = 0;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 2;
+    }
+    regex_t compiled;
+    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    if (err != 0) {
+        return err;
+    }
+
+    char* text = aic_rt_fs_copy_slice(text_ptr, text_len);
+    if (text == NULL) {
+        regfree(&compiled);
+        return 6;
+    }
+    int rc = regexec(&compiled, text, 0, NULL, 0);
+    free(text);
+    regfree(&compiled);
+#ifdef REG_NOMATCH
+    if (rc == REG_NOMATCH) {
+        if (out_is_match != NULL) {
+            *out_is_match = 0;
+        }
+        return 0;
+    }
+#endif
+    if (rc != 0) {
+        return aic_rt_regex_map_exec_error(rc);
+    }
+    if (out_is_match != NULL) {
+        *out_is_match = 1;
+    }
+    return 0;
+}
+
+long aic_rt_regex_find(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)text_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 2;
+    }
+    regex_t compiled;
+    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    if (err != 0) {
+        return err;
+    }
+
+    char* text = aic_rt_fs_copy_slice(text_ptr, text_len);
+    if (text == NULL) {
+        regfree(&compiled);
+        return 6;
+    }
+    regmatch_t match;
+    int rc = regexec(&compiled, text, 1, &match, 0);
+    if (rc != 0) {
+        free(text);
+        regfree(&compiled);
+        return aic_rt_regex_map_exec_error(rc);
+    }
+    if (match.rm_so < 0 || match.rm_eo < match.rm_so) {
+        free(text);
+        regfree(&compiled);
+        return 6;
+    }
+
+    size_t start = (size_t)match.rm_so;
+    size_t end = (size_t)match.rm_eo;
+    char* out = aic_rt_copy_bytes(text + start, end - start);
+    free(text);
+    regfree(&compiled);
+    if (out == NULL) {
+        return 6;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)(end - start);
+    }
+    return 0;
+}
+
+long aic_rt_regex_replace(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    const char* replacement_ptr,
+    long replacement_len,
+    long replacement_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)text_cap;
+    (void)replacement_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 2;
+    }
+    if (replacement_len < 0 || (replacement_len > 0 && replacement_ptr == NULL)) {
+        return 2;
+    }
+
+    regex_t compiled;
+    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    if (err != 0) {
+        return err;
+    }
+
+    char* text = aic_rt_fs_copy_slice(text_ptr, text_len);
+    char* replacement = aic_rt_fs_copy_slice(replacement_ptr, replacement_len);
+    if (text == NULL || replacement == NULL) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 6;
+    }
+
+    regmatch_t match;
+    int rc = regexec(&compiled, text, 1, &match, 0);
+    if (rc != 0) {
+#ifdef REG_NOMATCH
+        if (rc == REG_NOMATCH) {
+            size_t text_bytes = strlen(text);
+            char* out_copy = aic_rt_copy_bytes(text, text_bytes);
+            free(text);
+            free(replacement);
+            regfree(&compiled);
+            if (out_copy == NULL) {
+                return 6;
+            }
+            if (out_ptr != NULL) {
+                *out_ptr = out_copy;
+            } else {
+                free(out_copy);
+            }
+            if (out_len != NULL) {
+                *out_len = (long)text_bytes;
+            }
+            return 0;
+        }
+#endif
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return aic_rt_regex_map_exec_error(rc);
+    }
+    if (match.rm_so < 0 || match.rm_eo < match.rm_so) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 6;
+    }
+
+    size_t text_bytes = strlen(text);
+    size_t repl_bytes = strlen(replacement);
+    size_t prefix = (size_t)match.rm_so;
+    size_t suffix_start = (size_t)match.rm_eo;
+    if (suffix_start > text_bytes || prefix > suffix_start) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 6;
+    }
+    size_t suffix = text_bytes - suffix_start;
+    if (prefix > (size_t)LONG_MAX || repl_bytes > (size_t)LONG_MAX || suffix > (size_t)LONG_MAX) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 5;
+    }
+    if (prefix > SIZE_MAX - repl_bytes || prefix + repl_bytes > SIZE_MAX - suffix) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 5;
+    }
+    size_t out_bytes = prefix + repl_bytes + suffix;
+    if (out_bytes > (size_t)LONG_MAX) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 5;
+    }
+
+    char* out = (char*)malloc(out_bytes + 1);
+    if (out == NULL) {
+        free(text);
+        free(replacement);
+        regfree(&compiled);
+        return 6;
+    }
+    if (prefix > 0) {
+        memcpy(out, text, prefix);
+    }
+    if (repl_bytes > 0) {
+        memcpy(out + prefix, replacement, repl_bytes);
+    }
+    if (suffix > 0) {
+        memcpy(out + prefix + repl_bytes, text + suffix_start, suffix);
+    }
+    out[out_bytes] = '\0';
+
+    free(text);
+    free(replacement);
+    regfree(&compiled);
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)out_bytes;
+    }
+    return 0;
+}
+#endif
+
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
     (void)cap;
     if (ptr == NULL) {
@@ -11360,6 +12336,15 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_regex_compile(i8*, i64, i64, i64)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_regex_is_match(i8*, i64, i64, i64, i8*, i64, i64, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)"
+        ));
         assert!(runtime_c_source().contains(
             "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
         ));
@@ -11381,5 +12366,8 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
+        assert!(runtime_c_source().contains("long aic_rt_regex_compile("));
+        assert!(runtime_c_source().contains("long aic_rt_regex_find("));
+        assert!(runtime_c_source().contains("long aic_rt_regex_replace("));
     }
 }

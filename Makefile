@@ -129,6 +129,7 @@ docs-check:
 	@test -f docs/io-runtime/net-time-rand.md
 	@test -f docs/io-runtime/error-model.md
 	@test -f docs/io-runtime/lifecycle-playbook.md
+	@test -f docs/data-regex.md
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
 	@test -f docs/release-security-ops.md
