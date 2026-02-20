@@ -14,6 +14,14 @@ fn main() -> Int effects { io, fs, net, time, rand } {
     let _a = exists("data.txt");
     let _b = read_text("data.txt");
     write_text("out.txt", "ok");
+    append_text("out.txt", "!");
+    copy("out.txt", "out-copy.txt");
+    move("out-copy.txt", "out-moved.txt");
+    let _meta = metadata("out.txt");
+    let _entries = walk_dir(".");
+    let _tmp_file = temp_file("std_smoke_");
+    let _tmp_dir = temp_dir("std_smoke_");
+    delete("out-moved.txt");
     let handle = tcp_connect("localhost:80");
     tcp_send(handle, "ping");
     let _t = now_ms();

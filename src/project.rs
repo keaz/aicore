@@ -118,16 +118,83 @@ fn vec_cap[T](v: Vec[T]) -> Int {
         path.join("std/fs.aic"),
         r#"module std.fs;
 
+import std.result;
+import std.vec;
+
+enum FsError {
+    NotFound,
+    PermissionDenied,
+    AlreadyExists,
+    InvalidInput,
+    Io,
+}
+
+struct FsMetadata {
+    is_file: Bool,
+    is_dir: Bool,
+    size: Int,
+}
+
 fn exists(path: String) -> Bool effects { fs } {
     false
 }
 
-fn read_text(path: String) -> String effects { fs } {
-    ""
+fn read_text(path: String) -> Result[String, FsError] effects { fs } {
+    let out: Result[String, FsError] = Ok("");
+    out
 }
 
-fn write_text(path: String, content: String) -> () effects { fs } {
-    ()
+fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn delete(path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs } {
+    let out: Result[FsMetadata, FsError] = Ok(FsMetadata {
+        is_file: false,
+        is_dir: false,
+        size: 0,
+    });
+    out
+}
+
+fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
+    let out: Result[Vec[String], FsError] = Ok(Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    });
+    out
+}
+
+fn temp_file(prefix: String) -> Result[String, FsError] effects { fs } {
+    let out: Result[String, FsError] = Ok("");
+    out
+}
+
+fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
+    let out: Result[String, FsError] = Ok("");
+    out
 }
 "#,
     )?;

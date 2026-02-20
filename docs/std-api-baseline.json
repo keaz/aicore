@@ -3,18 +3,68 @@
   "symbols": [
     {
       "module": "std.fs",
+      "kind": "enum",
+      "signature": "FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Io }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "delete(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
       "kind": "fn",
       "signature": "exists(path: String) -> Bool effects { fs }"
     },
     {
       "module": "std.fs",
       "kind": "fn",
-      "signature": "read_text(path: String) -> String effects { fs }"
+      "signature": "metadata(path: String) -> Result[FsMetadata, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
       "kind": "fn",
-      "signature": "write_text(path: String, content: String) -> () effects { fs }"
+      "signature": "move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "read_text(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "temp_dir(prefix: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "temp_file(prefix: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FsMetadata { is_file: Bool, is_dir: Bool, size: Int }"
     },
     {
       "module": "std.io",

@@ -203,6 +203,7 @@ Program {
 - Effect declarations are canonicalized to deterministic sorted signatures.
 - Interprocedural call-graph analysis enforces transitive effect safety with call-path diagnostics.
 - Contracts are checked as pure contexts.
+- `std.fs` uses stable `FsError` categories (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`) and returns `Result` for fallible operations.
 
 ## 6. Contracts
 
@@ -236,6 +237,7 @@ Registry and ownership: `docs/diagnostic-codes.md`.
   - `Option[T]` (core path)
   - calls, `if`, `match`, arithmetic/comparison/logical ops
   - runtime panic + print helpers
+  - filesystem runtime ABI (`read/write/append/copy/move/delete/metadata/walk/temp`)
 - Match-or lowers for bool/enum matches.
 - Match guards currently emit backend diagnostic `E5023` (frontend check-only support).
 

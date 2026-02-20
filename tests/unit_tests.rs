@@ -709,6 +709,16 @@ import std.result;
 
 fn main() -> Int effects { io, fs, net, time, rand } {
     let _exists = exists("foo.txt");
+    let _read = read_text("foo.txt");
+    let _write = write_text("foo.txt", "ok");
+    let _append = append_text("foo.txt", "!");
+    let _copy = copy("foo.txt", "bar.txt");
+    let _move = move("bar.txt", "baz.txt");
+    let _delete = delete("baz.txt");
+    let _meta = metadata("foo.txt");
+    let _walk = walk_dir(".");
+    let _tmp_file = temp_file("unit_");
+    let _tmp_dir = temp_dir("unit_");
     let _handle = tcp_connect("localhost:80");
     let _ts = now_ms();
     let _r = random_int();
@@ -741,6 +751,29 @@ import std.fs;
 
 fn main() -> Int {
     if exists("foo.txt") { 1 } else { 0 }
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_fs_read_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.fs;
+
+fn main() -> Int {
+    read_text("foo.txt");
+    0
 }
 "#,
     )

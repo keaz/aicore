@@ -1,0 +1,55 @@
+module example.io.fs_backup;
+
+import std.io;
+import std.fs;
+import std.string;
+import std.vec;
+
+fn err_code(err: FsError) -> Int {
+    match err {
+        NotFound => 10,
+        PermissionDenied => 11,
+        AlreadyExists => 12,
+        InvalidInput => 13,
+        Io => 14,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote = match write_text("backup_source.txt", "42") {
+        Ok(_) => 1,
+        Err(err) => err_code(err),
+    };
+
+    let copied = match copy("backup_source.txt", "backup_copy.txt") {
+        Ok(_) => 1,
+        Err(err) => err_code(err),
+    };
+
+    let copied_len = match read_text("backup_copy.txt") {
+        Ok(text) => len(text),
+        Err(err) => err_code(err),
+    };
+
+    let walked = match walk_dir(".") {
+        Ok(entries) => vec_len(entries),
+        Err(_) => 0,
+    };
+
+    let temp = match temp_file("backup_tmp_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let temp_ok = if exists(temp) { 1 } else { 0 };
+
+    delete(temp);
+    delete("backup_source.txt");
+    delete("backup_copy.txt");
+
+    if wrote == 1 && copied == 1 && copied_len == 2 && walked >= 0 && temp_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

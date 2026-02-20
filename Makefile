@@ -122,6 +122,7 @@ docs-check:
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
 	@test -f docs/package-workflow.md
+	@test -f docs/io-filesystem.md
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
 	@test -f docs/release-security-ops.md

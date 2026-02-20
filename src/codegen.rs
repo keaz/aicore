@@ -675,6 +675,17 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_vec_len(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_cap(i8*, i64, i64)\n");
         text.push_str("declare void @aic_rt_panic(i8*, i64, i64, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_append_text(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_copy(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_move(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_delete(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_metadata(i8*, i64, i64, i64*, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_walk_dir(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_temp_file(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_temp_dir(i8*, i64, i64, i8**, i64*)\n\n");
 
         for global in &self.globals {
             text.push_str(global);
@@ -1522,6 +1533,10 @@ impl<'a> Generator<'a> {
             });
         }
 
+        if let Some(result) = self.gen_fs_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+
         if let Some(instances) = self.generic_fn_instances.get(name).cloned() {
             let mut values = Vec::new();
             for expr in args {
@@ -1659,6 +1674,1022 @@ impl<'a> Generator<'a> {
                 repr: Some(reg),
             })
         }
+    }
+
+    fn sig_matches_shape(&self, name: &str, params: &[&str], ret: &str) -> bool {
+        let Some(sig) = self.fn_sigs.get(name) else {
+            return false;
+        };
+        if sig.params.len() != params.len() {
+            return false;
+        }
+        if sig
+            .params
+            .iter()
+            .zip(params.iter())
+            .any(|(actual, expected)| render_type(actual) != *expected)
+        {
+            return false;
+        }
+        render_type(&sig.ret) == ret
+    }
+
+    fn gen_fs_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        if name == "exists" && self.sig_matches_shape(name, &["String"], "Bool") {
+            return Some(self.gen_fs_exists_call(args, span, fctx));
+        }
+
+        if name == "read_text"
+            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
+        {
+            return Some(self.gen_fs_string_result_call(
+                name,
+                "aic_rt_fs_read_text",
+                args,
+                span,
+                fctx,
+            ));
+        }
+
+        if name == "temp_file"
+            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
+        {
+            return Some(self.gen_fs_string_result_call(
+                name,
+                "aic_rt_fs_temp_file",
+                args,
+                span,
+                fctx,
+            ));
+        }
+
+        if name == "temp_dir"
+            && self.sig_matches_shape(name, &["String"], "Result[String, FsError]")
+        {
+            return Some(self.gen_fs_string_result_call(
+                name,
+                "aic_rt_fs_temp_dir",
+                args,
+                span,
+                fctx,
+            ));
+        }
+
+        if name == "write_text"
+            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
+        {
+            return Some(self.gen_fs_write_like_call(
+                name,
+                "aic_rt_fs_write_text",
+                args,
+                span,
+                fctx,
+            ));
+        }
+
+        if name == "append_text"
+            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
+        {
+            return Some(self.gen_fs_write_like_call(
+                name,
+                "aic_rt_fs_append_text",
+                args,
+                span,
+                fctx,
+            ));
+        }
+
+        if name == "copy"
+            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
+        {
+            return Some(self.gen_fs_write_like_call(name, "aic_rt_fs_copy", args, span, fctx));
+        }
+
+        if name == "move"
+            && self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]")
+        {
+            return Some(self.gen_fs_write_like_call(name, "aic_rt_fs_move", args, span, fctx));
+        }
+
+        if name == "delete" && self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") {
+            return Some(self.gen_fs_delete_call(name, args, span, fctx));
+        }
+
+        if name == "metadata"
+            && self.sig_matches_shape(name, &["String"], "Result[FsMetadata, FsError]")
+        {
+            return Some(self.gen_fs_metadata_call(name, args, span, fctx));
+        }
+
+        if name == "walk_dir"
+            && self.sig_matches_shape(name, &["String"], "Result[Vec[String], FsError]")
+        {
+            return Some(self.gen_fs_walk_dir_call(name, args, span, fctx));
+        }
+
+        None
+    }
+
+    fn gen_fs_exists_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "exists expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let arg = self.gen_expr(&args[0], fctx)?;
+        if arg.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "exists expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&arg, args[0].span, fctx)?;
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_exists(i8* {}, i64 {}, i64 {})",
+            raw, ptr, len, cap
+        ));
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", reg, raw));
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_fs_string_result_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_write_like_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs = self.gen_expr(&args[0], fctx)?;
+        let rhs = self.gen_expr(&args[1], fctx)?;
+        if lhs.ty != LType::String || rhs.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (lhs_ptr, lhs_len, lhs_cap) = self.string_parts(&lhs, args[0].span, fctx)?;
+        let (rhs_ptr, rhs_len, rhs_cap) = self.string_parts(&rhs, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            err, runtime_fn, lhs_ptr, lhs_len, lhs_cap, rhs_ptr, rhs_len, rhs_cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_delete_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "delete expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "delete expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_delete(i8* {}, i64 {}, i64 {})",
+            err, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_metadata_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "metadata expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "metadata expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let is_file_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", is_file_slot));
+        let is_dir_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", is_dir_slot));
+        let size_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", size_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_metadata(i8* {}, i64 {}, i64 {}, i64* {}, i64* {}, i64* {})",
+            err, ptr, len, cap, is_file_slot, is_dir_slot, size_slot
+        ));
+
+        let is_file_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            is_file_raw, is_file_slot
+        ));
+        let is_file = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", is_file, is_file_raw));
+
+        let is_dir_raw = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", is_dir_raw, is_dir_slot));
+        let is_dir = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", is_dir, is_dir_raw));
+
+        let size = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", size, size_slot));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "metadata expects Result[FsMetadata, FsError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_struct_value(
+            &ok_layout,
+            &[
+                Value {
+                    ty: LType::Bool,
+                    repr: Some(is_file),
+                },
+                Value {
+                    ty: LType::Bool,
+                    repr: Some(is_dir),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(size),
+                },
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_walk_dir_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "walk_dir expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "walk_dir expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let count_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", count_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_walk_dir(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, count_slot
+        ));
+        let count = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", count, count_slot));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "walk_dir expects Result[Vec[String], FsError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_struct_value(
+            &ok_layout,
+            &[
+                Value {
+                    ty: LType::Int,
+                    repr: Some("0".to_string()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(count.clone()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(count),
+                },
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn wrap_fs_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "filesystem builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_fs_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("fs_ok");
+        let err_label = self.new_label("fs_err");
+        let cont_label = self.new_label("fs_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn result_layout_parts(
+        &mut self,
+        result_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<(EnumLayoutType, LType, LType, usize, usize)> {
+        let LType::Enum(layout) = result_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "filesystem builtin expects Result return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Result" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "filesystem builtin expects Result return type, found '{}'",
+                    layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(ok_index) = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Ok")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Result return type is missing Ok variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(err_index) = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Err")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Result return type is missing Err variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(ok_ty) = layout.variants[ok_index].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Result Ok variant must have a payload",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(err_ty) = layout.variants[err_index].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Result Err variant must have a payload",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some((layout.clone(), ok_ty, err_ty, ok_index, err_index))
+    }
+
+    fn build_enum_variant(
+        &mut self,
+        layout: &EnumLayoutType,
+        variant_index: usize,
+        payload: Option<Value>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if variant_index >= layout.variants.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "enum variant index out of range",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let expected_payload = &layout.variants[variant_index].payload;
+        if expected_payload.is_none() && payload.is_some() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "enum variant does not accept payload",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ty = LType::Enum(layout.clone());
+        let mut acc = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i32 {}, 0",
+            acc,
+            llvm_type(&ty),
+            variant_index
+        ));
+        for (idx, variant) in layout.variants.iter().enumerate() {
+            let (slot_ty, slot_repr) = if let Some(payload_ty) = &variant.payload {
+                if idx == variant_index {
+                    if let Some(payload_value) = payload.as_ref() {
+                        if payload_value.ty != *payload_ty {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E5011",
+                                format!(
+                                    "enum payload expects '{}', found '{}'",
+                                    render_type(payload_ty),
+                                    render_type(&payload_value.ty)
+                                ),
+                                self.file,
+                                span,
+                            ));
+                            (llvm_type(payload_ty), default_value(payload_ty))
+                        } else {
+                            (
+                                llvm_type(payload_ty),
+                                payload_value
+                                    .repr
+                                    .clone()
+                                    .unwrap_or_else(|| default_value(payload_ty)),
+                            )
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5011",
+                            "enum variant expects payload",
+                            self.file,
+                            span,
+                        ));
+                        (llvm_type(payload_ty), default_value(payload_ty))
+                    }
+                } else {
+                    (llvm_type(payload_ty), default_value(payload_ty))
+                }
+            } else {
+                ("i8".to_string(), "0".to_string())
+            };
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, {} {}, {}",
+                reg,
+                llvm_type(&ty),
+                acc,
+                slot_ty,
+                slot_repr,
+                idx + 1
+            ));
+            acc = reg;
+        }
+        Some(Value {
+            ty,
+            repr: Some(acc),
+        })
+    }
+
+    fn build_struct_value(
+        &mut self,
+        layout: &StructLayoutType,
+        field_values: &[Value],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if layout.fields.len() != field_values.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "struct '{}' field count mismatch: expected {}, found {}",
+                    layout.repr,
+                    layout.fields.len(),
+                    field_values.len()
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ty = LType::Struct(layout.clone());
+        if layout.fields.is_empty() {
+            return Some(Value {
+                ty,
+                repr: Some(default_value(&LType::Struct(layout.clone()))),
+            });
+        }
+
+        let mut acc = "undef".to_string();
+        for (idx, (field, value)) in layout.fields.iter().zip(field_values.iter()).enumerate() {
+            let rendered = if value.ty == field.ty {
+                value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&field.ty))
+            } else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5011",
+                    format!(
+                        "field '{}.{}' expects '{}', found '{}'",
+                        layout.repr,
+                        field.name,
+                        render_type(&field.ty),
+                        render_type(&value.ty)
+                    ),
+                    self.file,
+                    span,
+                ));
+                default_value(&field.ty)
+            };
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, {} {}, {}",
+                reg,
+                llvm_type(&ty),
+                acc,
+                llvm_type(&field.ty),
+                rendered,
+                idx
+            ));
+            acc = reg;
+        }
+
+        Some(Value {
+            ty,
+            repr: Some(acc),
+        })
+    }
+
+    fn build_string_value(&mut self, ptr: &str, len: &str, cap: &str, fctx: &mut FnCtx) -> Value {
+        let ty = LType::String;
+        let reg0 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i8* {}, 0",
+            reg0,
+            llvm_type(&ty),
+            ptr
+        ));
+        let reg1 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i64 {}, 1",
+            reg1,
+            llvm_type(&ty),
+            reg0,
+            len
+        ));
+        let reg2 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i64 {}, 2",
+            reg2,
+            llvm_type(&ty),
+            reg1,
+            cap
+        ));
+        Value {
+            ty,
+            repr: Some(reg2),
+        }
+    }
+
+    fn build_fs_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Enum(layout) = err_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "filesystem builtin expects FsError payload, found '{}'",
+                    render_type(err_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "FsError" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "filesystem builtin expects FsError payload, found '{}'",
+                    layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        if layout
+            .variants
+            .iter()
+            .any(|variant| variant.payload.is_some())
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError variants must not have payloads",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let variant_index =
+            |name: &str| -> Option<usize> { layout.variants.iter().position(|v| v.name == name) };
+        let Some(not_found_idx) = variant_index("NotFound") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError is missing NotFound variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(permission_idx) = variant_index("PermissionDenied") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError is missing PermissionDenied variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(exists_idx) = variant_index("AlreadyExists") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError is missing AlreadyExists variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(invalid_idx) = variant_index("InvalidInput") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError is missing InvalidInput variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(io_idx) = variant_index("Io") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "FsError is missing Io variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        let mut tag = format!("{}", io_idx as i32);
+        for (code, index) in [
+            (1i64, not_found_idx),
+            (2i64, permission_idx),
+            (3i64, exists_idx),
+            (4i64, invalid_idx),
+            (5i64, io_idx),
+        ] {
+            let is_match = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = icmp eq i64 {}, {}",
+                is_match, err_code, code
+            ));
+            let selected = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = select i1 {}, i32 {}, i32 {}",
+                selected, is_match, index as i32, tag
+            ));
+            tag = selected;
+        }
+
+        self.build_no_payload_enum_with_tag(layout, &tag, span, fctx)
+    }
+
+    fn build_no_payload_enum_with_tag(
+        &mut self,
+        layout: &EnumLayoutType,
+        tag: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if layout
+            .variants
+            .iter()
+            .any(|variant| variant.payload.is_some())
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected no-payload enum layout",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ty = LType::Enum(layout.clone());
+        let mut acc = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i32 {}, 0",
+            acc,
+            llvm_type(&ty),
+            tag
+        ));
+        for idx in 0..layout.variants.len() {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, i8 0, {}",
+                reg,
+                llvm_type(&ty),
+                acc,
+                idx + 1
+            ));
+            acc = reg;
+        }
+        Some(Value {
+            ty,
+            repr: Some(acc),
+        })
     }
 
     fn gen_struct_init(
@@ -3456,6 +4487,18 @@ fn runtime_c_source() -> &'static str {
     r#"#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <limits.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <unistd.h>
+#endif
 
 typedef struct {
     const char* ptr;
@@ -3511,6 +4554,657 @@ long aic_rt_vec_cap(unsigned char* ptr, long len, long cap) {
         return 0;
     }
     return cap;
+}
+
+static long aic_rt_fs_map_errno(int err) {
+    switch (err) {
+        case ENOENT:
+            return 1;  // NotFound
+        case EACCES:
+        case EPERM:
+            return 2;  // PermissionDenied
+        case EEXIST:
+            return 3;  // AlreadyExists
+        case EINVAL:
+        #ifdef ENAMETOOLONG
+        case ENAMETOOLONG:
+        #endif
+            return 4;  // InvalidInput
+        default:
+            return 5;  // Io
+    }
+}
+
+#ifdef _WIN32
+static long aic_rt_fs_map_win_error(DWORD err) {
+    switch (err) {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
+            return 1;
+        case ERROR_ACCESS_DENIED:
+            return 2;
+        case ERROR_ALREADY_EXISTS:
+        case ERROR_FILE_EXISTS:
+            return 3;
+        case ERROR_INVALID_NAME:
+        case ERROR_INVALID_PARAMETER:
+            return 4;
+        default:
+            return 5;
+    }
+}
+#endif
+
+static char* aic_rt_fs_copy_slice(const char* ptr, long len) {
+    if (ptr == NULL || len < 0) {
+        return NULL;
+    }
+    size_t n = (size_t)len;
+    char* out = (char*)malloc(n + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (n > 0) {
+        memcpy(out, ptr, n);
+    }
+    out[n] = '\0';
+    return out;
+}
+
+static int aic_rt_fs_invalid_input_path(const char* path) {
+    return path == NULL || path[0] == '\0';
+}
+
+long aic_rt_fs_exists(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 0;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 0;
+    }
+    struct stat info;
+    int ok = stat(path, &info) == 0;
+    free(path);
+    return ok ? 1 : 0;
+}
+
+long aic_rt_fs_read_text(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)path_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "rb");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    if (fseek(f, 0, SEEK_END) != 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    long size = ftell(f);
+    if (size < 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+
+    char* buffer = (char*)malloc((size_t)size + 1);
+    if (buffer == NULL) {
+        fclose(f);
+        return 5;
+    }
+
+    size_t read_n = fread(buffer, 1, (size_t)size, f);
+    if (read_n != (size_t)size && ferror(f)) {
+        int err = errno;
+        free(buffer);
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    fclose(f);
+
+    buffer[read_n] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = buffer;
+    }
+    if (out_len != NULL) {
+        *out_len = (long)read_n;
+    }
+    return 0;
+}
+
+long aic_rt_fs_write_text(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* content_ptr,
+    long content_len,
+    long content_cap
+) {
+    (void)path_cap;
+    (void)content_cap;
+    if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
+        return 4;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "wb");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    size_t target = (size_t)content_len;
+    if (target > 0) {
+        size_t written = fwrite(content_ptr, 1, target, f);
+        if (written != target) {
+            int err = errno;
+            fclose(f);
+            return aic_rt_fs_map_errno(err);
+        }
+    }
+
+    if (fclose(f) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
+}
+
+long aic_rt_fs_append_text(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* content_ptr,
+    long content_len,
+    long content_cap
+) {
+    (void)path_cap;
+    (void)content_cap;
+    if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
+        return 4;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "ab");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    size_t target = (size_t)content_len;
+    if (target > 0) {
+        size_t written = fwrite(content_ptr, 1, target, f);
+        if (written != target) {
+            int err = errno;
+            fclose(f);
+            return aic_rt_fs_map_errno(err);
+        }
+    }
+
+    if (fclose(f) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
+}
+
+long aic_rt_fs_copy(
+    const char* from_ptr,
+    long from_len,
+    long from_cap,
+    const char* to_ptr,
+    long to_len,
+    long to_cap
+) {
+    (void)from_cap;
+    (void)to_cap;
+    char* from_path = aic_rt_fs_copy_slice(from_ptr, from_len);
+    char* to_path = aic_rt_fs_copy_slice(to_ptr, to_len);
+    if (from_path == NULL || to_path == NULL) {
+        free(from_path);
+        free(to_path);
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(from_path) || aic_rt_fs_invalid_input_path(to_path)) {
+        free(from_path);
+        free(to_path);
+        return 4;
+    }
+
+    FILE* in = fopen(from_path, "rb");
+    if (in == NULL) {
+        int err = errno;
+        free(from_path);
+        free(to_path);
+        return aic_rt_fs_map_errno(err);
+    }
+    FILE* out = fopen(to_path, "wb");
+    if (out == NULL) {
+        int err = errno;
+        fclose(in);
+        free(from_path);
+        free(to_path);
+        return aic_rt_fs_map_errno(err);
+    }
+
+    unsigned char buf[4096];
+    while (1) {
+        size_t n = fread(buf, 1, sizeof(buf), in);
+        if (n > 0) {
+            size_t written = fwrite(buf, 1, n, out);
+            if (written != n) {
+                int err = errno;
+                fclose(in);
+                fclose(out);
+                free(from_path);
+                free(to_path);
+                return aic_rt_fs_map_errno(err);
+            }
+        }
+        if (n < sizeof(buf)) {
+            if (ferror(in)) {
+                int err = errno;
+                fclose(in);
+                fclose(out);
+                free(from_path);
+                free(to_path);
+                return aic_rt_fs_map_errno(err);
+            }
+            break;
+        }
+    }
+
+    if (fclose(in) != 0 || fclose(out) != 0) {
+        int err = errno;
+        free(from_path);
+        free(to_path);
+        return aic_rt_fs_map_errno(err);
+    }
+
+    free(from_path);
+    free(to_path);
+    return 0;
+}
+
+long aic_rt_fs_move(
+    const char* from_ptr,
+    long from_len,
+    long from_cap,
+    const char* to_ptr,
+    long to_len,
+    long to_cap
+) {
+    (void)from_cap;
+    (void)to_cap;
+    char* from_path = aic_rt_fs_copy_slice(from_ptr, from_len);
+    char* to_path = aic_rt_fs_copy_slice(to_ptr, to_len);
+    if (from_path == NULL || to_path == NULL) {
+        free(from_path);
+        free(to_path);
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(from_path) || aic_rt_fs_invalid_input_path(to_path)) {
+        free(from_path);
+        free(to_path);
+        return 4;
+    }
+    int rc = rename(from_path, to_path);
+    int err = errno;
+    free(from_path);
+    free(to_path);
+    if (rc != 0) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return 0;
+}
+
+long aic_rt_fs_delete(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+    int rc = remove(path);
+    int err = errno;
+    free(path);
+    if (rc != 0) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return 0;
+}
+
+long aic_rt_fs_metadata(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    long* out_is_file,
+    long* out_is_dir,
+    long* out_size
+) {
+    (void)path_cap;
+    if (out_is_file != NULL) {
+        *out_is_file = 0;
+    }
+    if (out_is_dir != NULL) {
+        *out_is_dir = 0;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+    struct stat info;
+    if (stat(path, &info) != 0) {
+        int err = errno;
+        free(path);
+        return aic_rt_fs_map_errno(err);
+    }
+    free(path);
+
+    if (out_is_file != NULL) {
+        *out_is_file = S_ISREG(info.st_mode) ? 1 : 0;
+    }
+    if (out_is_dir != NULL) {
+        *out_is_dir = S_ISDIR(info.st_mode) ? 1 : 0;
+    }
+    if (out_size != NULL) {
+        *out_size = (long)info.st_size;
+    }
+    return 0;
+}
+
+long aic_rt_fs_walk_dir(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    long* out_count
+) {
+    (void)path_cap;
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+#ifdef _WIN32
+    size_t n = strlen(path);
+    const char* suffix = (n > 0 && (path[n - 1] == '\\' || path[n - 1] == '/')) ? "*" : "\\*";
+    size_t pat_len = n + strlen(suffix) + 1;
+    char* pattern = (char*)malloc(pat_len);
+    if (pattern == NULL) {
+        free(path);
+        return 5;
+    }
+    snprintf(pattern, pat_len, "%s%s", path, suffix);
+
+    WIN32_FIND_DATAA entry;
+    HANDLE handle = FindFirstFileA(pattern, &entry);
+    free(pattern);
+    if (handle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        free(path);
+        return aic_rt_fs_map_win_error(err);
+    }
+
+    long count = 0;
+    do {
+        const char* name = entry.cFileName;
+        if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
+            count += 1;
+        }
+    } while (FindNextFileA(handle, &entry) != 0);
+    FindClose(handle);
+    free(path);
+    if (out_count != NULL) {
+        *out_count = count;
+    }
+    return 0;
+#else
+    DIR* dir = opendir(path);
+    if (dir == NULL) {
+        int err = errno;
+        free(path);
+        return aic_rt_fs_map_errno(err);
+    }
+
+    long count = 0;
+    struct dirent* entry = NULL;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            count += 1;
+        }
+    }
+    int closed = closedir(dir);
+    free(path);
+    if (closed != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    if (out_count != NULL) {
+        *out_count = count;
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_fs_temp_file(
+    const char* prefix_ptr,
+    long prefix_len,
+    long prefix_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)prefix_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (prefix_len < 0) {
+        return 4;
+    }
+
+    char* prefix = aic_rt_fs_copy_slice(prefix_ptr, prefix_len);
+    if (prefix == NULL && prefix_len > 0) {
+        return 5;
+    }
+    const char* effective_prefix = (prefix != NULL && prefix[0] != '\0') ? prefix : "aic_";
+
+#ifdef _WIN32
+    char temp_dir[MAX_PATH + 1];
+    DWORD dir_len = GetTempPathA((DWORD)MAX_PATH, temp_dir);
+    if (dir_len == 0 || dir_len > MAX_PATH) {
+        free(prefix);
+        return 5;
+    }
+    char filename[MAX_PATH + 1];
+    UINT rc = GetTempFileNameA(temp_dir, effective_prefix, 0, filename);
+    free(prefix);
+    if (rc == 0) {
+        return aic_rt_fs_map_win_error(GetLastError());
+    }
+    size_t out_n = strlen(filename);
+    char* owned = (char*)malloc(out_n + 1);
+    if (owned == NULL) {
+        return 5;
+    }
+    memcpy(owned, filename, out_n + 1);
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    }
+    if (out_len != NULL) {
+        *out_len = (long)out_n;
+    }
+    return 0;
+#else
+    const char* tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+    size_t needed = strlen(tmp) + 1 + strlen(effective_prefix) + 6 + 1;
+    char* tmpl = (char*)malloc(needed);
+    if (tmpl == NULL) {
+        free(prefix);
+        return 5;
+    }
+    snprintf(tmpl, needed, "%s/%sXXXXXX", tmp, effective_prefix);
+    int fd = mkstemp(tmpl);
+    free(prefix);
+    if (fd < 0) {
+        int err = errno;
+        free(tmpl);
+        return aic_rt_fs_map_errno(err);
+    }
+    close(fd);
+    if (out_ptr != NULL) {
+        *out_ptr = tmpl;
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(tmpl);
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_fs_temp_dir(
+    const char* prefix_ptr,
+    long prefix_len,
+    long prefix_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)prefix_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (prefix_len < 0) {
+        return 4;
+    }
+
+    char* prefix = aic_rt_fs_copy_slice(prefix_ptr, prefix_len);
+    if (prefix == NULL && prefix_len > 0) {
+        return 5;
+    }
+    const char* effective_prefix = (prefix != NULL && prefix[0] != '\0') ? prefix : "aic_";
+
+#ifdef _WIN32
+    char temp_dir[MAX_PATH + 1];
+    DWORD dir_len = GetTempPathA((DWORD)MAX_PATH, temp_dir);
+    if (dir_len == 0 || dir_len > MAX_PATH) {
+        free(prefix);
+        return 5;
+    }
+
+    char candidate[MAX_PATH + 1];
+    snprintf(candidate, sizeof(candidate), "%s%s%lu", temp_dir, effective_prefix, (unsigned long)GetTickCount());
+    if (_mkdir(candidate) != 0) {
+        long mapped = aic_rt_fs_map_errno(errno);
+        free(prefix);
+        return mapped;
+    }
+    free(prefix);
+
+    size_t out_n = strlen(candidate);
+    char* owned = (char*)malloc(out_n + 1);
+    if (owned == NULL) {
+        return 5;
+    }
+    memcpy(owned, candidate, out_n + 1);
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    }
+    if (out_len != NULL) {
+        *out_len = (long)out_n;
+    }
+    return 0;
+#else
+    const char* tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+    size_t needed = strlen(tmp) + 1 + strlen(effective_prefix) + 6 + 1;
+    char* tmpl = (char*)malloc(needed);
+    if (tmpl == NULL) {
+        free(prefix);
+        return 5;
+    }
+    snprintf(tmpl, needed, "%s/%sXXXXXX", tmp, effective_prefix);
+    free(prefix);
+    char* out = mkdtemp(tmpl);
+    if (out == NULL) {
+        int err = errno;
+        free(tmpl);
+        return aic_rt_fs_map_errno(err);
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = tmpl;
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(tmpl);
+    }
+    return 0;
+#endif
 }
 
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
@@ -3759,8 +5453,16 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare void @aic_rt_panic(i8*, i64, i64, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_fs_metadata(i8*, i64, i64, i64*, i64*, i64*)"));
         assert!(runtime_c_source().contains(
             "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
         ));
+        assert!(runtime_c_source().contains("long aic_rt_fs_read_text("));
+        assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
     }
 }

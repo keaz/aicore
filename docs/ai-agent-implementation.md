@@ -89,6 +89,13 @@ Notes:
 
 - Effects are declared on side-effecting std APIs.
 - `std.time.now` is compatibility API and intentionally deprecated in policy metadata.
+- `std.fs` now exposes production-facing APIs with typed failures:
+  - `read_text`, `write_text`, `append_text`, `copy`, `move`, `delete`
+  - `metadata`, `walk_dir`, `temp_file`, `temp_dir`
+  - stable error enum `FsError` and metadata struct `FsMetadata`
+- Filesystem API contract and examples:
+  - `docs/io-filesystem.md`
+  - `examples/io/fs_backup.aic`
 
 ### Manifest + lockfile workflow (E6-T2)
 

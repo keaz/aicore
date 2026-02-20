@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use aicore::codegen::{
@@ -9,7 +10,10 @@ use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
 use tempfile::tempdir;
 
-fn compile_and_run(source: &str) -> (i32, String, String) {
+fn compile_and_run_with_setup<F>(source: &str, setup: F) -> (i32, String, String)
+where
+    F: FnOnce(&Path),
+{
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("main.aic");
     fs::write(&src, source).expect("write source");
@@ -27,12 +31,20 @@ fn compile_and_run(source: &str) -> (i32, String, String) {
     let exe = dir.path().join("app");
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
 
-    let output = Command::new(exe).output().expect("run exe");
+    setup(dir.path());
+    let output = Command::new(exe)
+        .current_dir(dir.path())
+        .output()
+        .expect("run exe");
     (
         output.status.code().unwrap_or(1),
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
     )
+}
+
+fn compile_and_run(source: &str) -> (i32, String, String) {
+    compile_and_run_with_setup(source, |_| {})
 }
 
 fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
@@ -362,6 +374,152 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "3\n");
+}
+
+#[test]
+fn exec_fs_roundtrip_and_metadata() {
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn unwrap_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote = unwrap_bool(write_text("a.txt", "ab"));
+    let appended = unwrap_bool(append_text("a.txt", "cd"));
+    let copied = unwrap_bool(copy("a.txt", "b.txt"));
+    let moved = unwrap_bool(move("b.txt", "c.txt"));
+    let size = match metadata("a.txt") {
+        Ok(m) => m.size,
+        Err(_) => 0,
+    };
+    let c_exists = if exists("c.txt") { 1 } else { 0 };
+    let deleted_a = unwrap_bool(delete("a.txt"));
+    let deleted_c = unwrap_bool(delete("c.txt"));
+    let score = wrote + appended + copied + moved + deleted_a + deleted_c + size + c_exists;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "11\n");
+}
+
+#[test]
+fn exec_fs_walk_and_temp_utilities() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.vec;
+
+fn main() -> Int effects { io, fs } {
+    let tmp_file = match temp_file("aic_io_test_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let tmp_dir = match temp_dir("aic_io_test_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let is_file = match metadata(tmp_file) {
+        Ok(m) => if m.is_file { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let dir_exists = if exists(tmp_dir) { 1 } else { 0 };
+    let walked = match walk_dir(".") {
+        Ok(entries) => if vec_len(entries) >= 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    delete(tmp_file);
+    delete(tmp_dir);
+    print_int(is_file + dir_exists + walked);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "3\n");
+}
+
+#[test]
+fn exec_fs_not_found_and_invalid_input_errors_are_stable() {
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn err_code(err: FsError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        AlreadyExists => 3,
+        InvalidInput => 4,
+        Io => 5,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let missing = match read_text("missing-aicore-file.txt") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let invalid = match read_text("") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    print_int(missing * 10 + invalid);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "14\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn exec_fs_permission_error_maps_to_permission_denied() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn err_code(err: FsError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        AlreadyExists => 3,
+        InvalidInput => 4,
+        Io => 5,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let result = read_text("secret.txt");
+    let code = match result {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    print_int(code);
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        let path = root.join("secret.txt");
+        fs::write(&path, "locked").expect("write secret file");
+        let mut perms = fs::metadata(&path).expect("metadata").permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&path, perms).expect("chmod 000");
+    });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n");
 }
 
 #[test]

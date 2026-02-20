@@ -159,9 +159,9 @@ Commands:
 ## Test suite
 
 - Core unit tests: 94 (`src/*` library tests)
-- Unit integration tests: 71 (`tests/unit_tests.rs`)
+- Unit integration tests: 72 (`tests/unit_tests.rs`)
 - Golden tests: 16 (`tests/golden_tests.rs`)
-- Execution tests: 18 (`tests/execution_tests.rs`)
+- Execution tests: 22 (`tests/execution_tests.rs`)
 - CLI contract tests: 5 (`tests/e7_cli_tests.rs`)
 - LSP smoke tests: 2 (`tests/lsp_smoke_tests.rs`)
 - E8 verification tests: 11 total / 10 active (`tests/e8_*`)
