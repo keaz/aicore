@@ -130,6 +130,7 @@ Commands:
 - `examples/`: runnable and checker-focused examples
 - `docs/`: MVP language and compiler specs
 - `tests/`: golden, unit, and execution tests
+- `tools/vscode-aic/`: prototype VS Code extension wiring to `aic lsp`
 
 ## Test suite
 

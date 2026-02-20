@@ -15,6 +15,10 @@ Implemented LSP capabilities:
 
 ## VS Code setup
 
+Prototype extension source is included in-repo:
+
+- `tools/vscode-aic/`
+
 ### Option A: `coc.nvim`/`coc`-style language server config
 
 Use any client that accepts a stdio server command:
@@ -32,6 +36,14 @@ Use any client that accepts a stdio server command:
 - extensions: [`.aic`]
 
 `contributes.configuration` should point format-on-save to the AIC language server.
+
+Build extension prototype:
+
+```bash
+cd tools/vscode-aic
+npm install
+npm run build
+```
 
 ## Neovim setup (`nvim-lspconfig`)
 

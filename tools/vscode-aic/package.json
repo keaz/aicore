@@ -1,0 +1,80 @@
+{
+  "name": "aic-language-tools",
+  "displayName": "AICore Language Tools",
+  "description": "VS Code integration for AICore via aic lsp",
+  "version": "0.1.0",
+  "publisher": "keaz",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:aic",
+    "onCommand:aic.restartLanguageServer"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "aic",
+        "aliases": [
+          "AICore",
+          "aic"
+        ],
+        "extensions": [
+          ".aic"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "aic.restartLanguageServer",
+        "title": "AICore: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "AICore",
+      "properties": {
+        "aic.server.path": {
+          "type": "string",
+          "default": "aic",
+          "description": "Path to AICore executable"
+        },
+        "aic.server.args": {
+          "type": "array",
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments passed to AICore language server executable",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aic.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace level for AICore language server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -w -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "vscode-languageclient": "^9.0.1"
+  }
+}
