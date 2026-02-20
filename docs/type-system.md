@@ -12,6 +12,10 @@
 - Match exhaustiveness checking for Bool/Option/Result/enums.
 - Match overlap/dead-arm detection with deterministic diagnostics.
 - Pattern bindings are unique within a single pattern tree.
+- Pattern-or (`p1 | p2`) alternatives must bind identical name sets.
+- Pattern-or bindings must have compatible types across alternatives.
+- Match guards (`if <expr>`) must type-check to `Bool`.
+- Guarded arms do not satisfy exhaustiveness coverage.
 - `await` requires `Async[T]` and is valid only inside `async fn`.
 - Result propagation `expr?` requires `expr: Result[T, E]` and enclosing return type `Result[U, E]`.
 - `?` never performs implicit error conversion; mismatched `E` types are diagnostics.
@@ -25,5 +29,9 @@
   - assignment while borrowed is rejected (`E1265`)
   - assignment to immutable binding is rejected (`E1266`)
   - borrow target must be a local variable (`E1268`)
+- Match-pattern diagnostics:
+  - `E1270`: non-`Bool` guard expression
+  - `E1271`: or-pattern binding name-set mismatch
+  - `E1272`: or-pattern binding type mismatch
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.

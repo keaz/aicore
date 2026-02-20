@@ -1293,6 +1293,115 @@ fn f(x: Option[Int]) -> Int {
 }
 
 #[test]
+fn unit_or_pattern_bool_match_is_exhaustive() {
+    let src = r#"
+fn f(x: Bool) -> Int {
+    match x {
+        true | false => 1,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "unexpected diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_guarded_arm_does_not_satisfy_exhaustiveness() {
+    let src = r#"
+fn f(x: Bool, allow: Bool) -> Int {
+    match x {
+        true if allow => 1,
+        false => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1246"));
+}
+
+#[test]
+fn unit_match_guard_must_be_bool_reports_e1270() {
+    let src = r#"
+fn f(x: Bool) -> Int {
+    match x {
+        true if 1 => 1,
+        false => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1270"));
+}
+
+#[test]
+fn unit_or_pattern_binding_set_mismatch_reports_e1271() {
+    let src = r#"
+fn f(x: Option[Int]) -> Int {
+    match x {
+        Some(v) | None => 1,
+        _ => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1271"));
+}
+
+#[test]
+fn unit_or_pattern_binding_type_mismatch_reports_e1272() {
+    let src = r#"
+enum Mixed {
+    A(Int),
+    B(Bool),
+}
+
+fn f(x: Mixed) -> Int {
+    match x {
+        A(v) | B(v) => 1,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1272"));
+}
+
+#[test]
+fn unit_or_pattern_redundant_arm_reports_e1251() {
+    let src = r#"
+fn f(x: Bool) -> Int {
+    match x {
+        true | false => 1,
+        true => 2,
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, diags) = resolve(&ir, "unit.aic");
+    assert!(diags.is_empty(), "resolver diags={diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1251"));
+}
+
+#[test]
 fn unit_parser_rejects_null_literal_with_e1051() {
     let src = "fn main() -> Int { null }";
     let (_program, diags) = parse(src, "unit.aic");

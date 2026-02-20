@@ -1,0 +1,11 @@
+fn select(x: Bool, allow: Bool) -> Int {
+    match x {
+        true if allow => 1,
+        false => 0,
+        _ => 2,
+    }
+}
+
+fn main() -> Int {
+    select(true, true)
+}

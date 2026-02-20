@@ -1100,6 +1100,12 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let arm_start = self.current_span().start;
             let pattern = self.parse_pattern()?;
+            let guard = if self.at_kind(|k| matches!(k, TokenKind::KwIf)) {
+                self.bump();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
             self.expect(
                 |k| matches!(k, TokenKind::FatArrow),
                 "E1044",
@@ -1109,6 +1115,7 @@ impl<'a> Parser<'a> {
             let arm_span = Span::new(arm_start, body.span.end);
             arms.push(MatchArm {
                 pattern,
+                guard,
                 body,
                 span: arm_span,
             });
@@ -1133,6 +1140,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self) -> Option<Pattern> {
+        let mut patterns = vec![self.parse_pattern_atom()?];
+        while self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+            self.bump();
+            patterns.push(self.parse_pattern_atom()?);
+        }
+        if patterns.len() == 1 {
+            return patterns.into_iter().next();
+        }
+        let span = Span::new(
+            patterns.first().expect("first pattern").span.start,
+            patterns.last().expect("last pattern").span.end,
+        );
+        Some(Pattern {
+            kind: PatternKind::Or { patterns },
+            span,
+        })
+    }
+
+    fn parse_pattern_atom(&mut self) -> Option<Pattern> {
         let token = self.current().clone();
         match token.kind {
             TokenKind::Underscore => {
@@ -1363,7 +1389,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{Expr, ExprKind, Item};
+    use crate::ast::{Expr, ExprKind, Item, PatternKind};
 
     #[test]
     fn parses_simple_function() {
@@ -1406,6 +1432,32 @@ fn f(x: Option[Int]) -> Int {
         };
         let tail = f.body.tail.as_ref().expect("tail");
         assert!(matches!(tail.kind, ExprKind::Match { .. }));
+    }
+
+    #[test]
+    fn parses_match_or_pattern_and_guard() {
+        let src = r#"
+fn f(x: Option[Int], ready: Bool) -> Int {
+    match x {
+        None | Some(v) if ready => 1,
+        _ => 0,
+    }
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!(),
+        };
+        let tail = f.body.tail.as_ref().expect("tail");
+        let ExprKind::Match { arms, .. } = &tail.kind else {
+            panic!("expected match expression");
+        };
+        assert_eq!(arms.len(), 2);
+        assert!(arms[0].guard.is_some());
+        assert!(matches!(arms[0].pattern.kind, PatternKind::Or { .. }));
     }
 
     #[test]

@@ -306,6 +306,8 @@ pub enum ExprKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    #[serde(default)]
+    pub guard: Option<Expr>,
     pub body: Expr,
     pub span: Span,
 }
@@ -324,6 +326,7 @@ pub enum PatternKind {
     Int(i64),
     Bool(bool),
     Unit,
+    Or { patterns: Vec<Pattern> },
     Variant { name: String, args: Vec<Pattern> },
 }
 

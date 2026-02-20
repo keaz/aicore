@@ -2443,20 +2443,44 @@ impl<'a> Generator<'a> {
         arms: &[ir::MatchArm],
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let mut true_arm = None;
-        let mut false_arm = None;
-        let mut wildcard_arm = None;
-        for arm in arms {
-            match &arm.pattern.kind {
-                ir::PatternKind::Bool(true) => true_arm = Some(arm),
-                ir::PatternKind::Bool(false) => false_arm = Some(arm),
-                ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => wildcard_arm = Some(arm),
-                _ => {}
-            }
+        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5023",
+                    "match guards are not supported by LLVM backend yet",
+                    self.file,
+                    guard.span,
+                )
+                .with_help("remove the guard or evaluate guard logic outside the match"),
+            );
+            return None;
         }
 
-        let true_arm = true_arm.or(wildcard_arm)?;
-        let false_arm = false_arm.or(wildcard_arm)?;
+        let Some((true_arm, true_pattern)) = arms.iter().find_map(|arm| {
+            self.select_bool_pattern(&arm.pattern, true)
+                .map(|p| (arm, p))
+        }) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "non-exhaustive bool match reached codegen for `true` branch",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        };
+
+        let Some((false_arm, false_pattern)) = arms.iter().find_map(|arm| {
+            self.select_bool_pattern(&arm.pattern, false)
+                .map(|p| (arm, p))
+        }) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "non-exhaustive bool match reached codegen for `false` branch",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        };
 
         let then_label = self.new_label("match_true");
         let else_label = self.new_label("match_false");
@@ -2476,6 +2500,7 @@ impl<'a> Generator<'a> {
 
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", then_label));
+        self.bind_bool_match_pattern(true_pattern, true, fctx);
         let tv = self.gen_expr(&true_arm.body, fctx);
         let t_term = fctx.terminated;
         if !t_term {
@@ -2514,6 +2539,7 @@ impl<'a> Generator<'a> {
         fctx.vars = saved_scope.clone();
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", else_label));
+        self.bind_bool_match_pattern(false_pattern, false, fctx);
         let ev = self.gen_expr(&false_arm.body, fctx);
         let e_term = fctx.terminated;
         if !e_term {
@@ -2588,20 +2614,26 @@ impl<'a> Generator<'a> {
         arms: &[ir::MatchArm],
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let wildcard_arm = arms.iter().find(|arm| {
-            matches!(
-                arm.pattern.kind,
-                ir::PatternKind::Wildcard | ir::PatternKind::Var(_)
-            )
-        });
+        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5023",
+                    "match guards are not supported by LLVM backend yet",
+                    self.file,
+                    guard.span,
+                )
+                .with_help("remove the guard or evaluate guard logic outside the match"),
+            );
+            return None;
+        }
 
         let mut selected_arms = Vec::new();
         for variant in &layout.variants {
-            let explicit = arms.iter().find(|arm| match &arm.pattern.kind {
-                ir::PatternKind::Variant { name, .. } => name == &variant.name,
-                _ => false,
+            let selected = arms.iter().find_map(|arm| {
+                self.select_enum_pattern(&arm.pattern, &variant.name)
+                    .map(|p| (arm, p))
             });
-            let Some(arm) = explicit.or(wildcard_arm) else {
+            let Some((arm, selected_pattern)) = selected else {
                 self.diagnostics.push(Diagnostic::error(
                     "E5016",
                     format!(
@@ -2613,7 +2645,7 @@ impl<'a> Generator<'a> {
                 ));
                 return None;
             };
-            selected_arms.push(arm);
+            selected_arms.push((arm, selected_pattern));
         }
 
         let mut result_ty: Option<LType> = None;
@@ -2650,13 +2682,13 @@ impl<'a> Generator<'a> {
         let saved_terminated = fctx.terminated;
 
         let mut terminated_all = true;
-        for (idx, arm) in selected_arms.iter().enumerate() {
+        for (idx, (arm, selected_pattern)) in selected_arms.iter().enumerate() {
             let variant = &layout.variants[idx];
             fctx.vars = saved_scope.clone();
             fctx.terminated = false;
             fctx.lines.push(format!("{}:", case_labels[idx]));
 
-            match &arm.pattern.kind {
+            match &selected_pattern.kind {
                 ir::PatternKind::Var(binding) => {
                     let ptr = self.new_temp();
                     fctx.lines
@@ -2803,6 +2835,52 @@ impl<'a> Generator<'a> {
                 ty: LType::Unit,
                 repr: None,
             })
+        }
+    }
+
+    fn select_bool_pattern<'p>(
+        &self,
+        pattern: &'p ir::Pattern,
+        value: bool,
+    ) -> Option<&'p ir::Pattern> {
+        match &pattern.kind {
+            ir::PatternKind::Bool(v) if *v == value => Some(pattern),
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some(pattern),
+            ir::PatternKind::Or { patterns } => patterns
+                .iter()
+                .find_map(|part| self.select_bool_pattern(part, value)),
+            _ => None,
+        }
+    }
+
+    fn select_enum_pattern<'p>(
+        &self,
+        pattern: &'p ir::Pattern,
+        variant_name: &str,
+    ) -> Option<&'p ir::Pattern> {
+        match &pattern.kind {
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some(pattern),
+            ir::PatternKind::Variant { name, .. } if name == variant_name => Some(pattern),
+            ir::PatternKind::Or { patterns } => patterns
+                .iter()
+                .find_map(|part| self.select_enum_pattern(part, variant_name)),
+            _ => None,
+        }
+    }
+
+    fn bind_bool_match_pattern(&mut self, pattern: &ir::Pattern, value: bool, fctx: &mut FnCtx) {
+        if let ir::PatternKind::Var(binding) = &pattern.kind {
+            let ptr = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i1", ptr));
+            let bit = if value { "1" } else { "0" };
+            fctx.lines.push(format!("  store i1 {}, i1* {}", bit, ptr));
+            fctx.vars.last_mut().expect("scope").insert(
+                binding.clone(),
+                Local {
+                    ty: LType::Bool,
+                    ptr,
+                },
+            );
         }
     }
 

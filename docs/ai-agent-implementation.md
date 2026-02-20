@@ -2,6 +2,10 @@
 
 This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
+Core language-specific deep dive:
+
+- `docs/core-language-1.0.md`
+
 ## Pipeline Touch Points
 
 - Frontend orchestration: `src/driver.rs`

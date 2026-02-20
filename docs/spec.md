@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v4` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v5` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -107,8 +107,9 @@ enum Option[T] {
 
 ```aic
 match maybe {
-    None => 0,
+    None | Some(_) if allow_fallback => 0,
     Some(v) => v,
+    None => 0,
 }
 ```
 
@@ -140,6 +141,9 @@ Rules:
 - Multiple mutable borrows of the same binding are rejected.
 - Assignments while active borrows exist are rejected.
 - Borrows are lexical: borrows introduced in nested blocks do not escape that block.
+- Or-pattern alternatives must bind the same names with compatible types.
+- Match guards must type-check as `Bool`.
+- Guarded arms do not count toward exhaustiveness coverage.
 
 ### 2.6 Namespaces
 
@@ -187,6 +191,8 @@ Program {
   - `Option[T]`
   - `Result[T, E]`
   - declared enums
+- Pattern-or (`p1 | p2`) is supported with binding-set/type consistency checks.
+- Guarded match arms are type-checked but excluded from coverage proofs.
 
 ## 5. Effect system
 
@@ -230,6 +236,8 @@ Registry and ownership: `docs/diagnostic-codes.md`.
   - `Option[T]` (core path)
   - calls, `if`, `match`, arithmetic/comparison/logical ops
   - runtime panic + print helpers
+- Match-or lowers for bool/enum matches.
+- Match guards currently emit backend diagnostic `E5023` (frontend check-only support).
 
 ## 9. Determinism
 

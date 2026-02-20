@@ -289,6 +289,10 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             for arm in arms {
                 out.push_str("    ");
                 format_pattern(out, &arm.pattern);
+                if let Some(guard) = &arm.guard {
+                    out.push_str(" if ");
+                    format_expr(out, guard, 0);
+                }
                 out.push_str(" => ");
                 format_expr(out, &arm.body, 0);
                 out.push_str(",\n");
@@ -381,6 +385,14 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
         ir::PatternKind::Int(v) => out.push_str(&v.to_string()),
         ir::PatternKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
         ir::PatternKind::Unit => out.push_str("()"),
+        ir::PatternKind::Or { patterns } => {
+            for (idx, part) in patterns.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(" | ");
+                }
+                format_pattern(out, part);
+            }
+        }
         ir::PatternKind::Variant { name, args } => {
             out.push_str(name);
             if !args.is_empty() {

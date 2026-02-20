@@ -3,7 +3,7 @@
 This file is the frozen grammar contract for the current parser implementation.
 If parser behavior changes, this file must be updated in the same change.
 
-Version: `mvp-grammar-v4`
+Version: `mvp-grammar-v5`
 
 ## Lexical tokens
 
@@ -12,7 +12,7 @@ Version: `mvp-grammar-v4`
 - `string`: double-quoted UTF-8 string with escape support
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
-- operators: `+ - * / % == != < <= > >= && || ! ? & =`
+- operators: `+ - * / % == != < <= > >= && || ! ? & = |`
 
 ## Top-level grammar
 
@@ -112,7 +112,8 @@ unit_lit       = "(" ")" ;
 if_expr        = "if" expr block "else" (block | if_expr) ;
 match_expr     = "match" expr "{" match_arms? "}" ;
 match_arms     = match_arm ("," match_arm)* ","? ;
-match_arm      = pattern "=>" expr ;
+match_arm      = pattern guard_clause? "=>" expr ;
+guard_clause   = "if" expr ;
 
 struct_init    = ident "{" struct_init_fields? "}" ;
 struct_init_fields = struct_init_field ("," struct_init_field)* ","? ;
@@ -122,7 +123,9 @@ struct_init_field = ident ":" expr ;
 ## Pattern grammar
 
 ```ebnf
-pattern        = "_"
+pattern        = or_pattern ;
+or_pattern     = pattern_atom ("|" pattern_atom)* ;
+pattern_atom   = "_"
                | ident_pattern
                | int
                | bool
@@ -137,6 +140,8 @@ variant_pattern = ident ("(" pattern ("," pattern)* ","? ")")? ;
 Pattern disambiguation:
 - bare uppercase identifier is treated as a zero-arg variant pattern
 - bare lowercase identifier is treated as a variable binding pattern
+- `|` inside patterns is pattern-or; logical-or in expressions remains `||`
+- match guards (`if <expr>`) are checked as `Bool` expressions
 
 Result propagation:
 - `expr?` is a postfix propagation operator.

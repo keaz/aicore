@@ -1258,6 +1258,9 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
             max = max.max(max_node_expr(expr));
             for arm in arms {
                 max = max.max(max_node_pattern(&arm.pattern));
+                if let Some(guard) = &arm.guard {
+                    max = max.max(max_node_expr(guard));
+                }
                 max = max.max(max_node_expr(&arm.body));
             }
         }
@@ -1286,10 +1289,18 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
 
 fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
     let mut max = pattern.node.0;
-    if let ir::PatternKind::Variant { args, .. } = &pattern.kind {
-        for arg in args {
-            max = max.max(max_node_pattern(arg));
+    match &pattern.kind {
+        ir::PatternKind::Or { patterns } => {
+            for part in patterns {
+                max = max.max(max_node_pattern(part));
+            }
         }
+        ir::PatternKind::Variant { args, .. } => {
+            for arg in args {
+                max = max.max(max_node_pattern(arg));
+            }
+        }
+        _ => {}
     }
     max
 }
@@ -1320,6 +1331,7 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
                 .iter()
                 .map(|arm| ir::MatchArm {
                     pattern: clone_pattern(&arm.pattern, alloc),
+                    guard: arm.guard.as_ref().map(|g| clone_expr(g, alloc)),
                     body: clone_expr(&arm.body, alloc),
                     span: arm.span,
                 })
@@ -1422,6 +1434,9 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
         ir::PatternKind::Int(v) => ir::PatternKind::Int(*v),
         ir::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
         ir::PatternKind::Unit => ir::PatternKind::Unit,
+        ir::PatternKind::Or { patterns } => ir::PatternKind::Or {
+            patterns: patterns.iter().map(|p| clone_pattern(p, alloc)).collect(),
+        },
         ir::PatternKind::Variant { name, args } => ir::PatternKind::Variant {
             name: name.clone(),
             args: args.iter().map(|a| clone_pattern(a, alloc)).collect(),
@@ -1464,6 +1479,10 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .iter()
                 .map(|arm| ir::MatchArm {
                     pattern: clone_pattern(&arm.pattern, alloc),
+                    guard: arm
+                        .guard
+                        .as_ref()
+                        .map(|g| substitute_result_var(g, result_name, alloc)),
                     body: substitute_result_var(&arm.body, result_name, alloc),
                     span: arm.span,
                 })

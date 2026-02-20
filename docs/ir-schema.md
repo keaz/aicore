@@ -29,6 +29,8 @@ Notable function/expression fields:
 - `ExprKind::Borrow { mutable, expr }`
 - `ExprKind::Await { expr }`
 - `ExprKind::Try { expr }`
+- `MatchArm.guard: Option<Expr>`
+- `PatternKind::Or { patterns }`
 
 Invariants:
 

@@ -64,6 +64,7 @@ pub enum TokenKind {
     Ge,
     AndAnd,
     Ampersand,
+    Pipe,
     OrOr,
     Bang,
     Question,
@@ -218,11 +219,7 @@ impl<'a> Lexer<'a> {
                         self.bump();
                         self.push(TokenKind::OrOr, Span::new(start, self.offset));
                     } else {
-                        self.error(
-                            "E0003",
-                            "expected '|' for logical or",
-                            Span::new(start, self.offset),
-                        );
+                        self.push(TokenKind::Pipe, Span::new(start, self.offset));
                     }
                 }
                 '/' => self.single(TokenKind::Slash),
@@ -412,7 +409,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; y }";
+        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; match x { Some(v) | None => v } }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
@@ -425,6 +422,7 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Ampersand)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Pipe)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAwait)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Question)));
     }

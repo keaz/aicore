@@ -15,6 +15,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Effect checker (`io`, `fs`, `net`, `time`, `rand`) | Implemented |
 | Contracts (`requires`, `ensures`, `invariant`) | Implemented (runtime lowering + static constant checks) |
 | Match + exhaustiveness (Bool/Option/Result + enums) | Implemented |
+| Pattern matching 1.0 (`|` alternatives + guard typing/coverage checks) | Implemented (guarded arms are frontend-only for now; backend emits `E5023`) |
 | Async/await core model (`async fn`, `await`, `Async[T]`) | Implemented (deterministic typing + diagnostics + execution path) |
 | Trait/interface MVP (`trait`/`impl` + bounded generics) | Implemented (coherence checks + deterministic bound enforcement) |
 | Result propagation operator (`expr?`) | Implemented (typed error propagation with no implicit conversion) |
@@ -157,10 +158,10 @@ Commands:
 
 ## Test suite
 
-- Core unit tests: 90 (`src/*` library tests)
-- Unit integration tests: 52 (`tests/unit_tests.rs`)
-- Golden tests: 13 (`tests/golden_tests.rs`)
-- Execution tests: 13 (`tests/execution_tests.rs`)
+- Core unit tests: 94 (`src/*` library tests)
+- Unit integration tests: 71 (`tests/unit_tests.rs`)
+- Golden tests: 16 (`tests/golden_tests.rs`)
+- Execution tests: 18 (`tests/execution_tests.rs`)
 - CLI contract tests: 5 (`tests/e7_cli_tests.rs`)
 - LSP smoke tests: 2 (`tests/lsp_smoke_tests.rs`)
 - E8 verification tests: 11 total / 10 active (`tests/e8_*`)

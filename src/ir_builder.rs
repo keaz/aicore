@@ -277,6 +277,7 @@ impl Builder {
                     .iter()
                     .map(|arm| ir::MatchArm {
                         pattern: self.lower_pattern(&arm.pattern),
+                        guard: arm.guard.as_ref().map(|g| self.lower_expr(g)),
                         body: self.lower_expr(&arm.body),
                         span: arm.span,
                     })
@@ -328,6 +329,9 @@ impl Builder {
             ast::PatternKind::Int(v) => ir::PatternKind::Int(*v),
             ast::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
             ast::PatternKind::Unit => ir::PatternKind::Unit,
+            ast::PatternKind::Or { patterns } => ir::PatternKind::Or {
+                patterns: patterns.iter().map(|a| self.lower_pattern(a)).collect(),
+            },
             ast::PatternKind::Variant { name, args } => ir::PatternKind::Variant {
                 name: name.clone(),
                 args: args.iter().map(|a| self.lower_pattern(a)).collect(),

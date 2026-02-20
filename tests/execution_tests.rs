@@ -209,6 +209,86 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_bool_or_pattern() {
+    let src = r#"
+import std.io;
+
+fn collapse(b: Bool) -> Int {
+    match b {
+        true | false => 42,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(collapse(false));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_enum_or_pattern() {
+    let src = r#"
+import std.io;
+
+fn collapse(x: Option[Int]) -> Int {
+    match x {
+        None | Some(_) => 42,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(collapse(Some(0)));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_match_guard_backend_reports_e5023() {
+    let source = r#"
+import std.io;
+
+fn f(x: Bool, allow: Bool) -> Int {
+    match x {
+        true if allow => 1,
+        false => 0,
+        _ => 2,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(f(true, true));
+    0
+}
+"#;
+
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("main.aic");
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let diags = match emit_llvm(&lowered, &src.to_string_lossy()) {
+        Ok(_) => panic!("expected backend error"),
+        Err(diags) => diags,
+    };
+    assert!(diags.iter().any(|d| d.code == "E5023"), "diags={diags:#?}");
+}
+
+#[test]
 fn exec_nested_adt_match() {
     let src = r#"
 import std.io;

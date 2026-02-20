@@ -1,0 +1,12 @@
+import std.io;
+
+fn collapse(x: Option[Int]) -> Int {
+    match x {
+        None | Some(_) => 42,
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(collapse(Some(0)));
+    0
+}

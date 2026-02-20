@@ -47,8 +47,12 @@ Recent core-language additions:
 - `E1267`: mutable borrow of immutable binding.
 - `E1268`: invalid borrow target (non-local expression).
 - `E1269`: assignment type mismatch.
+- `E1270`: match guard expression must be `Bool`.
+- `E1271`: or-pattern alternatives bind different variable sets.
+- `E1272`: or-pattern alternatives bind a variable with incompatible types.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
+- `E5023`: backend does not yet lower guarded match arms.
 
 ## Change policy
 

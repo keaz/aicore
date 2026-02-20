@@ -72,6 +72,11 @@ Built-in templates are included:
 - `Option[T]` -> variants `None`, `Some(T)`
 - `Result[T, E]` -> variants `Ok(T)`, `Err(E)`
 
+Match lowering notes:
+
+- Bool/enum `match` supports top-level or-pattern alternatives (`p1 | p2`).
+- Guarded arms (`pattern if cond => ...`) are currently frontend-only; backend emits `E5023`.
+
 ## Generic Monomorphization (E5-T3)
 
 - Frontend typecheck records deterministic generic instantiations in IR.

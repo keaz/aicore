@@ -1837,9 +1837,9 @@ impl<'a> Checker<'a> {
                 let mut wildcard_seen = false;
 
                 for arm in arms {
-                    if self.coverage_is_complete(&scrutinee_ty, &seen, wildcard_seen)
-                        || self.arm_is_redundant(&arm.pattern, &scrutinee_ty, &seen, wildcard_seen)
-                    {
+                    let redundant = self.coverage_is_complete(&scrutinee_ty, &seen, wildcard_seen)
+                        || self.arm_is_redundant(&arm.pattern, &scrutinee_ty, &seen, wildcard_seen);
+                    if redundant {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1251",
@@ -1858,10 +1858,35 @@ impl<'a> Checker<'a> {
                         &arm.pattern,
                         &scrutinee_ty,
                         &mut arm_scope,
-                        &mut seen,
-                        &mut wildcard_seen,
                         &mut bound_names,
                     );
+                    if let Some(guard) = &arm.guard {
+                        let guard_ty = self.check_expr(
+                            guard,
+                            &mut arm_scope,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                        );
+                        if guard_ty != "Bool" {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1270",
+                                    format!("match guard must be Bool, found '{}'", guard_ty),
+                                    self.file,
+                                    guard.span,
+                                )
+                                .with_help("make the guard expression evaluate to Bool"),
+                            );
+                        }
+                    } else {
+                        self.record_pattern_coverage(
+                            &arm.pattern,
+                            &scrutinee_ty,
+                            &mut seen,
+                            &mut wildcard_seen,
+                        );
+                    }
                     let body_ty = self.check_expr(
                         &arm.body,
                         &mut arm_scope,
@@ -2376,14 +2401,10 @@ impl<'a> Checker<'a> {
         pattern: &ir::Pattern,
         scrutinee_ty: &str,
         locals: &mut BTreeMap<String, String>,
-        seen: &mut BTreeSet<String>,
-        wildcard_seen: &mut bool,
         bound_names: &mut BTreeSet<String>,
     ) {
         match &pattern.kind {
-            ir::PatternKind::Wildcard => {
-                *wildcard_seen = true;
-            }
+            ir::PatternKind::Wildcard => {}
             ir::PatternKind::Var(name) => {
                 if !bound_names.insert(name.clone()) {
                     self.diagnostics.push(
@@ -2397,9 +2418,8 @@ impl<'a> Checker<'a> {
                     );
                 }
                 locals.insert(name.clone(), scrutinee_ty.to_string());
-                *wildcard_seen = true;
             }
-            ir::PatternKind::Int(v) => {
+            ir::PatternKind::Int(_v) => {
                 if scrutinee_ty != "Int" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1234",
@@ -2411,9 +2431,8 @@ impl<'a> Checker<'a> {
                         pattern.span,
                     ));
                 }
-                seen.insert(format!("int:{v}"));
             }
-            ir::PatternKind::Bool(v) => {
+            ir::PatternKind::Bool(_v) => {
                 if scrutinee_ty != "Bool" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1235",
@@ -2425,7 +2444,6 @@ impl<'a> Checker<'a> {
                         pattern.span,
                     ));
                 }
-                seen.insert(if *v { "true" } else { "false" }.to_string());
             }
             ir::PatternKind::Unit => {
                 if scrutinee_ty != "()" {
@@ -2439,7 +2457,113 @@ impl<'a> Checker<'a> {
                         pattern.span,
                     ));
                 }
-                seen.insert("()".to_string());
+            }
+            ir::PatternKind::Or { patterns } => {
+                if patterns.len() < 2 {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1271",
+                            "or-pattern requires at least two alternatives",
+                            self.file,
+                            pattern.span,
+                        )
+                        .with_help("use `p1 | p2` with two or more alternatives"),
+                    );
+                }
+
+                let mut alternatives = Vec::new();
+                for alt in patterns {
+                    let mut alt_locals = locals.clone();
+                    let mut alt_bound_names = BTreeSet::new();
+                    self.check_pattern(alt, scrutinee_ty, &mut alt_locals, &mut alt_bound_names);
+                    let mut bindings = BTreeMap::new();
+                    for name in alt_bound_names {
+                        if let Some(ty) = alt_locals.get(&name) {
+                            bindings.insert(name, ty.clone());
+                        }
+                    }
+                    alternatives.push(bindings);
+                }
+
+                let Some(first_bindings) = alternatives.first().cloned() else {
+                    return;
+                };
+                let first_names = first_bindings.keys().cloned().collect::<BTreeSet<_>>();
+
+                let mut consistent = true;
+                for (idx, bindings) in alternatives.iter().enumerate().skip(1) {
+                    let names = bindings.keys().cloned().collect::<BTreeSet<_>>();
+                    if names != first_names {
+                        let expected = if first_names.is_empty() {
+                            "<none>".to_string()
+                        } else {
+                            first_names.iter().cloned().collect::<Vec<_>>().join(", ")
+                        };
+                        let found = if names.is_empty() {
+                            "<none>".to_string()
+                        } else {
+                            names.iter().cloned().collect::<Vec<_>>().join(", ")
+                        };
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1271",
+                                format!(
+                                    "or-pattern alternative {} binds [{}], expected [{}]",
+                                    idx + 1,
+                                    found,
+                                    expected
+                                ),
+                                self.file,
+                                pattern.span,
+                            )
+                            .with_help(
+                                "all alternatives in an or-pattern must bind the same variable names",
+                            ),
+                        );
+                        consistent = false;
+                        continue;
+                    }
+                    for name in &first_names {
+                        let a = first_bindings.get(name).expect("first binding present");
+                        let b = bindings.get(name).expect("alternative binding present");
+                        if !type_compatible(a, b) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1272",
+                                    format!(
+                                        "or-pattern binding '{}' has incompatible types '{}' and '{}'",
+                                        name, a, b
+                                    ),
+                                    self.file,
+                                    pattern.span,
+                                )
+                                .with_help(
+                                    "make every alternative bind this variable with the same type",
+                                ),
+                            );
+                            consistent = false;
+                        }
+                    }
+                }
+
+                if consistent {
+                    for (name, ty) in first_bindings {
+                        if !bound_names.insert(name.clone()) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1252",
+                                    format!("duplicate binding '{}' in pattern", name),
+                                    self.file,
+                                    pattern.span,
+                                )
+                                .with_help(
+                                    "each variable name may be bound at most once per pattern",
+                                ),
+                            );
+                        }
+                        locals.insert(name, ty);
+                    }
+                }
             }
             ir::PatternKind::Variant { name, args } => {
                 if scrutinee_ty.starts_with("Option[") {
@@ -2453,19 +2577,9 @@ impl<'a> Checker<'a> {
                                     pattern.span,
                                 ));
                                 for arg in args {
-                                    let mut nested_seen = BTreeSet::new();
-                                    let mut nested_wildcard_seen = false;
-                                    self.check_pattern(
-                                        arg,
-                                        "<?>",
-                                        locals,
-                                        &mut nested_seen,
-                                        &mut nested_wildcard_seen,
-                                        bound_names,
-                                    );
+                                    self.check_pattern(arg, "<?>", locals, bound_names);
                                 }
                             }
-                            seen.insert("None".to_string());
                         }
                         "Some" => {
                             let inner = extract_generic_args(scrutinee_ty)
@@ -2486,18 +2600,8 @@ impl<'a> Checker<'a> {
                                 ));
                             }
                             for arg in args {
-                                let mut nested_seen = BTreeSet::new();
-                                let mut nested_wildcard_seen = false;
-                                self.check_pattern(
-                                    arg,
-                                    &inner,
-                                    locals,
-                                    &mut nested_seen,
-                                    &mut nested_wildcard_seen,
-                                    bound_names,
-                                );
+                                self.check_pattern(arg, &inner, locals, bound_names);
                             }
-                            seen.insert("Some".to_string());
                         }
                         _ => {
                             self.diagnostics.push(Diagnostic::error(
@@ -2529,18 +2633,8 @@ impl<'a> Checker<'a> {
                                 ));
                             }
                             for arg in args {
-                                let mut nested_seen = BTreeSet::new();
-                                let mut nested_wildcard_seen = false;
-                                self.check_pattern(
-                                    arg,
-                                    &payload_ty,
-                                    locals,
-                                    &mut nested_seen,
-                                    &mut nested_wildcard_seen,
-                                    bound_names,
-                                );
+                                self.check_pattern(arg, &payload_ty, locals, bound_names);
                             }
-                            seen.insert(name.clone());
                         }
                         _ => {
                             self.diagnostics.push(Diagnostic::error(
@@ -2597,16 +2691,7 @@ impl<'a> Checker<'a> {
                                 ));
                             }
                             for arg in args {
-                                let mut nested_seen = BTreeSet::new();
-                                let mut nested_wildcard_seen = false;
-                                self.check_pattern(
-                                    arg,
-                                    &payload,
-                                    locals,
-                                    &mut nested_seen,
-                                    &mut nested_wildcard_seen,
-                                    bound_names,
-                                );
+                                self.check_pattern(arg, &payload, locals, bound_names);
                             }
                         } else if !args.is_empty() {
                             self.diagnostics.push(Diagnostic::error(
@@ -2616,19 +2701,9 @@ impl<'a> Checker<'a> {
                                 pattern.span,
                             ));
                             for arg in args {
-                                let mut nested_seen = BTreeSet::new();
-                                let mut nested_wildcard_seen = false;
-                                self.check_pattern(
-                                    arg,
-                                    "<?>",
-                                    locals,
-                                    &mut nested_seen,
-                                    &mut nested_wildcard_seen,
-                                    bound_names,
-                                );
+                                self.check_pattern(arg, "<?>", locals, bound_names);
                             }
                         }
-                        seen.insert(name.clone());
                     } else {
                         self.diagnostics.push(Diagnostic::error(
                             "E1244",
@@ -2649,6 +2724,59 @@ impl<'a> Checker<'a> {
                     self.file,
                     pattern.span,
                 ));
+            }
+        }
+    }
+
+    fn record_pattern_coverage(
+        &self,
+        pattern: &ir::Pattern,
+        scrutinee_ty: &str,
+        seen: &mut BTreeSet<String>,
+        wildcard_seen: &mut bool,
+    ) {
+        match &pattern.kind {
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => {
+                *wildcard_seen = true;
+            }
+            ir::PatternKind::Int(v) => {
+                if scrutinee_ty == "Int" {
+                    seen.insert(format!("int:{v}"));
+                }
+            }
+            ir::PatternKind::Bool(v) => {
+                if scrutinee_ty == "Bool" {
+                    seen.insert(if *v { "true" } else { "false" }.to_string());
+                }
+            }
+            ir::PatternKind::Unit => {
+                if scrutinee_ty == "()" {
+                    seen.insert("()".to_string());
+                }
+            }
+            ir::PatternKind::Or { patterns } => {
+                for part in patterns {
+                    self.record_pattern_coverage(part, scrutinee_ty, seen, wildcard_seen);
+                }
+            }
+            ir::PatternKind::Variant { name, .. } => {
+                if scrutinee_ty.starts_with("Option[") {
+                    if name == "None" || name == "Some" {
+                        seen.insert(name.clone());
+                    }
+                    return;
+                }
+                if scrutinee_ty.starts_with("Result[") {
+                    if name == "Ok" || name == "Err" {
+                        seen.insert(name.clone());
+                    }
+                    return;
+                }
+                if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+                    if enum_info.variants.contains_key(name) {
+                        seen.insert(name.clone());
+                    }
+                }
             }
         }
     }
@@ -2779,6 +2907,9 @@ impl<'a> Checker<'a> {
             ir::PatternKind::Int(v) => seen.contains(&format!("int:{v}")),
             ir::PatternKind::Bool(v) => seen.contains(if *v { "true" } else { "false" }),
             ir::PatternKind::Unit => seen.contains("()"),
+            ir::PatternKind::Or { patterns } => patterns
+                .iter()
+                .all(|p| self.arm_is_redundant(p, scrutinee_ty, seen, wildcard_seen)),
             ir::PatternKind::Variant { name, .. } => {
                 if scrutinee_ty.starts_with("Option[") {
                     return (name == "None" || name == "Some") && seen.contains(name);
