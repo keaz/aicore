@@ -675,6 +675,12 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_vec_len(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_cap(i8*, i64, i64)\n");
         text.push_str("declare void @aic_rt_panic(i8*, i64, i64, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_time_now_ms()\n");
+        text.push_str("declare i64 @aic_rt_time_monotonic_ms()\n");
+        text.push_str("declare void @aic_rt_time_sleep_ms(i64)\n\n");
+        text.push_str("declare void @aic_rt_rand_seed(i64)\n");
+        text.push_str("declare i64 @aic_rt_rand_next()\n");
+        text.push_str("declare i64 @aic_rt_rand_range(i64, i64)\n\n");
         text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
@@ -1570,6 +1576,12 @@ impl<'a> Generator<'a> {
             });
         }
 
+        if let Some(result) = self.gen_time_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_rand_builtin_call(name, args, span, fctx) {
+            return result;
+        }
         if let Some(result) = self.gen_fs_builtin_call(name, args, span, fctx) {
             return result;
         }
@@ -1741,6 +1753,205 @@ impl<'a> Generator<'a> {
             return false;
         }
         render_type(&sig.ret) == ret
+    }
+
+    fn gen_time_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "now_ms" | "aic_time_now_ms_intrinsic" => "now_ms",
+            "monotonic_ms" | "aic_time_monotonic_ms_intrinsic" => "monotonic_ms",
+            "sleep_ms" | "aic_time_sleep_ms_intrinsic" => "sleep_ms",
+            _ => return None,
+        };
+
+        match canonical {
+            "now_ms" if self.sig_matches_shape(name, &[], "Int") => Some(Some(
+                self.gen_time_now_call("aic_rt_time_now_ms", span, fctx),
+            )),
+            "monotonic_ms" if self.sig_matches_shape(name, &[], "Int") => Some(Some(
+                self.gen_time_now_call("aic_rt_time_monotonic_ms", span, fctx),
+            )),
+            "sleep_ms" if self.sig_matches_shape(name, &["Int"], "()") => {
+                Some(self.gen_time_sleep_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_rand_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "seed" | "aic_rand_seed_intrinsic" => "seed",
+            "random_int" | "aic_rand_int_intrinsic" => "random_int",
+            "random_range" | "aic_rand_range_intrinsic" => "random_range",
+            _ => return None,
+        };
+
+        match canonical {
+            "seed" if self.sig_matches_shape(name, &["Int"], "()") => {
+                Some(self.gen_rand_seed_call(name, args, span, fctx))
+            }
+            "random_int" if self.sig_matches_shape(name, &[], "Int") => {
+                Some(Some(self.gen_rand_next_call(span, fctx)))
+            }
+            "random_range" if self.sig_matches_shape(name, &["Int", "Int"], "Int") => {
+                Some(self.gen_rand_range_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_time_now_call(
+        &mut self,
+        runtime_fn: &str,
+        _span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Value {
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @{}()", reg, runtime_fn));
+        Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        }
+    }
+
+    fn gen_time_sleep_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ms = self.gen_expr(&args[0], fctx)?;
+        if ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        fctx.lines.push(format!(
+            "  call void @aic_rt_time_sleep_ms(i64 {})",
+            ms.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_rand_seed_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let seed = self.gen_expr(&args[0], fctx)?;
+        if seed.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        fctx.lines.push(format!(
+            "  call void @aic_rt_rand_seed(i64 {})",
+            seed.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_rand_next_call(&mut self, _span: crate::span::Span, fctx: &mut FnCtx) -> Value {
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @aic_rt_rand_next()", reg));
+        Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        }
+    }
+
+    fn gen_rand_range_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let min_inclusive = self.gen_expr(&args[0], fctx)?;
+        let max_exclusive = self.gen_expr(&args[1], fctx)?;
+        if min_inclusive.ty != LType::Int || max_exclusive.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Int, Int)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_rand_range(i64 {}, i64 {})",
+            reg,
+            min_inclusive
+                .repr
+                .clone()
+                .unwrap_or_else(|| "0".to_string()),
+            max_exclusive
+                .repr
+                .clone()
+                .unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        })
     }
 
     fn gen_fs_builtin_call(
@@ -6456,6 +6667,7 @@ fn runtime_c_source() -> &'static str {
 #include <netinet/in.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -6517,6 +6729,114 @@ long aic_rt_vec_cap(unsigned char* ptr, long len, long cap) {
         return 0;
     }
     return cap;
+}
+
+long aic_rt_time_now_ms(void) {
+#ifdef _WIN32
+    FILETIME ft;
+    ULARGE_INTEGER ticks;
+    GetSystemTimeAsFileTime(&ft);
+    ticks.LowPart = ft.dwLowDateTime;
+    ticks.HighPart = ft.dwHighDateTime;
+    unsigned long long millis_since_windows_epoch = ticks.QuadPart / 10000ULL;
+    const unsigned long long unix_epoch_offset_ms = 11644473600000ULL;
+    if (millis_since_windows_epoch < unix_epoch_offset_ms) {
+        return 0;
+    }
+    return (long)(millis_since_windows_epoch - unix_epoch_offset_ms);
+#else
+    struct timeval tv;
+    if (gettimeofday(&tv, NULL) != 0) {
+        return 0;
+    }
+    return (long)(tv.tv_sec * 1000L + tv.tv_usec / 1000L);
+#endif
+}
+
+long aic_rt_time_monotonic_ms(void) {
+#ifdef _WIN32
+    return (long)GetTickCount64();
+#else
+#ifdef CLOCK_MONOTONIC
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        return (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
+    }
+#endif
+    return aic_rt_time_now_ms();
+#endif
+}
+
+void aic_rt_time_sleep_ms(long ms) {
+    if (ms <= 0) {
+        return;
+    }
+#ifdef _WIN32
+    if (ms > 0x7fffffffL) {
+        ms = 0x7fffffffL;
+    }
+    Sleep((DWORD)ms);
+#else
+    struct timespec req;
+    req.tv_sec = (time_t)(ms / 1000);
+    req.tv_nsec = (long)((ms % 1000) * 1000000L);
+    while (nanosleep(&req, &req) != 0) {
+        if (errno != EINTR) {
+            break;
+        }
+    }
+#endif
+}
+
+static unsigned long long aic_rt_rand_state = 0x9e3779b97f4a7c15ULL;
+static int aic_rt_rand_seeded = 0;
+
+static unsigned long long aic_rt_rand_step(void) {
+    unsigned long long x = aic_rt_rand_state;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    aic_rt_rand_state = x;
+    return x * 0x2545F4914F6CDD1DULL;
+}
+
+static void aic_rt_rand_ensure_seeded(void) {
+    if (aic_rt_rand_seeded) {
+        return;
+    }
+    unsigned long long seed = (unsigned long long)aic_rt_time_now_ms();
+    seed ^= ((unsigned long long)aic_rt_time_monotonic_ms() << 1);
+    seed ^= 0xa1c0de5eedULL;
+    if (seed == 0) {
+        seed = 0x9e3779b97f4a7c15ULL;
+    }
+    aic_rt_rand_state = seed;
+    aic_rt_rand_seeded = 1;
+}
+
+void aic_rt_rand_seed(long seed) {
+    unsigned long long state = (unsigned long long)seed;
+    if (state == 0) {
+        state = 0x9e3779b97f4a7c15ULL;
+    }
+    aic_rt_rand_state = state;
+    aic_rt_rand_seeded = 1;
+}
+
+long aic_rt_rand_next(void) {
+    aic_rt_rand_ensure_seeded();
+    return (long)(aic_rt_rand_step() & 0x7FFFFFFFFFFFFFFFULL);
+}
+
+long aic_rt_rand_range(long min_inclusive, long max_exclusive) {
+    if (max_exclusive <= min_inclusive) {
+        return min_inclusive;
+    }
+    unsigned long long span =
+        (unsigned long long)max_exclusive - (unsigned long long)min_inclusive;
+    unsigned long long value = (unsigned long long)aic_rt_rand_next();
+    unsigned long long offset = value % span;
+    return min_inclusive + (long)offset;
 }
 
 static long aic_rt_fs_map_errno(int err) {
@@ -9494,6 +9814,20 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_fs_metadata(i8*, i64, i64, i64*, i64*, i64*)"));
+        assert!(output.llvm_ir.contains("declare i64 @aic_rt_time_now_ms()"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_time_monotonic_ms()"));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_time_sleep_ms(i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_rand_seed(i64)"));
+        assert!(output.llvm_ir.contains("declare i64 @aic_rt_rand_next()"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_rand_range(i64, i64)"));
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
@@ -9508,6 +9842,12 @@ fn main() -> Int effects { io } {
         ));
         assert!(runtime_c_source().contains("long aic_rt_fs_read_text("));
         assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
+        assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
+        assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));
+        assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(long ms)"));
+        assert!(runtime_c_source().contains("void aic_rt_rand_seed(long seed)"));
+        assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
+        assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));

@@ -957,6 +957,60 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_time_public_apis_delegate_to_runtime_intrinsics() {
+    let time_source = fs::read_to_string("std/time.aic").expect("read std/time.aic");
+
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "now_ms",
+        "aic_time_now_ms_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "monotonic_ms",
+        "aic_time_monotonic_ms_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "sleep_ms",
+        "aic_time_sleep_ms_intrinsic",
+        1,
+    );
+}
+
+#[test]
+fn unit_std_rand_public_apis_delegate_to_runtime_intrinsics() {
+    let rand_source = fs::read_to_string("std/rand.aic").expect("read std/rand.aic");
+
+    assert_delegate_call(
+        &rand_source,
+        "std/rand.aic",
+        "seed",
+        "aic_rand_seed_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &rand_source,
+        "std/rand.aic",
+        "random_int",
+        "aic_rand_int_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &rand_source,
+        "std/rand.aic",
+        "random_range",
+        "aic_rand_range_intrinsic",
+        2,
+    );
+}
+
+#[test]
 fn unit_diagnostic_registry_covers_all_emitted_codes() {
     let mut files = Vec::new();
     collect_rs_files(Path::new("src"), &mut files);
@@ -1103,7 +1157,15 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc } {
     let _dns = dns_lookup("localhost");
     let _dns_rev = dns_reverse("127.0.0.1");
     let _ts = now_ms();
+    let _mono = monotonic_ms();
+    let _deadline = deadline_after_ms(5);
+    let _remain = remaining_ms(_deadline);
+    let _expired = timeout_expired(_deadline);
+    sleep_until(_deadline);
+    seed(123);
     let _r = random_int();
+    let _rr = random_range(1, 5);
+    let _rb = random_bool();
     let _n = len("abc");
     print_int(1);
     0
@@ -1202,6 +1264,50 @@ import std.proc;
 fn main() -> Int {
     run("echo hi");
     0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_time_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.time;
+
+fn main() -> Int {
+    now_ms()
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
+}
+
+#[test]
+fn unit_std_rand_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.rand;
+
+fn main() -> Int {
+    random_int()
 }
 "#,
     )

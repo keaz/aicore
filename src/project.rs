@@ -580,15 +580,58 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net } {
         path.join("std/time.aic"),
         r#"module std.time;
 
-fn now_ms() -> Int effects { time } {
+fn aic_time_now_ms_intrinsic() -> Int effects { time } {
     0
+}
+
+fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
+    0
+}
+
+fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
+    ()
+}
+
+fn now_ms() -> Int effects { time } {
+    aic_time_now_ms_intrinsic()
 }
 
 fn now() -> Int effects { time } {
     now_ms()
 }
 
+fn monotonic_ms() -> Int effects { time } {
+    aic_time_monotonic_ms_intrinsic()
+}
+
 fn sleep_ms(ms: Int) -> () effects { time } {
+    aic_time_sleep_ms_intrinsic(ms)
+}
+
+fn deadline_after_ms(timeout_ms: Int) -> Int effects { time } {
+    let base = monotonic_ms();
+    if timeout_ms <= 0 {
+        base
+    } else {
+        base + timeout_ms
+    }
+}
+
+fn remaining_ms(deadline_ms: Int) -> Int effects { time } {
+    let now = monotonic_ms();
+    if deadline_ms <= now {
+        0
+    } else {
+        deadline_ms - now
+    }
+}
+
+fn timeout_expired(deadline_ms: Int) -> Bool effects { time } {
+    monotonic_ms() >= deadline_ms
+}
+
+fn sleep_until(deadline_ms: Int) -> () effects { time } {
+    sleep_ms(remaining_ms(deadline_ms));
     ()
 }
 "#,
@@ -598,12 +641,32 @@ fn sleep_ms(ms: Int) -> () effects { time } {
         path.join("std/rand.aic"),
         r#"module std.rand;
 
+fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand } {
+    ()
+}
+
+fn aic_rand_int_intrinsic() -> Int effects { rand } {
+    0
+}
+
+fn aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
+    min_inclusive
+}
+
+fn seed(seed_value: Int) -> () effects { rand } {
+    aic_rand_seed_intrinsic(seed_value)
+}
+
 fn random_int() -> Int effects { rand } {
-    4
+    aic_rand_int_intrinsic()
 }
 
 fn random_bool() -> Bool effects { rand } {
-    true
+    random_int() % 2 != 0
+}
+
+fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
+    aic_rand_range_intrinsic(min_inclusive, max_exclusive)
 }
 "#,
     )?;

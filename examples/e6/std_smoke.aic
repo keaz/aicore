@@ -37,8 +37,15 @@ fn main() -> Int effects { io, fs, net, time, rand } {
     let _dns = dns_lookup("localhost");
     let _dns_rev = dns_reverse("127.0.0.1");
     let _t = now_ms();
+    let _mono = monotonic_ms();
+    let _deadline = deadline_after_ms(1);
+    let _remaining = remaining_ms(_deadline);
+    let _expired = timeout_expired(_deadline);
+    sleep_until(_deadline);
     sleep_ms(0);
+    seed(123);
     let _r = random_int();
+    let _rr = random_range(1, 4);
     let _rb = random_bool();
     let _s = len("abc");
     print_int(1);

@@ -581,6 +581,76 @@ fn main() -> Int effects { io, env, fs } {
     assert_eq!(stdout, "42\n");
 }
 
+#[test]
+fn exec_time_helpers_are_predictable() {
+    let src = r#"
+import std.io;
+import std.time;
+
+fn main() -> Int effects { io, time } {
+    let wall = now_ms();
+    let start = monotonic_ms();
+    let deadline = deadline_after_ms(25);
+    sleep_ms(35);
+    let after = monotonic_ms();
+    let remain = remaining_ms(deadline);
+    let expired = if timeout_expired(deadline) { 1 } else { 0 };
+    sleep_until(deadline);
+
+    let progressed = if after >= start { 1 } else { 0 };
+    if wall > 0 && progressed == 1 && remain == 0 && expired == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_rand_seed_reproducibility_and_range() {
+    let src = r#"
+import std.io;
+import std.rand;
+
+fn bool_eq(a: Bool, b: Bool) -> Int {
+    if a == b { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, rand } {
+    seed(20260220);
+    let a = random_int();
+    let b = random_int();
+    let c = random_range(10, 20);
+    let d = random_bool();
+    let fixed = random_range(5, 5);
+
+    seed(20260220);
+    let a2 = random_int();
+    let b2 = random_int();
+    let c2 = random_range(10, 20);
+    let d2 = random_bool();
+
+    let same = if a == a2 && b == b2 && c == c2 && bool_eq(d, d2) == 1 { 1 } else { 0 };
+    let in_range = if c >= 10 && c < 20 && fixed == 5 { 1 } else { 0 };
+
+    if same == 1 && in_range == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_proc_run_pipe_spawn_wait_and_kill() {

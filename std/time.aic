@@ -1,8 +1,20 @@
 module std.time;
 
-/// Current wall clock time in milliseconds.
-fn now_ms() -> Int effects { time } {
+fn aic_time_now_ms_intrinsic() -> Int effects { time } {
     0
+}
+
+fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
+    0
+}
+
+fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
+    ()
+}
+
+/// Current wall clock time in milliseconds since Unix epoch.
+fn now_ms() -> Int effects { time } {
+    aic_time_now_ms_intrinsic()
 }
 
 /// Deprecated compatibility function.
@@ -10,7 +22,43 @@ fn now() -> Int effects { time } {
     now_ms()
 }
 
-/// Sleep for a number of milliseconds.
+/// Monotonic clock time in milliseconds.
+fn monotonic_ms() -> Int effects { time } {
+    aic_time_monotonic_ms_intrinsic()
+}
+
+/// Sleep for at least a number of milliseconds.
 fn sleep_ms(ms: Int) -> () effects { time } {
+    aic_time_sleep_ms_intrinsic(ms)
+}
+
+/// Build a monotonic deadline from a timeout duration.
+fn deadline_after_ms(timeout_ms: Int) -> Int effects { time } {
+    let base = monotonic_ms();
+    if timeout_ms <= 0 {
+        base
+    } else {
+        base + timeout_ms
+    }
+}
+
+/// Return the remaining time until a monotonic deadline in milliseconds.
+fn remaining_ms(deadline_ms: Int) -> Int effects { time } {
+    let now = monotonic_ms();
+    if deadline_ms <= now {
+        0
+    } else {
+        deadline_ms - now
+    }
+}
+
+/// Return true when the deadline has passed.
+fn timeout_expired(deadline_ms: Int) -> Bool effects { time } {
+    monotonic_ms() >= deadline_ms
+}
+
+/// Sleep until a deadline, no-op if already expired.
+fn sleep_until(deadline_ms: Int) -> () effects { time } {
+    sleep_ms(remaining_ms(deadline_ms));
     ()
 }

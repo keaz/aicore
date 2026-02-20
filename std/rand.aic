@@ -1,11 +1,33 @@
 module std.rand;
 
+fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand } {
+    ()
+}
+
+fn aic_rand_int_intrinsic() -> Int effects { rand } {
+    0
+}
+
+fn aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
+    min_inclusive
+}
+
+/// Set deterministic PRNG seed for reproducible sequences.
+fn seed(seed_value: Int) -> () effects { rand } {
+    aic_rand_seed_intrinsic(seed_value)
+}
+
 /// Return pseudo-random Int.
 fn random_int() -> Int effects { rand } {
-    4
+    aic_rand_int_intrinsic()
 }
 
 /// Return pseudo-random Bool.
 fn random_bool() -> Bool effects { rand } {
-    true
+    random_int() % 2 != 0
+}
+
+/// Return pseudo-random Int in [min_inclusive, max_exclusive).
+fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
+    aic_rand_range_intrinsic(min_inclusive, max_exclusive)
 }

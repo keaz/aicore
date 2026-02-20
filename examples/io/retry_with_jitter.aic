@@ -1,0 +1,32 @@
+module example.io.retry_with_jitter;
+
+import std.io;
+import std.time;
+import std.rand;
+
+fn backoff_ms(attempt: Int) -> Int {
+    let base = attempt * 5;
+    if base > 30 { 30 } else { base }
+}
+
+fn main() -> Int effects { io, time, rand } {
+    seed(424242);
+    let start = monotonic_ms();
+
+    let jitter = random_range(1, 4);
+    let timeout = backoff_ms(3) + jitter;
+    let deadline = deadline_after_ms(timeout);
+
+    sleep_until(deadline);
+
+    let elapsed = monotonic_ms() - start;
+    let remained = remaining_ms(deadline);
+    let expired = if timeout_expired(deadline) { 1 } else { 0 };
+
+    if elapsed >= timeout && remained == 0 && expired == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
