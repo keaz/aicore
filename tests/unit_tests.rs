@@ -957,6 +957,95 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
+    let url_source = fs::read_to_string("std/url.aic").expect("read std/url.aic");
+
+    assert_delegate_call(
+        &url_source,
+        "std/url.aic",
+        "parse",
+        "aic_url_parse_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &url_source,
+        "std/url.aic",
+        "normalize",
+        "aic_url_normalize_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &url_source,
+        "std/url.aic",
+        "net_addr",
+        "aic_url_net_addr_intrinsic",
+        1,
+    );
+}
+
+#[test]
+fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
+    let http_source = fs::read_to_string("std/http.aic").expect("read std/http.aic");
+
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "parse_method",
+        "aic_http_parse_method_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "method_name",
+        "aic_http_method_name_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "status_reason",
+        "aic_http_status_reason_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "validate_header",
+        "aic_http_validate_header_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "validate_target",
+        "aic_http_validate_target_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "header",
+        "aic_http_header_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "request",
+        "aic_http_request_intrinsic",
+        4,
+    );
+    assert_delegate_call(
+        &http_source,
+        "std/http.aic",
+        "response",
+        "aic_http_response_intrinsic",
+        3,
+    );
+}
+
+#[test]
 fn unit_std_time_public_apis_delegate_to_runtime_intrinsics() {
     let time_source = fs::read_to_string("std/time.aic").expect("read std/time.aic");
 
@@ -1041,6 +1130,124 @@ fn unit_std_regex_public_apis_delegate_to_runtime_intrinsics() {
         "replace",
         "aic_regex_replace_intrinsic",
         3,
+    );
+}
+
+#[test]
+fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
+    let json_source = fs::read_to_string("std/json.aic").expect("read std/json.aic");
+
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "parse",
+        "aic_json_parse_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "stringify",
+        "aic_json_stringify_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "encode_int",
+        "aic_json_encode_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "encode_bool",
+        "aic_json_encode_bool_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "encode_string",
+        "aic_json_encode_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "encode_null",
+        "aic_json_encode_null_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "decode_int",
+        "aic_json_decode_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "decode_bool",
+        "aic_json_decode_bool_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "decode_string",
+        "aic_json_decode_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "object_empty",
+        "aic_json_object_empty_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "object_set",
+        "aic_json_object_set_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "object_get",
+        "aic_json_object_get_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "kind",
+        "aic_json_kind_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "encode",
+        "aic_json_serde_encode_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "decode_with",
+        "aic_json_serde_decode_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "schema",
+        "aic_json_serde_schema_intrinsic",
+        1,
     );
 }
 

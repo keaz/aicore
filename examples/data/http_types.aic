@@ -1,0 +1,97 @@
+import std.http;
+import std.io;
+import std.net;
+import std.string;
+import std.url;
+import std.vec;
+
+fn main() -> Int effects { io, net } {
+    let fallback = Url {
+        scheme: "",
+        host: "",
+        port: -1,
+        path: "/",
+        query: "",
+        fragment: "",
+    };
+    let parsed = match parse("https://Example.COM:443/v1/health?trace=on#p") {
+        Ok(value) => value,
+        Err(_) => fallback,
+    };
+    let normalized = match normalize(parsed) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let method = match parse_method("GET") {
+        Ok(value) => value,
+        Err(_) => Get(),
+    };
+    let method_text = match method_name(method) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let header_ok = match header("Accept", "application/json") {
+        Ok(value) => if len(value.name) == 6 && len(value.value) == 16 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let empty_headers: Vec[HttpHeader] = Vec { ptr: 0, len: 0, cap: 0 };
+    let req_ok = match request(method, "/v1/health", empty_headers, "") {
+        Ok(req) => if len(req.target) == 10 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let empty_headers2: Vec[HttpHeader] = Vec { ptr: 0, len: 0, cap: 0 };
+    let resp_ok = match response(200, empty_headers2, "ok") {
+        Ok(resp) => if resp.status == 200 && len(resp.reason) > 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let listen_url = match parse("tcp://127.0.0.1:0") {
+        Ok(value) => value,
+        Err(_) => fallback,
+    };
+    let bind_addr = match net_addr(listen_url) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let listener = match tcp_listen(bind_addr) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let local_addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let closed = match tcp_close(listener) {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let normalized_url = match parse(normalized) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    };
+    let normalized_ok =
+        if len(normalized_url.scheme) == 5 &&
+            len(normalized_url.host) == 11 &&
+            normalized_url.port == -1 &&
+            len(normalized_url.path) == 10 &&
+            len(normalized_url.query) == 8 &&
+            len(normalized_url.fragment) == 1 {
+            1
+        } else {
+            0
+        };
+    let method_ok = if len(method_text) == 3 { 1 } else { 0 };
+    let net_ok = if len(local_addr) > 0 && closed == 1 { 1 } else { 0 };
+
+    if normalized_ok + method_ok + header_ok + req_ok + resp_ok + net_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

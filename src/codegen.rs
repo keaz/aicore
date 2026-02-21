@@ -82,6 +82,19 @@ struct Value {
 }
 
 #[derive(Debug, Clone)]
+struct ValueWithErr {
+    value: Value,
+    err_code: String,
+}
+
+#[derive(Debug, Clone)]
+struct JsonObjectGetValue {
+    value: Value,
+    found: String,
+    err_code: String,
+}
+
+#[derive(Debug, Clone)]
 struct Local {
     ty: LType,
     ptr: String,
@@ -739,6 +752,36 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_udp_close(i64)\n");
         text.push_str("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_dns_reverse(i8*, i64, i64, i8**, i64*)\n\n");
+        text.push_str(
+            "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_url_normalize(i8*, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_url_net_addr(i8*, i64, i64, i8*, i64, i64, i64, i8**, i64*)\n\n",
+        );
+        text.push_str("declare i64 @aic_rt_http_parse_method(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_http_method_name(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_http_status_reason(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_http_validate_header(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_http_validate_target(i8*, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_json_parse(i8*, i64, i64, i8**, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_stringify(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_encode_int(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_encode_bool(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_encode_string(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_encode_null(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_decode_int(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_decode_bool(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_decode_string(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_object_empty(i8**, i64*)\n");
+        text.push_str(
+            "declare i64 @aic_rt_json_object_set(i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_json_object_get(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i64*, i64*)\n\n",
+        );
         text.push_str("declare i64 @aic_rt_regex_compile(i8*, i64, i64, i64)\n");
         text.push_str(
             "declare i64 @aic_rt_regex_is_match(i8*, i64, i64, i64, i8*, i64, i64, i64*)\n",
@@ -1620,6 +1663,15 @@ impl<'a> Generator<'a> {
         if let Some(result) = self.gen_net_builtin_call(name, args, span, fctx) {
             return result;
         }
+        if let Some(result) = self.gen_url_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_http_builtin_call(name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_json_builtin_call(name, args, span, fctx) {
+            return result;
+        }
         if let Some(result) = self.gen_regex_builtin_call(name, args, span, fctx) {
             return result;
         }
@@ -1779,6 +1831,43 @@ impl<'a> Generator<'a> {
             return false;
         }
         render_type(&sig.ret) == ret
+    }
+
+    fn resolve_call_sig_for_types(
+        &mut self,
+        name: &str,
+        arg_types: &[LType],
+        span: crate::span::Span,
+    ) -> Option<FnSig> {
+        if let Some(sig) = self.fn_sigs.get(name).cloned() {
+            if sig.params == arg_types {
+                return Some(sig);
+            }
+        }
+
+        if let Some(instances) = self.generic_fn_instances.get(name) {
+            let matches = instances
+                .iter()
+                .filter(|instance| instance.params == arg_types)
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                let instance = matches[0];
+                return Some(FnSig {
+                    params: instance.params.clone(),
+                    ret: instance.ret.clone(),
+                });
+            }
+            if matches.len() > 1 {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5014",
+                    format!("ambiguous generic call to '{}'", name),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+        }
+        None
     }
 
     fn gen_time_builtin_call(
@@ -5179,6 +5268,3834 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_url_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "parse" | "aic_url_parse_intrinsic" => "parse",
+            "normalize" | "aic_url_normalize_intrinsic" => "normalize",
+            "net_addr" | "aic_url_net_addr_intrinsic" => "net_addr",
+            _ => return None,
+        };
+
+        match canonical {
+            "parse" if self.sig_matches_shape(name, &["String"], "Result[Url, UrlError]") => {
+                Some(self.gen_url_parse_call(name, args, span, fctx))
+            }
+            "normalize" if self.sig_matches_shape(name, &["Url"], "Result[String, UrlError]") => {
+                Some(self.gen_url_normalize_call(name, args, span, fctx))
+            }
+            "net_addr" if self.sig_matches_shape(name, &["Url"], "Result[String, UrlError]") => {
+                Some(self.gen_url_net_addr_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_http_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "parse_method" | "aic_http_parse_method_intrinsic" => "parse_method",
+            "method_name" | "aic_http_method_name_intrinsic" => "method_name",
+            "status_reason" | "aic_http_status_reason_intrinsic" => "status_reason",
+            "validate_header" | "aic_http_validate_header_intrinsic" => "validate_header",
+            "validate_target" | "aic_http_validate_target_intrinsic" => "validate_target",
+            "header" | "aic_http_header_intrinsic" => "header",
+            "request" | "aic_http_request_intrinsic" => "request",
+            "response" | "aic_http_response_intrinsic" => "response",
+            _ => return None,
+        };
+
+        match canonical {
+            "parse_method"
+                if self.sig_matches_shape(name, &["String"], "Result[HttpMethod, HttpError]") =>
+            {
+                Some(self.gen_http_parse_method_call(name, args, span, fctx))
+            }
+            "method_name"
+                if self.sig_matches_shape(name, &["HttpMethod"], "Result[String, HttpError]") =>
+            {
+                Some(self.gen_http_method_name_call(name, args, span, fctx))
+            }
+            "status_reason"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, HttpError]") =>
+            {
+                Some(self.gen_http_status_reason_call(name, args, span, fctx))
+            }
+            "validate_header"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[Bool, HttpError]",
+                ) =>
+            {
+                Some(self.gen_http_validate_header_call(name, args, span, fctx))
+            }
+            "validate_target"
+                if self.sig_matches_shape(name, &["String"], "Result[Bool, HttpError]") =>
+            {
+                Some(self.gen_http_validate_target_call(name, args, span, fctx))
+            }
+            "header"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[HttpHeader, HttpError]",
+                ) =>
+            {
+                Some(self.gen_http_header_call(name, args, span, fctx))
+            }
+            "request"
+                if self.sig_matches_shape(
+                    name,
+                    &["HttpMethod", "String", "Vec[HttpHeader]", "String"],
+                    "Result[HttpRequest, HttpError]",
+                ) =>
+            {
+                Some(self.gen_http_request_call(name, args, span, fctx))
+            }
+            "response"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Vec[HttpHeader]", "String"],
+                    "Result[HttpResponse, HttpError]",
+                ) =>
+            {
+                Some(self.gen_http_response_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_url_parse_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "parse expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let text = self.gen_expr(&args[0], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&text, args[0].span, fctx)?;
+        let scheme_ptr_slot = self.new_temp();
+        let scheme_len_slot = self.new_temp();
+        let host_ptr_slot = self.new_temp();
+        let host_len_slot = self.new_temp();
+        let port_slot = self.new_temp();
+        let path_ptr_slot = self.new_temp();
+        let path_len_slot = self.new_temp();
+        let query_ptr_slot = self.new_temp();
+        let query_len_slot = self.new_temp();
+        let fragment_ptr_slot = self.new_temp();
+        let fragment_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", scheme_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", scheme_len_slot));
+        fctx.lines.push(format!("  {} = alloca i8*", host_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", host_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", port_slot));
+        fctx.lines.push(format!("  {} = alloca i8*", path_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", path_len_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i8*", query_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", query_len_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i8*", fragment_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", fragment_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_url_parse(i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err,
+            ptr,
+            len,
+            cap,
+            scheme_ptr_slot,
+            scheme_len_slot,
+            host_ptr_slot,
+            host_len_slot,
+            port_slot,
+            path_ptr_slot,
+            path_len_slot,
+            query_ptr_slot,
+            query_len_slot,
+            fragment_ptr_slot,
+            fragment_len_slot
+        ));
+
+        let scheme_ptr = self.new_temp();
+        let scheme_len = self.new_temp();
+        let host_ptr = self.new_temp();
+        let host_len = self.new_temp();
+        let port_reg = self.new_temp();
+        let path_ptr = self.new_temp();
+        let path_len = self.new_temp();
+        let query_ptr = self.new_temp();
+        let query_len = self.new_temp();
+        let fragment_ptr = self.new_temp();
+        let fragment_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            scheme_ptr, scheme_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            scheme_len, scheme_len_slot
+        ));
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", host_ptr, host_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", host_len, host_len_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", port_reg, port_slot));
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", path_ptr, path_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", path_len, path_len_slot));
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            query_ptr, query_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            query_len, query_len_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            fragment_ptr, fragment_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            fragment_len, fragment_len_slot
+        ));
+
+        let scheme = self.build_string_value(&scheme_ptr, &scheme_len, &scheme_len, fctx);
+        let host = self.build_string_value(&host_ptr, &host_len, &host_len, fctx);
+        let path = self.build_string_value(&path_ptr, &path_len, &path_len, fctx);
+        let query = self.build_string_value(&query_ptr, &query_len, &query_len, fctx);
+        let fragment = self.build_string_value(&fragment_ptr, &fragment_len, &fragment_len, fctx);
+        let port = Value {
+            ty: LType::Int,
+            repr: Some(port_reg),
+        };
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = self.build_url_struct_value(
+            &ok_ty, scheme, host, port, path, query, fragment, span, fctx,
+        )?;
+        self.wrap_url_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_url_normalize_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "normalize expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let url = self.gen_expr(&args[0], fctx)?;
+        let (scheme, host, port, path, query, fragment) =
+            self.url_parts(&url, args[0].span, fctx)?;
+        let (scheme_ptr, scheme_len, scheme_cap) = self.string_parts(&scheme, span, fctx)?;
+        let (host_ptr, host_len, host_cap) = self.string_parts(&host, span, fctx)?;
+        let (path_ptr, path_len, path_cap) = self.string_parts(&path, span, fctx)?;
+        let (query_ptr, query_len, query_cap) = self.string_parts(&query, span, fctx)?;
+        let (fragment_ptr, fragment_len, fragment_cap) =
+            self.string_parts(&fragment, span, fctx)?;
+
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_url_normalize(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            scheme_ptr,
+            scheme_len,
+            scheme_cap,
+            host_ptr,
+            host_len,
+            host_cap,
+            port.repr.clone().unwrap_or_else(|| "0".to_string()),
+            path_ptr,
+            path_len,
+            path_cap,
+            query_ptr,
+            query_len,
+            query_cap,
+            fragment_ptr,
+            fragment_len,
+            fragment_cap,
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_url_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_url_net_addr_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "net_addr expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let url = self.gen_expr(&args[0], fctx)?;
+        let (scheme, host, port, _, _, _) = self.url_parts(&url, args[0].span, fctx)?;
+        let (scheme_ptr, scheme_len, scheme_cap) = self.string_parts(&scheme, span, fctx)?;
+        let (host_ptr, host_len, host_cap) = self.string_parts(&host, span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_url_net_addr(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            scheme_ptr,
+            scheme_len,
+            scheme_cap,
+            host_ptr,
+            host_len,
+            host_cap,
+            port.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_url_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_parse_method_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "parse_method expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let text = self.gen_expr(&args[0], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse_method expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&text, args[0].span, fctx)?;
+        let out_tag_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_tag_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_parse_method(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, out_tag_slot
+        ));
+        let out_tag = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_tag, out_tag_slot));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Enum(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse_method expects Result[HttpMethod, HttpError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let out_tag_i32 = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = trunc i64 {} to i32", out_tag_i32, out_tag));
+        let ok_payload =
+            self.build_no_payload_enum_with_tag(&ok_layout, &out_tag_i32, span, fctx)?;
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_method_name_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "method_name expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let method = self.gen_expr(&args[0], fctx)?;
+        let tag_i32 = self.enum_tag_i32(&method, args[0].span, fctx)?;
+        let tag_i64 = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = sext i32 {} to i64", tag_i64, tag_i32));
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_method_name(i64 {}, i8** {}, i64* {})",
+            err, tag_i64, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_status_reason_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "status_reason expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let status = self.gen_expr(&args[0], fctx)?;
+        if status.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "status_reason expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_status_reason(i64 {}, i8** {}, i64* {})",
+            err,
+            status.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_validate_header_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "validate_header expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let name_value = self.gen_expr(&args[0], fctx)?;
+        let header_value = self.gen_expr(&args[1], fctx)?;
+        if name_value.ty != LType::String || header_value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "validate_header expects (String, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (name_ptr, name_len, name_cap) = self.string_parts(&name_value, args[0].span, fctx)?;
+        let (value_ptr, value_len, value_cap) =
+            self.string_parts(&header_value, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_validate_header(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            err, name_ptr, name_len, name_cap, value_ptr, value_len, value_cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_validate_target_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "validate_target expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let target = self.gen_expr(&args[0], fctx)?;
+        if target.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "validate_target expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&target, args[0].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_validate_target(i8* {}, i64 {}, i64 {})",
+            err, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_header_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "header expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let header_name = self.gen_expr(&args[0], fctx)?;
+        let header_value = self.gen_expr(&args[1], fctx)?;
+        if header_name.ty != LType::String || header_value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "header expects (String, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (name_ptr, name_len, name_cap) = self.string_parts(&header_name, args[0].span, fctx)?;
+        let (value_ptr, value_len, value_cap) =
+            self.string_parts(&header_value, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_validate_header(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            err, name_ptr, name_len, name_cap, value_ptr, value_len, value_cap
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = self.build_http_struct_value(
+            &ok_ty,
+            "HttpHeader",
+            &[("name", header_name), ("value", header_value)],
+            span,
+            fctx,
+        )?;
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_request_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 4 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "request expects four arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let method = self.gen_expr(&args[0], fctx)?;
+        let target = self.gen_expr(&args[1], fctx)?;
+        let headers = self.gen_expr(&args[2], fctx)?;
+        let body = self.gen_expr(&args[3], fctx)?;
+        if target.ty != LType::String || body.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "request expects (HttpMethod, String, Vec[HttpHeader], String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (target_ptr, target_len, target_cap) =
+            self.string_parts(&target, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_validate_target(i8* {}, i64 {}, i64 {})",
+            err, target_ptr, target_len, target_cap
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = self.build_http_struct_value(
+            &ok_ty,
+            "HttpRequest",
+            &[
+                ("method", method),
+                ("target", target),
+                ("headers", headers),
+                ("body", body),
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_response_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "response expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let status = self.gen_expr(&args[0], fctx)?;
+        let headers = self.gen_expr(&args[1], fctx)?;
+        let body = self.gen_expr(&args[2], fctx)?;
+        if status.ty != LType::Int || body.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "response expects (Int, Vec[HttpHeader], String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_status_reason(i64 {}, i8** {}, i64* {})",
+            err,
+            status.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let reason = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = self.build_http_struct_value(
+            &ok_ty,
+            "HttpResponse",
+            &[
+                ("status", status),
+                ("reason", reason),
+                ("headers", headers),
+                ("body", body),
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_http_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn build_http_struct_value(
+        &mut self,
+        ty: &LType,
+        expected_name: &str,
+        fields: &[(&str, Value)],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "expected {expected_name} struct, found '{}'",
+                    render_type(ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != expected_name {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected {expected_name} struct, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mut ordered = Vec::new();
+        for field in &layout.fields {
+            let Some((_, value)) = fields.iter().find(|(name, _)| *name == field.name) else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5011",
+                    format!("{} is missing field '{}'", layout.repr, field.name),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+            ordered.push(value.clone());
+        }
+        self.build_struct_value(layout, &ordered, span, fctx)
+    }
+
+    fn build_url_struct_value(
+        &mut self,
+        url_ty: &LType,
+        scheme: Value,
+        host: Value,
+        port: Value,
+        path: Value,
+        query: Value,
+        fragment: Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = url_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected Url struct, found '{}'", render_type(url_ty)),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Url" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected Url struct, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mut ordered = Vec::new();
+        for field in &layout.fields {
+            match field.name.as_str() {
+                "scheme" => ordered.push(scheme.clone()),
+                "host" => ordered.push(host.clone()),
+                "port" => ordered.push(port.clone()),
+                "path" => ordered.push(path.clone()),
+                "query" => ordered.push(query.clone()),
+                "fragment" => ordered.push(fragment.clone()),
+                _ => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5011",
+                        format!("Url contains unsupported field '{}'", field.name),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+            }
+        }
+        self.build_struct_value(layout, &ordered, span, fctx)
+    }
+
+    fn url_parts(
+        &mut self,
+        url: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(Value, Value, Value, Value, Value, Value)> {
+        let LType::Struct(layout) = &url.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected Url struct value",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Url" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected Url struct value, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut scheme = None;
+        let mut host = None;
+        let mut port = None;
+        let mut path = None;
+        let mut query = None;
+        let mut fragment = None;
+        let url_repr = url.repr.clone().unwrap_or_else(|| default_value(&url.ty));
+        let url_ty = llvm_type(&url.ty);
+
+        for (index, field) in layout.fields.iter().enumerate() {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                reg, url_ty, url_repr, index
+            ));
+            let value = Value {
+                ty: field.ty.clone(),
+                repr: Some(reg),
+            };
+            match field.name.as_str() {
+                "scheme" => scheme = Some(value),
+                "host" => host = Some(value),
+                "port" => port = Some(value),
+                "path" => path = Some(value),
+                "query" => query = Some(value),
+                "fragment" => fragment = Some(value),
+                _ => {}
+            }
+        }
+
+        let Some(scheme) = scheme else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `scheme` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(host) = host else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `host` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(port) = port else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `port` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(path) = path else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `path` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(query) = query else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `query` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(fragment) = fragment else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url struct is missing `fragment` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if scheme.ty != LType::String
+            || host.ty != LType::String
+            || port.ty != LType::Int
+            || path.ty != LType::String
+            || query.ty != LType::String
+            || fragment.ty != LType::String
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Url fields must be scheme/host/path/query/fragment as String and port as Int",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some((scheme, host, port, path, query, fragment))
+    }
+
+    fn wrap_url_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "url builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_url_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("url_ok");
+        let err_label = self.new_label("url_err");
+        let cont_label = self.new_label("url_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn wrap_http_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "http builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_http_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("http_ok");
+        let err_label = self.new_label("http_err");
+        let cont_label = self.new_label("http_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_json_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "parse" | "aic_json_parse_intrinsic" => "parse",
+            "stringify" | "aic_json_stringify_intrinsic" => "stringify",
+            "encode_int" | "aic_json_encode_int_intrinsic" => "encode_int",
+            "encode_bool" | "aic_json_encode_bool_intrinsic" => "encode_bool",
+            "encode_string" | "aic_json_encode_string_intrinsic" => "encode_string",
+            "encode_null" | "aic_json_encode_null_intrinsic" => "encode_null",
+            "encode" | "aic_json_serde_encode_intrinsic" => "encode_any",
+            "decode_int" | "aic_json_decode_int_intrinsic" => "decode_int",
+            "decode_bool" | "aic_json_decode_bool_intrinsic" => "decode_bool",
+            "decode_string" | "aic_json_decode_string_intrinsic" => "decode_string",
+            "decode_with" | "aic_json_serde_decode_intrinsic" => "decode_any",
+            "schema" | "aic_json_serde_schema_intrinsic" => "schema_any",
+            "object_empty" | "aic_json_object_empty_intrinsic" => "object_empty",
+            "object_set" | "aic_json_object_set_intrinsic" => "object_set",
+            "object_get" | "aic_json_object_get_intrinsic" => "object_get",
+            "kind" | "aic_json_kind_intrinsic" => "kind",
+            _ => return None,
+        };
+
+        match canonical {
+            "parse"
+                if self.sig_matches_shape(name, &["String"], "Result[JsonValue, JsonError]") =>
+            {
+                Some(self.gen_json_parse_call(name, args, span, fctx))
+            }
+            "stringify"
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[String, JsonError]") =>
+            {
+                Some(self.gen_json_stringify_call(name, args, span, fctx))
+            }
+            "encode_int" if self.sig_matches_shape(name, &["Int"], "JsonValue") => {
+                Some(self.gen_json_encode_int_call(args, span, fctx))
+            }
+            "encode_bool" if self.sig_matches_shape(name, &["Bool"], "JsonValue") => {
+                Some(self.gen_json_encode_bool_call(args, span, fctx))
+            }
+            "encode_string" if self.sig_matches_shape(name, &["String"], "JsonValue") => {
+                Some(self.gen_json_encode_string_call(args, span, fctx))
+            }
+            "encode_null" if self.sig_matches_shape(name, &[], "JsonValue") => {
+                Some(self.gen_json_encode_null_call(args, span, fctx))
+            }
+            "encode_any" => Some(self.gen_json_derive_encode_call(name, args, span, fctx)),
+            "decode_int"
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[Int, JsonError]") =>
+            {
+                Some(self.gen_json_decode_int_call(name, args, span, fctx))
+            }
+            "decode_bool"
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[Bool, JsonError]") =>
+            {
+                Some(self.gen_json_decode_bool_call(name, args, span, fctx))
+            }
+            "decode_string"
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[String, JsonError]") =>
+            {
+                Some(self.gen_json_decode_string_call(name, args, span, fctx))
+            }
+            "decode_any" => Some(self.gen_json_derive_decode_call(name, args, span, fctx)),
+            "schema_any" => Some(self.gen_json_derive_schema_call(name, args, span, fctx)),
+            "object_empty" if self.sig_matches_shape(name, &[], "JsonValue") => {
+                Some(self.gen_json_object_empty_call(args, span, fctx))
+            }
+            "object_set"
+                if self.sig_matches_shape(
+                    name,
+                    &["JsonValue", "String", "JsonValue"],
+                    "Result[JsonValue, JsonError]",
+                ) =>
+            {
+                Some(self.gen_json_object_set_call(name, args, span, fctx))
+            }
+            "object_get"
+                if self.sig_matches_shape(
+                    name,
+                    &["JsonValue", "String"],
+                    "Result[Option[JsonValue], JsonError]",
+                ) =>
+            {
+                Some(self.gen_json_object_get_call(name, args, span, fctx))
+            }
+            "kind" if self.sig_matches_shape(name, &["JsonValue"], "JsonKind") => {
+                Some(self.gen_json_kind_call(args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_json_parse_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "parse expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let text = self.gen_expr(&args[0], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&text, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_kind_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_kind_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_parse(i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            err, ptr, len, cap, out_ptr_slot, out_len_slot, out_kind_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_kind = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_kind, out_kind_slot));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&ok_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, &out_kind, span, fctx)?;
+        let ok_payload = self.build_json_value_struct(&ok_ty, raw, kind_value, span, fctx)?;
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_stringify_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "stringify expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_stringify(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, raw_ptr, raw_len, raw_cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_encode_int_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "encode_int expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let int_repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_int(i64 {}, i8** {}, i64* {})",
+            _err, int_repr, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self
+            .fn_sigs
+            .get("encode_int")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "2", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
+    fn gen_json_encode_bool_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode_bool expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "encode_bool expects Bool",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let bool_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            bool_i64,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_bool(i64 {}, i8** {}, i64* {})",
+            _err, bool_i64, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self
+            .fn_sigs
+            .get("encode_bool")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "1", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
+    fn gen_json_encode_string_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode_string expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "encode_string expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_string(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            _err, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self
+            .fn_sigs
+            .get("encode_string")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "3", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
+    fn gen_json_encode_null_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode_null expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_null(i8** {}, i64* {})",
+            _err, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self
+            .fn_sigs
+            .get("encode_null")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "0", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
+    fn gen_json_decode_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "decode_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_int(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out_reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_reg, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_reg),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_decode_bool_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "decode_bool expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_bool(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out_reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_reg, out_slot));
+        let bool_reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", bool_reg, out_reg));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(bool_reg),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_decode_string_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "decode_string expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_string(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, raw_ptr, raw_len, raw_cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_object_empty_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "object_empty expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_empty(i8** {}, i64* {})",
+            _err, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self
+            .fn_sigs
+            .get("object_empty")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "5", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
+    fn gen_json_object_set_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "object_set expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let object = self.gen_expr(&args[0], fctx)?;
+        let key = self.gen_expr(&args[1], fctx)?;
+        let value = self.gen_expr(&args[2], fctx)?;
+        if key.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "object_set key expects String",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (obj_ptr, obj_len, obj_cap) = self.json_raw_parts(&object, args[0].span, fctx)?;
+        let (key_ptr, key_len, key_cap) = self.string_parts(&key, args[1].span, fctx)?;
+        let (value_ptr, value_len, value_cap) = self.json_raw_parts(&value, args[2].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_kind_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_kind_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_set(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            err,
+            obj_ptr,
+            obj_len,
+            obj_cap,
+            key_ptr,
+            key_len,
+            key_cap,
+            value_ptr,
+            value_len,
+            value_cap,
+            out_ptr_slot,
+            out_len_slot,
+            out_kind_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_kind = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_kind, out_kind_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&ok_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, &out_kind, span, fctx)?;
+        let ok_payload = self.build_json_value_struct(&ok_ty, raw_value, kind_value, span, fctx)?;
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_object_get_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "object_get expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let object = self.gen_expr(&args[0], fctx)?;
+        let key = self.gen_expr(&args[1], fctx)?;
+        if key.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "object_get key expects String",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (obj_ptr, obj_len, obj_cap) = self.json_raw_parts(&object, args[0].span, fctx)?;
+        let (key_ptr, key_len, key_cap) = self.string_parts(&key, args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_kind_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_kind_slot));
+        let out_found_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_found_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_get(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {}, i64* {})",
+            err,
+            obj_ptr,
+            obj_len,
+            obj_cap,
+            key_ptr,
+            key_len,
+            key_cap,
+            out_ptr_slot,
+            out_len_slot,
+            out_kind_slot,
+            out_found_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_kind = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_kind, out_kind_slot));
+        let out_found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_found, out_found_slot
+        ));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Enum(option_layout) = ok_ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "object_get expects Result[Option[JsonValue], JsonError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&option_layout.repr) != "Option" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "object_get expects Option payload",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(none_index) = option_layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "None")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Option payload missing None variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(some_index) = option_layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Some")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Option payload missing Some variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(some_payload_ty) = option_layout.variants[some_index].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Option Some variant missing payload type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&some_payload_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, &out_kind, span, fctx)?;
+        let json_payload =
+            self.build_json_value_struct(&some_payload_ty, raw_value, kind_value, span, fctx)?;
+
+        let none_value = self.build_enum_variant(&option_layout, none_index, None, span, fctx)?;
+        let some_value =
+            self.build_enum_variant(&option_layout, some_index, Some(json_payload), span, fctx)?;
+        let option_slot = self.alloc_entry_slot(&ok_ty, fctx);
+        let is_found = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", is_found, out_found));
+        let some_label = self.new_label("json_opt_some");
+        let none_label = self.new_label("json_opt_none");
+        let cont_label = self.new_label("json_opt_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_found, some_label, none_label
+        ));
+
+        fctx.lines.push(format!("{}:", some_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&ok_ty),
+            some_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&ok_ty)),
+            llvm_type(&ok_ty),
+            option_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", none_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&ok_ty),
+            none_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&ok_ty)),
+            llvm_type(&ok_ty),
+            option_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let ok_payload_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            ok_payload_reg,
+            llvm_type(&ok_ty),
+            llvm_type(&ok_ty),
+            option_slot
+        ));
+        let ok_payload = Value {
+            ty: ok_ty,
+            repr: Some(ok_payload_reg),
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_kind_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "kind expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (layout, _, kind_index, kind_ty) = self.json_value_layout(&value.ty, args[0].span)?;
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            reg,
+            llvm_type(&LType::Struct(layout.clone())),
+            value_repr,
+            kind_index
+        ));
+        Some(Value {
+            ty: kind_ty,
+            repr: Some(reg),
+        })
+    }
+
+    fn wrap_json_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "json builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_json_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("json_ok");
+        let err_label = self.new_label("json_err");
+        let cont_label = self.new_label("json_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn json_value_layout(
+        &mut self,
+        ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<(StructLayoutType, usize, usize, LType)> {
+        let LType::Struct(layout) = ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected JsonValue struct, found '{}'", render_type(ty)),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((raw_index, raw_field)) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name == "raw")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue struct is missing `raw` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((kind_index, kind_field)) = layout
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name == "kind")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue struct is missing `kind` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if raw_field.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue.raw must be String",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let LType::Enum(kind_layout) = kind_field.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue.kind must be JsonKind enum",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&kind_layout.repr) != "JsonKind" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue.kind must use JsonKind enum",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some((layout.clone(), raw_index, kind_index, kind_field.ty.clone()))
+    }
+
+    fn build_json_value_struct(
+        &mut self,
+        json_ty: &LType,
+        raw_value: Value,
+        kind_value: Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let (layout, _, _, _) = self.json_value_layout(json_ty, span)?;
+        if raw_value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue.raw payload must be String",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut ordered = Vec::new();
+        for field in &layout.fields {
+            if field.name == "raw" {
+                ordered.push(raw_value.clone());
+            } else if field.name == "kind" {
+                if field.ty != kind_value.ty {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5011",
+                        "JsonValue.kind payload type mismatch",
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+                ordered.push(kind_value.clone());
+            } else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5011",
+                    format!(
+                        "JsonValue contains unsupported field '{}'; expected only raw/kind",
+                        field.name
+                    ),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+        }
+        self.build_struct_value(&layout, &ordered, span, fctx)
+    }
+
+    fn json_raw_parts(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        let (layout, raw_index, _, _) = self.json_value_layout(&value.ty, span)?;
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let raw_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            raw_reg,
+            llvm_type(&LType::Struct(layout.clone())),
+            value_repr,
+            raw_index
+        ));
+        let raw_value = Value {
+            ty: LType::String,
+            repr: Some(raw_reg),
+        };
+        self.string_parts(&raw_value, span, fctx)
+    }
+
+    fn gen_json_derive_encode_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        let arg_types = vec![input.ty.clone()];
+        let call_sig = self
+            .resolve_call_sig_for_types(name, &arg_types, span)
+            .or_else(|| {
+                if name == "aic_json_serde_encode_intrinsic" {
+                    Some(FnSig {
+                        params: arg_types.clone(),
+                        ret: fctx.ret_ty.clone(),
+                    })
+                } else {
+                    None
+                }
+            });
+        let Some(call_sig) = call_sig else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{}' in codegen", name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&call_sig.ret, span) else {
+            return None;
+        };
+        if render_type(&ok_ty) != "JsonValue" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "encode expects Result[JsonValue, JsonError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let encoded = self.json_encode_value(&input, span, fctx)?;
+        self.wrap_json_result(&call_sig.ret, encoded.value, &encoded.err_code, span, fctx)
+    }
+
+    fn gen_json_derive_decode_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "decode_with expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        let marker = self.gen_expr(&args[1], fctx)?;
+        let target_ty = self.json_marker_payload_ty(&marker.ty, args[1].span)?;
+        let arg_types = vec![input.ty.clone(), marker.ty.clone()];
+        let call_sig = self
+            .resolve_call_sig_for_types(name, &arg_types, span)
+            .or_else(|| {
+                if name == "aic_json_serde_decode_intrinsic" {
+                    Some(FnSig {
+                        params: arg_types.clone(),
+                        ret: fctx.ret_ty.clone(),
+                    })
+                } else {
+                    None
+                }
+            });
+        let Some(call_sig) = call_sig else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{}' in codegen", name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&call_sig.ret, span) else {
+            return None;
+        };
+        if ok_ty != target_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "decode_with marker type does not match function return payload",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let decoded = self.json_decode_value(&target_ty, &input, span, fctx)?;
+        self.wrap_json_result(&call_sig.ret, decoded.value, &decoded.err_code, span, fctx)
+    }
+
+    fn gen_json_derive_schema_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "schema expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let marker = self.gen_expr(&args[0], fctx)?;
+        let target_ty = self.json_marker_payload_ty(&marker.ty, args[0].span)?;
+        let arg_types = vec![marker.ty.clone()];
+        let call_sig = self
+            .resolve_call_sig_for_types(name, &arg_types, span)
+            .or_else(|| {
+                if name == "aic_json_serde_schema_intrinsic" {
+                    Some(FnSig {
+                        params: arg_types.clone(),
+                        ret: fctx.ret_ty.clone(),
+                    })
+                } else {
+                    None
+                }
+            });
+        let Some(call_sig) = call_sig else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{}' in codegen", name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&call_sig.ret, span) else {
+            return None;
+        };
+        if ok_ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "schema expects Result[String, JsonError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mut stack = Vec::new();
+        let schema = self.json_schema_for_type(&target_ty, &mut stack, span)?;
+        let payload = self.string_literal(&schema, fctx);
+        self.wrap_json_result(&call_sig.ret, payload, "0", span, fctx)
+    }
+
+    fn json_marker_payload_ty(
+        &mut self,
+        marker_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<LType> {
+        let LType::Enum(layout) = marker_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "serde marker must be Option[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Option" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "serde marker must be Option[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(some_index) = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Some")
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Option marker missing Some variant",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(payload) = layout.variants[some_index].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Option marker Some variant is missing payload",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some(payload)
+    }
+
+    fn json_encode_value(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        match &value.ty {
+            LType::Int => self.json_encode_int_runtime(value, span, fctx),
+            LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
+            LType::String => self.json_encode_string_runtime(value, span, fctx),
+            LType::Unit => self.json_encode_null_runtime(span, fctx),
+            LType::Struct(layout) => self.json_encode_struct(value, layout, span, fctx),
+            LType::Enum(layout) => self.json_encode_enum(value, layout, span, fctx),
+        }
+    }
+
+    fn json_encode_struct(
+        &mut self,
+        value: &Value,
+        layout: &StructLayoutType,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let mut object = self.json_object_empty_runtime(span, fctx)?;
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let mut ordered = (0..layout.fields.len()).collect::<Vec<_>>();
+        ordered.sort_by(|a, b| layout.fields[*a].name.cmp(&layout.fields[*b].name));
+
+        for index in ordered {
+            let field = &layout.fields[index];
+            let field_reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                field_reg,
+                llvm_type(&value.ty),
+                value_repr,
+                index
+            ));
+            let field_value = Value {
+                ty: field.ty.clone(),
+                repr: Some(field_reg),
+            };
+            let encoded_field = self.json_encode_value(&field_value, span, fctx)?;
+            let key = self.string_literal(&field.name, fctx);
+            let updated = self.json_object_set_runtime(
+                &object.value,
+                &key,
+                &encoded_field.value,
+                span,
+                fctx,
+            )?;
+            let err_after_field =
+                self.combine_error_codes(&object.err_code, &encoded_field.err_code, fctx);
+            let err_after_set = self.combine_error_codes(&err_after_field, &updated.err_code, fctx);
+            let ok = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", ok, err_after_set));
+            let next_repr = self.select_value_repr(
+                &ok,
+                &object.value.ty,
+                &updated
+                    .value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&object.value.ty)),
+                &object
+                    .value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&object.value.ty)),
+                fctx,
+            );
+            object = ValueWithErr {
+                value: Value {
+                    ty: object.value.ty.clone(),
+                    repr: Some(next_repr),
+                },
+                err_code: err_after_set,
+            };
+        }
+        Some(object)
+    }
+
+    fn json_encode_enum(
+        &mut self,
+        value: &Value,
+        layout: &EnumLayoutType,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let mut object = self.json_object_empty_runtime(span, fctx)?;
+        let tag_i32 = self.enum_tag_i32(value, span, fctx)?;
+        let tag_i64 = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = sext i32 {} to i64", tag_i64, tag_i32));
+        let tag_json = self.json_encode_int_runtime(
+            &Value {
+                ty: LType::Int,
+                repr: Some(tag_i64),
+            },
+            span,
+            fctx,
+        )?;
+        let tag_key = self.string_literal("tag", fctx);
+        let tagged_object =
+            self.json_object_set_runtime(&object.value, &tag_key, &tag_json.value, span, fctx)?;
+        let err_after_tag_payload =
+            self.combine_error_codes(&object.err_code, &tag_json.err_code, fctx);
+        let err_after_tag_set =
+            self.combine_error_codes(&err_after_tag_payload, &tagged_object.err_code, fctx);
+        let tag_non_negative = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp sge i32 {}, 0",
+            tag_non_negative, tag_i32
+        ));
+        let tag_lt_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp slt i32 {}, {}",
+            tag_lt_count,
+            tag_i32,
+            layout.variants.len() as i32
+        ));
+        let tag_in_range = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = and i1 {}, {}",
+            tag_in_range, tag_non_negative, tag_lt_count
+        ));
+        let tag_range_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 2",
+            tag_range_err, tag_in_range
+        ));
+        let err_after_tag = self.combine_error_codes(&err_after_tag_set, &tag_range_err, fctx);
+        let tagged_ok = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp eq i64 {}, 0",
+            tagged_ok, err_after_tag
+        ));
+        let tagged_repr = self.select_value_repr(
+            &tagged_ok,
+            &object.value.ty,
+            &tagged_object
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&object.value.ty)),
+            &object
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&object.value.ty)),
+            fctx,
+        );
+        object = ValueWithErr {
+            value: Value {
+                ty: object.value.ty.clone(),
+                repr: Some(tagged_repr),
+            },
+            err_code: err_after_tag,
+        };
+
+        let mut payload = self.json_encode_null_runtime(span, fctx)?;
+        let enum_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        for (index, variant) in layout.variants.iter().enumerate() {
+            let Some(payload_ty) = variant.payload.clone() else {
+                continue;
+            };
+            let payload_reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                payload_reg,
+                llvm_type(&value.ty),
+                enum_repr,
+                index + 1
+            ));
+            let encoded_variant = self.json_encode_value(
+                &Value {
+                    ty: payload_ty.clone(),
+                    repr: Some(payload_reg),
+                },
+                span,
+                fctx,
+            )?;
+            let is_variant = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = icmp eq i32 {}, {}",
+                is_variant, tag_i32, index as i32
+            ));
+            let next_payload = self.select_value_repr(
+                &is_variant,
+                &payload.value.ty,
+                &encoded_variant
+                    .value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&payload.value.ty)),
+                &payload
+                    .value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&payload.value.ty)),
+                fctx,
+            );
+            let active_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = select i1 {}, i64 {}, i64 0",
+                active_err, is_variant, encoded_variant.err_code
+            ));
+            let payload_err = self.combine_error_codes(&payload.err_code, &active_err, fctx);
+            payload = ValueWithErr {
+                value: Value {
+                    ty: payload.value.ty.clone(),
+                    repr: Some(next_payload),
+                },
+                err_code: payload_err,
+            };
+        }
+
+        let value_key = self.string_literal("value", fctx);
+        let valued_object =
+            self.json_object_set_runtime(&object.value, &value_key, &payload.value, span, fctx)?;
+        let err_after_payload = self.combine_error_codes(&object.err_code, &payload.err_code, fctx);
+        let final_err = self.combine_error_codes(&err_after_payload, &valued_object.err_code, fctx);
+        let final_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", final_ok, final_err));
+        let final_repr = self.select_value_repr(
+            &final_ok,
+            &object.value.ty,
+            &valued_object
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&object.value.ty)),
+            &object
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&object.value.ty)),
+            fctx,
+        );
+        Some(ValueWithErr {
+            value: Value {
+                ty: object.value.ty,
+                repr: Some(final_repr),
+            },
+            err_code: final_err,
+        })
+    }
+
+    fn json_decode_value(
+        &mut self,
+        target_ty: &LType,
+        json: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        match target_ty {
+            LType::Int => self.json_decode_int_runtime(json, span, fctx),
+            LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
+            LType::String => self.json_decode_string_runtime(json, span, fctx),
+            LType::Unit => {
+                let kind_tag = self.json_kind_tag_i32(json, span, fctx)?;
+                let null_index = self.json_kind_variant_index(&json.ty, "NullValue", span)? as i32;
+                let is_null = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = icmp eq i32 {}, {}",
+                    is_null, kind_tag, null_index
+                ));
+                let err = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = select i1 {}, i64 0, i64 2", err, is_null));
+                Some(ValueWithErr {
+                    value: Value {
+                        ty: LType::Unit,
+                        repr: None,
+                    },
+                    err_code: err,
+                })
+            }
+            LType::Struct(layout) => self.json_decode_struct(layout, json, span, fctx),
+            LType::Enum(layout) => self.json_decode_enum(layout, json, span, fctx),
+        }
+    }
+
+    fn json_decode_struct(
+        &mut self,
+        layout: &StructLayoutType,
+        json: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let mut err_code = "0".to_string();
+        let mut decoded_fields = vec![None; layout.fields.len()];
+        let mut ordered = (0..layout.fields.len()).collect::<Vec<_>>();
+        ordered.sort_by(|a, b| layout.fields[*a].name.cmp(&layout.fields[*b].name));
+
+        for index in ordered {
+            let field = &layout.fields[index];
+            let key = self.string_literal(&field.name, fctx);
+            let field_json = self.json_object_get_runtime(json, &key, span, fctx)?;
+            err_code = self.combine_error_codes(&err_code, &field_json.err_code, fctx);
+
+            let found = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp ne i64 {}, 0", found, field_json.found));
+            let missing_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = select i1 {}, i64 0, i64 3",
+                missing_err, found
+            ));
+            err_code = self.combine_error_codes(&err_code, &missing_err, fctx);
+
+            let null_json = self.json_encode_null_runtime(span, fctx)?.value;
+            let selected_json_repr = self.select_value_repr(
+                &found,
+                &field_json.value.ty,
+                &field_json
+                    .value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&field_json.value.ty)),
+                &null_json
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&field_json.value.ty)),
+                fctx,
+            );
+            let selected_json = Value {
+                ty: field_json.value.ty.clone(),
+                repr: Some(selected_json_repr),
+            };
+            let decoded = self.json_decode_value(&field.ty, &selected_json, span, fctx)?;
+            let active_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = select i1 {}, i64 {}, i64 0",
+                active_err, found, decoded.err_code
+            ));
+            err_code = self.combine_error_codes(&err_code, &active_err, fctx);
+
+            let decoded_repr = decoded
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&field.ty));
+            let selected_repr = self.select_value_repr(
+                &found,
+                &field.ty,
+                &decoded_repr,
+                &default_value(&field.ty),
+                fctx,
+            );
+            decoded_fields[index] = Some(Value {
+                ty: field.ty.clone(),
+                repr: Some(selected_repr),
+            });
+        }
+
+        let values = decoded_fields
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value.unwrap_or_else(|| Value {
+                    ty: layout.fields[index].ty.clone(),
+                    repr: Some(default_value(&layout.fields[index].ty)),
+                })
+            })
+            .collect::<Vec<_>>();
+        let decoded_struct = self.build_struct_value(layout, &values, span, fctx)?;
+        Some(ValueWithErr {
+            value: decoded_struct,
+            err_code,
+        })
+    }
+
+    fn json_decode_enum(
+        &mut self,
+        layout: &EnumLayoutType,
+        json: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if layout.variants.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "enum decoding requires at least one variant",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let tag_key = self.string_literal("tag", fctx);
+        let tag_json = self.json_object_get_runtime(json, &tag_key, span, fctx)?;
+        let value_key = self.string_literal("value", fctx);
+        let payload_json = self.json_object_get_runtime(json, &value_key, span, fctx)?;
+
+        let mut err_code = "0".to_string();
+        err_code = self.combine_error_codes(&err_code, &tag_json.err_code, fctx);
+        err_code = self.combine_error_codes(&err_code, &payload_json.err_code, fctx);
+
+        let tag_found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            tag_found, tag_json.found
+        ));
+        let value_found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            value_found, payload_json.found
+        ));
+        let missing_tag_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 3",
+            missing_tag_err, tag_found
+        ));
+        let missing_value_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 3",
+            missing_value_err, value_found
+        ));
+        err_code = self.combine_error_codes(&err_code, &missing_tag_err, fctx);
+        err_code = self.combine_error_codes(&err_code, &missing_value_err, fctx);
+
+        let tag_fallback_json = self
+            .json_encode_int_runtime(
+                &Value {
+                    ty: LType::Int,
+                    repr: Some("0".to_string()),
+                },
+                span,
+                fctx,
+            )?
+            .value;
+        let selected_tag_json_repr = self.select_value_repr(
+            &tag_found,
+            &tag_json.value.ty,
+            &tag_json
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&tag_json.value.ty)),
+            &tag_fallback_json
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&tag_json.value.ty)),
+            fctx,
+        );
+        let selected_tag_json = Value {
+            ty: tag_json.value.ty.clone(),
+            repr: Some(selected_tag_json_repr),
+        };
+        let decoded_tag = self.json_decode_int_runtime(&selected_tag_json, span, fctx)?;
+        let tag_decode_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 {}, i64 0",
+            tag_decode_err, tag_found, decoded_tag.err_code
+        ));
+        err_code = self.combine_error_codes(&err_code, &tag_decode_err, fctx);
+        let tag_value = decoded_tag
+            .value
+            .repr
+            .clone()
+            .unwrap_or_else(|| "0".to_string());
+
+        let tag_non_negative = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp sge i64 {}, 0",
+            tag_non_negative, tag_value
+        ));
+        let tag_lt_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp slt i64 {}, {}",
+            tag_lt_count,
+            tag_value,
+            layout.variants.len() as i64
+        ));
+        let tag_in_range = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = and i1 {}, {}",
+            tag_in_range, tag_non_negative, tag_lt_count
+        ));
+        let unknown_tag_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 2",
+            unknown_tag_err, tag_in_range
+        ));
+        err_code = self.combine_error_codes(&err_code, &unknown_tag_err, fctx);
+
+        let fields_ready = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = and i1 {}, {}",
+            fields_ready, tag_found, value_found
+        ));
+
+        let payload_fallback_json = self.json_encode_null_runtime(span, fctx)?.value;
+        let selected_payload_json_repr = self.select_value_repr(
+            &value_found,
+            &payload_json.value.ty,
+            &payload_json
+                .value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&payload_json.value.ty)),
+            &payload_fallback_json
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&payload_json.value.ty)),
+            fctx,
+        );
+        let selected_payload_json = Value {
+            ty: payload_json.value.ty.clone(),
+            repr: Some(selected_payload_json_repr),
+        };
+
+        let enum_ty = LType::Enum(layout.clone());
+        let initial_payload = layout.variants[0].payload.as_ref().map(|ty| Value {
+            ty: ty.clone(),
+            repr: Some(default_value(ty)),
+        });
+        let mut selected = self.build_enum_variant(layout, 0, initial_payload, span, fctx)?;
+        for (index, variant) in layout.variants.iter().enumerate() {
+            let is_variant = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = icmp eq i64 {}, {}",
+                is_variant, tag_value, index as i64
+            ));
+            let active_variant = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = and i1 {}, {}",
+                active_variant, fields_ready, is_variant
+            ));
+
+            let (candidate, candidate_err) = if let Some(payload_ty) = variant.payload.clone() {
+                let decoded_payload =
+                    self.json_decode_value(&payload_ty, &selected_payload_json, span, fctx)?;
+                let enum_value = self.build_enum_variant(
+                    layout,
+                    index,
+                    Some(decoded_payload.value.clone()),
+                    span,
+                    fctx,
+                )?;
+                (enum_value, decoded_payload.err_code)
+            } else {
+                let payload_kind = self.json_kind_tag_i32(&selected_payload_json, span, fctx)?;
+                let null_index =
+                    self.json_kind_variant_index(&selected_payload_json.ty, "NullValue", span)?
+                        as i32;
+                let is_null = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = icmp eq i32 {}, {}",
+                    is_null, payload_kind, null_index
+                ));
+                let null_err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = select i1 {}, i64 0, i64 2",
+                    null_err, is_null
+                ));
+                let enum_value = self.build_enum_variant(layout, index, None, span, fctx)?;
+                (enum_value, null_err)
+            };
+            let active_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = select i1 {}, i64 {}, i64 0",
+                active_err, active_variant, candidate_err
+            ));
+            err_code = self.combine_error_codes(&err_code, &active_err, fctx);
+
+            let selected_repr = self.select_value_repr(
+                &active_variant,
+                &enum_ty,
+                &candidate
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&enum_ty)),
+                &selected
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&enum_ty)),
+                fctx,
+            );
+            selected = Value {
+                ty: enum_ty.clone(),
+                repr: Some(selected_repr),
+            };
+        }
+
+        Some(ValueWithErr {
+            value: selected,
+            err_code,
+        })
+    }
+
+    fn json_schema_for_type(
+        &mut self,
+        ty: &LType,
+        stack: &mut Vec<String>,
+        span: crate::span::Span,
+    ) -> Option<String> {
+        match ty {
+            LType::Int => Some("{\"kind\":\"int\"}".to_string()),
+            LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
+            LType::String => Some("{\"kind\":\"string\"}".to_string()),
+            LType::Unit => Some("{\"kind\":\"unit\"}".to_string()),
+            LType::Struct(layout) => {
+                if stack.iter().any(|name| name == &layout.repr) {
+                    return Some(format!(
+                        "{{\"kind\":\"ref\",\"name\":\"{}\"}}",
+                        json_escape_string(&layout.repr)
+                    ));
+                }
+                stack.push(layout.repr.clone());
+                let mut ordered = (0..layout.fields.len()).collect::<Vec<_>>();
+                ordered.sort_by(|a, b| layout.fields[*a].name.cmp(&layout.fields[*b].name));
+                let mut fields = Vec::new();
+                for index in ordered {
+                    let field = &layout.fields[index];
+                    let field_schema = self.json_schema_for_type(&field.ty, stack, span)?;
+                    fields.push(format!(
+                        "{{\"name\":\"{}\",\"type\":{}}}",
+                        json_escape_string(&field.name),
+                        field_schema
+                    ));
+                }
+                stack.pop();
+                Some(format!(
+                    "{{\"kind\":\"struct\",\"name\":\"{}\",\"fields\":[{}]}}",
+                    json_escape_string(&layout.repr),
+                    fields.join(",")
+                ))
+            }
+            LType::Enum(layout) => {
+                if stack.iter().any(|name| name == &layout.repr) {
+                    return Some(format!(
+                        "{{\"kind\":\"ref\",\"name\":\"{}\"}}",
+                        json_escape_string(&layout.repr)
+                    ));
+                }
+                if layout.variants.is_empty() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5011",
+                        "schema generation requires enums with at least one variant",
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+                stack.push(layout.repr.clone());
+                let mut variants = Vec::new();
+                for (index, variant) in layout.variants.iter().enumerate() {
+                    let payload = if let Some(payload_ty) = variant.payload.clone() {
+                        self.json_schema_for_type(&payload_ty, stack, span)?
+                    } else {
+                        "null".to_string()
+                    };
+                    variants.push(format!(
+                        "{{\"name\":\"{}\",\"tag\":{},\"payload\":{}}}",
+                        json_escape_string(&variant.name),
+                        index,
+                        payload
+                    ));
+                }
+                stack.pop();
+                Some(format!(
+                    "{{\"kind\":\"enum\",\"name\":\"{}\",\"tag_encoding\":\"indexed\",\"variants\":[{}]}}",
+                    json_escape_string(&layout.repr),
+                    variants.join(",")
+                ))
+            }
+        }
+    }
+
+    fn json_value_type(&mut self, span: crate::span::Span) -> Option<LType> {
+        let Some(ty) = self.parse_type_repr("JsonValue", span) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue type is unavailable for serde json lowering",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some(ty)
+    }
+
+    fn json_encode_int_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects Int input",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_int(i64 {}, i8** {}, i64* {})",
+            err_code,
+            value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "2", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_encode_bool_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects Bool input",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let bool_int = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            bool_int,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_bool(i64 {}, i8** {}, i64* {})",
+            err_code, bool_int, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "1", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_encode_string_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects String input",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(value, span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_string(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err_code, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "3", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_encode_null_runtime(
+        &mut self,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_null(i8** {}, i64* {})",
+            err_code, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "0", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_object_empty_runtime(
+        &mut self,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_empty(i8** {}, i64* {})",
+            err_code, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "5", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_object_set_runtime(
+        &mut self,
+        object: &Value,
+        key: &Value,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let (obj_ptr, obj_len, obj_cap) = self.json_raw_parts(object, span, fctx)?;
+        let (key_ptr, key_len, key_cap) = self.string_parts(key, span, fctx)?;
+        let (value_ptr, value_len, value_cap) = self.json_raw_parts(value, span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_kind_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_kind_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_set(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            err_code,
+            obj_ptr,
+            obj_len,
+            obj_cap,
+            key_ptr,
+            key_len,
+            key_cap,
+            value_ptr,
+            value_len,
+            value_cap,
+            out_ptr_slot,
+            out_len_slot,
+            out_kind_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_kind = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_kind, out_kind_slot));
+
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&object.ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, &out_kind, span, fctx)?;
+        let json = self.build_json_value_struct(&object.ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_object_get_runtime(
+        &mut self,
+        object: &Value,
+        key: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<JsonObjectGetValue> {
+        let (obj_ptr, obj_len, obj_cap) = self.json_raw_parts(object, span, fctx)?;
+        let (key_ptr, key_len, key_cap) = self.string_parts(key, span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_kind_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_kind_slot));
+        let found_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", found_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_object_get(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {}, i64* {})",
+            err_code,
+            obj_ptr,
+            obj_len,
+            obj_cap,
+            key_ptr,
+            key_len,
+            key_cap,
+            out_ptr_slot,
+            out_len_slot,
+            out_kind_slot,
+            found_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_kind = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_kind, out_kind_slot));
+        let found = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", found, found_slot));
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self.json_value_type(span)?;
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, &out_kind, span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(JsonObjectGetValue {
+            value: json,
+            found,
+            err_code,
+        })
+    }
+
+    fn json_decode_int_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(value, span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_int(i8* {}, i64 {}, i64 {}, i64* {})",
+            err_code, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        Some(ValueWithErr {
+            value: Value {
+                ty: LType::Int,
+                repr: Some(out),
+            },
+            err_code,
+        })
+    }
+
+    fn json_decode_bool_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(value, span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_bool(i8* {}, i64 {}, i64 {}, i64* {})",
+            err_code, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out_int = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_int, out_slot));
+        let out_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", out_bool, out_int));
+        Some(ValueWithErr {
+            value: Value {
+                ty: LType::Bool,
+                repr: Some(out_bool),
+            },
+            err_code,
+        })
+    }
+
+    fn json_decode_string_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(value, span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_string(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err_code, raw_ptr, raw_len, raw_cap, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let decoded = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        Some(ValueWithErr {
+            value: decoded,
+            err_code,
+        })
+    }
+
+    fn json_kind_tag_i32(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let (layout, _, kind_index, kind_ty) = self.json_value_layout(&value.ty, span)?;
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let kind_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            kind_reg,
+            llvm_type(&LType::Struct(layout)),
+            value_repr,
+            kind_index
+        ));
+        self.enum_tag_i32(
+            &Value {
+                ty: kind_ty,
+                repr: Some(kind_reg),
+            },
+            span,
+            fctx,
+        )
+    }
+
+    fn enum_tag_i32(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let LType::Enum(_) = value.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected enum value while extracting tag",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&value.ty),
+            value_repr
+        ));
+        Some(tag)
+    }
+
+    fn json_kind_variant_index(
+        &mut self,
+        json_ty: &LType,
+        variant_name: &str,
+        span: crate::span::Span,
+    ) -> Option<usize> {
+        let (_, _, _, kind_ty) = self.json_value_layout(json_ty, span)?;
+        let LType::Enum(layout) = kind_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "JsonValue.kind must be enum",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(index) = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == variant_name)
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("JsonKind is missing {} variant", variant_name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some(index)
+    }
+
+    fn combine_error_codes(&mut self, left: &str, right: &str, fctx: &mut FnCtx) -> String {
+        let left_is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", left_is_ok, left));
+        let merged = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 {}, i64 {}",
+            merged, left_is_ok, right, left
+        ));
+        merged
+    }
+
+    fn select_value_repr(
+        &mut self,
+        cond: &str,
+        ty: &LType,
+        when_true: &str,
+        when_false: &str,
+        fctx: &mut FnCtx,
+    ) -> String {
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, {} {}, {} {}",
+            reg,
+            cond,
+            llvm_type(ty),
+            when_true,
+            llvm_type(ty),
+            when_false
+        ));
+        reg
+    }
+
     fn gen_regex_builtin_call(
         &mut self,
         name: &str,
@@ -6135,6 +10052,60 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn build_url_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "UrlError",
+            "url",
+            &[
+                (1, "InvalidUrl"),
+                (2, "InvalidScheme"),
+                (3, "InvalidHost"),
+                (4, "InvalidPort"),
+                (5, "InvalidPath"),
+                (6, "InvalidInput"),
+                (7, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_http_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "HttpError",
+            "http",
+            &[
+                (1, "InvalidMethod"),
+                (2, "InvalidStatus"),
+                (3, "InvalidHeaderName"),
+                (4, "InvalidHeaderValue"),
+                (5, "InvalidTarget"),
+                (6, "InvalidInput"),
+                (7, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
     fn build_regex_error_from_code(
         &mut self,
         err_ty: &LType,
@@ -6183,6 +10154,59 @@ impl<'a> Generator<'a> {
             ],
             "Io",
             err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_json_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "JsonError",
+            "json",
+            &[
+                (1, "InvalidJson"),
+                (2, "InvalidType"),
+                (3, "MissingField"),
+                (4, "InvalidNumber"),
+                (5, "InvalidString"),
+                (6, "InvalidInput"),
+                (7, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_json_kind_from_code(
+        &mut self,
+        kind_ty: &LType,
+        kind_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            kind_ty,
+            "JsonKind",
+            "json kind",
+            &[
+                (0, "NullValue"),
+                (1, "BoolValue"),
+                (2, "NumberValue"),
+                (3, "StringValue"),
+                (4, "ArrayValue"),
+                (5, "ObjectValue"),
+            ],
+            "NullValue",
+            kind_code,
             span,
             fctx,
         )
@@ -8022,6 +12046,24 @@ fn escape_c_string_bytes(text: &str) -> (String, usize) {
     out.push_str("\\00");
     len += 1;
     (out, len)
+}
+
+fn json_escape_string(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0C}' => out.push_str("\\f"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04X}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out
 }
 
 fn runtime_c_source() -> &'static str {
@@ -11606,6 +15648,1424 @@ long aic_rt_net_dns_reverse(
 }
 #endif
 
+#define AIC_RT_JSON_KIND_NULL 0L
+#define AIC_RT_JSON_KIND_BOOL 1L
+#define AIC_RT_JSON_KIND_NUMBER 2L
+#define AIC_RT_JSON_KIND_STRING 3L
+#define AIC_RT_JSON_KIND_ARRAY 4L
+#define AIC_RT_JSON_KIND_OBJECT 5L
+
+typedef struct {
+    char* key;
+    const char* value_ptr;
+    size_t value_len;
+    long value_kind;
+    int value_owned;
+} AicJsonObjectEntry;
+
+static int aic_rt_json_is_space(char ch) {
+    return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t';
+}
+
+static void aic_rt_json_skip_ws(const char* text, size_t len, size_t* pos) {
+    while (*pos < len && aic_rt_json_is_space(text[*pos])) {
+        *pos += 1;
+    }
+}
+
+static int aic_rt_json_hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return (int)(ch - '0');
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (int)(ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (int)(ch - 'A');
+    }
+    return -1;
+}
+
+static int aic_rt_json_append_utf8(char* out, size_t cap, size_t* out_pos, unsigned codepoint) {
+    if (codepoint <= 0x7F) {
+        if (*out_pos + 1 > cap) {
+            return 0;
+        }
+        out[(*out_pos)++] = (char)codepoint;
+        return 1;
+    }
+    if (codepoint <= 0x7FF) {
+        if (*out_pos + 2 > cap) {
+            return 0;
+        }
+        out[(*out_pos)++] = (char)(0xC0 | ((codepoint >> 6) & 0x1F));
+        out[(*out_pos)++] = (char)(0x80 | (codepoint & 0x3F));
+        return 1;
+    }
+    if (codepoint <= 0xFFFF) {
+        if (*out_pos + 3 > cap) {
+            return 0;
+        }
+        out[(*out_pos)++] = (char)(0xE0 | ((codepoint >> 12) & 0x0F));
+        out[(*out_pos)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        out[(*out_pos)++] = (char)(0x80 | (codepoint & 0x3F));
+        return 1;
+    }
+    if (codepoint <= 0x10FFFF) {
+        if (*out_pos + 4 > cap) {
+            return 0;
+        }
+        out[(*out_pos)++] = (char)(0xF0 | ((codepoint >> 18) & 0x07));
+        out[(*out_pos)++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+        out[(*out_pos)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        out[(*out_pos)++] = (char)(0x80 | (codepoint & 0x3F));
+        return 1;
+    }
+    return 0;
+}
+
+static long aic_rt_json_parse_value(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    long* out_kind,
+    int depth
+);
+
+static long aic_rt_json_parse_string_token(const char* text, size_t len, size_t* pos) {
+    if (*pos >= len || text[*pos] != '"') {
+        return 1;
+    }
+    *pos += 1;
+    while (*pos < len) {
+        char ch = text[*pos];
+        *pos += 1;
+        if (ch == '"') {
+            return 0;
+        }
+        if ((unsigned char)ch < 0x20) {
+            return 1;
+        }
+        if (ch == '\\') {
+            if (*pos >= len) {
+                return 1;
+            }
+            char esc = text[*pos];
+            *pos += 1;
+            switch (esc) {
+                case '"':
+                case '\\':
+                case '/':
+                case 'b':
+                case 'f':
+                case 'n':
+                case 'r':
+                case 't':
+                    break;
+                case 'u':
+                    for (int i = 0; i < 4; ++i) {
+                        if (*pos >= len || aic_rt_json_hex_value(text[*pos]) < 0) {
+                            return 1;
+                        }
+                        *pos += 1;
+                    }
+                    break;
+                default:
+                    return 1;
+            }
+        }
+    }
+    return 1;
+}
+
+static long aic_rt_json_parse_number_token(const char* text, size_t len, size_t* pos) {
+    size_t i = *pos;
+    if (i < len && text[i] == '-') {
+        i += 1;
+    }
+    if (i >= len) {
+        return 1;
+    }
+    if (text[i] == '0') {
+        i += 1;
+    } else if (text[i] >= '1' && text[i] <= '9') {
+        i += 1;
+        while (i < len && text[i] >= '0' && text[i] <= '9') {
+            i += 1;
+        }
+    } else {
+        return 1;
+    }
+    if (i < len && text[i] == '.') {
+        i += 1;
+        if (i >= len || text[i] < '0' || text[i] > '9') {
+            return 1;
+        }
+        while (i < len && text[i] >= '0' && text[i] <= '9') {
+            i += 1;
+        }
+    }
+    if (i < len && (text[i] == 'e' || text[i] == 'E')) {
+        i += 1;
+        if (i < len && (text[i] == '+' || text[i] == '-')) {
+            i += 1;
+        }
+        if (i >= len || text[i] < '0' || text[i] > '9') {
+            return 1;
+        }
+        while (i < len && text[i] >= '0' && text[i] <= '9') {
+            i += 1;
+        }
+    }
+    *pos = i;
+    return 0;
+}
+
+static long aic_rt_json_parse_array(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    int depth
+) {
+    if (*pos >= len || text[*pos] != '[') {
+        return 1;
+    }
+    *pos += 1;
+    aic_rt_json_skip_ws(text, len, pos);
+    if (*pos < len && text[*pos] == ']') {
+        *pos += 1;
+        return 0;
+    }
+    while (*pos < len) {
+        long inner_kind = 0;
+        long rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
+        if (rc != 0) {
+            return rc;
+        }
+        aic_rt_json_skip_ws(text, len, pos);
+        if (*pos >= len) {
+            return 1;
+        }
+        if (text[*pos] == ',') {
+            *pos += 1;
+            aic_rt_json_skip_ws(text, len, pos);
+            continue;
+        }
+        if (text[*pos] == ']') {
+            *pos += 1;
+            return 0;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static long aic_rt_json_parse_object(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    int depth
+) {
+    if (*pos >= len || text[*pos] != '{') {
+        return 1;
+    }
+    *pos += 1;
+    aic_rt_json_skip_ws(text, len, pos);
+    if (*pos < len && text[*pos] == '}') {
+        *pos += 1;
+        return 0;
+    }
+    while (*pos < len) {
+        long key_rc = aic_rt_json_parse_string_token(text, len, pos);
+        if (key_rc != 0) {
+            return key_rc;
+        }
+        aic_rt_json_skip_ws(text, len, pos);
+        if (*pos >= len || text[*pos] != ':') {
+            return 1;
+        }
+        *pos += 1;
+        aic_rt_json_skip_ws(text, len, pos);
+        long inner_kind = 0;
+        long value_rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
+        if (value_rc != 0) {
+            return value_rc;
+        }
+        aic_rt_json_skip_ws(text, len, pos);
+        if (*pos >= len) {
+            return 1;
+        }
+        if (text[*pos] == ',') {
+            *pos += 1;
+            aic_rt_json_skip_ws(text, len, pos);
+            continue;
+        }
+        if (text[*pos] == '}') {
+            *pos += 1;
+            return 0;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static long aic_rt_json_parse_value(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    long* out_kind,
+    int depth
+) {
+    if (depth > 128) {
+        return 1;
+    }
+    aic_rt_json_skip_ws(text, len, pos);
+    if (*pos >= len) {
+        return 1;
+    }
+    char ch = text[*pos];
+    if (ch == 'n') {
+        if (*pos + 4 <= len && memcmp(text + *pos, "null", 4) == 0) {
+            *pos += 4;
+            if (out_kind != NULL) {
+                *out_kind = AIC_RT_JSON_KIND_NULL;
+            }
+            return 0;
+        }
+        return 1;
+    }
+    if (ch == 't') {
+        if (*pos + 4 <= len && memcmp(text + *pos, "true", 4) == 0) {
+            *pos += 4;
+            if (out_kind != NULL) {
+                *out_kind = AIC_RT_JSON_KIND_BOOL;
+            }
+            return 0;
+        }
+        return 1;
+    }
+    if (ch == 'f') {
+        if (*pos + 5 <= len && memcmp(text + *pos, "false", 5) == 0) {
+            *pos += 5;
+            if (out_kind != NULL) {
+                *out_kind = AIC_RT_JSON_KIND_BOOL;
+            }
+            return 0;
+        }
+        return 1;
+    }
+    if (ch == '"') {
+        long rc = aic_rt_json_parse_string_token(text, len, pos);
+        if (rc != 0) {
+            return rc;
+        }
+        if (out_kind != NULL) {
+            *out_kind = AIC_RT_JSON_KIND_STRING;
+        }
+        return 0;
+    }
+    if (ch == '[') {
+        long rc = aic_rt_json_parse_array(text, len, pos, depth);
+        if (rc != 0) {
+            return rc;
+        }
+        if (out_kind != NULL) {
+            *out_kind = AIC_RT_JSON_KIND_ARRAY;
+        }
+        return 0;
+    }
+    if (ch == '{') {
+        long rc = aic_rt_json_parse_object(text, len, pos, depth);
+        if (rc != 0) {
+            return rc;
+        }
+        if (out_kind != NULL) {
+            *out_kind = AIC_RT_JSON_KIND_OBJECT;
+        }
+        return 0;
+    }
+    if (ch == '-' || (ch >= '0' && ch <= '9')) {
+        long rc = aic_rt_json_parse_number_token(text, len, pos);
+        if (rc != 0) {
+            return rc;
+        }
+        if (out_kind != NULL) {
+            *out_kind = AIC_RT_JSON_KIND_NUMBER;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static long aic_rt_json_validate_document(const char* text, size_t len, long* out_kind) {
+    size_t pos = 0;
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long rc = aic_rt_json_parse_value(text, len, &pos, &kind, 0);
+    if (rc != 0) {
+        return rc;
+    }
+    aic_rt_json_skip_ws(text, len, &pos);
+    if (pos != len) {
+        return 1;
+    }
+    if (out_kind != NULL) {
+        *out_kind = kind;
+    }
+    return 0;
+}
+
+static long aic_rt_json_decode_string_token(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    char** out_ptr,
+    size_t* out_len
+) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (*pos >= len || text[*pos] != '"') {
+        return 1;
+    }
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return 7;
+    }
+    size_t out_pos = 0;
+    *pos += 1;
+    while (*pos < len) {
+        char ch = text[*pos];
+        *pos += 1;
+        if (ch == '"') {
+            out[out_pos] = '\0';
+            if (out_ptr != NULL) {
+                *out_ptr = out;
+            } else {
+                free(out);
+            }
+            if (out_len != NULL) {
+                *out_len = out_pos;
+            }
+            return 0;
+        }
+        if ((unsigned char)ch < 0x20) {
+            free(out);
+            return 1;
+        }
+        if (ch != '\\') {
+            out[out_pos++] = ch;
+            continue;
+        }
+        if (*pos >= len) {
+            free(out);
+            return 1;
+        }
+        char esc = text[*pos];
+        *pos += 1;
+        switch (esc) {
+            case '"':
+            case '\\':
+            case '/':
+                out[out_pos++] = esc;
+                break;
+            case 'b':
+                out[out_pos++] = '\b';
+                break;
+            case 'f':
+                out[out_pos++] = '\f';
+                break;
+            case 'n':
+                out[out_pos++] = '\n';
+                break;
+            case 'r':
+                out[out_pos++] = '\r';
+                break;
+            case 't':
+                out[out_pos++] = '\t';
+                break;
+            case 'u': {
+                unsigned codepoint = 0;
+                for (int i = 0; i < 4; ++i) {
+                    if (*pos >= len) {
+                        free(out);
+                        return 1;
+                    }
+                    int hv = aic_rt_json_hex_value(text[*pos]);
+                    if (hv < 0) {
+                        free(out);
+                        return 1;
+                    }
+                    codepoint = (codepoint << 4) | (unsigned)hv;
+                    *pos += 1;
+                }
+                if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+                    if (*pos + 6 > len || text[*pos] != '\\' || text[*pos + 1] != 'u') {
+                        free(out);
+                        return 1;
+                    }
+                    *pos += 2;
+                    unsigned low = 0;
+                    for (int i = 0; i < 4; ++i) {
+                        int hv = aic_rt_json_hex_value(text[*pos]);
+                        if (hv < 0) {
+                            free(out);
+                            return 1;
+                        }
+                        low = (low << 4) | (unsigned)hv;
+                        *pos += 1;
+                    }
+                    if (low < 0xDC00 || low > 0xDFFF) {
+                        free(out);
+                        return 1;
+                    }
+                    codepoint = 0x10000 + (((codepoint - 0xD800) << 10) | (low - 0xDC00));
+                } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
+                    free(out);
+                    return 1;
+                }
+                if (!aic_rt_json_append_utf8(out, len, &out_pos, codepoint)) {
+                    free(out);
+                    return 7;
+                }
+                break;
+            }
+            default:
+                free(out);
+                return 1;
+        }
+    }
+    free(out);
+    return 1;
+}
+
+static long aic_rt_json_escape_string(
+    const char* src,
+    size_t len,
+    char** out_ptr,
+    long* out_len
+) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    size_t needed = 2;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char ch = (unsigned char)src[i];
+        switch (ch) {
+            case '"':
+            case '\\':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+                needed += 2;
+                break;
+            default:
+                if (ch < 0x20) {
+                    needed += 6;
+                } else {
+                    needed += 1;
+                }
+                break;
+        }
+    }
+    char* out = (char*)malloc(needed + 1);
+    if (out == NULL) {
+        return 7;
+    }
+    size_t pos = 0;
+    out[pos++] = '"';
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char ch = (unsigned char)src[i];
+        switch (ch) {
+            case '"':
+                out[pos++] = '\\';
+                out[pos++] = '"';
+                break;
+            case '\\':
+                out[pos++] = '\\';
+                out[pos++] = '\\';
+                break;
+            case '\b':
+                out[pos++] = '\\';
+                out[pos++] = 'b';
+                break;
+            case '\f':
+                out[pos++] = '\\';
+                out[pos++] = 'f';
+                break;
+            case '\n':
+                out[pos++] = '\\';
+                out[pos++] = 'n';
+                break;
+            case '\r':
+                out[pos++] = '\\';
+                out[pos++] = 'r';
+                break;
+            case '\t':
+                out[pos++] = '\\';
+                out[pos++] = 't';
+                break;
+            default:
+                if (ch < 0x20) {
+                    static const char* hex = "0123456789abcdef";
+                    out[pos++] = '\\';
+                    out[pos++] = 'u';
+                    out[pos++] = '0';
+                    out[pos++] = '0';
+                    out[pos++] = hex[(ch >> 4) & 0x0F];
+                    out[pos++] = hex[ch & 0x0F];
+                } else {
+                    out[pos++] = (char)ch;
+                }
+                break;
+        }
+    }
+    out[pos++] = '"';
+    out[pos] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)pos;
+    }
+    return 0;
+}
+
+static void aic_rt_json_free_entries(AicJsonObjectEntry* entries, size_t count) {
+    if (entries == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free(entries[i].key);
+        if (entries[i].value_owned && entries[i].value_ptr != NULL) {
+            free((void*)entries[i].value_ptr);
+        }
+    }
+    free(entries);
+}
+
+static long aic_rt_json_upsert_entry(
+    AicJsonObjectEntry** entries_ptr,
+    size_t* count_ptr,
+    size_t* cap_ptr,
+    char* key,
+    const char* value_ptr,
+    size_t value_len,
+    long value_kind,
+    int value_owned
+) {
+    AicJsonObjectEntry* entries = *entries_ptr;
+    size_t count = *count_ptr;
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].key, key) == 0) {
+            free(entries[i].key);
+            entries[i].key = key;
+            if (entries[i].value_owned && entries[i].value_ptr != NULL) {
+                free((void*)entries[i].value_ptr);
+            }
+            entries[i].value_ptr = value_ptr;
+            entries[i].value_len = value_len;
+            entries[i].value_kind = value_kind;
+            entries[i].value_owned = value_owned;
+            return 0;
+        }
+    }
+    if (count == *cap_ptr) {
+        size_t next_cap = (*cap_ptr == 0) ? 4 : (*cap_ptr * 2);
+        AicJsonObjectEntry* resized =
+            (AicJsonObjectEntry*)realloc(entries, next_cap * sizeof(AicJsonObjectEntry));
+        if (resized == NULL) {
+            return 7;
+        }
+        entries = resized;
+        *entries_ptr = entries;
+        *cap_ptr = next_cap;
+    }
+    entries[count].key = key;
+    entries[count].value_ptr = value_ptr;
+    entries[count].value_len = value_len;
+    entries[count].value_kind = value_kind;
+    entries[count].value_owned = value_owned;
+    *count_ptr = count + 1;
+    return 0;
+}
+
+static long aic_rt_json_collect_object_entries(
+    const char* text,
+    size_t len,
+    AicJsonObjectEntry** out_entries,
+    size_t* out_count
+) {
+    if (out_entries != NULL) {
+        *out_entries = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+
+    size_t pos = 0;
+    aic_rt_json_skip_ws(text, len, &pos);
+    if (pos >= len || text[pos] != '{') {
+        return 1;
+    }
+    pos += 1;
+    aic_rt_json_skip_ws(text, len, &pos);
+
+    AicJsonObjectEntry* entries = NULL;
+    size_t count = 0;
+    size_t cap = 0;
+
+    if (pos < len && text[pos] == '}') {
+        pos += 1;
+        aic_rt_json_skip_ws(text, len, &pos);
+        if (pos != len) {
+            return 1;
+        }
+        if (out_entries != NULL) {
+            *out_entries = entries;
+        }
+        if (out_count != NULL) {
+            *out_count = count;
+        }
+        return 0;
+    }
+
+    while (pos < len) {
+        char* key = NULL;
+        size_t key_len = 0;
+        long key_rc = aic_rt_json_decode_string_token(text, len, &pos, &key, &key_len);
+        (void)key_len;
+        if (key_rc != 0) {
+            free(key);
+            aic_rt_json_free_entries(entries, count);
+            return key_rc;
+        }
+        aic_rt_json_skip_ws(text, len, &pos);
+        if (pos >= len || text[pos] != ':') {
+            free(key);
+            aic_rt_json_free_entries(entries, count);
+            return 1;
+        }
+        pos += 1;
+        aic_rt_json_skip_ws(text, len, &pos);
+
+        size_t value_start = pos;
+        long value_kind = 0;
+        long value_rc = aic_rt_json_parse_value(text, len, &pos, &value_kind, 1);
+        if (value_rc != 0) {
+            free(key);
+            aic_rt_json_free_entries(entries, count);
+            return value_rc;
+        }
+        size_t value_end = pos;
+
+        long upsert = aic_rt_json_upsert_entry(
+            &entries,
+            &count,
+            &cap,
+            key,
+            text + value_start,
+            value_end - value_start,
+            value_kind,
+            0
+        );
+        if (upsert != 0) {
+            free(key);
+            aic_rt_json_free_entries(entries, count);
+            return upsert;
+        }
+
+        aic_rt_json_skip_ws(text, len, &pos);
+        if (pos >= len) {
+            aic_rt_json_free_entries(entries, count);
+            return 1;
+        }
+        if (text[pos] == ',') {
+            pos += 1;
+            aic_rt_json_skip_ws(text, len, &pos);
+            continue;
+        }
+        if (text[pos] == '}') {
+            pos += 1;
+            aic_rt_json_skip_ws(text, len, &pos);
+            if (pos != len) {
+                aic_rt_json_free_entries(entries, count);
+                return 1;
+            }
+            if (out_entries != NULL) {
+                *out_entries = entries;
+            } else {
+                aic_rt_json_free_entries(entries, count);
+            }
+            if (out_count != NULL) {
+                *out_count = count;
+            }
+            return 0;
+        }
+        aic_rt_json_free_entries(entries, count);
+        return 1;
+    }
+
+    aic_rt_json_free_entries(entries, count);
+    return 1;
+}
+
+static int aic_rt_json_entry_cmp(const void* left, const void* right) {
+    const AicJsonObjectEntry* a = (const AicJsonObjectEntry*)left;
+    const AicJsonObjectEntry* b = (const AicJsonObjectEntry*)right;
+    return strcmp(a->key, b->key);
+}
+
+static int aic_rt_json_trim_bounds(const char* text, size_t len, size_t* out_start, size_t* out_end) {
+    size_t start = 0;
+    size_t end = len;
+    while (start < end && aic_rt_json_is_space(text[start])) {
+        start += 1;
+    }
+    while (end > start && aic_rt_json_is_space(text[end - 1])) {
+        end -= 1;
+    }
+    if (out_start != NULL) {
+        *out_start = start;
+    }
+    if (out_end != NULL) {
+        *out_end = end;
+    }
+    return start < end;
+}
+
+long aic_rt_json_parse(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len,
+    long* out_kind
+) {
+    (void)text_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_kind != NULL) {
+        *out_kind = AIC_RT_JSON_KIND_NULL;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 6;
+    }
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long parse_rc = aic_rt_json_validate_document(text_ptr, (size_t)text_len, &kind);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    char* out = aic_rt_copy_bytes(text_ptr, (size_t)text_len);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = text_len;
+    }
+    if (out_kind != NULL) {
+        *out_kind = kind;
+    }
+    return 0;
+}
+
+long aic_rt_json_stringify(
+    const char* raw_ptr,
+    long raw_len,
+    long raw_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)raw_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
+        return 6;
+    }
+    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, NULL);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    char* out = aic_rt_copy_bytes(raw_ptr, (size_t)raw_len);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = raw_len;
+    }
+    return 0;
+}
+
+long aic_rt_json_encode_int(long value, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%ld", value);
+    if (written < 0) {
+        return 7;
+    }
+    char* out = aic_rt_copy_bytes(buf, (size_t)written);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)written;
+    }
+    return 0;
+}
+
+long aic_rt_json_encode_bool(long value, char** out_ptr, long* out_len) {
+    if (value != 0) {
+        char* out_true = aic_rt_copy_bytes("true", 4);
+        if (out_true == NULL) {
+            return 7;
+        }
+        if (out_ptr != NULL) {
+            *out_ptr = out_true;
+        } else {
+            free(out_true);
+        }
+        if (out_len != NULL) {
+            *out_len = 4;
+        }
+        return 0;
+    }
+    char* out_false = aic_rt_copy_bytes("false", 5);
+    if (out_false == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out_false;
+    } else {
+        free(out_false);
+    }
+    if (out_len != NULL) {
+        *out_len = 5;
+    }
+    return 0;
+}
+
+long aic_rt_json_encode_string(
+    const char* value_ptr,
+    long value_len,
+    long value_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)value_cap;
+    if (value_len < 0 || (value_len > 0 && value_ptr == NULL)) {
+        if (out_ptr != NULL) {
+            *out_ptr = NULL;
+        }
+        if (out_len != NULL) {
+            *out_len = 0;
+        }
+        return 6;
+    }
+    return aic_rt_json_escape_string(value_ptr, (size_t)value_len, out_ptr, out_len);
+}
+
+long aic_rt_json_encode_null(char** out_ptr, long* out_len) {
+    char* out = aic_rt_copy_bytes("null", 4);
+    if (out == NULL) {
+        if (out_ptr != NULL) {
+            *out_ptr = NULL;
+        }
+        if (out_len != NULL) {
+            *out_len = 0;
+        }
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = 4;
+    }
+    return 0;
+}
+
+long aic_rt_json_decode_int(
+    const char* raw_ptr,
+    long raw_len,
+    long raw_cap,
+    long* out_value
+) {
+    (void)raw_cap;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
+        return 6;
+    }
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    if (kind != AIC_RT_JSON_KIND_NUMBER) {
+        return 2;
+    }
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_json_trim_bounds(raw_ptr, (size_t)raw_len, &start, &end)) {
+        return 4;
+    }
+    for (size_t i = start; i < end; ++i) {
+        char ch = raw_ptr[i];
+        if (ch == '.' || ch == 'e' || ch == 'E') {
+            return 4;
+        }
+    }
+    char* number = aic_rt_copy_bytes(raw_ptr + start, end - start);
+    if (number == NULL) {
+        return 7;
+    }
+    errno = 0;
+    char* tail = NULL;
+    long long parsed = strtoll(number, &tail, 10);
+    if (errno == ERANGE || tail == number || (tail != NULL && *tail != '\0')) {
+        free(number);
+        return 4;
+    }
+    if (parsed < LONG_MIN || parsed > LONG_MAX) {
+        free(number);
+        return 4;
+    }
+    if (out_value != NULL) {
+        *out_value = (long)parsed;
+    }
+    free(number);
+    return 0;
+}
+
+long aic_rt_json_decode_bool(
+    const char* raw_ptr,
+    long raw_len,
+    long raw_cap,
+    long* out_value
+) {
+    (void)raw_cap;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
+        return 6;
+    }
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    if (kind != AIC_RT_JSON_KIND_BOOL) {
+        return 2;
+    }
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_json_trim_bounds(raw_ptr, (size_t)raw_len, &start, &end)) {
+        return 1;
+    }
+    size_t n = end - start;
+    if (n == 4 && memcmp(raw_ptr + start, "true", 4) == 0) {
+        if (out_value != NULL) {
+            *out_value = 1;
+        }
+        return 0;
+    }
+    if (n == 5 && memcmp(raw_ptr + start, "false", 5) == 0) {
+        if (out_value != NULL) {
+            *out_value = 0;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+long aic_rt_json_decode_string(
+    const char* raw_ptr,
+    long raw_len,
+    long raw_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)raw_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
+        return 6;
+    }
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    if (kind != AIC_RT_JSON_KIND_STRING) {
+        return 2;
+    }
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_json_trim_bounds(raw_ptr, (size_t)raw_len, &start, &end)) {
+        return 5;
+    }
+    size_t pos = start;
+    char* decoded = NULL;
+    size_t decoded_len = 0;
+    long decode_rc =
+        aic_rt_json_decode_string_token(raw_ptr, end, &pos, &decoded, &decoded_len);
+    if (decode_rc != 0 || pos != end) {
+        free(decoded);
+        return decode_rc == 7 ? 7 : 5;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = decoded;
+    } else {
+        free(decoded);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)decoded_len;
+    }
+    return 0;
+}
+
+long aic_rt_json_object_empty(char** out_ptr, long* out_len) {
+    char* out = aic_rt_copy_bytes("{}", 2);
+    if (out == NULL) {
+        if (out_ptr != NULL) {
+            *out_ptr = NULL;
+        }
+        if (out_len != NULL) {
+            *out_len = 0;
+        }
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = 2;
+    }
+    return 0;
+}
+
+long aic_rt_json_object_set(
+    const char* object_ptr,
+    long object_len,
+    long object_cap,
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    const char* value_ptr,
+    long value_len,
+    long value_cap,
+    char** out_ptr,
+    long* out_len,
+    long* out_kind
+) {
+    (void)object_cap;
+    (void)key_cap;
+    (void)value_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_kind != NULL) {
+        *out_kind = AIC_RT_JSON_KIND_NULL;
+    }
+    if (object_len < 0 || (object_len > 0 && object_ptr == NULL) ||
+        key_len < 0 || (key_len > 0 && key_ptr == NULL) ||
+        value_len < 0 || (value_len > 0 && value_ptr == NULL)) {
+        return 6;
+    }
+
+    long object_kind = AIC_RT_JSON_KIND_NULL;
+    long object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
+    if (object_rc != 0) {
+        return object_rc;
+    }
+    if (object_kind != AIC_RT_JSON_KIND_OBJECT) {
+        return 2;
+    }
+    long value_kind = AIC_RT_JSON_KIND_NULL;
+    long value_rc = aic_rt_json_validate_document(value_ptr, (size_t)value_len, &value_kind);
+    if (value_rc != 0) {
+        return value_rc;
+    }
+
+    char* object_copy = aic_rt_copy_bytes(object_ptr, (size_t)object_len);
+    char* key_copy = aic_rt_copy_bytes(key_ptr, (size_t)key_len);
+    char* value_copy = aic_rt_copy_bytes(value_ptr, (size_t)value_len);
+    if (object_copy == NULL || key_copy == NULL || value_copy == NULL) {
+        free(object_copy);
+        free(key_copy);
+        free(value_copy);
+        return 7;
+    }
+
+    AicJsonObjectEntry* entries = NULL;
+    size_t count = 0;
+    long collect_rc =
+        aic_rt_json_collect_object_entries(object_copy, (size_t)object_len, &entries, &count);
+    if (collect_rc != 0) {
+        free(object_copy);
+        free(key_copy);
+        free(value_copy);
+        aic_rt_json_free_entries(entries, count);
+        return collect_rc;
+    }
+
+    size_t cap = count;
+    long upsert_rc = aic_rt_json_upsert_entry(
+        &entries,
+        &count,
+        &cap,
+        key_copy,
+        value_copy,
+        (size_t)value_len,
+        value_kind,
+        1
+    );
+    if (upsert_rc != 0) {
+        free(object_copy);
+        free(key_copy);
+        free(value_copy);
+        aic_rt_json_free_entries(entries, count);
+        return upsert_rc;
+    }
+
+    qsort(entries, count, sizeof(AicJsonObjectEntry), aic_rt_json_entry_cmp);
+
+    char** key_json = NULL;
+    long* key_json_len = NULL;
+    if (count > 0) {
+        key_json = (char**)calloc(count, sizeof(char*));
+        key_json_len = (long*)calloc(count, sizeof(long));
+        if (key_json == NULL || key_json_len == NULL) {
+            free(object_copy);
+            free(key_json);
+            free(key_json_len);
+            aic_rt_json_free_entries(entries, count);
+            return 7;
+        }
+    }
+
+    size_t total_len = 2;
+    for (size_t i = 0; i < count; ++i) {
+        long escape_rc = aic_rt_json_escape_string(
+            entries[i].key,
+            strlen(entries[i].key),
+            &key_json[i],
+            &key_json_len[i]
+        );
+        if (escape_rc != 0) {
+            free(object_copy);
+            for (size_t j = 0; j <= i; ++j) {
+                free(key_json[j]);
+            }
+            free(key_json);
+            free(key_json_len);
+            aic_rt_json_free_entries(entries, count);
+            return escape_rc;
+        }
+        if (count > 0) {
+            total_len += (size_t)key_json_len[i] + 1 + entries[i].value_len;
+            if (i + 1 < count) {
+                total_len += 1;
+            }
+        }
+    }
+
+    char* out = (char*)malloc(total_len + 1);
+    if (out == NULL) {
+        free(object_copy);
+        for (size_t i = 0; i < count; ++i) {
+            free(key_json[i]);
+        }
+        free(key_json);
+        free(key_json_len);
+        aic_rt_json_free_entries(entries, count);
+        return 7;
+    }
+
+    size_t pos = 0;
+    out[pos++] = '{';
+    for (size_t i = 0; i < count; ++i) {
+        if (i > 0) {
+            out[pos++] = ',';
+        }
+        memcpy(out + pos, key_json[i], (size_t)key_json_len[i]);
+        pos += (size_t)key_json_len[i];
+        out[pos++] = ':';
+        if (entries[i].value_len > 0) {
+            memcpy(out + pos, entries[i].value_ptr, entries[i].value_len);
+            pos += entries[i].value_len;
+        }
+    }
+    out[pos++] = '}';
+    out[pos] = '\0';
+
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)pos;
+    }
+    if (out_kind != NULL) {
+        *out_kind = AIC_RT_JSON_KIND_OBJECT;
+    }
+
+    free(object_copy);
+    for (size_t i = 0; i < count; ++i) {
+        free(key_json[i]);
+    }
+    free(key_json);
+    free(key_json_len);
+    aic_rt_json_free_entries(entries, count);
+    return 0;
+}
+
+long aic_rt_json_object_get(
+    const char* object_ptr,
+    long object_len,
+    long object_cap,
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    char** out_ptr,
+    long* out_len,
+    long* out_kind,
+    long* out_found
+) {
+    (void)object_cap;
+    (void)key_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_kind != NULL) {
+        *out_kind = AIC_RT_JSON_KIND_NULL;
+    }
+    if (out_found != NULL) {
+        *out_found = 0;
+    }
+    if (object_len < 0 || (object_len > 0 && object_ptr == NULL) ||
+        key_len < 0 || (key_len > 0 && key_ptr == NULL)) {
+        return 6;
+    }
+
+    long object_kind = AIC_RT_JSON_KIND_NULL;
+    long object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
+    if (object_rc != 0) {
+        return object_rc;
+    }
+    if (object_kind != AIC_RT_JSON_KIND_OBJECT) {
+        return 2;
+    }
+
+    char* object_copy = aic_rt_copy_bytes(object_ptr, (size_t)object_len);
+    char* key_copy = aic_rt_copy_bytes(key_ptr, (size_t)key_len);
+    if (object_copy == NULL || key_copy == NULL) {
+        free(object_copy);
+        free(key_copy);
+        return 7;
+    }
+
+    AicJsonObjectEntry* entries = NULL;
+    size_t count = 0;
+    long collect_rc =
+        aic_rt_json_collect_object_entries(object_copy, (size_t)object_len, &entries, &count);
+    if (collect_rc != 0) {
+        free(object_copy);
+        free(key_copy);
+        aic_rt_json_free_entries(entries, count);
+        return collect_rc;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].key, key_copy) == 0) {
+            char* out = aic_rt_copy_bytes(entries[i].value_ptr, entries[i].value_len);
+            if (out == NULL) {
+                free(object_copy);
+                free(key_copy);
+                aic_rt_json_free_entries(entries, count);
+                return 7;
+            }
+            if (out_ptr != NULL) {
+                *out_ptr = out;
+            } else {
+                free(out);
+            }
+            if (out_len != NULL) {
+                *out_len = (long)entries[i].value_len;
+            }
+            if (out_kind != NULL) {
+                *out_kind = entries[i].value_kind;
+            }
+            if (out_found != NULL) {
+                *out_found = 1;
+            }
+            free(object_copy);
+            free(key_copy);
+            aic_rt_json_free_entries(entries, count);
+            return 0;
+        }
+    }
+
+    free(object_copy);
+    free(key_copy);
+    aic_rt_json_free_entries(entries, count);
+    return 0;
+}
+
 #define AIC_RT_REGEX_FLAG_CASE_INSENSITIVE 1L
 #define AIC_RT_REGEX_FLAG_MULTILINE 2L
 #define AIC_RT_REGEX_FLAG_DOT_MATCHES_NEWLINE 4L
@@ -12049,6 +17509,932 @@ long aic_rt_regex_replace(
 }
 #endif
 
+static int aic_rt_ascii_is_alpha(char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+}
+
+static int aic_rt_ascii_is_alnum(char ch) {
+    return aic_rt_ascii_is_alpha(ch) || (ch >= '0' && ch <= '9');
+}
+
+static int aic_rt_ascii_is_digit(char ch) {
+    return ch >= '0' && ch <= '9';
+}
+
+static char aic_rt_ascii_lower(char ch) {
+    if (ch >= 'A' && ch <= 'Z') {
+        return (char)(ch + ('a' - 'A'));
+    }
+    return ch;
+}
+
+static int aic_rt_ascii_eq_lit_ci(const char* ptr, size_t len, const char* lit) {
+    size_t lit_len = strlen(lit);
+    if (len != lit_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        if (aic_rt_ascii_lower(ptr[i]) != lit[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int aic_rt_url_has_control_or_space(const char* ptr, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char ch = (unsigned char)ptr[i];
+        if (ch <= 0x20 || ch == 0x7F) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static long aic_rt_url_validate_scheme(const char* ptr, size_t len) {
+    if (ptr == NULL || len == 0) {
+        return 2;
+    }
+    if (!aic_rt_ascii_is_alpha(ptr[0])) {
+        return 2;
+    }
+    for (size_t i = 1; i < len; ++i) {
+        char ch = ptr[i];
+        if (!aic_rt_ascii_is_alnum(ch) && ch != '+' && ch != '-' && ch != '.') {
+            return 2;
+        }
+    }
+    return 0;
+}
+
+static long aic_rt_url_parse_port(const char* ptr, size_t len, long* out_port) {
+    if (out_port != NULL) {
+        *out_port = -1;
+    }
+    if (ptr == NULL || len == 0) {
+        return 4;
+    }
+    unsigned long long value = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (!aic_rt_ascii_is_digit(ptr[i])) {
+            return 4;
+        }
+        value = value * 10ULL + (unsigned long long)(ptr[i] - '0');
+        if (value > 65535ULL) {
+            return 4;
+        }
+    }
+    if (out_port != NULL) {
+        *out_port = (long)value;
+    }
+    return 0;
+}
+
+static int aic_rt_url_host_needs_brackets(const char* host, size_t host_len) {
+    for (size_t i = 0; i < host_len; ++i) {
+        if (host[i] == ':') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static long aic_rt_url_copy_out(
+    const char* ptr,
+    size_t len,
+    char** out_ptr,
+    long* out_len
+) {
+    char* out = aic_rt_copy_bytes(ptr, len);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)len;
+    }
+    return 0;
+}
+
+long aic_rt_url_parse(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_scheme_ptr,
+    long* out_scheme_len,
+    char** out_host_ptr,
+    long* out_host_len,
+    long* out_port,
+    char** out_path_ptr,
+    long* out_path_len,
+    char** out_query_ptr,
+    long* out_query_len,
+    char** out_fragment_ptr,
+    long* out_fragment_len
+) {
+    (void)text_cap;
+    if (out_scheme_ptr != NULL) {
+        *out_scheme_ptr = NULL;
+    }
+    if (out_scheme_len != NULL) {
+        *out_scheme_len = 0;
+    }
+    if (out_host_ptr != NULL) {
+        *out_host_ptr = NULL;
+    }
+    if (out_host_len != NULL) {
+        *out_host_len = 0;
+    }
+    if (out_port != NULL) {
+        *out_port = -1;
+    }
+    if (out_path_ptr != NULL) {
+        *out_path_ptr = NULL;
+    }
+    if (out_path_len != NULL) {
+        *out_path_len = 0;
+    }
+    if (out_query_ptr != NULL) {
+        *out_query_ptr = NULL;
+    }
+    if (out_query_len != NULL) {
+        *out_query_len = 0;
+    }
+    if (out_fragment_ptr != NULL) {
+        *out_fragment_ptr = NULL;
+    }
+    if (out_fragment_len != NULL) {
+        *out_fragment_len = 0;
+    }
+
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 6;
+    }
+    size_t len = (size_t)text_len;
+    if (len == 0) {
+        return 1;
+    }
+    if (aic_rt_url_has_control_or_space(text_ptr, len)) {
+        return 6;
+    }
+
+    size_t scheme_end = 0;
+    for (size_t i = 1; i + 2 < len; ++i) {
+        if (text_ptr[i] == ':' && text_ptr[i + 1] == '/' && text_ptr[i + 2] == '/') {
+            scheme_end = i;
+            break;
+        }
+    }
+    if (scheme_end == 0) {
+        return 1;
+    }
+    long scheme_check = aic_rt_url_validate_scheme(text_ptr, scheme_end);
+    if (scheme_check != 0) {
+        return scheme_check;
+    }
+
+    size_t authority_start = scheme_end + 3;
+    if (authority_start >= len) {
+        return 3;
+    }
+    size_t authority_end = len;
+    for (size_t i = authority_start; i < len; ++i) {
+        if (text_ptr[i] == '/' || text_ptr[i] == '?' || text_ptr[i] == '#') {
+            authority_end = i;
+            break;
+        }
+    }
+    if (authority_end <= authority_start) {
+        return 3;
+    }
+
+    size_t host_start = authority_start;
+    size_t host_end = authority_end;
+    long parsed_port = -1;
+    int bracketed = 0;
+    if (text_ptr[authority_start] == '[') {
+        bracketed = 1;
+        size_t close = authority_start + 1;
+        while (close < authority_end && text_ptr[close] != ']') {
+            close += 1;
+        }
+        if (close >= authority_end || close <= authority_start + 1) {
+            return 3;
+        }
+        host_start = authority_start + 1;
+        host_end = close;
+        if (close + 1 < authority_end) {
+            if (text_ptr[close + 1] != ':') {
+                return 3;
+            }
+            long port_rc = aic_rt_url_parse_port(
+                text_ptr + close + 2,
+                authority_end - (close + 2),
+                &parsed_port
+            );
+            if (port_rc != 0) {
+                return port_rc;
+            }
+        }
+    } else {
+        size_t colon = authority_end;
+        for (size_t i = authority_start; i < authority_end; ++i) {
+            if (text_ptr[i] == ':') {
+                colon = i;
+            }
+        }
+        if (colon < authority_end) {
+            host_end = colon;
+            long port_rc =
+                aic_rt_url_parse_port(text_ptr + colon + 1, authority_end - (colon + 1), &parsed_port);
+            if (port_rc != 0) {
+                return port_rc;
+            }
+        }
+    }
+    if (host_end <= host_start) {
+        return 3;
+    }
+    for (size_t i = host_start; i < host_end; ++i) {
+        char ch = text_ptr[i];
+        if (bracketed) {
+            if (!aic_rt_ascii_is_alnum(ch) && ch != ':' && ch != '.') {
+                return 3;
+            }
+        } else {
+            if (ch == ':') {
+                return 3;
+            }
+            if (!aic_rt_ascii_is_alnum(ch) && ch != '.' && ch != '-') {
+                return 3;
+            }
+        }
+    }
+
+    size_t cursor = authority_end;
+    size_t path_start = 0;
+    size_t path_end = 0;
+    int path_default = 0;
+    if (cursor >= len) {
+        path_default = 1;
+    } else if (text_ptr[cursor] == '/') {
+        path_start = cursor;
+        cursor += 1;
+        while (cursor < len && text_ptr[cursor] != '?' && text_ptr[cursor] != '#') {
+            cursor += 1;
+        }
+        path_end = cursor;
+    } else if (text_ptr[cursor] == '?' || text_ptr[cursor] == '#') {
+        path_default = 1;
+    } else {
+        return 5;
+    }
+
+    size_t query_start = 0;
+    size_t query_len_value = 0;
+    if (cursor < len && text_ptr[cursor] == '?') {
+        query_start = cursor + 1;
+        cursor += 1;
+        while (cursor < len && text_ptr[cursor] != '#') {
+            cursor += 1;
+        }
+        query_len_value = cursor - query_start;
+    }
+
+    size_t fragment_start = 0;
+    size_t fragment_len_value = 0;
+    if (cursor < len && text_ptr[cursor] == '#') {
+        fragment_start = cursor + 1;
+        cursor += 1;
+        fragment_len_value = len - fragment_start;
+        cursor = len;
+    }
+    if (cursor != len) {
+        return 1;
+    }
+
+    long rc = aic_rt_url_copy_out(text_ptr, scheme_end, out_scheme_ptr, out_scheme_len);
+    if (rc != 0) {
+        return rc;
+    }
+    rc = aic_rt_url_copy_out(text_ptr + host_start, host_end - host_start, out_host_ptr, out_host_len);
+    if (rc != 0) {
+        free(out_scheme_ptr != NULL ? *out_scheme_ptr : NULL);
+        if (out_scheme_ptr != NULL) {
+            *out_scheme_ptr = NULL;
+        }
+        return rc;
+    }
+    if (out_port != NULL) {
+        *out_port = parsed_port;
+    }
+    if (path_default) {
+        rc = aic_rt_url_copy_out("/", 1, out_path_ptr, out_path_len);
+    } else {
+        rc = aic_rt_url_copy_out(text_ptr + path_start, path_end - path_start, out_path_ptr, out_path_len);
+    }
+    if (rc != 0) {
+        free(out_scheme_ptr != NULL ? *out_scheme_ptr : NULL);
+        free(out_host_ptr != NULL ? *out_host_ptr : NULL);
+        if (out_scheme_ptr != NULL) {
+            *out_scheme_ptr = NULL;
+        }
+        if (out_host_ptr != NULL) {
+            *out_host_ptr = NULL;
+        }
+        return rc;
+    }
+    rc = aic_rt_url_copy_out(
+        query_len_value > 0 ? text_ptr + query_start : "",
+        query_len_value,
+        out_query_ptr,
+        out_query_len
+    );
+    if (rc != 0) {
+        free(out_scheme_ptr != NULL ? *out_scheme_ptr : NULL);
+        free(out_host_ptr != NULL ? *out_host_ptr : NULL);
+        free(out_path_ptr != NULL ? *out_path_ptr : NULL);
+        if (out_scheme_ptr != NULL) {
+            *out_scheme_ptr = NULL;
+        }
+        if (out_host_ptr != NULL) {
+            *out_host_ptr = NULL;
+        }
+        if (out_path_ptr != NULL) {
+            *out_path_ptr = NULL;
+        }
+        return rc;
+    }
+    rc = aic_rt_url_copy_out(
+        fragment_len_value > 0 ? text_ptr + fragment_start : "",
+        fragment_len_value,
+        out_fragment_ptr,
+        out_fragment_len
+    );
+    if (rc != 0) {
+        free(out_scheme_ptr != NULL ? *out_scheme_ptr : NULL);
+        free(out_host_ptr != NULL ? *out_host_ptr : NULL);
+        free(out_path_ptr != NULL ? *out_path_ptr : NULL);
+        free(out_query_ptr != NULL ? *out_query_ptr : NULL);
+        if (out_scheme_ptr != NULL) {
+            *out_scheme_ptr = NULL;
+        }
+        if (out_host_ptr != NULL) {
+            *out_host_ptr = NULL;
+        }
+        if (out_path_ptr != NULL) {
+            *out_path_ptr = NULL;
+        }
+        if (out_query_ptr != NULL) {
+            *out_query_ptr = NULL;
+        }
+        return rc;
+    }
+    return 0;
+}
+
+long aic_rt_url_normalize(
+    const char* scheme_ptr,
+    long scheme_len,
+    long scheme_cap,
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    long port,
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* query_ptr,
+    long query_len,
+    long query_cap,
+    const char* fragment_ptr,
+    long fragment_len,
+    long fragment_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)scheme_cap;
+    (void)host_cap;
+    (void)path_cap;
+    (void)query_cap;
+    (void)fragment_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (scheme_len < 0 || host_len < 0 || path_len < 0 || query_len < 0 || fragment_len < 0) {
+        return 6;
+    }
+    if ((scheme_len > 0 && scheme_ptr == NULL) || (host_len > 0 && host_ptr == NULL) ||
+        (path_len > 0 && path_ptr == NULL) || (query_len > 0 && query_ptr == NULL) ||
+        (fragment_len > 0 && fragment_ptr == NULL)) {
+        return 6;
+    }
+    if (port < -1 || port > 65535) {
+        return 4;
+    }
+    long scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
+    if (scheme_check != 0) {
+        return scheme_check;
+    }
+    if (host_len == 0) {
+        return 3;
+    }
+    int host_has_colon = 0;
+    for (size_t i = 0; i < (size_t)host_len; ++i) {
+        char ch = host_ptr[i];
+        if (ch == ':') {
+            host_has_colon = 1;
+        }
+        if (!aic_rt_ascii_is_alnum(ch) && ch != '.' && ch != '-' && ch != ':') {
+            return 3;
+        }
+    }
+    if (path_len > 0 && path_ptr[0] != '/') {
+        return 5;
+    }
+    if ((path_len > 0 && aic_rt_url_has_control_or_space(path_ptr, (size_t)path_len)) ||
+        (query_len > 0 && aic_rt_url_has_control_or_space(query_ptr, (size_t)query_len)) ||
+        (fragment_len > 0 && aic_rt_url_has_control_or_space(fragment_ptr, (size_t)fragment_len))) {
+        return 6;
+    }
+
+    char* scheme = aic_rt_copy_bytes(scheme_ptr, (size_t)scheme_len);
+    char* host = aic_rt_copy_bytes(host_ptr, (size_t)host_len);
+    if (scheme == NULL || host == NULL) {
+        free(scheme);
+        free(host);
+        return 7;
+    }
+    for (size_t i = 0; i < (size_t)scheme_len; ++i) {
+        scheme[i] = aic_rt_ascii_lower(scheme[i]);
+    }
+    for (size_t i = 0; i < (size_t)host_len; ++i) {
+        host[i] = aic_rt_ascii_lower(host[i]);
+    }
+
+    long normalized_port = port;
+    if ((normalized_port == 80 && aic_rt_ascii_eq_lit_ci(scheme, (size_t)scheme_len, "http")) ||
+        (normalized_port == 443 && aic_rt_ascii_eq_lit_ci(scheme, (size_t)scheme_len, "https"))) {
+        normalized_port = -1;
+    }
+
+    char port_buf[32];
+    size_t port_len = 0;
+    if (normalized_port >= 0) {
+        int written = snprintf(port_buf, sizeof(port_buf), "%ld", normalized_port);
+        if (written <= 0 || (size_t)written >= sizeof(port_buf)) {
+            free(scheme);
+            free(host);
+            return 7;
+        }
+        port_len = (size_t)written;
+    }
+
+    int use_default_path = path_len == 0;
+    const char* out_path_ptr = use_default_path ? "/" : path_ptr;
+    size_t out_path_len = use_default_path ? 1U : (size_t)path_len;
+    int bracket_host = host_has_colon || aic_rt_url_host_needs_brackets(host, (size_t)host_len);
+
+    size_t total = (size_t)scheme_len + 3U + (size_t)host_len + out_path_len;
+    if (bracket_host) {
+        total += 2U;
+    }
+    if (normalized_port >= 0) {
+        total += 1U + port_len;
+    }
+    if (query_len > 0) {
+        total += 1U + (size_t)query_len;
+    }
+    if (fragment_len > 0) {
+        total += 1U + (size_t)fragment_len;
+    }
+
+    char* out = (char*)malloc(total + 1U);
+    if (out == NULL) {
+        free(scheme);
+        free(host);
+        return 7;
+    }
+    size_t pos = 0;
+    memcpy(out + pos, scheme, (size_t)scheme_len);
+    pos += (size_t)scheme_len;
+    memcpy(out + pos, "://", 3);
+    pos += 3;
+    if (bracket_host) {
+        out[pos++] = '[';
+    }
+    memcpy(out + pos, host, (size_t)host_len);
+    pos += (size_t)host_len;
+    if (bracket_host) {
+        out[pos++] = ']';
+    }
+    if (normalized_port >= 0) {
+        out[pos++] = ':';
+        memcpy(out + pos, port_buf, port_len);
+        pos += port_len;
+    }
+    memcpy(out + pos, out_path_ptr, out_path_len);
+    pos += out_path_len;
+    if (query_len > 0) {
+        out[pos++] = '?';
+        memcpy(out + pos, query_ptr, (size_t)query_len);
+        pos += (size_t)query_len;
+    }
+    if (fragment_len > 0) {
+        out[pos++] = '#';
+        memcpy(out + pos, fragment_ptr, (size_t)fragment_len);
+        pos += (size_t)fragment_len;
+    }
+    out[pos] = '\0';
+    free(scheme);
+    free(host);
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)pos;
+    }
+    return 0;
+}
+
+long aic_rt_url_net_addr(
+    const char* scheme_ptr,
+    long scheme_len,
+    long scheme_cap,
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    long port,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)scheme_cap;
+    (void)host_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (scheme_len < 0 || host_len < 0) {
+        return 6;
+    }
+    if ((scheme_len > 0 && scheme_ptr == NULL) || (host_len > 0 && host_ptr == NULL)) {
+        return 6;
+    }
+    if (host_len == 0) {
+        return 3;
+    }
+
+    long scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
+    if (scheme_check != 0) {
+        return scheme_check;
+    }
+    for (size_t i = 0; i < (size_t)host_len; ++i) {
+        char ch = host_ptr[i];
+        if (!aic_rt_ascii_is_alnum(ch) && ch != '.' && ch != '-' && ch != ':') {
+            return 3;
+        }
+    }
+
+    long resolved_port = port;
+    if (resolved_port < 0) {
+        if (aic_rt_ascii_eq_lit_ci(scheme_ptr, (size_t)scheme_len, "http")) {
+            resolved_port = 80;
+        } else if (aic_rt_ascii_eq_lit_ci(scheme_ptr, (size_t)scheme_len, "https")) {
+            resolved_port = 443;
+        } else {
+            return 4;
+        }
+    }
+    if (resolved_port < 0 || resolved_port > 65535) {
+        return 4;
+    }
+
+    int needs_brackets = aic_rt_url_host_needs_brackets(host_ptr, (size_t)host_len);
+    char port_buf[32];
+    int written = snprintf(port_buf, sizeof(port_buf), "%ld", resolved_port);
+    if (written <= 0 || (size_t)written >= sizeof(port_buf)) {
+        return 7;
+    }
+    size_t total = (size_t)host_len + 1U + (size_t)written + (needs_brackets ? 2U : 0U);
+    char* out = (char*)malloc(total + 1U);
+    if (out == NULL) {
+        return 7;
+    }
+    size_t pos = 0;
+    if (needs_brackets) {
+        out[pos++] = '[';
+    }
+    memcpy(out + pos, host_ptr, (size_t)host_len);
+    pos += (size_t)host_len;
+    if (needs_brackets) {
+        out[pos++] = ']';
+    }
+    out[pos++] = ':';
+    memcpy(out + pos, port_buf, (size_t)written);
+    pos += (size_t)written;
+    out[pos] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)pos;
+    }
+    return 0;
+}
+
+static int aic_rt_http_is_token_char(char ch) {
+    if (aic_rt_ascii_is_alnum(ch)) {
+        return 1;
+    }
+    switch (ch) {
+        case '!':
+        case '#':
+        case '$':
+        case '%':
+        case '&':
+        case '\'':
+        case '*':
+        case '+':
+        case '-':
+        case '.':
+        case '^':
+        case '_':
+        case '`':
+        case '|':
+        case '~':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static long aic_rt_http_copy_const(const char* text, char** out_ptr, long* out_len) {
+    size_t len = strlen(text);
+    char* out = aic_rt_copy_bytes(text, len);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)len;
+    }
+    return 0;
+}
+
+long aic_rt_http_parse_method(const char* text_ptr, long text_len, long text_cap, long* out_tag) {
+    (void)text_cap;
+    if (out_tag != NULL) {
+        *out_tag = 0;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 6;
+    }
+    if (text_len == 3 && memcmp(text_ptr, "GET", 3) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 0;
+        }
+        return 0;
+    }
+    if (text_len == 4 && memcmp(text_ptr, "HEAD", 4) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 1;
+        }
+        return 0;
+    }
+    if (text_len == 4 && memcmp(text_ptr, "POST", 4) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 2;
+        }
+        return 0;
+    }
+    if (text_len == 3 && memcmp(text_ptr, "PUT", 3) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 3;
+        }
+        return 0;
+    }
+    if (text_len == 5 && memcmp(text_ptr, "PATCH", 5) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 4;
+        }
+        return 0;
+    }
+    if (text_len == 6 && memcmp(text_ptr, "DELETE", 6) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 5;
+        }
+        return 0;
+    }
+    if (text_len == 7 && memcmp(text_ptr, "OPTIONS", 7) == 0) {
+        if (out_tag != NULL) {
+            *out_tag = 6;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+long aic_rt_http_method_name(long method_tag, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    switch (method_tag) {
+        case 0:
+            return aic_rt_http_copy_const("GET", out_ptr, out_len);
+        case 1:
+            return aic_rt_http_copy_const("HEAD", out_ptr, out_len);
+        case 2:
+            return aic_rt_http_copy_const("POST", out_ptr, out_len);
+        case 3:
+            return aic_rt_http_copy_const("PUT", out_ptr, out_len);
+        case 4:
+            return aic_rt_http_copy_const("PATCH", out_ptr, out_len);
+        case 5:
+            return aic_rt_http_copy_const("DELETE", out_ptr, out_len);
+        case 6:
+            return aic_rt_http_copy_const("OPTIONS", out_ptr, out_len);
+        default:
+            return 1;
+    }
+}
+
+long aic_rt_http_status_reason(long status, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (status < 100 || status > 599) {
+        return 2;
+    }
+    switch (status) {
+        case 100:
+            return aic_rt_http_copy_const("Continue", out_ptr, out_len);
+        case 101:
+            return aic_rt_http_copy_const("Switching Protocols", out_ptr, out_len);
+        case 200:
+            return aic_rt_http_copy_const("OK", out_ptr, out_len);
+        case 201:
+            return aic_rt_http_copy_const("Created", out_ptr, out_len);
+        case 202:
+            return aic_rt_http_copy_const("Accepted", out_ptr, out_len);
+        case 204:
+            return aic_rt_http_copy_const("No Content", out_ptr, out_len);
+        case 301:
+            return aic_rt_http_copy_const("Moved Permanently", out_ptr, out_len);
+        case 302:
+            return aic_rt_http_copy_const("Found", out_ptr, out_len);
+        case 304:
+            return aic_rt_http_copy_const("Not Modified", out_ptr, out_len);
+        case 400:
+            return aic_rt_http_copy_const("Bad Request", out_ptr, out_len);
+        case 401:
+            return aic_rt_http_copy_const("Unauthorized", out_ptr, out_len);
+        case 403:
+            return aic_rt_http_copy_const("Forbidden", out_ptr, out_len);
+        case 404:
+            return aic_rt_http_copy_const("Not Found", out_ptr, out_len);
+        case 405:
+            return aic_rt_http_copy_const("Method Not Allowed", out_ptr, out_len);
+        case 409:
+            return aic_rt_http_copy_const("Conflict", out_ptr, out_len);
+        case 422:
+            return aic_rt_http_copy_const("Unprocessable Entity", out_ptr, out_len);
+        case 429:
+            return aic_rt_http_copy_const("Too Many Requests", out_ptr, out_len);
+        case 500:
+            return aic_rt_http_copy_const("Internal Server Error", out_ptr, out_len);
+        case 501:
+            return aic_rt_http_copy_const("Not Implemented", out_ptr, out_len);
+        case 502:
+            return aic_rt_http_copy_const("Bad Gateway", out_ptr, out_len);
+        case 503:
+            return aic_rt_http_copy_const("Service Unavailable", out_ptr, out_len);
+        default:
+            return aic_rt_http_copy_const("Unknown", out_ptr, out_len);
+    }
+}
+
+long aic_rt_http_validate_header(
+    const char* name_ptr,
+    long name_len,
+    long name_cap,
+    const char* value_ptr,
+    long value_len,
+    long value_cap
+) {
+    (void)name_cap;
+    (void)value_cap;
+    if (name_len < 0 || value_len < 0) {
+        return 6;
+    }
+    if ((name_len > 0 && name_ptr == NULL) || (value_len > 0 && value_ptr == NULL)) {
+        return 6;
+    }
+    if (name_len == 0) {
+        return 3;
+    }
+    for (size_t i = 0; i < (size_t)name_len; ++i) {
+        if (!aic_rt_http_is_token_char(name_ptr[i])) {
+            return 3;
+        }
+    }
+    for (size_t i = 0; i < (size_t)value_len; ++i) {
+        unsigned char ch = (unsigned char)value_ptr[i];
+        if (ch == '\r' || ch == '\n' || ch == 0x7F) {
+            return 4;
+        }
+        if (ch < 0x20 && ch != '\t') {
+            return 4;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_http_validate_target(const char* target_ptr, long target_len, long target_cap) {
+    (void)target_cap;
+    if (target_len < 0 || (target_len > 0 && target_ptr == NULL)) {
+        return 6;
+    }
+    if (target_len == 0) {
+        return 5;
+    }
+    if (aic_rt_url_has_control_or_space(target_ptr, (size_t)target_len)) {
+        return 5;
+    }
+    if (target_ptr[0] == '/') {
+        return 0;
+    }
+    int has_scheme = 0;
+    for (size_t i = 1; i + 2 < (size_t)target_len; ++i) {
+        if (target_ptr[i] == ':' && target_ptr[i + 1] == '/' && target_ptr[i + 2] == '/') {
+            has_scheme = 1;
+            break;
+        }
+    }
+    if (!has_scheme) {
+        return 5;
+    }
+    char* scheme = NULL;
+    char* host = NULL;
+    char* path = NULL;
+    char* query = NULL;
+    char* fragment = NULL;
+    long port = -1;
+    long rc = aic_rt_url_parse(
+        target_ptr,
+        target_len,
+        target_cap,
+        &scheme,
+        NULL,
+        &host,
+        NULL,
+        &port,
+        &path,
+        NULL,
+        &query,
+        NULL,
+        &fragment,
+        NULL
+    );
+    free(scheme);
+    free(host);
+    free(path);
+    free(query);
+    free(fragment);
+    if (rc == 0) {
+        return 0;
+    }
+    if (rc == 6) {
+        return 6;
+    }
+    if (rc == 7) {
+        return 7;
+    }
+    return 5;
+}
+
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
     (void)cap;
     if (ptr == NULL) {
@@ -12336,6 +18722,33 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_url_normalize(i8*, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_url_net_addr(i8*, i64, i64, i8*, i64, i64, i64, i8**, i64*)"
+        ));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_http_parse_method(i8*, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_http_status_reason(i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_http_validate_header(i8*, i64, i64, i8*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_json_parse(i8*, i64, i64, i8**, i64*, i64*)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_json_object_set(i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_json_object_get(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i64*, i64*)"
+        ));
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_regex_compile(i8*, i64, i64, i64)"));
@@ -12366,6 +18779,18 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
+        assert!(runtime_c_source().contains("long aic_rt_url_parse("));
+        assert!(runtime_c_source().contains("long aic_rt_url_normalize("));
+        assert!(runtime_c_source().contains("long aic_rt_url_net_addr("));
+        assert!(runtime_c_source().contains("long aic_rt_http_parse_method("));
+        assert!(runtime_c_source().contains("long aic_rt_http_status_reason("));
+        assert!(runtime_c_source().contains("long aic_rt_http_validate_header("));
+        assert!(runtime_c_source().contains("long aic_rt_http_validate_target("));
+        assert!(runtime_c_source().contains("long aic_rt_json_parse("));
+        assert!(runtime_c_source().contains("long aic_rt_json_stringify("));
+        assert!(runtime_c_source().contains("long aic_rt_json_decode_string("));
+        assert!(runtime_c_source().contains("long aic_rt_json_object_set("));
+        assert!(runtime_c_source().contains("long aic_rt_json_object_get("));
         assert!(runtime_c_source().contains("long aic_rt_regex_compile("));
         assert!(runtime_c_source().contains("long aic_rt_regex_find("));
         assert!(runtime_c_source().contains("long aic_rt_regex_replace("));

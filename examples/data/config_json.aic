@@ -1,0 +1,86 @@
+import std.io;
+import std.json;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } {
+    let cfg = match parse("{\"service\":\"billing\",\"enabled\":true,\"port\":8080}") {
+        Ok(value) => value,
+        Err(_) => object_empty(),
+    };
+    let cfg_with_timeout = match object_set(cfg, "timeout_ms", encode_null()) {
+        Ok(value) => value,
+        Err(_) => object_empty(),
+    };
+
+    let service_ok = match object_get(cfg_with_timeout, "service") {
+        Ok(maybe) => match maybe {
+            Some(value) => match decode_string(value) {
+                Ok(name) => if len(name) == 7 { 1 } else { 0 },
+                Err(_) => 0,
+            },
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+    let enabled_ok = match object_get(cfg_with_timeout, "enabled") {
+        Ok(maybe) => match maybe {
+            Some(value) => match decode_bool(value) {
+                Ok(v) => bool_to_int(v),
+                Err(_) => 0,
+            },
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+    let port_ok = match object_get(cfg_with_timeout, "port") {
+        Ok(maybe) => match maybe {
+            Some(value) => match decode_int(value) {
+                Ok(v) => if v == 8080 { 1 } else { 0 },
+                Err(_) => 0,
+            },
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+    let timeout_ok = match object_get(cfg_with_timeout, "timeout_ms") {
+        Ok(maybe) => match maybe {
+            Some(value) => match is_null(value) {
+                true => 1,
+                false => 0,
+            },
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let with_retries = match object_set(cfg_with_timeout, "retries", encode_int(3)) {
+        Ok(value) => value,
+        Err(_) => object_empty(),
+    };
+    let retries_ok = match object_get(with_retries, "retries") {
+        Ok(maybe) => match maybe {
+            Some(value) => match decode_int(value) {
+                Ok(v) => if v == 3 { 1 } else { 0 },
+                Err(_) => 0,
+            },
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let rendered = match stringify(with_retries) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+
+    if service_ok + enabled_ok + port_ok + timeout_ok + retries_ok == 5 && len(rendered) > 0 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

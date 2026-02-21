@@ -307,6 +307,111 @@
       "signature": "FsMetadata { is_file: Bool, is_dir: Bool, size: Int }"
     },
     {
+      "module": "std.http",
+      "kind": "enum",
+      "signature": "HttpError { InvalidMethod, InvalidStatus, InvalidHeaderName, InvalidHeaderValue, InvalidTarget, InvalidInput, Internal }"
+    },
+    {
+      "module": "std.http",
+      "kind": "enum",
+      "signature": "HttpMethod { Get, Head, Post, Put, Patch, Delete, Options }"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "header(name: String, value: String) -> Result[HttpHeader, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "method_name(method: HttpMethod) -> Result[String, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "parse_method(text: String) -> Result[HttpMethod, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "status_reason(status: Int) -> Result[String, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "validate_header(name: String, value: String) -> Result[Bool, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "validate_target(target: String) -> Result[Bool, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "struct",
+      "signature": "HttpHeader { name: String, value: String }"
+    },
+    {
+      "module": "std.http",
+      "kind": "struct",
+      "signature": "HttpRequest { method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String }"
+    },
+    {
+      "module": "std.http",
+      "kind": "struct",
+      "signature": "HttpResponse { status: Int, reason: String, headers: Vec[HttpHeader], body: String }"
+    },
+    {
       "module": "std.io",
       "kind": "fn",
       "signature": "panic(message: String) -> () effects { io }"
@@ -320,6 +425,186 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "print_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.json",
+      "kind": "enum",
+      "signature": "JsonError { InvalidJson, InvalidType, MissingField, InvalidNumber, InvalidString, InvalidInput, Internal }"
+    },
+    {
+      "module": "std.json",
+      "kind": "enum",
+      "signature": "JsonKind { NullValue, BoolValue, NumberValue, StringValue, ArrayValue, ObjectValue }"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_decode_bool_intrinsic(value: JsonValue) -> Result[Bool, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_decode_string_intrinsic(value: JsonValue) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_encode_int_intrinsic(value: Int) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_encode_null_intrinsic() -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_encode_string_intrinsic(value: String) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_kind_intrinsic(value: JsonValue) -> JsonKind"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_object_empty_intrinsic() -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_object_get_intrinsic(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_object_set_intrinsic(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_parse_intrinsic(text: String) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_serde_decode_intrinsic[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_serde_encode_intrinsic[T](value: T) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_serde_schema_intrinsic[T](marker: Option[T]) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_stringify_intrinsic(value: JsonValue) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "decode_bool(value: JsonValue) -> Result[Bool, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "decode_int(value: JsonValue) -> Result[Int, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "decode_string(value: JsonValue) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "decode_with[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode[T](value: T) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode_bool(value: Bool) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode_int(value: Int) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode_null() -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode_string(value: String) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "is_null(value: JsonValue) -> Bool"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "kind(value: JsonValue) -> JsonKind"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "object_empty() -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "object_get(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "object_set(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "parse(text: String) -> Result[JsonValue, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "schema[T](marker: Option[T]) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "stringify(value: JsonValue) -> Result[String, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "struct",
+      "signature": "JsonValue { raw: String, kind: JsonKind }"
     },
     {
       "module": "std.net",
@@ -765,6 +1050,51 @@
       "module": "std.time",
       "kind": "fn",
       "signature": "timeout_expired(deadline_ms: Int) -> Bool effects { time }"
+    },
+    {
+      "module": "std.url",
+      "kind": "enum",
+      "signature": "UrlError { InvalidUrl, InvalidScheme, InvalidHost, InvalidPort, InvalidPath, InvalidInput, Internal }"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "aic_url_net_addr_intrinsic(url: Url) -> Result[String, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "aic_url_normalize_intrinsic(url: Url) -> Result[String, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "aic_url_parse_intrinsic(text: String) -> Result[Url, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "has_explicit_port(url: Url) -> Bool"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "net_addr(url: Url) -> Result[String, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "normalize(url: Url) -> Result[String, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "parse(text: String) -> Result[Url, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "struct",
+      "signature": "Url { scheme: String, host: String, port: Int, path: String, query: String, fragment: String }"
     },
     {
       "module": "std.vec",

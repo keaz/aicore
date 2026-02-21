@@ -672,6 +672,379 @@ fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } 
     )?;
 
     fs::write(
+        path.join("std/json.aic"),
+        r#"module std.json;
+
+import std.result;
+
+enum JsonError {
+    InvalidJson,
+    InvalidType,
+    MissingField,
+    InvalidNumber,
+    InvalidString,
+    InvalidInput,
+    Internal,
+}
+
+enum JsonKind {
+    NullValue,
+    BoolValue,
+    NumberValue,
+    StringValue,
+    ArrayValue,
+    ObjectValue,
+}
+
+struct JsonValue {
+    raw: String,
+    kind: JsonKind,
+}
+
+fn aic_json_parse_intrinsic(text: String) -> Result[JsonValue, JsonError] {
+    let out: Result[JsonValue, JsonError] = Ok(JsonValue {
+        raw: text,
+        kind: StringValue(),
+    });
+    out
+}
+
+fn aic_json_stringify_intrinsic(value: JsonValue) -> Result[String, JsonError] {
+    let out: Result[String, JsonError] = Ok(value.raw);
+    out
+}
+
+fn aic_json_encode_int_intrinsic(value: Int) -> JsonValue {
+    JsonValue {
+        raw: "0",
+        kind: NumberValue(),
+    }
+}
+
+fn aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue {
+    JsonValue {
+        raw: "false",
+        kind: BoolValue(),
+    }
+}
+
+fn aic_json_encode_string_intrinsic(value: String) -> JsonValue {
+    JsonValue {
+        raw: "\"\"",
+        kind: StringValue(),
+    }
+}
+
+fn aic_json_encode_null_intrinsic() -> JsonValue {
+    JsonValue {
+        raw: "",
+        kind: NullValue(),
+    }
+}
+
+fn aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError] {
+    let out: Result[Int, JsonError] = Ok(0);
+    out
+}
+
+fn aic_json_decode_bool_intrinsic(value: JsonValue) -> Result[Bool, JsonError] {
+    let out: Result[Bool, JsonError] = Ok(false);
+    out
+}
+
+fn aic_json_decode_string_intrinsic(value: JsonValue) -> Result[String, JsonError] {
+    let out: Result[String, JsonError] = Ok("");
+    out
+}
+
+fn aic_json_object_empty_intrinsic() -> JsonValue {
+    JsonValue {
+        raw: "{}",
+        kind: ObjectValue(),
+    }
+}
+
+fn aic_json_object_set_intrinsic(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError] {
+    let out: Result[JsonValue, JsonError] = Ok(object);
+    out
+}
+
+fn aic_json_object_get_intrinsic(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError] {
+    let out: Result[Option[JsonValue], JsonError] = Ok(None());
+    out
+}
+
+fn aic_json_kind_intrinsic(value: JsonValue) -> JsonKind {
+    value.kind
+}
+
+fn aic_json_serde_encode_intrinsic[T](value: T) -> Result[JsonValue, JsonError] {
+    let out: Result[JsonValue, JsonError] = Ok(encode_null());
+    out
+}
+
+fn aic_json_serde_decode_intrinsic[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError] {
+    let out: Result[T, JsonError] = Err(InvalidType());
+    out
+}
+
+fn aic_json_serde_schema_intrinsic[T](marker: Option[T]) -> Result[String, JsonError] {
+    let out: Result[String, JsonError] = Ok("");
+    out
+}
+
+fn parse(text: String) -> Result[JsonValue, JsonError] {
+    aic_json_parse_intrinsic(text)
+}
+
+fn stringify(value: JsonValue) -> Result[String, JsonError] {
+    aic_json_stringify_intrinsic(value)
+}
+
+fn encode_int(value: Int) -> JsonValue {
+    aic_json_encode_int_intrinsic(value)
+}
+
+fn encode_bool(value: Bool) -> JsonValue {
+    aic_json_encode_bool_intrinsic(value)
+}
+
+fn encode_string(value: String) -> JsonValue {
+    aic_json_encode_string_intrinsic(value)
+}
+
+fn encode_null() -> JsonValue {
+    aic_json_encode_null_intrinsic()
+}
+
+fn decode_int(value: JsonValue) -> Result[Int, JsonError] {
+    aic_json_decode_int_intrinsic(value)
+}
+
+fn decode_bool(value: JsonValue) -> Result[Bool, JsonError] {
+    aic_json_decode_bool_intrinsic(value)
+}
+
+fn decode_string(value: JsonValue) -> Result[String, JsonError] {
+    aic_json_decode_string_intrinsic(value)
+}
+
+fn object_empty() -> JsonValue {
+    aic_json_object_empty_intrinsic()
+}
+
+fn object_set(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError] {
+    aic_json_object_set_intrinsic(object, key, value)
+}
+
+fn object_get(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError] {
+    aic_json_object_get_intrinsic(object, key)
+}
+
+fn kind(value: JsonValue) -> JsonKind {
+    aic_json_kind_intrinsic(value)
+}
+
+fn encode[T](value: T) -> Result[JsonValue, JsonError] {
+    aic_json_serde_encode_intrinsic(value)
+}
+
+fn decode_with[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError] {
+    aic_json_serde_decode_intrinsic(value, marker)
+}
+
+fn schema[T](marker: Option[T]) -> Result[String, JsonError] {
+    aic_json_serde_schema_intrinsic(marker)
+}
+
+fn is_null(value: JsonValue) -> Bool {
+    match kind(value) {
+        NullValue => true,
+        _ => false,
+    }
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/url.aic"),
+        r#"module std.url;
+
+import std.result;
+
+enum UrlError {
+    InvalidUrl,
+    InvalidScheme,
+    InvalidHost,
+    InvalidPort,
+    InvalidPath,
+    InvalidInput,
+    Internal,
+}
+
+struct Url {
+    scheme: String,
+    host: String,
+    port: Int,
+    path: String,
+    query: String,
+    fragment: String,
+}
+
+fn aic_url_parse_intrinsic(text: String) -> Result[Url, UrlError] {
+    let out: Result[Url, UrlError] = Err(InvalidUrl());
+    out
+}
+
+fn aic_url_normalize_intrinsic(url: Url) -> Result[String, UrlError] {
+    let out: Result[String, UrlError] = Ok("");
+    out
+}
+
+fn aic_url_net_addr_intrinsic(url: Url) -> Result[String, UrlError] {
+    let out: Result[String, UrlError] = Ok("");
+    out
+}
+
+fn parse(text: String) -> Result[Url, UrlError] {
+    aic_url_parse_intrinsic(text)
+}
+
+fn normalize(url: Url) -> Result[String, UrlError] {
+    aic_url_normalize_intrinsic(url)
+}
+
+fn net_addr(url: Url) -> Result[String, UrlError] {
+    aic_url_net_addr_intrinsic(url)
+}
+
+fn has_explicit_port(url: Url) -> Bool {
+    url.port >= 0
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/http.aic"),
+        r#"module std.http;
+
+import std.result;
+import std.vec;
+
+enum HttpError {
+    InvalidMethod,
+    InvalidStatus,
+    InvalidHeaderName,
+    InvalidHeaderValue,
+    InvalidTarget,
+    InvalidInput,
+    Internal,
+}
+
+enum HttpMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
+}
+
+struct HttpHeader {
+    name: String,
+    value: String,
+}
+
+struct HttpRequest {
+    method: HttpMethod,
+    target: String,
+    headers: Vec[HttpHeader],
+    body: String,
+}
+
+struct HttpResponse {
+    status: Int,
+    reason: String,
+    headers: Vec[HttpHeader],
+    body: String,
+}
+
+fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError] {
+    let out: Result[HttpMethod, HttpError] = Err(InvalidMethod());
+    out
+}
+
+fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError] {
+    let out: Result[String, HttpError] = Ok("");
+    out
+}
+
+fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError] {
+    let out: Result[String, HttpError] = Ok("");
+    out
+}
+
+fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError] {
+    let out: Result[Bool, HttpError] = Ok(true);
+    out
+}
+
+fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError] {
+    let out: Result[Bool, HttpError] = Ok(true);
+    out
+}
+
+fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError] {
+    let out: Result[HttpHeader, HttpError] = Err(InvalidHeaderName());
+    out
+}
+
+fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
+    let out: Result[HttpRequest, HttpError] = Err(InvalidTarget());
+    out
+}
+
+fn aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
+    let out: Result[HttpResponse, HttpError] = Err(InvalidStatus());
+    out
+}
+
+fn parse_method(text: String) -> Result[HttpMethod, HttpError] {
+    aic_http_parse_method_intrinsic(text)
+}
+
+fn method_name(method: HttpMethod) -> Result[String, HttpError] {
+    aic_http_method_name_intrinsic(method)
+}
+
+fn status_reason(status: Int) -> Result[String, HttpError] {
+    aic_http_status_reason_intrinsic(status)
+}
+
+fn validate_header(name: String, value: String) -> Result[Bool, HttpError] {
+    aic_http_validate_header_intrinsic(name, value)
+}
+
+fn validate_target(target: String) -> Result[Bool, HttpError] {
+    aic_http_validate_target_intrinsic(target)
+}
+
+fn header(name: String, value: String) -> Result[HttpHeader, HttpError] {
+    aic_http_header_intrinsic(name, value)
+}
+
+fn request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
+    aic_http_request_intrinsic(method, target, headers, body)
+}
+
+fn response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
+    aic_http_response_intrinsic(status, headers, body)
+}
+"#,
+    )?;
+
+    fs::write(
         path.join("std/regex.aic"),
         r#"module std.regex;
 

@@ -1,0 +1,74 @@
+import std.io;
+import std.json;
+import std.string;
+
+struct Credentials {
+    user: String,
+    pass: String,
+}
+
+enum Event {
+    Ping,
+    Data(Credentials),
+    Fault(String),
+}
+
+struct Envelope[T] {
+    version: Int,
+    data: T,
+}
+
+fn main() -> Int effects { io } {
+    let creds = Credentials {
+        user: "alice",
+        pass: "p@ss",
+    };
+    let event: Event = Data(creds);
+    let message = Envelope {
+        version: 2,
+        data: event,
+    };
+
+    let encoded = match encode(message) {
+        Ok(value) => value,
+        Err(_) => encode_null(),
+    };
+    let wire = match stringify(encoded) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+    let parsed = match parse(wire) {
+        Ok(value) => value,
+        Err(_) => encode_null(),
+    };
+
+    let decode_marker: Option[Envelope[Event]] = None();
+    let fallback_event: Event = Ping();
+    let decoded: Envelope[Event] = match decode_with(parsed, decode_marker) {
+        Ok(value) => value,
+        Err(_) => Envelope {
+            version: 0,
+            data: fallback_event,
+        },
+    };
+
+    let schema_marker: Option[Envelope[Event]] = None();
+    let schema_text = match schema(schema_marker) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+
+    let variant_score = match decoded.data {
+        Data(payload) => if len(payload.user) == 5 && len(payload.pass) == 4 { 1 } else { 0 },
+        _ => 0,
+    };
+    let version_score = if decoded.version == 2 { 1 } else { 0 };
+    let schema_score = if len(schema_text) > 80 { 1 } else { 0 };
+
+    if variant_score + version_score + schema_score == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

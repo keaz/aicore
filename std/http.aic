@@ -1,0 +1,115 @@
+module std.http;
+
+import std.result;
+import std.vec;
+
+enum HttpError {
+    InvalidMethod,
+    InvalidStatus,
+    InvalidHeaderName,
+    InvalidHeaderValue,
+    InvalidTarget,
+    InvalidInput,
+    Internal,
+}
+
+enum HttpMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
+}
+
+struct HttpHeader {
+    name: String,
+    value: String,
+}
+
+struct HttpRequest {
+    method: HttpMethod,
+    target: String,
+    headers: Vec[HttpHeader],
+    body: String,
+}
+
+struct HttpResponse {
+    status: Int,
+    reason: String,
+    headers: Vec[HttpHeader],
+    body: String,
+}
+
+fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError] {
+    let out: Result[HttpMethod, HttpError] = Err(InvalidMethod());
+    out
+}
+
+fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError] {
+    let out: Result[String, HttpError] = Ok("");
+    out
+}
+
+fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError] {
+    let out: Result[String, HttpError] = Ok("");
+    out
+}
+
+fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError] {
+    let out: Result[Bool, HttpError] = Ok(true);
+    out
+}
+
+fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError] {
+    let out: Result[Bool, HttpError] = Ok(true);
+    out
+}
+
+fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError] {
+    let out: Result[HttpHeader, HttpError] = Err(InvalidHeaderName());
+    out
+}
+
+fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
+    let out: Result[HttpRequest, HttpError] = Err(InvalidTarget());
+    out
+}
+
+fn aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
+    let out: Result[HttpResponse, HttpError] = Err(InvalidStatus());
+    out
+}
+
+fn parse_method(text: String) -> Result[HttpMethod, HttpError] {
+    aic_http_parse_method_intrinsic(text)
+}
+
+fn method_name(method: HttpMethod) -> Result[String, HttpError] {
+    aic_http_method_name_intrinsic(method)
+}
+
+fn status_reason(status: Int) -> Result[String, HttpError] {
+    aic_http_status_reason_intrinsic(status)
+}
+
+fn validate_header(name: String, value: String) -> Result[Bool, HttpError] {
+    aic_http_validate_header_intrinsic(name, value)
+}
+
+fn validate_target(target: String) -> Result[Bool, HttpError] {
+    aic_http_validate_target_intrinsic(target)
+}
+
+fn header(name: String, value: String) -> Result[HttpHeader, HttpError] {
+    aic_http_header_intrinsic(name, value)
+}
+
+fn request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
+    aic_http_request_intrinsic(method, target, headers, body)
+}
+
+fn response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
+    aic_http_response_intrinsic(status, headers, body)
+}

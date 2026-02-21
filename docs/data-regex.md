@@ -64,3 +64,105 @@ Behavior notes:
 ## Example
 
 See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/log_parse_regex.aic`.
+
+## Serde Derive Lite (`std.json`) - DT-T3
+
+This section documents the derive-like ADT JSON support added for `[DT-T3] Serde derive lite for ADTs`.
+
+### Public APIs
+
+```aic
+fn encode[T](value: T) -> Result[JsonValue, JsonError]
+fn decode_with[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError]
+fn schema[T](marker: Option[T]) -> Result[String, JsonError]
+```
+
+Notes:
+
+- `decode_with` and `schema` use `Option[T]` markers to disambiguate target types in the current IR/codegen model.
+- Marker value is typically `None()` with an explicit marker type annotation.
+
+### Derived wire format
+
+- Structs are encoded as JSON objects keyed by field names.
+- Enums use deterministic indexed tagging:
+  - object key `"tag"` stores variant index (`Int`)
+  - object key `"value"` stores payload JSON (`null` for no-payload variants)
+
+### Deterministic ordering contract
+
+- Struct field schema entries are emitted in lexicographic field-name order.
+- Enum tag assignment is declaration-order index (`0..n-1`).
+- Runtime object writes remain deterministic (object keys canonically sorted by runtime object builder).
+- Schema strings are deterministic across runs for identical sources.
+
+### Versioning diagnostics
+
+`decode_with` emits stable `JsonError` values for common wire/schema drift:
+
+- `MissingField` when required struct fields or enum keys are absent.
+- `InvalidType` for unknown enum tags or incompatible payload kinds.
+
+### Example
+
+See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/serde_models.aic`.
+
+## URL + HTTP Types (`std.url`, `std.http`) - DT-T4
+
+This section documents `[DT-T4] URL and HTTP types and parsers`.
+
+### URL module (`std.url`)
+
+Core types:
+
+- `UrlError`: `InvalidUrl`, `InvalidScheme`, `InvalidHost`, `InvalidPort`, `InvalidPath`, `InvalidInput`, `Internal`
+- `Url`: `{ scheme, host, port, path, query, fragment }`
+
+Public APIs:
+
+- `parse(text: String) -> Result[Url, UrlError]`
+- `normalize(url: Url) -> Result[String, UrlError]`
+- `net_addr(url: Url) -> Result[String, UrlError]`
+- `has_explicit_port(url: Url) -> Bool`
+
+Behavior:
+
+- `parse` validates an RFC-style subset: `scheme://authority/path?query#fragment`.
+- Host and scheme normalization is deterministic (`normalize` lowercases both).
+- Default ports are elided in normalized output (`http:80`, `https:443`).
+- `net_addr` returns `host:port`, filling default ports for `http`/`https` when absent.
+
+### HTTP module (`std.http`)
+
+Core types:
+
+- `HttpError`: `InvalidMethod`, `InvalidStatus`, `InvalidHeaderName`, `InvalidHeaderValue`, `InvalidTarget`, `InvalidInput`, `Internal`
+- `HttpMethod`: `Get|Head|Post|Put|Patch|Delete|Options`
+- `HttpHeader`, `HttpRequest`, `HttpResponse`
+
+Public APIs:
+
+- `parse_method(text: String) -> Result[HttpMethod, HttpError]`
+- `method_name(method: HttpMethod) -> Result[String, HttpError]`
+- `status_reason(status: Int) -> Result[String, HttpError]`
+- `validate_header(name: String, value: String) -> Result[Bool, HttpError]`
+- `validate_target(target: String) -> Result[Bool, HttpError]`
+- `header(name: String, value: String) -> Result[HttpHeader, HttpError]`
+- `request(method, target, headers, body) -> Result[HttpRequest, HttpError]`
+- `response(status, headers, body) -> Result[HttpResponse, HttpError]`
+
+Behavior:
+
+- Method parsing is strict and deterministic (`TRACE` returns `InvalidMethod`).
+- Status validation enforces `100..599`; known status phrases are stable.
+- Header validation enforces token-safe names and control-free values.
+- Request-target validation accepts origin-form (`/path`) and absolute-form URLs.
+
+### Runtime Integration
+
+- URL parsing/normalization and HTTP validators are runtime-backed intrinsics in `src/codegen.rs`.
+- `std.url.net_addr` is designed for direct use with `std.net` APIs (for example `tcp_listen`/`tcp_connect` address input).
+
+### Example
+
+See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/http_types.aic`.
