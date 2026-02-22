@@ -97,7 +97,14 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                                 func.name
                             ),
                         )),
-                        ProofState::Unknown => {}
+                        ProofState::Unknown => diagnostics.push(residual_note(
+                            file,
+                            req.span,
+                            format!(
+                                "requires contract for '{}' kept as residual runtime obligation",
+                                func.name
+                            ),
+                        )),
                     }
                 }
 
@@ -120,7 +127,14 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                                 func.name
                             ),
                         )),
-                        ProofState::Unknown => {}
+                        ProofState::Unknown => diagnostics.push(residual_note(
+                            file,
+                            ens.span,
+                            format!(
+                                "ensures contract for '{}' kept as residual runtime obligation",
+                                func.name
+                            ),
+                        )),
                     }
                 }
             }
@@ -145,7 +159,14 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                                 strukt.name
                             ),
                         )),
-                        ProofState::Unknown => {}
+                        ProofState::Unknown => diagnostics.push(residual_note(
+                            file,
+                            inv.span,
+                            format!(
+                                "invariant for struct '{}' kept as residual runtime obligation",
+                                strukt.name
+                            ),
+                        )),
                     }
                 }
             }
@@ -240,6 +261,12 @@ pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
 
 fn discharge_note(file: &str, span: crate::span::Span, message: String) -> Diagnostic {
     let mut diag = Diagnostic::error("E4005", message, file, span);
+    diag.severity = Severity::Note;
+    diag
+}
+
+fn residual_note(file: &str, span: crate::span::Span, message: String) -> Diagnostic {
+    let mut diag = Diagnostic::error("E4003", message, file, span);
     diag.severity = Severity::Note;
     diag
 }
@@ -1594,6 +1621,28 @@ mod tests {
     }
 
     #[test]
+    fn lowering_skips_discharged_requires_and_ensures() {
+        let src = "fn id(x: Int) -> Int requires x == x ensures result == result { x }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let func = match &lowered.items[0] {
+            ir::Item::Function(f) => f,
+            _ => panic!(),
+        };
+        assert!(
+            !func
+                .body
+                .stmts
+                .iter()
+                .any(|stmt| matches!(stmt, ir::Stmt::Assert { .. })),
+            "lowered={:#?}",
+            func.body
+        );
+    }
+
+    #[test]
     fn static_verifier_discharges_abs_postcondition() {
         let src = r#"
 fn abs(x: Int) -> Int ensures result >= 0 {
@@ -1634,6 +1683,11 @@ fn choose(x: Int, y: Int) -> Int ensures result >= y {
         );
         assert!(
             !diags.iter().any(|d| d.code == "E4005"),
+            "diags={:#?}",
+            diags
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "E4003"),
             "diags={:#?}",
             diags
         );

@@ -74,6 +74,7 @@ check_pass=(
   "examples/core/mut_vec.aic"
   "examples/core/pattern_or.aic"
   "examples/core/pattern_guard_check.aic"
+  "examples/verify/range_proofs.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -122,6 +123,7 @@ run_pass=(
   "examples/core/result_propagation.aic"
   "examples/core/mut_vec.aic"
   "examples/core/pattern_or.aic"
+  "examples/verify/range_proofs.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -234,6 +236,7 @@ case "$MODE" in
     expect_run_value "examples/core/result_propagation.aic" "42"
     expect_run_value "examples/core/mut_vec.aic" "2"
     expect_run_value "examples/core/pattern_or.aic" "42"
+    expect_run_value "examples/verify/range_proofs.aic" "9"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then

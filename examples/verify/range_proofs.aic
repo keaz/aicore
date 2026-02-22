@@ -1,0 +1,21 @@
+module verify.range_proofs;
+
+import std.io;
+
+fn abs(x: Int) -> Int ensures result >= 0 {
+    if x >= 0 {
+        x
+    } else {
+        0 - x
+    }
+}
+
+fn choose(x: Int, y: Int) -> Int ensures result >= y {
+    x
+}
+
+fn main() -> Int effects { io } {
+    print_int(abs(-7));
+    print_int(choose(9, 4));
+    0
+}

@@ -151,6 +151,35 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
 }
 
 #[test]
+fn static_contract_verifier_emits_discharge_and_residual_notes() {
+    let out = run_aic(&["check", "examples/verify/range_proofs.aic", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E4005"),
+        "expected E4005 discharge note; diagnostics={diagnostics:#}"
+    );
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E4003"),
+        "expected E4003 residual note; diagnostics={diagnostics:#}"
+    );
+}
+
+#[test]
+fn static_contract_verifier_output_is_deterministic() {
+    let first = run_aic(&["check", "examples/verify/range_proofs.aic", "--json"]);
+    let second = run_aic(&["check", "examples/verify/range_proofs.aic", "--json"]);
+    assert_eq!(first.status.code(), Some(0));
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "expected deterministic diagnostics output"
+    );
+}
+
+#[test]
 fn explain_and_contract_commands_work() {
     let explain_known = run_aic(&["explain", "E2001", "--json"]);
     assert_eq!(explain_known.status.code(), Some(0));
