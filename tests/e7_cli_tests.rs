@@ -129,6 +129,92 @@ fn explain_and_contract_commands_work() {
 }
 
 #[test]
+fn diag_apply_fixes_dry_run_and_apply_are_deterministic() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        "module fixdemo.main;\nfn main() -> Int {\n    let x = 1\n    x\n}\n",
+    )
+    .expect("write source");
+
+    let source_path_str = source_path.to_string_lossy().to_string();
+    let original = fs::read_to_string(&source_path).expect("read original");
+
+    let dry_run_1 = run_aic(&[
+        "diag",
+        "apply-fixes",
+        &source_path_str,
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(
+        dry_run_1.status.code(),
+        Some(0),
+        "dry-run-1 stdout={}\nstderr={}",
+        String::from_utf8_lossy(&dry_run_1.stdout),
+        String::from_utf8_lossy(&dry_run_1.stderr)
+    );
+    let dry_run_1_json: serde_json::Value =
+        serde_json::from_slice(&dry_run_1.stdout).expect("dry run json");
+    assert_eq!(dry_run_1_json["mode"], "dry-run");
+    assert!(dry_run_1_json["conflicts"]
+        .as_array()
+        .expect("conflicts")
+        .is_empty());
+    assert!(!dry_run_1_json["applied_edits"]
+        .as_array()
+        .expect("applied edits")
+        .is_empty());
+
+    let dry_run_2 = run_aic(&[
+        "diag",
+        "apply-fixes",
+        &source_path_str,
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(dry_run_2.status.code(), Some(0));
+    let dry_run_2_json: serde_json::Value =
+        serde_json::from_slice(&dry_run_2.stdout).expect("dry run json 2");
+    assert_eq!(
+        dry_run_1_json["applied_edits"],
+        dry_run_2_json["applied_edits"]
+    );
+
+    let after_dry_run = fs::read_to_string(&source_path).expect("read after dry-run");
+    assert_eq!(original, after_dry_run);
+
+    let apply = run_aic(&["diag", "apply-fixes", &source_path_str, "--json"]);
+    assert_eq!(
+        apply.status.code(),
+        Some(0),
+        "apply stdout={}\nstderr={}",
+        String::from_utf8_lossy(&apply.stdout),
+        String::from_utf8_lossy(&apply.stderr)
+    );
+    let apply_json: serde_json::Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(apply_json["mode"], "apply");
+    assert!(apply_json["conflicts"]
+        .as_array()
+        .expect("conflicts")
+        .is_empty());
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten");
+    assert!(rewritten.contains("let x = 1;"));
+
+    let check = run_aic(&["check", &source_path_str]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));

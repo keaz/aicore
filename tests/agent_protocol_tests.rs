@@ -4,6 +4,7 @@ use std::process::Command;
 
 use jsonschema::JSONSchema;
 use serde_json::Value;
+use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -91,4 +92,29 @@ fn contract_negotiation_reports_incompatible_major() {
     let contract: Value = serde_json::from_slice(&out.stdout).expect("contract json");
     assert_eq!(contract["protocol"]["compatible"], false);
     assert!(contract["protocol"]["selected_version"].is_null());
+}
+
+#[test]
+fn diag_apply_fixes_json_validates_against_fix_schema() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("fixable.aic");
+    fs::write(
+        &file,
+        "module proto.fix;\nfn main() -> Int {\n    let x = 1\n    x\n}\n",
+    )
+    .expect("write source");
+
+    let file_str = file.to_string_lossy().to_string();
+    let out = run_aic(&["diag", "apply-fixes", &file_str, "--dry-run", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let response: Value = serde_json::from_slice(&out.stdout).expect("fix response");
+
+    let schema = read_json("docs/agent-tooling/schemas/fix-response.schema.json");
+    let compiled = JSONSchema::compile(&schema).expect("compile fix schema");
+    let result = compiled.validate(&response);
+    assert!(
+        result.is_ok(),
+        "fix response does not satisfy schema: {:?}",
+        result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
 }

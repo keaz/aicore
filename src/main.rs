@@ -8,6 +8,7 @@ use aicore::codegen::{
     CodegenOptions, CompileOptions, LinkOptions,
 };
 use aicore::contracts::lower_runtime_asserts;
+use aicore::diag_fixes::apply_safe_fixes;
 use aicore::diagnostic_explain::{explain, explain_text};
 use aicore::diagnostics::Severity;
 use aicore::docgen::generate_docs;
@@ -65,6 +66,8 @@ enum Command {
         offline: bool,
     },
     Diag {
+        #[command(subcommand)]
+        command: Option<DiagSubcommand>,
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
         #[arg(long, conflicts_with = "sarif")]
@@ -179,6 +182,21 @@ enum TestModeArg {
     RunPass,
     CompileFail,
     Golden,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum DiagSubcommand {
+    #[command(name = "apply-fixes")]
+    ApplyFixes {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        offline: bool,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -339,12 +357,6 @@ fn run_cli() -> anyhow::Result<i32> {
             json,
             sarif,
             offline,
-        }
-        | Command::Diag {
-            input,
-            json,
-            sarif,
-            offline,
         } => {
             let workspace_diags = if input.is_dir() {
                 match workspace_build_plan(&input) {
@@ -388,6 +400,118 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_OK
             }
         }
+        Command::Diag {
+            command,
+            input,
+            json,
+            sarif,
+            offline,
+        } => match command {
+            Some(DiagSubcommand::ApplyFixes {
+                input,
+                dry_run,
+                json,
+                offline,
+            }) => {
+                let workspace_diags = if input.is_dir() {
+                    match workspace_build_plan(&input) {
+                        Ok(Some(plan)) => {
+                            let mut all = Vec::new();
+                            for member in &plan.members {
+                                let entry = member.root.join(&member.main);
+                                let front =
+                                    run_frontend_with_options(&entry, FrontendOptions { offline })?;
+                                all.extend(front.diagnostics);
+                            }
+                            Some(all)
+                        }
+                        Ok(None) => None,
+                        Err(diag) => Some(vec![diag]),
+                    }
+                } else {
+                    None
+                };
+
+                let diagnostics = if let Some(diags) = workspace_diags {
+                    diags
+                } else {
+                    run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
+                };
+
+                let response = apply_safe_fixes(&diagnostics, dry_run)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&response)?);
+                } else {
+                    println!(
+                        "diag apply-fixes (mode={}): {} planned edits, {} conflicts",
+                        response.mode,
+                        response.applied_edits.len(),
+                        response.conflicts.len()
+                    );
+                    for edit in &response.applied_edits {
+                        println!(
+                            "  apply {}:{}..{} {}",
+                            edit.file, edit.start, edit.end, edit.message
+                        );
+                    }
+                    for conflict in &response.conflicts {
+                        eprintln!(
+                            "  conflict {}:{}..{} {}",
+                            conflict.file, conflict.start, conflict.end, conflict.message
+                        );
+                    }
+                }
+                if response.ok {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            None => {
+                let workspace_diags = if input.is_dir() {
+                    match workspace_build_plan(&input) {
+                        Ok(Some(plan)) => {
+                            let mut all = Vec::new();
+                            for member in &plan.members {
+                                let entry = member.root.join(&member.main);
+                                let front =
+                                    run_frontend_with_options(&entry, FrontendOptions { offline })?;
+                                all.extend(front.diagnostics);
+                            }
+                            Some(all)
+                        }
+                        Ok(None) => None,
+                        Err(diag) => Some(vec![diag]),
+                    }
+                } else {
+                    None
+                };
+
+                let diagnostics = if let Some(diags) = workspace_diags {
+                    diags
+                } else {
+                    run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
+                };
+
+                if sarif {
+                    let sarif =
+                        diagnostics_to_sarif(&diagnostics, "aic", env!("CARGO_PKG_VERSION"));
+                    println!("{}", serde_json::to_string_pretty(&sarif)?);
+                } else if json {
+                    println!("{}", serde_json::to_string_pretty(&diagnostics)?);
+                } else if diagnostics.is_empty() {
+                    println!("check: ok");
+                } else {
+                    print!("{}", diagnostics_pretty(&diagnostics));
+                }
+
+                if has_errors(&diagnostics) {
+                    EXIT_DIAGNOSTIC_ERROR
+                } else {
+                    EXIT_OK
+                }
+            }
+        },
         Command::Explain { code, json } => {
             let entry = explain(&code);
             if json {

@@ -306,6 +306,9 @@ Diagnostics:
   - `examples/agent/protocol_check.json`
   - `examples/agent/protocol_build.json`
   - `examples/agent/protocol_fix.json`
+- Autofix engine:
+  - planner/applicator in `src/diag_fixes.rs`
+  - command: `aic diag apply-fixes <path> [--dry-run] [--json] [--offline]`
 - Exit code mapping:
   - `0`: success
   - `1`: diagnostic/runtime failure

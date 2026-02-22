@@ -25,6 +25,12 @@ Negotiation rules:
 - Build response: `docs/agent-tooling/schemas/build-response.schema.json`
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
 
+Reference command for fix responses:
+
+```bash
+aic diag apply-fixes examples/agent/fixable_imports.aic --dry-run --json
+```
+
 ## Compatibility guarantees
 
 - Schema files are versioned (`...-1.0.schema.json` in `$id`) and backward compatible within major version `1`.

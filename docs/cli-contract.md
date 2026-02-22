@@ -69,6 +69,17 @@ Stable `pkg` flags include:
 
 `--json` and `--sarif` are mutually exclusive.
 
+Autofix API:
+
+```bash
+aic diag apply-fixes <file-or-workspace> --dry-run --json
+aic diag apply-fixes <file-or-workspace> --json
+```
+
+- Dry-run mode computes deterministic edit plans without writing files.
+- Apply mode writes only non-conflicting safe edits.
+- Conflicts are reported in `conflicts[]` and produce non-zero exit.
+
 ## Breaking-change policy
 
 Any command/flag/output shape changes require a contract version bump and migration notes in docs.

@@ -43,8 +43,14 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "diag",
         description: "Alias of check focused on diagnostics output",
-        stable_flags: &["--json", "--sarif", "--offline"],
-        output_modes: &["text", "json", "sarif"],
+        stable_flags: &[
+            "--json",
+            "--sarif",
+            "--offline",
+            "subcommands:apply-fixes",
+            "apply-fixes --dry-run",
+        ],
+        output_modes: &["text", "json", "sarif", "fix-json"],
     },
     CommandContract {
         name: "fmt",
