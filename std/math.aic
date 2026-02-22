@@ -1,0 +1,100 @@
+module std.math;
+
+const PI: Float = 3.14159265358979;
+const E: Float = 2.71828182845905;
+
+fn aic_math_abs_intrinsic(x: Int) -> Int {
+    0
+}
+
+fn aic_math_abs_float_intrinsic(x: Float) -> Float {
+    0.0
+}
+
+fn aic_math_min_intrinsic(a: Int, b: Int) -> Int {
+    0
+}
+
+fn aic_math_max_intrinsic(a: Int, b: Int) -> Int {
+    0
+}
+
+fn aic_math_pow_intrinsic(base: Float, exp: Float) -> Float {
+    0.0
+}
+
+fn aic_math_sqrt_intrinsic(x: Float) -> Float {
+    0.0
+}
+
+fn aic_math_floor_intrinsic(x: Float) -> Int {
+    0
+}
+
+fn aic_math_ceil_intrinsic(x: Float) -> Int {
+    0
+}
+
+fn aic_math_round_intrinsic(x: Float) -> Int {
+    0
+}
+
+fn aic_math_log_intrinsic(x: Float) -> Float {
+    0.0
+}
+
+fn aic_math_sin_intrinsic(x: Float) -> Float {
+    0.0
+}
+
+fn aic_math_cos_intrinsic(x: Float) -> Float {
+    0.0
+}
+
+fn abs(x: Int) -> Int {
+    aic_math_abs_intrinsic(x)
+}
+
+fn abs_float(x: Float) -> Float {
+    aic_math_abs_float_intrinsic(x)
+}
+
+fn min(a: Int, b: Int) -> Int {
+    aic_math_min_intrinsic(a, b)
+}
+
+fn max(a: Int, b: Int) -> Int {
+    aic_math_max_intrinsic(a, b)
+}
+
+fn pow(base: Float, exp: Float) -> Float {
+    aic_math_pow_intrinsic(base, exp)
+}
+
+fn sqrt(x: Float) -> Float {
+    aic_math_sqrt_intrinsic(x)
+}
+
+fn floor(x: Float) -> Int {
+    aic_math_floor_intrinsic(x)
+}
+
+fn ceil(x: Float) -> Int {
+    aic_math_ceil_intrinsic(x)
+}
+
+fn round(x: Float) -> Int {
+    aic_math_round_intrinsic(x)
+}
+
+fn log(x: Float) -> Float {
+    aic_math_log_intrinsic(x)
+}
+
+fn sin(x: Float) -> Float {
+    aic_math_sin_intrinsic(x)
+}
+
+fn cos(x: Float) -> Float {
+    aic_math_cos_intrinsic(x)
+}

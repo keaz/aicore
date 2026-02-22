@@ -4,9 +4,13 @@ import std.option;
 import std.result;
 import std.vec;
 
+fn aic_string_len_intrinsic(s: String) -> Int {
+    0
+}
+
 /// Return string length in bytes.
 fn len(s: String) -> Int {
-    0
+    aic_string_len_intrinsic(s)
 }
 
 /// Return true when the string is empty.

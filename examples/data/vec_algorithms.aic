@@ -1,0 +1,92 @@
+import std.io;
+import std.option;
+import std.vec;
+
+struct Row {
+    key: Int,
+    tag: Int,
+}
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn less_int(a: Int, b: Int) -> Bool {
+    a < b
+}
+
+fn less_row(a: Row, b: Row) -> Bool {
+    a.key < b.key
+}
+
+fn row_tag(row: Row) -> Int {
+    row.tag
+}
+
+fn is_even(x: Int) -> Bool {
+    x % 2 == 0
+}
+
+fn positive(x: Int) -> Bool {
+    x > 0
+}
+
+fn over_two(x: Int) -> Bool {
+    x > 2
+}
+
+fn main() -> Int effects { io } {
+    let mut nums: Vec[Int] = vec.new_vec();
+    nums = vec.push(nums, 3);
+    nums = vec.push(nums, 1);
+    nums = vec.push(nums, 2);
+    nums = vec.push(nums, 2);
+
+    let sorted = vec.sort(nums, less_int);
+    let sorted_ok =
+        (if opt_int_or(vec.get(sorted, 0), -1) == 1 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 1), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 2), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 3), -1) == 3 { 1 } else { 0 });
+
+    let mut rows: Vec[Row] = vec.new_vec();
+    rows = vec.push(rows, Row { key: 2, tag: 21 });
+    rows = vec.push(rows, Row { key: 1, tag: 11 });
+    rows = vec.push(rows, Row { key: 2, tag: 22 });
+    rows = vec.push(rows, Row { key: 1, tag: 12 });
+    let sorted_rows = vec.sort(rows, less_row);
+    let tags = vec.map_vec(sorted_rows, row_tag);
+    let stable_ok =
+        (if opt_int_or(vec.get(tags, 0), -1) == 11 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 1), -1) == 12 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 2), -1) == 21 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 3), -1) == 22 { 1 } else { 0 });
+
+    let find_ok = if opt_int_or(vec.find(sorted, over_two), 0) == 3 { 1 } else { 0 };
+    let any_ok = if vec.any(sorted, is_even) { 1 } else { 0 };
+    let all_ok = if vec.all(sorted, positive) { 1 } else { 0 };
+    let count_ok = if vec.count(sorted, is_even) == 2 { 1 } else { 0 };
+
+    let zipped = vec.zip(sorted, vec.append(vec.vec_of(9), vec.vec_of(8)));
+    let zip_ok = match vec.get(zipped, 1) {
+        Some(pair) => if pair.left == 2 && pair.right == 8 && vec.vec_len(zipped) == 2 { 1 } else { 0 },
+        None => 0,
+    };
+
+    let numbers = vec.append(vec.vec_of(40), vec.vec_of(50));
+    let indexed = vec.enumerate(numbers);
+    let enumerate_ok = match vec.get(indexed, 1) {
+        Some(item) => if item.index == 1 && item.value == 50 { 1 } else { 0 },
+        None => 0,
+    };
+
+    if sorted_ok + stable_ok + find_ok + any_ok + all_ok + count_ok + zip_ok + enumerate_ok == 14 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -406,7 +406,7 @@ pub fn compile_with_clang_artifact_with_options(
             command.arg("-O0").arg(&ll_path).arg(&runtime_path);
             append_link_options(&mut command, &options.link);
             if cfg!(not(target_os = "windows")) {
-                command.arg("-pthread");
+                command.arg("-pthread").arg("-lm");
             }
             command.arg("-o").arg(output_path);
             run_checked_command(command, "clang", "building executable artifact")?;
@@ -906,6 +906,18 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare void @aic_rt_string_format(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
+        text.push_str("declare i64 @aic_rt_math_abs(i64)\n");
+        text.push_str("declare double @aic_rt_math_abs_float(double)\n");
+        text.push_str("declare i64 @aic_rt_math_min(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_math_max(i64, i64)\n");
+        text.push_str("declare double @aic_rt_math_pow(double, double)\n");
+        text.push_str("declare double @aic_rt_math_sqrt(double)\n");
+        text.push_str("declare i64 @aic_rt_math_floor(double)\n");
+        text.push_str("declare i64 @aic_rt_math_ceil(double)\n");
+        text.push_str("declare i64 @aic_rt_math_round(double)\n");
+        text.push_str("declare double @aic_rt_math_log(double)\n");
+        text.push_str("declare double @aic_rt_math_sin(double)\n");
+        text.push_str("declare double @aic_rt_math_cos(double)\n");
         text.push_str("declare i64 @aic_rt_vec_len(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_cap(i8*, i64, i64)\n");
         text.push_str("declare void @aic_rt_vec_new(i8**, i64*, i64*)\n");
@@ -2330,6 +2342,9 @@ impl<'a> Generator<'a> {
         }
 
         if let Some(result) = self.gen_string_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_math_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
 
@@ -9433,6 +9448,7 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
         let canonical = match name {
+            "len" | "aic_string_len_intrinsic" => "len",
             "contains" | "aic_string_contains_intrinsic" => "contains",
             "starts_with" | "aic_string_starts_with_intrinsic" => "starts_with",
             "ends_with" | "aic_string_ends_with_intrinsic" => "ends_with",
@@ -9460,6 +9476,9 @@ impl<'a> Generator<'a> {
         };
 
         match canonical {
+            "len" if self.sig_matches_shape(name, &["String"], "Int") => {
+                Some(self.gen_string_len_call(name, args, span, fctx))
+            }
             "contains" if self.sig_matches_shape(name, &["String", "String"], "Bool") => {
                 Some(self.gen_string_bool_binary_call(
                     "contains",
@@ -9635,6 +9654,44 @@ impl<'a> Generator<'a> {
             .push(format!("  {} = icmp ne i64 {}, 0", reg, raw));
         Some(Value {
             ty: LType::Bool,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_string_len_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_strlen(i8* {}, i64 {}, i64 {})",
+            reg, ptr, len, cap
+        ));
+        Some(Value {
+            ty: LType::Int,
             repr: Some(reg),
         })
     }
@@ -10613,6 +10670,267 @@ impl<'a> Generator<'a> {
             out_len_slot
         ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
+    fn gen_math_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "abs" | "aic_math_abs_intrinsic" => "abs",
+            "abs_float" | "aic_math_abs_float_intrinsic" => "abs_float",
+            "min" | "aic_math_min_intrinsic" => "min",
+            "max" | "aic_math_max_intrinsic" => "max",
+            "pow" | "aic_math_pow_intrinsic" => "pow",
+            "sqrt" | "aic_math_sqrt_intrinsic" => "sqrt",
+            "floor" | "aic_math_floor_intrinsic" => "floor",
+            "ceil" | "aic_math_ceil_intrinsic" => "ceil",
+            "round" | "aic_math_round_intrinsic" => "round",
+            "log" | "aic_math_log_intrinsic" => "log",
+            "sin" | "aic_math_sin_intrinsic" => "sin",
+            "cos" | "aic_math_cos_intrinsic" => "cos",
+            _ => return None,
+        };
+
+        match canonical {
+            "abs" if self.sig_matches_shape(name, &["Int"], "Int") => {
+                Some(self.gen_math_unary_int_call(name, "aic_rt_math_abs", args, span, fctx))
+            }
+            "abs_float" if self.sig_matches_shape(name, &["Float"], "Float") => Some(
+                self.gen_math_unary_float_call(name, "aic_rt_math_abs_float", args, span, fctx),
+            ),
+            "min" if self.sig_matches_shape(name, &["Int", "Int"], "Int") => {
+                Some(self.gen_math_binary_int_call(name, "aic_rt_math_min", args, span, fctx))
+            }
+            "max" if self.sig_matches_shape(name, &["Int", "Int"], "Int") => {
+                Some(self.gen_math_binary_int_call(name, "aic_rt_math_max", args, span, fctx))
+            }
+            "pow" if self.sig_matches_shape(name, &["Float", "Float"], "Float") => {
+                Some(self.gen_math_binary_float_call(name, "aic_rt_math_pow", args, span, fctx))
+            }
+            "sqrt" if self.sig_matches_shape(name, &["Float"], "Float") => {
+                Some(self.gen_math_unary_float_call(name, "aic_rt_math_sqrt", args, span, fctx))
+            }
+            "floor" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+                self.gen_math_unary_float_to_int_call(name, "aic_rt_math_floor", args, span, fctx),
+            ),
+            "ceil" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+                self.gen_math_unary_float_to_int_call(name, "aic_rt_math_ceil", args, span, fctx),
+            ),
+            "round" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+                self.gen_math_unary_float_to_int_call(name, "aic_rt_math_round", args, span, fctx),
+            ),
+            "log" if self.sig_matches_shape(name, &["Float"], "Float") => {
+                Some(self.gen_math_unary_float_call(name, "aic_rt_math_log", args, span, fctx))
+            }
+            "sin" if self.sig_matches_shape(name, &["Float"], "Float") => {
+                Some(self.gen_math_unary_float_call(name, "aic_rt_math_sin", args, span, fctx))
+            }
+            "cos" if self.sig_matches_shape(name, &["Float"], "Float") => {
+                Some(self.gen_math_unary_float_call(name, "aic_rt_math_cos", args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_math_unary_int_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let arg = value.repr.unwrap_or_else(|| "0".to_string());
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @{}(i64 {})", reg, runtime_fn, arg));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_math_binary_int_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs = self.gen_expr(&args[0], fctx)?;
+        let rhs = self.gen_expr(&args[1], fctx)?;
+        if lhs.ty != LType::Int || rhs.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Int, Int)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs_arg = lhs.repr.unwrap_or_else(|| "0".to_string());
+        let rhs_arg = rhs.repr.unwrap_or_else(|| "0".to_string());
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64 {})",
+            reg, runtime_fn, lhs_arg, rhs_arg
+        ));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_math_unary_float_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Float"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let arg = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call double @{}(double {})",
+            reg, runtime_fn, arg
+        ));
+        Some(Value {
+            ty: LType::Float,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_math_binary_float_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs = self.gen_expr(&args[0], fctx)?;
+        let rhs = self.gen_expr(&args[1], fctx)?;
+        if lhs.ty != LType::Float || rhs.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Float, Float)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs_arg = lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let rhs_arg = rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call double @{}(double {}, double {})",
+            reg, runtime_fn, lhs_arg, rhs_arg
+        ));
+        Some(Value {
+            ty: LType::Float,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_math_unary_float_to_int_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Float"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let arg = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(double {})",
+            reg, runtime_fn, arg
+        ));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        })
     }
 
     fn wrap_option_with_condition(
@@ -22564,6 +22882,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("vec", "slice") => Some("aic_vec_slice_intrinsic"),
         ("vec", "append") => Some("aic_vec_append_intrinsic"),
         ("vec", "clear") => Some("aic_vec_clear_intrinsic"),
+        ("string", "len") => Some("aic_string_len_intrinsic"),
         ("string", "contains") => Some("aic_string_contains_intrinsic"),
         ("string", "starts_with") => Some("aic_string_starts_with_intrinsic"),
         ("string", "ends_with") => Some("aic_string_ends_with_intrinsic"),
@@ -22587,6 +22906,18 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("string", "bool_to_string") => Some("aic_string_bool_to_string_intrinsic"),
         ("string", "join") => Some("aic_string_join_intrinsic"),
         ("string", "format") => Some("aic_string_format_intrinsic"),
+        ("math", "abs") => Some("aic_math_abs_intrinsic"),
+        ("math", "abs_float") => Some("aic_math_abs_float_intrinsic"),
+        ("math", "min") => Some("aic_math_min_intrinsic"),
+        ("math", "max") => Some("aic_math_max_intrinsic"),
+        ("math", "pow") => Some("aic_math_pow_intrinsic"),
+        ("math", "sqrt") => Some("aic_math_sqrt_intrinsic"),
+        ("math", "floor") => Some("aic_math_floor_intrinsic"),
+        ("math", "ceil") => Some("aic_math_ceil_intrinsic"),
+        ("math", "round") => Some("aic_math_round_intrinsic"),
+        ("math", "log") => Some("aic_math_log_intrinsic"),
+        ("math", "sin") => Some("aic_math_sin_intrinsic"),
+        ("math", "cos") => Some("aic_math_cos_intrinsic"),
         ("path", "join") => Some("aic_path_join_intrinsic"),
         ("path", "basename") => Some("aic_path_basename_intrinsic"),
         ("path", "dirname") => Some("aic_path_dirname_intrinsic"),
@@ -22978,6 +23309,7 @@ fn runtime_c_source() -> &'static str {
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
+#include <math.h>
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -22995,7 +23327,6 @@ fn runtime_c_source() -> &'static str {
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
-#include <math.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -27559,6 +27890,70 @@ long aic_rt_map_entries_int(long handle, char** out_ptr, long* out_count) {
         aic_rt_map_free_int_entries(entries, slot->len);
     }
     return 0;
+}
+
+static long aic_rt_math_float_to_int(double value) {
+    if (isnan(value)) {
+        return 0;
+    }
+    if (value >= (double)LONG_MAX) {
+        return LONG_MAX;
+    }
+    if (value <= (double)LONG_MIN) {
+        return LONG_MIN;
+    }
+    return (long)value;
+}
+
+long aic_rt_math_abs(long x) {
+    if (x == LONG_MIN) {
+        return LONG_MIN;
+    }
+    return x < 0 ? -x : x;
+}
+
+double aic_rt_math_abs_float(double x) {
+    return fabs(x);
+}
+
+long aic_rt_math_min(long a, long b) {
+    return a < b ? a : b;
+}
+
+long aic_rt_math_max(long a, long b) {
+    return a > b ? a : b;
+}
+
+double aic_rt_math_pow(double base, double exp) {
+    return pow(base, exp);
+}
+
+double aic_rt_math_sqrt(double x) {
+    return sqrt(x);
+}
+
+long aic_rt_math_floor(double x) {
+    return aic_rt_math_float_to_int(floor(x));
+}
+
+long aic_rt_math_ceil(double x) {
+    return aic_rt_math_float_to_int(ceil(x));
+}
+
+long aic_rt_math_round(double x) {
+    return aic_rt_math_float_to_int(round(x));
+}
+
+double aic_rt_math_log(double x) {
+    return log(x);
+}
+
+double aic_rt_math_sin(double x) {
+    return sin(x);
+}
+
+double aic_rt_math_cos(double x) {
+    return cos(x);
 }
 
 long aic_rt_string_contains(

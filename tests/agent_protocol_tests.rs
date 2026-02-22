@@ -84,6 +84,32 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
         assert!(contract["schemas"][phase]["path"].is_string());
         assert!(contract["examples"][phase].is_string());
     }
+
+    let commands = contract["commands"].as_array().expect("command contracts");
+    let coverage = commands
+        .iter()
+        .find(|entry| entry["name"] == "coverage")
+        .expect("coverage contract");
+    assert!(coverage["stable_flags"]
+        .as_array()
+        .expect("coverage flags")
+        .iter()
+        .any(|flag| flag == "--check"));
+    assert!(coverage["stable_flags"]
+        .as_array()
+        .expect("coverage flags")
+        .iter()
+        .any(|flag| flag == "--min"));
+
+    let run = commands
+        .iter()
+        .find(|entry| entry["name"] == "run")
+        .expect("run contract");
+    assert!(run["stable_flags"]
+        .as_array()
+        .expect("run flags")
+        .iter()
+        .any(|flag| flag == "--profile"));
 }
 
 #[test]

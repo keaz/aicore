@@ -101,14 +101,17 @@ fn size[K, V](m: Map[K, V]) -> Int {
     aic_map_size_intrinsic(m)
 }
 
+/// Return keys in deterministic ascending key order.
 fn keys[K, V](m: Map[K, V]) -> Vec[K] {
     aic_map_keys_intrinsic(m)
 }
 
+/// Return values in the same deterministic order as `keys(m)`.
 fn values[K, V](m: Map[K, V]) -> Vec[V] {
     aic_map_values_intrinsic(m)
 }
 
+/// Return entries in deterministic ascending key order.
 fn entries[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
     aic_map_entries_intrinsic(m)
 }

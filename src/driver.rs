@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +11,7 @@ use crate::codegen::{
     CompileOptions, LinkOptions,
 };
 use crate::contracts::{lower_runtime_asserts, verify_static};
-use crate::diagnostics::{Diagnostic, Severity};
+use crate::diagnostics::{Diagnostic, Severity, SuggestedFix};
 use crate::effects::normalize_effect_declarations;
 use crate::formatter::format_program;
 use crate::ir;
@@ -210,21 +209,70 @@ pub fn sort_and_cap_diagnostics(
     max_errors: usize,
 ) -> Vec<Diagnostic> {
     sort_diagnostics(&mut diagnostics);
+    diagnostics.dedup();
     diagnostics.truncate(max_errors);
     diagnostics
 }
 
 pub fn sort_diagnostics(diagnostics: &mut [Diagnostic]) {
-    diagnostics.sort_by(diagnostic_cmp);
+    diagnostics.sort_by_cached_key(diagnostic_sort_key);
 }
 
-fn diagnostic_cmp(a: &Diagnostic, b: &Diagnostic) -> Ordering {
-    let a_pos = a.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
-    let b_pos = b.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
-    a_pos
-        .cmp(&b_pos)
-        .then(a.code.cmp(&b.code))
-        .then(a.message.cmp(&b.message))
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct DiagnosticSortKey {
+    first_span_start: usize,
+    first_span_end: usize,
+    first_span_file: String,
+    severity_rank: u8,
+    code: String,
+    message: String,
+    spans: Vec<(String, usize, usize, Option<String>)>,
+    help: Vec<String>,
+    fixes: Vec<DiagnosticFixKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct DiagnosticFixKey {
+    message: String,
+    replacement: Option<String>,
+    start: Option<usize>,
+    end: Option<usize>,
+}
+
+fn diagnostic_sort_key(diag: &Diagnostic) -> DiagnosticSortKey {
+    let first_span = diag.spans.first();
+    DiagnosticSortKey {
+        first_span_start: first_span.map(|span| span.start).unwrap_or(usize::MAX),
+        first_span_end: first_span.map(|span| span.end).unwrap_or(usize::MAX),
+        first_span_file: first_span.map(|span| span.file.clone()).unwrap_or_default(),
+        severity_rank: severity_rank(&diag.severity),
+        code: diag.code.clone(),
+        message: diag.message.clone(),
+        spans: diag
+            .spans
+            .iter()
+            .map(|span| (span.file.clone(), span.start, span.end, span.label.clone()))
+            .collect(),
+        help: diag.help.clone(),
+        fixes: diag.suggested_fixes.iter().map(fix_sort_key).collect(),
+    }
+}
+
+fn severity_rank(severity: &Severity) -> u8 {
+    match severity {
+        Severity::Error => 0,
+        Severity::Warning => 1,
+        Severity::Note => 2,
+    }
+}
+
+fn fix_sort_key(fix: &SuggestedFix) -> DiagnosticFixKey {
+    DiagnosticFixKey {
+        message: fix.message.clone(),
+        replacement: fix.replacement.clone(),
+        start: fix.start,
+        end: fix.end,
+    }
 }
 
 pub fn format_source(path: &Path, write: bool) -> anyhow::Result<String> {

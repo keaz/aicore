@@ -14,6 +14,11 @@ aic repl
 
 Use `aic repl --json` for machine-consumable line-delimited JSON events (`ready`, `result`, `type`, `effects`, `error`, `bye`), which is useful for AI-agent tool integration.
 
+For deterministic tooling artifacts:
+
+- `aic coverage <input> --report <path>` emits a JSON coverage summary (and supports `--check --min <pct>` threshold gates).
+- `aic run <input> --profile --profile-output <path>` writes a deterministic profile JSON report with top functions and `self_time_ms`/`total_time_ms`.
+
 Implemented LSP capabilities:
 
 - diagnostics (`textDocument/publishDiagnostics`)
@@ -33,9 +38,27 @@ Inside `aic repl`, supported commands are:
 
 - `:type <expr>`
 - `:effects <fn>`
+- `:history` (print numbered history)
+- `!!` (re-run previous entry)
+- `!<n>` (re-run history entry `n`, 1-based)
 - `:quit`
 
 REPL state persists across entries for bindings/evaluated values during the session.
+In non-JSON mode, control characters are applied as line edits before evaluation (`Backspace`/`Delete`, `Ctrl-U`, `Ctrl-W`).
+
+Example history flow:
+
+```text
+$ aic repl
+aic repl ready (:type <expr>, :effects <fn>, :history, :quit)
+let x = 7
+x = 7 : Int
+!!
+x = 7 : Int
+:history
+1: let x = 7
+2: let x = 7
+```
 
 ## VS Code setup
 

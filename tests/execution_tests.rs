@@ -943,6 +943,114 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_math_ops_full_surface_and_edge_cases() {
+    let src = r#"
+import std.io;
+import std.math;
+
+fn approx_eq(a: Float, b: Float, epsilon: Float) -> Bool {
+    abs_float(a - b) <= epsilon
+}
+
+fn main() -> Int effects { io } {
+    let abs_ok = if abs(-42) == 42 { 1 } else { 0 };
+    let abs_float_ok = if approx_eq(abs_float(-3.5), 3.5, 0.000000001) { 1 } else { 0 };
+    let min_ok = if min(7, -2) == -2 { 1 } else { 0 };
+    let max_ok = if max(7, -2) == 7 { 1 } else { 0 };
+
+    let pow_ok = if approx_eq(pow(2.0, 3.0), 8.0, 0.000000001) { 1 } else { 0 };
+    let sqrt_ok = if approx_eq(sqrt(81.0), 9.0, 0.000000001) { 1 } else { 0 };
+
+    let floor_pos_ok = if floor(3.9) == 3 { 1 } else { 0 };
+    let floor_neg_ok = if floor(-3.1) == -4 { 1 } else { 0 };
+    let ceil_pos_ok = if ceil(3.1) == 4 { 1 } else { 0 };
+    let ceil_neg_ok = if ceil(-3.9) == -3 { 1 } else { 0 };
+    let round_down_ok = if round(3.49) == 3 { 1 } else { 0 };
+    let round_half_ok = if round(3.5) == 4 { 1 } else { 0 };
+    let round_neg_half_ok = if round(-3.5) == -4 { 1 } else { 0 };
+
+    let log_ok = if approx_eq(log(E), 1.0, 0.0000001) { 1 } else { 0 };
+    let sin_ok = if approx_eq(sin(PI / 2.0), 1.0, 0.0000001) { 1 } else { 0 };
+    let cos_ok = if approx_eq(cos(PI), -1.0, 0.0000001) { 1 } else { 0 };
+
+    let constants_ok =
+        if PI > 3.14 && PI < 3.15 && E > 2.71 && E < 2.72 {
+            1
+        } else {
+            0
+        };
+
+    let sqrt_nan = sqrt(-1.0);
+    let nan_ok = if sqrt_nan != sqrt_nan { 1 } else { 0 };
+
+    let score =
+        abs_ok +
+        abs_float_ok +
+        min_ok +
+        max_ok +
+        pow_ok +
+        sqrt_ok +
+        floor_pos_ok +
+        floor_neg_ok +
+        ceil_pos_ok +
+        ceil_neg_ok +
+        round_down_ok +
+        round_half_ok +
+        round_neg_half_ok +
+        log_ok +
+        sin_ok +
+        cos_ok +
+        constants_ok +
+        nan_ok;
+
+    if score == 18 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_math_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.math;
+
+fn main() -> Int effects { io } {
+    let signal_a = round(pow(2.0, 8.0) + sqrt(81.0) + sin(PI / 2.0) * 10.0);
+    let signal_b = round(pow(2.0, 8.0) + sqrt(81.0) + sin(PI / 2.0) * 10.0);
+    let slope_a = round(log(E) * 10.0 + cos(PI) * 10.0);
+    let slope_b = round(log(E) * 10.0 + cos(PI) * 10.0);
+
+    if signal_a == signal_b && slope_a == slope_b {
+        print_int(signal_a + slope_a);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code_a, stdout_a, stderr_a) = compile_and_run(src);
+    assert_eq!(code_a, 0, "stderr={stderr_a}");
+    assert_eq!(stdout_a, "275\n");
+
+    let (code_b, stdout_b, stderr_b) = compile_and_run(src);
+    assert_eq!(code_b, 0, "stderr={stderr_b}");
+    assert_eq!(stdout_b, "275\n");
+    assert_eq!(
+        stdout_a, stdout_b,
+        "math program output must be deterministic"
+    );
+}
+
+#[test]
 fn exec_string_http_like_request_and_header_workflow() {
     let src = r#"
 import std.io;
@@ -1045,7 +1153,7 @@ fn main() -> Int effects { io } {
 
     let match_yes = bool_result(is_match(re, "ERROR 42"));
     let match_no = bool_result(is_match(re, "info 42"));
-    let found_len = string_len(find(re, "warn\nerror 17\nok"));
+    let found_len = string_len(regex.find(re, "warn\nerror 17\nok"));
     let replaced_len = string_len(regex.replace(re, "warn\nERROR 17\nok", "<redacted>"));
     let replace_nomatch_len = string_len(regex.replace(re, "all good", "<x>"));
 
@@ -1114,7 +1222,7 @@ fn main() -> Int effects { io } {
         Ok(value) => value,
         Err(_) => Regex { pattern: "error", flags: 0 },
     };
-    let miss = no_match(find(re, "all good"));
+    let miss = no_match(regex.find(re, "all good"));
 
     if bad + unsupported + miss == 3 {
         print_int(42);
@@ -1784,6 +1892,162 @@ fn main() -> Int effects { io } {
 
     let score = a_missing_ok + size_ok + has_c + keys_order_ok + values_len_ok + entries_len_ok;
     if score == 6 && b_value == 20 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_set_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.option;
+import std.set;
+import std.string;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let s0 = set.new_set();
+    let s1 = set.set_add(s0, "pear");
+    let s2 = set.set_add(s1, "apple");
+    let s3 = set.set_add(s2, "banana");
+    let s4 = set.set_add(s3, "banana");
+
+    let t0 = set.new_set();
+    let t1 = set.set_add(t0, "banana");
+    let t2 = set.set_add(t1, "date");
+
+    let unioned = set.union(s4, t2);
+    let crossed = set.intersection(s4, t2);
+    let only_left = set.difference(s4, t2);
+
+    let base_size_ok = if set.set_size(s4) == 3 { 1 } else { 0 };
+    let base_join = string.join(set.to_vec(s4), ",");
+    let base_order_ok = if opt_int_or(string.index_of(base_join, "apple,banana,pear"), -1) == 0 { 1 } else { 0 };
+    let union_join = string.join(set.to_vec(unioned), ",");
+    let union_ok = if opt_int_or(string.index_of(union_join, "apple,banana,date,pear"), -1) == 0 { 1 } else { 0 };
+    let intersection_join = string.join(set.to_vec(crossed), ",");
+    let intersection_ok = if opt_int_or(string.index_of(intersection_join, "banana"), -1) == 0 { 1 } else { 0 };
+    let diff_join = string.join(set.to_vec(only_left), ",");
+    let diff_ok = if opt_int_or(string.index_of(diff_join, "apple,pear"), -1) == 0 { 1 } else { 0 };
+    let removed = set.set_discard(unioned, "date");
+    let remove_ok = if set.set_has(removed, "date") { 0 } else { 1 };
+
+    if base_size_ok + base_order_ok + union_ok + intersection_ok + diff_ok + remove_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_vec_algorithms_are_stable_and_deterministic() {
+    let src = r#"
+import std.io;
+import std.option;
+import std.vec;
+
+struct Row {
+    key: Int,
+    tag: Int,
+}
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn less_int(a: Int, b: Int) -> Bool {
+    a < b
+}
+
+fn less_row(a: Row, b: Row) -> Bool {
+    a.key < b.key
+}
+
+fn row_tag(row: Row) -> Int {
+    row.tag
+}
+
+fn is_even(x: Int) -> Bool {
+    x % 2 == 0
+}
+
+fn positive(x: Int) -> Bool {
+    x > 0
+}
+
+fn over_two(x: Int) -> Bool {
+    x > 2
+}
+
+fn main() -> Int effects { io } {
+    let mut nums: Vec[Int] = vec.new_vec();
+    nums = vec.push(nums, 3);
+    nums = vec.push(nums, 1);
+    nums = vec.push(nums, 2);
+    nums = vec.push(nums, 2);
+
+    let sorted = vec.sort(nums, less_int);
+    let sorted_ok =
+        (if opt_int_or(vec.get(sorted, 0), -1) == 1 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 1), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 2), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(sorted, 3), -1) == 3 { 1 } else { 0 });
+
+    let mut rows: Vec[Row] = vec.new_vec();
+    rows = vec.push(rows, Row { key: 2, tag: 21 });
+    rows = vec.push(rows, Row { key: 1, tag: 11 });
+    rows = vec.push(rows, Row { key: 2, tag: 22 });
+    rows = vec.push(rows, Row { key: 1, tag: 12 });
+    let sorted_rows = vec.sort(rows, less_row);
+    let tags = vec.map_vec(sorted_rows, row_tag);
+    let stable_ok =
+        (if opt_int_or(vec.get(tags, 0), -1) == 11 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 1), -1) == 12 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 2), -1) == 21 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(tags, 3), -1) == 22 { 1 } else { 0 });
+
+    let find_ok = if opt_int_or(vec.find(sorted, over_two), 0) == 3 { 1 } else { 0 };
+    let any_ok = if vec.any(sorted, is_even) { 1 } else { 0 };
+    let all_ok = if vec.all(sorted, positive) { 1 } else { 0 };
+    let count_ok = if vec.count(sorted, is_even) == 2 { 1 } else { 0 };
+
+    let zipped = vec.zip(sorted, vec.append(vec.vec_of(9), vec.vec_of(8)));
+    let zip_ok = match vec.get(zipped, 1) {
+        Some(pair) => if pair.left == 2 && pair.right == 8 && vec.vec_len(zipped) == 2 { 1 } else { 0 },
+        None => 0,
+    };
+
+    let numbers = vec.append(vec.vec_of(40), vec.vec_of(50));
+    let indexed = vec.enumerate(numbers);
+    let enumerate_ok = match vec.get(indexed, 1) {
+        Some(item) => if item.index == 1 && item.value == 50 { 1 } else { 0 },
+        None => 0,
+    };
+
+    if sorted_ok + stable_ok + find_ok + any_ok + all_ok + count_ok + zip_ok + enumerate_ok == 14 {
         print_int(42);
     } else {
         print_int(0);

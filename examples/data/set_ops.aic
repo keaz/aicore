@@ -1,0 +1,46 @@
+import std.io;
+import std.option;
+import std.set;
+import std.string;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let s0 = set.new_set();
+    let s1 = set.set_add(s0, "pear");
+    let s2 = set.set_add(s1, "apple");
+    let s3 = set.set_add(s2, "banana");
+    let s4 = set.set_add(s3, "banana");
+
+    let t0 = set.new_set();
+    let t1 = set.set_add(t0, "banana");
+    let t2 = set.set_add(t1, "date");
+
+    let unioned = set.union(s4, t2);
+    let crossed = set.intersection(s4, t2);
+    let only_left = set.difference(s4, t2);
+
+    let base_size_ok = if set.set_size(s4) == 3 { 1 } else { 0 };
+    let base_join = string.join(set.to_vec(s4), ",");
+    let base_order_ok = if opt_int_or(string.index_of(base_join, "apple,banana,pear"), -1) == 0 { 1 } else { 0 };
+    let union_join = string.join(set.to_vec(unioned), ",");
+    let union_ok = if opt_int_or(string.index_of(union_join, "apple,banana,date,pear"), -1) == 0 { 1 } else { 0 };
+    let intersection_join = string.join(set.to_vec(crossed), ",");
+    let intersection_ok = if opt_int_or(string.index_of(intersection_join, "banana"), -1) == 0 { 1 } else { 0 };
+    let diff_join = string.join(set.to_vec(only_left), ",");
+    let diff_ok = if opt_int_or(string.index_of(diff_join, "apple,pear"), -1) == 0 { 1 } else { 0 };
+    let removed = set.set_discard(unioned, "date");
+    let remove_ok = if set.set_has(removed, "date") { 0 } else { 1 };
+
+    if base_size_ok + base_order_ok + union_ok + intersection_ok + diff_ok + remove_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

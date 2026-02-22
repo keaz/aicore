@@ -41,6 +41,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json", "sarif"],
     },
     CommandContract {
+        name: "coverage",
+        description: "Deterministic source/function coverage summary from check diagnostics",
+        stable_flags: &["--check", "--min", "--report", "--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "diag",
         description: "Alias of check focused on diagnostics output",
         stable_flags: &[
@@ -115,8 +121,14 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "run",
         description: "Build and execute entry program",
-        stable_flags: &["--offline", "--sandbox", "--sandbox-config"],
-        output_modes: &["text"],
+        stable_flags: &[
+            "--offline",
+            "--sandbox",
+            "--sandbox-config",
+            "--profile",
+            "--profile-output",
+        ],
+        output_modes: &["text", "profile-json"],
     },
     CommandContract {
         name: "explain",

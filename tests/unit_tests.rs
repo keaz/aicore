@@ -1574,6 +1574,13 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &string_source,
         "std/string.aic",
+        "len",
+        "aic_string_len_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
         "contains",
         "aic_string_contains_intrinsic",
         2,
@@ -1724,6 +1731,103 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
         "join",
         "aic_string_join_intrinsic",
         2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "format",
+        "aic_string_format_intrinsic",
+        2,
+    );
+}
+
+#[test]
+fn unit_std_math_public_apis_delegate_to_runtime_intrinsics() {
+    let math_source = fs::read_to_string("std/math.aic").expect("read std/math.aic");
+
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "abs",
+        "aic_math_abs_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "abs_float",
+        "aic_math_abs_float_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "min",
+        "aic_math_min_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "max",
+        "aic_math_max_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "pow",
+        "aic_math_pow_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "sqrt",
+        "aic_math_sqrt_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "floor",
+        "aic_math_floor_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "ceil",
+        "aic_math_ceil_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "round",
+        "aic_math_round_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "log",
+        "aic_math_log_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "sin",
+        "aic_math_sin_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &math_source,
+        "std/math.aic",
+        "cos",
+        "aic_math_cos_intrinsic",
+        1,
     );
 }
 
@@ -2316,6 +2420,7 @@ import std.rand;
 import std.env;
 import std.path;
 import std.map;
+import std.set;
 import std.proc;
 import std.string;
 import std.vec;
@@ -2352,6 +2457,16 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _header_entries = map.entries(_header_map);
     let _header_size = map.size(_header_map);
     let _header_removed = map.remove(_header_map, "accept");
+    let _set0 = set.new_set();
+    let _set1 = set.set_add(_set0, "accept");
+    let _set2 = set.set_add(_set1, "x-id");
+    let _set3 = set.set_discard(_set2, "accept");
+    let _set_has = set.set_has(_set3, "x-id");
+    let _set_union = set.union(_set3, set.set_add(set.new_set(), "trace-id"));
+    let _set_inter = set.intersection(_set_union, _set3);
+    let _set_diff = set.difference(_set_union, _set3);
+    let _set_vec = set.to_vec(_set_union);
+    let _set_size = set.set_size(_set_union);
     let _base = basename(_path_join);
     let _dir = dirname(_path_join);
     let _ext = extension(_path_join);
@@ -2445,6 +2560,13 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _vc = vec.contains(_v9, 0);
     let _vi = vec.index_of(_v9, 0);
     let _ve = vec.is_empty(_v9);
+    let _v_sorted = vec.sort(_v9, |a: Int, b: Int| -> Bool { a < b });
+    let _v_find = vec.find(_v_sorted, |x: Int| -> Bool { x == 9 });
+    let _v_any = vec.any(_v_sorted, |x: Int| -> Bool { x >= 0 });
+    let _v_all = vec.all(_v_sorted, |x: Int| -> Bool { x >= 0 });
+    let _v_count = vec.count(_v_sorted, |x: Int| -> Bool { x == 9 });
+    let _v_zip = vec.zip(_v_sorted, vec.vec_of("x"));
+    let _v_enum = vec.enumerate(_v_sorted);
     print_int(1);
     0
 }

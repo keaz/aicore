@@ -3,6 +3,9 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+mod coverage;
+mod profile;
+
 use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
 };
@@ -82,6 +85,23 @@ enum Command {
             value_parser = parse_max_errors
         )]
         max_errors: usize,
+    },
+    Coverage {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long)]
+        check: bool,
+        #[arg(
+            long,
+            value_name = "PCT",
+            default_value_t = 0.0,
+            value_parser = parse_coverage_percent
+        )]
+        min: f64,
+        #[arg(long)]
+        report: Option<PathBuf>,
+        #[arg(long)]
+        offline: bool,
     },
     Diag {
         #[command(subcommand)]
@@ -195,6 +215,10 @@ enum Command {
         sandbox: SandboxProfileArg,
         #[arg(long)]
         sandbox_config: Option<PathBuf>,
+        #[arg(long)]
+        profile: bool,
+        #[arg(long, default_value = "profile.json", requires = "profile")]
+        profile_output: PathBuf,
         #[arg(last = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -407,6 +431,19 @@ fn parse_max_errors(value: &str) -> Result<usize, String> {
     }
 }
 
+fn parse_coverage_percent(value: &str) -> Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| format!("invalid value `{value}` for --min"))?;
+    if !parsed.is_finite() {
+        return Err("--min must be a finite number".to_string());
+    }
+    if !(0.0..=100.0).contains(&parsed) {
+        return Err("--min must be within [0, 100]".to_string());
+    }
+    Ok(parsed)
+}
+
 fn run_cli() -> anyhow::Result<i32> {
     let cli = Cli::parse();
 
@@ -442,6 +479,33 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
                 EXIT_OK
+            }
+        }
+        Command::Coverage {
+            input,
+            check,
+            min,
+            report,
+            offline,
+        } => {
+            let diagnostics = collect_diagnostics(&input, offline)?;
+            let mut coverage_report = coverage::build_report(&input, &diagnostics)?;
+            if check {
+                coverage::apply_threshold(&mut coverage_report, min);
+            }
+            if let Some(report_path) = report {
+                coverage::write_report(&report_path, &coverage_report)?;
+            }
+            println!("{}", serde_json::to_string_pretty(&coverage_report)?);
+            if coverage_report
+                .check
+                .as_ref()
+                .map(|result| result.passed)
+                .unwrap_or(true)
+            {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
             }
         }
         Command::Diag {
@@ -1239,58 +1303,72 @@ fn run_cli() -> anyhow::Result<i32> {
             offline,
             sandbox,
             sandbox_config,
+            profile,
+            profile_output,
             args,
         } => {
-            let out = std::env::temp_dir().join("aicore_run_bin");
-            let build_code = build_file(&input, &out, offline)?;
-            if build_code != EXIT_OK {
-                build_code
+            let profile_policy = sandbox.to_profile().policy();
+            let policy = if let Some(config_path) = sandbox_config {
+                load_sandbox_policy(&config_path)?
             } else {
-                let profile_policy = sandbox.to_profile().policy();
-                let policy = if let Some(config_path) = sandbox_config {
-                    load_sandbox_policy(&config_path)?
-                } else {
-                    profile_policy
-                };
+                profile_policy
+            };
 
-                if !cfg!(target_os = "linux") && policy.limits.is_some() {
-                    eprintln!(
-                        "sandbox profile '{}' requires Linux `prlimit`; use --sandbox none",
-                        policy.profile
+            if !cfg!(target_os = "linux") && policy.limits.is_some() {
+                eprintln!(
+                    "sandbox profile '{}' requires Linux `prlimit`; use --sandbox none",
+                    policy.profile
+                );
+                return Ok(EXIT_USAGE_ERROR);
+            }
+
+            if profile {
+                let outcome = profile::run_profiled(profile::RunProfileOptions {
+                    input: &input,
+                    offline,
+                    args: &args,
+                    policy: &policy,
+                    output_path: &profile_output,
+                })?;
+                outcome.exit_code
+            } else {
+                let run_work = fresh_work_dir("run-bin");
+                let out = run_work.join("aicore_run_bin");
+                let build_code = build_file(&input, &out, offline)?;
+                if build_code != EXIT_OK {
+                    build_code
+                } else {
+                    let trace_id = telemetry::current_trace_id();
+                    let execute_started = Instant::now();
+                    let status = run_with_policy(&out, &args, &policy, Some(&trace_id))?;
+                    let attrs = std::collections::BTreeMap::from([
+                        (
+                            "input".to_string(),
+                            serde_json::json!(input.display().to_string()),
+                        ),
+                        (
+                            "profile".to_string(),
+                            serde_json::json!(policy.profile.clone()),
+                        ),
+                    ]);
+                    telemetry::emit_phase(
+                        "run",
+                        "execute",
+                        if status.success() { "ok" } else { "error" },
+                        execute_started.elapsed(),
+                        attrs.clone(),
                     );
-                    return Ok(EXIT_USAGE_ERROR);
-                }
-
-                let trace_id = telemetry::current_trace_id();
-                let execute_started = Instant::now();
-                let status = run_with_policy(&out, &args, &policy, Some(&trace_id))?;
-                let attrs = std::collections::BTreeMap::from([
-                    (
-                        "input".to_string(),
-                        serde_json::json!(input.display().to_string()),
-                    ),
-                    (
-                        "profile".to_string(),
-                        serde_json::json!(policy.profile.clone()),
-                    ),
-                ]);
-                telemetry::emit_phase(
-                    "run",
-                    "execute",
-                    if status.success() { "ok" } else { "error" },
-                    execute_started.elapsed(),
-                    attrs.clone(),
-                );
-                telemetry::emit_metric(
-                    "run",
-                    "exit_code",
-                    status.code().unwrap_or(-1) as f64,
-                    attrs,
-                );
-                if status.success() {
-                    EXIT_OK
-                } else {
-                    EXIT_DIAGNOSTIC_ERROR
+                    telemetry::emit_metric(
+                        "run",
+                        "exit_code",
+                        status.code().unwrap_or(-1) as f64,
+                        attrs,
+                    );
+                    if status.success() {
+                        EXIT_OK
+                    } else {
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
                 }
             }
         }
@@ -1381,10 +1459,33 @@ struct ReplEvalResult {
     binding: Option<String>,
 }
 
+#[derive(Debug, Default)]
+struct ReplHistory {
+    entries: Vec<String>,
+}
+
+impl ReplHistory {
+    fn push(&mut self, line: &str) {
+        self.entries.push(line.to_string());
+    }
+
+    fn latest(&self) -> Option<&str> {
+        self.entries.last().map(String::as_str)
+    }
+
+    fn by_index(&self, one_based_index: usize) -> Option<&str> {
+        one_based_index
+            .checked_sub(1)
+            .and_then(|index| self.entries.get(index))
+            .map(String::as_str)
+    }
+}
+
 fn run_repl(json: bool) -> anyhow::Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let mut state = ReplState::new();
+    let mut history = ReplHistory::default();
 
     if json {
         repl_emit_json(
@@ -1398,7 +1499,7 @@ fn run_repl(json: bool) -> anyhow::Result<()> {
     } else {
         repl_emit_text(
             &mut stdout,
-            "aic repl ready (:type <expr>, :effects <fn>, :quit)",
+            "aic repl ready (:type <expr>, :effects <fn>, :history, :quit)",
         )?;
     }
 
@@ -1421,9 +1522,30 @@ fn run_repl(json: bool) -> anyhow::Result<()> {
                 break;
             }
         };
-        let trimmed = line.trim();
+        let line = if json {
+            line
+        } else {
+            repl_apply_line_editing(&line)
+        };
+        let mut trimmed = line.trim().to_string();
         if trimmed.is_empty() {
             continue;
+        }
+
+        if !json && trimmed == ":history" {
+            repl_print_history(&mut stdout, &history)?;
+            continue;
+        }
+
+        if !json {
+            match repl_expand_history_command(&trimmed, &history) {
+                Ok(Some(expanded)) => trimmed = expanded,
+                Ok(None) => {}
+                Err(message) => {
+                    repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+                    continue;
+                }
+            }
         }
 
         if trimmed == ":quit" {
@@ -1433,6 +1555,10 @@ fn run_repl(json: bool) -> anyhow::Result<()> {
                 repl_emit_text(&mut stdout, "bye")?;
             }
             break;
+        }
+
+        if !json {
+            history.push(&trimmed);
         }
 
         if let Some(expr) = trimmed.strip_prefix(":type ") {
@@ -1554,7 +1680,7 @@ fn run_repl(json: bool) -> anyhow::Result<()> {
             continue;
         }
 
-        match parse_repl_statement(trimmed).and_then(|stmt| eval_repl_statement(&stmt, &mut state))
+        match parse_repl_statement(&trimmed).and_then(|stmt| eval_repl_statement(&stmt, &mut state))
         {
             Ok(result) => {
                 if json {
@@ -1594,6 +1720,71 @@ fn run_repl(json: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn repl_apply_line_editing(line: &str) -> String {
+    let mut edited = String::new();
+    for ch in line.chars() {
+        match ch {
+            '\u{08}' | '\u{7f}' => {
+                edited.pop();
+            }
+            '\u{15}' => edited.clear(),
+            '\u{17}' => repl_delete_last_word(&mut edited),
+            _ => edited.push(ch),
+        }
+    }
+    edited
+}
+
+fn repl_delete_last_word(buffer: &mut String) {
+    while matches!(buffer.chars().last(), Some(ch) if ch.is_whitespace()) {
+        buffer.pop();
+    }
+    while matches!(buffer.chars().last(), Some(ch) if !ch.is_whitespace()) {
+        buffer.pop();
+    }
+}
+
+fn repl_print_history(out: &mut impl Write, history: &ReplHistory) -> anyhow::Result<()> {
+    if history.entries.is_empty() {
+        repl_emit_text(out, "history is empty")
+    } else {
+        for (index, entry) in history.entries.iter().enumerate() {
+            repl_emit_text(out, &format!("{}: {entry}", index + 1))?;
+        }
+        Ok(())
+    }
+}
+
+fn repl_expand_history_command(
+    line: &str,
+    history: &ReplHistory,
+) -> Result<Option<String>, String> {
+    if line == "!!" {
+        return history
+            .latest()
+            .map(|entry| Some(entry.to_string()))
+            .ok_or_else(|| "history is empty".to_string());
+    }
+
+    let Some(raw_index) = line.strip_prefix('!') else {
+        return Ok(None);
+    };
+    if raw_index.is_empty() || !raw_index.chars().all(|ch| ch.is_ascii_digit()) {
+        return Ok(None);
+    }
+
+    let index = raw_index
+        .parse::<usize>()
+        .map_err(|_| format!("invalid history reference `{line}`"))?;
+    if index == 0 {
+        return Err("history references are 1-based; use !1 for the first entry".to_string());
+    }
+    history
+        .by_index(index)
+        .map(|entry| Some(entry.to_string()))
+        .ok_or_else(|| format!("history entry `{line}` not found"))
 }
 
 fn repl_emit_text(out: &mut impl Write, line: &str) -> anyhow::Result<()> {

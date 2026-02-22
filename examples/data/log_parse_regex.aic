@@ -29,7 +29,7 @@ fn main() -> Int effects { io } {
     };
 
     let line_ok = bool_result(is_match(event_re, "ERROR 503 user=alice"));
-    let found_ok = if string_len(find(search_re, "ts=1 ERROR 503 user=alice path=/pay")) == 20 { 1 } else { 0 };
+    let found_ok = if string_len(regex.find(search_re, "ts=1 ERROR 503 user=alice path=/pay")) == 20 { 1 } else { 0 };
     let replaced_ok = if string_len(regex.replace(search_re, "ts=1 ERROR 503 user=alice path=/pay", "<redacted>")) == 25 {
         1
     } else {

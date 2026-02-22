@@ -39,6 +39,20 @@ fn parse_err_non_empty(v: Result[Int, String]) -> Int {
     }
 }
 
+fn parse_float_or(v: Result[Float, String], fallback: Float) -> Float {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn parse_float_err_non_empty(v: Result[Float, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(message) => if len(message) > 0 { 1 } else { 0 },
+    }
+}
+
 fn main() -> Int effects { io } {
     let request_line = "GET /api/users HTTP/1.1";
     let parts = split(request_line, " ");
@@ -63,11 +77,15 @@ fn main() -> Int effects { io } {
         (if len(repeat("ab", 3)) == 6 { 1 } else { 0 }) +
         (if parse_or(parse_int(" 42 "), 0) == 42 { 1 } else { 0 }) +
         parse_err_non_empty(parse_int("x42")) +
+        (if parse_float_or(parse_float("3.125"), 0.0) > 3.124 && parse_float_or(parse_float("3.125"), 0.0) < 3.126 { 1 } else { 0 }) +
+        parse_float_err_non_empty(parse_float("bad-float")) +
         (if len(int_to_string(-2048)) == 5 { 1 } else { 0 }) +
+        (if len(float_to_string(3.5)) > 0 { 1 } else { 0 }) +
         (if len(bool_to_string(true)) == 4 && len(bool_to_string(false)) == 5 { 1 } else { 0 }) +
-        (if len(join(parts, " ")) == len(request_line) { 1 } else { 0 });
+        (if len(join(parts, " ")) == len(request_line) { 1 } else { 0 }) +
+        (if len(format("user={0}", split("alice", ","))) == 10 { 1 } else { 0 });
 
-    if checks == 21 {
+    if checks == 25 {
         print_int(42);
     } else {
         print_int(0);

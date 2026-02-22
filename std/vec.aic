@@ -8,6 +8,16 @@ struct Vec[T] {
     cap: Int,
 }
 
+struct ZipPair[T, U] {
+    left: T,
+    right: U,
+}
+
+struct IndexedValue[T] {
+    index: Int,
+    value: T,
+}
+
 fn vec_len[T](v: Vec[T]) -> Int {
     v.len
 }
@@ -215,4 +225,130 @@ fn fold_vec[T, S](v: Vec[T], init: S, reducer: Fn(S, T) -> S) -> S {
         i = i + 1;
     };
     acc
+}
+
+/// Stable insertion sort with deterministic output for a deterministic comparator.
+fn sort[T](v: Vec[T], less: Fn(T, T) -> Bool) -> Vec[T] {
+    let mut out = v;
+    let mut i = 1;
+    while i < out.len {
+        let mut j = i;
+        while j > 0 {
+            let mut swapped = false;
+            out = match aic_vec_get_intrinsic(out, j - 1) {
+                Some(left_value) => match aic_vec_get_intrinsic(out, j) {
+                    Some(right_value) => if less(right_value, left_value) {
+                        swapped = true;
+                        let with_left = aic_vec_set_intrinsic(out, j - 1, right_value);
+                        aic_vec_set_intrinsic(with_left, j, left_value)
+                    } else {
+                        out
+                    },
+                    None => out,
+                },
+                None => out,
+            };
+            if swapped {
+                j = j - 1;
+            } else {
+                j = 0;
+            };
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn find[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Option[T] {
+    let mut out: Option[T] = None();
+    let mut done = false;
+    let mut i = 0;
+    while i < v.len && !done {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => if predicate(value) {
+                done = true;
+                Some(value)
+            } else {
+                out
+            },
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn any[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
+    let mut out = false;
+    let mut i = 0;
+    while i < v.len && !out {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => predicate(value),
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn all[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
+    let mut out = true;
+    let mut i = 0;
+    while i < v.len && out {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => predicate(value),
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn count[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Int {
+    let mut total = 0;
+    let mut i = 0;
+    while i < v.len {
+        total = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => if predicate(value) { total + 1 } else { total },
+            None => total,
+        };
+        i = i + 1;
+    };
+    total
+}
+
+fn zip[T, U](left: Vec[T], right: Vec[U]) -> Vec[ZipPair[T, U]] {
+    let mut out: Vec[ZipPair[T, U]] = new_vec();
+    let limit = if left.len < right.len { left.len } else { right.len };
+    let mut i = 0;
+    while i < limit {
+        out = match aic_vec_get_intrinsic(left, i) {
+            Some(left_value) => match aic_vec_get_intrinsic(right, i) {
+                Some(right_value) => aic_vec_push_intrinsic(out, ZipPair {
+                    left: left_value,
+                    right: right_value,
+                }),
+                None => out,
+            },
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn enumerate[T](v: Vec[T]) -> Vec[IndexedValue[T]] {
+    let mut out: Vec[IndexedValue[T]] = new_vec();
+    let mut i = 0;
+    while i < v.len {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => aic_vec_push_intrinsic(out, IndexedValue {
+                index: i,
+                value: value,
+            }),
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
 }

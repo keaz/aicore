@@ -6,7 +6,7 @@ This document describes the current AICore compiler/runtime architecture as impl
 
 ## Repository Layers
 
-- CLI orchestration: `src/main.rs`, `src/cli_contract.rs`
+- CLI orchestration: `src/main.rs`, `src/cli_contract.rs`, `src/coverage.rs`, `src/profile.rs`
 - Frontend pipeline: `src/package_loader.rs`, `src/parser.rs`, `src/ir_builder.rs`, `src/effects.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/contracts.rs`
 - Backend/code generation: `src/codegen.rs`
 - Tooling surfaces: `src/lsp.rs`, `src/daemon.rs`, `src/docgen.rs`, `src/diag_fixes.rs`
@@ -61,10 +61,12 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 ## Command-to-Module Flow
 
 - `aic check` / `aic diag`: frontend diagnostics, optional JSON/SARIF output (`src/sarif.rs`)
+- `aic coverage`: deterministic coverage JSON from scanned source functions + diagnostics (`src/coverage.rs`)
 - `aic fmt`: parse + IR format (`src/formatter.rs`)
 - `aic ir`: frontend + IR emit
 - `aic build`: frontend + contract lowering + codegen + clang
 - `aic run`: build pipeline + sandboxed process execution (`src/sandbox.rs`)
+- `aic run --profile`: profiled build/execute pipeline with deterministic profile report JSON (`src/profile.rs`)
 - `aic doc`: frontend + doc rendering (`src/docgen.rs`)
 - `aic test`: fixture harness (`src/test_harness.rs`)
 - `aic lsp`: language server endpoint (`src/lsp.rs`)

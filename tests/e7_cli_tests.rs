@@ -3,6 +3,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use aicore::diagnostics::{Diagnostic, DiagnosticSpan, Severity};
+use aicore::driver::sort_and_cap_diagnostics;
 use serde_json::{json, Value};
 use tempfile::tempdir;
 
@@ -68,6 +70,38 @@ fn write_many_check_diagnostics_fixture() -> (tempfile::TempDir, String) {
     (project, source_path.to_string_lossy().to_string())
 }
 
+fn write_profile_demo_project(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module profile.demo;\n",
+            "import std.io;\n",
+            "fn main() -> Int effects { io } {\n",
+            "    print_int(7);\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write profile demo source");
+}
+
+fn make_diag(code: &str, message: &str, file: &str, start: usize, end: usize) -> Diagnostic {
+    Diagnostic {
+        code: code.to_string(),
+        severity: Severity::Error,
+        message: message.to_string(),
+        spans: vec![DiagnosticSpan {
+            file: file.to_string(),
+            start,
+            end,
+            label: Some("label".to_string()),
+        }],
+        help: vec!["help".to_string()],
+        suggested_fixes: vec![],
+    }
+}
+
 struct DaemonHarness {
     child: Child,
     stdin: ChildStdin,
@@ -129,8 +163,8 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "diag", "explain", "fmt", "ir", "migrate", "build", "lsp", "daemon",
-        "repl", "test", "contract", "release", "run",
+        "init", "check", "coverage", "diag", "explain", "fmt", "ir", "migrate", "build", "lsp",
+        "daemon", "repl", "test", "contract", "release", "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -152,6 +186,16 @@ fn cli_help_snapshots_are_stable() {
         check_help_text.contains("[default: 20]"),
         "missing default in check help:\n{check_help_text}"
     );
+
+    let run_help = run_aic(&["run", "--help"]);
+    assert!(run_help.status.success());
+    let run_help_text = String::from_utf8_lossy(&run_help.stdout);
+    for flag in ["--profile", "--profile-output <PROFILE_OUTPUT>"] {
+        assert!(
+            run_help_text.contains(flag),
+            "missing `{flag}` in run help:\n{run_help_text}"
+        );
+    }
 
     let test_help = run_aic(&["test", "--help"]);
     assert!(test_help.status.success());
@@ -203,6 +247,26 @@ fn repl_handles_invalid_input_without_crashing() {
         text.contains("unknown command `:unknown`"),
         "stdout:\n{text}"
     );
+    assert!(text.contains("bye"), "stdout:\n{text}");
+}
+
+#[test]
+fn repl_non_json_history_and_line_editing_work() {
+    let output = run_repl_session(
+        &["repl"],
+        "let x = 7\nx + 1\n!!\n!2\n4\u{8}\u{8}5\n:history\n:quit\n",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("x = 7 : Int"), "stdout:\n{text}");
+    assert!(
+        text.matches("8 : Int").count() >= 3,
+        "expected history replay to re-run expression; stdout:\n{text}"
+    );
+    assert!(text.contains("5 : Int"), "stdout:\n{text}");
+    assert!(text.contains("1: let x = 7"), "stdout:\n{text}");
+    assert!(text.contains("2: x + 1"), "stdout:\n{text}");
+    assert!(text.contains("5: 5"), "stdout:\n{text}");
     assert!(text.contains("bye"), "stdout:\n{text}");
 }
 
@@ -262,6 +326,37 @@ fn repl_json_mode_emits_structured_events() {
 
     let bye_event: Value = serde_json::from_str(lines[6]).expect("bye event json");
     assert_eq!(bye_event["event"], "bye");
+}
+
+#[test]
+fn diagnostics_are_deduplicated_and_keep_deterministic_capped_prefix() {
+    let a = make_diag("E1001", "alpha", "main.aic", 10, 12);
+    let b = make_diag("E1001", "alpha", "main.aic", 10, 12);
+    let c = make_diag("E1002", "beta", "main.aic", 10, 12);
+    let d = make_diag("E2001", "gamma", "main.aic", 30, 33);
+    let e = make_diag("E5001", "delta", "main.aic", 2, 3);
+
+    let left = vec![a.clone(), c.clone(), d.clone(), b.clone(), e.clone()];
+    let right = vec![d, b, e, c, a];
+
+    let full_left = sort_and_cap_diagnostics(left.clone(), 64);
+    let full_right = sort_and_cap_diagnostics(right, 64);
+    assert_eq!(
+        full_left, full_right,
+        "deduplicated ordering should be deterministic across input permutations"
+    );
+    assert_eq!(
+        full_left.len(),
+        4,
+        "expected one duplicate cascade diagnostic to be removed"
+    );
+
+    let capped = sort_and_cap_diagnostics(left, 2);
+    assert_eq!(
+        capped,
+        full_left[..2].to_vec(),
+        "expected --max-errors style capping to preserve deterministic sorted prefix"
+    );
 }
 
 #[test]
@@ -343,6 +438,72 @@ fn check_honors_custom_max_errors_and_keeps_order() {
 }
 
 #[test]
+fn coverage_command_emits_deterministic_json_and_writes_report() {
+    let project = tempdir().expect("project");
+    let source = project.path().join("coverage_ok.aic");
+    fs::write(
+        &source,
+        "module coverage.ok;\nfn main() -> Int {\n    0\n}\n",
+    )
+    .expect("write coverage source");
+    let report_path = project.path().join("target/coverage/report.json");
+
+    let source_str = source.to_string_lossy().to_string();
+    let report_str = report_path.to_string_lossy().to_string();
+    let first = run_aic(&["coverage", &source_str, "--report", &report_str]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "first stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = run_aic(&["coverage", &source_str, "--report", &report_str]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "coverage output should be deterministic"
+    );
+
+    let stdout_json: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("coverage stdout json");
+    let report_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).expect("read coverage report"))
+            .expect("coverage report json");
+
+    assert_eq!(stdout_json, report_json);
+    assert_eq!(stdout_json["phase"], "coverage");
+    assert_eq!(stdout_json["schema_version"], "1.0");
+    assert!(stdout_json["summary"]["coverage_pct"].is_number());
+    assert!(stdout_json["files"].is_array());
+}
+
+#[test]
+fn coverage_check_enforces_minimum_percentage() {
+    let project = tempdir().expect("project");
+    let source = project.path().join("coverage_bad.aic");
+    fs::write(
+        &source,
+        "module coverage.bad;\nfn main() -> Int {\n    missing_fn()\n}\n",
+    )
+    .expect("write bad coverage source");
+    let source_str = source.to_string_lossy().to_string();
+
+    let fail = run_aic(&["coverage", &source_str, "--check", "--min", "75"]);
+    assert_eq!(fail.status.code(), Some(1));
+    let fail_json: serde_json::Value = serde_json::from_slice(&fail.stdout).expect("fail json");
+    assert_eq!(fail_json["phase"], "coverage");
+    assert_eq!(fail_json["check"]["min_pct"], 75.0);
+    assert_eq!(fail_json["check"]["passed"], false);
+
+    let pass = run_aic(&["coverage", &source_str, "--check", "--min", "0"]);
+    assert_eq!(pass.status.code(), Some(0));
+    let pass_json: serde_json::Value = serde_json::from_slice(&pass.stdout).expect("pass json");
+    assert_eq!(pass_json["check"]["passed"], true);
+}
+
+#[test]
 fn static_contract_verifier_emits_discharge_and_residual_notes() {
     let out = run_aic(&["check", "examples/verify/range_proofs.aic", "--json"]);
     assert_eq!(out.status.code(), Some(0));
@@ -416,6 +577,27 @@ fn explain_and_contract_commands_work() {
         .expect("commands")
         .iter()
         .any(|c| c["name"] == "lsp"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "coverage"));
+    let run_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "run")
+        .expect("run command contract");
+    assert!(run_contract["stable_flags"]
+        .as_array()
+        .expect("run stable flags")
+        .iter()
+        .any(|flag| flag == "--profile"));
+    assert!(run_contract["stable_flags"]
+        .as_array()
+        .expect("run stable flags")
+        .iter()
+        .any(|flag| flag == "--profile-output"));
     for phase in ["parse", "check", "build", "fix"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
@@ -786,6 +968,79 @@ fn main() -> Int effects { io } {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}
+
+#[test]
+fn run_profile_writes_profile_json_with_top_functions() {
+    let project = tempdir().expect("project");
+    write_profile_demo_project(project.path());
+
+    let run = run_aic_in_dir(project.path(), &["run", "src/main.aic", "--profile"]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "7\n");
+
+    let profile_path = project.path().join("profile.json");
+    assert!(profile_path.exists(), "expected profile.json to be written");
+    let profile: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(profile_path).expect("read profile"))
+            .expect("profile json");
+
+    assert_eq!(profile["phase"], "profile");
+    assert_eq!(profile["schema_version"], "1.0");
+    let top = profile["top_functions"].as_array().expect("top functions");
+    assert!(!top.is_empty(), "expected non-empty top_functions");
+    assert!(
+        top.iter().any(|entry| entry["function"] == "run.execute"),
+        "top_functions={profile:#}"
+    );
+    for entry in top {
+        assert!(entry["function"].is_string());
+        assert!(entry["self_time_ms"].is_number());
+        assert!(entry["total_time_ms"].is_number());
+    }
+
+    let mut previous = f64::INFINITY;
+    for entry in top {
+        let total = entry["total_time_ms"].as_f64().expect("total_time_ms");
+        assert!(
+            total <= previous + f64::EPSILON,
+            "top_functions should be sorted by total_time_ms desc: {profile:#}"
+        );
+        previous = total;
+    }
+}
+
+#[test]
+fn run_profile_output_flag_writes_custom_profile_path() {
+    let project = tempdir().expect("project");
+    write_profile_demo_project(project.path());
+    let custom = project.path().join("reports/custom-profile.json");
+    let custom_str = custom.to_string_lossy().to_string();
+
+    let run = run_aic_in_dir(
+        project.path(),
+        &[
+            "run",
+            "src/main.aic",
+            "--profile",
+            "--profile-output",
+            &custom_str,
+        ],
+    );
+    assert_eq!(run.status.code(), Some(0));
+    assert!(custom.exists(), "expected custom profile output path");
+
+    let profile: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(custom).expect("read profile"))
+            .expect("profile json");
+    assert_eq!(profile["phase"], "profile");
+    assert!(profile["top_functions"].is_array());
 }
 
 #[test]
