@@ -60,6 +60,16 @@ aic release verify-provenance \
   --key-env AIC_SIGNING_KEY
 ```
 
+### Artifact checksum verification
+
+Validate packaged release archives against `.sha256` files:
+
+```bash
+aic release verify-checksum \
+  --artifact aicore-vX.Y.Z-linux-x64.tar.gz \
+  --checksum aicore-vX.Y.Z-linux-x64.tar.gz.sha256
+```
+
 ### Security audit
 
 ```bash
@@ -123,4 +133,4 @@ make release-preflight
 - `.github/workflows/ci.yml` runs `make test-e9`, `make security-audit`, and `make repro-check`.
 - `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata.
 - `.github/workflows/security.yml` runs scheduled and on-demand security audit checks.
-
+- `docs/release/matrix.md` documents the cross-platform release matrix and verification workflow.

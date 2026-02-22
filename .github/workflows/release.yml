@@ -74,13 +74,21 @@ jobs:
       - name: Build binary
         run: cargo build --release --locked --bin aic
 
+      - name: Compute release target tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          OS_NAME="$(echo "${RUNNER_OS}" | tr '[:upper:]' '[:lower:]')"
+          ARCH_NAME="$(echo "${RUNNER_ARCH}" | tr '[:upper:]' '[:lower:]')"
+          echo "TARGET_TAG=${OS_NAME}-${ARCH_NAME}" >> "$GITHUB_ENV"
+
       - name: Generate release metadata
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          cargo run --quiet --bin aic -- release manifest --root . --output dist/repro-manifest.json --source-date-epoch 1700000000
-          cargo run --quiet --bin aic -- release sbom --root . --output dist/sbom.json --source-date-epoch 1700000000
+          cargo run --quiet --bin aic -- release manifest --root . --output "dist/repro-manifest-${TARGET_TAG}.json" --source-date-epoch 1700000000
+          cargo run --quiet --bin aic -- release sbom --root . --output "dist/sbom-${TARGET_TAG}.json" --source-date-epoch 1700000000
           cargo run --quiet --bin aic -- release policy --check
 
       - name: Package (Unix)
@@ -88,9 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OS_NAME="$(echo "${RUNNER_OS}" | tr '[:upper:]' '[:lower:]')"
-          ARCH_NAME="$(echo "${RUNNER_ARCH}" | tr '[:upper:]' '[:lower:]')"
-          ARCHIVE="aicore-${GITHUB_REF_NAME}-${OS_NAME}-${ARCH_NAME}.tar.gz"
+          ARCHIVE="aicore-${GITHUB_REF_NAME}-${TARGET_TAG}.tar.gz"
 
           mkdir -p dist
           cp "target/release/${{ matrix.bin_name }}" "dist/${{ matrix.bin_name }}"
@@ -103,9 +109,7 @@ jobs:
         if: matrix.archive_ext == 'zip'
         shell: pwsh
         run: |
-          $osName = $env:RUNNER_OS.ToLower()
-          $archName = $env:RUNNER_ARCH.ToLower()
-          $archive = "aicore-$env:GITHUB_REF_NAME-$osName-$archName.zip"
+          $archive = "aicore-$env:GITHUB_REF_NAME-$env:TARGET_TAG.zip"
 
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item "target/release/${{ matrix.bin_name }}" "dist/${{ matrix.bin_name }}"
@@ -115,6 +119,38 @@ jobs:
           "$hash  $archive" | Out-File -FilePath "$archive.sha256" -Encoding ascii
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Smoke test binary (Unix)
+        if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/aic --help >/dev/null
+          ./target/release/aic check examples/option_match.aic >/dev/null
+
+      - name: Smoke test binary (Windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          & "target/release/aic.exe" --help | Out-Null
+          & "target/release/aic.exe" check "examples/option_match.aic" | Out-Null
+
+      - name: Verify archive checksum (Unix)
+        if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/aic release verify-checksum \
+            --artifact "$ARCHIVE" \
+            --checksum "$ARCHIVE.sha256"
+
+      - name: Verify archive checksum (Windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          & "target/release/aic.exe" release verify-checksum `
+            --artifact "$env:ARCHIVE" `
+            --checksum "$env:ARCHIVE.sha256"
+
       - name: Sign provenance metadata
         if: env.AIC_SIGNING_KEY != ''
         shell: bash
@@ -122,11 +158,20 @@ jobs:
           set -euo pipefail
           cargo run --quiet --bin aic -- release provenance \
             --artifact "dist/${{ matrix.bin_name }}" \
-            --sbom dist/sbom.json \
-            --manifest dist/repro-manifest.json \
-            --output dist/provenance.json \
+            --sbom "dist/sbom-${TARGET_TAG}.json" \
+            --manifest "dist/repro-manifest-${TARGET_TAG}.json" \
+            --output "dist/provenance-${TARGET_TAG}.json" \
             --key-env AIC_SIGNING_KEY \
             --key-id "github-actions-${{ runner.os }}-${{ runner.arch }}"
+
+      - name: Verify provenance signature
+        if: env.AIC_SIGNING_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --bin aic -- release verify-provenance \
+            --provenance "dist/provenance-${TARGET_TAG}.json" \
+            --key-env AIC_SIGNING_KEY
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -135,9 +180,9 @@ jobs:
           path: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
-            dist/repro-manifest.json
-            dist/sbom.json
-            dist/provenance.json
+            dist/repro-manifest-*.json
+            dist/sbom-*.json
+            dist/provenance-*.json
 
   release-publish:
     name: Publish GitHub Release
@@ -152,17 +197,53 @@ jobs:
         with:
           path: dist
           pattern: release-*
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Display files
-        run: ls -la dist
+        run: find dist -maxdepth 3 -type f | sort
+
+      - name: Build release metadata notes
+        run: |
+          set -euo pipefail
+          NOTES="dist/release-metadata.md"
+          {
+            echo "# Reproducibility Metadata"
+            echo
+            echo "Source date epoch: \`1700000000\`"
+            echo
+            echo "| Artifact | SHA256 | Manifest Digest | SBOM Digest | Provenance Signature |"
+            echo "|---|---|---|---|---|"
+            for sha_file in dist/release-*/*.sha256; do
+              [ -f "$sha_file" ] || continue
+              artifact_name="$(basename "${sha_file%.sha256}")"
+              sha="$(awk '{print $1}' "$sha_file")"
+              dir="$(dirname "$sha_file")"
+              manifest_file="$(ls "$dir"/repro-manifest-*.json 2>/dev/null | head -n1 || true)"
+              sbom_file="$(ls "$dir"/sbom-*.json 2>/dev/null | head -n1 || true)"
+              provenance_file="$(ls "$dir"/provenance-*.json 2>/dev/null | head -n1 || true)"
+              manifest_digest="n/a"
+              sbom_digest="n/a"
+              provenance_signature="n/a"
+              if [ -n "$manifest_file" ]; then
+                manifest_digest="$(jq -r '.digest // \"n/a\"' "$manifest_file")"
+              fi
+              if [ -n "$sbom_file" ]; then
+                sbom_digest="$(jq -r '.digest // \"n/a\"' "$sbom_file")"
+              fi
+              if [ -n "$provenance_file" ]; then
+                provenance_signature="$(jq -r '.signature // \"n/a\"' "$provenance_file")"
+              fi
+              echo "| \`$artifact_name\` | \`$sha\` | \`$manifest_digest\` | \`$sbom_digest\` | \`$provenance_signature\` |"
+            done
+          } > "$NOTES"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.sha256
-            dist/*.json
+            dist/**/*.tar.gz
+            dist/**/*.zip
+            dist/**/*.sha256
+            dist/**/*.json
+          body_path: dist/release-metadata.md
           generate_release_notes: true

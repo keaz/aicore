@@ -32,8 +32,8 @@ use aicore::project::init_project;
 use aicore::release_ops::{
     check_compatibility_policy, compatibility_policy, effective_source_date_epoch,
     generate_provenance, generate_repro_manifest, generate_sbom, read_provenance,
-    read_repro_manifest, run_security_audit, verify_provenance, verify_repro_manifest,
-    write_provenance, write_repro_manifest, write_sbom,
+    read_repro_manifest, run_security_audit, verify_checksum_file, verify_provenance,
+    verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
 };
 use aicore::sandbox::{run_with_limits, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
@@ -246,6 +246,14 @@ enum ReleaseCommand {
         provenance: PathBuf,
         #[arg(long, default_value = "AIC_SIGNING_KEY")]
         key_env: String,
+        #[arg(long)]
+        json: bool,
+    },
+    VerifyChecksum {
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        checksum: PathBuf,
         #[arg(long)]
         json: bool,
     },
@@ -1060,6 +1068,28 @@ fn run_cli() -> anyhow::Result<i32> {
                     println!("provenance verification: ok");
                 } else {
                     eprintln!("provenance verification failed:");
+                    for error in &errors {
+                        eprintln!("  - {}", error);
+                    }
+                }
+                if errors.is_empty() {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::VerifyChecksum {
+                artifact,
+                checksum,
+                json,
+            } => {
+                let errors = verify_checksum_file(&artifact, &checksum)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&errors)?);
+                } else if errors.is_empty() {
+                    println!("checksum verification: ok");
+                } else {
+                    eprintln!("checksum verification failed:");
                     for error in &errors {
                         eprintln!("  - {}", error);
                     }

@@ -387,6 +387,57 @@ pub fn verify_provenance(
     Ok(errors)
 }
 
+pub fn verify_checksum_file(artifact: &Path, checksum_file: &Path) -> anyhow::Result<Vec<String>> {
+    let (expected_hash, expected_name) = parse_checksum_entry(checksum_file)?;
+    let artifact_bytes = fs::read(artifact)?;
+    let actual_hash = sha256_hex(&artifact_bytes);
+    let artifact_name = artifact
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let mut errors = Vec::new();
+    if expected_hash != actual_hash {
+        errors.push(format!(
+            "checksum mismatch: expected {} got {}",
+            expected_hash, actual_hash
+        ));
+    }
+    if !expected_name.is_empty() && expected_name != artifact_name {
+        errors.push(format!(
+            "artifact name mismatch: checksum entry `{}` does not match `{}`",
+            expected_name, artifact_name
+        ));
+    }
+    Ok(errors)
+}
+
+fn parse_checksum_entry(path: &Path) -> anyhow::Result<(String, String)> {
+    let raw = fs::read_to_string(path)?;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = trimmed.split_whitespace();
+        let Some(hash) = parts.next() else {
+            continue;
+        };
+        let Some(name) = parts.next() else {
+            anyhow::bail!("invalid checksum entry in {}", path.display());
+        };
+
+        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            anyhow::bail!("invalid checksum hash in {}", path.display());
+        }
+        let normalized_name = name.trim_start_matches('*').to_string();
+        return Ok((hash.to_ascii_lowercase(), normalized_name));
+    }
+
+    anyhow::bail!("checksum file has no entries: {}", path.display())
+}
+
 pub fn compatibility_policy() -> CompatibilityPolicy {
     CompatibilityPolicy {
         version: COMPATIBILITY_POLICY_VERSION.to_string(),
@@ -402,6 +453,7 @@ pub fn compatibility_policy() -> CompatibilityPolicy {
             "docs/compatibility-migration-policy.md".to_string(),
             "docs/security-threat-model.md".to_string(),
             "docs/release-security-ops.md".to_string(),
+            "docs/release/matrix.md".to_string(),
         ],
         required_workflows: vec![
             ".github/workflows/ci.yml".to_string(),
@@ -1086,8 +1138,8 @@ mod tests {
 
     use super::{
         check_compatibility_policy, compatibility_policy, generate_provenance,
-        generate_repro_manifest, has_unsafe_keyword, read_lockfile_packages, verify_provenance,
-        write_provenance,
+        generate_repro_manifest, has_unsafe_keyword, read_lockfile_packages, verify_checksum_file,
+        verify_provenance, write_provenance,
     };
 
     #[test]
@@ -1166,6 +1218,8 @@ version = "1.0.0"
         .expect("compat");
         fs::write(root.join("docs/security-threat-model.md"), "# threat\n").expect("threat");
         fs::write(root.join("docs/release-security-ops.md"), "# ops\n").expect("ops");
+        fs::create_dir_all(root.join("docs/release")).expect("release docs");
+        fs::write(root.join("docs/release/matrix.md"), "# matrix\n").expect("matrix");
         fs::write(root.join(".github/workflows/ci.yml"), "name: CI\n").expect("ci");
         fs::write(
             root.join(".github/workflows/release.yml"),
@@ -1181,6 +1235,26 @@ version = "1.0.0"
         let policy = compatibility_policy();
         let problems = check_compatibility_policy(root, &policy);
         assert!(problems.is_empty(), "problems={problems:#?}");
+    }
+
+    #[test]
+    fn checksum_verification_detects_tampering() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+
+        let artifact = root.join("artifact.tar.gz");
+        let checksum = root.join("artifact.sha256");
+        fs::write(&artifact, b"artifact-bytes").expect("artifact");
+        let digest = super::sha256_hex(b"artifact-bytes");
+        fs::write(&checksum, format!("{digest}  artifact.tar.gz\n")).expect("checksum");
+
+        let ok = verify_checksum_file(&artifact, &checksum).expect("verify");
+        assert!(ok.is_empty(), "errors={ok:#?}");
+
+        fs::write(&artifact, b"tampered").expect("tamper");
+        let errors = verify_checksum_file(&artifact, &checksum).expect("verify");
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("checksum mismatch"));
     }
 
     #[test]

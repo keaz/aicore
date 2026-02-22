@@ -176,6 +176,75 @@ fn release_policy_and_security_audit_commands_work() {
     assert!(report["checks"].is_array());
 }
 
+#[test]
+fn release_checksum_verification_command_detects_tampering() {
+    let dir = tempdir().expect("tempdir");
+    let artifact = dir.path().join("artifact.tar.gz");
+    let checksum = dir.path().join("artifact.tar.gz.sha256");
+    fs::write(&artifact, b"release-artifact").expect("write artifact");
+
+    let digest = {
+        let bytes = fs::read(&artifact).expect("read artifact");
+        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        hasher.update(&bytes);
+        format!("{:x}", hasher.finalize())
+    };
+    fs::write(&checksum, format!("{digest}  artifact.tar.gz\n")).expect("write checksum");
+
+    let artifact_str = artifact.to_string_lossy().to_string();
+    let checksum_str = checksum.to_string_lossy().to_string();
+
+    let verify_ok = run_aic(&[
+        "release",
+        "verify-checksum",
+        "--artifact",
+        &artifact_str,
+        "--checksum",
+        &checksum_str,
+    ]);
+    assert_eq!(verify_ok.status.code(), Some(0));
+
+    fs::write(&artifact, b"tampered").expect("tamper");
+
+    let verify_fail = run_aic(&[
+        "release",
+        "verify-checksum",
+        "--artifact",
+        &artifact_str,
+        "--checksum",
+        &checksum_str,
+        "--json",
+    ]);
+    assert_eq!(verify_fail.status.code(), Some(1));
+    let failures: serde_json::Value =
+        serde_json::from_slice(&verify_fail.stdout).expect("parse checksum failure json");
+    assert!(failures.is_array());
+    assert!(!failures.as_array().expect("array").is_empty());
+}
+
+#[test]
+fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
+        .expect("read release workflow");
+    for token in [
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest",
+        "Smoke test binary (Unix)",
+        "Smoke test binary (Windows)",
+        "Verify archive checksum (Unix)",
+        "Verify archive checksum (Windows)",
+        "Verify provenance signature",
+        "release-metadata.md",
+    ] {
+        assert!(
+            workflow.contains(token),
+            "release workflow missing expected token: {token}"
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn run_supports_ci_sandbox_profile() {
