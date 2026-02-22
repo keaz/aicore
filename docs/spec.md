@@ -176,6 +176,7 @@ Program {
 
 `aic ir --emit json` prints canonical JSON serialization.
 `aic ir-migrate <ir.json>` migrates legacy IR JSON to current schema version.
+`aic migrate <path> --dry-run --json` provides deterministic source + IR migration planning.
 
 ## 4. Type system
 

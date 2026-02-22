@@ -71,6 +71,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "migrate",
+        description: "Guided source/IR migration with deterministic report output",
+        stable_flags: &["--dry-run", "--json", "--report"],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "lock",
         description: "Generate deterministic package lockfile",
         stable_flags: &[],

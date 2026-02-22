@@ -42,6 +42,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Security audit + threat model checks | Implemented (`aic release security-audit`) |
 | Sandboxed run profiles | Implemented (`aic run --sandbox`) |
 | Compatibility + migration policy check | Implemented (`aic release policy --check`) |
+| Guided upgrade migrations with risk reports | Implemented (`aic migrate`) |
 | Complete IO runtime agent playbooks | Implemented (`docs/io-runtime/`) |
 
 ## Prerequisites
@@ -114,6 +115,7 @@ cargo run -- check examples/effects_reject.aic --json
 cargo run -- fmt examples/option_match.aic
 cargo run -- ir examples/option_match.aic --emit json
 cargo run -- ir-migrate old_ir.json
+cargo run -- migrate examples/ops/migration_v1_to_v2 --dry-run --json
 cargo run -- build examples/option_match.aic -o option_match
 cargo run -- build examples/e5/object_link_main.aic --artifact obj -o object_link_main.o
 cargo run -- build examples/e5/panic_line_map.aic --debug-info -o panic_dbg
@@ -145,6 +147,7 @@ Commands:
 - `aic fmt`
 - `aic ir --emit json|text`
 - `aic ir-migrate`
+- `aic migrate`
 - `aic lock`
 - `aic pkg`
 - `aic build`

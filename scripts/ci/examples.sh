@@ -267,6 +267,13 @@ case "$MODE" in
     "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
     expect_file_exists "$DOC_DIR/index.md"
     expect_file_exists "$DOC_DIR/api.json"
+    MIGRATION_DIR="$ARTIFACT_DIR/migration_v1_to_v2"
+    cp -R "examples/ops/migration_v1_to_v2" "$MIGRATION_DIR"
+    "${AIC[@]}" migrate "$MIGRATION_DIR" --dry-run --json >"$ARTIFACT_DIR/migration_dry_run.json"
+    python3 -m json.tool "$ARTIFACT_DIR/migration_dry_run.json" >/dev/null
+    "${AIC[@]}" migrate "$MIGRATION_DIR" --report "$ARTIFACT_DIR/migration_report.json" >/dev/null
+    python3 -m json.tool "$ARTIFACT_DIR/migration_report.json" >/dev/null
+    "${AIC[@]}" check "$MIGRATION_DIR/src/main.aic" >/dev/null
     expect_build_artifact "examples/e5/object_link_main.aic" "obj" "$ARTIFACT_DIR/object_link_main.o"
     expect_build_artifact "examples/e5/object_link_main.aic" "lib" "$ARTIFACT_DIR/libobject_link_main.a"
     for entry in "${run_fail[@]}"; do

@@ -25,6 +25,7 @@ This policy defines what AICore treats as compatibility guarantees and how migra
 
 - `schema_version` increments on incompatible structural changes.
 - `aic ir-migrate` must support migrating from previous public schema.
+- `aic migrate` must provide deterministic dry-run/apply reports for known source + IR breakages.
 
 ### Diagnostics
 
@@ -41,7 +42,7 @@ This policy defines what AICore treats as compatibility guarantees and how migra
 ## Migration Workflow
 
 1. Propose breaking change with migration impact section.
-2. Add/adjust migration tooling (`aic ir-migrate`, std compatibility checks, docs).
+2. Add/adjust migration tooling (`aic migrate`, `aic ir-migrate`, std compatibility checks, docs).
 3. Add tests for old-to-new behavior.
 4. Update docs and examples.
 5. Pass `aic release policy --check` in CI.
@@ -52,6 +53,7 @@ Run:
 
 ```bash
 aic release policy --check
+aic migrate examples/ops/migration_v1_to_v2 --dry-run --json
 ```
 
 JSON output for agents:
@@ -61,4 +63,3 @@ aic release policy --check --json
 ```
 
 The check verifies required docs/workflows and policy metadata consistency.
-

@@ -17,6 +17,14 @@ fn run_aic(args: &[&str]) -> std::process::Output {
         .expect("run aic")
 }
 
+fn run_aic_in_dir(cwd: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_aic"))
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run aic in dir")
+}
+
 fn run_aic_with_env(args: &[&str], key: &str, value: &str) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aic"))
         .args(args)
@@ -262,6 +270,166 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
             "release workflow missing expected token: {token}"
         );
     }
+}
+
+#[test]
+fn migrate_dry_run_report_is_deterministic() {
+    let dir = tempdir().expect("tempdir");
+    let project = dir.path().join("migration_project");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+
+    fs::write(
+        project.join("src/main.aic"),
+        r#"module migration.demo;
+import std.time;
+import std.io;
+import std.option;
+
+fn main() -> Int effects { io, time } {
+    let stamp = std.time.now();
+    let maybe: Option[Int] = null;
+    let out = match maybe {
+        None => stamp,
+        Some(v) => v,
+    };
+    print_int(out);
+    0
+}
+"#,
+    )
+    .expect("write source");
+
+    fs::write(
+        project.join("legacy_ir.json"),
+        r#"{
+  "module": null,
+  "imports": [],
+  "items": [],
+  "symbols": [],
+  "types": [],
+  "span": { "start": 0, "end": 0 }
+}"#,
+    )
+    .expect("write legacy ir");
+
+    let first = run_aic_in_dir(&project, &["migrate", ".", "--dry-run", "--json"]);
+    let second = run_aic_in_dir(&project, &["migrate", ".", "--dry-run", "--json"]);
+    assert_eq!(first.status.code(), Some(0), "stderr={:?}", first.stderr);
+    assert_eq!(second.status.code(), Some(0), "stderr={:?}", second.stderr);
+    assert_eq!(
+        first.stdout, second.stdout,
+        "dry-run report must be deterministic"
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&first.stdout).expect("report json");
+    assert_eq!(report["dry_run"], true);
+    assert_eq!(report["files_changed"], 2);
+    assert_eq!(report["high_risk_edits"], 1);
+    assert!(report["edits_planned"].as_u64().unwrap_or(0) >= 3);
+
+    let unchanged_source = fs::read_to_string(project.join("src/main.aic")).expect("read source");
+    assert!(unchanged_source.contains("std.time.now()"));
+    assert!(unchanged_source.contains("null"));
+}
+
+#[test]
+fn migrate_apply_updates_files_and_writes_report() {
+    let dir = tempdir().expect("tempdir");
+    let project = dir.path().join("migration_project");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+
+    fs::write(
+        project.join("src/main.aic"),
+        r#"module migration.demo;
+import std.time;
+import std.io;
+import std.option;
+
+fn main() -> Int effects { io, time } {
+    let stamp = std.time.now();
+    let maybe: Option[Int] = null;
+    let out = match maybe {
+        None => stamp,
+        Some(v) => v,
+    };
+    print_int(out);
+    0
+}
+"#,
+    )
+    .expect("write source");
+
+    fs::write(
+        project.join("legacy_ir.json"),
+        r#"{
+  "module": null,
+  "imports": [],
+  "items": [],
+  "symbols": [],
+  "types": [],
+  "span": { "start": 0, "end": 0 }
+}"#,
+    )
+    .expect("write legacy ir");
+
+    let report_path = project.join("migration-report.json");
+    let report_arg = report_path.to_string_lossy().to_string();
+    let migrated = run_aic_in_dir(&project, &["migrate", ".", "--report", &report_arg]);
+    assert_eq!(
+        migrated.status.code(),
+        Some(0),
+        "stderr={:?}",
+        migrated.stderr
+    );
+    assert!(report_path.is_file(), "expected migration report file");
+
+    let rewritten_source = fs::read_to_string(project.join("src/main.aic")).expect("read source");
+    assert!(rewritten_source.contains("std.time.now_ms()"));
+    assert!(rewritten_source.contains("None()"));
+    assert!(!rewritten_source.contains("null"));
+
+    let migrated_ir: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(project.join("legacy_ir.json")).expect("ir"))
+            .expect("migrated ir json");
+    assert_eq!(migrated_ir["schema_version"], 1);
+
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).expect("report")).expect("json");
+    assert_eq!(report["dry_run"], false);
+    assert_eq!(report["files_changed"], 2);
+
+    let checked = run_aic_in_dir(&project, &["check", "src/main.aic"]);
+    assert_eq!(
+        checked.status.code(),
+        Some(0),
+        "stderr={:?}",
+        checked.stderr
+    );
+}
+
+#[test]
+fn migrate_direct_ir_file_rejects_unsupported_schema_version() {
+    let dir = tempdir().expect("tempdir");
+    let ir_path = dir.path().join("legacy_ir.json");
+    fs::write(
+        &ir_path,
+        r#"{
+  "schema_version": 99,
+  "module": null,
+  "imports": [],
+  "items": [],
+  "symbols": [],
+  "types": [],
+  "span": { "start": 0, "end": 0 }
+}"#,
+    )
+    .expect("write unsupported ir");
+
+    let ir_arg = ir_path.to_string_lossy().to_string();
+    let out = run_aic_in_dir(dir.path(), &["migrate", &ir_arg, "--dry-run", "--json"]);
+    assert_eq!(out.status.code(), Some(3), "stdout={:?}", out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("unsupported IR schema_version"));
 }
 
 #[test]

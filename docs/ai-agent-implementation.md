@@ -559,7 +559,11 @@ Diagnostics:
 
 - Policy doc:
   - `docs/compatibility-migration-policy.md`
+- Migration runbook:
+  - `docs/security-ops/migration.md`
 - CLI:
+  - `aic migrate <path> --dry-run --json`
+  - `aic migrate <path> --report <file>`
   - `aic release policy --check`
   - `aic release policy --check --json`
 - Policy model:

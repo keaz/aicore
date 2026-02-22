@@ -19,6 +19,7 @@ use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
 use aicore::lsp;
+use aicore::migration::{run_migration, write_report as write_migration_report};
 use aicore::package_registry::{
     install_with_options as pkg_install_with_options,
     publish_with_options as pkg_publish_with_options,
@@ -102,6 +103,16 @@ enum Command {
     IrMigrate {
         #[arg(default_value = "ir.json")]
         input: PathBuf,
+    },
+    Migrate {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        report: Option<PathBuf>,
     },
     Lock {
         #[arg(default_value = ".")]
@@ -586,6 +597,63 @@ fn run_cli() -> anyhow::Result<i32> {
             let raw = std::fs::read_to_string(&input)?;
             let migrated = migrate_json_to_current(&raw)?;
             println!("{}", serde_json::to_string_pretty(&migrated)?);
+            EXIT_OK
+        }
+        Command::Migrate {
+            path,
+            dry_run,
+            json,
+            report,
+        } => {
+            let migration = run_migration(&path, dry_run)?;
+            if let Some(report_path) = report {
+                write_migration_report(&report_path, &migration)?;
+                if !json {
+                    println!("wrote migration report {}", report_path.display());
+                }
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&migration)?);
+            } else {
+                println!(
+                    "migration: scanned={} changed={} edits={} high-risk={} dry-run={}",
+                    migration.files_scanned,
+                    migration.files_changed,
+                    migration.edits_planned,
+                    migration.high_risk_edits,
+                    migration.dry_run
+                );
+                for file in migration.files.iter().filter(|file| file.changed) {
+                    let highest = file
+                        .highest_risk
+                        .as_deref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "none".to_string());
+                    println!(
+                        "  {} [{}] edits={} highest-risk={}",
+                        file.path,
+                        file.file_kind,
+                        file.edits.len(),
+                        highest
+                    );
+                    for edit in &file.edits {
+                        println!(
+                            "    {} {}:{} {}",
+                            edit.rule, edit.start_line, edit.start_col, edit.description
+                        );
+                    }
+                }
+                if !migration.warnings.is_empty() {
+                    println!("warnings:");
+                    for warning in &migration.warnings {
+                        println!("  - {}", warning);
+                    }
+                }
+                if migration.high_risk_edits > 0 {
+                    println!("note: high-risk migrations detected; review report before release.");
+                }
+            }
             EXIT_OK
         }
         Command::Lock { path } => {

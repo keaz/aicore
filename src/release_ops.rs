@@ -444,6 +444,7 @@ pub fn compatibility_policy() -> CompatibilityPolicy {
         ir_schema_version: CURRENT_IR_SCHEMA_VERSION,
         cli_contract_version: CLI_CONTRACT_VERSION.to_string(),
         migration_commands: vec![
+            "aic migrate <path> --dry-run --json".to_string(),
             "aic ir-migrate <legacy-ir.json>".to_string(),
             "aic std-compat --check --baseline docs/std-api-baseline.json".to_string(),
             "aic release policy --check".to_string(),
@@ -451,6 +452,7 @@ pub fn compatibility_policy() -> CompatibilityPolicy {
         required_docs: vec![
             "docs/spec.md".to_string(),
             "docs/compatibility-migration-policy.md".to_string(),
+            "docs/security-ops/migration.md".to_string(),
             "docs/security-threat-model.md".to_string(),
             "docs/release-security-ops.md".to_string(),
             "docs/release/matrix.md".to_string(),
@@ -1209,6 +1211,7 @@ version = "1.0.0"
         let root = dir.path();
 
         fs::create_dir_all(root.join("docs")).expect("docs");
+        fs::create_dir_all(root.join("docs/security-ops")).expect("security ops docs");
         fs::create_dir_all(root.join(".github/workflows")).expect("workflows");
         fs::write(root.join("docs/spec.md"), "# spec\n").expect("spec");
         fs::write(
@@ -1218,6 +1221,7 @@ version = "1.0.0"
         .expect("compat");
         fs::write(root.join("docs/security-threat-model.md"), "# threat\n").expect("threat");
         fs::write(root.join("docs/release-security-ops.md"), "# ops\n").expect("ops");
+        fs::write(root.join("docs/security-ops/migration.md"), "# migrate\n").expect("migrate");
         fs::create_dir_all(root.join("docs/release")).expect("release docs");
         fs::write(root.join("docs/release/matrix.md"), "# matrix\n").expect("matrix");
         fs::write(root.join(".github/workflows/ci.yml"), "name: CI\n").expect("ci");

@@ -37,6 +37,7 @@ Published parse/check/build/fix schemas:
 - `aic fmt`
 - `aic ir`
 - `aic ir-migrate`
+- `aic migrate`
 - `aic lock`
 - `aic pkg` (`publish`, `install`, `search`)
 - `aic build`

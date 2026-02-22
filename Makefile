@@ -152,6 +152,7 @@ docs-check:
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
 	@test -f docs/release-security-ops.md
+	@test -f docs/security-ops/migration.md
 	@test -f docs/security-threat-model.md
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/std-api-baseline.json
@@ -165,6 +166,7 @@ docs-check:
 	@grep -q "aic fmt" README.md
 	@grep -q "aic ir" README.md
 	@grep -q "aic ir-migrate" README.md
+	@grep -q "aic migrate" README.md
 	@grep -q "aic build" README.md
 	@grep -q "aic lock" README.md
 	@grep -q "aic doc" README.md
@@ -179,7 +181,7 @@ docs-check:
 	@cargo run --quiet --bin aic -- release policy --check >/dev/null
 
 no-null-lint:
-	@if rg -n --glob '*.aic' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \
+	@if rg -n --glob '*.aic' --glob '!examples/ops/migration_v1_to_v2/**' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \
 		echo "forbidden 'null' token found in AIC source files:" >&2; \
 		cat /tmp/aic-no-null-lint.out >&2; \
 		exit 1; \

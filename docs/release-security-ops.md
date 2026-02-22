@@ -97,6 +97,20 @@ Check required compatibility assets:
 aic release policy --check
 ```
 
+### Guided migration
+
+Run deterministic migration analysis:
+
+```bash
+aic migrate examples/ops/migration_v1_to_v2 --dry-run --json
+```
+
+Apply known migrations and persist a report:
+
+```bash
+aic migrate examples/ops/migration_v1_to_v2 --report target/ops/migration-report.json
+```
+
 ## Sandbox Profiles
 
 `aic run` supports sandbox profiles:
@@ -153,6 +167,7 @@ Telemetry schema and runbook:
 
 - `docs/security-ops/telemetry.schema.json`
 - `docs/security-ops/telemetry.md`
+- `docs/security-ops/migration.md`
 
 ## Local CI Integration
 

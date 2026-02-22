@@ -39,6 +39,6 @@ Invariants:
 - `generic_instantiations` is deduplicated and stably ordered by canonical instantiation key.
 - printer operates on IR, not source text.
 - `Program.schema_version` is always emitted.
-- legacy unversioned JSON (v0) is migrated by `aic ir-migrate`.
+- legacy unversioned JSON (v0) is migrated by `aic ir-migrate` (and by `aic migrate` when scanning project trees).
 
 See `docs/id-allocation.md` for the full deterministic ID policy.
