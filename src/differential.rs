@@ -70,11 +70,49 @@ pub fn run_roundtrip_corpus(path: &Path) -> anyhow::Result<DifferentialReport> {
 
 pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult> {
     let source = fs::read_to_string(path)?;
+    run_roundtrip_source(&source, &path.to_string_lossy())
+}
 
-    let (program1, parse_diags1) = parser::parse(&source, &path.to_string_lossy());
+pub fn run_roundtrip_source(source: &str, label: &str) -> anyhow::Result<DifferentialCaseResult> {
+    run_roundtrip_source_internal(source, label, true)
+}
+
+pub fn run_randomized_roundtrip(seed: u64, cases: usize) -> anyhow::Result<DifferentialReport> {
+    let mut rng = DifferentialLcg::new(seed);
+    let mut report = DifferentialReport {
+        total: 0,
+        matched: 0,
+        diverged: 0,
+        cases: Vec::new(),
+    };
+
+    for idx in 0..cases {
+        let source = generate_random_program(&mut rng);
+        let label = format!("<random:{}:{}>", seed, idx);
+        let result = run_roundtrip_source_internal(&source, &label, false)?;
+        report.total += 1;
+        if result.passed {
+            report.matched += 1;
+        } else {
+            report.diverged += 1;
+        }
+        report.cases.push(result);
+    }
+
+    Ok(report)
+}
+
+fn run_roundtrip_source_internal(
+    source: &str,
+    label: &str,
+    include_minimized_source: bool,
+) -> anyhow::Result<DifferentialCaseResult> {
+    let source = source.to_string();
+
+    let (program1, parse_diags1) = parser::parse(&source, label);
     if parse_diags1.iter().any(Diagnostic::is_error) {
         return Ok(DifferentialCaseResult {
-            file: path.to_string_lossy().to_string(),
+            file: label.to_string(),
             passed: false,
             details: format!("source parse failed: {parse_diags1:#?}"),
         });
@@ -82,7 +120,7 @@ pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult>
 
     let Some(program1) = program1 else {
         return Ok(DifferentialCaseResult {
-            file: path.to_string_lossy().to_string(),
+            file: label.to_string(),
             passed: false,
             details: "source parse returned no AST".to_string(),
         });
@@ -91,10 +129,10 @@ pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult>
     let ir1 = ir_builder::build(&program1);
     let formatted = format_program(&ir1);
 
-    let (program2, parse_diags2) = parser::parse(&formatted, &path.to_string_lossy());
+    let (program2, parse_diags2) = parser::parse(&formatted, label);
     if parse_diags2.iter().any(Diagnostic::is_error) {
         return Ok(DifferentialCaseResult {
-            file: path.to_string_lossy().to_string(),
+            file: label.to_string(),
             passed: false,
             details: format!("roundtrip parse failed: {parse_diags2:#?}"),
         });
@@ -102,7 +140,7 @@ pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult>
 
     let Some(program2) = program2 else {
         return Ok(DifferentialCaseResult {
-            file: path.to_string_lossy().to_string(),
+            file: label.to_string(),
             passed: false,
             details: "roundtrip parse returned no AST".to_string(),
         });
@@ -110,12 +148,12 @@ pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult>
 
     let ir2 = ir_builder::build(&program2);
 
-    let snapshot1 = build_semantic_snapshot(&ir1, &path.to_string_lossy())?;
-    let snapshot2 = build_semantic_snapshot(&ir2, &path.to_string_lossy())?;
+    let snapshot1 = build_semantic_snapshot(&ir1, label)?;
+    let snapshot2 = build_semantic_snapshot(&ir2, label)?;
 
     if snapshot1 == snapshot2 {
         return Ok(DifferentialCaseResult {
-            file: path.to_string_lossy().to_string(),
+            file: label.to_string(),
             passed: true,
             details: "semantic-equivalent".to_string(),
         });
@@ -123,10 +161,20 @@ pub fn run_roundtrip_file(path: &Path) -> anyhow::Result<DifferentialCaseResult>
 
     let left = serde_json::to_string_pretty(&snapshot1)?;
     let right = serde_json::to_string_pretty(&snapshot2)?;
-    let detail = format_divergence(&left, &right);
+    let detail = if include_minimized_source {
+        let minimized =
+            minimize_source_for_divergence(&source, label).unwrap_or_else(|| source.clone());
+        format!(
+            "{}\nminimized_repro:\n{}\n",
+            format_divergence(&left, &right),
+            minimized
+        )
+    } else {
+        format_divergence(&left, &right)
+    };
 
     Ok(DifferentialCaseResult {
-        file: path.to_string_lossy().to_string(),
+        file: label.to_string(),
         passed: false,
         details: detail,
     })
@@ -256,6 +304,92 @@ fn normalize_generic_instantiations(value: &mut Value) {
     }
 }
 
+fn minimize_source_for_divergence(source: &str, label: &str) -> Option<String> {
+    if source.is_empty() {
+        return Some(String::new());
+    }
+    if !semantic_mismatch(source, label) {
+        return None;
+    }
+
+    let mut bytes = source.as_bytes().to_vec();
+    let mut granularity = (bytes.len() / 2).max(1);
+
+    while granularity > 0 {
+        let mut reduced = false;
+        let mut index = 0usize;
+        while index < bytes.len() {
+            let end = (index + granularity).min(bytes.len());
+            if end <= index {
+                break;
+            }
+            let mut candidate = bytes.clone();
+            candidate.drain(index..end);
+            let candidate_src = String::from_utf8_lossy(&candidate).to_string();
+            if semantic_mismatch(&candidate_src, label) {
+                bytes = candidate;
+                reduced = true;
+            } else {
+                index += granularity;
+            }
+        }
+        if !reduced {
+            if granularity == 1 {
+                break;
+            }
+            granularity /= 2;
+        }
+    }
+
+    Some(String::from_utf8_lossy(&bytes).to_string())
+}
+
+fn semantic_mismatch(source: &str, label: &str) -> bool {
+    let (program1, parse_diags1) = parser::parse(source, label);
+    if parse_diags1.iter().any(Diagnostic::is_error) {
+        return false;
+    }
+    let Some(program1) = program1 else {
+        return false;
+    };
+    let ir1 = ir_builder::build(&program1);
+    let formatted = format_program(&ir1);
+
+    let (program2, parse_diags2) = parser::parse(&formatted, label);
+    if parse_diags2.iter().any(Diagnostic::is_error) {
+        return false;
+    }
+    let Some(program2) = program2 else {
+        return false;
+    };
+    let ir2 = ir_builder::build(&program2);
+
+    let Ok(snapshot1) = build_semantic_snapshot(&ir1, label) else {
+        return false;
+    };
+    let Ok(snapshot2) = build_semantic_snapshot(&ir2, label) else {
+        return false;
+    };
+    snapshot1 != snapshot2
+}
+
+fn generate_random_program(rng: &mut DifferentialLcg) -> String {
+    let a = rng.next_i64(0, 80);
+    let b = rng.next_i64(0, 80);
+    let c = rng.next_i64(0, 80);
+    let op = rng.next_usize(3);
+    let (lhs, rhs, expr_op) = match op {
+        0 => (a, b, "+"),
+        1 => (a + b, c, "-"),
+        _ => (a, b.max(1), "*"),
+    };
+    let threshold = rng.next_i64(0, 120);
+    let cond = if rng.next_bool() { ">=" } else { "<=" };
+    format!(
+        "fn main() -> Int {{\n    let value = {lhs} {expr_op} {rhs};\n    if value {cond} {threshold} {{\n        value\n    }} else {{\n        value + 1\n    }}\n}}\n"
+    )
+}
+
 fn format_divergence(left: &str, right: &str) -> String {
     match first_diff_line(left, right) {
         Some(line) => {
@@ -269,6 +403,38 @@ fn format_divergence(left: &str, right: &str) -> String {
             )
         }
         None => "diverged with equivalent line rendering".to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DifferentialLcg {
+    state: u64,
+}
+
+impl DifferentialLcg {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        self.state
+    }
+
+    fn next_usize(&mut self, upper_exclusive: usize) -> usize {
+        if upper_exclusive == 0 {
+            return 0;
+        }
+        (self.next_u64() as usize) % upper_exclusive
+    }
+
+    fn next_i64(&mut self, low: i64, high: i64) -> i64 {
+        let span = (high - low + 1).max(1) as usize;
+        low + self.next_usize(span) as i64
+    }
+
+    fn next_bool(&mut self) -> bool {
+        (self.next_u64() & 1) == 1
     }
 }
 
@@ -318,12 +484,30 @@ fn collect_aic_files(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use super::first_diff_line;
+    use super::{
+        first_diff_line, generate_random_program, minimize_source_for_divergence, DifferentialLcg,
+    };
 
     #[test]
     fn reports_first_diff_line() {
         let left = "a\nb\nc\n";
         let right = "a\nb\nd\n";
         assert_eq!(first_diff_line(left, right), Some(2));
+    }
+
+    #[test]
+    fn random_program_generation_is_deterministic() {
+        let mut a = DifferentialLcg::new(42);
+        let mut b = DifferentialLcg::new(42);
+        assert_eq!(
+            generate_random_program(&mut a),
+            generate_random_program(&mut b)
+        );
+    }
+
+    #[test]
+    fn minimize_returns_none_when_no_mismatch() {
+        let src = "fn main() -> Int { 42 }";
+        assert!(minimize_source_for_divergence(src, "test.aic").is_none());
     }
 }

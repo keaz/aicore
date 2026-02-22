@@ -49,7 +49,10 @@ cargo test --locked --test e8_fuzz_tests -- --ignored
 
 - Differential runner: `src/differential.rs`
 - Reference seed: `examples/e8/roundtrip_random_seed.aic`
+- Differential corpus path: `tests/differential/`
 - Test: `tests/e8_differential_tests.rs`
+- Randomized differential suite: deterministic seeded generator (`run_randomized_roundtrip`)
+- Mismatch triage: first divergent line + minimized reproducer snippet in case details
 
 The runner compares semantic snapshots before and after `parse -> IR -> format -> parse -> IR` and reports the first divergence line.
 

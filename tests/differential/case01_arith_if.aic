@@ -1,0 +1,8 @@
+fn main() -> Int {
+    let base = 21 + 20;
+    if base >= 41 {
+        base + 1
+    } else {
+        base
+    }
+}
