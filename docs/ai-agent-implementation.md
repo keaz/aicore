@@ -5,6 +5,7 @@ This document is implementation-oriented and intended for autonomous contributor
 Core language-specific deep dive:
 
 - `docs/core-language-1.0.md`
+- `docs/ai-agent-rest-guide.md`
 
 ## Pipeline Touch Points
 

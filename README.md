@@ -45,6 +45,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | LTS support policy + compatibility matrix gate | Implemented (`aic release lts --check`) |
 | Guided upgrade migrations with risk reports | Implemented (`aic migrate`) |
 | Complete IO runtime agent playbooks | Implemented (`docs/io-runtime/`) |
+| REST implementation playbook for agents | Implemented (`docs/ai-agent-rest-guide.md`) |
 | Verification-quality agent runbooks | Implemented (`docs/verification-quality/`) |
 | Security/release operations agent runbooks | Implemented (`docs/security-ops/`) |
 
@@ -173,6 +174,7 @@ Commands:
 - `examples/`: runnable and checker-focused examples
 - `docs/`: MVP language and compiler specs
   - includes executable agent recipes in `docs/agent-recipes/`
+  - includes REST implementation playbook in `docs/ai-agent-rest-guide.md`
 - `tests/`: golden, unit, and execution tests
 - `tools/vscode-aic/`: prototype VS Code extension wiring to `aic lsp`
 

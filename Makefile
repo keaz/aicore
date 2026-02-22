@@ -136,6 +136,7 @@ docs-check:
 	@test -f docs/agent-tooling/schemas/build-response.schema.json
 	@test -f docs/agent-tooling/schemas/fix-response.schema.json
 	@test -f docs/package-workflow.md
+	@test -f docs/ai-agent-rest-guide.md
 	@test -f docs/package-ecosystem/README.md
 	@test -f docs/package-ecosystem/publish-consume.md
 	@test -f docs/package-ecosystem/workspaces-and-locks.md
@@ -196,6 +197,7 @@ docs-check:
 	@grep -q "aic run" README.md
 	@grep -q "aic release" README.md
 	@grep -q "aic contract" README.md
+	@grep -q "docs/ai-agent-rest-guide.md" README.md
 	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
 	@cargo run --quiet --bin aic -- release policy --check >/dev/null
 	@cargo run --quiet --bin aic -- release lts --check >/dev/null
