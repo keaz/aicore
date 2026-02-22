@@ -422,6 +422,218 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_string_ops_full_surface_and_edge_cases() {
+    let src = r#"
+import std.io;
+import std.option;
+import std.result;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn opt_string_len(v: Option[String]) -> Int {
+    match v {
+        Some(value) => len(value),
+        None => 0,
+    }
+}
+
+fn opt_vec_len(v: Option[Vec[String]]) -> Int {
+    match v {
+        Some(value) => vec_len(value),
+        None => 0,
+    }
+}
+
+fn result_int_or(v: Result[Int, String], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn result_err_non_empty(v: Result[Int, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(message) => if len(message) > 0 { 1 } else { 0 },
+    }
+}
+
+fn main() -> Int effects { io } {
+    let contains_ok = if contains("alpha beta", "pha") { 1 } else { 0 };
+    let starts_ok = if starts_with("alpha beta", "alpha") { 1 } else { 0 };
+    let ends_ok = if ends_with("alpha beta", "beta") { 1 } else { 0 };
+
+    let idx_first_ok = if opt_int_or(index_of("banana", "na"), -1) == 2 { 1 } else { 0 };
+    let idx_last_ok = if opt_int_or(last_index_of("banana", "na"), -1) == 4 { 1 } else { 0 };
+    let idx_none_ok = if opt_int_or(index_of("banana", "zz"), -1) == -1 { 1 } else { 0 };
+
+    let sub_ok = if len(substring("header", 1, 4)) == 3 { 1 } else { 0 };
+    let sub_oob_ok = if len(substring("abc", 9, 12)) == 0 { 1 } else { 0 };
+    let char_ok = if opt_string_len(char_at("abc", 1)) == 1 { 1 } else { 0 };
+    let char_oob_ok = if opt_string_len(char_at("abc", 9)) == 0 { 1 } else { 0 };
+
+    let split_ok = if vec_len(split("GET /api/users HTTP/1.1", " ")) == 3 { 1 } else { 0 };
+    let split_first_ok =
+        if opt_vec_len(split_first("Content-Type: application/json", ":")) == 2 {
+            1
+        } else {
+            0
+        };
+    let split_first_none_ok =
+        if opt_vec_len(split_first("Content-Type application/json", ":")) == 0 {
+            1
+        } else {
+            0
+        };
+
+    let trim_ok = if len(trim(" \t  hello \n")) == 5 { 1 } else { 0 };
+    let trim_start_ok = if len(trim_start("   hello ")) == 6 { 1 } else { 0 };
+    let trim_end_ok = if len(trim_end(" hello   ")) == 6 { 1 } else { 0 };
+
+    let upper_ok = if len(to_upper("abcXYZ")) == 6 { 1 } else { 0 };
+    let lower_ok = if len(to_lower("ABCxyz")) == 6 { 1 } else { 0 };
+    let replace_ok = if len(replace("a-b-c", "-", "/")) == 5 { 1 } else { 0 };
+    let repeat_ok = if len(repeat("ab", 3)) == 6 { 1 } else { 0 };
+    let repeat_neg_ok = if len(repeat("ab", -2)) == 0 { 1 } else { 0 };
+
+    let parse_ok = if result_int_or(parse_int("  -42 "), 0) == -42 { 1 } else { 0 };
+    let parse_bad_ok = result_err_non_empty(parse_int("12x"));
+    let parse_overflow_ok = result_err_non_empty(parse_int("999999999999999999999999"));
+
+    let int_to_string_ok = if len(int_to_string(-2048)) == 5 { 1 } else { 0 };
+    let bool_true_ok = if len(bool_to_string(true)) == 4 { 1 } else { 0 };
+    let bool_false_ok = if len(bool_to_string(false)) == 5 { 1 } else { 0 };
+
+    let joined = join(split("a,b,c", ","), "|");
+    let join_ok = if len(joined) == 5 { 1 } else { 0 };
+    let join_empty_ok = if len(join(split("", ","), "|")) == 0 { 1 } else { 0 };
+
+    let score =
+        contains_ok +
+        starts_ok +
+        ends_ok +
+        idx_first_ok +
+        idx_last_ok +
+        idx_none_ok +
+        sub_ok +
+        sub_oob_ok +
+        char_ok +
+        char_oob_ok +
+        split_ok +
+        split_first_ok +
+        split_first_none_ok +
+        trim_ok +
+        trim_start_ok +
+        trim_end_ok +
+        upper_ok +
+        lower_ok +
+        replace_ok +
+        repeat_ok +
+        repeat_neg_ok +
+        parse_ok +
+        parse_bad_ok +
+        parse_overflow_ok +
+        int_to_string_ok +
+        bool_true_ok +
+        bool_false_ok +
+        join_ok +
+        join_empty_ok;
+
+    if score == 29 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_string_http_like_request_and_header_workflow() {
+    let src = r#"
+import std.io;
+import std.option;
+import std.result;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn opt_vec_len(v: Option[Vec[String]]) -> Int {
+    match v {
+        Some(value) => vec_len(value),
+        None => 0,
+    }
+}
+
+fn parse_or_zero(v: Result[Int, String]) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let request_line = "GET /api/users HTTP/1.1";
+    let line_parts = split(request_line, " ");
+    let parts_ok = if vec_len(line_parts) == 3 { 1 } else { 0 };
+    let line_roundtrip_ok = if len(join(line_parts, " ")) == len(request_line) { 1 } else { 0 };
+    let method_ok = if starts_with(request_line, "GET ") { 1 } else { 0 };
+    let target_ok = if contains(request_line, "/api/users") { 1 } else { 0 };
+    let version_ok = if ends_with(request_line, "HTTP/1.1") { 1 } else { 0 };
+
+    let header = "Content-Length: 12";
+    let header_parts = split_first(header, ":");
+    let header_pair_ok = if opt_vec_len(header_parts) == 2 { 1 } else { 0 };
+    let header_name_ok = if len(trim("  Content-Length  ")) == 14 { 1 } else { 0 };
+    let parsed_length_ok = if parse_or_zero(parse_int(trim(" 12 "))) == 12 { 1 } else { 0 };
+
+    let query = "page=12";
+    let query_parts_ok = if opt_vec_len(split_first(query, "=")) == 2 { 1 } else { 0 };
+    let page_idx_ok = if opt_int_or(index_of(query, "="), -1) == 4 { 1 } else { 0 };
+
+    let score =
+        parts_ok +
+        line_roundtrip_ok +
+        method_ok +
+        target_ok +
+        version_ok +
+        header_pair_ok +
+        header_name_ok +
+        parsed_length_ok +
+        query_parts_ok +
+        page_idx_ok;
+
+    if score == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_regex_compile_match_find_replace() {
     let src = r#"
 import std.io;
@@ -451,8 +663,8 @@ fn main() -> Int effects { io } {
     let match_yes = bool_result(is_match(re, "ERROR 42"));
     let match_no = bool_result(is_match(re, "info 42"));
     let found_len = string_len(find(re, "warn\nerror 17\nok"));
-    let replaced_len = string_len(replace(re, "warn\nERROR 17\nok", "<redacted>"));
-    let replace_nomatch_len = string_len(replace(re, "all good", "<x>"));
+    let replaced_len = string_len(regex.replace(re, "warn\nERROR 17\nok", "<redacted>"));
+    let replace_nomatch_len = string_len(regex.replace(re, "all good", "<x>"));
 
     if match_yes == 1
         && match_no == 0
@@ -718,7 +930,7 @@ fn main() -> Int effects { io, env, fs } {
         Ok(path) => path,
         Err(_) => "",
     };
-    let joined = join(now, "alpha.txt");
+    let joined = path.join(now, "alpha.txt");
     let base_len = len(basename(joined));
     let dir_len = len(dirname(joined));
     let ext_len = len(extension(joined));
@@ -727,6 +939,118 @@ fn main() -> Int effects { io, env, fs } {
 
     let score = set_ok + rm_ok + missing_ok + cwd_set_ok + abs_ok + restore_ok;
     if score == 6 && got_len == 9 && base_len == 9 && dir_len > 0 && ext_len == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_map_string_string_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(x) => x,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let m0: Map[String, String] = map.new_map();
+    let m1 = map.insert(m0, "content-type", "application/json");
+    let m2 = map.insert(m1, "accept", "*/*");
+    let m3 = map.insert(m2, "x-id", "42");
+    let m4 = map.insert(m3, "accept", "text/plain");
+    let m5 = map.remove(m4, "content-type");
+
+    let has_accept = if map.contains_key(m5, "accept") { 1 } else { 0 };
+    let missing_ok = if map.contains_key(m5, "missing") { 0 } else { 1 };
+    let accept_len = match map.get(m5, "accept") {
+        Some(v) => len(v),
+        None => 0,
+    };
+    let removed_ok = match map.get(m5, "content-type") {
+        Some(_) => 0,
+        None => 1,
+    };
+    let size_ok = if map.size(m5) == 2 { 1 } else { 0 };
+    let keys_join = string.join(map.keys(m5), ",");
+    let keys_order_ok = if opt_int_or(index_of(keys_join, "accept,x-id"), -1) == 0 { 1 } else { 0 };
+    let values_join = string.join(map.values(m5), ",");
+    let values_order_ok = if opt_int_or(index_of(values_join, "text/plain,42"), -1) == 0 { 1 } else { 0 };
+    let entries_len_ok = if vec_len(map.entries(m5)) == 2 { 1 } else { 0 };
+
+    let score =
+        has_accept +
+        missing_ok +
+        removed_ok +
+        size_ok +
+        keys_order_ok +
+        values_order_ok +
+        entries_len_ok;
+    if score == 7 && accept_len == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_map_string_int_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(x) => x,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let m0: Map[String, Int] = map.new_map();
+    let m1 = map.insert(m0, "b", 2);
+    let m2 = map.insert(m1, "a", 1);
+    let m3 = map.insert(m2, "c", 3);
+    let m4 = map.insert(m3, "b", 20);
+    let m5 = map.remove(m4, "a");
+
+    let b_value = opt_int_or(map.get(m5, "b"), 0);
+    let a_missing_ok = match map.get(m5, "a") {
+        Some(_) => 0,
+        None => 1,
+    };
+    let size_ok = if map.size(m5) == 2 { 1 } else { 0 };
+    let has_c = if map.contains_key(m5, "c") { 1 } else { 0 };
+    let keys_join = string.join(map.keys(m5), ",");
+    let keys_order_ok = if opt_int_or(index_of(keys_join, "b,c"), -1) == 0 { 1 } else { 0 };
+    let values_len_ok = if vec_len(map.values(m5)) == 2 { 1 } else { 0 };
+    let entries_len_ok = if vec_len(map.entries(m5)) == 2 { 1 } else { 0 };
+
+    let score = a_missing_ok + size_ok + has_c + keys_order_ok + values_len_ok + entries_len_ok;
+    if score == 6 && b_value == 20 {
         print_int(42);
     } else {
         print_int(0);

@@ -1,0 +1,45 @@
+module example.data.map_headers;
+
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(x) => x,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let headers0: Map[String, String] = map.new_map();
+    let headers1 = map.insert(headers0, "content-type", "application/json");
+    let headers2 = map.insert(headers1, "accept", "*/*");
+    let headers3 = map.insert(headers2, "x-id", "42");
+    let headers4 = map.insert(headers3, "accept", "text/plain");
+
+    let counters0: Map[String, Int] = map.new_map();
+    let counters1 = map.insert(counters0, "ok", 1);
+    let counters2 = map.insert(counters1, "err", 2);
+    let counters3 = map.insert(counters2, "ok", 4);
+
+    let header_value_ok = match map.get(headers4, "accept") {
+        Some(v) => if len(v) == 10 { 1 } else { 0 },
+        None => 0,
+    };
+    let headers_size_ok = if map.size(headers4) == 3 { 1 } else { 0 };
+    let keys_ok = if opt_int_or(index_of(string.join(map.keys(headers4), ","), "accept,content-type,x-id"), -1) == 0 { 1 } else { 0 };
+    let values_ok = if opt_int_or(index_of(string.join(map.values(headers4), ","), "text/plain,application/json,42"), -1) == 0 { 1 } else { 0 };
+    let entries_ok = if vec_len(map.entries(headers4)) == 3 { 1 } else { 0 };
+    let counter_ok = if opt_int_or(map.get(counters3, "ok"), 0) == 4 { 1 } else { 0 };
+    let counter_vecs_ok = if vec_len(map.values(counters3)) == 2 && vec_len(map.entries(counters3)) == 2 { 1 } else { 0 };
+
+    if header_value_ok + headers_size_ok + keys_ok + values_ok + entries_ok + counter_ok + counter_vecs_ok == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -951,6 +951,75 @@ fn unit_std_env_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_map_public_apis_delegate_to_runtime_intrinsics() {
+    let map_source = fs::read_to_string("std/map.aic").expect("read std/map.aic");
+
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "new_map",
+        "aic_map_new_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "insert",
+        "aic_map_insert_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "get",
+        "aic_map_get_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "contains_key",
+        "aic_map_contains_key_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "remove",
+        "aic_map_remove_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "size",
+        "aic_map_size_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "keys",
+        "aic_map_keys_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "values",
+        "aic_map_values_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &map_source,
+        "std/map.aic",
+        "entries",
+        "aic_map_entries_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_std_path_public_apis_delegate_to_runtime_intrinsics() {
     let path_source = fs::read_to_string("std/path.aic").expect("read std/path.aic");
 
@@ -1160,6 +1229,152 @@ fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
         "net_addr",
         "aic_url_net_addr_intrinsic",
         1,
+    );
+}
+
+#[test]
+fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
+    let string_source = fs::read_to_string("std/string.aic").expect("read std/string.aic");
+
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "contains",
+        "aic_string_contains_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "starts_with",
+        "aic_string_starts_with_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "ends_with",
+        "aic_string_ends_with_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "index_of",
+        "aic_string_index_of_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "last_index_of",
+        "aic_string_last_index_of_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "substring",
+        "aic_string_substring_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "char_at",
+        "aic_string_char_at_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "split",
+        "aic_string_split_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "split_first",
+        "aic_string_split_first_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "trim",
+        "aic_string_trim_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "trim_start",
+        "aic_string_trim_start_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "trim_end",
+        "aic_string_trim_end_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "to_upper",
+        "aic_string_to_upper_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "to_lower",
+        "aic_string_to_lower_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "replace",
+        "aic_string_replace_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "repeat",
+        "aic_string_repeat_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "parse_int",
+        "aic_string_parse_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "int_to_string",
+        "aic_string_int_to_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "bool_to_string",
+        "aic_string_bool_to_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "join",
+        "aic_string_join_intrinsic",
+        2,
     );
 }
 
@@ -1641,6 +1856,7 @@ import std.time;
 import std.rand;
 import std.env;
 import std.path;
+import std.map;
 import std.proc;
 import std.string;
 import std.vec;
@@ -1660,16 +1876,25 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _walk = walk_dir(".");
     let _tmp_file = temp_file("unit_");
     let _tmp_dir = temp_dir("unit_");
-    let _env_get = get("HOME");
+    let _env_get = env.get("HOME");
     let _env_set = set("AIC_UNIT_TMP", "1");
-    let _env_rm = remove("AIC_UNIT_TMP");
+    let _env_rm = env.remove("AIC_UNIT_TMP");
     let _cwd = cwd();
     let _set_cwd = set_cwd(".");
-    let _join = join("foo", "bar.txt");
-    let _base = basename(_join);
-    let _dir = dirname(_join);
-    let _ext = extension(_join);
-    let _abs = is_abs(_join);
+    let _path_join = path.join("foo", "bar.txt");
+    let _header_map: Map[String, String] = map.new_map();
+    let _header_map = map.insert(_header_map, "accept", "application/json");
+    let _header_value = map.get(_header_map, "accept");
+    let _header_has = map.contains_key(_header_map, "accept");
+    let _header_keys = map.keys(_header_map);
+    let _header_values = map.values(_header_map);
+    let _header_entries = map.entries(_header_map);
+    let _header_size = map.size(_header_map);
+    let _header_removed = map.remove(_header_map, "accept");
+    let _base = basename(_path_join);
+    let _dir = dirname(_path_join);
+    let _ext = extension(_path_join);
+    let _abs = is_abs(_path_join);
     let _spawn = spawn("echo smoke");
     let _wait = wait(1);
     let _kill = kill(1);
@@ -1711,6 +1936,26 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
     let _close_mutex = close_mutex(IntMutex { handle: 1 });
     let _n = len("abc");
+    let _contains = contains("abc", "b");
+    let _starts = starts_with("abc", "a");
+    let _ends = ends_with("abc", "c");
+    let _index = index_of("abc", "b");
+    let _last = last_index_of("abcb", "b");
+    let _sub = substring("abc", 0, 2);
+    let _char = char_at("abc", 1);
+    let _parts = split("GET /api/users HTTP/1.1", " ");
+    let _first = split_first("Content-Type: application/json", ":");
+    let _trim = trim("  hi  ");
+    let _trim_start = trim_start("  hi");
+    let _trim_end = trim_end("hi  ");
+    let _upper = to_upper("abc");
+    let _lower = to_lower("ABC");
+    let _replace = replace("a-b-c", "-", "/");
+    let _repeat = repeat("ab", 2);
+    let _parse = parse_int("42");
+    let _int_s = int_to_string(42);
+    let _bool_s = bool_to_string(true);
+    let _joined_parts = string.join(_parts, "|");
     print_int(1);
     0
 }
@@ -2048,7 +2293,7 @@ import app.math;
 import app.more;
 
 fn main() -> Int {
-    0
+    add(1, 2)
 }
 "#,
     )

@@ -1,0 +1,114 @@
+module std.map;
+
+import std.option;
+import std.vec;
+
+struct Map[K, V] {
+    handle: Int,
+}
+
+struct MapEntry[K, V] {
+    key: K,
+    value: V,
+}
+
+fn aic_map_new_intrinsic[K, V]() -> Map[K, V] {
+    Map {
+        handle: 0,
+    }
+}
+
+fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
+    let _key = key;
+    let _value = value;
+    m
+}
+
+fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V] {
+    let _m = m;
+    let _key = key;
+    let out: Option[V] = None();
+    out
+}
+
+fn aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool {
+    let _m = m;
+    let _key = key;
+    false
+}
+
+fn aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V] {
+    let _key = key;
+    m
+}
+
+fn aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int {
+    let _m = m;
+    0
+}
+
+fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K] {
+    let _m = m;
+    let out: Vec[K] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+    out
+}
+
+fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V] {
+    let _m = m;
+    let out: Vec[V] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+    out
+}
+
+fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
+    let _m = m;
+    let out: Vec[MapEntry[K, V]] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+    out
+}
+
+fn new_map[K, V]() -> Map[K, V] {
+    aic_map_new_intrinsic()
+}
+
+fn insert[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
+    aic_map_insert_intrinsic(m, key, value)
+}
+
+fn get[K, V](m: Map[K, V], key: K) -> Option[V] {
+    aic_map_get_intrinsic(m, key)
+}
+
+fn contains_key[K, V](m: Map[K, V], key: K) -> Bool {
+    aic_map_contains_key_intrinsic(m, key)
+}
+
+fn remove[K, V](m: Map[K, V], key: K) -> Map[K, V] {
+    aic_map_remove_intrinsic(m, key)
+}
+
+fn size[K, V](m: Map[K, V]) -> Int {
+    aic_map_size_intrinsic(m)
+}
+
+fn keys[K, V](m: Map[K, V]) -> Vec[K] {
+    aic_map_keys_intrinsic(m)
+}
+
+fn values[K, V](m: Map[K, V]) -> Vec[V] {
+    aic_map_values_intrinsic(m)
+}
+
+fn entries[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
+    aic_map_entries_intrinsic(m)
+}

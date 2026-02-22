@@ -39,6 +39,7 @@ struct Checker<'a> {
     diagnostics: Vec<Diagnostic>,
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
+    module_functions: BTreeMap<(String, String), FnSig>,
     generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
     call_graph: BTreeMap<String, Vec<CallEdge>>,
@@ -158,6 +159,7 @@ impl<'a> Checker<'a> {
         }
 
         let mut functions = BTreeMap::new();
+        let mut module_functions = BTreeMap::new();
         let mut generic_arity = BTreeMap::new();
         generic_arity.insert("Option".to_string(), 1);
         generic_arity.insert("Result".to_string(), 2);
@@ -172,6 +174,30 @@ impl<'a> Checker<'a> {
             }
             functions.insert(
                 name.clone(),
+                FnSig {
+                    is_async: info.is_async,
+                    is_unsafe: info.is_unsafe,
+                    is_extern: info.is_extern,
+                    extern_abi: info.extern_abi.clone(),
+                    params,
+                    ret: types
+                        .get(&info.ret_type)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string()),
+                    effects: info.effects.clone(),
+                    generic_params: info.generics.clone(),
+                    generic_bounds: info.generic_bounds.clone(),
+                },
+            );
+        }
+
+        for ((module, name), info) in &resolution.module_function_infos {
+            let mut params = Vec::new();
+            for ty in &info.param_types {
+                params.push(types.get(ty).cloned().unwrap_or_else(|| "<?>".to_string()));
+            }
+            module_functions.insert(
+                (module.clone(), name.clone()),
                 FnSig {
                     is_async: info.is_async,
                     is_unsafe: info.is_unsafe,
@@ -261,6 +287,7 @@ impl<'a> Checker<'a> {
             diagnostics: Vec::new(),
             types,
             functions,
+            module_functions,
             generic_arity,
             effect_usage: BTreeMap::new(),
             call_graph: BTreeMap::new(),
@@ -1407,8 +1434,6 @@ impl<'a> Checker<'a> {
                     span,
                     ..
                 } => {
-                    let expr_ty =
-                        self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                     if let Some(ann) = ty {
                         let ann_ty = self
                             .types
@@ -1416,6 +1441,14 @@ impl<'a> Checker<'a> {
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string());
                         self.check_generic_arity(&ann_ty, *span);
+                        let expr_ty = self.check_expr_with_expected(
+                            expr,
+                            &mut scope,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            Some(&ann_ty),
+                        );
                         if !type_compatible(&ann_ty, &expr_ty) {
                             self.diagnostics.push(
                                 Diagnostic::error(
@@ -1432,6 +1465,8 @@ impl<'a> Checker<'a> {
                         }
                         scope.insert(name.clone(), ann_ty);
                     } else {
+                        let expr_ty =
+                            self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                         if contains_unresolved_type(&expr_ty) {
                             self.diagnostics.push(
                                 Diagnostic::error(
@@ -1481,7 +1516,14 @@ impl<'a> Checker<'a> {
                 }
                 ir::Stmt::Return { expr, span } => {
                     let ty = if let Some(expr) = expr {
-                        self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode)
+                        self.check_expr_with_expected(
+                            expr,
+                            &mut scope,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            Some(ret_type),
+                        )
                     } else {
                         "()".to_string()
                     };
@@ -1512,7 +1554,14 @@ impl<'a> Checker<'a> {
         }
 
         if let Some(tail) = &block.tail {
-            self.check_expr(tail, &mut scope, allowed_effects, ctx, contract_mode)
+            self.check_expr_with_expected(
+                tail,
+                &mut scope,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                Some(ret_type),
+            )
         } else {
             "()".to_string()
         }
@@ -1525,6 +1574,18 @@ impl<'a> Checker<'a> {
         allowed_effects: &BTreeSet<String>,
         ctx: &mut ExprContext,
         contract_mode: bool,
+    ) -> String {
+        self.check_expr_with_expected(expr, locals, allowed_effects, ctx, contract_mode, None)
+    }
+
+    fn check_expr_with_expected(
+        &mut self,
+        expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
     ) -> String {
         match &expr.kind {
             ir::ExprKind::Int(_) => "Int".to_string(),
@@ -1689,25 +1750,6 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
-                    if self
-                        .resolution
-                        .function_modules
-                        .get(&name)
-                        .map(|mods| mods.len() > 1)
-                        .unwrap_or(false)
-                    {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E2104",
-                                format!("ambiguous callable '{}' exported by multiple modules", name),
-                                self.file,
-                                callee.span,
-                            )
-                            .with_help("rename colliding functions or import a single module exporting that name"),
-                        );
-                        return "<?>".to_string();
-                    }
-
                     resolved_module = Some(module.clone());
                     name.clone()
                 } else {
@@ -1765,7 +1807,16 @@ impl<'a> Checker<'a> {
                     name.clone()
                 };
 
-                if let Some(sig) = self.functions.get(&resolved_name).cloned() {
+                let sig = if let Some(module_name) = resolved_module.as_ref() {
+                    self.module_functions
+                        .get(&(module_name.clone(), resolved_name.clone()))
+                        .cloned()
+                        .or_else(|| self.functions.get(&resolved_name).cloned())
+                } else {
+                    self.functions.get(&resolved_name).cloned()
+                };
+
+                if let Some(sig) = sig {
                     if let Some(module_name) = resolved_module.as_deref() {
                         if let Some(entry) = find_deprecated_api(module_name, &resolved_name) {
                             self.diagnostics.push(
@@ -1883,6 +1934,27 @@ impl<'a> Checker<'a> {
                                 self.file,
                                 args[idx].span,
                             ));
+                        }
+                    }
+
+                    if !sig.generic_params.is_empty() {
+                        if let Some(expected) = expected_ty {
+                            let expected_ret_hint =
+                                if sig.is_async && base_type_name(expected) == "Async" {
+                                    extract_generic_args(expected)
+                                        .and_then(|args| args.into_iter().next())
+                                        .unwrap_or_else(|| expected.to_string())
+                                } else {
+                                    expected.to_string()
+                                };
+                            if !contains_unresolved_type(&expected_ret_hint) {
+                                infer_generic_bindings(
+                                    &sig.ret,
+                                    &expected_ret_hint,
+                                    &generic_set,
+                                    &mut generic_bindings,
+                                );
+                            }
                         }
                     }
 
