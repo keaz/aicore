@@ -1,0 +1,11 @@
+trait A[T];
+
+trait B[T];
+
+impl A[Int];
+
+impl B[Int];
+
+fn pick[T: A + B](x: T, y: T) -> T {
+    x
+}

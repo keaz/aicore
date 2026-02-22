@@ -148,7 +148,7 @@ impl<'a> Parser<'a> {
     ) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
-        let generics = self.parse_generics();
+        let mut generics = self.parse_generics();
         self.expect(
             |k| matches!(k, TokenKind::LParen),
             "E1005",
@@ -161,6 +161,7 @@ impl<'a> Parser<'a> {
             "expected '->' with function return type",
         )?;
         let ret_type = self.parse_type()?;
+        self.parse_where_clause(&mut generics);
         let effects = if self.at_kind(|k| matches!(k, TokenKind::KwEffects)) {
             self.bump();
             self.expect(
@@ -616,6 +617,73 @@ impl<'a> Parser<'a> {
             "expected ']' after generic parameters",
         );
         params
+    }
+
+    fn parse_where_clause(&mut self, generics: &mut [GenericParam]) {
+        if !self.at_kind(|k| matches!(k, TokenKind::KwWhere)) {
+            return;
+        }
+        self.bump();
+
+        loop {
+            let Some((generic_name, generic_span)) =
+                self.expect_ident("E1020", "expected generic parameter in where clause")
+            else {
+                break;
+            };
+            if self
+                .expect(
+                    |k| matches!(k, TokenKind::Colon),
+                    "E1023",
+                    "expected ':' after generic parameter in where clause",
+                )
+                .is_none()
+            {
+                break;
+            }
+
+            let mut parsed_bounds = Vec::new();
+            loop {
+                let Some((bound, _)) =
+                    self.expect_ident("E1059", "expected trait bound in where clause")
+                else {
+                    break;
+                };
+                parsed_bounds.push(bound);
+                if self.at_kind(|k| matches!(k, TokenKind::Plus)) {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+
+            if let Some(param) = generics.iter_mut().find(|g| g.name == generic_name) {
+                for bound in parsed_bounds {
+                    if !param.bounds.iter().any(|existing| existing == &bound) {
+                        param.bounds.push(bound);
+                    }
+                }
+            } else {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1259",
+                        format!(
+                            "where clause references unknown generic parameter '{}'",
+                            generic_name
+                        ),
+                        self.file,
+                        generic_span,
+                    )
+                    .with_help("declare the generic parameter in the function signature"),
+                );
+            }
+
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+                continue;
+            }
+            break;
+        }
     }
 
     fn parse_params(&mut self) -> Option<Vec<Param>> {
@@ -1423,8 +1491,7 @@ impl<'a> Parser<'a> {
     fn parse_for_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // for
-        let (binding, _) =
-            self.expect_ident("E1031", "expected loop binding name after `for`")?;
+        let (binding, _) = self.expect_ident("E1031", "expected loop binding name after `for`")?;
         self.expect(
             |k| matches!(k, TokenKind::KwIn),
             "E1041",
@@ -1573,7 +1640,13 @@ impl<'a> Parser<'a> {
         stmts
     }
 
-    fn desugar_for_vec(&mut self, binding: String, iterable: Expr, body: Block, start: usize) -> Expr {
+    fn desugar_for_vec(
+        &mut self,
+        binding: String,
+        iterable: Expr,
+        body: Block,
+        start: usize,
+    ) -> Expr {
         let id = self.next_for_id();
         let span = Span::new(start, body.span.end);
         let iter_name = self.make_for_name("iter", id);
@@ -2006,9 +2079,9 @@ impl<'a> Parser<'a> {
                 self.bump();
                 break;
             }
-            if self.at_kind(|k| {
-                matches!(k, TokenKind::KwLet | TokenKind::KwReturn | TokenKind::KwFor)
-            }) {
+            if self
+                .at_kind(|k| matches!(k, TokenKind::KwLet | TokenKind::KwReturn | TokenKind::KwFor))
+            {
                 break;
             }
             self.bump();
@@ -2407,6 +2480,31 @@ fn pick[T: Order](a: T, b: T) -> T {
         assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
         let program = program.expect("program");
         assert_eq!(program.items.len(), 3);
+    }
+
+    #[test]
+    fn parses_where_clause_with_multiple_bounds() {
+        let src = r#"
+trait A[T];
+trait B[T];
+
+fn pick[T](x: T) -> T where T: A + B {
+    x
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[2] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert_eq!(function.generics.len(), 1);
+        assert_eq!(function.generics[0].name, "T");
+        assert_eq!(
+            function.generics[0].bounds,
+            vec!["A".to_string(), "B".to_string()]
+        );
     }
 
     #[test]

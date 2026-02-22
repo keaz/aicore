@@ -594,10 +594,17 @@ fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendered
     if loop_body.stmts.len() != 1 || loop_body.tail.is_some() {
         return None;
     }
-    let ir::Stmt::Expr { expr: match_expr, .. } = &loop_body.stmts[0] else {
+    let ir::Stmt::Expr {
+        expr: match_expr, ..
+    } = &loop_body.stmts[0]
+    else {
         return None;
     };
-    let ir::ExprKind::Match { expr: scrutinee, arms } = &match_expr.kind else {
+    let ir::ExprKind::Match {
+        expr: scrutinee,
+        arms,
+    } = &match_expr.kind
+    else {
         return None;
     };
     if arms.len() != 2 {
@@ -718,7 +725,10 @@ fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Render
         return None;
     }
     if else_block.stmts.len() != 0
-        || else_block.tail.as_ref().is_none_or(|tail| !is_break_none_expr(tail))
+        || else_block
+            .tail
+            .as_ref()
+            .is_none_or(|tail| !is_break_none_expr(tail))
     {
         return None;
     }

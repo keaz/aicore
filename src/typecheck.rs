@@ -1634,6 +1634,7 @@ impl<'a> Checker<'a> {
         contract_mode: bool,
     ) -> String {
         let mut scope = locals.clone();
+        let mut pending_unresolved_lets: Vec<(String, crate::span::Span)> = Vec::new();
 
         for stmt in &block.stmts {
             match stmt {
@@ -1678,18 +1679,7 @@ impl<'a> Checker<'a> {
                         let expr_ty =
                             self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                         if contains_unresolved_type(&expr_ty) {
-                            self.diagnostics.push(
-                                Diagnostic::error(
-                                    "E1204",
-                                    format!(
-                                        "cannot infer concrete type for let binding '{}' (inferred '{}')",
-                                        name, expr_ty
-                                    ),
-                                    self.file,
-                                    *span,
-                                )
-                                .with_help("add an explicit type annotation on the binding"),
-                            );
+                            pending_unresolved_lets.push((name.clone(), *span));
                         }
                         scope.insert(name.clone(), expr_ty);
                     }
@@ -1763,7 +1753,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        if let Some(tail) = &block.tail {
+        let result_ty = if let Some(tail) = &block.tail {
             self.check_expr_with_expected(
                 tail,
                 &mut scope,
@@ -1774,7 +1764,28 @@ impl<'a> Checker<'a> {
             )
         } else {
             "()".to_string()
+        };
+
+        for (name, span) in pending_unresolved_lets {
+            if let Some(ty) = scope.get(&name) {
+                if contains_unresolved_type(ty) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1204",
+                            format!(
+                                "cannot infer concrete type for let binding '{}' (inferred '{}')",
+                                name, ty
+                            ),
+                            self.file,
+                            span,
+                        )
+                        .with_help("add an explicit type annotation on the binding"),
+                    );
+                }
+            }
         }
+
+        result_ty
     }
 
     fn check_expr(
@@ -1804,8 +1815,22 @@ impl<'a> Checker<'a> {
             ir::ExprKind::String(_) => "String".to_string(),
             ir::ExprKind::Unit => "()".to_string(),
             ir::ExprKind::Var(name) => {
-                if let Some(ty) = locals.get(name) {
-                    return ty.clone();
+                if let Some(local_ty) = locals.get(name).cloned() {
+                    if let Some(expected) = expected_ty {
+                        let expected_norm = self.normalize_type(expected);
+                        if contains_unresolved_type(&local_ty)
+                            && !contains_unresolved_type(&expected_norm)
+                            && !contains_symbolic_generic_type(&expected_norm)
+                            && self.types_compatible(&expected_norm, &local_ty)
+                        {
+                            let refined = self.merge_compatible_types(&local_ty, &expected_norm);
+                            if !contains_unresolved_type(&refined) {
+                                locals.insert(name.clone(), refined.clone());
+                                return refined;
+                            }
+                        }
+                    }
+                    return local_ty;
                 }
                 if let Some(ty) = self.const_types.get(name) {
                     return ty.clone();
@@ -2179,12 +2204,22 @@ impl<'a> Checker<'a> {
                         );
                     }
 
-                    let arg_types = args
-                        .iter()
-                        .map(|arg| {
+                    let mut arg_types = Vec::new();
+                    for (idx, arg) in args.iter().enumerate() {
+                        let arg_ty = if let Some(expected_hint) = sig.params.get(idx) {
+                            self.check_expr_with_expected(
+                                arg,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                                Some(expected_hint),
+                            )
+                        } else {
                             self.check_expr(arg, locals, allowed_effects, ctx, contract_mode)
-                        })
-                        .collect::<Vec<_>>();
+                        };
+                        arg_types.push(arg_ty);
+                    }
 
                     if args.len() != sig.params.len() {
                         self.diagnostics.push(Diagnostic::error(
@@ -2262,7 +2297,7 @@ impl<'a> Checker<'a> {
                             .filter(|g| !generic_bindings.contains_key(*g))
                             .cloned()
                             .collect::<Vec<_>>();
-                        if !unresolved.is_empty() {
+                        if !unresolved.is_empty() && expected_ty.is_some() {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1212",
@@ -2325,7 +2360,27 @@ impl<'a> Checker<'a> {
                         let Some(expected) = instantiated_params.get(idx) else {
                             continue;
                         };
-                        if !self.types_compatible(expected, arg_ty) {
+                        let mut observed_ty = arg_ty.clone();
+                        if let ir::ExprKind::Var(name) = &args[idx].kind {
+                            if let Some(local_ty) = locals.get(name).cloned() {
+                                let expected_norm = self.normalize_type(expected);
+                                if contains_unresolved_type(&local_ty)
+                                    && !contains_unresolved_type(&expected_norm)
+                                    && !contains_symbolic_generic_type(&expected_norm)
+                                    && self.types_compatible(&expected_norm, &local_ty)
+                                {
+                                    let refined =
+                                        self.merge_compatible_types(&local_ty, &expected_norm);
+                                    if !contains_unresolved_type(&refined) {
+                                        locals.insert(name.clone(), refined.clone());
+                                        observed_ty = refined;
+                                    }
+                                } else {
+                                    observed_ty = local_ty;
+                                }
+                            }
+                        }
+                        if !self.types_compatible(expected, &observed_ty) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1214",
                                 format!(
@@ -2333,7 +2388,7 @@ impl<'a> Checker<'a> {
                                     idx + 1,
                                     rendered_path,
                                     expected,
-                                    arg_ty
+                                    observed_ty
                                 ),
                                 self.file,
                                 args[idx].span,
@@ -2391,18 +2446,20 @@ impl<'a> Checker<'a> {
                         ret_ty = format!("Async[{ret_ty}]");
                     }
                     if !sig.generic_params.is_empty() && contains_unresolved_type(&ret_ty) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E1212",
-                                format!(
-                                    "cannot fully resolve return type for generic call '{}': inferred '{}'",
-                                    rendered_path, ret_ty
-                                ),
-                                self.file,
-                                expr.span,
-                            )
-                            .with_help("add explicit type annotations to constrain generic inference"),
-                        );
+                        if expected_ty.is_some() {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1212",
+                                    format!(
+                                        "cannot fully resolve return type for generic call '{}': inferred '{}'",
+                                        rendered_path, ret_ty
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("add explicit type annotations to constrain generic inference"),
+                            );
+                        }
                     }
                     if !sig.generic_params.is_empty() {
                         let applied = sig
@@ -2601,11 +2658,17 @@ impl<'a> Checker<'a> {
                 let mut closure_locals = locals.clone();
                 let mut closure_param_tys = Vec::new();
                 for (_idx, param) in params.iter().enumerate() {
+                    let inferred_expected_param = expected_fn
+                        .as_ref()
+                        .and_then(|(params, _)| params.get(_idx))
+                        .cloned();
                     let param_ty = if let Some(ty) = param.ty {
                         self.types
                             .get(&ty)
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string())
+                    } else if let Some(expected_param) = inferred_expected_param {
+                        expected_param
                     } else {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -2614,7 +2677,9 @@ impl<'a> Checker<'a> {
                                 self.file,
                                 param.span,
                             )
-                            .with_help("add an explicit closure parameter type"),
+                            .with_help(
+                                "add an explicit closure parameter type or pass the closure where an expected Fn type is known",
+                            ),
                         );
                         "<?>".to_string()
                     };
@@ -2649,6 +2714,9 @@ impl<'a> Checker<'a> {
                         .zip(closure_param_tys.iter())
                         .enumerate()
                     {
+                        if is_symbolic_generic_name(expected_param) {
+                            continue;
+                        }
                         if !self.types_compatible(expected_param, actual_param) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1285",
@@ -2663,7 +2731,9 @@ impl<'a> Checker<'a> {
                             ));
                         }
                     }
-                    if !self.types_compatible(expected_ret, &declared_ret) {
+                    if !is_symbolic_generic_name(expected_ret)
+                        && !self.types_compatible(expected_ret, &declared_ret)
+                    {
                         self.diagnostics.push(Diagnostic::error(
                             "E1286",
                             format!(
@@ -4453,6 +4523,23 @@ fn contains_unresolved_type(ty: &str) -> bool {
     ty.contains("<?>")
 }
 
+fn is_symbolic_generic_name(ty: &str) -> bool {
+    if ty.len() > 4 || ty.contains('[') || ty.contains(']') || ty.contains(',') || ty.contains('.')
+    {
+        return false;
+    }
+    ty.chars().all(|ch| ch.is_ascii_uppercase())
+}
+
+fn contains_symbolic_generic_type(ty: &str) -> bool {
+    if is_symbolic_generic_name(ty) {
+        return true;
+    }
+    extract_generic_args(ty)
+        .map(|args| args.iter().any(|arg| contains_symbolic_generic_type(arg)))
+        .unwrap_or(false)
+}
+
 fn infer_generic_bindings(
     expected: &str,
     found: &str,
@@ -4460,8 +4547,19 @@ fn infer_generic_bindings(
     bindings: &mut BTreeMap<String, String>,
 ) -> bool {
     if generic_params.contains(expected) {
-        if let Some(bound) = bindings.get(expected) {
-            return type_compatible(bound, found);
+        if let Some(bound) = bindings.get(expected).cloned() {
+            if contains_unresolved_type(&bound) && !contains_unresolved_type(found) {
+                bindings.insert(expected.to_string(), found.to_string());
+                return true;
+            }
+            if contains_unresolved_type(found) && !contains_unresolved_type(&bound) {
+                return true;
+            }
+            if type_compatible(&bound, found) {
+                bindings.insert(expected.to_string(), merge_types(&bound, found));
+                return true;
+            }
+            return false;
         }
         bindings.insert(expected.to_string(), found.to_string());
         return true;

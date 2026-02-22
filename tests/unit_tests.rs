@@ -200,6 +200,51 @@ fn demo() -> Bool {
 }
 
 #[test]
+fn unit_where_clause_multiple_bounds_are_enforced() {
+    let src = r#"
+trait A[T];
+trait B[T];
+impl A[Int];
+impl B[Int];
+
+fn accept[T](x: T) -> T where T: A + B {
+    x
+}
+
+fn main() -> Int {
+    accept(41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_where_clause_missing_bound_reports_e1258() {
+    let src = r#"
+trait A[T];
+trait B[T];
+impl A[Int];
+
+fn accept[T](x: T) -> T where T: A + B {
+    x
+}
+
+fn main() -> Int {
+    accept(41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1258"));
+}
+
+#[test]
 fn unit_async_call_requires_await_for_value_use() {
     let src = r#"
 async fn ping() -> Int {
@@ -287,6 +332,24 @@ fn main() -> Int {
         "diags={:#?}",
         out.diagnostics
     );
+}
+
+#[test]
+fn unit_closure_parameter_is_inferred_from_fn_context() {
+    let src = r#"
+fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+fn main() -> Int {
+    apply(|x| -> Int { x + 1 }, 41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
 }
 
 #[test]
@@ -3196,6 +3259,31 @@ fn main() -> Int {
     assert!(
         out.diagnostics.is_empty(),
         "type diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_generic_inference_refines_from_first_use() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.vec;
+
+fn main() -> Int {
+    let values = vec.new_vec();
+    let values_next = vec.push(values, 41);
+    vec.vec_len(values_next)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
         out.diagnostics
     );
 }

@@ -122,3 +122,8 @@ fn golden_case18_type_alias_const() {
 fn golden_case19_for_in_loop() {
     run_golden_case("case19_for_in_loop.aic");
 }
+
+#[test]
+fn golden_case20_where_bounds() {
+    run_golden_case("case20_where_bounds.aic");
+}
