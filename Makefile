@@ -152,6 +152,8 @@ docs-check:
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
 	@test -f docs/release-security-ops.md
+	@test -f docs/release/lts-policy.md
+	@test -f docs/release/compatibility-matrix.json
 	@test -f docs/security-ops/migration.md
 	@test -f docs/security-threat-model.md
 	@test -f docs/compatibility-migration-policy.md
@@ -161,6 +163,7 @@ docs-check:
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/build-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
+	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md
@@ -179,6 +182,7 @@ docs-check:
 	@grep -q "aic contract" README.md
 	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
 	@cargo run --quiet --bin aic -- release policy --check >/dev/null
+	@cargo run --quiet --bin aic -- release lts --check >/dev/null
 
 no-null-lint:
 	@if rg -n --glob '*.aic' --glob '!examples/ops/migration_v1_to_v2/**' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \

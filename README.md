@@ -42,6 +42,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Security audit + threat model checks | Implemented (`aic release security-audit`) |
 | Sandboxed run profiles | Implemented (`aic run --sandbox`) |
 | Compatibility + migration policy check | Implemented (`aic release policy --check`) |
+| LTS support policy + compatibility matrix gate | Implemented (`aic release lts --check`) |
 | Guided upgrade migrations with risk reports | Implemented (`aic migrate`) |
 | Complete IO runtime agent playbooks | Implemented (`docs/io-runtime/`) |
 
@@ -101,10 +102,11 @@ This installs:
 - `Release` (`.github/workflows/release.yml`):
   - runs on tags `v*`
   - builds release binaries on Linux/macOS/Windows
+  - enforces release policy + LTS policy gates before packaging
   - uploads archives + checksums and publishes a GitHub Release
 - `Security` (`.github/workflows/security.yml`):
   - runs security audit checks on push/PR/schedule
-  - enforces threat-model and workflow hardening checks
+  - enforces threat-model, workflow hardening, and LTS policy checks
 
 ## CLI
 
@@ -136,6 +138,7 @@ cargo run -- contract --json
 cargo run -- release manifest --output target/release/repro-manifest.json
 cargo run -- release sbom --output target/release/sbom.json
 cargo run -- release policy --check
+cargo run -- release lts --check
 cargo run -- run examples/option_match.aic
 ```
 

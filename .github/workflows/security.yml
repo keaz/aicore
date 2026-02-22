@@ -35,5 +35,8 @@ jobs:
       - name: Run compatibility policy check
         run: cargo run --quiet --bin aic -- release policy --check
 
+      - name: Run LTS policy check
+        run: cargo run --quiet --bin aic -- release lts --check
+
       - name: Run reproducibility manifest gate
         run: make repro-check

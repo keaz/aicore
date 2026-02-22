@@ -12,6 +12,7 @@ pub const REPRO_MANIFEST_VERSION: u32 = 1;
 pub const SBOM_FORMAT: &str = "aicore-sbom-v1";
 pub const PROVENANCE_FORMAT: &str = "aicore-provenance-v1";
 pub const COMPATIBILITY_POLICY_VERSION: &str = "1.0";
+pub const LTS_POLICY_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReproManifest {
@@ -72,6 +73,23 @@ pub struct CompatibilityPolicy {
     pub migration_commands: Vec<String>,
     pub required_docs: Vec<String>,
     pub required_workflows: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LtsPolicy {
+    pub version: String,
+    pub branches: Vec<LtsBranchPolicy>,
+    pub compatibility_gates: Vec<String>,
+    pub required_docs: Vec<String>,
+    pub required_workflows: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LtsBranchPolicy {
+    pub name: String,
+    pub channel: String,
+    pub support_window_months: u32,
+    pub security_sla_days: BTreeMap<String, u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -448,6 +466,7 @@ pub fn compatibility_policy() -> CompatibilityPolicy {
             "aic ir-migrate <legacy-ir.json>".to_string(),
             "aic std-compat --check --baseline docs/std-api-baseline.json".to_string(),
             "aic release policy --check".to_string(),
+            "aic release lts --check".to_string(),
         ],
         required_docs: vec![
             "docs/spec.md".to_string(),
@@ -456,6 +475,8 @@ pub fn compatibility_policy() -> CompatibilityPolicy {
             "docs/security-threat-model.md".to_string(),
             "docs/release-security-ops.md".to_string(),
             "docs/release/matrix.md".to_string(),
+            "docs/release/lts-policy.md".to_string(),
+            "docs/release/compatibility-matrix.json".to_string(),
         ],
         required_workflows: vec![
             ".github/workflows/ci.yml".to_string(),
@@ -486,6 +507,206 @@ pub fn check_compatibility_policy(root: &Path, policy: &CompatibilityPolicy) -> 
 
     if policy.cli_contract_version.trim().is_empty() {
         problems.push("empty cli_contract_version".to_string());
+    }
+
+    problems.sort();
+    problems.dedup();
+    problems
+}
+
+pub fn lts_policy() -> LtsPolicy {
+    let main_sla = BTreeMap::from([
+        ("critical".to_string(), 2),
+        ("high".to_string(), 7),
+        ("medium".to_string(), 30),
+    ]);
+    let stable_sla = BTreeMap::from([
+        ("critical".to_string(), 2),
+        ("high".to_string(), 7),
+        ("medium".to_string(), 30),
+    ]);
+
+    LtsPolicy {
+        version: LTS_POLICY_VERSION.to_string(),
+        branches: vec![
+            LtsBranchPolicy {
+                name: "main".to_string(),
+                channel: "active".to_string(),
+                support_window_months: 12,
+                security_sla_days: main_sla,
+            },
+            LtsBranchPolicy {
+                name: "release/0.1".to_string(),
+                channel: "lts".to_string(),
+                support_window_months: 18,
+                security_sla_days: stable_sla,
+            },
+        ],
+        compatibility_gates: vec![
+            "cargo run --quiet --bin aic -- release policy --check".to_string(),
+            "cargo run --quiet --bin aic -- release lts --check".to_string(),
+            "cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json"
+                .to_string(),
+        ],
+        required_docs: vec![
+            "docs/release/lts-policy.md".to_string(),
+            "docs/release/compatibility-matrix.json".to_string(),
+        ],
+        required_workflows: vec![
+            ".github/workflows/ci.yml".to_string(),
+            ".github/workflows/release.yml".to_string(),
+            ".github/workflows/security.yml".to_string(),
+        ],
+    }
+}
+
+pub fn check_lts_policy(root: &Path, policy: &LtsPolicy) -> Vec<String> {
+    let mut problems = Vec::new();
+
+    if policy.version.trim().is_empty() {
+        problems.push("empty lts policy version".to_string());
+    }
+
+    if policy.branches.is_empty() {
+        problems.push("lts policy has no branches".to_string());
+    }
+
+    for branch in &policy.branches {
+        if branch.name.trim().is_empty() {
+            problems.push("lts branch with empty name".to_string());
+        }
+        if branch.channel.trim().is_empty() {
+            problems.push(format!("lts branch `{}` has empty channel", branch.name));
+        }
+        if branch.support_window_months == 0 {
+            problems.push(format!(
+                "lts branch `{}` has zero support_window_months",
+                branch.name
+            ));
+        }
+
+        let critical = branch
+            .security_sla_days
+            .get("critical")
+            .copied()
+            .unwrap_or(0);
+        let high = branch.security_sla_days.get("high").copied().unwrap_or(0);
+        if critical == 0 {
+            problems.push(format!(
+                "lts branch `{}` missing critical security SLA days",
+                branch.name
+            ));
+        }
+        if high == 0 {
+            problems.push(format!(
+                "lts branch `{}` missing high security SLA days",
+                branch.name
+            ));
+        }
+        if critical > 7 {
+            problems.push(format!(
+                "lts branch `{}` critical security SLA exceeds 7 days ({})",
+                branch.name, critical
+            ));
+        }
+        if high > 14 {
+            problems.push(format!(
+                "lts branch `{}` high security SLA exceeds 14 days ({})",
+                branch.name, high
+            ));
+        }
+    }
+
+    for doc in &policy.required_docs {
+        if !root.join(doc).is_file() {
+            problems.push(format!("missing required lts doc: {}", doc));
+        }
+    }
+
+    for workflow in &policy.required_workflows {
+        if !root.join(workflow).is_file() {
+            problems.push(format!("missing required lts workflow: {}", workflow));
+        }
+    }
+
+    let matrix_path = root.join("docs/release/compatibility-matrix.json");
+    if matrix_path.is_file() {
+        match fs::read_to_string(&matrix_path) {
+            Ok(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+                Ok(parsed) => {
+                    if parsed
+                        .get("schema_version")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                        != 1
+                    {
+                        problems.push("compatibility matrix schema_version must be 1".to_string());
+                    }
+                    let names = parsed
+                        .get("branches")
+                        .and_then(|v| v.as_array())
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter_map(|item| {
+                                    item.get("name")
+                                        .and_then(|value| value.as_str())
+                                        .map(|value| value.to_string())
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    for expected in &policy.branches {
+                        if !names.contains(&expected.name) {
+                            problems.push(format!(
+                                "compatibility matrix missing lts branch `{}`",
+                                expected.name
+                            ));
+                        }
+                    }
+                }
+                Err(err) => problems.push(format!(
+                    "compatibility matrix is invalid JSON ({}): {}",
+                    matrix_path.display(),
+                    err
+                )),
+            },
+            Err(err) => problems.push(format!(
+                "failed to read compatibility matrix {}: {}",
+                matrix_path.display(),
+                err
+            )),
+        }
+    }
+
+    for workflow in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/security.yml",
+    ] {
+        let path = root.join(workflow);
+        if !path.is_file() {
+            continue;
+        }
+        match fs::read_to_string(&path) {
+            Ok(raw) => {
+                if !raw.contains("release lts --check") {
+                    problems.push(format!(
+                        "workflow {} missing `release lts --check` gate",
+                        workflow
+                    ));
+                }
+                if workflow.ends_with("security.yml") && !raw.contains("cron:") {
+                    problems.push(
+                        "security workflow missing scheduled cadence for SLA enforcement"
+                            .to_string(),
+                    );
+                }
+            }
+            Err(err) => {
+                problems.push(format!("failed to read workflow {}: {}", workflow, err));
+            }
+        }
     }
 
     problems.sort();
@@ -1139,9 +1360,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        check_compatibility_policy, compatibility_policy, generate_provenance,
-        generate_repro_manifest, has_unsafe_keyword, read_lockfile_packages, verify_checksum_file,
-        verify_provenance, write_provenance,
+        check_compatibility_policy, check_lts_policy, compatibility_policy, generate_provenance,
+        generate_repro_manifest, has_unsafe_keyword, lts_policy, read_lockfile_packages,
+        verify_checksum_file, verify_provenance, write_provenance,
     };
 
     #[test]
@@ -1224,6 +1445,12 @@ version = "1.0.0"
         fs::write(root.join("docs/security-ops/migration.md"), "# migrate\n").expect("migrate");
         fs::create_dir_all(root.join("docs/release")).expect("release docs");
         fs::write(root.join("docs/release/matrix.md"), "# matrix\n").expect("matrix");
+        fs::write(root.join("docs/release/lts-policy.md"), "# lts\n").expect("lts");
+        fs::write(
+            root.join("docs/release/compatibility-matrix.json"),
+            r#"{"schema_version":1,"branches":[{"name":"main"},{"name":"release/0.1"}]}"#,
+        )
+        .expect("compat matrix");
         fs::write(root.join(".github/workflows/ci.yml"), "name: CI\n").expect("ci");
         fs::write(
             root.join(".github/workflows/release.yml"),
@@ -1238,6 +1465,48 @@ version = "1.0.0"
 
         let policy = compatibility_policy();
         let problems = check_compatibility_policy(root, &policy);
+        assert!(problems.is_empty(), "problems={problems:#?}");
+    }
+
+    #[test]
+    fn lts_policy_references_required_assets_and_gates() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+
+        fs::create_dir_all(root.join("docs/release")).expect("release docs");
+        fs::create_dir_all(root.join(".github/workflows")).expect("workflows");
+        fs::write(root.join("docs/release/lts-policy.md"), "# lts\n").expect("lts");
+        fs::write(
+            root.join("docs/release/compatibility-matrix.json"),
+            r#"{
+  "schema_version": 1,
+  "branches": [
+    { "name": "main", "channel": "active" },
+    { "name": "release/0.1", "channel": "lts" }
+  ]
+}"#,
+        )
+        .expect("compat matrix");
+
+        let gate = "cargo run --quiet --bin aic -- release lts --check";
+        fs::write(
+            root.join(".github/workflows/ci.yml"),
+            format!("steps:\n  - run: {gate}\n"),
+        )
+        .expect("ci");
+        fs::write(
+            root.join(".github/workflows/release.yml"),
+            format!("steps:\n  - run: {gate}\n"),
+        )
+        .expect("release");
+        fs::write(
+            root.join(".github/workflows/security.yml"),
+            format!("schedule:\n  - cron: \"0 6 * * 1\"\nsteps:\n  - run: {gate}\n"),
+        )
+        .expect("security");
+
+        let policy = lts_policy();
+        let problems = check_lts_policy(root, &policy);
         assert!(problems.is_empty(), "problems={problems:#?}");
     }
 

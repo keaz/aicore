@@ -90,6 +90,9 @@ jobs:
       - name: Security audit
         run: make security-audit
 
+      - name: LTS policy gate
+        run: cargo run --quiet --bin aic -- release lts --check
+
       - name: Reproducibility manifest check
         run: make repro-check
 

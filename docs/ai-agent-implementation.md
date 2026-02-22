@@ -561,13 +561,19 @@ Diagnostics:
   - `docs/compatibility-migration-policy.md`
 - Migration runbook:
   - `docs/security-ops/migration.md`
+- LTS docs:
+  - `docs/release/lts-policy.md`
+  - `docs/release/compatibility-matrix.json`
 - CLI:
   - `aic migrate <path> --dry-run --json`
   - `aic migrate <path> --report <file>`
   - `aic release policy --check`
   - `aic release policy --check --json`
+  - `aic release lts --check`
+  - `aic release lts --check --json`
 - Policy model:
   - `CompatibilityPolicy` in `src/release_ops.rs`
+  - `LtsPolicy` in `src/release_ops.rs`
 
 ## Validation Inventory
 

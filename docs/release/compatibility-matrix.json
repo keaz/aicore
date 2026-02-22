@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "description": "AICore release branch compatibility and support matrix",
+  "branches": [
+    {
+      "name": "main",
+      "channel": "active",
+      "support_window_months": 12,
+      "security_sla_days": {
+        "critical": 2,
+        "high": 7,
+        "medium": 30
+      },
+      "targets": [
+        "linux-x64",
+        "macos-x64",
+        "windows-x64"
+      ]
+    },
+    {
+      "name": "release/0.1",
+      "channel": "lts",
+      "support_window_months": 18,
+      "security_sla_days": {
+        "critical": 2,
+        "high": 7,
+        "medium": 30
+      },
+      "targets": [
+        "linux-x64",
+        "macos-x64",
+        "windows-x64"
+      ]
+    }
+  ],
+  "compatibility_gates": [
+    "cargo run --quiet --bin aic -- release policy --check",
+    "cargo run --quiet --bin aic -- release lts --check",
+    "cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json"
+  ]
+}

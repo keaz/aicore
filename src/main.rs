@@ -32,10 +32,10 @@ use aicore::package_workflow::{
 use aicore::parser;
 use aicore::project::init_project;
 use aicore::release_ops::{
-    check_compatibility_policy, compatibility_policy, effective_source_date_epoch,
-    generate_provenance, generate_repro_manifest, generate_sbom, read_provenance,
-    read_repro_manifest, run_security_audit, verify_checksum_file, verify_provenance,
-    verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
+    check_compatibility_policy, check_lts_policy, compatibility_policy,
+    effective_source_date_epoch, generate_provenance, generate_repro_manifest, generate_sbom,
+    lts_policy, read_provenance, read_repro_manifest, run_security_audit, verify_checksum_file,
+    verify_provenance, verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
 };
 use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
@@ -279,6 +279,14 @@ enum ReleaseCommand {
         json: bool,
     },
     Policy {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        check: bool,
+    },
+    Lts {
         #[arg(long, default_value = ".")]
         root: PathBuf,
         #[arg(long)]
@@ -1209,6 +1217,39 @@ fn run_cli() -> anyhow::Result<i32> {
                         println!("compatibility policy check: ok");
                     } else {
                         eprintln!("compatibility policy check failed:");
+                        for problem in &problems {
+                            eprintln!("  - {}", problem);
+                        }
+                    }
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&policy)?);
+                }
+
+                if problems.is_empty() {
+                    EXIT_OK
+                } else {
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::Lts { root, json, check } => {
+                let policy = lts_policy();
+                let problems = if check {
+                    check_lts_policy(&root, &policy)
+                } else {
+                    Vec::new()
+                };
+
+                if json {
+                    let payload = serde_json::json!({
+                        "policy": policy,
+                        "problems": problems,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&payload)?);
+                } else if check {
+                    if problems.is_empty() {
+                        println!("lts policy check: ok");
+                    } else {
+                        eprintln!("lts policy check failed:");
                         for problem in &problems {
                             eprintln!("  - {}", problem);
                         }

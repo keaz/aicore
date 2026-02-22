@@ -9,6 +9,7 @@ This policy defines what AICore treats as compatibility guarantees and how migra
 3. Diagnostic code namespace and semantics
 4. Standard library API baseline (`docs/std-api-baseline.json`)
 5. Release metadata formats (repro manifest, SBOM, provenance)
+6. LTS branch support matrix (`docs/release/lts-policy.md`, `docs/release/compatibility-matrix.json`)
 
 ## Compatibility Rules
 
@@ -45,7 +46,7 @@ This policy defines what AICore treats as compatibility guarantees and how migra
 2. Add/adjust migration tooling (`aic migrate`, `aic ir-migrate`, std compatibility checks, docs).
 3. Add tests for old-to-new behavior.
 4. Update docs and examples.
-5. Pass `aic release policy --check` in CI.
+5. Pass `aic release policy --check` and `aic release lts --check` in CI.
 
 ## Policy Validation
 
@@ -53,6 +54,7 @@ Run:
 
 ```bash
 aic release policy --check
+aic release lts --check
 aic migrate examples/ops/migration_v1_to_v2 --dry-run --json
 ```
 
@@ -60,6 +62,7 @@ JSON output for agents:
 
 ```bash
 aic release policy --check --json
+aic release lts --check --json
 ```
 
 The check verifies required docs/workflows and policy metadata consistency.

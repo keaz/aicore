@@ -195,6 +195,13 @@ fn release_policy_and_security_audit_commands_work() {
     assert_eq!(policy_json["policy"]["version"], "1.0");
     assert!(policy_json["problems"].is_array());
 
+    let lts = run_aic(&["release", "lts", "--check", "--json"]);
+    assert_eq!(lts.status.code(), Some(0));
+    let lts_json: serde_json::Value = serde_json::from_slice(&lts.stdout).expect("lts json");
+    assert_eq!(lts_json["policy"]["version"], "1.0");
+    assert!(lts_json["policy"]["branches"].is_array());
+    assert!(lts_json["problems"].is_array());
+
     let security = run_aic(&["release", "security-audit", "--json"]);
     assert_eq!(security.status.code(), Some(0));
     let report: serde_json::Value =
@@ -263,11 +270,38 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
         "Verify archive checksum (Unix)",
         "Verify archive checksum (Windows)",
         "Verify provenance signature",
+        "release lts --check",
         "release-metadata.md",
     ] {
         assert!(
             workflow.contains(token),
             "release workflow missing expected token: {token}"
+        );
+    }
+}
+
+#[test]
+fn lts_policy_docs_and_workflow_gates_are_wired() {
+    let matrix_path = repo_root().join("docs/release/compatibility-matrix.json");
+    let matrix_raw = fs::read_to_string(&matrix_path).expect("read compatibility matrix");
+    let matrix: serde_json::Value = serde_json::from_str(&matrix_raw).expect("matrix json");
+    assert_eq!(matrix["schema_version"], 1);
+    assert!(matrix["branches"].is_array());
+
+    let lts_doc = fs::read_to_string(repo_root().join("docs/release/lts-policy.md"))
+        .expect("read lts policy doc");
+    assert!(lts_doc.contains("## LTS Support Windows"));
+    assert!(lts_doc.contains("## Security Patch SLA"));
+
+    for workflow in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/security.yml",
+    ] {
+        let raw = fs::read_to_string(repo_root().join(workflow)).expect("read workflow");
+        assert!(
+            raw.contains("release lts --check"),
+            "workflow missing lts gate: {workflow}"
         );
     }
 }

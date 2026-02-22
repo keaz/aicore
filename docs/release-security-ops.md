@@ -12,6 +12,7 @@ E9 covers:
 4. Security audit checks and threat-model enforcement
 5. Sandboxed runtime execution profiles
 6. Compatibility and migration policy checks
+7. LTS branch support windows and compatibility matrix enforcement
 
 ## CLI Commands
 
@@ -97,6 +98,20 @@ Check required compatibility assets:
 aic release policy --check
 ```
 
+### LTS policy and compatibility matrix
+
+Show LTS policy JSON:
+
+```bash
+aic release lts --json
+```
+
+Check required LTS docs, matrix entries, and CI gates:
+
+```bash
+aic release lts --check
+```
+
 ### Guided migration
 
 Run deterministic migration analysis:
@@ -178,6 +193,7 @@ make security-audit
 make repro-check
 make test-e9
 make release-preflight
+aic release lts --check
 ```
 
 `make ci` also runs E9 checks.
@@ -185,6 +201,7 @@ make release-preflight
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` runs `make test-e9`, `make security-audit`, and `make repro-check`.
-- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata.
-- `.github/workflows/security.yml` runs scheduled and on-demand security audit checks.
+- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy` and `release lts` gates.
+- `.github/workflows/security.yml` runs scheduled and on-demand security audit checks, and the LTS policy gate.
 - `docs/release/matrix.md` documents the cross-platform release matrix and verification workflow.
+- `docs/release/lts-policy.md` and `docs/release/compatibility-matrix.json` define branch support windows and SLA compatibility expectations.

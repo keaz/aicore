@@ -38,6 +38,9 @@ jobs:
       - name: Release policy gate
         run: cargo run --quiet --bin aic -- release policy --check
 
+      - name: LTS policy gate
+        run: cargo run --quiet --bin aic -- release lts --check
+
       - name: Security audit gate
         run: cargo run --quiet --bin aic -- release security-audit --json
 
@@ -90,6 +93,7 @@ jobs:
           cargo run --quiet --bin aic -- release manifest --root . --output "dist/repro-manifest-${TARGET_TAG}.json" --source-date-epoch 1700000000
           cargo run --quiet --bin aic -- release sbom --root . --output "dist/sbom-${TARGET_TAG}.json" --source-date-epoch 1700000000
           cargo run --quiet --bin aic -- release policy --check
+          cargo run --quiet --bin aic -- release lts --check
 
       - name: Package (Unix)
         if: matrix.archive_ext == 'tar.gz'
