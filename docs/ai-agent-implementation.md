@@ -293,7 +293,19 @@ Diagnostics:
 ### CLI contract and deterministic exits (E7-T1)
 
 - Command/flag/exit contract metadata: `src/cli_contract.rs`
-- CLI contract command: `aic contract --json`
+- CLI contract command: `aic contract --json [--accept-version <v1,v2,...>]`
+- Agent protocol schemas:
+  - `docs/agent-tooling/schemas/parse-response.schema.json`
+  - `docs/agent-tooling/schemas/check-response.schema.json`
+  - `docs/agent-tooling/schemas/build-response.schema.json`
+  - `docs/agent-tooling/schemas/fix-response.schema.json`
+- Protocol guide:
+  - `docs/agent-tooling/protocol-v1.md`
+- Protocol fixtures:
+  - `examples/agent/protocol_parse.json`
+  - `examples/agent/protocol_check.json`
+  - `examples/agent/protocol_build.json`
+  - `examples/agent/protocol_fix.json`
 - Exit code mapping:
   - `0`: success
   - `1`: diagnostic/runtime failure

@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/fix-response-1.0.schema.json",
+  "title": "AIC Agent Fix Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "phase", "mode", "ok", "files_changed", "applied_edits", "conflicts", "diagnostics"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "phase": { "const": "fix" },
+    "mode": { "type": "string", "enum": ["dry-run", "apply"] },
+    "ok": { "type": "boolean" },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "applied_edits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edit" }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edit" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end", "replacement", "message"],
+      "properties": {
+        "file": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "replacement": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning", "note"] },
+        "message": { "type": "string" },
+        "spans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "start", "end", "label"],
+            "properties": {
+              "file": { "type": "string" },
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 },
+              "label": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "help": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["message", "replacement", "start", "end"],
+            "properties": {
+              "message": { "type": "string" },
+              "replacement": { "type": ["string", "null"] },
+              "start": { "type": ["integer", "null"], "minimum": 0 },
+              "end": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

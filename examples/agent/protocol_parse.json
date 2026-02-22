@@ -1,0 +1,8 @@
+{
+  "protocol_version": "1.0",
+  "phase": "parse",
+  "input": "examples/e7/cli_smoke.aic",
+  "ok": true,
+  "ast_items": 1,
+  "diagnostics": []
+}

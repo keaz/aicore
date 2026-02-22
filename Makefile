@@ -121,6 +121,11 @@ docs-check:
 	@test -f docs/sarif.md
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
+	@test -f docs/agent-tooling/protocol-v1.md
+	@test -f docs/agent-tooling/schemas/parse-response.schema.json
+	@test -f docs/agent-tooling/schemas/check-response.schema.json
+	@test -f docs/agent-tooling/schemas/build-response.schema.json
+	@test -f docs/agent-tooling/schemas/fix-response.schema.json
 	@test -f docs/package-workflow.md
 	@test -f docs/package-ecosystem/README.md
 	@test -f docs/package-ecosystem/publish-consume.md
@@ -142,6 +147,10 @@ docs-check:
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
+	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
+	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null
+	@python3 -m json.tool docs/agent-tooling/schemas/build-response.schema.json >/dev/null
+	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md

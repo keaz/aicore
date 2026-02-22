@@ -143,6 +143,8 @@ enum Command {
     Contract {
         #[arg(long)]
         json: bool,
+        #[arg(long = "accept-version", value_delimiter = ',')]
+        accept_versions: Vec<String>,
     },
     Release {
         #[command(subcommand)]
@@ -806,8 +808,13 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_OK
             }
         }
-        Command::Contract { json } => {
-            let contract = contract_json();
+        Command::Contract {
+            json,
+            accept_versions,
+        } => {
+            let contract = contract_json(&accept_versions);
+            let protocol = &contract["protocol"];
+            let compatible = protocol["compatible"].as_bool().unwrap_or(true);
             if json {
                 println!("{}", serde_json::to_string_pretty(&contract)?);
             } else {
@@ -815,13 +822,26 @@ fn run_cli() -> anyhow::Result<i32> {
                     "AICore CLI contract v{}",
                     contract["version"].as_str().unwrap_or("1.0")
                 );
+                println!(
+                    "protocol selected version: {}",
+                    protocol["selected_version"].as_str().unwrap_or("none")
+                );
                 println!("exit codes:");
                 println!("  {} -> success", EXIT_OK);
                 println!("  {} -> diagnostics/runtime failure", EXIT_DIAGNOSTIC_ERROR);
                 println!("  {} -> command-line usage error", EXIT_USAGE_ERROR);
                 println!("  {} -> internal/tooling failure", EXIT_INTERNAL_ERROR);
             }
-            EXIT_OK
+            if compatible {
+                EXIT_OK
+            } else {
+                if !json {
+                    eprintln!(
+                        "error: requested protocol versions are incompatible with supported versions"
+                    );
+                }
+                EXIT_DIAGNOSTIC_ERROR
+            }
         }
         Command::Release { command } => match command {
             ReleaseCommand::Manifest {

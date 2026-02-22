@@ -114,12 +114,18 @@ fn explain_and_contract_commands_work() {
     let contract_json: serde_json::Value =
         serde_json::from_slice(&contract.stdout).expect("contract json");
     assert_eq!(contract_json["version"], "1.0");
+    assert_eq!(contract_json["protocol"]["name"], "aic-compiler-json");
+    assert_eq!(contract_json["protocol"]["selected_version"], "1.0");
     assert!(contract_json["commands"].is_array());
     assert!(contract_json["commands"]
         .as_array()
         .expect("commands")
         .iter()
         .any(|c| c["name"] == "lsp"));
+    for phase in ["parse", "check", "build", "fix"] {
+        assert!(contract_json["schemas"][phase]["path"].is_string());
+        assert!(contract_json["examples"][phase].is_string());
+    }
 }
 
 #[test]

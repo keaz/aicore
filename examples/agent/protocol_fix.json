@@ -1,0 +1,20 @@
+{
+  "protocol_version": "1.0",
+  "phase": "fix",
+  "mode": "dry-run",
+  "ok": true,
+  "files_changed": [
+    "examples/agent/fixable_imports.aic"
+  ],
+  "applied_edits": [
+    {
+      "file": "examples/agent/fixable_imports.aic",
+      "start": 38,
+      "end": 38,
+      "replacement": ";",
+      "message": "insert ';' after let binding"
+    }
+  ],
+  "conflicts": [],
+  "diagnostics": []
+}

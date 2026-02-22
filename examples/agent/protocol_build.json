@@ -1,0 +1,9 @@
+{
+  "protocol_version": "1.0",
+  "phase": "build",
+  "input": "examples/e7/cli_smoke.aic",
+  "artifact": "exe",
+  "output": "target/agent/cli_smoke",
+  "ok": true,
+  "diagnostics": []
+}

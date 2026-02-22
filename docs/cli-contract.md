@@ -8,6 +8,19 @@ aic contract --json
 
 Current contract version: `1.0`
 
+Agent JSON protocol negotiation:
+
+```bash
+aic contract --json --accept-version 1.2,1.0
+```
+
+Published parse/check/build/fix schemas:
+
+- `docs/agent-tooling/schemas/parse-response.schema.json`
+- `docs/agent-tooling/schemas/check-response.schema.json`
+- `docs/agent-tooling/schemas/build-response.schema.json`
+- `docs/agent-tooling/schemas/fix-response.schema.json`
+
 ## Exit codes
 
 - `0`: success

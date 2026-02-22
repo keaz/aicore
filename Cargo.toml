@@ -16,4 +16,5 @@ sha2 = "0.10"
 thiserror = "2"
 
 [dev-dependencies]
+jsonschema = "0.18"
 tempfile = "3"
