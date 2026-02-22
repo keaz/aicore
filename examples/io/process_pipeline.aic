@@ -36,7 +36,7 @@ fn main() -> Int effects { io, proc, env, fs } {
         Ok(path) => path,
         Err(_) => "",
     };
-    let joined = join(current, "process_pipeline.log");
+    let joined = path.join(current, "process_pipeline.log");
 
     let env_set = ok_bool(set("AIC_PROCESS_PIPELINE_TMP", "ok"));
     let env_remove = ok_bool(remove("AIC_PROCESS_PIPELINE_TMP"));

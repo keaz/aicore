@@ -8,6 +8,7 @@ const ROOT_MODULE: &str = "<root>";
 #[derive(Debug, Clone)]
 pub struct Resolution {
     pub functions: BTreeMap<String, FunctionInfo>,
+    pub module_function_infos: BTreeMap<(String, String), FunctionInfo>,
     pub structs: BTreeMap<String, StructInfo>,
     pub enums: BTreeMap<String, EnumInfo>,
     pub traits: BTreeMap<String, TraitInfo>,
@@ -72,6 +73,7 @@ pub fn resolve_with_item_modules(
     let mut diagnostics = Vec::new();
 
     let mut functions = BTreeMap::new();
+    let mut module_function_infos = BTreeMap::new();
     let mut structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
     let mut traits = BTreeMap::new();
@@ -148,27 +150,28 @@ pub fn resolve_with_item_modules(
                 function_modules
                     .entry(f.name.clone())
                     .or_default()
-                    .insert(module_name);
+                    .insert(module_name.clone());
 
-                functions
-                    .entry(f.name.clone())
-                    .or_insert_with(|| FunctionInfo {
-                        symbol: f.symbol,
-                        is_async: f.is_async,
-                        is_unsafe: f.is_unsafe,
-                        is_extern: f.is_extern,
-                        extern_abi: f.extern_abi.clone(),
-                        generics: f.generics.iter().map(|g| g.name.clone()).collect(),
-                        generic_bounds: f
-                            .generics
-                            .iter()
-                            .map(|g| (g.name.clone(), g.bounds.clone()))
-                            .collect(),
-                        param_types: f.params.iter().map(|p| p.ty).collect(),
-                        ret_type: f.ret_type,
-                        effects: f.effects.iter().cloned().collect(),
-                        span: f.span,
-                    });
+                let info = FunctionInfo {
+                    symbol: f.symbol,
+                    is_async: f.is_async,
+                    is_unsafe: f.is_unsafe,
+                    is_extern: f.is_extern,
+                    extern_abi: f.extern_abi.clone(),
+                    generics: f.generics.iter().map(|g| g.name.clone()).collect(),
+                    generic_bounds: f
+                        .generics
+                        .iter()
+                        .map(|g| (g.name.clone(), g.bounds.clone()))
+                        .collect(),
+                    param_types: f.params.iter().map(|p| p.ty).collect(),
+                    ret_type: f.ret_type,
+                    effects: f.effects.iter().cloned().collect(),
+                    span: f.span,
+                };
+                module_function_infos.insert((module_name, f.name.clone()), info.clone());
+
+                functions.entry(f.name.clone()).or_insert_with(|| info);
             }
             ir::Item::Struct(s) => {
                 if let Some(existing_kind) = type_decl_kind_by_module_name
@@ -363,41 +366,6 @@ pub fn resolve_with_item_modules(
         }
     }
 
-    let mut imported_name_sources: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for module in &imports {
-        if let Some(names) = module_functions.get(module) {
-            for name in names {
-                imported_name_sources
-                    .entry(name.clone())
-                    .or_default()
-                    .push(module.clone());
-            }
-        }
-    }
-
-    for (name, mut modules) in imported_name_sources {
-        modules.sort();
-        modules.dedup();
-        if modules.len() > 1 {
-            diagnostics.push(
-                Diagnostic::error(
-                    "E2104",
-                    format!(
-                        "ambiguous imported symbol '{}' exported by modules: {}",
-                        name,
-                        modules.join(", ")
-                    ),
-                    file,
-                    program.span,
-                )
-                .with_help(format!(
-                    "use a qualified call (for example `{alias}.{name}(...)`) or import fewer colliding modules",
-                    alias = modules[0].rsplit('.').next().unwrap_or(&modules[0])
-                )),
-            );
-        }
-    }
-
     for alias in &ambiguous_import_aliases {
         diagnostics.push(
             Diagnostic::error(
@@ -416,6 +384,7 @@ pub fn resolve_with_item_modules(
     (
         Resolution {
             functions,
+            module_function_infos,
             structs,
             enums,
             traits,

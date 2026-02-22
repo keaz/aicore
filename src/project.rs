@@ -74,6 +74,10 @@ fn print_str(x: String) -> () effects { io } {
     ()
 }
 
+fn print_float(x: Float) -> () effects { io } {
+    ()
+}
+
 fn panic(message: String) -> () effects { io } {
     ()
 }
@@ -779,6 +783,13 @@ fn aic_json_encode_int_intrinsic(value: Int) -> JsonValue {
     }
 }
 
+fn aic_json_encode_float_intrinsic(value: Float) -> JsonValue {
+    JsonValue {
+        raw: "0.0",
+        kind: NumberValue(),
+    }
+}
+
 fn aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue {
     JsonValue {
         raw: "false",
@@ -802,6 +813,11 @@ fn aic_json_encode_null_intrinsic() -> JsonValue {
 
 fn aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError] {
     let out: Result[Int, JsonError] = Ok(0);
+    out
+}
+
+fn aic_json_decode_float_intrinsic(value: JsonValue) -> Result[Float, JsonError] {
+    let out: Result[Float, JsonError] = Ok(0.0);
     out
 }
 
@@ -863,6 +879,10 @@ fn encode_int(value: Int) -> JsonValue {
     aic_json_encode_int_intrinsic(value)
 }
 
+fn encode_float(value: Float) -> JsonValue {
+    aic_json_encode_float_intrinsic(value)
+}
+
 fn encode_bool(value: Bool) -> JsonValue {
     aic_json_encode_bool_intrinsic(value)
 }
@@ -877,6 +897,10 @@ fn encode_null() -> JsonValue {
 
 fn decode_int(value: JsonValue) -> Result[Int, JsonError] {
     aic_json_decode_int_intrinsic(value)
+}
+
+fn decode_float(value: JsonValue) -> Result[Float, JsonError] {
+    aic_json_decode_float_intrinsic(value)
 }
 
 fn decode_bool(value: JsonValue) -> Result[Bool, JsonError] {
@@ -1098,6 +1122,202 @@ fn request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: S
 
 fn response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
     aic_http_response_intrinsic(status, headers, body)
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/http_server.aic"),
+        r#"module std.http_server;
+
+import std.map;
+import std.result;
+
+enum ServerError {
+    InvalidRequest,
+    InvalidMethod,
+    InvalidHeader,
+    InvalidTarget,
+    Timeout,
+    ConnectionClosed,
+    BodyTooLarge,
+    Net,
+    Internal,
+}
+
+struct Request {
+    method: String,
+    path: String,
+    query: Map[String, String],
+    headers: Map[String, String],
+    body: String,
+}
+
+struct Response {
+    status: Int,
+    headers: Map[String, String],
+    body: String,
+}
+
+fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net } {
+    let _addr = addr;
+    let out: Result[Int, ServerError] = Err(Net());
+    out
+}
+
+fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net } {
+    let _listener = listener;
+    let _timeout_ms = timeout_ms;
+    let out: Result[Int, ServerError] = Err(Net());
+    out
+}
+
+fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
+    let _conn = conn;
+    let _max_bytes = max_bytes;
+    let _timeout_ms = timeout_ms;
+    let out: Result[Request, ServerError] = Err(InvalidRequest());
+    out
+}
+
+fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
+    let _conn = conn;
+    let _response = response;
+    let out: Result[Int, ServerError] = Err(Net());
+    out
+}
+
+fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net } {
+    let _handle = handle;
+    let out: Result[Bool, ServerError] = Err(Net());
+    out
+}
+
+fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Response {
+    let headers0: Map[String, String] = aic_map_new_intrinsic();
+    let headers = aic_map_insert_intrinsic(headers0, "content-type", "text/plain; charset=utf-8");
+    Response {
+        status: status,
+        headers: headers,
+        body: body,
+    }
+}
+
+fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Response {
+    let headers0: Map[String, String] = aic_map_new_intrinsic();
+    let headers = aic_map_insert_intrinsic(headers0, "content-type", "application/json");
+    Response {
+        status: status,
+        headers: headers,
+        body: body,
+    }
+}
+
+fn aic_http_server_header_intrinsic(resp: Response, name: String) -> Option[String] {
+    aic_map_get_intrinsic(resp.headers, name)
+}
+
+fn listen(addr: String) -> Result[Int, ServerError] effects { net } {
+    aic_http_server_listen_intrinsic(addr)
+}
+
+fn accept(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net } {
+    aic_http_server_accept_intrinsic(listener, timeout_ms)
+}
+
+fn read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
+    aic_http_server_read_request_intrinsic(conn, max_bytes, timeout_ms)
+}
+
+fn write_response(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
+    aic_http_server_write_response_intrinsic(conn, response)
+}
+
+fn close(handle: Int) -> Result[Bool, ServerError] effects { net } {
+    aic_http_server_close_intrinsic(handle)
+}
+
+fn response(status: Int, headers: Map[String, String], body: String) -> Response {
+    Response {
+        status: status,
+        headers: headers,
+        body: body,
+    }
+}
+
+fn text_response(status: Int, body: String) -> Response {
+    aic_http_server_text_response_intrinsic(status, body)
+}
+
+fn json_response(status: Int, body: String) -> Response {
+    aic_http_server_json_response_intrinsic(status, body)
+}
+
+fn error_response(status: Int, message: String) -> Response {
+    text_response(status, message)
+}
+
+fn header(resp: Response, name: String) -> Option[String] {
+    aic_http_server_header_intrinsic(resp, name)
+}
+"#,
+    )?;
+
+    fs::write(
+        path.join("std/router.aic"),
+        r#"module std.router;
+
+import std.map;
+import std.result;
+
+enum RouterError {
+    InvalidPattern,
+    InvalidMethod,
+    Capacity,
+    Internal,
+}
+
+struct Router {
+    handle: Int,
+}
+
+struct RouteMatch {
+    route_id: Int,
+    params: Map[String, String],
+}
+
+fn aic_router_new_intrinsic() -> Result[Router, RouterError] {
+    let out: Result[Router, RouterError] = Err(Capacity());
+    out
+}
+
+fn aic_router_add_intrinsic(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
+    let _router = router;
+    let _method = method;
+    let _pattern = pattern;
+    let _route_id = route_id;
+    let out: Result[Router, RouterError] = Err(Capacity());
+    out
+}
+
+fn aic_router_match_intrinsic(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
+    let _router = router;
+    let _method = method;
+    let _path = path;
+    let out: Result[Option[RouteMatch], RouterError] = Err(Capacity());
+    out
+}
+
+fn new_router() -> Result[Router, RouterError] {
+    aic_router_new_intrinsic()
+}
+
+fn add(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
+    aic_router_add_intrinsic(router, method, pattern, route_id)
+}
+
+fn match_route(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
+    aic_router_match_intrinsic(router, method, path)
 }
 "#,
     )?;

@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v5` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v6` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -33,7 +33,7 @@ fn main() -> Int {
 
 ### 2.2 Types
 
-- Builtins: `Int`, `Bool`, `String`, `()`
+- Builtins: `Int`, `Float`, `Bool`, `String`, `()`
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
 - Generic arity is checked statically (`Option[Int, Int]` is invalid).
@@ -100,7 +100,7 @@ enum Option[T] {
 
 ### 2.5 Expressions
 
-- Literals: `1`, `true`, `"x"`, `()`
+- Literals: `1`, `3.14`, `2.5e-3`, `true`, `"x"`, `()`
 - Calls: `f(x)`
 - `if`: `if cond { ... } else { ... }`
 - `match`:
@@ -235,7 +235,7 @@ Registry and ownership: `docs/diagnostic-codes.md`.
 - Emits LLVM IR text.
 - Compiles with `clang` plus runtime C shim.
 - Supported codegen subset:
-  - `Int`, `Bool`, `String`, `()`
+  - `Int`, `Float`, `Bool`, `String`, `()`
   - `Option[T]` (core path)
   - calls, `if`, `match`, arithmetic/comparison/logical ops
   - runtime panic + print helpers

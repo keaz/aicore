@@ -27,6 +27,7 @@ Registry source of truth:
 
 Recent core-language additions:
 
+- `E0007`: invalid float literal token.
 - `E1052`: invalid `async` item form (expected `async fn`).
 - `E1053-E1059`: trait/impl declaration syntax errors.
 - `E1060-E1062`: assignment statement parsing errors.

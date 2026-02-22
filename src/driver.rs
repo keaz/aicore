@@ -102,6 +102,7 @@ pub fn run_frontend_with_options(
             },
             resolution: Resolution {
                 functions: Default::default(),
+                module_function_infos: Default::default(),
                 structs: Default::default(),
                 enums: Default::default(),
                 traits: Default::default(),

@@ -1,0 +1,13 @@
+module verify.qv_contract_proof_fail;
+
+fn abs_non_negative(x: Int) -> Int ensures false {
+    if x < 0 {
+        -x
+    } else {
+        x
+    }
+}
+
+fn main() -> Int {
+    abs_non_negative(1)
+}

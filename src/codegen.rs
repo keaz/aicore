@@ -24,6 +24,7 @@ struct FnSig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LType {
     Int,
+    Float,
     Bool,
     Unit,
     String,
@@ -758,6 +759,7 @@ impl<'a> Generator<'a> {
             text.push_str(&format!("source_filename = \"{}\"\n", source_file));
         }
         text.push_str("declare void @aic_rt_print_int(i64)\n");
+        text.push_str("declare void @aic_rt_print_float(double)\n");
         text.push_str("declare void @aic_rt_print_str(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_strlen(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_string_contains(i8*, i64, i64, i8*, i64, i64)\n");
@@ -787,7 +789,11 @@ impl<'a> Generator<'a> {
         );
         text.push_str("declare void @aic_rt_string_repeat(i8*, i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_string_parse_int(i8*, i64, i64, i64*, i8**, i64*)\n");
+        text.push_str(
+            "declare i64 @aic_rt_string_parse_float(i8*, i64, i64, double*, i8**, i64*)\n",
+        );
         text.push_str("declare void @aic_rt_string_int_to_string(i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_string_float_to_string(double, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_string_bool_to_string(i64, i8**, i64*)\n");
         text.push_str(
             "declare void @aic_rt_string_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
@@ -899,13 +905,29 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_http_status_reason(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_http_validate_header(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_http_validate_target(i8*, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_http_server_listen(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_http_server_accept(i64, i64, i64*)\n");
+        text.push_str(
+            "declare i64 @aic_rt_http_server_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_http_server_write_response(i64, i64, i64, i8*, i64, i64, i64*)\n",
+        );
+        text.push_str("declare i64 @aic_rt_http_server_close(i64)\n\n");
+        text.push_str("declare i64 @aic_rt_router_new(i64*)\n");
+        text.push_str("declare i64 @aic_rt_router_add(i64, i8*, i64, i64, i8*, i64, i64, i64)\n");
+        text.push_str(
+            "declare i64 @aic_rt_router_match(i64, i8*, i64, i64, i8*, i64, i64, i64*, i64*, i64*)\n\n",
+        );
         text.push_str("declare i64 @aic_rt_json_parse(i8*, i64, i64, i8**, i64*, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_stringify(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_encode_int(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_encode_float(double, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_encode_bool(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_encode_string(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_encode_null(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_decode_int(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_json_decode_float(i8*, i64, i64, double*)\n");
         text.push_str("declare i64 @aic_rt_json_decode_bool(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_decode_string(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_json_object_empty(i8**, i64*)\n");
@@ -1111,6 +1133,16 @@ impl<'a> Generator<'a> {
                 extern_symbol: None,
                 extern_abi: None,
                 params: vec![LType::String],
+                ret: LType::Unit,
+            },
+        );
+        self.fn_sigs.insert(
+            "print_float".to_string(),
+            FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
+                params: vec![LType::Float],
                 ret: LType::Unit,
             },
         );
@@ -1612,6 +1644,10 @@ impl<'a> Generator<'a> {
                 ty: LType::Int,
                 repr: Some(v.to_string()),
             }),
+            ir::ExprKind::Float(v) => Some(Value {
+                ty: LType::Float,
+                repr: Some(llvm_float_literal(*v)),
+            }),
             ir::ExprKind::Bool(v) => Some(Value {
                 ty: LType::Bool,
                 repr: Some(if *v { "1".to_string() } else { "0".to_string() }),
@@ -1654,6 +1690,15 @@ impl<'a> Generator<'a> {
                         fctx.lines.push(format!("  {} = sub i64 0, {}", reg, repr));
                         Some(Value {
                             ty: LType::Int,
+                            repr: Some(reg),
+                        })
+                    }
+                    (UnaryOp::Neg, LType::Float) => {
+                        let reg = self.new_temp();
+                        let repr = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+                        fctx.lines.push(format!("  {} = fneg double {}", reg, repr));
+                        Some(Value {
+                            ty: LType::Float,
                             repr: Some(reg),
                         })
                     }
@@ -1742,35 +1787,60 @@ impl<'a> Generator<'a> {
     ) -> Option<Value> {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
-                if lhs.ty != LType::Int || rhs.ty != LType::Int {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5006",
-                        "arithmetic codegen only supports Int",
-                        self.file,
-                        span,
-                    ));
-                    return None;
+                match (&lhs.ty, &rhs.ty) {
+                    (LType::Int, LType::Int) => {
+                        let inst = match op {
+                            BinOp::Add => "add",
+                            BinOp::Sub => "sub",
+                            BinOp::Mul => "mul",
+                            BinOp::Div => "sdiv",
+                            BinOp::Mod => "srem",
+                            _ => unreachable!(),
+                        };
+                        let reg = self.new_temp();
+                        fctx.lines.push(format!(
+                            "  {} = {} i64 {}, {}",
+                            reg,
+                            inst,
+                            lhs.repr.unwrap_or_else(|| "0".to_string()),
+                            rhs.repr.unwrap_or_else(|| "0".to_string())
+                        ));
+                        Some(Value {
+                            ty: LType::Int,
+                            repr: Some(reg),
+                        })
+                    }
+                    (LType::Float, LType::Float) if !matches!(op, BinOp::Mod) => {
+                        let inst = match op {
+                            BinOp::Add => "fadd",
+                            BinOp::Sub => "fsub",
+                            BinOp::Mul => "fmul",
+                            BinOp::Div => "fdiv",
+                            _ => unreachable!(),
+                        };
+                        let reg = self.new_temp();
+                        fctx.lines.push(format!(
+                            "  {} = {} double {}, {}",
+                            reg,
+                            inst,
+                            lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
+                            rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64))
+                        ));
+                        Some(Value {
+                            ty: LType::Float,
+                            repr: Some(reg),
+                        })
+                    }
+                    _ => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5006",
+                            "arithmetic codegen expects matching Int or Float operands",
+                            self.file,
+                            span,
+                        ));
+                        None
+                    }
                 }
-                let inst = match op {
-                    BinOp::Add => "add",
-                    BinOp::Sub => "sub",
-                    BinOp::Mul => "mul",
-                    BinOp::Div => "sdiv",
-                    BinOp::Mod => "srem",
-                    _ => unreachable!(),
-                };
-                let reg = self.new_temp();
-                fctx.lines.push(format!(
-                    "  {} = {} i64 {}, {}",
-                    reg,
-                    inst,
-                    lhs.repr.unwrap_or_else(|| "0".to_string()),
-                    rhs.repr.unwrap_or_else(|| "0".to_string())
-                ));
-                Some(Value {
-                    ty: LType::Int,
-                    repr: Some(reg),
-                })
             }
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let (cmp, ty) = match (&lhs.ty, &rhs.ty) {
@@ -1785,6 +1855,18 @@ impl<'a> Generator<'a> {
                             _ => unreachable!(),
                         };
                         (cmp, "i64")
+                    }
+                    (LType::Float, LType::Float) => {
+                        let cmp = match op {
+                            BinOp::Eq => "oeq",
+                            BinOp::Ne => "une",
+                            BinOp::Lt => "olt",
+                            BinOp::Le => "ole",
+                            BinOp::Gt => "ogt",
+                            BinOp::Ge => "oge",
+                            _ => unreachable!(),
+                        };
+                        (cmp, "double")
                     }
                     (LType::Bool, LType::Bool) if matches!(op, BinOp::Eq | BinOp::Ne) => {
                         let cmp = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
@@ -1801,13 +1883,22 @@ impl<'a> Generator<'a> {
                     }
                 };
                 let reg = self.new_temp();
+                let (inst, lhs_repr, rhs_repr) = if ty == "double" {
+                    (
+                        "fcmp",
+                        lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
+                        rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
+                    )
+                } else {
+                    (
+                        "icmp",
+                        lhs.repr.unwrap_or_else(|| default_value(&lhs.ty)),
+                        rhs.repr.unwrap_or_else(|| default_value(&rhs.ty)),
+                    )
+                };
                 fctx.lines.push(format!(
-                    "  {} = icmp {} {} {}, {}",
-                    reg,
-                    cmp,
-                    ty,
-                    lhs.repr.unwrap_or_else(|| default_value(&lhs.ty)),
-                    rhs.repr.unwrap_or_else(|| default_value(&rhs.ty))
+                    "  {} = {} {} {} {}, {}",
+                    reg, inst, cmp, ty, lhs_repr, rhs_repr
                 ));
                 Some(Value {
                     ty: LType::Bool,
@@ -1929,6 +2020,35 @@ impl<'a> Generator<'a> {
             });
         }
 
+        if name == "print_float" {
+            if args.len() != 1 {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5010",
+                    "print_float expects one argument",
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            let arg = self.gen_expr(&args[0], fctx)?;
+            if arg.ty != LType::Float {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5011",
+                    "print_float expects Float",
+                    self.file,
+                    args[0].span,
+                ));
+                return None;
+            }
+            let repr = arg.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+            fctx.lines
+                .push(format!("  call void @aic_rt_print_float(double {})", repr));
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
         if name == "len" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
@@ -2027,6 +2147,12 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_http_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_http_server_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_router_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
         if let Some(result) = self.gen_json_builtin_call(builtin_name, args, span, fctx) {
@@ -5507,7 +5633,9 @@ impl<'a> Generator<'a> {
             "replace" | "aic_string_replace_intrinsic" => "replace",
             "repeat" | "aic_string_repeat_intrinsic" => "repeat",
             "parse_int" | "aic_string_parse_int_intrinsic" => "parse_int",
+            "parse_float" | "aic_string_parse_float_intrinsic" => "parse_float",
             "int_to_string" | "aic_string_int_to_string_intrinsic" => "int_to_string",
+            "float_to_string" | "aic_string_float_to_string_intrinsic" => "float_to_string",
             "bool_to_string" | "aic_string_bool_to_string_intrinsic" => "bool_to_string",
             "join" | "aic_string_join_intrinsic" => "join",
             _ => return None,
@@ -5627,8 +5755,14 @@ impl<'a> Generator<'a> {
             "parse_int" if self.sig_matches_shape(name, &["String"], "Result[Int, String]") => {
                 Some(self.gen_string_parse_int_call(name, args, span, fctx))
             }
+            "parse_float" if self.sig_matches_shape(name, &["String"], "Result[Float, String]") => {
+                Some(self.gen_string_parse_float_call(name, args, span, fctx))
+            }
             "int_to_string" if self.sig_matches_shape(name, &["Int"], "String") => {
                 Some(self.gen_string_int_to_string_call(args, span, fctx))
+            }
+            "float_to_string" if self.sig_matches_shape(name, &["Float"], "String") => {
+                Some(self.gen_string_float_to_string_call(args, span, fctx))
             }
             "bool_to_string" if self.sig_matches_shape(name, &["Bool"], "String") => {
                 Some(self.gen_string_bool_to_string_call(args, span, fctx))
@@ -6299,6 +6433,153 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_string_parse_float_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "parse_float expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let s = self.gen_expr(&args[0], fctx)?;
+        if s.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse_float expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (s_ptr, s_len, s_cap) = self.string_parts(&s, args[0].span, fctx)?;
+        let out_value_slot = self.new_temp();
+        let out_err_ptr_slot = self.new_temp();
+        let out_err_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca double", out_value_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_err_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_err_len_slot));
+        let status = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_string_parse_float(i8* {}, i64 {}, i64 {}, double* {}, i8** {}, i64* {})",
+            status, s_ptr, s_len, s_cap, out_value_slot, out_err_ptr_slot, out_err_len_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load double, double* {}",
+            out_value, out_value_slot
+        ));
+        let out_err_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_err_ptr, out_err_ptr_slot
+        ));
+        let out_err_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_err_len, out_err_len_slot
+        ));
+
+        let result_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            })?;
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(&result_ty, span)
+        else {
+            return None;
+        };
+        if ok_ty != LType::Float || err_ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "parse_float expects Result[Float, String] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_payload = Value {
+            ty: LType::Float,
+            repr: Some(out_value),
+        };
+        let err_payload = self.build_string_value(&out_err_ptr, &out_err_len, &out_err_len, fctx);
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(&result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, status));
+        let ok_label = self.new_label("string_parse_float_ok");
+        let err_label = self.new_label("string_parse_float_err");
+        let cont_label = self.new_label("string_parse_float_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(&result_ty),
+            llvm_type(&result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty,
+            repr: Some(reg),
+        })
+    }
+
     fn gen_string_int_to_string_call(
         &mut self,
         args: &[ir::Expr],
@@ -6331,6 +6612,46 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
         fctx.lines.push(format!(
             "  call void @aic_rt_string_int_to_string(i64 {}, i8** {}, i64* {})",
+            value_repr, out_ptr_slot, out_len_slot
+        ));
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
+    fn gen_string_float_to_string_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "float_to_string expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "float_to_string expects Float",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_string_float_to_string(double {}, i8** {}, i64* {})",
             value_repr, out_ptr_slot, out_len_slot
         ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
@@ -8355,6 +8676,905 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_http_server_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "listen" | "aic_http_server_listen_intrinsic" => "listen",
+            "accept" | "aic_http_server_accept_intrinsic" => "accept",
+            "read_request" | "aic_http_server_read_request_intrinsic" => "read_request",
+            "write_response" | "aic_http_server_write_response_intrinsic" => "write_response",
+            "close" | "aic_http_server_close_intrinsic" => "close",
+            "text_response" | "aic_http_server_text_response_intrinsic" => "text_response",
+            "json_response" | "aic_http_server_json_response_intrinsic" => "json_response",
+            "header" | "aic_http_server_header_intrinsic" => "header",
+            _ => return None,
+        };
+
+        match canonical {
+            "listen" if self.sig_matches_shape(name, &["String"], "Result[Int, ServerError]") => {
+                Some(self.gen_http_server_listen_call(name, args, span, fctx))
+            }
+            "accept"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Int, ServerError]") =>
+            {
+                Some(self.gen_http_server_accept_call(name, args, span, fctx))
+            }
+            "read_request"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[Request, ServerError]",
+                ) =>
+            {
+                Some(self.gen_http_server_read_request_call(name, args, span, fctx))
+            }
+            "write_response"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Response"],
+                    "Result[Int, ServerError]",
+                ) =>
+            {
+                Some(self.gen_http_server_write_response_call(name, args, span, fctx))
+            }
+            "close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, ServerError]") => {
+                Some(self.gen_http_server_close_call(name, args, span, fctx))
+            }
+            "text_response" if self.sig_matches_shape(name, &["Int", "String"], "Response") => {
+                Some(self.gen_http_server_text_response_call(
+                    name,
+                    args,
+                    "text/plain; charset=utf-8",
+                    span,
+                    fctx,
+                ))
+            }
+            "json_response" if self.sig_matches_shape(name, &["Int", "String"], "Response") => {
+                Some(self.gen_http_server_text_response_call(
+                    name,
+                    args,
+                    "application/json",
+                    span,
+                    fctx,
+                ))
+            }
+            "header" if self.sig_matches_shape(name, &["Response", "String"], "Option[String]") => {
+                Some(self.gen_http_server_header_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_http_server_listen_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "listen expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let addr = self.gen_expr(&args[0], fctx)?;
+        if addr.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "listen expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&addr, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_server_listen(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, out_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_server_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_server_accept_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "accept expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let listener = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if listener.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "accept expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_server_accept(i64 {}, i64 {}, i64* {})",
+            err,
+            listener.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let conn = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", conn, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(conn),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_server_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_server_read_request_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "read_request expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let conn = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout = self.gen_expr(&args[2], fctx)?;
+        if conn.ty != LType::Int || max_bytes.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "read_request expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let method_ptr_slot = self.new_temp();
+        let method_len_slot = self.new_temp();
+        let path_ptr_slot = self.new_temp();
+        let path_len_slot = self.new_temp();
+        let query_slot = self.new_temp();
+        let headers_slot = self.new_temp();
+        let body_ptr_slot = self.new_temp();
+        let body_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", method_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", method_len_slot));
+        fctx.lines.push(format!("  {} = alloca i8*", path_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", path_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", query_slot));
+        fctx.lines.push(format!("  {} = alloca i64", headers_slot));
+        fctx.lines.push(format!("  {} = alloca i8*", body_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", body_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_server_read_request(i64 {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {}, i64* {}, i64* {}, i8** {}, i64* {})",
+            err,
+            conn.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            method_ptr_slot,
+            method_len_slot,
+            path_ptr_slot,
+            path_len_slot,
+            query_slot,
+            headers_slot,
+            body_ptr_slot,
+            body_len_slot
+        ));
+
+        let method_ptr = self.new_temp();
+        let method_len = self.new_temp();
+        let path_ptr = self.new_temp();
+        let path_len = self.new_temp();
+        let query_handle = self.new_temp();
+        let headers_handle = self.new_temp();
+        let body_ptr = self.new_temp();
+        let body_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            method_ptr, method_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            method_len, method_len_slot
+        ));
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", path_ptr, path_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", path_len, path_len_slot));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            query_handle, query_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            headers_handle, headers_slot
+        ));
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", body_ptr, body_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", body_len, body_len_slot));
+
+        let method_value = self.build_string_value(&method_ptr, &method_len, &method_len, fctx);
+        let path_value = self.build_string_value(&path_ptr, &path_len, &path_len, fctx);
+        let body_value = self.build_string_value(&body_ptr, &body_len, &body_len, fctx);
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(layout) = &ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "read_request expects Result[Request, ServerError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(query_ty) = layout
+            .fields
+            .iter()
+            .find(|field| field.name == "query")
+            .map(|field| field.ty.clone())
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Request struct is missing `query` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(headers_ty) = layout
+            .fields
+            .iter()
+            .find(|field| field.name == "headers")
+            .map(|field| field.ty.clone())
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Request struct is missing `headers` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let query_value =
+            self.build_map_value_from_handle(&query_ty, &query_handle, args[0].span, fctx)?;
+        let headers_value =
+            self.build_map_value_from_handle(&headers_ty, &headers_handle, args[0].span, fctx)?;
+
+        let ok_payload = self.build_http_struct_value(
+            &ok_ty,
+            "Request",
+            &[
+                ("method", method_value),
+                ("path", path_value),
+                ("query", query_value),
+                ("headers", headers_value),
+                ("body", body_value),
+            ],
+            span,
+            fctx,
+        )?;
+        self.wrap_http_server_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_server_write_response_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "write_response expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let conn = self.gen_expr(&args[0], fctx)?;
+        let response = self.gen_expr(&args[1], fctx)?;
+        if conn.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "write_response expects (Int, Response)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (status, headers, body) =
+            self.http_server_response_parts(&response, args[1].span, fctx)?;
+        let headers_handle = self.extract_named_handle_from_value(
+            &headers,
+            "Map",
+            "write_response",
+            args[1].span,
+            fctx,
+        )?;
+        let (body_ptr, body_len, body_cap) = self.string_parts(&body, args[1].span, fctx)?;
+        let sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_server_write_response(i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err,
+            conn.repr.clone().unwrap_or_else(|| "0".to_string()),
+            status.repr.clone().unwrap_or_else(|| "0".to_string()),
+            headers_handle,
+            body_ptr,
+            body_len,
+            body_cap,
+            sent_slot
+        ));
+        let sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", sent, sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_server_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_server_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "close expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "close expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_http_server_close(i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_http_server_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_http_server_text_response_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        content_type: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let status = self.gen_expr(&args[0], fctx)?;
+        let body = self.gen_expr(&args[1], fctx)?;
+        if status.ty != LType::Int || body.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Int, String)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let LType::Struct(layout) = &result_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Response return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(headers_ty) = layout
+            .fields
+            .iter()
+            .find(|field| field.name == "headers")
+            .map(|field| field.ty.clone())
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response struct is missing `headers` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        let map_handle_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", map_handle_slot));
+        let map_new_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_map_new(i64 1, i64* {})",
+            map_new_err, map_handle_slot
+        ));
+        let map_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            map_handle, map_handle_slot
+        ));
+
+        let key = self.string_literal("content-type", fctx);
+        let value = self.string_literal(content_type, fctx);
+        let (kptr, klen, kcap) = self.string_parts(&key, span, fctx)?;
+        let (vptr, vlen, vcap) = self.string_parts(&value, span, fctx)?;
+        let map_insert_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_map_insert_string(i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            map_insert_err, map_handle, kptr, klen, kcap, vptr, vlen, vcap
+        ));
+
+        let headers =
+            self.build_map_value_from_handle(&headers_ty, &map_handle, args[0].span, fctx)?;
+        self.build_http_struct_value(
+            &result_ty,
+            "Response",
+            &[("status", status), ("headers", headers), ("body", body)],
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_http_server_header_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "header expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let response = self.gen_expr(&args[0], fctx)?;
+        let header_name = self.gen_expr(&args[1], fctx)?;
+        if header_name.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "header expects (Response, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (_status, headers, _body) =
+            self.http_server_response_parts(&response, args[0].span, fctx)?;
+        let headers_handle =
+            self.extract_named_handle_from_value(&headers, "Map", "header", args[0].span, fctx)?;
+        let (kptr, klen, kcap) = self.string_parts(&header_name, args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_map_get_string(i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            found, headers_handle, kptr, klen, kcap, out_ptr_slot, out_len_slot
+        ));
+        let found_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+    }
+
+    fn gen_router_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        match name {
+            "new_router" | "aic_router_new_intrinsic"
+                if self.sig_matches_shape(name, &[], "Result[Router, RouterError]") =>
+            {
+                Some(self.gen_router_new_call(name, args, span, fctx))
+            }
+            "add" | "aic_router_add_intrinsic"
+                if self.sig_matches_shape(
+                    name,
+                    &["Router", "String", "String", "Int"],
+                    "Result[Router, RouterError]",
+                ) =>
+            {
+                Some(self.gen_router_add_call(name, args, span, fctx))
+            }
+            "match_route" | "aic_router_match_intrinsic"
+                if self.sig_matches_shape(
+                    name,
+                    &["Router", "String", "String"],
+                    "Result[Option[RouteMatch], RouterError]",
+                ) =>
+            {
+                Some(self.gen_router_match_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_router_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "new_router expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_router_new(i64* {})",
+            err, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Router", &handle, span, fctx)?;
+        self.wrap_router_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_router_add_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 4 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "add expects four arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let router = self.gen_expr(&args[0], fctx)?;
+        let method = self.gen_expr(&args[1], fctx)?;
+        let pattern = self.gen_expr(&args[2], fctx)?;
+        let route_id = self.gen_expr(&args[3], fctx)?;
+        if method.ty != LType::String || pattern.ty != LType::String || route_id.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "add expects (Router, String, String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle =
+            self.extract_named_handle_from_value(&router, "Router", "add", args[0].span, fctx)?;
+        let (method_ptr, method_len, method_cap) =
+            self.string_parts(&method, args[1].span, fctx)?;
+        let (pattern_ptr, pattern_len, pattern_cap) =
+            self.string_parts(&pattern, args[2].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_router_add(i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {})",
+            err,
+            handle,
+            method_ptr,
+            method_len,
+            method_cap,
+            pattern_ptr,
+            pattern_len,
+            pattern_cap,
+            route_id.repr.clone().unwrap_or_else(|| "0".to_string()),
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Router", &handle, span, fctx)?;
+        self.wrap_router_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_router_match_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "match_route expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let router = self.gen_expr(&args[0], fctx)?;
+        let method = self.gen_expr(&args[1], fctx)?;
+        let path = self.gen_expr(&args[2], fctx)?;
+        if method.ty != LType::String || path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "match_route expects (Router, String, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.extract_named_handle_from_value(
+            &router,
+            "Router",
+            "match_route",
+            args[0].span,
+            fctx,
+        )?;
+        let (method_ptr, method_len, method_cap) =
+            self.string_parts(&method, args[1].span, fctx)?;
+        let (path_ptr, path_len, path_cap) = self.string_parts(&path, args[2].span, fctx)?;
+        let route_id_slot = self.new_temp();
+        let params_slot = self.new_temp();
+        let found_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", route_id_slot));
+        fctx.lines.push(format!("  {} = alloca i64", params_slot));
+        fctx.lines.push(format!("  {} = alloca i64", found_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_router_match(i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {}, i64* {}, i64* {})",
+            err,
+            handle,
+            method_ptr,
+            method_len,
+            method_cap,
+            path_ptr,
+            path_len,
+            path_cap,
+            route_id_slot,
+            params_slot,
+            found_slot
+        ));
+        let route_id = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", route_id, route_id_slot));
+        let params_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            params_handle, params_slot
+        ));
+        let found = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", found, found_slot));
+        let found_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let Some((_, route_match_ty, _, _)) = self.option_layout_parts(&ok_ty, span) else {
+            return None;
+        };
+        let LType::Struct(route_match_layout) = &route_match_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "match_route expects Option[RouteMatch] payload",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(params_ty) = route_match_layout
+            .fields
+            .iter()
+            .find(|field| field.name == "params")
+            .map(|field| field.ty.clone())
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RouteMatch struct is missing `params` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let params_value =
+            self.build_map_value_from_handle(&params_ty, &params_handle, args[0].span, fctx)?;
+        let route_match = self.build_http_struct_value(
+            &route_match_ty,
+            "RouteMatch",
+            &[
+                (
+                    "route_id",
+                    Value {
+                        ty: LType::Int,
+                        repr: Some(route_id),
+                    },
+                ),
+                ("params", params_value),
+            ],
+            span,
+            fctx,
+        )?;
+        let ok_payload =
+            self.wrap_option_with_condition(&ok_ty, route_match, &found_bool, span, fctx)?;
+        self.wrap_router_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     fn gen_url_parse_call(
         &mut self,
         name: &str,
@@ -9146,6 +10366,115 @@ impl<'a> Generator<'a> {
         self.build_struct_value(layout, &ordered, span, fctx)
     }
 
+    fn http_server_response_parts(
+        &mut self,
+        response: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(Value, Value, Value)> {
+        let LType::Struct(layout) = &response.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected Response struct value",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Response" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected Response struct value, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut status = None;
+        let mut headers = None;
+        let mut body = None;
+        let response_repr = response
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&response.ty));
+        let response_ty = llvm_type(&response.ty);
+
+        for (index, field) in layout.fields.iter().enumerate() {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                reg, response_ty, response_repr, index
+            ));
+            let value = Value {
+                ty: field.ty.clone(),
+                repr: Some(reg),
+            };
+            match field.name.as_str() {
+                "status" => status = Some(value),
+                "headers" => headers = Some(value),
+                "body" => body = Some(value),
+                _ => {}
+            }
+        }
+
+        let Some(status) = status else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response struct is missing `status` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(headers) = headers else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response struct is missing `headers` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(body) = body else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response struct is missing `body` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if status.ty != LType::Int || body.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response struct fields must be `status: Int`, `headers: Map`, and `body: String`",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let LType::Struct(headers_layout) = &headers.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response headers field must be a Map",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&headers_layout.repr) != "Map" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "Response headers field must be a Map",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some((status, headers, body))
+    }
+
     fn build_url_struct_value(
         &mut self,
         url_ty: &LType,
@@ -9494,6 +10823,174 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn wrap_http_server_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "http_server builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_http_server_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("http_server_ok");
+        let err_label = self.new_label("http_server_err");
+        let cont_label = self.new_label("http_server_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn wrap_router_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "router builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_router_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("router_ok");
+        let err_label = self.new_label("router_err");
+        let cont_label = self.new_label("router_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn gen_json_builtin_call(
         &mut self,
         name: &str,
@@ -9505,11 +11002,13 @@ impl<'a> Generator<'a> {
             "parse" | "aic_json_parse_intrinsic" => "parse",
             "stringify" | "aic_json_stringify_intrinsic" => "stringify",
             "encode_int" | "aic_json_encode_int_intrinsic" => "encode_int",
+            "encode_float" | "aic_json_encode_float_intrinsic" => "encode_float",
             "encode_bool" | "aic_json_encode_bool_intrinsic" => "encode_bool",
             "encode_string" | "aic_json_encode_string_intrinsic" => "encode_string",
             "encode_null" | "aic_json_encode_null_intrinsic" => "encode_null",
             "encode" | "aic_json_serde_encode_intrinsic" => "encode_any",
             "decode_int" | "aic_json_decode_int_intrinsic" => "decode_int",
+            "decode_float" | "aic_json_decode_float_intrinsic" => "decode_float",
             "decode_bool" | "aic_json_decode_bool_intrinsic" => "decode_bool",
             "decode_string" | "aic_json_decode_string_intrinsic" => "decode_string",
             "decode_with" | "aic_json_serde_decode_intrinsic" => "decode_any",
@@ -9535,6 +11034,9 @@ impl<'a> Generator<'a> {
             "encode_int" if self.sig_matches_shape(name, &["Int"], "JsonValue") => {
                 Some(self.gen_json_encode_int_call(args, span, fctx))
             }
+            "encode_float" if self.sig_matches_shape(name, &["Float"], "JsonValue") => {
+                Some(self.gen_json_encode_float_call(args, span, fctx))
+            }
             "encode_bool" if self.sig_matches_shape(name, &["Bool"], "JsonValue") => {
                 Some(self.gen_json_encode_bool_call(args, span, fctx))
             }
@@ -9549,6 +11051,11 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["JsonValue"], "Result[Int, JsonError]") =>
             {
                 Some(self.gen_json_decode_int_call(name, args, span, fctx))
+            }
+            "decode_float"
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[Float, JsonError]") =>
+            {
+                Some(self.gen_json_decode_float_call(name, args, span, fctx))
             }
             "decode_bool"
                 if self.sig_matches_shape(name, &["JsonValue"], "Result[Bool, JsonError]") =>
@@ -9760,6 +11267,66 @@ impl<'a> Generator<'a> {
         self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
     }
 
+    fn gen_json_encode_float_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "encode_float expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "encode_float expects Float",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let value_repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_float(double {}, i8** {}, i64* {})",
+            _err, value_repr, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let raw_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let json_ty = self
+            .fn_sigs
+            .get("encode_float")
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "JsonValue".to_string(),
+                    fields: Vec::new(),
+                })
+            });
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind_value = self.build_json_kind_from_code(&kind_ty, "2", span, fctx)?;
+        self.build_json_value_struct(&json_ty, raw_value, kind_value, span, fctx)
+    }
+
     fn gen_json_encode_bool_call(
         &mut self,
         args: &[ir::Expr],
@@ -9955,6 +11522,50 @@ impl<'a> Generator<'a> {
             .push(format!("  {} = load i64, i64* {}", out_reg, out_slot));
         let ok_payload = Value {
             ty: LType::Int,
+            repr: Some(out_reg),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_json_decode_float_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "decode_float expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca double", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_float(i8* {}, i64 {}, i64 {}, double* {})",
+            err, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out_reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load double, double* {}", out_reg, out_slot));
+        let ok_payload = Value {
+            ty: LType::Float,
             repr: Some(out_reg),
         };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
@@ -10888,6 +12499,7 @@ impl<'a> Generator<'a> {
     ) -> Option<ValueWithErr> {
         match &value.ty {
             LType::Int => self.json_encode_int_runtime(value, span, fctx),
+            LType::Float => self.json_encode_float_runtime(value, span, fctx),
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
             LType::String => self.json_encode_string_runtime(value, span, fctx),
             LType::Unit => self.json_encode_null_runtime(span, fctx),
@@ -11145,6 +12757,7 @@ impl<'a> Generator<'a> {
     ) -> Option<ValueWithErr> {
         match target_ty {
             LType::Int => self.json_decode_int_runtime(json, span, fctx),
+            LType::Float => self.json_decode_float_runtime(json, span, fctx),
             LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
             LType::String => self.json_decode_string_runtime(json, span, fctx),
             LType::Unit => {
@@ -11488,6 +13101,7 @@ impl<'a> Generator<'a> {
     ) -> Option<String> {
         match ty {
             LType::Int => Some("{\"kind\":\"int\"}".to_string()),
+            LType::Float => Some("{\"kind\":\"float\"}".to_string()),
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
             LType::String => Some("{\"kind\":\"string\"}".to_string()),
             LType::Unit => Some("{\"kind\":\"unit\"}".to_string()),
@@ -11596,6 +13210,53 @@ impl<'a> Generator<'a> {
             "  {} = call i64 @aic_rt_json_encode_int(i64 {}, i8** {}, i64* {})",
             err_code,
             value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let json_ty = self.json_value_type(span)?;
+        let raw = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let kind_ty = self.json_value_layout(&json_ty, span)?.3;
+        let kind = self.build_json_kind_from_code(&kind_ty, "2", span, fctx)?;
+        let json = self.build_json_value_struct(&json_ty, raw, kind, span, fctx)?;
+        Some(ValueWithErr {
+            value: json,
+            err_code,
+        })
+    }
+
+    fn json_encode_float_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if value.ty != LType::Float {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects Float input",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_encode_float(double {}, i8** {}, i64* {})",
+            err_code,
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| llvm_float_literal(0.0_f64)),
             out_ptr_slot,
             out_len_slot
         ));
@@ -11897,6 +13558,32 @@ impl<'a> Generator<'a> {
         Some(ValueWithErr {
             value: Value {
                 ty: LType::Int,
+                repr: Some(out),
+            },
+            err_code,
+        })
+    }
+
+    fn json_decode_float_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(value, span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca double", out_slot));
+        let err_code = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_json_decode_float(i8* {}, i64 {}, i64 {}, double* {})",
+            err_code, raw_ptr, raw_len, raw_cap, out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load double, double* {}", out, out_slot));
+        Some(ValueWithErr {
+            value: Value {
+                ty: LType::Float,
                 repr: Some(out),
             },
             err_code,
@@ -13112,6 +14799,59 @@ impl<'a> Generator<'a> {
                 (5, "InvalidTarget"),
                 (6, "InvalidInput"),
                 (7, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_http_server_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "ServerError",
+            "http_server",
+            &[
+                (1, "InvalidRequest"),
+                (2, "InvalidMethod"),
+                (3, "InvalidHeader"),
+                (4, "InvalidTarget"),
+                (5, "Timeout"),
+                (6, "ConnectionClosed"),
+                (7, "BodyTooLarge"),
+                (8, "Net"),
+                (9, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_router_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "RouterError",
+            "router",
+            &[
+                (1, "InvalidPattern"),
+                (2, "InvalidMethod"),
+                (3, "Capacity"),
+                (4, "Internal"),
             ],
             "Internal",
             err_code,
@@ -14750,6 +16490,7 @@ impl<'a> Generator<'a> {
         let repr = repr.trim();
         match repr {
             "Int" => return Some(LType::Int),
+            "Float" => return Some(LType::Float),
             "Bool" => return Some(LType::Bool),
             "String" => return Some(LType::String),
             "()" => return Some(LType::Unit),
@@ -15128,7 +16869,9 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("string", "replace") => Some("aic_string_replace_intrinsic"),
         ("string", "repeat") => Some("aic_string_repeat_intrinsic"),
         ("string", "parse_int") => Some("aic_string_parse_int_intrinsic"),
+        ("string", "parse_float") => Some("aic_string_parse_float_intrinsic"),
         ("string", "int_to_string") => Some("aic_string_int_to_string_intrinsic"),
+        ("string", "float_to_string") => Some("aic_string_float_to_string_intrinsic"),
         ("string", "bool_to_string") => Some("aic_string_bool_to_string_intrinsic"),
         ("string", "join") => Some("aic_string_join_intrinsic"),
         ("path", "join") => Some("aic_path_join_intrinsic"),
@@ -15166,14 +16909,27 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("http", "header") => Some("aic_http_header_intrinsic"),
         ("http", "request") => Some("aic_http_request_intrinsic"),
         ("http", "response") => Some("aic_http_response_intrinsic"),
+        ("http_server", "listen") => Some("aic_http_server_listen_intrinsic"),
+        ("http_server", "accept") => Some("aic_http_server_accept_intrinsic"),
+        ("http_server", "read_request") => Some("aic_http_server_read_request_intrinsic"),
+        ("http_server", "write_response") => Some("aic_http_server_write_response_intrinsic"),
+        ("http_server", "close") => Some("aic_http_server_close_intrinsic"),
+        ("http_server", "text_response") => Some("aic_http_server_text_response_intrinsic"),
+        ("http_server", "json_response") => Some("aic_http_server_json_response_intrinsic"),
+        ("http_server", "header") => Some("aic_http_server_header_intrinsic"),
+        ("router", "new_router") => Some("aic_router_new_intrinsic"),
+        ("router", "add") => Some("aic_router_add_intrinsic"),
+        ("router", "match_route") => Some("aic_router_match_intrinsic"),
         ("json", "parse") => Some("aic_json_parse_intrinsic"),
         ("json", "stringify") => Some("aic_json_stringify_intrinsic"),
         ("json", "encode_int") => Some("aic_json_encode_int_intrinsic"),
+        ("json", "encode_float") => Some("aic_json_encode_float_intrinsic"),
         ("json", "encode_bool") => Some("aic_json_encode_bool_intrinsic"),
         ("json", "encode_string") => Some("aic_json_encode_string_intrinsic"),
         ("json", "encode_null") => Some("aic_json_encode_null_intrinsic"),
         ("json", "encode") => Some("aic_json_serde_encode_intrinsic"),
         ("json", "decode_int") => Some("aic_json_decode_int_intrinsic"),
+        ("json", "decode_float") => Some("aic_json_decode_float_intrinsic"),
         ("json", "decode_bool") => Some("aic_json_decode_bool_intrinsic"),
         ("json", "decode_string") => Some("aic_json_decode_string_intrinsic"),
         ("json", "decode_with") => Some("aic_json_serde_decode_intrinsic"),
@@ -15200,9 +16956,14 @@ fn coerce_repr(value: &Value, expected: &LType) -> String {
     default_value(expected)
 }
 
+fn llvm_float_literal(value: f64) -> String {
+    format!("0x{:016X}", value.to_bits())
+}
+
 fn llvm_type(ty: &LType) -> String {
     match ty {
         LType::Int => "i64".to_string(),
+        LType::Float => "double".to_string(),
         LType::Bool => "i1".to_string(),
         LType::Unit => "void".to_string(),
         LType::String => "{ i8*, i64, i64 }".to_string(),
@@ -15235,6 +16996,7 @@ fn llvm_type(ty: &LType) -> String {
 fn default_value(ty: &LType) -> String {
     match ty {
         LType::Int => "0".to_string(),
+        LType::Float => llvm_float_literal(0.0_f64),
         LType::Bool => "0".to_string(),
         LType::Unit => String::new(),
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
@@ -15268,6 +17030,7 @@ fn default_value(ty: &LType) -> String {
 fn render_type(ty: &LType) -> String {
     match ty {
         LType::Int => "Int".to_string(),
+        LType::Float => "Float".to_string(),
         LType::Bool => "Bool".to_string(),
         LType::Unit => "()".to_string(),
         LType::String => "String".to_string(),
@@ -15470,6 +17233,7 @@ fn runtime_c_source() -> &'static str {
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <math.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -15612,6 +17376,28 @@ static long aic_rt_sandbox_violation(const char* domain, const char* operation, 
 
 void aic_rt_print_int(long x) {
     printf("%ld\n", x);
+}
+
+void aic_rt_print_float(double x) {
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%.17g", x);
+    if (written <= 0) {
+        printf("0.0\n");
+        return;
+    }
+    int has_decimal = 0;
+    for (int i = 0; i < written; ++i) {
+        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
+            has_decimal = 1;
+            break;
+        }
+    }
+    if (!has_decimal && written < (int)sizeof(buf) - 2) {
+        buf[written++] = '.';
+        buf[written++] = '0';
+        buf[written] = '\0';
+    }
+    printf("%s\n", buf);
 }
 
 void aic_rt_print_str(const char* ptr, long len, long cap) {
@@ -18705,6 +20491,83 @@ long aic_rt_string_parse_int(
     return 0;
 }
 
+static long aic_rt_string_parse_float_error(const char* message, char** out_err_ptr, long* out_err_len) {
+    size_t message_len = strlen(message);
+    char* out = aic_rt_copy_bytes(message, message_len);
+    if (out == NULL) {
+        if (out_err_ptr != NULL) {
+            *out_err_ptr = NULL;
+        }
+        if (out_err_len != NULL) {
+            *out_err_len = 0;
+        }
+        return 1;
+    }
+    if (out_err_ptr != NULL) {
+        *out_err_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_err_len != NULL) {
+        *out_err_len = (long)message_len;
+    }
+    return 1;
+}
+
+long aic_rt_string_parse_float(
+    const char* s_ptr,
+    long s_len,
+    long s_cap,
+    double* out_value,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)s_cap;
+    if (out_value != NULL) {
+        *out_value = 0.0;
+    }
+    if (out_err_ptr != NULL) {
+        *out_err_ptr = NULL;
+    }
+    if (out_err_len != NULL) {
+        *out_err_len = 0;
+    }
+    if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
+        return aic_rt_string_parse_float_error("invalid float: invalid input", out_err_ptr, out_err_len);
+    }
+    size_t start = 0;
+    size_t end = 0;
+    aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &start, &end);
+    if (start >= end) {
+        return aic_rt_string_parse_float_error("invalid float: empty", out_err_ptr, out_err_len);
+    }
+
+    char* text = aic_rt_copy_bytes(s_ptr + start, end - start);
+    if (text == NULL) {
+        return aic_rt_string_parse_float_error("invalid float: allocation failed", out_err_ptr, out_err_len);
+    }
+    errno = 0;
+    char* tail = NULL;
+    double parsed = strtod(text, &tail);
+    if (tail == text || (tail != NULL && *tail != '\0')) {
+        free(text);
+        return aic_rt_string_parse_float_error("invalid float: malformed", out_err_ptr, out_err_len);
+    }
+    if (errno == ERANGE) {
+        free(text);
+        return aic_rt_string_parse_float_error("invalid float: out of range", out_err_ptr, out_err_len);
+    }
+    if (isnan(parsed) || isinf(parsed)) {
+        free(text);
+        return aic_rt_string_parse_float_error("invalid float: non-finite", out_err_ptr, out_err_len);
+    }
+    if (out_value != NULL) {
+        *out_value = parsed;
+    }
+    free(text);
+    return 0;
+}
+
 void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -18717,6 +20580,47 @@ void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
         return;
+    }
+    char* out = aic_rt_copy_bytes(buffer, (size_t)written);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (isnan(value)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("NaN", 3));
+        return;
+    }
+    if (isinf(value)) {
+        if (value < 0.0) {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("-inf", 4));
+        } else {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("inf", 3));
+        }
+        return;
+    }
+    char buffer[64];
+    int written = snprintf(buffer, sizeof(buffer), "%.17g", value);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    int has_decimal = 0;
+    for (int i = 0; i < written; ++i) {
+        if (buffer[i] == '.' || buffer[i] == 'e' || buffer[i] == 'E') {
+            has_decimal = 1;
+            break;
+        }
+    }
+    if (!has_decimal && written < (int)sizeof(buffer) - 2) {
+        buffer[written++] = '.';
+        buffer[written++] = '0';
+        buffer[written] = '\0';
     }
     char* out = aic_rt_copy_bytes(buffer, (size_t)written);
     aic_rt_write_string_out(out_ptr, out_len, out);
@@ -22239,6 +24143,48 @@ long aic_rt_json_encode_int(long value, char** out_ptr, long* out_len) {
     return 0;
 }
 
+long aic_rt_json_encode_float(double value, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (!isfinite(value)) {
+        return 4;
+    }
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%.17g", value);
+    if (written < 0) {
+        return 7;
+    }
+    int has_decimal = 0;
+    for (int i = 0; i < written; ++i) {
+        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
+            has_decimal = 1;
+            break;
+        }
+    }
+    if (!has_decimal && written < (int)sizeof(buf) - 2) {
+        buf[written++] = '.';
+        buf[written++] = '0';
+        buf[written] = '\0';
+    }
+    char* out = aic_rt_copy_bytes(buf, (size_t)written);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)written;
+    }
+    return 0;
+}
+
 long aic_rt_json_encode_bool(long value, char** out_ptr, long* out_len) {
     if (value != 0) {
         char* out_true = aic_rt_copy_bytes("true", 4);
@@ -22361,6 +24307,54 @@ long aic_rt_json_decode_int(
     }
     if (out_value != NULL) {
         *out_value = (long)parsed;
+    }
+    free(number);
+    return 0;
+}
+
+long aic_rt_json_decode_float(
+    const char* raw_ptr,
+    long raw_len,
+    long raw_cap,
+    double* out_value
+) {
+    (void)raw_cap;
+    if (out_value != NULL) {
+        *out_value = 0.0;
+    }
+    if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
+        return 6;
+    }
+    long kind = AIC_RT_JSON_KIND_NULL;
+    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    if (parse_rc != 0) {
+        return parse_rc;
+    }
+    if (kind != AIC_RT_JSON_KIND_NUMBER) {
+        return 2;
+    }
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_json_trim_bounds(raw_ptr, (size_t)raw_len, &start, &end)) {
+        return 4;
+    }
+    char* number = aic_rt_copy_bytes(raw_ptr + start, end - start);
+    if (number == NULL) {
+        return 7;
+    }
+    errno = 0;
+    char* tail = NULL;
+    double parsed = strtod(number, &tail);
+    if (errno == ERANGE || tail == number || (tail != NULL && *tail != '\0')) {
+        free(number);
+        return 4;
+    }
+    if (!isfinite(parsed)) {
+        free(number);
+        return 4;
+    }
+    if (out_value != NULL) {
+        *out_value = parsed;
     }
     free(number);
     return 0;
@@ -24124,6 +26118,1129 @@ long aic_rt_http_validate_target(const char* target_ptr, long target_len, long t
     return 5;
 }
 
+static long aic_rt_http_server_map_net_error(long net_err) {
+    if (net_err == 0) {
+        return 0;
+    }
+    if (net_err == 4) {
+        return 5;
+    }
+    return 8;
+}
+
+static int aic_rt_http_server_parse_decimal(const char* ptr, size_t len, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (ptr == NULL || len == 0) {
+        return 0;
+    }
+    long value = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (!aic_rt_ascii_is_digit(ptr[i])) {
+            return 0;
+        }
+        int digit = ptr[i] - '0';
+        if (value > (LONG_MAX - digit) / 10) {
+            return 0;
+        }
+        value = (value * 10) + digit;
+    }
+    if (out_value != NULL) {
+        *out_value = value;
+    }
+    return 1;
+}
+
+static long aic_rt_http_server_query_to_map(const char* query_ptr, size_t query_len, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    long handle = 0;
+    if (aic_rt_map_new(1, &handle) != 0) {
+        return 9;
+    }
+    if (out_handle != NULL) {
+        *out_handle = handle;
+    }
+    if (query_len == 0) {
+        return 0;
+    }
+    if (query_ptr == NULL) {
+        return 1;
+    }
+    size_t cursor = 0;
+    while (cursor <= query_len) {
+        size_t segment_end = cursor;
+        while (segment_end < query_len && query_ptr[segment_end] != '&') {
+            segment_end++;
+        }
+        if (segment_end > cursor) {
+            size_t eq = cursor;
+            while (eq < segment_end && query_ptr[eq] != '=') {
+                eq++;
+            }
+            const char* key_ptr = query_ptr + cursor;
+            size_t key_len = eq - cursor;
+            const char* value_ptr = eq < segment_end ? query_ptr + eq + 1 : query_ptr + segment_end;
+            size_t value_len = eq < segment_end ? segment_end - (eq + 1) : 0;
+            if (key_len > 0) {
+                long rc = aic_rt_map_insert_string(
+                    handle,
+                    key_ptr,
+                    (long)key_len,
+                    (long)key_len,
+                    value_ptr,
+                    (long)value_len,
+                    (long)value_len
+                );
+                if (rc != 0) {
+                    return 9;
+                }
+            }
+        }
+        if (segment_end >= query_len) {
+            break;
+        }
+        cursor = segment_end + 1;
+    }
+    return 0;
+}
+
+static long aic_rt_http_server_headers_to_map(
+    const char* headers_ptr,
+    size_t headers_len,
+    long* out_handle,
+    long* out_content_length,
+    int* out_has_content_length
+) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (out_content_length != NULL) {
+        *out_content_length = 0;
+    }
+    if (out_has_content_length != NULL) {
+        *out_has_content_length = 0;
+    }
+    long handle = 0;
+    if (aic_rt_map_new(1, &handle) != 0) {
+        return 9;
+    }
+    if (out_handle != NULL) {
+        *out_handle = handle;
+    }
+    if (headers_len == 0) {
+        return 0;
+    }
+    if (headers_ptr == NULL) {
+        return 1;
+    }
+
+    size_t cursor = 0;
+    while (cursor < headers_len) {
+        size_t line_end = cursor;
+        while (line_end < headers_len && headers_ptr[line_end] != '\n') {
+            line_end++;
+        }
+        size_t next_cursor = line_end < headers_len ? (line_end + 1) : headers_len;
+        size_t logical_end = line_end;
+        if (logical_end > cursor && headers_ptr[logical_end - 1] == '\r') {
+            logical_end--;
+        }
+        if (logical_end == cursor) {
+            cursor = next_cursor;
+            continue;
+        }
+
+        size_t colon = cursor;
+        while (colon < logical_end && headers_ptr[colon] != ':') {
+            colon++;
+        }
+        if (colon == cursor || colon >= logical_end) {
+            return 3;
+        }
+
+        const char* raw_name_ptr = headers_ptr + cursor;
+        size_t raw_name_len = colon - cursor;
+        size_t value_start = colon + 1;
+        while (value_start < logical_end &&
+               (headers_ptr[value_start] == ' ' || headers_ptr[value_start] == '\t')) {
+            value_start++;
+        }
+        size_t value_end = logical_end;
+        while (value_end > value_start &&
+               (headers_ptr[value_end - 1] == ' ' || headers_ptr[value_end - 1] == '\t')) {
+            value_end--;
+        }
+        const char* value_ptr = headers_ptr + value_start;
+        size_t value_len = value_end - value_start;
+
+        long valid = aic_rt_http_validate_header(
+            raw_name_ptr,
+            (long)raw_name_len,
+            (long)raw_name_len,
+            value_ptr,
+            (long)value_len,
+            (long)value_len
+        );
+        if (valid != 0) {
+            return 3;
+        }
+
+        char* lower_name = aic_rt_copy_bytes(raw_name_ptr, raw_name_len);
+        if (lower_name == NULL) {
+            return 9;
+        }
+        for (size_t i = 0; i < raw_name_len; ++i) {
+            lower_name[i] = aic_rt_ascii_lower(lower_name[i]);
+        }
+
+        long insert_rc = aic_rt_map_insert_string(
+            handle,
+            lower_name,
+            (long)raw_name_len,
+            (long)raw_name_len,
+            value_ptr,
+            (long)value_len,
+            (long)value_len
+        );
+        if (insert_rc != 0) {
+            free(lower_name);
+            return 9;
+        }
+
+        if (aic_rt_ascii_eq_lit_ci(lower_name, raw_name_len, "content-length")) {
+            long parsed = 0;
+            int parsed_ok = aic_rt_http_server_parse_decimal(value_ptr, value_len, &parsed);
+            if (!parsed_ok) {
+                free(lower_name);
+                return 1;
+            }
+            if (out_content_length != NULL) {
+                *out_content_length = parsed;
+            }
+            if (out_has_content_length != NULL) {
+                *out_has_content_length = 1;
+            }
+        }
+
+        free(lower_name);
+        cursor = next_cursor;
+    }
+
+    return 0;
+}
+
+long aic_rt_http_server_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    long rc = aic_rt_net_tcp_listen(addr_ptr, addr_len, addr_cap, out_handle);
+    return aic_rt_http_server_map_net_error(rc);
+}
+
+long aic_rt_http_server_accept(long listener, long timeout_ms, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    long rc = aic_rt_net_tcp_accept(listener, timeout_ms, out_handle);
+    return aic_rt_http_server_map_net_error(rc);
+}
+
+long aic_rt_http_server_read_request(
+    long conn,
+    long max_bytes,
+    long timeout_ms,
+    char** out_method_ptr,
+    long* out_method_len,
+    char** out_path_ptr,
+    long* out_path_len,
+    long* out_query_handle,
+    long* out_headers_handle,
+    char** out_body_ptr,
+    long* out_body_len
+) {
+    if (out_method_ptr != NULL) {
+        *out_method_ptr = NULL;
+    }
+    if (out_method_len != NULL) {
+        *out_method_len = 0;
+    }
+    if (out_path_ptr != NULL) {
+        *out_path_ptr = NULL;
+    }
+    if (out_path_len != NULL) {
+        *out_path_len = 0;
+    }
+    if (out_query_handle != NULL) {
+        *out_query_handle = 0;
+    }
+    if (out_headers_handle != NULL) {
+        *out_headers_handle = 0;
+    }
+    if (out_body_ptr != NULL) {
+        *out_body_ptr = NULL;
+    }
+    if (out_body_len != NULL) {
+        *out_body_len = 0;
+    }
+    if (max_bytes <= 0) {
+        return 7;
+    }
+
+    char* payload = NULL;
+    long payload_len = 0;
+    long recv_rc = aic_rt_net_tcp_recv(conn, max_bytes, timeout_ms, &payload, &payload_len);
+    if (recv_rc != 0) {
+        return aic_rt_http_server_map_net_error(recv_rc);
+    }
+    if (payload == NULL || payload_len <= 0) {
+        free(payload);
+        return 6;
+    }
+
+    size_t payload_n = (size_t)payload_len;
+    size_t line_end = 0;
+    while (line_end < payload_n && payload[line_end] != '\n') {
+        line_end++;
+    }
+    if (line_end >= payload_n) {
+        free(payload);
+        return 1;
+    }
+    size_t request_line_end = line_end;
+    if (request_line_end > 0 && payload[request_line_end - 1] == '\r') {
+        request_line_end--;
+    }
+
+    size_t header_marker = SIZE_MAX;
+    size_t delimiter_len = 0;
+    size_t scan = line_end + 1;
+    while (scan < payload_n) {
+        if (scan + 3 < payload_n &&
+            payload[scan] == '\r' &&
+            payload[scan + 1] == '\n' &&
+            payload[scan + 2] == '\r' &&
+            payload[scan + 3] == '\n') {
+            header_marker = scan;
+            delimiter_len = 4;
+            break;
+        }
+        if (scan + 1 < payload_n && payload[scan] == '\n' && payload[scan + 1] == '\n') {
+            header_marker = scan;
+            delimiter_len = 2;
+            break;
+        }
+        scan++;
+    }
+    if (header_marker == SIZE_MAX) {
+        free(payload);
+        return 1;
+    }
+
+    size_t sp1 = 0;
+    while (sp1 < request_line_end && payload[sp1] != ' ') {
+        sp1++;
+    }
+    if (sp1 == 0 || sp1 >= request_line_end) {
+        free(payload);
+        return 1;
+    }
+    size_t sp2 = sp1 + 1;
+    while (sp2 < request_line_end && payload[sp2] != ' ') {
+        sp2++;
+    }
+    if (sp2 <= sp1 + 1 || sp2 >= request_line_end) {
+        free(payload);
+        return 1;
+    }
+
+    const char* method_ptr = payload;
+    size_t method_len = sp1;
+    const char* target_ptr = payload + sp1 + 1;
+    size_t target_len = sp2 - (sp1 + 1);
+    const char* version_ptr = payload + sp2 + 1;
+    size_t version_len = request_line_end - (sp2 + 1);
+    if (!((version_len == 8 && memcmp(version_ptr, "HTTP/1.1", 8) == 0) ||
+          (version_len == 8 && memcmp(version_ptr, "HTTP/1.0", 8) == 0))) {
+        free(payload);
+        return 1;
+    }
+
+    long method_tag = 0;
+    if (aic_rt_http_parse_method(method_ptr, (long)method_len, (long)method_len, &method_tag) != 0) {
+        free(payload);
+        return 2;
+    }
+    if (aic_rt_http_validate_target(target_ptr, (long)target_len, (long)target_len) != 0) {
+        free(payload);
+        return 4;
+    }
+
+    char* method_owned = aic_rt_copy_bytes(method_ptr, method_len);
+    if (method_owned == NULL) {
+        free(payload);
+        return 9;
+    }
+
+    char* path_owned = NULL;
+    const char* query_src = NULL;
+    size_t query_len = 0;
+    char* query_owned = NULL;
+
+    if (target_len > 0 && target_ptr[0] == '/') {
+        size_t qmark = 0;
+        while (qmark < target_len && target_ptr[qmark] != '?') {
+            qmark++;
+        }
+        size_t path_len = qmark;
+        if (path_len == 0) {
+            path_owned = aic_rt_copy_bytes("/", 1);
+        } else {
+            path_owned = aic_rt_copy_bytes(target_ptr, path_len);
+        }
+        if (path_owned == NULL) {
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
+        if (qmark < target_len) {
+            query_src = target_ptr + qmark + 1;
+            query_len = target_len - (qmark + 1);
+        }
+    } else {
+        char* scheme = NULL;
+        char* host = NULL;
+        char* fragment = NULL;
+        long path_len_long = 0;
+        long query_len_long = 0;
+        long parse_rc = aic_rt_url_parse(
+            target_ptr,
+            (long)target_len,
+            (long)target_len,
+            &scheme,
+            NULL,
+            &host,
+            NULL,
+            NULL,
+            &path_owned,
+            &path_len_long,
+            &query_owned,
+            &query_len_long,
+            &fragment,
+            NULL
+        );
+        free(scheme);
+        free(host);
+        free(fragment);
+        if (parse_rc != 0) {
+            free(path_owned);
+            free(query_owned);
+            free(method_owned);
+            free(payload);
+            return parse_rc == 7 ? 9 : 4;
+        }
+        if (path_owned == NULL || path_len_long <= 0) {
+            free(path_owned);
+            path_owned = aic_rt_copy_bytes("/", 1);
+            if (path_owned == NULL) {
+                free(query_owned);
+                free(method_owned);
+                free(payload);
+                return 9;
+            }
+        }
+        query_src = query_owned;
+        query_len = query_len_long > 0 ? (size_t)query_len_long : 0;
+    }
+
+    size_t headers_start = line_end + 1;
+    size_t headers_len = header_marker - headers_start;
+    long headers_handle = 0;
+    long content_length = 0;
+    int has_content_length = 0;
+    long headers_rc = aic_rt_http_server_headers_to_map(
+        payload + headers_start,
+        headers_len,
+        &headers_handle,
+        &content_length,
+        &has_content_length
+    );
+    if (headers_rc != 0) {
+        free(query_owned);
+        free(path_owned);
+        free(method_owned);
+        free(payload);
+        return headers_rc;
+    }
+
+    long query_handle = 0;
+    long query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
+    if (query_rc != 0) {
+        free(query_owned);
+        free(path_owned);
+        free(method_owned);
+        free(payload);
+        return query_rc;
+    }
+    free(query_owned);
+
+    size_t body_start = header_marker + delimiter_len;
+    size_t available_body = body_start <= payload_n ? (payload_n - body_start) : 0;
+    size_t body_len = available_body;
+    if (has_content_length) {
+        if (content_length < 0) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 1;
+        }
+        body_len = (size_t)content_length;
+        if (body_len > available_body) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 7;
+        }
+    }
+
+    char* body_owned = aic_rt_copy_bytes(payload + body_start, body_len);
+    free(payload);
+    if (body_owned == NULL) {
+        free(path_owned);
+        free(method_owned);
+        return 9;
+    }
+
+    if (out_method_ptr != NULL) {
+        *out_method_ptr = method_owned;
+    } else {
+        free(method_owned);
+    }
+    if (out_method_len != NULL) {
+        *out_method_len = (long)method_len;
+    }
+    long path_len_out = (long)strlen(path_owned);
+    if (out_path_ptr != NULL) {
+        *out_path_ptr = path_owned;
+    } else {
+        free(path_owned);
+    }
+    if (out_path_len != NULL) {
+        *out_path_len = path_len_out;
+    }
+    if (out_query_handle != NULL) {
+        *out_query_handle = query_handle;
+    }
+    if (out_headers_handle != NULL) {
+        *out_headers_handle = headers_handle;
+    }
+    if (out_body_ptr != NULL) {
+        *out_body_ptr = body_owned;
+    } else {
+        free(body_owned);
+    }
+    if (out_body_len != NULL) {
+        *out_body_len = (long)body_len;
+    }
+    return 0;
+}
+
+long aic_rt_http_server_write_response(
+    long conn,
+    long status,
+    long headers_handle,
+    const char* body_ptr,
+    long body_len,
+    long body_cap,
+    long* out_sent
+) {
+    (void)body_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (status < 100 || status > 599) {
+        return 1;
+    }
+    if (body_len < 0 || (body_len > 0 && body_ptr == NULL)) {
+        return 1;
+    }
+
+    AicMapSlot* headers_slot = aic_rt_map_get_slot(headers_handle);
+    if (headers_slot == NULL || headers_slot->value_kind != 1) {
+        return 3;
+    }
+
+    char* reason = NULL;
+    long reason_len = 0;
+    long reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
+    if (reason_rc != 0 || reason == NULL) {
+        free(reason);
+        return 1;
+    }
+
+    size_t* order = aic_rt_map_sorted_order(headers_slot);
+    if (headers_slot->len > 0 && order == NULL) {
+        free(reason);
+        return 9;
+    }
+
+    size_t headers_bytes = 0;
+    for (size_t i = 0; i < headers_slot->len; ++i) {
+        AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
+        if (entry->key_ptr == NULL || entry->str_value_ptr == NULL) {
+            continue;
+        }
+        if (aic_rt_ascii_eq_lit_ci(entry->key_ptr, (size_t)entry->key_len, "content-length")) {
+            continue;
+        }
+        long valid = aic_rt_http_validate_header(
+            entry->key_ptr,
+            entry->key_len,
+            entry->key_len,
+            entry->str_value_ptr,
+            entry->str_value_len,
+            entry->str_value_len
+        );
+        if (valid != 0) {
+            free(order);
+            free(reason);
+            return 3;
+        }
+        headers_bytes += (size_t)entry->key_len + 2 + (size_t)entry->str_value_len + 2;
+    }
+
+    char status_buf[32];
+    int status_len = snprintf(status_buf, sizeof(status_buf), "%ld", status);
+    if (status_len <= 0 || (size_t)status_len >= sizeof(status_buf)) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+    char content_len_buf[32];
+    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%ld", body_len);
+    if (content_len_len <= 0 || (size_t)content_len_len >= sizeof(content_len_buf)) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    size_t total = 0;
+    total += 9 + (size_t)status_len + 1 + (size_t)reason_len + 2;
+    total += headers_bytes;
+    total += 16 + (size_t)content_len_len + 2;
+    total += 2;
+    total += (size_t)body_len;
+    if (total > (size_t)LONG_MAX) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    char* wire = (char*)malloc(total + 1);
+    if (wire == NULL) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    size_t pos = 0;
+    memcpy(wire + pos, "HTTP/1.1 ", 9);
+    pos += 9;
+    memcpy(wire + pos, status_buf, (size_t)status_len);
+    pos += (size_t)status_len;
+    wire[pos++] = ' ';
+    memcpy(wire + pos, reason, (size_t)reason_len);
+    pos += (size_t)reason_len;
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+
+    for (size_t i = 0; i < headers_slot->len; ++i) {
+        AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
+        if (entry->key_ptr == NULL || entry->str_value_ptr == NULL) {
+            continue;
+        }
+        if (aic_rt_ascii_eq_lit_ci(entry->key_ptr, (size_t)entry->key_len, "content-length")) {
+            continue;
+        }
+        memcpy(wire + pos, entry->key_ptr, (size_t)entry->key_len);
+        pos += (size_t)entry->key_len;
+        wire[pos++] = ':';
+        wire[pos++] = ' ';
+        memcpy(wire + pos, entry->str_value_ptr, (size_t)entry->str_value_len);
+        pos += (size_t)entry->str_value_len;
+        wire[pos++] = '\r';
+        wire[pos++] = '\n';
+    }
+
+    memcpy(wire + pos, "content-length: ", 16);
+    pos += 16;
+    memcpy(wire + pos, content_len_buf, (size_t)content_len_len);
+    pos += (size_t)content_len_len;
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+
+    if (body_len > 0) {
+        memcpy(wire + pos, body_ptr, (size_t)body_len);
+        pos += (size_t)body_len;
+    }
+    wire[pos] = '\0';
+
+    long sent = 0;
+    long send_rc = aic_rt_net_tcp_send(conn, wire, (long)pos, (long)pos, &sent);
+    free(wire);
+    free(order);
+    free(reason);
+
+    if (send_rc != 0) {
+        return aic_rt_http_server_map_net_error(send_rc);
+    }
+    if (out_sent != NULL) {
+        *out_sent = sent;
+    }
+    return 0;
+}
+
+long aic_rt_http_server_close(long handle) {
+    long rc = aic_rt_net_tcp_close(handle);
+    return aic_rt_http_server_map_net_error(rc);
+}
+
+#define AIC_RT_ROUTER_TABLE_CAP 64
+#define AIC_RT_ROUTER_ROUTE_CAP 128
+
+typedef struct {
+    int active;
+    char* method_ptr;
+    long method_len;
+    char* pattern_ptr;
+    long pattern_len;
+    long route_id;
+} AicRtRouterRoute;
+
+typedef struct {
+    int active;
+    long len;
+    AicRtRouterRoute routes[AIC_RT_ROUTER_ROUTE_CAP];
+} AicRtRouterSlot;
+
+static AicRtRouterSlot aic_rt_router_table[AIC_RT_ROUTER_TABLE_CAP];
+
+static char aic_rt_router_ascii_upper(char ch) {
+    if (ch >= 'a' && ch <= 'z') {
+        return (char)(ch - ('a' - 'A'));
+    }
+    return ch;
+}
+
+static AicRtRouterSlot* aic_rt_router_get_slot(long handle) {
+    if (handle <= 0 || handle > AIC_RT_ROUTER_TABLE_CAP) {
+        return NULL;
+    }
+    AicRtRouterSlot* slot = &aic_rt_router_table[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static int aic_rt_router_validate_method(const char* method_ptr, size_t method_len) {
+    if (method_ptr == NULL || method_len == 0) {
+        return 0;
+    }
+    if (method_len == 1 && method_ptr[0] == '*') {
+        return 1;
+    }
+    for (size_t i = 0; i < method_len; ++i) {
+        char c = aic_rt_router_ascii_upper(method_ptr[i]);
+        if (!((c >= 'A' && c <= 'Z') || c == '-')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int aic_rt_router_validate_path_pattern(const char* pattern_ptr, size_t pattern_len) {
+    if (pattern_ptr == NULL || pattern_len == 0 || pattern_ptr[0] != '/') {
+        return 0;
+    }
+    int wildcard_seen = 0;
+    size_t i = 1;
+    while (i <= pattern_len) {
+        size_t segment_start = i;
+        while (i < pattern_len && pattern_ptr[i] != '/') {
+            i++;
+        }
+        size_t segment_len = i - segment_start;
+        if (segment_len > 0) {
+            const char* segment_ptr = pattern_ptr + segment_start;
+            if (wildcard_seen) {
+                return 0;
+            }
+            if (segment_len == 1 && segment_ptr[0] == '*') {
+                wildcard_seen = 1;
+                if (i < pattern_len) {
+                    return 0;
+                }
+            } else if (segment_ptr[0] == ':') {
+                if (segment_len == 1) {
+                    return 0;
+                }
+                for (size_t j = 1; j < segment_len; ++j) {
+                    char c = segment_ptr[j];
+                    if (!((c >= 'a' && c <= 'z') ||
+                          (c >= 'A' && c <= 'Z') ||
+                          (c >= '0' && c <= '9') ||
+                          c == '_')) {
+                        return 0;
+                    }
+                }
+            } else {
+                for (size_t j = 0; j < segment_len; ++j) {
+                    char c = segment_ptr[j];
+                    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                        return 0;
+                    }
+                }
+            }
+        }
+        if (i < pattern_len) {
+            i++;
+        } else {
+            break;
+        }
+    }
+    return 1;
+}
+
+static int aic_rt_router_validate_path_input(const char* path_ptr, size_t path_len) {
+    if (path_ptr == NULL || path_len == 0 || path_ptr[0] != '/') {
+        return 0;
+    }
+    for (size_t i = 0; i < path_len; ++i) {
+        char c = path_ptr[i];
+        if (c == '\r' || c == '\n') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void aic_rt_router_next_segment(
+    const char* text_ptr,
+    size_t text_len,
+    size_t* cursor,
+    const char** out_ptr,
+    size_t* out_len,
+    int* out_done
+) {
+    while (*cursor < text_len && text_ptr[*cursor] == '/') {
+        (*cursor)++;
+    }
+    if (*cursor >= text_len) {
+        *out_done = 1;
+        *out_ptr = NULL;
+        *out_len = 0;
+        return;
+    }
+    size_t start = *cursor;
+    while (*cursor < text_len && text_ptr[*cursor] != '/') {
+        (*cursor)++;
+    }
+    *out_done = 0;
+    *out_ptr = text_ptr + start;
+    *out_len = *cursor - start;
+}
+
+static int aic_rt_router_method_matches(
+    const AicRtRouterRoute* route,
+    const char* method_ptr,
+    size_t method_len
+) {
+    if (route == NULL || route->method_ptr == NULL || method_ptr == NULL) {
+        return 0;
+    }
+    if (route->method_len == 1 && route->method_ptr[0] == '*') {
+        return 1;
+    }
+    if ((size_t)route->method_len != method_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < method_len; ++i) {
+        if (aic_rt_router_ascii_upper(route->method_ptr[i]) !=
+            aic_rt_router_ascii_upper(method_ptr[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static long aic_rt_router_pattern_match(
+    const char* pattern_ptr,
+    size_t pattern_len,
+    const char* path_ptr,
+    size_t path_len,
+    long params_handle,
+    int* out_match
+) {
+    if (out_match != NULL) {
+        *out_match = 0;
+    }
+    if (pattern_ptr == NULL || path_ptr == NULL) {
+        return 4;
+    }
+
+    size_t pattern_cursor = 0;
+    size_t path_cursor = 0;
+    while (1) {
+        const char* pattern_segment_ptr = NULL;
+        size_t pattern_segment_len = 0;
+        int pattern_done = 0;
+        const char* path_segment_ptr = NULL;
+        size_t path_segment_len = 0;
+        int path_done = 0;
+
+        aic_rt_router_next_segment(
+            pattern_ptr,
+            pattern_len,
+            &pattern_cursor,
+            &pattern_segment_ptr,
+            &pattern_segment_len,
+            &pattern_done
+        );
+        aic_rt_router_next_segment(
+            path_ptr,
+            path_len,
+            &path_cursor,
+            &path_segment_ptr,
+            &path_segment_len,
+            &path_done
+        );
+
+        if (pattern_done && path_done) {
+            if (out_match != NULL) {
+                *out_match = 1;
+            }
+            return 0;
+        }
+        if (!pattern_done && pattern_segment_len == 1 && pattern_segment_ptr[0] == '*') {
+            if (out_match != NULL) {
+                *out_match = 1;
+            }
+            return 0;
+        }
+        if (pattern_done || path_done) {
+            return 0;
+        }
+
+        if (pattern_segment_ptr[0] == ':') {
+            if (params_handle > 0) {
+                long insert_rc = aic_rt_map_insert_string(
+                    params_handle,
+                    pattern_segment_ptr + 1,
+                    (long)(pattern_segment_len - 1),
+                    (long)(pattern_segment_len - 1),
+                    path_segment_ptr,
+                    (long)path_segment_len,
+                    (long)path_segment_len
+                );
+                if (insert_rc != 0) {
+                    return 4;
+                }
+            }
+            continue;
+        }
+
+        if (pattern_segment_len != path_segment_len ||
+            memcmp(pattern_segment_ptr, path_segment_ptr, pattern_segment_len) != 0) {
+            return 0;
+        }
+    }
+}
+
+long aic_rt_router_new(long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    for (long i = 0; i < AIC_RT_ROUTER_TABLE_CAP; ++i) {
+        if (!aic_rt_router_table[i].active) {
+            AicRtRouterSlot* slot = &aic_rt_router_table[i];
+            slot->active = 1;
+            slot->len = 0;
+            for (long j = 0; j < AIC_RT_ROUTER_ROUTE_CAP; ++j) {
+                slot->routes[j].active = 0;
+                slot->routes[j].method_ptr = NULL;
+                slot->routes[j].method_len = 0;
+                slot->routes[j].pattern_ptr = NULL;
+                slot->routes[j].pattern_len = 0;
+                slot->routes[j].route_id = 0;
+            }
+            if (out_handle != NULL) {
+                *out_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    return 3;
+}
+
+long aic_rt_router_add(
+    long handle,
+    const char* method_ptr,
+    long method_len,
+    long method_cap,
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long route_id
+) {
+    (void)method_cap;
+    (void)pattern_cap;
+    if (method_len <= 0 || pattern_len <= 0) {
+        return 1;
+    }
+    AicRtRouterSlot* slot = aic_rt_router_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    if (!aic_rt_router_validate_method(method_ptr, (size_t)method_len)) {
+        return 2;
+    }
+    if (!aic_rt_router_validate_path_pattern(pattern_ptr, (size_t)pattern_len)) {
+        return 1;
+    }
+    if (slot->len >= AIC_RT_ROUTER_ROUTE_CAP) {
+        return 3;
+    }
+
+    char* method_owned = aic_rt_copy_bytes(method_ptr, (size_t)method_len);
+    if (method_owned == NULL) {
+        return 4;
+    }
+    for (long i = 0; i < method_len; ++i) {
+        method_owned[i] = aic_rt_router_ascii_upper(method_owned[i]);
+    }
+    char* pattern_owned = aic_rt_copy_bytes(pattern_ptr, (size_t)pattern_len);
+    if (pattern_owned == NULL) {
+        free(method_owned);
+        return 4;
+    }
+
+    AicRtRouterRoute* route = &slot->routes[slot->len];
+    route->active = 1;
+    route->method_ptr = method_owned;
+    route->method_len = method_len;
+    route->pattern_ptr = pattern_owned;
+    route->pattern_len = pattern_len;
+    route->route_id = route_id;
+    slot->len += 1;
+    return 0;
+}
+
+long aic_rt_router_match(
+    long handle,
+    const char* method_ptr,
+    long method_len,
+    long method_cap,
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    long* out_route_id,
+    long* out_params_handle,
+    long* out_found
+) {
+    (void)method_cap;
+    (void)path_cap;
+    if (out_route_id != NULL) {
+        *out_route_id = 0;
+    }
+    if (out_params_handle != NULL) {
+        *out_params_handle = 0;
+    }
+    if (out_found != NULL) {
+        *out_found = 0;
+    }
+    if (method_len <= 0 || path_len <= 0) {
+        return 1;
+    }
+    if (!aic_rt_router_validate_method(method_ptr, (size_t)method_len)) {
+        return 2;
+    }
+    if (!aic_rt_router_validate_path_input(path_ptr, (size_t)path_len)) {
+        return 1;
+    }
+
+    AicRtRouterSlot* slot = aic_rt_router_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+
+    for (long i = 0; i < slot->len; ++i) {
+        AicRtRouterRoute* route = &slot->routes[i];
+        if (!route->active) {
+            continue;
+        }
+        if (!aic_rt_router_method_matches(route, method_ptr, (size_t)method_len)) {
+            continue;
+        }
+        int first_match = 0;
+        long first_rc = aic_rt_router_pattern_match(
+            route->pattern_ptr,
+            (size_t)route->pattern_len,
+            path_ptr,
+            (size_t)path_len,
+            0,
+            &first_match
+        );
+        if (first_rc != 0) {
+            return 4;
+        }
+        if (!first_match) {
+            continue;
+        }
+
+        long params_handle = 0;
+        if (aic_rt_map_new(1, &params_handle) != 0) {
+            return 4;
+        }
+        int second_match = 0;
+        long second_rc = aic_rt_router_pattern_match(
+            route->pattern_ptr,
+            (size_t)route->pattern_len,
+            path_ptr,
+            (size_t)path_len,
+            params_handle,
+            &second_match
+        );
+        if (second_rc != 0 || !second_match) {
+            return 4;
+        }
+
+        if (out_route_id != NULL) {
+            *out_route_id = route->route_id;
+        }
+        if (out_params_handle != NULL) {
+            *out_params_handle = params_handle;
+        }
+        if (out_found != NULL) {
+            *out_found = 1;
+        }
+        return 0;
+    }
+
+    long empty_params = 0;
+    if (aic_rt_map_new(1, &empty_params) != 0) {
+        return 4;
+    }
+    if (out_params_handle != NULL) {
+        *out_params_handle = empty_params;
+    }
+    return 0;
+}
+
 void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
     (void)cap;
     if (ptr == NULL) {
@@ -24530,6 +27647,21 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_http_validate_header(i8*, i64, i64, i8*, i64, i64)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_http_server_listen(i8*, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_http_server_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_router_new(i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_router_add(i64, i8*, i64, i64, i8*, i64, i64, i64)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_router_match(i64, i8*, i64, i64, i8*, i64, i64, i64*, i64*, i64*)"
+        ));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_json_parse(i8*, i64, i64, i8**, i64*, i64*)"));
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_json_object_set(i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*, i64*)"
@@ -24596,6 +27728,12 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_http_status_reason("));
         assert!(runtime_c_source().contains("long aic_rt_http_validate_header("));
         assert!(runtime_c_source().contains("long aic_rt_http_validate_target("));
+        assert!(runtime_c_source().contains("long aic_rt_http_server_listen("));
+        assert!(runtime_c_source().contains("long aic_rt_http_server_read_request("));
+        assert!(runtime_c_source().contains("long aic_rt_http_server_write_response("));
+        assert!(runtime_c_source().contains("long aic_rt_router_new(long* out_handle)"));
+        assert!(runtime_c_source().contains("long aic_rt_router_add("));
+        assert!(runtime_c_source().contains("long aic_rt_router_match("));
         assert!(runtime_c_source().contains("long aic_rt_json_parse("));
         assert!(runtime_c_source().contains("long aic_rt_json_stringify("));
         assert!(runtime_c_source().contains("long aic_rt_json_decode_string("));

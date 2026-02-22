@@ -288,6 +288,7 @@ fn format_block(
 fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
     match &expr.kind {
         ir::ExprKind::Int(v) => out.push_str(&v.to_string()),
+        ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
         ir::ExprKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
         ir::ExprKind::String(v) => {
             out.push('"');
@@ -434,6 +435,22 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             out.push('.');
             out.push_str(field);
         }
+    }
+}
+
+fn render_float_literal(value: f64) -> String {
+    if value.is_nan() {
+        "NaN".to_string()
+    } else if value == f64::INFINITY {
+        "inf".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-inf".to_string()
+    } else {
+        let mut text = format!("{value}");
+        if !text.contains('.') && !text.contains('e') && !text.contains('E') {
+            text.push_str(".0");
+        }
+        text
     }
 }
 

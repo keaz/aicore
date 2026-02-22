@@ -1,5 +1,9 @@
 module std.string;
 
+import std.option;
+import std.result;
+import std.vec;
+
 /// Return string length in bytes.
 fn len(s: String) -> Int {
     0
@@ -8,4 +12,191 @@ fn len(s: String) -> Int {
 /// Return true when the string is empty.
 fn is_empty(s: String) -> Bool {
     len(s) == 0
+}
+
+fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool {
+    false
+}
+
+fn aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool {
+    false
+}
+
+fn aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool {
+    false
+}
+
+fn aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
+    let out: Option[Int] = None();
+    out
+}
+
+fn aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
+    let out: Option[Int] = None();
+    out
+}
+
+fn aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String {
+    ""
+}
+
+fn aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String] {
+    let out: Option[String] = None();
+    out
+}
+
+fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String] {
+    let out: Vec[String] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+    out
+}
+
+fn aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[String]] {
+    let out: Option[Vec[String]] = None();
+    out
+}
+
+fn aic_string_trim_intrinsic(s: String) -> String {
+    ""
+}
+
+fn aic_string_trim_start_intrinsic(s: String) -> String {
+    ""
+}
+
+fn aic_string_trim_end_intrinsic(s: String) -> String {
+    ""
+}
+
+fn aic_string_to_upper_intrinsic(s: String) -> String {
+    ""
+}
+
+fn aic_string_to_lower_intrinsic(s: String) -> String {
+    ""
+}
+
+fn aic_string_replace_intrinsic(s: String, from: String, to: String) -> String {
+    ""
+}
+
+fn aic_string_repeat_intrinsic(s: String, count: Int) -> String {
+    ""
+}
+
+fn aic_string_parse_int_intrinsic(s: String) -> Result[Int, String] {
+    let out: Result[Int, String] = Err("invalid integer: empty");
+    out
+}
+
+fn aic_string_parse_float_intrinsic(s: String) -> Result[Float, String] {
+    let out: Result[Float, String] = Err("invalid float: empty");
+    out
+}
+
+fn aic_string_int_to_string_intrinsic(n: Int) -> String {
+    "0"
+}
+
+fn aic_string_float_to_string_intrinsic(v: Float) -> String {
+    "0.0"
+}
+
+fn aic_string_bool_to_string_intrinsic(b: Bool) -> String {
+    if b { "true" } else { "false" }
+}
+
+fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
+    ""
+}
+
+fn contains(haystack: String, needle: String) -> Bool {
+    aic_string_contains_intrinsic(haystack, needle)
+}
+
+fn starts_with(s: String, prefix: String) -> Bool {
+    aic_string_starts_with_intrinsic(s, prefix)
+}
+
+fn ends_with(s: String, suffix: String) -> Bool {
+    aic_string_ends_with_intrinsic(s, suffix)
+}
+
+fn index_of(s: String, needle: String) -> Option[Int] {
+    aic_string_index_of_intrinsic(s, needle)
+}
+
+fn last_index_of(s: String, needle: String) -> Option[Int] {
+    aic_string_last_index_of_intrinsic(s, needle)
+}
+
+fn substring(s: String, start: Int, end: Int) -> String {
+    aic_string_substring_intrinsic(s, start, end)
+}
+
+fn char_at(s: String, index: Int) -> Option[String] {
+    aic_string_char_at_intrinsic(s, index)
+}
+
+fn split(s: String, delimiter: String) -> Vec[String] {
+    aic_string_split_intrinsic(s, delimiter)
+}
+
+fn split_first(s: String, delimiter: String) -> Option[Vec[String]] {
+    aic_string_split_first_intrinsic(s, delimiter)
+}
+
+fn trim(s: String) -> String {
+    aic_string_trim_intrinsic(s)
+}
+
+fn trim_start(s: String) -> String {
+    aic_string_trim_start_intrinsic(s)
+}
+
+fn trim_end(s: String) -> String {
+    aic_string_trim_end_intrinsic(s)
+}
+
+fn to_upper(s: String) -> String {
+    aic_string_to_upper_intrinsic(s)
+}
+
+fn to_lower(s: String) -> String {
+    aic_string_to_lower_intrinsic(s)
+}
+
+fn replace(s: String, from: String, to: String) -> String {
+    aic_string_replace_intrinsic(s, from, to)
+}
+
+fn repeat(s: String, count: Int) -> String {
+    aic_string_repeat_intrinsic(s, count)
+}
+
+fn parse_int(s: String) -> Result[Int, String] {
+    aic_string_parse_int_intrinsic(s)
+}
+
+fn parse_float(s: String) -> Result[Float, String] {
+    aic_string_parse_float_intrinsic(s)
+}
+
+fn int_to_string(n: Int) -> String {
+    aic_string_int_to_string_intrinsic(n)
+}
+
+fn float_to_string(v: Float) -> String {
+    aic_string_float_to_string_intrinsic(v)
+}
+
+fn bool_to_string(b: Bool) -> String {
+    aic_string_bool_to_string_intrinsic(b)
+}
+
+fn join(parts: Vec[String], separator: String) -> String {
+    aic_string_join_intrinsic(parts, separator)
 }

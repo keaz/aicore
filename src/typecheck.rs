@@ -40,6 +40,7 @@ struct Checker<'a> {
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
     module_functions: BTreeMap<(String, String), FnSig>,
+    function_module_by_symbol: BTreeMap<ir::SymbolId, String>,
     generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
     call_graph: BTreeMap<String, Vec<CallEdge>>,
@@ -160,6 +161,7 @@ impl<'a> Checker<'a> {
 
         let mut functions = BTreeMap::new();
         let mut module_functions = BTreeMap::new();
+        let mut function_module_by_symbol = BTreeMap::new();
         let mut generic_arity = BTreeMap::new();
         generic_arity.insert("Option".to_string(), 1);
         generic_arity.insert("Result".to_string(), 2);
@@ -192,6 +194,7 @@ impl<'a> Checker<'a> {
         }
 
         for ((module, name), info) in &resolution.module_function_infos {
+            function_module_by_symbol.insert(info.symbol, module.clone());
             let mut params = Vec::new();
             for ty in &info.param_types {
                 params.push(types.get(ty).cloned().unwrap_or_else(|| "<?>".to_string()));
@@ -252,6 +255,20 @@ impl<'a> Checker<'a> {
             },
         );
         functions.insert(
+            "print_float".to_string(),
+            FnSig {
+                is_async: false,
+                is_unsafe: false,
+                is_extern: false,
+                extern_abi: None,
+                params: vec!["Float".to_string()],
+                ret: "()".to_string(),
+                effects: BTreeSet::from(["io".to_string()]),
+                generic_params: Vec::new(),
+                generic_bounds: BTreeMap::new(),
+            },
+        );
+        functions.insert(
             "len".to_string(),
             FnSig {
                 is_async: false,
@@ -288,6 +305,7 @@ impl<'a> Checker<'a> {
             types,
             functions,
             module_functions,
+            function_module_by_symbol,
             generic_arity,
             effect_usage: BTreeMap::new(),
             call_graph: BTreeMap::new(),
@@ -343,7 +361,7 @@ impl<'a> Checker<'a> {
         let previous_unsafe = self.current_function_is_unsafe;
         let previous_ret = self.current_function_ret_type.clone();
         let previous_unsafe_depth = self.unsafe_depth;
-        self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
+        self.enforce_import_visibility = self.should_enforce_import_visibility(func.symbol);
         self.current_function_is_async = func.is_async;
         self.current_function_is_unsafe = func.is_unsafe;
         self.unsafe_depth = 0;
@@ -524,14 +542,14 @@ impl<'a> Checker<'a> {
         self.unsafe_depth = previous_unsafe_depth;
     }
 
-    fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
-        let Some(entry_module) = self.resolution.entry_module.as_ref() else {
+    fn should_enforce_import_visibility(&self, function_symbol: ir::SymbolId) -> bool {
+        let Some(function_module) = self.function_module_by_symbol.get(&function_symbol) else {
             return true;
         };
-        let Some(modules) = self.resolution.function_modules.get(function_name) else {
-            return true;
-        };
-        modules.len() == 1 && modules.contains(entry_module)
+        match self.resolution.entry_module.as_deref() {
+            Some(entry_module) => function_module == entry_module,
+            None => function_module == "<root>",
+        }
     }
 
     fn check_extern_function_signature(
@@ -895,6 +913,7 @@ impl<'a> Checker<'a> {
                 self.check_resource_protocol_expr_mode(base, state, false);
             }
             ir::ExprKind::Int(_)
+            | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit
@@ -1208,6 +1227,7 @@ impl<'a> Checker<'a> {
                 self.check_borrow_expr(base, mutability, state)
             }
             ir::ExprKind::Int(_)
+            | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit
@@ -1589,6 +1609,7 @@ impl<'a> Checker<'a> {
     ) -> String {
         match &expr.kind {
             ir::ExprKind::Int(_) => "Int".to_string(),
+            ir::ExprKind::Float(_) => "Float".to_string(),
             ir::ExprKind::Bool(_) => "Bool".to_string(),
             ir::ExprKind::String(_) => "String".to_string(),
             ir::ExprKind::Unit => "()".to_string(),
@@ -1839,6 +1860,7 @@ impl<'a> Checker<'a> {
 
                     if resolved_name == "print_int"
                         || resolved_name == "print_str"
+                        || resolved_name == "print_float"
                         || resolved_name == "panic"
                     {
                         if !self.resolution.imports.contains("std.io") {
@@ -2498,15 +2520,19 @@ impl<'a> Checker<'a> {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
                 match op {
                     crate::ast::UnaryOp::Neg => {
-                        if ty != "Int" {
+                        if ty != "Int" && ty != "Float" {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1222",
-                                "unary '-' expects Int",
+                                "unary '-' expects Int or Float",
                                 self.file,
                                 inner.span,
                             ));
                         }
-                        "Int".to_string()
+                        if ty == "Float" {
+                            "Float".to_string()
+                        } else {
+                            "Int".to_string()
+                        }
                     }
                     crate::ast::UnaryOp::Not => {
                         if ty != "Bool" {
@@ -2916,12 +2942,28 @@ impl<'a> Checker<'a> {
 
     fn check_binary(&mut self, op: BinOp, lhs: &str, rhs: &str, span: crate::span::Span) -> String {
         match op {
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                if lhs == rhs && (lhs == "Int" || lhs == "Float") {
+                    lhs.to_string()
+                } else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1230",
+                        format!(
+                            "arithmetic operators require matching Int or Float operands, found '{}' and '{}'",
+                            lhs, rhs
+                        ),
+                        self.file,
+                        span,
+                    ));
+                    "<?>".to_string()
+                }
+            }
+            BinOp::Mod => {
                 if lhs != "Int" || rhs != "Int" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
                         format!(
-                            "arithmetic operators require Int operands, found '{}' and '{}'",
+                            "operator '%' requires Int operands, found '{}' and '{}'",
                             lhs, rhs
                         ),
                         self.file,
@@ -2945,10 +2987,10 @@ impl<'a> Checker<'a> {
                 "Bool".to_string()
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if lhs != "Int" || rhs != "Int" {
+                if !(lhs == rhs && (lhs == "Int" || lhs == "Float")) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
-                        "comparison operators require Int operands",
+                        "comparison operators require matching Int or Float operands",
                         self.file,
                         span,
                     ));
@@ -3933,7 +3975,7 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     if contains_unresolved_type(ty) {
         return false;
     }
-    matches!(base_type_name(ty), "Int" | "Bool") && extract_generic_args(ty).is_none()
+    matches!(base_type_name(ty), "Int" | "Bool" | "Float") && extract_generic_args(ty).is_none()
 }
 
 fn split_top_level(input: &str) -> Vec<String> {

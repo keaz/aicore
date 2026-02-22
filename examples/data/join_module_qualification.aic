@@ -1,0 +1,19 @@
+module example.data.join_module_qualification;
+
+import std.io;
+import std.path;
+import std.string;
+
+fn main() -> Int effects { io } {
+    let full_path = path.join("/tmp", "alpha.txt");
+    let base = path.basename(full_path);
+    let parts = string.split("a,b,c", ",");
+    let joined = string.join(parts, "|");
+
+    if len(base) == 9 && len(joined) == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

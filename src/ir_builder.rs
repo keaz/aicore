@@ -257,6 +257,7 @@ impl Builder {
     fn lower_expr(&mut self, expr: &ast::Expr) -> ir::Expr {
         let kind = match &expr.kind {
             ast::ExprKind::Int(v) => ir::ExprKind::Int(*v),
+            ast::ExprKind::Float(v) => ir::ExprKind::Float(*v),
             ast::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
             ast::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
             ast::ExprKind::Unit => ir::ExprKind::Unit,

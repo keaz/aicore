@@ -1,0 +1,16 @@
+module verify.qv_contract_proof_fixed;
+import std.io;
+
+fn abs_non_negative(x: Int) -> Int ensures result >= 0 {
+    if x < 0 {
+        -x
+    } else {
+        x
+    }
+}
+
+fn main() -> Int effects { io } {
+    let value = abs_non_negative(-7);
+    print_int(value);
+    0
+}

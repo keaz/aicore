@@ -151,10 +151,22 @@ docs-check:
 	@test -f docs/data-regex.md
 	@test -f docs/std-compatibility.md
 	@test -f docs/e8-verification-gates.md
+	@test -f docs/verification-quality/README.md
+	@test -f docs/verification-quality/contracts-proof-obligations.md
+	@test -f docs/verification-quality/effect-protocols.md
+	@test -f docs/verification-quality/fuzz-differential-runbook.md
+	@test -f docs/verification-quality/perf-sla-playbook.md
+	@test -f docs/verification-quality/incident-reproduction.md
 	@test -f docs/release-security-ops.md
+	@test -f docs/security-ops/README.md
+	@test -f docs/security-ops/release-runbook.md
+	@test -f docs/security-ops/sandbox-operations.md
+	@test -f docs/security-ops/telemetry.md
+	@test -f docs/security-ops/telemetry.schema.json
 	@test -f docs/release/lts-policy.md
 	@test -f docs/release/compatibility-matrix.json
 	@test -f docs/security-ops/migration.md
+	@test -f docs/security-ops/incident-response.md
 	@test -f docs/security-threat-model.md
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/std-api-baseline.json

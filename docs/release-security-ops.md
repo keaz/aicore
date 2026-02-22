@@ -183,6 +183,9 @@ Telemetry schema and runbook:
 - `docs/security-ops/telemetry.schema.json`
 - `docs/security-ops/telemetry.md`
 - `docs/security-ops/migration.md`
+- `docs/security-ops/release-runbook.md`
+- `docs/security-ops/sandbox-operations.md`
+- `docs/security-ops/incident-response.md`
 
 ## Local CI Integration
 

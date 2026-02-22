@@ -1,0 +1,41 @@
+import std.io;
+import std.json;
+import std.string;
+
+fn main() -> Int effects { io } {
+    let a = 3.5;
+    let b = 2.0;
+    let total = (a + b) * 2.0;
+    let arith_ok = if total == 11.0 && total > 10.0 { 1 } else { 0 };
+
+    let parsed = match parse_float("3.125") {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let text = float_to_string(parsed);
+    let reparsed = match parse_float(text) {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let decoded = match decode_float(encode_float(reparsed)) {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let roundtrip_ok = if decoded == 3.125 { 1 } else { 0 };
+
+    let parse_bad = match parse_float("inf") {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let json_bad = match decode_float(encode_string("abc")) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    if arith_ok == 1 && roundtrip_ok == 1 && parse_bad == 1 && json_bad == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

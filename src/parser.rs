@@ -1071,6 +1071,13 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
+            TokenKind::Float(value) => {
+                self.bump();
+                Some(Expr {
+                    kind: ExprKind::Float(value),
+                    span: token.span,
+                })
+            }
             TokenKind::String(value) => {
                 self.bump();
                 Some(Expr {
@@ -1899,5 +1906,27 @@ fn main() -> Int {
 "#;
         let (_program, diagnostics) = parse(src, "test.aic");
         assert!(diagnostics.iter().any(|d| d.code == "E1062"));
+    }
+
+    #[test]
+    fn parses_float_literals() {
+        let src = r#"
+fn main() -> Float {
+    3.125 + 2.5e-3
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        let ExprKind::Binary { lhs, rhs, .. } = &tail.kind else {
+            panic!("expected binary expression");
+        };
+        assert!(matches!(lhs.kind, ExprKind::Float(v) if (v - 3.125).abs() < 1e-12));
+        assert!(matches!(rhs.kind, ExprKind::Float(v) if (v - 2.5e-3).abs() < 1e-12));
     }
 }

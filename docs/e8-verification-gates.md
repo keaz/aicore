@@ -112,3 +112,14 @@ Run all E8 gates with:
 ```bash
 make test-e8
 ```
+
+## Agent Runbooks
+
+For agent-grade gate playbooks and verifier-friendly authoring guidance, use:
+
+- `docs/verification-quality/README.md`
+- `docs/verification-quality/contracts-proof-obligations.md`
+- `docs/verification-quality/effect-protocols.md`
+- `docs/verification-quality/fuzz-differential-runbook.md`
+- `docs/verification-quality/perf-sla-playbook.md`
+- `docs/verification-quality/incident-reproduction.md`

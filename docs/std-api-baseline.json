@@ -412,9 +412,119 @@
       "signature": "HttpResponse { status: Int, reason: String, headers: Vec[HttpHeader], body: String }"
     },
     {
+      "module": "std.http_server",
+      "kind": "enum",
+      "signature": "ServerError { InvalidRequest, InvalidMethod, InvalidHeader, InvalidTarget, Timeout, ConnectionClosed, BodyTooLarge, Net, Internal }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "accept(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_header_intrinsic(resp: Response, name: String) -> Option[String]"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_json_response_intrinsic(status: Int, body: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_text_response_intrinsic(status: Int, body: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "close(handle: Int) -> Result[Bool, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "error_response(status: Int, message: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "header(resp: Response, name: String) -> Option[String]"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "json_response(status: Int, body: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "listen(addr: String) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "response(status: Int, headers: Map[String, String], body: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "text_response(status: Int, body: String) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "write_response(conn: Int, response: Response) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "Request { method: String, path: String, query: Map[String, String], headers: Map[String, String], body: String }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "Response { status: Int, headers: Map[String, String], body: String }"
+    },
+    {
       "module": "std.io",
       "kind": "fn",
       "signature": "panic(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "print_float(x: Float) -> () effects { io }"
     },
     {
       "module": "std.io",
@@ -444,6 +554,11 @@
     {
       "module": "std.json",
       "kind": "fn",
+      "signature": "aic_json_decode_float_intrinsic(value: JsonValue) -> Result[Float, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
       "signature": "aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError]"
     },
     {
@@ -455,6 +570,11 @@
       "module": "std.json",
       "kind": "fn",
       "signature": "aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "aic_json_encode_float_intrinsic(value: Float) -> JsonValue"
     },
     {
       "module": "std.json",
@@ -524,6 +644,11 @@
     {
       "module": "std.json",
       "kind": "fn",
+      "signature": "decode_float(value: JsonValue) -> Result[Float, JsonError]"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
       "signature": "decode_int(value: JsonValue) -> Result[Int, JsonError]"
     },
     {
@@ -545,6 +670,11 @@
       "module": "std.json",
       "kind": "fn",
       "signature": "encode_bool(value: Bool) -> JsonValue"
+    },
+    {
+      "module": "std.json",
+      "kind": "fn",
+      "signature": "encode_float(value: Float) -> JsonValue"
     },
     {
       "module": "std.json",
@@ -605,6 +735,106 @@
       "module": "std.json",
       "kind": "struct",
       "signature": "JsonValue { raw: String, kind: JsonKind }"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_new_intrinsic[K, V]() -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "contains_key[K, V](m: Map[K, V], key: K) -> Bool"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "entries[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "get[K, V](m: Map[K, V], key: K) -> Option[V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "insert[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "keys[K, V](m: Map[K, V]) -> Vec[K]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "new_map[K, V]() -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "remove[K, V](m: Map[K, V], key: K) -> Map[K, V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "size[K, V](m: Map[K, V]) -> Int"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "values[K, V](m: Map[K, V]) -> Vec[V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "struct",
+      "signature": "MapEntry[K, V] { key: K, value: V }"
+    },
+    {
+      "module": "std.map",
+      "kind": "struct",
+      "signature": "Map[K, V] { handle: Int }"
     },
     {
       "module": "std.net",
@@ -987,6 +1217,196 @@
       "signature": "Result[T, E] { Ok(T), Err(E) }"
     },
     {
+      "module": "std.router",
+      "kind": "enum",
+      "signature": "RouterError { InvalidPattern, InvalidMethod, Capacity, Internal }"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "add(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "aic_router_add_intrinsic(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "aic_router_match_intrinsic(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "aic_router_new_intrinsic() -> Result[Router, RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "match_route(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "fn",
+      "signature": "new_router() -> Result[Router, RouterError]"
+    },
+    {
+      "module": "std.router",
+      "kind": "struct",
+      "signature": "RouteMatch { route_id: Int, params: Map[String, String] }"
+    },
+    {
+      "module": "std.router",
+      "kind": "struct",
+      "signature": "Router { handle: Int }"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_bool_to_string_intrinsic(b: Bool) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_float_to_string_intrinsic(v: Float) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_int_to_string_intrinsic(n: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_parse_float_intrinsic(s: String) -> Result[Float, String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_parse_int_intrinsic(s: String) -> Result[Int, String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_repeat_intrinsic(s: String, count: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_replace_intrinsic(s: String, from: String, to: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[String]]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_to_lower_intrinsic(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_to_upper_intrinsic(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_trim_end_intrinsic(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_trim_intrinsic(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_trim_start_intrinsic(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "bool_to_string(b: Bool) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "char_at(s: String, index: Int) -> Option[String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "contains(haystack: String, needle: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "ends_with(s: String, suffix: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "float_to_string(v: Float) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "index_of(s: String, needle: String) -> Option[Int]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "int_to_string(n: Int) -> String"
+    },
+    {
       "module": "std.string",
       "kind": "fn",
       "signature": "is_empty(s: String) -> Bool"
@@ -994,7 +1414,97 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "join(parts: Vec[String], separator: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "last_index_of(s: String, needle: String) -> Option[Int]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "len(s: String) -> Int"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "parse_float(s: String) -> Result[Float, String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "parse_int(s: String) -> Result[Int, String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "repeat(s: String, count: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "replace(s: String, from: String, to: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "split(s: String, delimiter: String) -> Vec[String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "split_first(s: String, delimiter: String) -> Option[Vec[String]]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "starts_with(s: String, prefix: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "substring(s: String, start: Int, end: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "to_lower(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "to_upper(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "trim(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "trim_end(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "trim_start(s: String) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "enum",
+      "signature": "TimeError { InvalidFormat, InvalidDate, InvalidTime, InvalidOffset, InvalidInput, Internal }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time }"
     },
     {
       "module": "std.time",
@@ -1009,12 +1519,32 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time }"
     },
     {
       "module": "std.time",
       "kind": "fn",
       "signature": "deadline_after_ms(timeout_ms: Int) -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "format_iso8601(value: DateTime) -> Result[String, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "format_rfc3339(value: DateTime) -> Result[String, TimeError] effects { time }"
     },
     {
       "module": "std.time",
@@ -1030,6 +1560,16 @@
       "module": "std.time",
       "kind": "fn",
       "signature": "now_ms() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "parse_iso8601(text: String) -> Result[DateTime, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "parse_rfc3339(text: String) -> Result[DateTime, TimeError] effects { time }"
     },
     {
       "module": "std.time",
@@ -1050,6 +1590,11 @@
       "module": "std.time",
       "kind": "fn",
       "signature": "timeout_expired(deadline_ms: Int) -> Bool effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "struct",
+      "signature": "DateTime { year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int, offset_minutes: Int }"
     },
     {
       "module": "std.url",

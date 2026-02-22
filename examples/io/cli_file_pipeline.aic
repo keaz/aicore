@@ -27,8 +27,8 @@ fn main() -> Int effects { io, fs, env, time } {
         Err(_) => ".",
     };
 
-    let input_path = join(scratch, "input.txt");
-    let output_path = join(scratch, "output.txt");
+    let input_path = path.join(scratch, "input.txt");
+    let output_path = path.join(scratch, "output.txt");
 
     let write_ok = match write_text(input_path, "hello") {
         Ok(_) => 1,

@@ -1,0 +1,54 @@
+module std.router;
+
+import std.map;
+import std.result;
+
+enum RouterError {
+    InvalidPattern,
+    InvalidMethod,
+    Capacity,
+    Internal,
+}
+
+struct Router {
+    handle: Int,
+}
+
+struct RouteMatch {
+    route_id: Int,
+    params: Map[String, String],
+}
+
+fn aic_router_new_intrinsic() -> Result[Router, RouterError] {
+    let out: Result[Router, RouterError] = Err(Capacity());
+    out
+}
+
+fn aic_router_add_intrinsic(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
+    let _router = router;
+    let _method = method;
+    let _pattern = pattern;
+    let _route_id = route_id;
+    let out: Result[Router, RouterError] = Err(Capacity());
+    out
+}
+
+fn aic_router_match_intrinsic(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
+    let _router = router;
+    let _method = method;
+    let _path = path;
+    let out: Result[Option[RouteMatch], RouterError] = Err(Capacity());
+    out
+}
+
+fn new_router() -> Result[Router, RouterError] {
+    aic_router_new_intrinsic()
+}
+
+fn add(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
+    aic_router_add_intrinsic(router, method, pattern, route_id)
+}
+
+fn match_route(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
+    aic_router_match_intrinsic(router, method, path)
+}

@@ -505,6 +505,24 @@ Diagnostics:
   - `make test-e8` in Linux full validation job.
   - per-target perf gate run in `execution-matrix` job (Linux + macOS) with perf artifacts uploaded.
 
+### Verification-quality runbooks (QV-T6)
+
+Agent-grade docs for all QV gates:
+
+- `docs/verification-quality/README.md`
+- `docs/verification-quality/contracts-proof-obligations.md`
+- `docs/verification-quality/effect-protocols.md`
+- `docs/verification-quality/fuzz-differential-runbook.md`
+- `docs/verification-quality/perf-sla-playbook.md`
+- `docs/verification-quality/incident-reproduction.md`
+
+Verifier-focused examples:
+
+- `examples/verify/qv_contract_proof_fail.aic`
+- `examples/verify/qv_contract_proof_fixed.aic`
+- `examples/verify/file_protocol.aic`
+- `examples/verify/file_protocol_invalid.aic`
+
 ## E9 Summary (Release Security + Operations)
 
 ### Reproducibility pipeline (E9-T1)
@@ -564,6 +582,13 @@ Diagnostics:
 - LTS docs:
   - `docs/release/lts-policy.md`
   - `docs/release/compatibility-matrix.json`
+- OPS runbooks:
+  - `docs/security-ops/README.md`
+  - `docs/security-ops/release-runbook.md`
+  - `docs/security-ops/sandbox-operations.md`
+  - `docs/security-ops/telemetry.md`
+  - `docs/security-ops/migration.md`
+  - `docs/security-ops/incident-response.md`
 - CLI:
   - `aic migrate <path> --dry-run --json`
   - `aic migrate <path> --report <file>`

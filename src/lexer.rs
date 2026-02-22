@@ -11,6 +11,7 @@ pub struct Token {
 pub enum TokenKind {
     Ident(String),
     Int(i64),
+    Float(f64),
     String(String),
 
     KwModule,
@@ -130,7 +131,7 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Underscore, Span::new(start, start + 1));
                     }
                 }
-                '0'..='9' => self.lex_int(),
+                '0'..='9' => self.lex_number(),
                 '"' => self.lex_string(),
                 '(' => self.single(TokenKind::LParen),
                 ')' => self.single(TokenKind::RParen),
@@ -295,7 +296,7 @@ impl<'a> Lexer<'a> {
         self.push(kind, Span::new(start, self.offset));
     }
 
-    fn lex_int(&mut self) {
+    fn lex_number(&mut self) {
         let start = self.offset;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
@@ -304,14 +305,63 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
+        let mut is_float = false;
+        if self.peek() == Some('.')
+            && self
+                .peek_next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        {
+            is_float = true;
+            self.bump(); // '.'
+            while let Some(c) = self.peek() {
+                if c.is_ascii_digit() {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+        }
+        if matches!(self.peek(), Some('e' | 'E')) {
+            let sign = self.peek_nth(1);
+            let exp_digit = match sign {
+                Some('+') | Some('-') => self.peek_nth(2),
+                _ => sign,
+            };
+            if exp_digit.map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                is_float = true;
+                self.bump(); // e/E
+                if matches!(self.peek(), Some('+' | '-')) {
+                    self.bump();
+                }
+                while let Some(c) = self.peek() {
+                    if c.is_ascii_digit() {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
         let text = &self.source[start..self.offset];
-        match text.parse::<i64>() {
-            Ok(value) => self.push(TokenKind::Int(value), Span::new(start, self.offset)),
-            Err(_) => self.error(
-                "E0004",
-                format!("invalid integer literal '{}'", text),
-                Span::new(start, self.offset),
-            ),
+        if is_float {
+            match text.parse::<f64>() {
+                Ok(value) => self.push(TokenKind::Float(value), Span::new(start, self.offset)),
+                Err(_) => self.error(
+                    "E0007",
+                    format!("invalid float literal '{}'", text),
+                    Span::new(start, self.offset),
+                ),
+            }
+        } else {
+            match text.parse::<i64>() {
+                Ok(value) => self.push(TokenKind::Int(value), Span::new(start, self.offset)),
+                Err(_) => self.error(
+                    "E0004",
+                    format!("invalid integer literal '{}'", text),
+                    Span::new(start, self.offset),
+                ),
+            }
         }
     }
 
@@ -408,6 +458,10 @@ impl<'a> Lexer<'a> {
         iter.next()
     }
 
+    fn peek_nth(&self, n: usize) -> Option<char> {
+        self.source[self.offset..].chars().nth(n)
+    }
+
     fn bump(&mut self) {
         if let Some(c) = self.peek() {
             self.offset += c.len_utf8();
@@ -471,5 +525,24 @@ mod tests {
         assert!(diags.is_empty());
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwExtern)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwUnsafe)));
+    }
+
+    #[test]
+    fn lexes_float_literals() {
+        let src = "let a = 3.125; let b = 0.5; let c = 1e10; let d = 2.5e-3;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 3.125).abs() < 1e-12)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 0.5).abs() < 1e-12)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 1.0e10).abs() < 1.0)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 2.5e-3).abs() < 1e-12)));
     }
 }

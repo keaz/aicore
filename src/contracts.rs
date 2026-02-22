@@ -962,6 +962,7 @@ fn rewrite_struct_inits_in_expr(
             rewrite_struct_inits_in_expr(base, helper_names, field_orders, alloc);
         }
         ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
@@ -1118,6 +1119,7 @@ fn lower_ensures_in_expr(
             lower_ensures_in_expr(base, ensures, ret_type, function_name, alloc);
         }
         ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
@@ -1380,6 +1382,7 @@ fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
 fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
     let kind = match &expr.kind {
         ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
+        ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
@@ -1539,6 +1542,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
     let kind = match &expr.kind {
         ir::ExprKind::Var(name) if name == "result" => ir::ExprKind::Var(result_name.to_string()),
         ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
+        ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
@@ -1891,6 +1895,7 @@ fn make(x: Int) -> NonEmpty {
                 .sum(),
             ir::ExprKind::FieldAccess { base, .. } => count_asserts_in_expr(base),
             ir::ExprKind::Int(_)
+            | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit

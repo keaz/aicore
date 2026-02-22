@@ -45,6 +45,8 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | LTS support policy + compatibility matrix gate | Implemented (`aic release lts --check`) |
 | Guided upgrade migrations with risk reports | Implemented (`aic migrate`) |
 | Complete IO runtime agent playbooks | Implemented (`docs/io-runtime/`) |
+| Verification-quality agent runbooks | Implemented (`docs/verification-quality/`) |
+| Security/release operations agent runbooks | Implemented (`docs/security-ops/`) |
 
 ## Prerequisites
 

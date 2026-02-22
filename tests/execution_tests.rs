@@ -1689,6 +1689,230 @@ fn main() -> Int effects { io, net } {
     assert_eq!(stdout, "46\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_parses_request_and_emits_http11_response() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.map;
+import std.string;
+
+fn request_matches(req: Request) -> Int {
+    let query_name = match map.get(req.query, "name") {
+        Some(v) => v,
+        None => "",
+    };
+    let host = match map.get(req.headers, "host") {
+        Some(v) => v,
+        None => "",
+    };
+    let trace = match map.get(req.headers, "x-trace") {
+        Some(v) => v,
+        None => "",
+    };
+
+    let method_ok = if contains(req.method, "GET") && len(req.method) == 3 { 1 } else { 0 };
+    let path_ok = if contains(req.path, "/hello") && len(req.path) == 6 { 1 } else { 0 };
+    let query_ok = if contains(query_name, "Kasun") && len(query_name) == 5 { 1 } else { 0 };
+    let host_ok = if contains(host, "localhost") && len(host) == 9 { 1 } else { 0 };
+    let trace_ok = if contains(trace, "abc") && len(trace) == 3 { 1 } else { 0 };
+    let body_ok = if contains(req.body, "hello") && len(req.body) == 5 { 1 } else { 0 };
+
+    if method_ok == 1 && path_ok == 1 && query_ok == 1 &&
+       host_ok == 1 && trace_ok == 1 && body_ok == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let raw_req = "GET /hello?name=Kasun&lang=ai HTTP/1.1\nHost: localhost\nX-Trace: abc\nContent-Length: 5\n\nhello";
+    let sent = match tcp_send(client, raw_req) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+
+    let parsed_ok = match read_request(server, 4096, 1000) {
+        Ok(req) => request_matches(req),
+        Err(_) => 0,
+    };
+
+    let wrote = match write_response(server, text_response(200, "ok")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let wire = match tcp_recv(client, 1024, 1000) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+    let wire_ok = if contains(wire, "HTTP/1.1 200 OK") &&
+        contains(wire, "content-length: 2") &&
+        ends_with(wire, "ok") {
+        1
+    } else {
+        0
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent > 0 && wrote > 0 && parsed_ok == 1 && wire_ok == 1 &&
+        closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_invalid_method_returns_typed_error() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, "BREW /coffee HTTP/1.1\nHost: localhost\n\n");
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if code == 2 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_router_matches_paths_params_and_order() {
+    let src = fs::read_to_string("examples/io/http_router.aic").expect("read router example");
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_router_invalid_method_returns_typed_error() {
+    let src = r#"
+import std.io;
+import std.router;
+
+fn err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let router = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let code = match add(router, "G ET", "/health", 1) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    print_int(code);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n");
+}
+
 #[test]
 fn exec_json_roundtrip_and_object_operations() {
     let src = r#"
@@ -1890,6 +2114,79 @@ fn main() -> Int effects { io } {
     };
 
     if a_score + b_score + c_score + missing_score == 37 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_float_arithmetic_and_comparisons() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let a = 3.5;
+    let b = 2.0;
+    let sum = a + b;
+    let total = sum * 2.0;
+
+    let gt_ok = if total > 10.0 { 1 } else { 0 };
+    let eq_ok = if total == 11.0 { 1 } else { 0 };
+    let lt_ok = if a < b { 0 } else { 1 };
+    let ge_ok = if total >= 11.0 { 1 } else { 0 };
+
+    if gt_ok + eq_ok + lt_ok + ge_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_float_string_and_json_roundtrip() {
+    let src = r#"
+import std.io;
+import std.json;
+import std.string;
+
+fn main() -> Int effects { io } {
+    let parsed = match parse_float("3.125") {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let text = float_to_string(parsed);
+    let reparsed = match parse_float(text) {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let from_json = match decode_float(encode_float(reparsed)) {
+        Ok(v) => v,
+        Err(_) => 0.0,
+    };
+    let good_value = if from_json == 3.125 { 1 } else { 0 };
+    let parse_bad = match parse_float("nan") {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let decode_bad = match decode_float(encode_string("abc")) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    if good_value == 1 && parse_bad == 1 && decode_bad == 1 {
         print_int(42);
     } else {
         print_int(0);

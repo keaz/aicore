@@ -307,6 +307,57 @@ fn lts_policy_docs_and_workflow_gates_are_wired() {
 }
 
 #[test]
+fn ops_agent_runbooks_cover_t1_to_t5_with_tabletop_commands() {
+    let root = repo_root();
+    let ops_readme =
+        fs::read_to_string(root.join("docs/security-ops/README.md")).expect("read ops README");
+    for token in ["OPS-T1", "OPS-T2", "OPS-T3", "OPS-T4", "OPS-T5"] {
+        assert!(
+            ops_readme.contains(token),
+            "ops README missing token: {token}"
+        );
+    }
+    for path in [
+        "docs/security-ops/release-runbook.md",
+        "docs/security-ops/sandbox-operations.md",
+        "docs/security-ops/telemetry.md",
+        "docs/security-ops/migration.md",
+        "docs/security-ops/incident-response.md",
+    ] {
+        assert!(root.join(path).is_file(), "missing ops runbook: {path}");
+    }
+
+    let release_runbook = fs::read_to_string(root.join("docs/security-ops/release-runbook.md"))
+        .expect("read release runbook");
+    assert!(release_runbook.contains("release manifest"));
+    assert!(release_runbook.contains("release security-audit --json"));
+
+    let sandbox_runbook = fs::read_to_string(root.join("docs/security-ops/sandbox-operations.md"))
+        .expect("read sandbox runbook");
+    assert!(sandbox_runbook.contains("sandbox_policy_violation"));
+
+    let incident = fs::read_to_string(root.join("docs/security-ops/incident-response.md"))
+        .expect("read incident runbook");
+    assert!(incident.contains("aic release lts --check"));
+    assert!(incident.contains("Migration Rollback Trigger"));
+
+    let lts = run_aic(&["release", "lts", "--check", "--json"]);
+    assert_eq!(lts.status.code(), Some(0));
+
+    let migration = run_aic(&[
+        "migrate",
+        "examples/ops/migration_v1_to_v2",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(migration.status.code(), Some(0));
+    let migration_json: serde_json::Value =
+        serde_json::from_slice(&migration.stdout).expect("migration json");
+    assert_eq!(migration_json["dry_run"], true);
+    assert!(migration_json["files_scanned"].as_u64().unwrap_or(0) >= 1);
+}
+
+#[test]
 fn migrate_dry_run_report_is_deterministic() {
     let dir = tempdir().expect("tempdir");
     let project = dir.path().join("migration_project");

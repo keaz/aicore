@@ -46,6 +46,13 @@ fn aic_json_encode_int_intrinsic(value: Int) -> JsonValue {
     }
 }
 
+fn aic_json_encode_float_intrinsic(value: Float) -> JsonValue {
+    JsonValue {
+        raw: "0.0",
+        kind: NumberValue(),
+    }
+}
+
 fn aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue {
     JsonValue {
         raw: "false",
@@ -69,6 +76,11 @@ fn aic_json_encode_null_intrinsic() -> JsonValue {
 
 fn aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError] {
     let out: Result[Int, JsonError] = Ok(0);
+    out
+}
+
+fn aic_json_decode_float_intrinsic(value: JsonValue) -> Result[Float, JsonError] {
+    let out: Result[Float, JsonError] = Ok(0.0);
     out
 }
 
@@ -130,6 +142,10 @@ fn encode_int(value: Int) -> JsonValue {
     aic_json_encode_int_intrinsic(value)
 }
 
+fn encode_float(value: Float) -> JsonValue {
+    aic_json_encode_float_intrinsic(value)
+}
+
 fn encode_bool(value: Bool) -> JsonValue {
     aic_json_encode_bool_intrinsic(value)
 }
@@ -144,6 +160,10 @@ fn encode_null() -> JsonValue {
 
 fn decode_int(value: JsonValue) -> Result[Int, JsonError] {
     aic_json_decode_int_intrinsic(value)
+}
+
+fn decode_float(value: JsonValue) -> Result[Float, JsonError] {
+    aic_json_decode_float_intrinsic(value)
 }
 
 fn decode_bool(value: JsonValue) -> Result[Bool, JsonError] {

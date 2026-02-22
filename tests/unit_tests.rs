@@ -129,6 +129,20 @@ fn unit_typecheck_unknown_symbol() {
 }
 
 #[test]
+fn unit_typecheck_rejects_implicit_int_float_coercion() {
+    let src = "fn bad() -> Float { 1 + 2.0 }";
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1230"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_trait_bounded_generic_accepts_multiple_impl_types() {
     let src = r#"
 trait Order[T];
@@ -1358,8 +1372,22 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &string_source,
         "std/string.aic",
+        "parse_float",
+        "aic_string_parse_float_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
         "int_to_string",
         "aic_string_int_to_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "float_to_string",
+        "aic_string_float_to_string_intrinsic",
         1,
     );
     assert_delegate_call(
@@ -1436,6 +1464,102 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
         "std/http.aic",
         "response",
         "aic_http_response_intrinsic",
+        3,
+    );
+}
+
+#[test]
+fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
+    let source = fs::read_to_string("std/http_server.aic").expect("read std/http_server.aic");
+
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "listen",
+        "aic_http_server_listen_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "accept",
+        "aic_http_server_accept_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "read_request",
+        "aic_http_server_read_request_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "write_response",
+        "aic_http_server_write_response_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "close",
+        "aic_http_server_close_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "text_response",
+        "aic_http_server_text_response_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "json_response",
+        "aic_http_server_json_response_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "header",
+        "aic_http_server_header_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/http_server.aic",
+        "error_response",
+        "text_response",
+        2,
+    );
+}
+
+#[test]
+fn unit_std_router_public_apis_delegate_to_runtime_intrinsics() {
+    let source = fs::read_to_string("std/router.aic").expect("read std/router.aic");
+
+    assert_delegate_call(
+        &source,
+        "std/router.aic",
+        "new_router",
+        "aic_router_new_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &source,
+        "std/router.aic",
+        "add",
+        "aic_router_add_intrinsic",
+        4,
+    );
+    assert_delegate_call(
+        &source,
+        "std/router.aic",
+        "match_route",
+        "aic_router_match_intrinsic",
         3,
     );
 }
@@ -1584,6 +1708,13 @@ fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &json_source,
         "std/json.aic",
+        "encode_float",
+        "aic_json_encode_float_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
         "encode_bool",
         "aic_json_encode_bool_intrinsic",
         1,
@@ -1607,6 +1738,13 @@ fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
         "std/json.aic",
         "decode_int",
         "aic_json_decode_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &json_source,
+        "std/json.aic",
+        "decode_float",
+        "aic_json_decode_float_intrinsic",
         1,
     );
     assert_delegate_call(
@@ -1863,6 +2001,8 @@ import std.vec;
 import std.option;
 import std.result;
 import std.concurrent;
+import std.http_server;
+import std.router;
 
 fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _exists = exists("foo.txt");
@@ -1914,6 +2054,18 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _udp_close = udp_close(1);
     let _dns = dns_lookup("localhost");
     let _dns_rev = dns_reverse("127.0.0.1");
+    let _srv_listen = http_server.listen("127.0.0.1:0");
+    let _srv_accept = http_server.accept(1, 1);
+    let _srv_read = http_server.read_request(1, 1024, 1);
+    let _srv_resp = http_server.text_response(200, "ok");
+    let _srv_write = http_server.write_response(1, _srv_resp);
+    let _srv_close = http_server.close(1);
+    let _srv_json = http_server.json_response(200, "{\"ok\":true}");
+    let _srv_err = http_server.error_response(500, "boom");
+    let _srv_hdr = http_server.header(_srv_json, "content-type");
+    let _router_new = router.new_router();
+    let _router_add = router.add(Router { handle: 1 }, "GET", "/health", 1);
+    let _router_match = router.match_route(Router { handle: 1 }, "GET", "/health");
     let _ts = now_ms();
     let _mono = monotonic_ms();
     let _deadline = deadline_after_ms(5);
@@ -2241,6 +2393,54 @@ fn hidden() -> Int {
 
     let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
     assert!(out.diagnostics.iter().any(|d| d.code == "E2102"));
+}
+
+#[test]
+fn unit_root_entry_allows_imported_module_internal_dependencies() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"import app.api;
+
+fn main() -> Int {
+    api.handle()
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/api.aic"),
+        r#"module app.api;
+import app.util;
+
+fn handle() -> Int {
+    answer()
+}
+"#,
+    )
+    .expect("write api");
+
+    fs::write(
+        root.join("src/util.aic"),
+        r#"module app.util;
+
+fn answer() -> Int {
+    42
+}
+"#,
+    )
+    .expect("write util");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
 }
 
 #[test]

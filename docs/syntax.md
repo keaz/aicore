@@ -3,12 +3,13 @@
 This file is the frozen grammar contract for the current parser implementation.
 If parser behavior changes, this file must be updated in the same change.
 
-Version: `mvp-grammar-v5`
+Version: `mvp-grammar-v6`
 
 ## Lexical tokens
 
 - `ident`: `[A-Za-z_][A-Za-z0-9_]*`
 - `int`: decimal integer literal (`0`, `1`, `42`, ...)
+- `float`: decimal/scientific literal (`3.14`, `0.5`, `1e10`, `2.5e-3`)
 - `string`: double-quoted UTF-8 string with escape support
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
@@ -97,6 +98,7 @@ field_suffix   = "." ident ;
 try_suffix     = "?" ;
 
 primary_expr   = int
+               | float
                | string
                | bool
                | unit_lit

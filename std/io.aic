@@ -10,6 +10,11 @@ fn print_str(x: String) -> () effects { io } {
     ()
 }
 
+/// Print floating point value to stdout.
+fn print_float(x: Float) -> () effects { io } {
+    ()
+}
+
 /// Abort execution with panic message.
 fn panic(message: String) -> () effects { io } {
     ()

@@ -1,0 +1,76 @@
+import std.io;
+import std.option;
+import std.result;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn opt_string_len(v: Option[String]) -> Int {
+    match v {
+        Some(value) => len(value),
+        None => 0,
+    }
+}
+
+fn opt_vec_len(v: Option[Vec[String]]) -> Int {
+    match v {
+        Some(value) => vec_len(value),
+        None => 0,
+    }
+}
+
+fn parse_or(v: Result[Int, String], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn parse_err_non_empty(v: Result[Int, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(message) => if len(message) > 0 { 1 } else { 0 },
+    }
+}
+
+fn main() -> Int effects { io } {
+    let request_line = "GET /api/users HTTP/1.1";
+    let parts = split(request_line, " ");
+    let header_parts = split_first("Content-Type: application/json", ":");
+
+    let checks =
+        (if contains("alpha beta", "pha") { 1 } else { 0 }) +
+        (if starts_with("alpha beta", "alpha") { 1 } else { 0 }) +
+        (if ends_with("alpha beta", "beta") { 1 } else { 0 }) +
+        (if opt_int_or(index_of("banana", "na"), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(last_index_of("banana", "na"), -1) == 4 { 1 } else { 0 }) +
+        (if len(substring("header", 1, 4)) == 3 { 1 } else { 0 }) +
+        (if opt_string_len(char_at("abc", 1)) == 1 { 1 } else { 0 }) +
+        (if vec_len(parts) == 3 { 1 } else { 0 }) +
+        (if opt_vec_len(header_parts) == 2 { 1 } else { 0 }) +
+        (if len(trim("  hi  ")) == 2 { 1 } else { 0 }) +
+        (if len(trim_start("  hi ")) == 3 { 1 } else { 0 }) +
+        (if len(trim_end(" hi  ")) == 3 { 1 } else { 0 }) +
+        (if len(to_upper("abc")) == 3 { 1 } else { 0 }) +
+        (if len(to_lower("ABC")) == 3 { 1 } else { 0 }) +
+        (if len(replace("a-b-c", "-", "/")) == 5 { 1 } else { 0 }) +
+        (if len(repeat("ab", 3)) == 6 { 1 } else { 0 }) +
+        (if parse_or(parse_int(" 42 "), 0) == 42 { 1 } else { 0 }) +
+        parse_err_non_empty(parse_int("x42")) +
+        (if len(int_to_string(-2048)) == 5 { 1 } else { 0 }) +
+        (if len(bool_to_string(true)) == 4 && len(bool_to_string(false)) == 5 { 1 } else { 0 }) +
+        (if len(join(parts, " ")) == len(request_line) { 1 } else { 0 });
+
+    if checks == 21 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

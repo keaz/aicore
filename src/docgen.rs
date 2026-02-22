@@ -313,6 +313,7 @@ fn render_generic_params(generics: &[ir::GenericParam]) -> String {
 fn render_expr(expr: &ir::Expr) -> String {
     match &expr.kind {
         ir::ExprKind::Int(v) => v.to_string(),
+        ir::ExprKind::Float(v) => render_float_literal(*v),
         ir::ExprKind::Bool(v) => v.to_string(),
         ir::ExprKind::String(s) => format!("\"{}\"", s),
         ir::ExprKind::Unit => "()".to_string(),
@@ -369,6 +370,22 @@ fn render_expr(expr: &ir::Expr) -> String {
         }
         ir::ExprKind::FieldAccess { base, field } => format!("{}.{}", render_expr(base), field),
         ir::ExprKind::UnsafeBlock { .. } => "unsafe { ... }".to_string(),
+    }
+}
+
+fn render_float_literal(value: f64) -> String {
+    if value.is_nan() {
+        "NaN".to_string()
+    } else if value == f64::INFINITY {
+        "inf".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-inf".to_string()
+    } else {
+        let mut text = format!("{value}");
+        if !text.contains('.') && !text.contains('e') && !text.contains('E') {
+            text.push_str(".0");
+        }
+        text
     }
 }
 

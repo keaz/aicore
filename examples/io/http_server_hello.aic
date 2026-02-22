@@ -1,0 +1,75 @@
+import std.io;
+import std.net;
+import std.http_server;
+import std.map;
+import std.string;
+
+fn string_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn request_ok(req: Request) -> Int {
+    let name = match map.get(req.query, "name") {
+        Some(v) => v,
+        None => "",
+    };
+    let method_ok = string_eq(req.method, "GET");
+    let path_ok = string_eq(req.path, "/hello");
+    let name_ok = string_eq(name, "AIC");
+    if method_ok == 1 && path_ok == 1 && name_ok == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, "GET /hello?name=AIC HTTP/1.1\nHost: localhost\n\n");
+    let parsed_ok = match read_request(server, 4096, 1000) {
+        Ok(req) => request_ok(req),
+        Err(_) => 0,
+    };
+
+    write_response(server, text_response(200, "hello"));
+    let wire = match tcp_recv(client, 512, 1000) {
+        Ok(text) => text,
+        Err(_) => "",
+    };
+    let wire_ok = if contains(wire, "HTTP/1.1 200 OK") && ends_with(wire, "hello") {
+        1
+    } else {
+        0
+    };
+
+    tcp_close(client);
+    close(server);
+    close(listener);
+
+    if parsed_ok == 1 && wire_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

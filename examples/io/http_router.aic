@@ -1,0 +1,99 @@
+import std.io;
+import std.map;
+import std.router;
+import std.string;
+
+fn string_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_value: String) -> Int {
+    let id_ok = if found.route_id == expected_id { 1 } else { 0 };
+    let param_ok = if len(param_key) == 0 {
+        1
+    } else {
+        match map.get(found.params, param_key) {
+            Some(value) => string_eq(value, param_value),
+            None => 0,
+        }
+    };
+    if id_ok == 1 && param_ok == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn expect_route(found: Result[Option[RouteMatch], RouterError], expected_id: Int, param_key: String, param_value: String) -> Int {
+    match found {
+        Ok(value) => match value {
+            Some(route) => route_match_ok(route, expected_id, param_key, param_value),
+            None => if expected_id == 0 { 1 } else { 0 },
+        },
+        Err(_) => 0,
+    }
+}
+
+fn router_err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let router0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let router1 = match add(router0, "GET", "/health", 1) {
+        Ok(value) => value,
+        Err(_) => router0,
+    };
+    let router2 = match add(router1, "GET", "/users/:id", 2) {
+        Ok(value) => value,
+        Err(_) => router1,
+    };
+    let router3 = match add(router2, "GET", "/assets/*", 3) {
+        Ok(value) => value,
+        Err(_) => router2,
+    };
+
+    let check_health = expect_route(match_route(router3, "GET", "/health"), 1, "", "");
+    let check_user = expect_route(match_route(router3, "GET", "/users/42"), 2, "id", "42");
+    let check_asset = expect_route(match_route(router3, "GET", "/assets/css/site.css"), 3, "", "");
+    let check_method_miss = expect_route(match_route(router3, "POST", "/users/42"), 0, "", "");
+
+    let ordered0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let ordered1 = match add(ordered0, "GET", "/users/*", 10) {
+        Ok(value) => value,
+        Err(_) => ordered0,
+    };
+    let ordered2 = match add(ordered1, "GET", "/users/:id", 20) {
+        Ok(value) => value,
+        Err(_) => ordered1,
+    };
+    let check_order = expect_route(match_route(ordered2, "GET", "/users/99"), 10, "", "");
+
+    let invalid_pattern = match add(router3, "GET", "users/:id", 5) {
+        Ok(_) => 0,
+        Err(err) => if router_err_code(err) == 1 { 1 } else { 0 },
+    };
+
+    if check_health == 1 && check_user == 1 && check_asset == 1 &&
+        check_method_miss == 1 && check_order == 1 && invalid_pattern == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
