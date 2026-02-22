@@ -1,0 +1,18 @@
+module verify.file_protocol;
+
+import std.concurrent;
+
+fn open_channel() -> IntChannel effects { concurrency } {
+    match channel_int(4) {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn main() -> Int effects { concurrency } {
+    let ch = open_channel();
+    let _sent = send_int(ch, 7, 100);
+    let _recv = recv_int(ch, 100);
+    let _closed = close_channel(ch);
+    0
+}

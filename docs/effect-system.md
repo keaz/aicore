@@ -19,9 +19,30 @@ Rules:
 - Interprocedural call-graph analysis computes transitive required effects.
 - Pure callers that only indirectly reach effectful callees are rejected with a call-path diagnostic.
 - Contracts are checked in pure mode.
+- Selected resource APIs are checked for protocol safety (use-after-close / double-close).
+
+## Resource Protocol Verification (QV-T2)
+
+Compiler enforces stateful protocol rules for selected `std.concurrent` handles:
+
+- `IntChannel`: valid while open for `send_int` / `recv_int`, terminal close via `close_channel`.
+- `IntMutex`: valid while open for `lock_int` / `unlock_int`, terminal close via `close_mutex`.
+- `Task`: terminal completion via `join_task` or `cancel_task`.
+
+Violation model:
+
+- calling an API after terminal close/consume is rejected at compile time
+- repeated terminal calls are rejected at compile time
+- branch-local analysis is conservative to avoid false positives on mixed control-flow paths
 
 Diagnostics:
 
 - `E2003`: unknown effect.
 - `E2004`: duplicate effect declaration.
 - `E2005`: transitive effect path requires undeclared effect.
+- `E2006`: resource protocol violation (operation on closed/consumed handle).
+
+Examples:
+
+- Valid protocol usage: `examples/verify/file_protocol.aic`
+- Invalid protocol usage: `examples/verify/file_protocol_invalid.aic`

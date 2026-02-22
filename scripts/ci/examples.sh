@@ -74,6 +74,7 @@ check_pass=(
   "examples/core/mut_vec.aic"
   "examples/core/pattern_or.aic"
   "examples/core/pattern_guard_check.aic"
+  "examples/verify/file_protocol.aic"
   "examples/verify/range_proofs.aic"
 )
 check_fail=(
@@ -82,6 +83,7 @@ check_fail=(
   "examples/e7/diag_errors.aic"
   "examples/io/effect_misuse_fs.aic"
   "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
+  "examples/verify/file_protocol_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"

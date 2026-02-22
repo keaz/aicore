@@ -180,6 +180,23 @@ fn static_contract_verifier_output_is_deterministic() {
 }
 
 #[test]
+fn resource_protocol_violation_reports_e2006() {
+    let out = run_aic(&[
+        "check",
+        "examples/verify/file_protocol_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E2006"),
+        "expected E2006 protocol diagnostic; diagnostics={diagnostics:#}"
+    );
+}
+
+#[test]
 fn explain_and_contract_commands_work() {
     let explain_known = run_aic(&["explain", "E2001", "--json"]);
     assert_eq!(explain_known.status.code(), Some(0));

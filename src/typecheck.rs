@@ -113,6 +113,37 @@ struct TempBorrow {
     span: crate::span::Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ResourceKind {
+    Task,
+    IntChannel,
+    IntMutex,
+}
+
+impl ResourceKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Task => "Task",
+            Self::IntChannel => "IntChannel",
+            Self::IntMutex => "IntMutex",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResourceState {
+    closed_at: crate::span::Span,
+}
+
+type ResourceStateMap = BTreeMap<(String, ResourceKind), ResourceState>;
+
+#[derive(Debug, Clone, Copy)]
+struct ResourceProtocolOp {
+    kind: ResourceKind,
+    terminal: bool,
+    api: &'static str,
+}
+
 impl<'a> Checker<'a> {
     fn new(program: &'a ir::Program, resolution: &'a Resolution, file: &'a str) -> Self {
         let mut types = BTreeMap::new();
@@ -408,6 +439,7 @@ impl<'a> Checker<'a> {
             false,
         );
         self.check_mutability_and_borrows(func);
+        self.check_resource_protocols(func);
 
         if !type_compatible(&ret_type, &body_ty) {
             self.diagnostics.push(
@@ -716,6 +748,176 @@ impl<'a> Checker<'a> {
         }
         let mut borrow_state = BorrowState::default();
         self.check_borrow_block(&func.body, &mut mutability, &mut borrow_state);
+    }
+
+    fn check_resource_protocols(&mut self, func: &ir::Function) {
+        let mut state = ResourceStateMap::new();
+        self.check_resource_protocol_block(&func.body, &mut state);
+    }
+
+    fn check_resource_protocol_block(&mut self, block: &ir::Block, state: &mut ResourceStateMap) {
+        for stmt in &block.stmts {
+            match stmt {
+                ir::Stmt::Let { name, expr, .. } => {
+                    self.check_resource_protocol_expr(expr, state);
+                    clear_resource_state_for_var(name, state);
+                }
+                ir::Stmt::Assign { target, expr, .. } => {
+                    self.check_resource_protocol_expr(expr, state);
+                    clear_resource_state_for_var(target, state);
+                }
+                ir::Stmt::Expr { expr, .. } => self.check_resource_protocol_expr(expr, state),
+                ir::Stmt::Return {
+                    expr: Some(expr), ..
+                }
+                | ir::Stmt::Assert { expr, .. } => self.check_resource_protocol_expr(expr, state),
+                ir::Stmt::Return { expr: None, .. } => {}
+            }
+        }
+
+        if let Some(tail) = &block.tail {
+            self.check_resource_protocol_expr(tail, state);
+        }
+    }
+
+    fn check_resource_protocol_expr(&mut self, expr: &ir::Expr, state: &mut ResourceStateMap) {
+        self.check_resource_protocol_expr_mode(expr, state, false);
+    }
+
+    fn check_resource_protocol_expr_mode(
+        &mut self,
+        expr: &ir::Expr,
+        state: &mut ResourceStateMap,
+        allow_closed_use: bool,
+    ) {
+        match &expr.kind {
+            ir::ExprKind::Call { callee, args } => {
+                self.check_resource_protocol_expr_mode(callee, state, false);
+                for arg in args {
+                    self.check_resource_protocol_expr_mode(arg, state, false);
+                }
+                self.check_resource_protocol_call(callee, args, expr.span, state, allow_closed_use);
+            }
+            ir::ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.check_resource_protocol_expr_mode(cond, state, false);
+                let mut then_state = state.clone();
+                self.check_resource_protocol_block(then_block, &mut then_state);
+                let mut else_state = state.clone();
+                self.check_resource_protocol_block(else_block, &mut else_state);
+            }
+            ir::ExprKind::Match {
+                expr: scrutinee,
+                arms,
+            } => {
+                // `match call(...) { ... }` explicitly handles `Result` branches, including
+                // expected runtime closed/cancelled outcomes.
+                self.check_resource_protocol_expr_mode(scrutinee, state, true);
+                for arm in arms {
+                    let mut arm_state = state.clone();
+                    if let Some(guard) = &arm.guard {
+                        self.check_resource_protocol_expr_mode(guard, &mut arm_state, false);
+                    }
+                    self.check_resource_protocol_expr_mode(&arm.body, &mut arm_state, false);
+                }
+            }
+            ir::ExprKind::UnsafeBlock { block } => {
+                let mut block_state = state.clone();
+                self.check_resource_protocol_block(block, &mut block_state);
+            }
+            ir::ExprKind::Binary { lhs, rhs, .. } => {
+                self.check_resource_protocol_expr_mode(lhs, state, false);
+                self.check_resource_protocol_expr_mode(rhs, state, false);
+            }
+            ir::ExprKind::Unary { expr, .. }
+            | ir::ExprKind::Borrow { expr, .. }
+            | ir::ExprKind::Await { expr }
+            | ir::ExprKind::Try { expr } => {
+                self.check_resource_protocol_expr_mode(expr, state, false);
+            }
+            ir::ExprKind::StructInit { fields, .. } => {
+                for (_, value, _) in fields {
+                    self.check_resource_protocol_expr_mode(value, state, false);
+                }
+            }
+            ir::ExprKind::FieldAccess { base, .. } => {
+                self.check_resource_protocol_expr_mode(base, state, false);
+            }
+            ir::ExprKind::Int(_)
+            | ir::ExprKind::Bool(_)
+            | ir::ExprKind::String(_)
+            | ir::ExprKind::Unit
+            | ir::ExprKind::Var(_) => {}
+        }
+    }
+
+    fn check_resource_protocol_call(
+        &mut self,
+        callee: &ir::Expr,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        state: &mut ResourceStateMap,
+        allow_closed_use: bool,
+    ) {
+        let Some(name) = self.resolve_concurrent_protocol_call(callee) else {
+            return;
+        };
+        let Some(op) = concurrent_protocol_op(&name) else {
+            return;
+        };
+        let Some(first_arg) = args.first() else {
+            return;
+        };
+        let ir::ExprKind::Var(var_name) = &first_arg.kind else {
+            return;
+        };
+        let key = (var_name.clone(), op.kind);
+        if let Some(previous) = state.get(&key).copied() {
+            if !allow_closed_use {
+                let mut diag = Diagnostic::error(
+                    "E2006",
+                    format!(
+                        "resource protocol violation: '{}' called on closed {} '{}'",
+                        op.api,
+                        op.kind.as_str(),
+                        var_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help(format!(
+                    "create a new {} before calling '{}' again",
+                    op.kind.as_str(),
+                    op.api
+                ));
+                diag.spans.push(DiagnosticSpan {
+                    file: self.file.to_string(),
+                    start: previous.closed_at.start,
+                    end: previous.closed_at.end,
+                    label: Some("resource was closed here".to_string()),
+                });
+                self.diagnostics.push(diag);
+            }
+            return;
+        }
+        if op.terminal {
+            state.insert(key, ResourceState { closed_at: span });
+        }
+    }
+
+    fn resolve_concurrent_protocol_call(&self, callee: &ir::Expr) -> Option<String> {
+        let call_path = self.extract_callee_path(callee)?;
+        let name = call_path.last()?.clone();
+        let op = concurrent_protocol_op(&name)?;
+        let sig = self.functions.get(&name)?;
+        if sig.params.first().map(String::as_str) == Some(op.kind.as_str()) {
+            Some(name)
+        } else {
+            None
+        }
     }
 
     fn check_borrow_block(
@@ -3336,6 +3538,56 @@ fn contains_null_token(input: &str) -> bool {
         .any(|segment| segment.eq_ignore_ascii_case("null"))
 }
 
+fn concurrent_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
+    match name {
+        "send_int" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntChannel,
+            terminal: false,
+            api: "send_int",
+        }),
+        "recv_int" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntChannel,
+            terminal: false,
+            api: "recv_int",
+        }),
+        "close_channel" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntChannel,
+            terminal: true,
+            api: "close_channel",
+        }),
+        "lock_int" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntMutex,
+            terminal: false,
+            api: "lock_int",
+        }),
+        "unlock_int" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntMutex,
+            terminal: false,
+            api: "unlock_int",
+        }),
+        "close_mutex" => Some(ResourceProtocolOp {
+            kind: ResourceKind::IntMutex,
+            terminal: true,
+            api: "close_mutex",
+        }),
+        "join_task" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Task,
+            terminal: true,
+            api: "join_task",
+        }),
+        "cancel_task" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Task,
+            terminal: true,
+            api: "cancel_task",
+        }),
+        _ => None,
+    }
+}
+
+fn clear_resource_state_for_var(name: &str, state: &mut ResourceStateMap) {
+    state.retain(|(var, _), _| var != name);
+}
+
 fn contains_unresolved_type(ty: &str) -> bool {
     ty.contains("<?>")
 }
@@ -3589,6 +3841,100 @@ fn top() -> () {
         assert_eq!(
             out.function_effect_usage.get("top"),
             Some(&BTreeSet::from(["io".to_string()]))
+        );
+    }
+
+    #[test]
+    fn resource_protocol_accepts_valid_channel_sequence() {
+        let src = r#"
+enum ConcurrencyError { Closed }
+struct IntChannel { handle: Int }
+fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } { Ok(0) }
+fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+
+fn main() -> Int effects { concurrency } {
+    let ch = IntChannel { handle: 1 };
+    let _sent = send_int(ch, 1, 100);
+    let _recv = recv_int(ch, 100);
+    let _closed = close_channel(ch);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == "E2006"),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn resource_protocol_reports_use_after_close() {
+        let src = r#"
+enum ConcurrencyError { Closed }
+struct IntChannel { handle: Int }
+fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+
+fn main() -> Int effects { concurrency } {
+    let ch = IntChannel { handle: 1 };
+    let _closed = close_channel(ch);
+    let _sent = send_int(ch, 7, 50);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E2006")
+            .expect("missing E2006 protocol diagnostic");
+        assert!(
+            diag.message.contains("send_int") && diag.message.contains("closed IntChannel"),
+            "message={}",
+            diag.message
+        );
+    }
+
+    #[test]
+    fn resource_protocol_checker_avoids_branch_false_positive() {
+        let src = r#"
+enum ConcurrencyError { Closed }
+struct IntChannel { handle: Int }
+fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+
+fn maybe_close(ch: IntChannel, flag: Bool) -> Int effects { concurrency } {
+    if flag {
+        let _closed = close_channel(ch);
+    } else {
+        ()
+    };
+    let _sent = send_int(ch, 1, 25);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == "E2006"),
+            "diags={:#?}",
+            out.diagnostics
         );
     }
 
