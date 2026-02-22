@@ -17,7 +17,9 @@ use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
 use aicore::lsp;
 use aicore::package_registry::{
-    install as pkg_install, publish as pkg_publish, search as pkg_search,
+    install_with_options as pkg_install_with_options,
+    publish_with_options as pkg_publish_with_options,
+    search_with_options as pkg_search_with_options, RegistryClientOptions,
 };
 use aicore::package_workflow::generate_and_write_lockfile;
 use aicore::parser;
@@ -244,14 +246,22 @@ enum PkgCommand {
         #[arg(default_value = ".")]
         path: PathBuf,
         #[arg(long)]
-        registry: Option<PathBuf>,
+        registry: Option<String>,
+        #[arg(long)]
+        registry_config: Option<PathBuf>,
+        #[arg(long)]
+        token: Option<String>,
         #[arg(long)]
         json: bool,
     },
     Search {
         query: Option<String>,
         #[arg(long)]
-        registry: Option<PathBuf>,
+        registry: Option<String>,
+        #[arg(long)]
+        registry_config: Option<PathBuf>,
+        #[arg(long)]
+        token: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -261,7 +271,11 @@ enum PkgCommand {
         #[arg(long, default_value = ".")]
         path: PathBuf,
         #[arg(long)]
-        registry: Option<PathBuf>,
+        registry: Option<String>,
+        #[arg(long)]
+        registry_config: Option<PathBuf>,
+        #[arg(long)]
+        token: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -418,10 +432,17 @@ fn run_cli() -> anyhow::Result<i32> {
             PkgCommand::Publish {
                 path,
                 registry,
+                registry_config,
+                token,
                 json,
             } => {
                 let root = resolve_project_root(&path);
-                match pkg_publish(&root, registry.as_deref()) {
+                let options = RegistryClientOptions {
+                    registry,
+                    registry_config,
+                    token,
+                };
+                match pkg_publish_with_options(&root, &options) {
                     Ok(result) => {
                         if json {
                             println!("{}", serde_json::to_string_pretty(&result)?);
@@ -447,42 +468,59 @@ fn run_cli() -> anyhow::Result<i32> {
             PkgCommand::Search {
                 query,
                 registry,
+                registry_config,
+                token,
                 json,
-            } => match pkg_search(query.as_deref(), registry.as_deref()) {
-                Ok(results) => {
-                    if json {
-                        println!("{}", serde_json::to_string_pretty(&results)?);
-                    } else if results.is_empty() {
-                        println!("no packages found");
-                    } else {
-                        for result in results {
-                            println!(
-                                "{} latest={} versions={}",
-                                result.package,
-                                result.latest,
-                                result.versions.join(",")
-                            );
+            } => {
+                let root = std::env::current_dir()?;
+                let options = RegistryClientOptions {
+                    registry,
+                    registry_config,
+                    token,
+                };
+                match pkg_search_with_options(&root, query.as_deref(), &options) {
+                    Ok(results) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&results)?);
+                        } else if results.is_empty() {
+                            println!("no packages found");
+                        } else {
+                            for result in results {
+                                println!(
+                                    "{} latest={} versions={}",
+                                    result.package,
+                                    result.latest,
+                                    result.versions.join(",")
+                                );
+                            }
                         }
+                        EXIT_OK
                     }
-                    EXIT_OK
-                }
-                Err(diag) => {
-                    if json {
-                        println!("{}", serde_json::to_string_pretty(&vec![diag])?);
-                    } else {
-                        print!("{}", diagnostics_pretty(&[diag]));
+                    Err(diag) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&vec![diag])?);
+                        } else {
+                            print!("{}", diagnostics_pretty(&[diag]));
+                        }
+                        EXIT_DIAGNOSTIC_ERROR
                     }
-                    EXIT_DIAGNOSTIC_ERROR
                 }
-            },
+            }
             PkgCommand::Install {
                 specs,
                 path,
                 registry,
+                registry_config,
+                token,
                 json,
             } => {
                 let root = resolve_project_root(&path);
-                match pkg_install(&root, &specs, registry.as_deref()) {
+                let options = RegistryClientOptions {
+                    registry,
+                    registry_config,
+                    token,
+                };
+                match pkg_install_with_options(&root, &specs, &options) {
                     Ok(result) => {
                         if json {
                             println!("{}", serde_json::to_string_pretty(&result)?);

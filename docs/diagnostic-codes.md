@@ -57,6 +57,8 @@ Recent core-language additions:
 - `E2114`: semantic version resolution conflict across install requirements.
 - `E2115`: package/version not found in configured registry.
 - `E2116`: registry/index/package content IO or integrity failure.
+- `E2117`: private registry authentication missing or invalid.
+- `E2118`: registry configuration or credential source is invalid.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 - `E5023`: backend does not yet lower guarded match arms.

@@ -60,7 +60,13 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "pkg",
         description: "Publish/install/search package registry workflows",
-        stable_flags: &["subcommands", "--json", "--registry"],
+        stable_flags: &[
+            "subcommands",
+            "--json",
+            "--registry",
+            "--registry-config",
+            "--token",
+        ],
         output_modes: &["text", "json"],
     },
     CommandContract {

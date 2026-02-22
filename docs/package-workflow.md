@@ -45,9 +45,9 @@ aic lock <project-dir>
 Package lifecycle commands:
 
 ```bash
-aic pkg publish <project-dir> [--registry <path>]
-aic pkg search <query> [--registry <path>]
-aic pkg install <name@requirement>... [--path <project-dir>] [--registry <path>]
+aic pkg publish <project-dir> [--registry <alias-or-path>] [--registry-config aic.registry.json] [--token ...]
+aic pkg search <query> [--registry <alias-or-path>] [--registry-config aic.registry.json] [--token ...]
+aic pkg install <name@requirement>... [--path <project-dir>] [--registry <alias-or-path>] [--registry-config aic.registry.json] [--token ...]
 ```
 
 Version requirement forms:
@@ -62,6 +62,40 @@ Install writes dependencies to `aic.toml` (`[dependencies]`) and regenerates `ai
 Resolver behavior is deterministic: matching versions are sorted by semantic version and the highest compatible version is selected.
 
 Example consumer source: `examples/pkg/consume_http_client.aic`
+
+## Private Registries, Scopes, and Mirrors (PKG-T2)
+
+`aic pkg` can load registry settings from `aic.registry.json` in the project root (or `--registry-config` / `AIC_PKG_REGISTRY_CONFIG`).
+
+Example config:
+
+```json
+{
+  "default": "public",
+  "registries": {
+    "public": { "path": "/ci/cache/aic/public" },
+    "private": {
+      "path": "/ci/cache/aic/private",
+      "private": true,
+      "token_env": "AIC_PRIVATE_TOKEN",
+      "token_file": "/ci/secrets/aic-private.token",
+      "mirrors": ["/ci/cache/aic/private-mirror"]
+    }
+  },
+  "scopes": {
+    "corp/": "private"
+  }
+}
+```
+
+Rules:
+
+- `default` selects the fallback registry alias.
+- `scopes` routes package prefixes to a specific registry alias (longest-prefix match).
+- `mirrors` are tried in deterministic order when the primary registry is missing data.
+- Private registries require credentials from `--token` or `token_env`; mismatch/missing credentials return deterministic auth diagnostics.
+
+Example private-registry runbook: `examples/pkg/private_registry_readme.md`
 
 ## Build/Check Integration
 
@@ -83,6 +117,7 @@ Offline behavior:
 
 - resolves dependencies from `.aic-cache/`
 - validates cached checksum against lock entry
+- package install remains deterministic when configured mirrors are available (no network dependency)
 
 Offline diagnostics:
 

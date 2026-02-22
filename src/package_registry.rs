@@ -11,9 +11,17 @@ use crate::package_workflow::{compute_package_checksum_for_path, generate_and_wr
 use crate::span::Span;
 
 const ENV_REGISTRY_ROOT: &str = "AIC_PKG_REGISTRY";
+const ENV_REGISTRY_CONFIG: &str = "AIC_PKG_REGISTRY_CONFIG";
 const REGISTRY_INDEX_DIR: &str = "index";
 const REGISTRY_PACKAGES_DIR: &str = "packages";
 const DEPS_DIR: &str = "deps";
+
+#[derive(Debug, Clone, Default)]
+pub struct RegistryClientOptions {
+    pub registry: Option<String>,
+    pub registry_config: Option<PathBuf>,
+    pub token: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PublishResult {
@@ -55,6 +63,44 @@ struct RegistryIndex {
 struct RegistryRelease {
     version: String,
     checksum: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RegistryConfig {
+    #[serde(default)]
+    default: Option<String>,
+    #[serde(default)]
+    registries: BTreeMap<String, RegistryConfigEntry>,
+    #[serde(default)]
+    scopes: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RegistryConfigEntry {
+    path: String,
+    #[serde(default)]
+    mirrors: Vec<String>,
+    #[serde(default)]
+    private: bool,
+    #[serde(default)]
+    token_env: Option<String>,
+    #[serde(default)]
+    token_file: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedRegistryConfig {
+    path: PathBuf,
+    config: RegistryConfig,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedRegistry {
+    roots: Vec<PathBuf>,
+    private: bool,
+    token_env: Option<String>,
+    token_file: Option<PathBuf>,
+    display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +366,263 @@ fn registry_root(override_root: Option<&Path>) -> Result<PathBuf, Diagnostic> {
     Ok(canonical_or_self(
         PathBuf::from(home).join(".aic").join("registry"),
     ))
+}
+
+fn resolve_config_path(
+    project_root: &Path,
+    options: &RegistryClientOptions,
+) -> Result<Option<PathBuf>, Diagnostic> {
+    if let Some(path) = &options.registry_config {
+        return Ok(Some(canonical_or_self(path.clone())));
+    }
+
+    if let Ok(path) = std::env::var(ENV_REGISTRY_CONFIG) {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Ok(Some(canonical_or_self(PathBuf::from(trimmed))));
+        }
+    }
+
+    let candidate = project_root.join("aic.registry.json");
+    if candidate.exists() {
+        return Ok(Some(canonical_or_self(candidate)));
+    }
+
+    Ok(None)
+}
+
+fn load_registry_config(
+    project_root: &Path,
+    options: &RegistryClientOptions,
+) -> Result<Option<LoadedRegistryConfig>, Diagnostic> {
+    let Some(path) = resolve_config_path(project_root, options)? else {
+        return Ok(None);
+    };
+
+    let text = fs::read_to_string(&path).map_err(|err| {
+        diag_with_help(
+            "E2118",
+            format!("failed to read registry config '{}': {err}", path.display()),
+            &path,
+            "set --registry-config to a readable JSON config, or remove the broken file",
+        )
+    })?;
+
+    let config = serde_json::from_str::<RegistryConfig>(&text).map_err(|err| {
+        diag_with_help(
+            "E2118",
+            format!("invalid registry config '{}': {err}", path.display()),
+            &path,
+            "registry config must be valid JSON with `registries`, optional `default`, and optional `scopes`",
+        )
+    })?;
+
+    Ok(Some(LoadedRegistryConfig { path, config }))
+}
+
+fn is_path_like(value: &str) -> bool {
+    value.contains('/')
+        || value.contains('\\')
+        || value.starts_with('.')
+        || value.starts_with('~')
+        || Path::new(value).is_absolute()
+}
+
+fn resolve_config_path_value(base_dir: &Path, value: &str) -> PathBuf {
+    let candidate = PathBuf::from(value.trim());
+    if candidate.is_absolute() {
+        candidate
+    } else {
+        base_dir.join(candidate)
+    }
+}
+
+fn scoped_registry_alias(config: &RegistryConfig, package: &str) -> Option<String> {
+    config
+        .scopes
+        .iter()
+        .filter(|(prefix, _)| package.starts_with(prefix.as_str()))
+        .max_by_key(|(prefix, _)| prefix.len())
+        .map(|(_, alias)| alias.clone())
+}
+
+fn resolve_registry_alias(
+    package: Option<&str>,
+    loaded: &LoadedRegistryConfig,
+    options: &RegistryClientOptions,
+) -> Result<Option<String>, Diagnostic> {
+    if let Some(selected) = options.registry.as_deref() {
+        if loaded.config.registries.contains_key(selected) {
+            return Ok(Some(selected.to_string()));
+        }
+        if is_path_like(selected) {
+            return Ok(None);
+        }
+        return Err(diag_with_help(
+            "E2118",
+            format!(
+                "unknown registry alias '{selected}' in '{}'",
+                loaded.path.display()
+            ),
+            &loaded.path,
+            "declare the alias under `registries`, or pass an explicit registry path",
+        ));
+    }
+
+    if let Some(pkg) = package {
+        if let Some(alias) = scoped_registry_alias(&loaded.config, pkg) {
+            return Ok(Some(alias));
+        }
+    }
+
+    Ok(loaded.config.default.clone())
+}
+
+fn resolve_registry(
+    project_root: &Path,
+    package: Option<&str>,
+    options: &RegistryClientOptions,
+) -> Result<ResolvedRegistry, Diagnostic> {
+    let loaded = load_registry_config(project_root, options)?;
+    if let Some(loaded) = loaded.as_ref() {
+        if let Some(alias) = resolve_registry_alias(package, loaded, options)? {
+            let Some(entry) = loaded.config.registries.get(&alias) else {
+                return Err(diag_with_help(
+                    "E2118",
+                    format!(
+                        "registry alias '{}' is referenced but not defined in '{}'",
+                        alias,
+                        loaded.path.display()
+                    ),
+                    &loaded.path,
+                    "define the alias under `registries` with at least a `path` value",
+                ));
+            };
+
+            let base = loaded
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."));
+            let mut roots = Vec::new();
+            let primary = canonical_or_self(resolve_config_path_value(&base, &entry.path));
+            roots.push(primary);
+            for mirror in &entry.mirrors {
+                let mirror_path = canonical_or_self(resolve_config_path_value(&base, mirror));
+                if !roots.contains(&mirror_path) {
+                    roots.push(mirror_path);
+                }
+            }
+
+            let token_file = entry
+                .token_file
+                .as_deref()
+                .map(|value| canonical_or_self(resolve_config_path_value(&base, value)));
+
+            return Ok(ResolvedRegistry {
+                roots,
+                private: entry.private,
+                token_env: entry.token_env.clone(),
+                token_file,
+                display_name: alias,
+            });
+        }
+    }
+
+    if let Some(selected) = options.registry.as_deref() {
+        let root = canonical_or_self(PathBuf::from(selected));
+        return Ok(ResolvedRegistry {
+            roots: vec![root],
+            private: false,
+            token_env: None,
+            token_file: None,
+            display_name: selected.to_string(),
+        });
+    }
+
+    let root = registry_root(None)?;
+    Ok(ResolvedRegistry {
+        roots: vec![root],
+        private: false,
+        token_env: None,
+        token_file: None,
+        display_name: "default".to_string(),
+    })
+}
+
+fn resolve_auth_token(
+    registry: &ResolvedRegistry,
+    options: &RegistryClientOptions,
+) -> Option<String> {
+    if let Some(token) = options.token.as_deref() {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let Some(env_name) = registry.token_env.as_deref() else {
+        return None;
+    };
+    let Ok(value) = std::env::var(env_name) else {
+        return None;
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn authorize_registry(
+    action: &str,
+    registry: &ResolvedRegistry,
+    options: &RegistryClientOptions,
+) -> Result<(), Diagnostic> {
+    if !registry.private {
+        return Ok(());
+    }
+
+    let token = resolve_auth_token(registry, options).ok_or_else(|| {
+        diag_with_help(
+            "E2117",
+            format!(
+                "registry '{}' requires credentials for `{action}`",
+                registry.display_name
+            ),
+            registry.roots.first().map(PathBuf::as_path).unwrap_or(Path::new(".")),
+            "provide --token or configure `token_env` and set the expected environment variable in CI",
+        )
+    })?;
+
+    if let Some(token_file) = registry.token_file.as_deref() {
+        let expected = fs::read_to_string(token_file).map_err(|err| {
+            diag_with_help(
+                "E2118",
+                format!(
+                    "failed to read registry token file '{}': {err}",
+                    token_file.display()
+                ),
+                token_file,
+                "fix `token_file` path in registry config or update file permissions",
+            )
+        })?;
+
+        if token != expected.trim() {
+            return Err(diag_with_help(
+                "E2117",
+                format!(
+                    "unauthorized access to private registry '{}' for `{action}`",
+                    registry.display_name
+                ),
+                token_file,
+                "verify token source (--token or token_env) and retry",
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn index_dir(root: &Path) -> PathBuf {
@@ -858,15 +1161,146 @@ fn parse_releases(
     Ok(releases)
 }
 
+#[derive(Debug, Clone)]
+struct ReleaseSource {
+    root: PathBuf,
+    release: RegistryRelease,
+    index_path: PathBuf,
+}
+
+fn collect_release_sources(
+    roots: &[PathBuf],
+    package: &str,
+) -> Result<BTreeMap<SemVer, Vec<ReleaseSource>>, Diagnostic> {
+    let mut releases = BTreeMap::<SemVer, Vec<ReleaseSource>>::new();
+    for root in roots {
+        let index_path = package_index_path(root, package);
+        let index = read_index(&index_path, package)?;
+        for (version, release) in parse_releases(&index_path, &index)? {
+            releases.entry(version).or_default().push(ReleaseSource {
+                root: root.clone(),
+                release,
+                index_path: index_path.clone(),
+            });
+        }
+    }
+    Ok(releases)
+}
+
+fn scan_registry_packages(
+    roots: &[PathBuf],
+    filter: Option<&str>,
+) -> Result<BTreeMap<String, BTreeSet<SemVer>>, Diagnostic> {
+    let mut merged = BTreeMap::<String, BTreeSet<SemVer>>::new();
+    let filter = filter
+        .map(str::trim)
+        .filter(|q| !q.is_empty())
+        .map(str::to_ascii_lowercase);
+
+    for root in roots {
+        let index_root = index_dir(root);
+        if !index_root.exists() {
+            continue;
+        }
+        let mut entries = Vec::new();
+        collect_index_json_files(&index_root, &mut entries)?;
+        entries.sort();
+
+        for path in entries {
+            let package_name = path
+                .strip_prefix(&index_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/")
+                .strip_suffix(".json")
+                .unwrap_or_default()
+                .to_string();
+            if package_name.is_empty() {
+                continue;
+            }
+
+            if let Some(filter) = &filter {
+                if !package_name.to_ascii_lowercase().contains(filter) {
+                    continue;
+                }
+            }
+
+            let index = read_index(&path, &package_name)?;
+            let bucket = merged.entry(package_name).or_default();
+            for (version, _) in parse_releases(&path, &index)? {
+                bucket.insert(version);
+            }
+        }
+    }
+
+    Ok(merged)
+}
+
+fn collect_index_json_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Diagnostic> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(|err| {
+            diag_with_help(
+                "E2116",
+                format!("failed to read registry index '{}': {err}", dir.display()),
+                dir,
+                "ensure registry index files are readable",
+            )
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            diag_with_help(
+                "E2116",
+                format!("failed to scan registry index '{}': {err}", dir.display()),
+                dir,
+                "ensure registry index files are readable",
+            )
+        })?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_index_json_files(&path, out)?;
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            out.push(path);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn publish(
     project_root: &Path,
     registry_override: Option<&Path>,
 ) -> Result<PublishResult, Diagnostic> {
+    let options = RegistryClientOptions {
+        registry: registry_override.map(normalize_path),
+        ..RegistryClientOptions::default()
+    };
+    publish_with_options(project_root, &options)
+}
+
+pub fn publish_with_options(
+    project_root: &Path,
+    options: &RegistryClientOptions,
+) -> Result<PublishResult, Diagnostic> {
     let project_root = canonical_or_self(project_root.to_path_buf());
     let meta = parse_package_meta(&project_root)?;
-    let registry_root = registry_root(registry_override)?;
+    let registry = resolve_registry(&project_root, Some(&meta.name), options)?;
+    authorize_registry("publish", &registry, options)?;
 
-    ensure_registry_layout(&registry_root)?;
+    let Some(primary) = registry.roots.first() else {
+        return Err(diag_with_help(
+            "E2118",
+            "resolved registry has no root path",
+            &project_root,
+            "fix registry config by setting `path` and optional `mirrors`",
+        ));
+    };
+
+    ensure_registry_layout(primary)?;
 
     let checksum = compute_package_checksum_for_path(&project_root).map_err(|err| {
         diag_with_help(
@@ -880,7 +1314,7 @@ pub fn publish(
         )
     })?;
 
-    let index_path = package_index_path(&registry_root, &meta.name);
+    let index_path = package_index_path(primary, &meta.name);
     let mut index = read_index(&index_path, &meta.name)?;
 
     let version_str = meta.version.to_string();
@@ -896,7 +1330,7 @@ pub fn publish(
         ));
     }
 
-    let dest = package_version_path(&registry_root, &meta.name, &version_str);
+    let dest = package_version_path(primary, &meta.name, &version_str);
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             diag_with_help(
@@ -931,81 +1365,43 @@ pub fn search(
     query: Option<&str>,
     registry_override: Option<&Path>,
 ) -> Result<Vec<SearchResult>, Diagnostic> {
-    let registry_root = registry_root(registry_override)?;
-    let index_root = index_dir(&registry_root);
+    let options = RegistryClientOptions {
+        registry: registry_override.map(normalize_path),
+        ..RegistryClientOptions::default()
+    };
+    let cwd = std::env::current_dir().map_err(|err| {
+        diag_with_help(
+            "E2118",
+            format!("failed to resolve current directory for package search: {err}"),
+            Path::new("."),
+            "run from a readable working directory or pass --registry-config explicitly",
+        )
+    })?;
+    search_with_options(&cwd, query, &options)
+}
 
-    if !index_root.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut entries = fs::read_dir(&index_root)
-        .map_err(|err| {
-            diag_with_help(
-                "E2116",
-                format!(
-                    "failed to read registry index '{}': {err}",
-                    index_root.display()
-                ),
-                &index_root,
-                "ensure registry index files are readable",
-            )
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            diag_with_help(
-                "E2116",
-                format!(
-                    "failed to scan registry index '{}': {err}",
-                    index_root.display()
-                ),
-                &index_root,
-                "ensure registry index files are readable",
-            )
-        })?;
-
-    entries.sort_by_key(|entry| entry.path());
-
-    let filter = query
-        .map(str::trim)
-        .filter(|q| !q.is_empty())
-        .map(|q| q.to_ascii_lowercase());
+pub fn search_with_options(
+    project_root: &Path,
+    query: Option<&str>,
+    options: &RegistryClientOptions,
+) -> Result<Vec<SearchResult>, Diagnostic> {
+    let project_root = canonical_or_self(project_root.to_path_buf());
+    let registry = resolve_registry(&project_root, None, options)?;
+    authorize_registry("search", &registry, options)?;
+    let merged = scan_registry_packages(&registry.roots, query)?;
 
     let mut results = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+    for (package, versions) in merged {
+        if versions.is_empty() {
             continue;
         }
-
-        let package_name = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or_default()
-            .to_string();
-        if package_name.is_empty() {
-            continue;
-        }
-
-        if let Some(filter) = &filter {
-            if !package_name.to_ascii_lowercase().contains(filter) {
-                continue;
-            }
-        }
-
-        let index = read_index(&path, &package_name)?;
-        let mut releases = parse_releases(&path, &index)?;
-        releases.sort_by(|a, b| b.0.cmp(&a.0));
-        if releases.is_empty() {
-            continue;
-        }
-
-        let versions = releases
+        let versions = versions
             .iter()
-            .map(|(_, release)| release.version.clone())
+            .rev()
+            .map(ToString::to_string)
             .collect::<Vec<_>>();
-
         results.push(SearchResult {
-            package: package_name,
+            package,
             latest: versions
                 .first()
                 .cloned()
@@ -1022,6 +1418,18 @@ pub fn install(
     project_root: &Path,
     specs: &[String],
     registry_override: Option<&Path>,
+) -> Result<InstallResult, Diagnostic> {
+    let options = RegistryClientOptions {
+        registry: registry_override.map(normalize_path),
+        ..RegistryClientOptions::default()
+    };
+    install_with_options(project_root, specs, &options)
+}
+
+pub fn install_with_options(
+    project_root: &Path,
+    specs: &[String],
+    options: &RegistryClientOptions,
 ) -> Result<InstallResult, Diagnostic> {
     if specs.is_empty() {
         return Err(diag_with_help(
@@ -1046,8 +1454,6 @@ pub fn install(
         ));
     }
 
-    let registry_root = registry_root(registry_override)?;
-
     let mut parsed = Vec::new();
     for spec in specs {
         parsed.push(parse_spec(spec)?);
@@ -1058,34 +1464,41 @@ pub fn install(
         grouped.entry(spec.package.clone()).or_default().push(spec);
     }
 
-    let mut selected = Vec::<(String, String, String, String)>::new();
+    let mut selected = Vec::<(String, String, String, String, PathBuf)>::new();
     for (package, requirements) in grouped {
-        let index_path = package_index_path(&registry_root, &package);
-        let index = read_index(&index_path, &package)?;
-        if index.releases.is_empty() {
+        let registry = resolve_registry(&project_root, Some(&package), options)?;
+        authorize_registry("install", &registry, options)?;
+
+        let release_sources = collect_release_sources(&registry.roots, &package)?;
+        if release_sources.is_empty() {
+            let searched_roots = registry
+                .roots
+                .iter()
+                .map(|root| root.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(diag_with_help(
                 "E2115",
-                format!("package '{package}' not found in local registry"),
-                &index_path,
                 format!(
-                    "publish '{package}' first with `aic pkg publish --registry {}`",
-                    registry_root.display()
+                    "package '{package}' not found in configured registry roots: [{searched_roots}]"
                 ),
+                &project_root,
+                "publish the package, or configure mirrors/scopes to include the expected registry",
             ));
         }
 
-        let releases = parse_releases(&index_path, &index)?;
-        let mut matching = releases
-            .into_iter()
-            .filter(|(version, _)| {
+        let mut compatible = release_sources
+            .keys()
+            .copied()
+            .filter(|version| {
                 requirements
                     .iter()
                     .all(|spec| spec.requirement.matches(*version))
             })
             .collect::<Vec<_>>();
-        matching.sort_by(|a, b| a.0.cmp(&b.0));
+        compatible.sort();
 
-        let Some((resolved_version, resolved_release)) = matching.last().cloned() else {
+        let Some(resolved_version) = compatible.last().copied() else {
             let reqs = requirements
                 .iter()
                 .map(|r| r.requirement_raw.clone())
@@ -1093,13 +1506,85 @@ pub fn install(
                 .into_iter()
                 .collect::<Vec<_>>()
                 .join(", ");
+            let fallback_path = release_sources
+                .values()
+                .next()
+                .and_then(|sources| sources.first())
+                .map(|source| source.index_path.clone())
+                .unwrap_or_else(|| package_index_path(&registry.roots[0], &package));
             return Err(diag_with_help(
                 "E2114",
                 format!(
                     "resolution conflict for package '{package}': no version satisfies [{reqs}]"
                 ),
-                &index_path,
+                &fallback_path,
                 "align dependency requirements to a common semantic version range",
+            ));
+        };
+
+        let version_text = resolved_version.to_string();
+        let Some(sources) = release_sources.get(&resolved_version) else {
+            return Err(diag_with_help(
+                "E2116",
+                format!("internal resolution error for package '{package}'"),
+                &project_root,
+                "retry install; if this persists, regenerate registry index metadata",
+            ));
+        };
+
+        let mut chosen: Option<(PathBuf, String)> = None;
+        let mut checksum_mismatch: Option<(PathBuf, String, String)> = None;
+        for source in sources {
+            let source_path = package_version_path(&source.root, &package, &version_text);
+            if !source_path.exists() {
+                continue;
+            }
+
+            let source_checksum =
+                compute_package_checksum_for_path(&source_path).map_err(|err| {
+                    diag_with_help(
+                        "E2116",
+                        format!(
+                            "failed to checksum registry package '{}': {err}",
+                            source_path.display()
+                        ),
+                        &source_path,
+                        "repair or re-publish the corrupted registry package",
+                    )
+                })?;
+
+            if source_checksum == source.release.checksum {
+                chosen = Some((source_path, source.release.checksum.clone()));
+                break;
+            }
+
+            checksum_mismatch = Some((
+                source_path,
+                source.release.checksum.clone(),
+                source_checksum,
+            ));
+        }
+
+        let Some((resolved_source, resolved_checksum)) = chosen else {
+            if let Some((source_path, expected, actual)) = checksum_mismatch {
+                return Err(diag_with_help(
+                    "E2116",
+                    format!(
+                        "registry checksum mismatch for '{}@{}': index={}, actual={}",
+                        package, version_text, expected, actual
+                    ),
+                    &source_path,
+                    "re-publish package metadata/content or repair mirror synchronization",
+                ));
+            }
+            return Err(diag_with_help(
+                "E2115",
+                format!(
+                    "registry package content missing for '{}@{}' in configured roots",
+                    package, version_text
+                ),
+                &project_root,
+                "ensure the package exists in primary registry or configured mirrors",
             ));
         };
 
@@ -1114,8 +1599,9 @@ pub fn install(
         selected.push((
             package,
             requirement,
-            resolved_version.to_string(),
-            resolved_release.checksum,
+            version_text,
+            resolved_checksum,
+            resolved_source,
         ));
     }
 
@@ -1123,47 +1609,7 @@ pub fn install(
 
     let mut dep_updates = BTreeMap::<String, String>::new();
     let mut installed = Vec::<InstalledPackage>::new();
-
-    for (package, requirement, version, checksum) in selected {
-        let source = package_version_path(&registry_root, &package, &version);
-        if !source.exists() {
-            return Err(diag_with_help(
-                "E2115",
-                format!(
-                    "registry package content missing for '{}@{}' at '{}'",
-                    package,
-                    version,
-                    source.display()
-                ),
-                &source,
-                "re-publish the package into the local registry",
-            ));
-        }
-
-        let source_checksum = compute_package_checksum_for_path(&source).map_err(|err| {
-            diag_with_help(
-                "E2116",
-                format!(
-                    "failed to checksum registry package '{}': {err}",
-                    source.display()
-                ),
-                &source,
-                "repair or re-publish the corrupted registry package",
-            )
-        })?;
-
-        if source_checksum != checksum {
-            return Err(diag_with_help(
-                "E2116",
-                format!(
-                    "registry checksum mismatch for '{}@{}': index={}, actual={}",
-                    package, version, checksum, source_checksum
-                ),
-                &source,
-                "re-publish package metadata and content to restore consistency",
-            ));
-        }
-
+    for (package, requirement, version, _checksum, source) in selected {
         let rel_path = PathBuf::from(DEPS_DIR).join(&package);
         let destination = project_root.join(&rel_path);
         copy_tree(&source, &destination)?;
@@ -1202,7 +1648,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{install, package_index_path, parse_spec, publish, search, SemVer, VersionReq};
+    use super::{
+        install, install_with_options, package_index_path, parse_spec, publish, search,
+        RegistryClientOptions, SemVer, VersionReq,
+    };
 
     fn write_package(root: &Path, name: &str, version: &str, module: &str, value: i32) {
         fs::create_dir_all(root.join("src")).expect("mkdir src");
@@ -1374,5 +1823,132 @@ mod tests {
         let lock2 = fs::read_to_string(consumer.path().join("aic.lock")).expect("lock2");
 
         assert_eq!(lock1, lock2);
+    }
+
+    #[test]
+    fn private_registry_requires_valid_token() {
+        let registry = tempdir().expect("registry");
+        let package = tempdir().expect("package");
+        let consumer = tempdir().expect("consumer");
+
+        write_package(package.path(), "private_pkg", "1.0.0", "private_pkg", 1);
+        publish(package.path(), Some(registry.path())).expect("publish");
+
+        fs::create_dir_all(consumer.path().join("src")).expect("mkdir src");
+        fs::write(
+            consumer.path().join("aic.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("manifest");
+        fs::write(
+            consumer.path().join("src/main.aic"),
+            "module app.main;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("source");
+
+        let token_file = consumer.path().join("private.token");
+        fs::write(&token_file, "secret-token\n").expect("token file");
+        fs::write(
+            consumer.path().join("aic.registry.json"),
+            format!(
+                concat!(
+                    "{{\n",
+                    "  \"default\": \"private\",\n",
+                    "  \"registries\": {{\n",
+                    "    \"private\": {{\n",
+                    "      \"path\": \"{}\",\n",
+                    "      \"private\": true,\n",
+                    "      \"token_file\": \"{}\"\n",
+                    "    }}\n",
+                    "  }}\n",
+                    "}}\n"
+                ),
+                registry.path().display(),
+                token_file.display()
+            ),
+        )
+        .expect("registry config");
+
+        let missing = install_with_options(
+            consumer.path(),
+            &["private_pkg@^1.0.0".to_string()],
+            &RegistryClientOptions::default(),
+        )
+        .expect_err("missing token should fail");
+        assert_eq!(missing.code, "E2117");
+
+        let wrong = install_with_options(
+            consumer.path(),
+            &["private_pkg@^1.0.0".to_string()],
+            &RegistryClientOptions {
+                token: Some("wrong".to_string()),
+                ..RegistryClientOptions::default()
+            },
+        )
+        .expect_err("wrong token should fail");
+        assert_eq!(wrong.code, "E2117");
+
+        let ok = install_with_options(
+            consumer.path(),
+            &["private_pkg@^1.0.0".to_string()],
+            &RegistryClientOptions {
+                token: Some("secret-token".to_string()),
+                ..RegistryClientOptions::default()
+            },
+        )
+        .expect("token should authorize");
+        assert_eq!(ok.installed.len(), 1);
+    }
+
+    #[test]
+    fn mirror_fallback_installs_when_primary_missing_package() {
+        let primary = tempdir().expect("primary");
+        let mirror = tempdir().expect("mirror");
+        let package = tempdir().expect("package");
+        let consumer = tempdir().expect("consumer");
+
+        write_package(package.path(), "mirror_pkg", "1.0.0", "mirror_pkg", 1);
+        publish(package.path(), Some(mirror.path())).expect("publish mirror");
+
+        fs::create_dir_all(consumer.path().join("src")).expect("mkdir src");
+        fs::write(
+            consumer.path().join("aic.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("manifest");
+        fs::write(
+            consumer.path().join("src/main.aic"),
+            "module app.main;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("source");
+
+        fs::write(
+            consumer.path().join("aic.registry.json"),
+            format!(
+                concat!(
+                    "{{\n",
+                    "  \"default\": \"corp\",\n",
+                    "  \"registries\": {{\n",
+                    "    \"corp\": {{\n",
+                    "      \"path\": \"{}\",\n",
+                    "      \"mirrors\": [\"{}\"]\n",
+                    "    }}\n",
+                    "  }}\n",
+                    "}}\n"
+                ),
+                primary.path().display(),
+                mirror.path().display()
+            ),
+        )
+        .expect("registry config");
+
+        let installed = install_with_options(
+            consumer.path(),
+            &["mirror_pkg@^1.0.0".to_string()],
+            &RegistryClientOptions::default(),
+        )
+        .expect("mirror fallback install");
+        assert_eq!(installed.installed.len(), 1);
+        assert!(consumer.path().join("deps/mirror_pkg/aic.toml").exists());
     }
 }

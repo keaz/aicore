@@ -40,6 +40,12 @@ Stable `run` flags include:
 - `--offline`
 - `--sandbox` (`none|ci|strict`)
 
+Stable `pkg` flags include:
+
+- `--registry` (alias or path)
+- `--registry-config` (JSON registry settings file)
+- `--token` (auth token for private registries)
+
 ## Diagnostics output modes
 
 `aic check` and `aic diag` expose stable output modes:

@@ -119,6 +119,7 @@ cargo run -- check examples/e6/pkg_app --offline
 cargo run -- pkg publish examples/e6/pkg_app
 cargo run -- pkg search pkg
 cargo run -- pkg install util@^1.0.0 --path examples/e6/pkg_app
+cargo run -- pkg install corp/http_client@^1.2.0 --registry-config aic.registry.json --token "$AIC_PRIVATE_TOKEN"
 cargo run -- doc examples/e6/doc_sample.aic -o docs/api
 cargo run -- std-compat --check --baseline docs/std-api-baseline.json
 cargo run -- check examples/e7/diag_errors.aic --sarif
