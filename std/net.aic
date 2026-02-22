@@ -17,6 +17,14 @@ struct UdpPacket {
     payload: String,
 }
 
+struct AsyncIntOp {
+    handle: Int,
+}
+
+struct AsyncStringOp {
+    handle: Int,
+}
+
 fn aic_net_tcp_listen_intrinsic(addr: String) -> Result[Int, NetError] effects { net } {
     let out: Result[Int, NetError] = Ok(0);
     out
@@ -90,6 +98,36 @@ fn aic_net_dns_reverse_intrinsic(addr: String) -> Result[String, NetError] effec
     out
 }
 
+fn aic_net_async_accept_submit_intrinsic(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
+    let out: Result[AsyncIntOp, NetError] = Ok(AsyncIntOp { handle: 0 });
+    out
+}
+
+fn aic_net_async_send_submit_intrinsic(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
+    let out: Result[AsyncIntOp, NetError] = Ok(AsyncIntOp { handle: 0 });
+    out
+}
+
+fn aic_net_async_recv_submit_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency } {
+    let out: Result[AsyncStringOp, NetError] = Ok(AsyncStringOp { handle: 0 });
+    out
+}
+
+fn aic_net_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    let out: Result[Int, NetError] = Ok(0);
+    out
+}
+
+fn aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency } {
+    let out: Result[String, NetError] = Ok("");
+    out
+}
+
+fn aic_net_async_shutdown_intrinsic() -> Result[Bool, NetError] effects { net, concurrency } {
+    let out: Result[Bool, NetError] = Ok(true);
+    out
+}
+
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_listen_intrinsic(addr)
 }
@@ -144,4 +182,52 @@ fn dns_lookup(host: String) -> Result[String, NetError] effects { net } {
 
 fn dns_reverse(addr: String) -> Result[String, NetError] effects { net } {
     aic_net_dns_reverse_intrinsic(addr)
+}
+
+fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
+    aic_net_async_accept_submit_intrinsic(listener, timeout_ms)
+}
+
+fn async_tcp_send_submit(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
+    aic_net_async_send_submit_intrinsic(handle, payload)
+}
+
+fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency } {
+    aic_net_async_recv_submit_intrinsic(handle, max_bytes, timeout_ms)
+}
+
+fn async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    aic_net_async_wait_int_intrinsic(op, timeout_ms)
+}
+
+fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency } {
+    aic_net_async_wait_string_intrinsic(op, timeout_ms)
+}
+
+fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency } {
+    aic_net_async_shutdown_intrinsic()
+}
+
+fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    let submitted = async_accept_submit(listener, timeout_ms);
+    match submitted {
+        Ok(op) => async_wait_int(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+fn async_tcp_send(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    let submitted = async_tcp_send_submit(handle, payload);
+    match submitted {
+        Ok(op) => async_wait_int(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency } {
+    let submitted = async_tcp_recv_submit(handle, max_bytes, timeout_ms);
+    match submitted {
+        Ok(op) => async_wait_string(op, timeout_ms),
+        Err(err) => Err(err),
+    }
 }

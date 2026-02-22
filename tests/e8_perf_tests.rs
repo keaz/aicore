@@ -5,6 +5,7 @@ use aicore::perf_gate::{
     baseline_for_target, build_trend_report, host_target_label, load_budget, load_target_baselines,
     run_perf_gate, write_report, write_trend_report,
 };
+use serde_json::Value;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -70,5 +71,29 @@ fn perf_target_baselines_include_host_target() {
     assert!(
         baseline_for_target(&baselines, target).is_some(),
         "missing host target baseline: {target}"
+    );
+}
+
+#[test]
+fn perf_async_event_loop_gate_is_within_budget() {
+    let root = repo_root();
+    let raw = fs::read_to_string(root.join("benchmarks/service_baseline/async-net-gate.v1.json"))
+        .expect("read async-net gate");
+    let gate: Value = serde_json::from_str(&raw).expect("parse async-net gate");
+
+    let thread_ms = gate["thread_per_connection_ms"]
+        .as_f64()
+        .expect("thread_per_connection_ms");
+    let event_loop_ms = gate["event_loop_ms"].as_f64().expect("event_loop_ms");
+    let max_ratio = gate["max_ratio"].as_f64().expect("max_ratio");
+
+    assert!(thread_ms > 0.0);
+    assert!(event_loop_ms > 0.0);
+    assert!(max_ratio > 0.0);
+
+    let ratio = event_loop_ms / thread_ms;
+    assert!(
+        ratio <= max_ratio,
+        "async event-loop perf regression: ratio={ratio:.3} > budget={max_ratio:.3}"
     );
 }

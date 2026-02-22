@@ -2520,6 +2520,183 @@ fn main() -> Int effects { io, net } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_async_event_loop_multi_connection() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.string;
+
+fn main() -> Int effects { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let c1 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let c2 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let accept1 = match async_accept_submit(listener, 1000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let accept2 = match async_accept_submit(listener, 1000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let s1 = match async_wait_int(accept1, 2000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let s2 = match async_wait_int(accept2, 2000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let recv1 = match async_tcp_recv_submit(s1, 32, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let recv2 = match async_tcp_recv_submit(s2, 32, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+
+    let sent1 = match tcp_send(c1, "one") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let sent2 = match tcp_send(c2, "two") {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+
+    let msg1 = match async_wait_string(recv1, 2000) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let msg2 = match async_wait_string(recv2, 2000) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let ack_submit1 = match async_tcp_send_submit(s1, "ack") {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let ack_submit2 = match async_tcp_send_submit(s2, "ack") {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let ack1 = match async_wait_int(ack_submit1, 2000) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let ack2 = match async_wait_int(ack_submit2, 2000) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let client_read1 = match tcp_recv(c1, 16, 2000) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client_read2 = match tcp_recv(c2, 16, 2000) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_count =
+        (match tcp_close(c1) { Ok(_) => 1, Err(_) => 0 }) +
+        (match tcp_close(c2) { Ok(_) => 1, Err(_) => 0 }) +
+        (match tcp_close(s1) { Ok(_) => 1, Err(_) => 0 }) +
+        (match tcp_close(s2) { Ok(_) => 1, Err(_) => 0 }) +
+        (match tcp_close(listener) { Ok(_) => 1, Err(_) => 0 });
+
+    let payload_ok = if len(msg1) + len(msg2) == 6 { 1 } else { 0 };
+    let ack_ok = if ack1 + ack2 == 6 && len(client_read1) == 3 && len(client_read2) == 3 {
+        1
+    } else {
+        0
+    };
+
+    if sent1 + sent2 == 6 && payload_ok == 1 && ack_ok == 1 && shutdown_ok == 1 && close_count == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_async_queue_backpressure_and_shutdown() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn main() -> Int effects { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let mut i = 0;
+    let mut timeout_errs = 0;
+    while i < 320 {
+        let submitted = async_accept_submit(listener, 1);
+        let err_inc = match submitted {
+            Ok(_) => 0,
+            Err(err) => match err {
+                Timeout => 1,
+                _ => 1,
+            },
+        };
+        timeout_errs = timeout_errs + err_inc;
+        i = i + 1;
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if timeout_errs > 0 && shutdown_ok == 1 && closed == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_timeout_and_invalid_input_errors_are_stable() {
     let src = r#"
 import std.io;

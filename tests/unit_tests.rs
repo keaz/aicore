@@ -1495,6 +1495,48 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_dns_reverse_intrinsic",
         1,
     );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_accept_submit",
+        "aic_net_async_accept_submit_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_tcp_send_submit",
+        "aic_net_async_send_submit_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_tcp_recv_submit",
+        "aic_net_async_recv_submit_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_wait_int",
+        "aic_net_async_wait_int_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_wait_string",
+        "aic_net_async_wait_string_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_shutdown",
+        "aic_net_async_shutdown_intrinsic",
+        0,
+    );
 }
 
 #[test]

@@ -975,6 +975,12 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_udp_close(i64)\n");
         text.push_str("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_dns_reverse(i8*, i64, i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_net_async_accept_submit(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_async_send_submit(i64, i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_async_recv_submit(i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_async_wait_int(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_async_wait_string(i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_async_shutdown()\n\n");
         text.push_str(
             "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)\n",
         );
@@ -12015,6 +12021,18 @@ impl<'a> Generator<'a> {
             "udp_close" | "aic_net_udp_close_intrinsic" => "udp_close",
             "dns_lookup" | "aic_net_dns_lookup_intrinsic" => "dns_lookup",
             "dns_reverse" | "aic_net_dns_reverse_intrinsic" => "dns_reverse",
+            "async_accept_submit" | "aic_net_async_accept_submit_intrinsic" => {
+                "async_accept_submit"
+            }
+            "async_tcp_send_submit" | "aic_net_async_send_submit_intrinsic" => {
+                "async_tcp_send_submit"
+            }
+            "async_tcp_recv_submit" | "aic_net_async_recv_submit_intrinsic" => {
+                "async_tcp_recv_submit"
+            }
+            "async_wait_int" | "aic_net_async_wait_int_intrinsic" => "async_wait_int",
+            "async_wait_string" | "aic_net_async_wait_string_intrinsic" => "async_wait_string",
+            "async_shutdown" | "aic_net_async_shutdown_intrinsic" => "async_shutdown",
             _ => return None,
         };
 
@@ -12116,6 +12134,54 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["String"], "Result[String, NetError]") =>
             {
                 Some(self.gen_net_dns_call(name, "aic_rt_net_dns_reverse", args, span, fctx))
+            }
+            "async_accept_submit"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[AsyncIntOp, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_async_accept_submit_call(name, args, span, fctx))
+            }
+            "async_tcp_send_submit"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "String"],
+                    "Result[AsyncIntOp, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_async_send_submit_call(name, args, span, fctx))
+            }
+            "async_tcp_recv_submit"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[AsyncStringOp, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_async_recv_submit_call(name, args, span, fctx))
+            }
+            "async_wait_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["AsyncIntOp", "Int"],
+                    "Result[Int, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_async_wait_int_call(name, args, span, fctx))
+            }
+            "async_wait_string"
+                if self.sig_matches_shape(
+                    name,
+                    &["AsyncStringOp", "Int"],
+                    "Result[String, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_async_wait_string_call(name, args, span, fctx))
+            }
+            "async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, NetError]") => {
+                Some(self.gen_net_async_shutdown_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -12724,6 +12790,380 @@ impl<'a> Generator<'a> {
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
         let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn build_net_async_handle_payload(
+        &mut self,
+        result_ty: &LType,
+        expected_name: &str,
+        handle: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("net async builtin expects Result[{expected_name}, NetError] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != expected_name
+            || layout.fields.len() != 1
+            || layout.fields[0].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("net async builtin expects Result[{expected_name}, NetError] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.build_struct_value(
+            &layout,
+            &[Value {
+                ty: LType::Int,
+                repr: Some(handle.to_string()),
+            }],
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_net_async_accept_submit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_accept_submit expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let listener = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if listener.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "async_accept_submit expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_accept_submit(i64 {}, i64 {}, i64* {})",
+            err,
+            listener.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_net_async_handle_payload(&result_ty, "AsyncIntOp", &out, span, fctx)?;
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_async_send_submit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_tcp_send_submit expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "async_tcp_send_submit expects (Int, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_send_submit(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            ptr,
+            len,
+            cap,
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_net_async_handle_payload(&result_ty, "AsyncIntOp", &out, span, fctx)?;
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_async_recv_submit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_tcp_recv_submit expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "async_tcp_recv_submit expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_recv_submit(i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_net_async_handle_payload(&result_ty, "AsyncStringOp", &out, span, fctx)?;
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_async_wait_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_wait_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "async_wait_int expects (AsyncIntOp, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            "AsyncIntOp",
+            "async_wait_int",
+            args[0].span,
+            fctx,
+        )?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_wait_int(i64 {}, i64 {}, i64* {})",
+            err,
+            op_handle,
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_async_wait_string_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_wait_string expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "async_wait_string expects (AsyncStringOp, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            "AsyncStringOp",
+            "async_wait_string",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_wait_string(i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            op_handle,
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_net_async_shutdown_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_shutdown expects no arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @aic_rt_net_async_shutdown()", err));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
@@ -21495,6 +21935,12 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "udp_close") => Some("aic_net_udp_close_intrinsic"),
         ("net", "dns_lookup") => Some("aic_net_dns_lookup_intrinsic"),
         ("net", "dns_reverse") => Some("aic_net_dns_reverse_intrinsic"),
+        ("net", "async_accept_submit") => Some("aic_net_async_accept_submit_intrinsic"),
+        ("net", "async_tcp_send_submit") => Some("aic_net_async_send_submit_intrinsic"),
+        ("net", "async_tcp_recv_submit") => Some("aic_net_async_recv_submit_intrinsic"),
+        ("net", "async_wait_int") => Some("aic_net_async_wait_int_intrinsic"),
+        ("net", "async_wait_string") => Some("aic_net_async_wait_string_intrinsic"),
+        ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
         ("url", "parse") => Some("aic_url_parse_intrinsic"),
         ("url", "normalize") => Some("aic_url_normalize_intrinsic"),
         ("url", "net_addr") => Some("aic_url_net_addr_intrinsic"),
@@ -29667,6 +30113,78 @@ long aic_rt_net_dns_reverse(
     }
     return 7;
 }
+
+long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_accept_submit", 2);
+    (void)listener;
+    (void)timeout_ms;
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_async_send_submit(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_op
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_send_submit", 2);
+    (void)handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, long* out_op) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_recv_submit", 2);
+    (void)handle;
+    (void)max_bytes;
+    (void)timeout_ms;
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_wait_int", 2);
+    (void)op_handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_async_wait_string(
+    long op_handle,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_wait_string", 2);
+    (void)op_handle;
+    (void)timeout_ms;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_async_shutdown(void) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
+    return 7;
+}
 #else
 static long aic_rt_net_map_errno(int err) {
     switch (err) {
@@ -29966,6 +30484,541 @@ static char* aic_rt_net_format_sockaddr(const struct sockaddr* addr, socklen_t a
         snprintf(out, out_n + 1, "%s:%s", host, serv);
     }
     return out;
+}
+
+long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle);
+long aic_rt_net_tcp_send(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+);
+long aic_rt_net_tcp_recv(
+    long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+);
+
+#define AIC_RT_NET_ASYNC_OP_CAP 512
+#define AIC_RT_NET_ASYNC_QUEUE_CAP 64
+#define AIC_RT_NET_ASYNC_OP_ACCEPT 1
+#define AIC_RT_NET_ASYNC_OP_SEND 2
+#define AIC_RT_NET_ASYNC_OP_RECV 3
+
+typedef struct {
+    int initialized;
+    int active;
+    int queued;
+    int done;
+    int claimed;
+    int op_kind;
+    long arg0;
+    long arg1;
+    long arg2;
+    char* payload_ptr;
+    long payload_len;
+    long err_code;
+    long out_int;
+    char* out_string_ptr;
+    long out_string_len;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} AicNetAsyncOp;
+
+static AicNetAsyncOp aic_rt_net_async_ops[AIC_RT_NET_ASYNC_OP_CAP];
+static long aic_rt_net_async_queue[AIC_RT_NET_ASYNC_QUEUE_CAP];
+static long aic_rt_net_async_queue_head = 0;
+static long aic_rt_net_async_queue_tail = 0;
+static long aic_rt_net_async_queue_len = 0;
+static pthread_mutex_t aic_rt_net_async_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t aic_rt_net_async_queue_not_empty = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t aic_rt_net_async_queue_not_full = PTHREAD_COND_INITIALIZER;
+static pthread_t aic_rt_net_async_worker;
+static int aic_rt_net_async_worker_started = 0;
+static int aic_rt_net_async_shutdown_requested = 0;
+
+static void aic_rt_net_async_reset_op(AicNetAsyncOp* op) {
+    if (op == NULL) {
+        return;
+    }
+    if (op->payload_ptr != NULL) {
+        free(op->payload_ptr);
+        op->payload_ptr = NULL;
+    }
+    if (op->out_string_ptr != NULL) {
+        free(op->out_string_ptr);
+        op->out_string_ptr = NULL;
+    }
+    op->active = 0;
+    op->queued = 0;
+    op->done = 0;
+    op->claimed = 0;
+    op->op_kind = 0;
+    op->arg0 = 0;
+    op->arg1 = 0;
+    op->arg2 = 0;
+    op->payload_len = 0;
+    op->err_code = 0;
+    op->out_int = 0;
+    op->out_string_len = 0;
+}
+
+static int aic_rt_net_async_make_deadline(long timeout_ms, struct timespec* out_deadline) {
+    if (timeout_ms < 0 || out_deadline == NULL) {
+        return EINVAL;
+    }
+    if (clock_gettime(CLOCK_REALTIME, out_deadline) != 0) {
+        return errno;
+    }
+    out_deadline->tv_sec += (time_t)(timeout_ms / 1000);
+    out_deadline->tv_nsec += (long)((timeout_ms % 1000) * 1000000L);
+    if (out_deadline->tv_nsec >= 1000000000L) {
+        out_deadline->tv_sec += out_deadline->tv_nsec / 1000000000L;
+        out_deadline->tv_nsec = out_deadline->tv_nsec % 1000000000L;
+    }
+    return 0;
+}
+
+static void* aic_rt_net_async_worker_main(void* raw) {
+    (void)raw;
+    for (;;) {
+        int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+        if (lock_rc != 0) {
+            return NULL;
+        }
+        while (aic_rt_net_async_queue_len == 0 && !aic_rt_net_async_shutdown_requested) {
+            pthread_cond_wait(
+                &aic_rt_net_async_queue_not_empty,
+                &aic_rt_net_async_queue_mutex
+            );
+        }
+        if (aic_rt_net_async_queue_len == 0 && aic_rt_net_async_shutdown_requested) {
+            aic_rt_net_async_worker_started = 0;
+            pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+            return NULL;
+        }
+        long op_handle = aic_rt_net_async_queue[aic_rt_net_async_queue_head];
+        aic_rt_net_async_queue_head =
+            (aic_rt_net_async_queue_head + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+        aic_rt_net_async_queue_len -= 1;
+        pthread_cond_signal(&aic_rt_net_async_queue_not_full);
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+        if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+            continue;
+        }
+        AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+        long kind = 0;
+        long arg0 = 0;
+        long arg1 = 0;
+        long arg2 = 0;
+        char* payload_ptr = NULL;
+        long payload_len = 0;
+
+        lock_rc = pthread_mutex_lock(&op->mutex);
+        if (lock_rc != 0) {
+            continue;
+        }
+        if (!op->active) {
+            pthread_mutex_unlock(&op->mutex);
+            continue;
+        }
+        op->queued = 0;
+        kind = op->op_kind;
+        arg0 = op->arg0;
+        arg1 = op->arg1;
+        arg2 = op->arg2;
+        payload_ptr = op->payload_ptr;
+        payload_len = op->payload_len;
+        pthread_mutex_unlock(&op->mutex);
+
+        long err = 7;
+        long out_int = 0;
+        char* out_ptr = NULL;
+        long out_len = 0;
+
+        if (kind == AIC_RT_NET_ASYNC_OP_ACCEPT) {
+            err = aic_rt_net_tcp_accept(arg0, arg1, &out_int);
+        } else if (kind == AIC_RT_NET_ASYNC_OP_SEND) {
+            err = aic_rt_net_tcp_send(arg0, payload_ptr, payload_len, payload_len, &out_int);
+        } else if (kind == AIC_RT_NET_ASYNC_OP_RECV) {
+            err = aic_rt_net_tcp_recv(arg0, arg1, arg2, &out_ptr, &out_len);
+        }
+
+        lock_rc = pthread_mutex_lock(&op->mutex);
+        if (lock_rc != 0) {
+            if (out_ptr != NULL) {
+                free(out_ptr);
+            }
+            continue;
+        }
+        if (op->active) {
+            op->err_code = err;
+            op->out_int = out_int;
+            op->out_string_ptr = out_ptr;
+            op->out_string_len = out_len;
+            op->done = 1;
+            pthread_cond_broadcast(&op->cond);
+        } else if (out_ptr != NULL) {
+            free(out_ptr);
+        }
+        pthread_mutex_unlock(&op->mutex);
+    }
+}
+
+static int aic_rt_net_async_ensure_worker_locked(void) {
+    if (aic_rt_net_async_worker_started) {
+        return 1;
+    }
+    int rc = pthread_create(&aic_rt_net_async_worker, NULL, aic_rt_net_async_worker_main, NULL);
+    if (rc != 0) {
+        return 0;
+    }
+    aic_rt_net_async_worker_started = 1;
+    return 1;
+}
+
+static long aic_rt_net_async_alloc_slot_locked(void) {
+    for (long i = 0; i < AIC_RT_NET_ASYNC_OP_CAP; ++i) {
+        if (!aic_rt_net_async_ops[i].active) {
+            AicNetAsyncOp* op = &aic_rt_net_async_ops[i];
+            if (!op->initialized) {
+                if (pthread_mutex_init(&op->mutex, NULL) != 0) {
+                    return -1;
+                }
+                if (pthread_cond_init(&op->cond, NULL) != 0) {
+                    pthread_mutex_destroy(&op->mutex);
+                    return -1;
+                }
+                op->initialized = 1;
+            }
+            return i;
+        }
+    }
+    return -1;
+}
+
+long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_accept_submit", 2);
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    if (timeout_ms < 0) {
+        return 6;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (aic_rt_net_async_shutdown_requested) {
+        aic_rt_net_async_shutdown_requested = 0;
+    }
+    if (!aic_rt_net_async_ensure_worker_locked()) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 4;
+    }
+    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[slot_index];
+    aic_rt_net_async_reset_op(op);
+    op->active = 1;
+    op->queued = 1;
+    op->op_kind = AIC_RT_NET_ASYNC_OP_ACCEPT;
+    op->arg0 = listener;
+    op->arg1 = timeout_ms;
+    long op_handle = slot_index + 1;
+    aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
+    aic_rt_net_async_queue_tail =
+        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+    aic_rt_net_async_queue_len += 1;
+    pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+    if (out_op != NULL) {
+        *out_op = op_handle;
+    }
+    return 0;
+}
+
+long aic_rt_net_async_send_submit(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_op
+) {
+    (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("async_send_submit", 2);
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    if (payload_len < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 6;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (aic_rt_net_async_shutdown_requested) {
+        aic_rt_net_async_shutdown_requested = 0;
+    }
+    if (!aic_rt_net_async_ensure_worker_locked()) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 4;
+    }
+    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[slot_index];
+    aic_rt_net_async_reset_op(op);
+    op->active = 1;
+    op->queued = 1;
+    op->op_kind = AIC_RT_NET_ASYNC_OP_SEND;
+    op->arg0 = handle;
+    op->payload_ptr = aic_rt_copy_bytes(payload_ptr, (size_t)payload_len);
+    if (payload_len > 0 && op->payload_ptr == NULL) {
+        aic_rt_net_async_reset_op(op);
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    op->payload_len = payload_len;
+    long op_handle = slot_index + 1;
+    aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
+    aic_rt_net_async_queue_tail =
+        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+    aic_rt_net_async_queue_len += 1;
+    pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+    if (out_op != NULL) {
+        *out_op = op_handle;
+    }
+    return 0;
+}
+
+long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, long* out_op) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_recv_submit", 2);
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    if (max_bytes < 0 || timeout_ms < 0) {
+        return 6;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (aic_rt_net_async_shutdown_requested) {
+        aic_rt_net_async_shutdown_requested = 0;
+    }
+    if (!aic_rt_net_async_ensure_worker_locked()) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 4;
+    }
+    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+        return 7;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[slot_index];
+    aic_rt_net_async_reset_op(op);
+    op->active = 1;
+    op->queued = 1;
+    op->op_kind = AIC_RT_NET_ASYNC_OP_RECV;
+    op->arg0 = handle;
+    op->arg1 = max_bytes;
+    op->arg2 = timeout_ms;
+    long op_handle = slot_index + 1;
+    aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
+    aic_rt_net_async_queue_tail =
+        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+    aic_rt_net_async_queue_len += 1;
+    pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+    if (out_op != NULL) {
+        *out_op = op_handle;
+    }
+    return 0;
+}
+
+long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_wait_int", 2);
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+        return 6;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (op->op_kind != AIC_RT_NET_ASYNC_OP_ACCEPT && op->op_kind != AIC_RT_NET_ASYNC_OP_SEND) {
+        pthread_mutex_unlock(&op->mutex);
+        return 6;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    op->claimed = 1;
+
+    struct timespec deadline;
+    int deadline_rc = aic_rt_net_async_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        op->claimed = 0;
+        pthread_mutex_unlock(&op->mutex);
+        return aic_rt_net_map_errno(deadline_rc);
+    }
+    while (!op->done) {
+        int wait_rc = pthread_cond_timedwait(&op->cond, &op->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 4;
+        }
+#endif
+        if (wait_rc != 0) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return aic_rt_net_map_errno(wait_rc);
+        }
+    }
+
+    long err = op->err_code;
+    long out = op->out_int;
+    aic_rt_net_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0 && out_value != NULL) {
+        *out_value = out;
+    }
+    return err;
+}
+
+long aic_rt_net_async_wait_string(
+    long op_handle,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_wait_string", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+        return 6;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (op->op_kind != AIC_RT_NET_ASYNC_OP_RECV) {
+        pthread_mutex_unlock(&op->mutex);
+        return 6;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    op->claimed = 1;
+
+    struct timespec deadline;
+    int deadline_rc = aic_rt_net_async_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        op->claimed = 0;
+        pthread_mutex_unlock(&op->mutex);
+        return aic_rt_net_map_errno(deadline_rc);
+    }
+    while (!op->done) {
+        int wait_rc = pthread_cond_timedwait(&op->cond, &op->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 4;
+        }
+#endif
+        if (wait_rc != 0) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return aic_rt_net_map_errno(wait_rc);
+        }
+    }
+
+    long err = op->err_code;
+    char* text = op->out_string_ptr;
+    long text_len = op->out_string_len;
+    op->out_string_ptr = NULL;
+    op->out_string_len = 0;
+    aic_rt_net_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err != 0) {
+        free(text);
+        return err;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = text;
+    } else {
+        free(text);
+    }
+    if (out_len != NULL) {
+        *out_len = text_len;
+    }
+    return 0;
+}
+
+long aic_rt_net_async_shutdown(void) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    aic_rt_net_async_shutdown_requested = 1;
+    pthread_cond_broadcast(&aic_rt_net_async_queue_not_empty);
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+    if (aic_rt_net_async_worker_started) {
+        pthread_join(aic_rt_net_async_worker, NULL);
+    }
+    return 0;
 }
 
 long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
@@ -35122,6 +36175,24 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_accept_submit(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_send_submit(i64, i8*, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_recv_submit(i64, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_wait_int(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_wait_string(i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_net_async_shutdown()"));
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)"
         ));
@@ -35230,6 +36301,12 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_accept_submit("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_send_submit("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_recv_submit("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_wait_int("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
+        assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
         assert!(runtime_c_source().contains("long aic_rt_url_parse("));
         assert!(runtime_c_source().contains("long aic_rt_url_normalize("));
         assert!(runtime_c_source().contains("long aic_rt_url_net_addr("));
