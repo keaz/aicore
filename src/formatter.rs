@@ -343,6 +343,23 @@ fn format_expr(
     parent_prec: u8,
     type_map: &BTreeMap<ir::TypeId, String>,
 ) {
+    if let Some(rendered_for) = extract_for_syntax(expr) {
+        out.push_str("for ");
+        out.push_str(&rendered_for.binding);
+        out.push_str(" in ");
+        match rendered_for.iterable {
+            RenderedIterable::Expr(iterable) => format_expr(out, &iterable, 0, type_map),
+            RenderedIterable::Range { start, end } => {
+                format_expr(out, &start, 0, type_map);
+                out.push_str("..");
+                format_expr(out, &end, 0, type_map);
+            }
+        }
+        out.push(' ');
+        format_block(out, &rendered_for.body, type_map, 0);
+        return;
+    }
+
     match &expr.kind {
         ir::ExprKind::Int(v) => out.push_str(&v.to_string()),
         ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
@@ -515,6 +532,268 @@ fn format_expr(
             out.push_str(field);
         }
     }
+}
+
+#[derive(Debug, Clone)]
+enum RenderedIterable {
+    Expr(ir::Expr),
+    Range { start: ir::Expr, end: ir::Expr },
+}
+
+#[derive(Debug, Clone)]
+struct RenderedFor {
+    binding: String,
+    iterable: RenderedIterable,
+    body: ir::Block,
+}
+
+fn extract_for_syntax(expr: &ir::Expr) -> Option<RenderedFor> {
+    let ir::ExprKind::If {
+        cond,
+        then_block,
+        else_block,
+    } = &expr.kind
+    else {
+        return None;
+    };
+    if !matches!(cond.kind, ir::ExprKind::Bool(true)) || !is_unit_block(else_block) {
+        return None;
+    }
+    if then_block.stmts.len() != 2 {
+        return None;
+    }
+    let loop_expr = then_block.tail.as_ref()?;
+    let ir::ExprKind::Loop { body: loop_body } = &loop_expr.kind else {
+        return None;
+    };
+
+    extract_range_for(&then_block.stmts, loop_body)
+        .or_else(|| extract_vec_for(&then_block.stmts, loop_body))
+}
+
+fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<RenderedFor> {
+    let (iter_name, iterable_expr) = match &stmts[0] {
+        ir::Stmt::Let {
+            name,
+            mutable,
+            expr,
+            ..
+        } if !*mutable => (name.as_str(), expr.clone()),
+        _ => return None,
+    };
+    let index_name = match &stmts[1] {
+        ir::Stmt::Let {
+            name,
+            mutable,
+            expr,
+            ..
+        } if *mutable && matches!(expr.kind, ir::ExprKind::Int(0)) => name.as_str(),
+        _ => return None,
+    };
+
+    if loop_body.stmts.len() != 1 || loop_body.tail.is_some() {
+        return None;
+    }
+    let ir::Stmt::Expr { expr: match_expr, .. } = &loop_body.stmts[0] else {
+        return None;
+    };
+    let ir::ExprKind::Match { expr: scrutinee, arms } = &match_expr.kind else {
+        return None;
+    };
+    if arms.len() != 2 {
+        return None;
+    }
+
+    let ir::ExprKind::Call { callee, args } = &scrutinee.kind else {
+        return None;
+    };
+    let ir::ExprKind::Var(callee_name) = &callee.kind else {
+        return None;
+    };
+    if callee_name != "aic_vec_get_intrinsic" || args.len() != 2 {
+        return None;
+    }
+    if !matches!(&args[0].kind, ir::ExprKind::Var(name) if name == iter_name) {
+        return None;
+    }
+    if !matches!(&args[1].kind, ir::ExprKind::Var(name) if name == index_name) {
+        return None;
+    }
+
+    let arm_some = &arms[0];
+    let arm_none = &arms[1];
+
+    let binding = match &arm_some.pattern.kind {
+        ir::PatternKind::Variant { name, args } if name == "Some" && args.len() == 1 => {
+            match &args[0].kind {
+                ir::PatternKind::Var(binding) => binding.clone(),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    if arm_some.guard.is_some() {
+        return None;
+    }
+    if !matches!(
+        arm_none.pattern.kind,
+        ir::PatternKind::Variant { ref name, ref args }
+            if name == "None" && args.is_empty()
+    ) || arm_none.guard.is_some()
+        || !is_break_none_expr(&arm_none.body)
+    {
+        return None;
+    }
+
+    let some_then = extract_if_true_then_block(&arm_some.body)?;
+    if some_then.stmts.is_empty() || some_then.tail.is_some() {
+        return None;
+    }
+    let ir::Stmt::Assign { target, expr, .. } = &some_then.stmts[0] else {
+        return None;
+    };
+    if target != index_name || !is_increment_expr(expr, index_name) {
+        return None;
+    }
+
+    let body = ir::Block {
+        node: some_then.node,
+        stmts: some_then.stmts[1..].to_vec(),
+        tail: None,
+        span: some_then.span,
+    };
+
+    Some(RenderedFor {
+        binding,
+        iterable: RenderedIterable::Expr(iterable_expr),
+        body,
+    })
+}
+
+fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<RenderedFor> {
+    let (cur_name, start_expr) = match &stmts[0] {
+        ir::Stmt::Let {
+            name,
+            mutable,
+            expr,
+            ..
+        } if *mutable => (name.as_str(), expr.clone()),
+        _ => return None,
+    };
+    let (end_name, end_expr) = match &stmts[1] {
+        ir::Stmt::Let {
+            name,
+            mutable,
+            expr,
+            ..
+        } if !*mutable => (name.as_str(), expr.clone()),
+        _ => return None,
+    };
+
+    if loop_body.stmts.len() != 1 || loop_body.tail.is_some() {
+        return None;
+    }
+    let ir::Stmt::Expr { expr: if_expr, .. } = &loop_body.stmts[0] else {
+        return None;
+    };
+    let ir::ExprKind::If {
+        cond,
+        then_block,
+        else_block,
+    } = &if_expr.kind
+    else {
+        return None;
+    };
+
+    let ir::ExprKind::Binary { op, lhs, rhs } = &cond.kind else {
+        return None;
+    };
+    if *op != BinOp::Lt {
+        return None;
+    }
+    if !matches!(&lhs.kind, ir::ExprKind::Var(name) if name == cur_name) {
+        return None;
+    }
+    if !matches!(&rhs.kind, ir::ExprKind::Var(name) if name == end_name) {
+        return None;
+    }
+    if else_block.stmts.len() != 0
+        || else_block.tail.as_ref().is_none_or(|tail| !is_break_none_expr(tail))
+    {
+        return None;
+    }
+    if then_block.stmts.len() < 2 || then_block.tail.is_some() {
+        return None;
+    }
+
+    let binding = match &then_block.stmts[0] {
+        ir::Stmt::Let {
+            name,
+            mutable,
+            expr,
+            ..
+        } if !*mutable && matches!(&expr.kind, ir::ExprKind::Var(source) if source == cur_name) => {
+            name.clone()
+        }
+        _ => return None,
+    };
+    match &then_block.stmts[1] {
+        ir::Stmt::Assign { target, expr, .. }
+            if target == cur_name && is_increment_expr(expr, cur_name) => {}
+        _ => return None,
+    }
+
+    let body = ir::Block {
+        node: then_block.node,
+        stmts: then_block.stmts[2..].to_vec(),
+        tail: None,
+        span: then_block.span,
+    };
+
+    Some(RenderedFor {
+        binding,
+        iterable: RenderedIterable::Range {
+            start: start_expr,
+            end: end_expr,
+        },
+        body,
+    })
+}
+
+fn extract_if_true_then_block(expr: &ir::Expr) -> Option<&ir::Block> {
+    let ir::ExprKind::If {
+        cond,
+        then_block,
+        else_block,
+    } = &expr.kind
+    else {
+        return None;
+    };
+    if !matches!(cond.kind, ir::ExprKind::Bool(true)) || !is_unit_block(else_block) {
+        return None;
+    }
+    Some(then_block)
+}
+
+fn is_unit_block(block: &ir::Block) -> bool {
+    block.stmts.is_empty()
+        && block
+            .tail
+            .as_ref()
+            .is_none_or(|tail| matches!(tail.kind, ir::ExprKind::Unit))
+}
+
+fn is_break_none_expr(expr: &ir::Expr) -> bool {
+    matches!(expr.kind, ir::ExprKind::Break { expr: None })
+}
+
+fn is_increment_expr(expr: &ir::Expr, target: &str) -> bool {
+    let ir::ExprKind::Binary { op, lhs, rhs } = &expr.kind else {
+        return false;
+    };
+    *op == BinOp::Add
+        && matches!(&lhs.kind, ir::ExprKind::Var(name) if name == target)
+        && matches!(&rhs.kind, ir::ExprKind::Int(1))
 }
 
 fn render_float_literal(value: f64) -> String {

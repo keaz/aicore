@@ -1,0 +1,25 @@
+import std.vec;
+
+fn sum(n: Int, values: Vec[Int]) -> Int {
+    let mut total = 0;
+    for i in 0..n {
+    total = total + i;
+};
+    for j in range(0, n) {
+    if j == 1 {
+    continue;
+} else {
+    ()
+};
+    total = total + j;
+};
+    for item in values {
+    if item == 99 {
+    break;
+} else {
+    ()
+};
+    total = total + item;
+};
+    total
+}

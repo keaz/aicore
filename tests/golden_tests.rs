@@ -117,3 +117,8 @@ fn golden_case17_loop_control() {
 fn golden_case18_type_alias_const() {
     run_golden_case("case18_type_alias_const.aic");
 }
+
+#[test]
+fn golden_case19_for_in_loop() {
+    run_golden_case("case19_for_in_loop.aic");
+}

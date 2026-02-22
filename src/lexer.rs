@@ -32,6 +32,8 @@ pub enum TokenKind {
     KwIf,
     KwElse,
     KwMatch,
+    KwFor,
+    KwIn,
     KwWhile,
     KwLoop,
     KwBreak,
@@ -55,6 +57,7 @@ pub enum TokenKind {
     Colon,
     Semi,
     Dot,
+    DotDot,
     Arrow,
     FatArrow,
     ColonColon,
@@ -143,7 +146,16 @@ impl<'a> Lexer<'a> {
                 ']' => self.single(TokenKind::RBracket),
                 ',' => self.single(TokenKind::Comma),
                 ';' => self.single(TokenKind::Semi),
-                '.' => self.single(TokenKind::Dot),
+                '.' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('.') {
+                        self.bump();
+                        self.push(TokenKind::DotDot, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Dot, Span::new(start, self.offset));
+                    }
+                }
                 '+' => self.single(TokenKind::Plus),
                 '*' => self.single(TokenKind::Star),
                 '%' => self.single(TokenKind::Percent),
@@ -283,6 +295,8 @@ impl<'a> Lexer<'a> {
             "if" => TokenKind::KwIf,
             "else" => TokenKind::KwElse,
             "match" => TokenKind::KwMatch,
+            "for" => TokenKind::KwFor,
+            "in" => TokenKind::KwIn,
             "while" => TokenKind::KwWhile,
             "loop" => TokenKind::KwLoop,
             "break" => TokenKind::KwBreak,
@@ -479,7 +493,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "type Id = Int; const BASE: Int = 1; async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } }";
+        let src = "type Id = Int; const BASE: Int = 1; async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } for i in 0..1 { break; } }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwType)));
@@ -503,6 +517,9 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwContinue)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwFor)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwIn)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::DotDot)));
     }
 
     #[test]

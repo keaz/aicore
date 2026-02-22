@@ -252,6 +252,91 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_for_range_literal_with_continue_and_break() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let mut total = 0;
+    for i in 0..8 {
+        if i == 2 {
+            continue;
+        } else {
+            ()
+        };
+        if i == 6 {
+            break;
+        } else {
+            ()
+        };
+        total = total + i;
+    };
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "13\n");
+}
+
+#[test]
+fn exec_for_range_function_and_vec_iteration() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn main() -> Int effects { io } {
+    let mut from_range = 0;
+    for i in range(1, 5) {
+        from_range = from_range + i;
+    };
+
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 4);
+    v = vec.push(v, 7);
+
+    let mut from_vec = 0;
+    for item in v {
+        from_vec = from_vec + item;
+    };
+
+    print_int(from_range + from_vec);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "21\n");
+}
+
+#[test]
+fn exec_for_map_entries_iterates_deterministically() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.vec;
+
+fn main() -> Int effects { io } {
+    let mut m: Map[String, Int] = map.new_map();
+    m = map.insert(m, "b", 2);
+    m = map.insert(m, "a", 40);
+
+    let mut total = 0;
+    for entry in map.entries(m) {
+        total = total + entry.value;
+    };
+
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_trait_bounded_generic_dispatch() {
     let src = r#"
 import std.io;

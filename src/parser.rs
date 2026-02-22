@@ -10,6 +10,8 @@ pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
         tokens,
         index: 0,
         diagnostics: Vec::new(),
+        for_counter: 0,
+        disallow_struct_literal: false,
     };
     let program = parser.parse_program();
     diagnostics.extend(parser.diagnostics);
@@ -21,6 +23,8 @@ struct Parser<'a> {
     tokens: Vec<Token>,
     index: usize,
     diagnostics: Vec<Diagnostic>,
+    for_counter: usize,
+    disallow_struct_literal: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -1315,6 +1319,7 @@ impl<'a> Parser<'a> {
                 })
             }
             TokenKind::KwIf => self.parse_if_expr(),
+            TokenKind::KwFor => self.parse_for_expr(),
             TokenKind::KwWhile => self.parse_while_expr(),
             TokenKind::KwLoop => self.parse_loop_expr(),
             TokenKind::KwBreak => self.parse_break_expr(),
@@ -1330,7 +1335,8 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.bump();
-                if self.at_kind(|k| matches!(k, TokenKind::LBrace))
+                if !self.disallow_struct_literal
+                    && self.at_kind(|k| matches!(k, TokenKind::LBrace))
                     && self.looks_like_struct_literal()
                 {
                     self.bump();
@@ -1414,6 +1420,30 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_for_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // for
+        let (binding, _) =
+            self.expect_ident("E1031", "expected loop binding name after `for`")?;
+        self.expect(
+            |k| matches!(k, TokenKind::KwIn),
+            "E1041",
+            "expected `in` after loop binding in `for` expression",
+        )?;
+
+        let iterable = self.parse_expr_without_struct_literals()?;
+        let body = if self.at_kind(|k| matches!(k, TokenKind::DotDot)) {
+            self.bump(); // ..
+            let end = self.parse_expr_without_struct_literals()?;
+            let body = self.parse_block()?;
+            return Some(self.desugar_for_range(binding, iterable, end, body, start));
+        } else {
+            self.parse_block()?
+        };
+
+        Some(self.desugar_for_vec(binding, iterable, body, start))
+    }
+
     fn parse_while_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // while
@@ -1465,6 +1495,290 @@ impl<'a> Parser<'a> {
             kind: ExprKind::Continue,
             span: Span::new(start, self.previous_span().end),
         })
+    }
+
+    fn parse_expr_without_struct_literals(&mut self) -> Option<Expr> {
+        let prev = self.disallow_struct_literal;
+        self.disallow_struct_literal = true;
+        let expr = self.parse_expr();
+        self.disallow_struct_literal = prev;
+        expr
+    }
+
+    fn next_for_id(&mut self) -> usize {
+        let id = self.for_counter;
+        self.for_counter += 1;
+        id
+    }
+
+    fn make_for_name(&self, prefix: &str, id: usize) -> String {
+        format!("__aic_for_{prefix}_{id}")
+    }
+
+    fn make_bool_expr(&self, value: bool, span: Span) -> Expr {
+        Expr {
+            kind: ExprKind::Bool(value),
+            span,
+        }
+    }
+
+    fn make_int_expr(&self, value: i64, span: Span) -> Expr {
+        Expr {
+            kind: ExprKind::Int(value),
+            span,
+        }
+    }
+
+    fn make_unit_expr(&self, span: Span) -> Expr {
+        Expr {
+            kind: ExprKind::Unit,
+            span,
+        }
+    }
+
+    fn make_var_expr(&self, name: impl Into<String>, span: Span) -> Expr {
+        Expr {
+            kind: ExprKind::Var(name.into()),
+            span,
+        }
+    }
+
+    fn make_unit_block(&self, span: Span) -> Block {
+        Block {
+            stmts: Vec::new(),
+            tail: Some(Box::new(self.make_unit_expr(span))),
+            span,
+        }
+    }
+
+    fn wrap_if_true_expr(&self, then_block: Block, span: Span) -> Expr {
+        Expr {
+            kind: ExprKind::If {
+                cond: Box::new(self.make_bool_expr(true, span)),
+                then_block,
+                else_block: self.make_unit_block(span),
+            },
+            span,
+        }
+    }
+
+    fn for_body_to_stmts(&self, body: &Block) -> Vec<Stmt> {
+        let mut stmts = body.stmts.clone();
+        if let Some(tail) = &body.tail {
+            stmts.push(Stmt::Expr {
+                expr: (**tail).clone(),
+                span: tail.span,
+            });
+        }
+        stmts
+    }
+
+    fn desugar_for_vec(&mut self, binding: String, iterable: Expr, body: Block, start: usize) -> Expr {
+        let id = self.next_for_id();
+        let span = Span::new(start, body.span.end);
+        let iter_name = self.make_for_name("iter", id);
+        let index_name = self.make_for_name("index", id);
+
+        let mut some_body_stmts = vec![Stmt::Assign {
+            target: index_name.clone(),
+            expr: Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::Add,
+                    lhs: Box::new(self.make_var_expr(index_name.clone(), span)),
+                    rhs: Box::new(self.make_int_expr(1, span)),
+                },
+                span,
+            },
+            span,
+        }];
+        some_body_stmts.extend(self.for_body_to_stmts(&body));
+
+        let some_arm_then = Block {
+            stmts: some_body_stmts,
+            tail: None,
+            span: body.span,
+        };
+
+        let some_arm = MatchArm {
+            pattern: Pattern {
+                kind: PatternKind::Variant {
+                    name: "Some".to_string(),
+                    args: vec![Pattern {
+                        kind: PatternKind::Var(binding),
+                        span,
+                    }],
+                },
+                span,
+            },
+            guard: None,
+            body: self.wrap_if_true_expr(some_arm_then, span),
+            span,
+        };
+
+        let none_arm = MatchArm {
+            pattern: Pattern {
+                kind: PatternKind::Variant {
+                    name: "None".to_string(),
+                    args: Vec::new(),
+                },
+                span,
+            },
+            guard: None,
+            body: Expr {
+                kind: ExprKind::Break { expr: None },
+                span,
+            },
+            span,
+        };
+
+        let loop_body = Block {
+            stmts: vec![Stmt::Expr {
+                expr: Expr {
+                    kind: ExprKind::Match {
+                        expr: Box::new(Expr {
+                            kind: ExprKind::Call {
+                                callee: Box::new(self.make_var_expr("aic_vec_get_intrinsic", span)),
+                                args: vec![
+                                    self.make_var_expr(iter_name.clone(), span),
+                                    self.make_var_expr(index_name.clone(), span),
+                                ],
+                            },
+                            span,
+                        }),
+                        arms: vec![some_arm, none_arm],
+                    },
+                    span,
+                },
+                span,
+            }],
+            tail: None,
+            span,
+        };
+
+        let then_block = Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: iter_name.clone(),
+                    mutable: false,
+                    ty: None,
+                    expr: iterable,
+                    span,
+                },
+                Stmt::Let {
+                    name: index_name,
+                    mutable: true,
+                    ty: None,
+                    expr: self.make_int_expr(0, span),
+                    span,
+                },
+            ],
+            tail: Some(Box::new(Expr {
+                kind: ExprKind::Loop { body: loop_body },
+                span,
+            })),
+            span,
+        };
+
+        self.wrap_if_true_expr(then_block, span)
+    }
+
+    fn desugar_for_range(
+        &mut self,
+        binding: String,
+        start_expr: Expr,
+        end_expr: Expr,
+        body: Block,
+        start: usize,
+    ) -> Expr {
+        let id = self.next_for_id();
+        let span = Span::new(start, body.span.end);
+        let cur_name = self.make_for_name("range_cur", id);
+        let end_name = self.make_for_name("range_end", id);
+
+        let mut range_then_stmts = vec![
+            Stmt::Let {
+                name: binding,
+                mutable: false,
+                ty: None,
+                expr: self.make_var_expr(cur_name.clone(), span),
+                span,
+            },
+            Stmt::Assign {
+                target: cur_name.clone(),
+                expr: Expr {
+                    kind: ExprKind::Binary {
+                        op: BinOp::Add,
+                        lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
+                        rhs: Box::new(self.make_int_expr(1, span)),
+                    },
+                    span,
+                },
+                span,
+            },
+        ];
+        range_then_stmts.extend(self.for_body_to_stmts(&body));
+
+        let range_if_expr = Expr {
+            kind: ExprKind::If {
+                cond: Box::new(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinOp::Lt,
+                        lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
+                        rhs: Box::new(self.make_var_expr(end_name.clone(), span)),
+                    },
+                    span,
+                }),
+                then_block: Block {
+                    stmts: range_then_stmts,
+                    tail: None,
+                    span: body.span,
+                },
+                else_block: Block {
+                    stmts: Vec::new(),
+                    tail: Some(Box::new(Expr {
+                        kind: ExprKind::Break { expr: None },
+                        span,
+                    })),
+                    span,
+                },
+            },
+            span,
+        };
+
+        let loop_body = Block {
+            stmts: vec![Stmt::Expr {
+                expr: range_if_expr,
+                span,
+            }],
+            tail: None,
+            span,
+        };
+
+        let then_block = Block {
+            stmts: vec![
+                Stmt::Let {
+                    name: cur_name,
+                    mutable: true,
+                    ty: None,
+                    expr: start_expr,
+                    span,
+                },
+                Stmt::Let {
+                    name: end_name,
+                    mutable: false,
+                    ty: None,
+                    expr: end_expr,
+                    span,
+                },
+            ],
+            tail: Some(Box::new(Expr {
+                kind: ExprKind::Loop { body: loop_body },
+                span,
+            })),
+            span,
+        };
+
+        self.wrap_if_true_expr(then_block, span)
     }
 
     fn break_has_value_start(&self) -> bool {
@@ -1692,7 +2006,9 @@ impl<'a> Parser<'a> {
                 self.bump();
                 break;
             }
-            if self.at_kind(|k| matches!(k, TokenKind::KwLet | TokenKind::KwReturn)) {
+            if self.at_kind(|k| {
+                matches!(k, TokenKind::KwLet | TokenKind::KwReturn | TokenKind::KwFor)
+            }) {
                 break;
             }
             self.bump();
@@ -1902,6 +2218,57 @@ fn f(mut_n: Int) -> Int {
             Some(ref expr)
                 if matches!(expr.kind, ExprKind::Break { .. })
         ));
+    }
+
+    #[test]
+    fn parses_for_in_vec_and_range_forms() {
+        let src = r#"
+import std.vec;
+
+fn f(v: Vec[Int], n: Int) -> Int {
+    let mut acc = 0;
+    for item in v {
+        acc = acc + item;
+    };
+    for i in 0..n {
+        if i == 2 {
+            continue;
+        } else {
+            ()
+        };
+        acc = acc + i;
+    };
+    for j in range(0, n) {
+        if j == 3 {
+            break;
+        } else {
+            ()
+        };
+        acc = acc + j;
+    };
+    acc
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert_eq!(f.body.stmts.len(), 4);
+        for stmt in &f.body.stmts[1..] {
+            assert!(matches!(
+                stmt,
+                Stmt::Expr {
+                    expr: Expr {
+                        kind: ExprKind::If { .. },
+                        ..
+                    },
+                    ..
+                }
+            ));
+        }
     }
 
     #[test]

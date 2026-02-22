@@ -188,6 +188,17 @@ fn clear[T](v: Vec[T]) -> Vec[T] {
     aic_vec_clear_intrinsic(v)
 }
 
+/// Build a vector containing start <= value < end.
+fn range(start: Int, end: Int) -> Vec[Int] {
+    let mut out: Vec[Int] = new_vec();
+    let mut current = start;
+    while current < end {
+        out = aic_vec_push_intrinsic(out, current);
+        current = current + 1;
+    };
+    out
+}
+
 fn map_vec[T, U](v: Vec[T], mapper: Fn(T) -> U) -> Vec[U] {
     let mut out: Vec[U] = new_vec();
     let mut i = 0;

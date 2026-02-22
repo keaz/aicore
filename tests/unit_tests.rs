@@ -352,6 +352,87 @@ fn bad() -> Int {
 }
 
 #[test]
+fn unit_for_range_loop_infers_binding_type_and_allows_control_flow() {
+    let src = r#"
+fn sum(n: Int) -> Int {
+    let mut total = 0;
+    for i in 0..n {
+        if i == 2 {
+            continue;
+        } else {
+            ()
+        };
+        if i == 7 {
+            break;
+        } else {
+            ()
+        };
+        total = total + i;
+    };
+    total
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_for_range_function_loop_infers_int_binding() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.vec;
+
+fn sum(n: Int) -> Int {
+    let mut total = 0;
+    for i in range(0, n) {
+        total = total + i;
+    };
+    total
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diags={:#?}",
+        front.diagnostics
+    );
+}
+
+#[test]
+fn unit_for_vec_loop_binding_type_is_checked() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.vec;
+
+fn bad(v: Vec[Int]) -> Int {
+    for item in v {
+        let item_bool: Bool = item;
+    };
+    0
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&path).expect("frontend");
+    assert!(
+        front.diagnostics.iter().any(|d| d.code == "E1204"),
+        "diags={:#?}",
+        front.diagnostics
+    );
+}
+
+#[test]
 fn unit_extern_call_requires_explicit_unsafe_boundary() {
     let src = r#"
 extern "C" fn c_abs(x: Int) -> Int;

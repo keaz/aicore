@@ -1,0 +1,32 @@
+import std.io;
+import std.map;
+import std.vec;
+
+fn main() -> Int effects { io } {
+    let mut sum_range = 0;
+    for i in 0..6 {
+        if i == 1 {
+            continue;
+        } else {
+            ()
+        };
+        sum_range = sum_range + i;
+    };
+
+    let mut sum_vec = 0;
+    for value in range(0, 4) {
+        sum_vec = sum_vec + value;
+    };
+
+    let mut headers: Map[String, Int] = map.new_map();
+    headers = map.insert(headers, "x", 10);
+    headers = map.insert(headers, "a", 5);
+
+    let mut sum_map = 0;
+    for entry in map.entries(headers) {
+        sum_map = sum_map + entry.value;
+    };
+
+    print_int(sum_range + sum_vec + sum_map);
+    0
+}
