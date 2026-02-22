@@ -531,6 +531,12 @@ fn run_cli() -> anyhow::Result<i32> {
                                     item.package, item.version, item.requirement, item.path
                                 );
                             }
+                            for record in &result.audit {
+                                println!(
+                                    "trust {}@{} {}: {}",
+                                    record.package, record.version, record.decision, record.reason
+                                );
+                            }
                             println!("updated lockfile {}", result.lockfile);
                         }
                         EXIT_OK

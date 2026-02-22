@@ -1,0 +1,17 @@
+{
+  "default": "local",
+  "registries": {
+    "local": {
+      "path": "./local-registry",
+      "trust": {
+        "default": "deny",
+        "allow": ["corp/*"],
+        "deny": ["corp/legacy-*"],
+        "require_signed": true,
+        "trusted_keys": {
+          "corp": "AIC_TRUSTED_CORP_KEY"
+        }
+      }
+    }
+  }
+}

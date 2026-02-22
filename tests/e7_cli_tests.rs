@@ -322,6 +322,108 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn pkg_trust_policy_enforces_signatures_and_emits_audit_records() {
+    let registry = tempdir().expect("registry");
+    let package = tempdir().expect("package");
+    let consumer_ok = tempdir().expect("consumer ok");
+    let consumer_bad = tempdir().expect("consumer bad");
+
+    write_pkg_project(
+        package.path(),
+        "signed_pkg",
+        "1.0.0",
+        "signed_pkg",
+        "fn value() -> Int { 7 }",
+    );
+
+    let publish = run_aic_with_env(
+        &[
+            "pkg",
+            "publish",
+            package.path().to_str().expect("package"),
+            "--registry",
+            registry.path().to_str().expect("registry"),
+        ],
+        &[
+            ("AIC_PKG_SIGNING_KEY", "pkg-secret"),
+            ("AIC_PKG_SIGNING_KEY_ID", "corp"),
+        ],
+    );
+    assert_eq!(
+        publish.status.code(),
+        Some(0),
+        "publish stdout={}\nstderr={}",
+        String::from_utf8_lossy(&publish.stdout),
+        String::from_utf8_lossy(&publish.stderr)
+    );
+
+    for consumer in [consumer_ok.path(), consumer_bad.path()] {
+        write_consumer_project(consumer);
+        fs::write(
+            consumer.join("aic.registry.json"),
+            format!(
+                concat!(
+                    "{{\n",
+                    "  \"default\": \"local\",\n",
+                    "  \"registries\": {{\n",
+                    "    \"local\": {{\n",
+                    "      \"path\": \"{}\",\n",
+                    "      \"trust\": {{\n",
+                    "        \"default\": \"allow\",\n",
+                    "        \"require_signed\": true,\n",
+                    "        \"trusted_keys\": {{ \"corp\": \"AIC_TRUSTED_CORP_KEY\" }}\n",
+                    "      }}\n",
+                    "    }}\n",
+                    "  }}\n",
+                    "}}\n"
+                ),
+                registry.path().display()
+            ),
+        )
+        .expect("registry config");
+    }
+
+    let install_ok = run_aic_with_env(
+        &[
+            "pkg",
+            "install",
+            "signed_pkg@^1.0.0",
+            "--path",
+            consumer_ok.path().to_str().expect("consumer ok"),
+            "--json",
+        ],
+        &[("AIC_TRUSTED_CORP_KEY", "pkg-secret")],
+    );
+    assert_eq!(
+        install_ok.status.code(),
+        Some(0),
+        "install ok stdout={}\nstderr={}",
+        String::from_utf8_lossy(&install_ok.stdout),
+        String::from_utf8_lossy(&install_ok.stderr)
+    );
+    let ok_json: serde_json::Value = serde_json::from_slice(&install_ok.stdout).expect("ok json");
+    assert_eq!(ok_json["installed"][0]["package"], "signed_pkg");
+    assert_eq!(ok_json["audit"][0]["decision"], "allow");
+    assert_eq!(ok_json["audit"][0]["signature_verified"], true);
+
+    let install_bad = run_aic_with_env(
+        &[
+            "pkg",
+            "install",
+            "signed_pkg@^1.0.0",
+            "--path",
+            consumer_bad.path().to_str().expect("consumer bad"),
+            "--json",
+        ],
+        &[("AIC_TRUSTED_CORP_KEY", "wrong-secret")],
+    );
+    assert_eq!(install_bad.status.code(), Some(1));
+    let diags: serde_json::Value = serde_json::from_slice(&install_bad.stdout).expect("diag json");
+    assert!(diags.is_array());
+    assert_eq!(diags[0]["code"], "E2124");
+}
+
+#[test]
 fn pkg_install_conflict_is_diagnostic_and_json_structured() {
     let registry = tempdir().expect("registry");
     let package_v1 = tempdir().expect("package v1");

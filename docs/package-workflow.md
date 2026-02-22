@@ -137,6 +137,60 @@ Link semantics:
 
 Example source file: `examples/pkg/ffi_zlib.aic`
 
+## Registry Provenance And Trust Policy (PKG-T4)
+
+Package index entries now carry checksum plus optional signature metadata.
+
+Publish signing behavior:
+
+- if `AIC_PKG_SIGNING_KEY` is set during `aic pkg publish`, release metadata includes:
+  - `signature` (HMAC-SHA256 over package/version/checksum payload)
+  - `signature_alg` (`hmac-sha256`)
+  - `signature_key_id` (from `AIC_PKG_SIGNING_KEY_ID`, default `default`)
+- if no signing key is set, release is published unsigned.
+
+Install verification behavior:
+
+- checksums are always verified against index metadata.
+- signatures are verified when present.
+- trust policy can require signatures and enforce allow/deny rules.
+
+Trust policy configuration lives inside each registry entry in `aic.registry.json`:
+
+```json
+{
+  "default": "local",
+  "registries": {
+    "local": {
+      "path": "/path/to/registry",
+      "trust": {
+        "default": "deny",
+        "allow": ["corp/*"],
+        "deny": ["corp/legacy-*"],
+        "require_signed": true,
+        "require_signed_for": ["corp/*"],
+        "trusted_keys": {
+          "corp": "AIC_TRUSTED_CORP_KEY"
+        }
+      }
+    }
+  }
+}
+```
+
+Trust diagnostics:
+
+- `E2119`: trust policy denied package (deny rule/default deny/signature required).
+- `E2124`: signature verification or trusted-key configuration failure.
+
+Install auditability:
+
+- `aic pkg install ... --json` includes an `audit` array with per-package policy decisions and signature/checksum verification status.
+
+Example project:
+
+- `examples/pkg/policy_enforced_project/`
+
 ## Build/Check Integration
 
 When `aic.lock` exists, frontend package loading verifies dependency checksums before typechecking/codegen.

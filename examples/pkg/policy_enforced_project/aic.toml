@@ -1,0 +1,4 @@
+[package]
+name = "policy_enforced_project"
+version = "0.1.0"
+main = "src/main.aic"

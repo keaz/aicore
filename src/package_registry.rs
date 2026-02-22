@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::diagnostics::Diagnostic;
 use crate::package_workflow::{compute_package_checksum_for_path, generate_and_write_lockfile};
@@ -12,6 +13,8 @@ use crate::span::Span;
 
 const ENV_REGISTRY_ROOT: &str = "AIC_PKG_REGISTRY";
 const ENV_REGISTRY_CONFIG: &str = "AIC_PKG_REGISTRY_CONFIG";
+const ENV_SIGNING_KEY: &str = "AIC_PKG_SIGNING_KEY";
+const ENV_SIGNING_KEY_ID: &str = "AIC_PKG_SIGNING_KEY_ID";
 const REGISTRY_INDEX_DIR: &str = "index";
 const REGISTRY_PACKAGES_DIR: &str = "packages";
 const DEPS_DIR: &str = "deps";
@@ -51,6 +54,18 @@ pub struct InstallResult {
     pub project_root: String,
     pub installed: Vec<InstalledPackage>,
     pub lockfile: String,
+    pub audit: Vec<TrustAuditRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TrustAuditRecord {
+    pub package: String,
+    pub version: String,
+    pub decision: String,
+    pub reason: String,
+    pub checksum_verified: bool,
+    pub signature_verified: bool,
+    pub signature_key_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +78,12 @@ struct RegistryIndex {
 struct RegistryRelease {
     version: String,
     checksum: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature_alg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature_key_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -86,6 +107,24 @@ struct RegistryConfigEntry {
     token_env: Option<String>,
     #[serde(default)]
     token_file: Option<String>,
+    #[serde(default)]
+    trust: RegistryTrustPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RegistryTrustPolicy {
+    #[serde(default)]
+    default: Option<String>,
+    #[serde(default)]
+    allow: Vec<String>,
+    #[serde(default)]
+    deny: Vec<String>,
+    #[serde(default)]
+    require_signed: bool,
+    #[serde(default)]
+    require_signed_for: Vec<String>,
+    #[serde(default)]
+    trusted_keys: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +140,7 @@ struct ResolvedRegistry {
     token_env: Option<String>,
     token_file: Option<PathBuf>,
     display_name: String,
+    trust_policy: RegistryTrustPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -525,6 +565,7 @@ fn resolve_registry(
                 token_env: entry.token_env.clone(),
                 token_file,
                 display_name: alias,
+                trust_policy: entry.trust.clone(),
             });
         }
     }
@@ -537,6 +578,7 @@ fn resolve_registry(
             token_env: None,
             token_file: None,
             display_name: selected.to_string(),
+            trust_policy: RegistryTrustPolicy::default(),
         });
     }
 
@@ -547,6 +589,7 @@ fn resolve_registry(
         token_env: None,
         token_file: None,
         display_name: "default".to_string(),
+        trust_policy: RegistryTrustPolicy::default(),
     })
 }
 
@@ -854,6 +897,186 @@ fn compare_release_versions(a: &str, b: &str) -> Ordering {
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(_), Err(_)) => a.cmp(b),
     }
+}
+
+fn package_signature_payload(package: &str, version: &str, checksum: &str) -> String {
+    format!("aicore-pkg-v1\npackage={package}\nversion={version}\nchecksum={checksum}\n")
+}
+
+fn hmac_sha256_hex(key: &[u8], data: &[u8]) -> String {
+    let mut normalized_key = [0u8; 64];
+    if key.len() > 64 {
+        let mut hashed = Sha256::new();
+        hashed.update(key);
+        let digest = hashed.finalize();
+        normalized_key[..digest.len()].copy_from_slice(&digest);
+    } else {
+        normalized_key[..key.len()].copy_from_slice(key);
+    }
+
+    let mut o_key_pad = [0u8; 64];
+    let mut i_key_pad = [0u8; 64];
+    for (idx, key_byte) in normalized_key.iter().copied().enumerate() {
+        o_key_pad[idx] = key_byte ^ 0x5c;
+        i_key_pad[idx] = key_byte ^ 0x36;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(i_key_pad);
+    inner.update(data);
+    let inner_digest = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(o_key_pad);
+    outer.update(inner_digest);
+    format!("{:x}", outer.finalize())
+}
+
+fn maybe_sign_release(package: &str, version: &str, checksum: &str) -> Option<RegistryRelease> {
+    let key = std::env::var(ENV_SIGNING_KEY).ok()?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    let key_id = std::env::var(ENV_SIGNING_KEY_ID)
+        .ok()
+        .map(|raw| raw.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    let payload = package_signature_payload(package, version, checksum);
+    let signature = hmac_sha256_hex(key.as_bytes(), payload.as_bytes());
+
+    Some(RegistryRelease {
+        version: version.to_string(),
+        checksum: checksum.to_string(),
+        signature: Some(signature),
+        signature_alg: Some("hmac-sha256".to_string()),
+        signature_key_id: Some(key_id),
+    })
+}
+
+fn trust_pattern_matches(pattern: &str, package: &str) -> bool {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return false;
+    }
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return package.starts_with(prefix);
+    }
+    package == pattern
+}
+
+fn matches_any_pattern(patterns: &[String], package: &str) -> bool {
+    patterns
+        .iter()
+        .any(|pattern| trust_pattern_matches(pattern, package))
+}
+
+fn trust_default_allows(policy: &RegistryTrustPolicy, path: &Path) -> Result<bool, Diagnostic> {
+    match policy.default.as_deref().unwrap_or("allow") {
+        "allow" => Ok(true),
+        "deny" => Ok(false),
+        other => Err(diag_with_help(
+            "E2118",
+            format!("invalid trust policy default action '{other}' (expected 'allow' or 'deny')"),
+            path,
+            "set `trust.default` to `allow` or `deny` in aic.registry.json",
+        )),
+    }
+}
+
+fn verify_release_signature(
+    package: &str,
+    version: &str,
+    checksum: &str,
+    release: &RegistryRelease,
+    policy: &RegistryTrustPolicy,
+    source_path: &Path,
+) -> Result<(bool, Option<String>), Diagnostic> {
+    let Some(signature) = release.signature.as_deref() else {
+        return Ok((false, None));
+    };
+
+    let alg = release.signature_alg.as_deref().unwrap_or("hmac-sha256");
+    if alg != "hmac-sha256" {
+        return Err(diag_with_help(
+            "E2124",
+            format!(
+                "unsupported package signature algorithm '{}' for '{}@{}'",
+                alg, package, version
+            ),
+            source_path,
+            "supported algorithm is hmac-sha256",
+        ));
+    }
+
+    let key_id = release
+        .signature_key_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+    let env_name = policy
+        .trusted_keys
+        .get(&key_id)
+        .cloned()
+        .unwrap_or_else(|| {
+            if key_id == "default" {
+                ENV_SIGNING_KEY.to_string()
+            } else {
+                String::new()
+            }
+        });
+    if env_name.is_empty() {
+        return Err(diag_with_help(
+            "E2124",
+            format!(
+                "no trusted key mapping found for signature key id '{}' on '{}@{}'",
+                key_id, package, version
+            ),
+            source_path,
+            "add `trust.trusted_keys.<key_id> = \"ENV_VAR\"` in aic.registry.json",
+        ));
+    }
+
+    let trusted_key = std::env::var(&env_name).map_err(|_| {
+        diag_with_help(
+            "E2124",
+            format!(
+                "trusted key env '{}' is not set for verifying '{}@{}'",
+                env_name, package, version
+            ),
+            source_path,
+            format!("set environment variable '{}' before install", env_name),
+        )
+    })?;
+    let trusted_key = trusted_key.trim();
+    if trusted_key.is_empty() {
+        return Err(diag_with_help(
+            "E2124",
+            format!(
+                "trusted key env '{}' is empty for verifying '{}@{}'",
+                env_name, package, version
+            ),
+            source_path,
+            format!("set environment variable '{}' to a non-empty key", env_name),
+        ));
+    }
+
+    let payload = package_signature_payload(package, version, checksum);
+    let expected = hmac_sha256_hex(trusted_key.as_bytes(), payload.as_bytes());
+    if expected != signature {
+        return Err(diag_with_help(
+            "E2124",
+            format!(
+                "package signature mismatch for '{}@{}' (key id '{}')",
+                package, version, key_id
+            ),
+            source_path,
+            "verify trusted key configuration and re-publish package if metadata was tampered",
+        ));
+    }
+
+    Ok((true, Some(key_id)))
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), Diagnostic> {
@@ -1347,10 +1570,16 @@ pub fn publish_with_options(
 
     copy_tree(&project_root, &dest)?;
 
-    index.releases.push(RegistryRelease {
-        version: version_str.clone(),
-        checksum: checksum.clone(),
-    });
+    let release =
+        maybe_sign_release(&meta.name, &version_str, &checksum).unwrap_or(RegistryRelease {
+            version: version_str.clone(),
+            checksum: checksum.clone(),
+            signature: None,
+            signature_alg: None,
+            signature_key_id: None,
+        });
+
+    index.releases.push(release);
     write_index(&index_path, index)?;
 
     Ok(PublishResult {
@@ -1464,7 +1693,7 @@ pub fn install_with_options(
         grouped.entry(spec.package.clone()).or_default().push(spec);
     }
 
-    let mut selected = Vec::<(String, String, String, String, PathBuf)>::new();
+    let mut selected = Vec::<(String, String, String, String, PathBuf, TrustAuditRecord)>::new();
     for (package, requirements) in grouped {
         let registry = resolve_registry(&project_root, Some(&package), options)?;
         authorize_registry("install", &registry, options)?;
@@ -1532,7 +1761,7 @@ pub fn install_with_options(
             ));
         };
 
-        let mut chosen: Option<(PathBuf, String)> = None;
+        let mut chosen: Option<(PathBuf, String, RegistryRelease)> = None;
         let mut checksum_mismatch: Option<(PathBuf, String, String)> = None;
         for source in sources {
             let source_path = package_version_path(&source.root, &package, &version_text);
@@ -1554,7 +1783,11 @@ pub fn install_with_options(
                 })?;
 
             if source_checksum == source.release.checksum {
-                chosen = Some((source_path, source.release.checksum.clone()));
+                chosen = Some((
+                    source_path,
+                    source.release.checksum.clone(),
+                    source.release.clone(),
+                ));
                 break;
             }
 
@@ -1565,7 +1798,7 @@ pub fn install_with_options(
             ));
         }
 
-        let Some((resolved_source, resolved_checksum)) = chosen else {
+        let Some((resolved_source, resolved_checksum, resolved_release)) = chosen else {
             if let Some((source_path, expected, actual)) = checksum_mismatch {
                 return Err(diag_with_help(
                     "E2116",
@@ -1588,6 +1821,54 @@ pub fn install_with_options(
             ));
         };
 
+        if matches_any_pattern(&registry.trust_policy.deny, &package) {
+            return Err(diag_with_help(
+                "E2119",
+                format!(
+                    "trust policy denied package '{}@{}' via deny rules",
+                    package, version_text
+                ),
+                &resolved_source,
+                "remove matching deny rule or install an allowed package/version",
+            ));
+        }
+        let allow_match = matches_any_pattern(&registry.trust_policy.allow, &package);
+        let default_allow = trust_default_allows(&registry.trust_policy, &resolved_source)?;
+        if !allow_match && !default_allow {
+            return Err(diag_with_help(
+                "E2119",
+                format!(
+                    "trust policy denied package '{}@{}' (default action is deny)",
+                    package, version_text
+                ),
+                &resolved_source,
+                "add an allow rule or change trust.default to allow",
+            ));
+        }
+
+        let (signature_verified, signature_key_id) = verify_release_signature(
+            &package,
+            &version_text,
+            &resolved_checksum,
+            &resolved_release,
+            &registry.trust_policy,
+            &resolved_source,
+        )?;
+
+        let require_signed = registry.trust_policy.require_signed
+            || matches_any_pattern(&registry.trust_policy.require_signed_for, &package);
+        if require_signed && !signature_verified {
+            return Err(diag_with_help(
+                "E2119",
+                format!(
+                    "trust policy requires signed package for '{}@{}', but the release is unsigned",
+                    package, version_text
+                ),
+                &resolved_source,
+                "publish with AIC_PKG_SIGNING_KEY and configure trust.trusted_keys for verification",
+            ));
+        }
+
         let requirement = requirements
             .iter()
             .map(|r| r.requirement_raw.clone())
@@ -1596,12 +1877,34 @@ pub fn install_with_options(
             .collect::<Vec<_>>()
             .join(",");
 
+        let mut reason = if allow_match {
+            "allowed by trust.allow".to_string()
+        } else {
+            "allowed by trust.default=allow".to_string()
+        };
+        if signature_verified {
+            reason.push_str("; signature verified");
+        } else if require_signed {
+            reason.push_str("; signature required");
+        } else {
+            reason.push_str("; unsigned allowed by policy");
+        }
+
         selected.push((
             package,
             requirement,
             version_text,
             resolved_checksum,
             resolved_source,
+            TrustAuditRecord {
+                package: String::new(),
+                version: String::new(),
+                decision: "allow".to_string(),
+                reason,
+                checksum_verified: true,
+                signature_verified,
+                signature_key_id,
+            },
         ));
     }
 
@@ -1609,11 +1912,14 @@ pub fn install_with_options(
 
     let mut dep_updates = BTreeMap::<String, String>::new();
     let mut installed = Vec::<InstalledPackage>::new();
-    for (package, requirement, version, _checksum, source) in selected {
+    let mut audit = Vec::<TrustAuditRecord>::new();
+    for (package, requirement, version, _checksum, source, mut audit_record) in selected {
         let rel_path = PathBuf::from(DEPS_DIR).join(&package);
         let destination = project_root.join(&rel_path);
         copy_tree(&source, &destination)?;
 
+        audit_record.package = package.clone();
+        audit_record.version = version.clone();
         dep_updates.insert(package.clone(), normalize_path(&rel_path));
         installed.push(InstalledPackage {
             package,
@@ -1621,6 +1927,7 @@ pub fn install_with_options(
             version,
             path: normalize_path(&destination),
         });
+        audit.push(audit_record);
     }
 
     rewrite_dependencies_section(&manifest_path, &dep_updates)?;
@@ -1638,13 +1945,14 @@ pub fn install_with_options(
         project_root: normalize_path(&project_root),
         installed,
         lockfile: normalize_path(&lock_path),
+        audit,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use tempfile::tempdir;
 
@@ -1731,8 +2039,100 @@ mod tests {
         .expect("install");
 
         assert_eq!(installed.installed.len(), 1);
+        assert_eq!(installed.audit.len(), 1);
+        assert_eq!(installed.audit[0].decision, "allow");
+        assert!(installed.audit[0].checksum_verified);
         assert!(consumer.path().join("deps/http_client/aic.toml").exists());
         assert!(consumer.path().join("aic.lock").exists());
+    }
+
+    #[test]
+    fn install_blocks_tampered_registry_package() {
+        let registry = tempdir().expect("registry");
+        let package = tempdir().expect("package");
+        let consumer = tempdir().expect("consumer");
+
+        write_package(package.path(), "tamper_pkg", "1.0.0", "tamper_pkg", 1);
+        let published = publish(package.path(), Some(registry.path())).expect("publish");
+        let published_root = PathBuf::from(&published.registry_path);
+        fs::write(
+            published_root.join("src/main.aic"),
+            "module tamper_pkg.main;\nfn value() -> Int { 999 }\n",
+        )
+        .expect("tamper package");
+
+        fs::create_dir_all(consumer.path().join("src")).expect("mkdir src");
+        fs::write(
+            consumer.path().join("aic.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("manifest");
+        fs::write(
+            consumer.path().join("src/main.aic"),
+            "module app.main;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("source");
+
+        let err = install(
+            consumer.path(),
+            &["tamper_pkg@^1.0.0".to_string()],
+            Some(registry.path()),
+        )
+        .expect_err("tampered install should fail");
+        assert_eq!(err.code, "E2116");
+        assert!(err.message.contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn trust_policy_deny_rule_blocks_install() {
+        let registry = tempdir().expect("registry");
+        let package = tempdir().expect("package");
+        let consumer = tempdir().expect("consumer");
+
+        write_package(package.path(), "blocked_pkg", "1.0.0", "blocked_pkg", 1);
+        publish(package.path(), Some(registry.path())).expect("publish");
+
+        fs::create_dir_all(consumer.path().join("src")).expect("mkdir src");
+        fs::write(
+            consumer.path().join("aic.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("manifest");
+        fs::write(
+            consumer.path().join("src/main.aic"),
+            "module app.main;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("source");
+        fs::write(
+            consumer.path().join("aic.registry.json"),
+            format!(
+                concat!(
+                    "{{\n",
+                    "  \"default\": \"local\",\n",
+                    "  \"registries\": {{\n",
+                    "    \"local\": {{\n",
+                    "      \"path\": \"{}\",\n",
+                    "      \"trust\": {{\n",
+                    "        \"default\": \"allow\",\n",
+                    "        \"deny\": [\"blocked_pkg\"]\n",
+                    "      }}\n",
+                    "    }}\n",
+                    "  }}\n",
+                    "}}\n"
+                ),
+                registry.path().display()
+            ),
+        )
+        .expect("registry config");
+
+        let err = install_with_options(
+            consumer.path(),
+            &["blocked_pkg@^1.0.0".to_string()],
+            &RegistryClientOptions::default(),
+        )
+        .expect_err("deny policy should fail");
+        assert_eq!(err.code, "E2119");
+        assert!(err.message.contains("trust policy denied"));
     }
 
     #[test]

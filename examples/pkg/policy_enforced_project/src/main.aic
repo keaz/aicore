@@ -1,0 +1,5 @@
+module policy_enforced_project.main;
+
+fn main() -> Int {
+    0
+}

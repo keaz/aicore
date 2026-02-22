@@ -162,6 +162,38 @@ Implementation and test references:
 - `tests/e7_cli_tests.rs` (`build_links_native_c_library_from_manifest_native_section`)
 - `examples/pkg/ffi_zlib.aic`
 
+### Registry provenance and trust policy (PKG-T4)
+
+`src/package_registry.rs` extends package install security with signature metadata and trust-policy gating.
+
+- Registry release metadata now supports optional:
+  - `signature`
+  - `signature_alg`
+  - `signature_key_id`
+- Publish signing:
+  - if `AIC_PKG_SIGNING_KEY` is set, publish emits deterministic HMAC-SHA256 signatures over `package/version/checksum`.
+  - key id uses `AIC_PKG_SIGNING_KEY_ID` (default `default`).
+- Install trust policy:
+  - policy config is per registry entry (`aic.registry.json -> registries.<alias>.trust`).
+  - supports:
+    - `default`: `allow` or `deny`
+    - `allow`: package patterns (`prefix*` or exact)
+    - `deny`: package patterns (`prefix*` or exact)
+    - `require_signed`: global signature requirement
+    - `require_signed_for`: package-pattern signature requirement
+    - `trusted_keys`: `key_id -> env var name` mapping for verification keys
+- Security diagnostics:
+  - `E2119`: trust policy denied install.
+  - `E2124`: signature verification or trusted-key configuration failure.
+- Auditability:
+  - `InstallResult` JSON now includes `audit` records (`decision`, reason, checksum/signature verification, key id).
+
+Implementation and test references:
+
+- `src/package_registry.rs`
+- `tests/e7_cli_tests.rs` (`pkg_trust_policy_enforces_signatures_and_emits_audit_records`)
+- `examples/pkg/policy_enforced_project/`
+
 ### Checksum verification + offline cache (E6-T3)
 
 `src/package_workflow.rs`:
