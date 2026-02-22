@@ -1,10 +1,10 @@
 # Agent Compiler Protocol v1.0
 
-This document defines the machine-facing JSON protocol contract for parse/check/build/fix workflows.
+This document defines machine-facing contracts for parse/check/build/fix workflows and their compatibility guarantees.
 
 ## Version negotiation
 
-Query the contract and negotiate a protocol version:
+Query contract metadata and negotiate protocol versions:
 
 ```bash
 aic contract --json --accept-version 1.2,1.0
@@ -12,11 +12,10 @@ aic contract --json --accept-version 1.2,1.0
 
 Negotiation rules:
 
-- server publishes supported versions in `protocol.supported_versions`
-- server selects the highest compatible version where:
-  - major version matches
-  - server version is less than or equal to requested version
-- if no version is compatible, `protocol.compatible` is `false` and command exits with status `1`
+- server advertises `protocol.supported_versions`
+- compatible selection requires matching major version
+- server version must be less than or equal to requested version
+- no compatible match => `protocol.compatible=false` and exit status `1`
 
 ## Published schemas
 
@@ -25,22 +24,74 @@ Negotiation rules:
 - Build response: `docs/agent-tooling/schemas/build-response.schema.json`
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
 
-Reference command for fix responses:
+Positive fixtures:
+
+- `examples/agent/protocol_parse.json`
+- `examples/agent/protocol_check.json`
+- `examples/agent/protocol_build.json`
+- `examples/agent/protocol_fix.json`
+
+Negative/error fixtures:
+
+- `examples/agent/protocol_parse_error.json`
+- `examples/agent/protocol_build_error.json`
+- `examples/agent/protocol_fix_conflict.json`
+
+## Autofix contract (AG-T2)
+
+Reference command:
 
 ```bash
 aic diag apply-fixes examples/agent/fixable_imports.aic --dry-run --json
 ```
 
+Behavior:
+
+- only parser-safe diagnostic codes are auto-applied (`E1033`, `E1034`, `E1041`, `E1062`)
+- edits are ordered deterministically by file/start/end/message
+- overlapping edits become `conflicts[]` and are never applied in write mode
+- dry-run computes deterministic plans without filesystem writes
+
+## LSP workflow examples (AG-T3)
+
+LSP request/response samples are documented in:
+
+- `examples/agent/lsp_workflow.json`
+
+Covered methods:
+
+- completion (`textDocument/completion`)
+- goto-definition (`textDocument/definition`)
+- rename (`textDocument/rename`)
+- code action (`textDocument/codeAction`)
+- semantic tokens (`textDocument/semanticTokens/full`)
+
+Includes unknown-method error response examples for client fallback handling.
+
+## Incremental daemon workflow (AG-T4)
+
+See `docs/agent-tooling/incremental-daemon.md` for:
+
+- daemon methods (`check`, `build`, `stats`, `shutdown`)
+- cache invalidation rules based on content hashes
+- warm/cold parity verification via `output_sha256`
+- troubleshooting common daemon failures
+
+## End-to-end loops (AG-T5)
+
+Executable cookbook workflows:
+
+- `docs/agent-recipes/feature-loop.md`
+- `docs/agent-recipes/bugfix-loop.md`
+- `docs/agent-recipes/refactor-loop.md`
+- `docs/agent-recipes/diagnostics-loop.md`
+
+These recipes are validated as docs-as-tests.
+
 ## Compatibility guarantees
 
-- Schema files are versioned (`...-1.0.schema.json` in `$id`) and backward compatible within major version `1`.
-- New optional fields are allowed in minor updates.
-- Removing required fields, changing field meaning, or changing required field types requires a major version bump.
-- Diagnostics remain stable via code IDs and deterministic payload ordering.
-
-## Reference examples
-
-- Parse: `examples/agent/protocol_parse.json`
-- Check: `examples/agent/protocol_check.json`
-- Build: `examples/agent/protocol_build.json`
-- Fix: `examples/agent/protocol_fix.json`
+- schema IDs are versioned (`*-1.0.schema.json`)
+- backward compatibility is guaranteed within major version `1`
+- adding optional fields is minor-compatible
+- removing required fields or changing required field semantics/types is major-breaking
+- diagnostics remain stable through code IDs and deterministic ordering

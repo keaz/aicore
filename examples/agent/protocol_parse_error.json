@@ -1,0 +1,33 @@
+{
+  "protocol_version": "1.0",
+  "phase": "parse",
+  "input": "examples/agent/fixable_imports.aic",
+  "ok": false,
+  "ast_items": 0,
+  "diagnostics": [
+    {
+      "code": "E1033",
+      "severity": "error",
+      "message": "expected ';' after let binding",
+      "spans": [
+        {
+          "file": "examples/agent/fixable_imports.aic",
+          "start": 38,
+          "end": 39,
+          "label": null
+        }
+      ],
+      "help": [
+        "insert ';' after let binding"
+      ],
+      "suggested_fixes": [
+        {
+          "message": "insert ';' after let binding",
+          "replacement": ";",
+          "start": 38,
+          "end": 38
+        }
+      ]
+    }
+  ]
+}

@@ -77,6 +77,7 @@ test-exec:
 test-e7:
 	$(CARGO) test --locked --test e7_cli_tests
 	$(CARGO) test --locked --test lsp_smoke_tests
+	$(CARGO) test --locked --test agent_protocol_tests
 	$(CARGO) test --locked --test agent_recipe_tests
 
 test-e8:
@@ -122,6 +123,7 @@ docs-check:
 	@test -f docs/sarif.md
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
+	@test -f docs/agent-tooling/README.md
 	@test -f docs/agent-tooling/protocol-v1.md
 	@test -f docs/agent-tooling/incremental-daemon.md
 	@test -f docs/agent-recipes/README.md

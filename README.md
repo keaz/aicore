@@ -34,6 +34,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
 | Incremental check/build daemon | Implemented (`aic daemon`) |
 | Agent cookbook workflows | Implemented (`docs/agent-recipes/`) |
+| Agent-grade tooling docs | Implemented (`docs/agent-tooling/`) |
 | Built-in fixture harness | Implemented (`aic test`) |
 | Verification/fuzzing/performance gates | Implemented (E8 conformance + differential + matrix + perf budgets) |
 | Release reproducibility manifest pipeline | Implemented (`aic release manifest`, `verify-manifest`) |

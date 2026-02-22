@@ -1,0 +1,27 @@
+{
+  "protocol_version": "1.0",
+  "phase": "build",
+  "input": "examples/effects_reject.aic",
+  "artifact": "exe",
+  "output": "target/agent/effects_reject",
+  "ok": false,
+  "diagnostics": [
+    {
+      "code": "E2001",
+      "severity": "error",
+      "message": "calling 'io_fn' requires undeclared effects: io",
+      "spans": [
+        {
+          "file": "examples/effects_reject.aic",
+          "start": 77,
+          "end": 82,
+          "label": null
+        }
+      ],
+      "help": [
+        "add `effects { io }` on the enclosing function"
+      ],
+      "suggested_fixes": []
+    }
+  ]
+}

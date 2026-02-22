@@ -1,0 +1,53 @@
+{
+  "protocol_version": "1.0",
+  "phase": "fix",
+  "mode": "apply",
+  "ok": false,
+  "files_changed": [
+    "examples/agent/fixable_imports.aic"
+  ],
+  "applied_edits": [
+    {
+      "file": "examples/agent/fixable_imports.aic",
+      "start": 38,
+      "end": 38,
+      "replacement": ";",
+      "message": "insert ';' after let binding"
+    }
+  ],
+  "conflicts": [
+    {
+      "file": "examples/agent/fixable_imports.aic",
+      "start": 38,
+      "end": 38,
+      "replacement": "",
+      "message": "conflicting edit overlaps with another fix"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "E1033",
+      "severity": "error",
+      "message": "expected ';' after let binding",
+      "spans": [
+        {
+          "file": "examples/agent/fixable_imports.aic",
+          "start": 38,
+          "end": 39,
+          "label": null
+        }
+      ],
+      "help": [
+        "insert ';' after let binding"
+      ],
+      "suggested_fixes": [
+        {
+          "message": "insert ';' after let binding",
+          "replacement": ";",
+          "start": 38,
+          "end": 38
+        }
+      ]
+    }
+  ]
+}

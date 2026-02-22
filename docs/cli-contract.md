@@ -98,6 +98,12 @@ Agent cookbook references:
 - `docs/agent-recipes/refactor-loop.md`
 - `docs/agent-recipes/diagnostics-loop.md`
 
+Agent tooling references:
+
+- `docs/agent-tooling/README.md`
+- `docs/agent-tooling/protocol-v1.md`
+- `examples/agent/lsp_workflow.json`
+
 ## Breaking-change policy
 
 Any command/flag/output shape changes require a contract version bump and migration notes in docs.

@@ -408,6 +408,27 @@ Diagnostics:
   - `tests/agent_recipe_tests.rs`
   - `make test-e7` includes recipe docs-as-tests execution
 
+### Agent-grade tooling documentation (AG-T6)
+
+- Tooling index:
+  - `docs/agent-tooling/README.md`
+- Versioned protocol reference:
+  - `docs/agent-tooling/protocol-v1.md`
+- Positive fixtures:
+  - `examples/agent/protocol_parse.json`
+  - `examples/agent/protocol_check.json`
+  - `examples/agent/protocol_build.json`
+  - `examples/agent/protocol_fix.json`
+- Negative fixtures:
+  - `examples/agent/protocol_parse_error.json`
+  - `examples/agent/protocol_build_error.json`
+  - `examples/agent/protocol_fix_conflict.json`
+- LSP request/response workflow examples:
+  - `examples/agent/lsp_workflow.json`
+- Validation gates:
+  - `tests/agent_protocol_tests.rs` validates schemas, fixtures, and docs references
+  - `make test-e7` includes agent protocol + recipe docs-as-tests suites
+
 ## E8 Summary (Verification + Fuzzing + Performance Gates)
 
 ### Conformance suites (E8-T1)
