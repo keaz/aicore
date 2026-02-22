@@ -59,6 +59,23 @@ make init
 - `make examples-check`
 - `make examples-run`
 
+## Open Language Issue Workflow
+
+For open language issues `#128`, `#130`, `#136`, `#137`, `#138`, `#139`, use:
+
+- `docs/reference/open-issue-contracts.md`
+
+Required workflow for those issue IDs:
+
+1. Confirm the exact `Current behavior` and `Target behavior` contract section before coding.
+2. Implement syntax/typing/borrow/effect behavior only within the issue scope.
+3. Add tests using the issue's `Minimal test matrix template`, including negative diagnostics.
+4. Keep docs synchronized: update the relevant `docs/reference/*.md` pages and this contract file when scope changes.
+5. Run quality gates:
+- `make docs-check`
+- targeted subsystem tests
+- `make ci` before final completion
+
 ## Test Infrastructure Guide
 
 ### Unit and golden

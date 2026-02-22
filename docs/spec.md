@@ -153,6 +153,21 @@ Rules:
 - Value/type shadowing with the same identifier is legal.
 - Duplicate declarations within the same namespace and module are errors.
 
+### 2.7 Open issue implementation contracts
+
+Detailed AI-agent implementation contracts for open language issues live in:
+
+- `docs/reference/open-issue-contracts.md`
+
+Status summary (`current` -> `target`):
+
+- `#128` tuple types: unit/grouping-only parentheses -> tuple types/literals/patterns/projections.
+- `#130` methods: marker-trait impl declarations only -> inherent methods + method call and associated call syntax.
+- `#136` trait methods: marker traits only -> trait method signatures/impl bodies with method resolution (static dispatch MVP; dyn dispatch optional).
+- `#137` borrow completeness: lexical/local alias checks -> move tracking, cross-call/field-aware borrow reasoning, and stronger ownership diagnostics.
+- `#138` generic constraints: inline bounds only -> normalized inline + `where` constraints (with equivalent semantics).
+- `#139` inference: limited local inference and explicit closure parameter types -> broader local deterministic inference while keeping function signatures explicit.
+
 ## 3. Canonical IR
 
 IR entities use stable IDs:

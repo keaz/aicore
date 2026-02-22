@@ -35,3 +35,28 @@
   - `E1272`: or-pattern binding type mismatch
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.
+
+## Open issue contracts (current vs target)
+
+Detailed per-issue contracts are tracked in:
+
+- `docs/reference/open-issue-contracts.md`
+
+Type-focused status:
+
+- `#136` trait methods and dispatch
+  - Current: trait bounds are marker-only.
+  - Target: trait method signatures + impl method conformance + bounded method resolution (static dispatch MVP).
+- `#137` borrow checker completeness
+  - Current: alias/mutability checks for lexical local borrows (`E1263`-`E1269`).
+  - Target: move/use-after-move checks, cross-call borrow reasoning, field-aware ownership checks.
+- `#138` generic constraints and `where`
+  - Current: inline bounds (including `+`) only.
+  - Target: equivalent constraint model across inline and `where` forms.
+- `#139` improved inference
+  - Current: local inference with deterministic unresolved failures (`E1204`, `E1212`, `E1280`).
+  - Target: stronger local inference (closure-context and usage-driven) with explicit ambiguity diagnostics.
+
+Related syntax issue with type impact:
+
+- `#128` tuple types are not currently available; target adds tuple type/literal/pattern/projection typing rules.

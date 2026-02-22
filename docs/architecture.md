@@ -99,6 +99,20 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 - Agent protocol schemas/docs: `docs/agent-tooling/*`, `docs/agent-recipes/*`
 - Validate with: `tests/lsp_smoke_tests.rs`, `tests/agent_protocol_tests.rs`, `tests/agent_recipe_tests.rs`
 
+## Open Issue Touchpoints
+
+For open language issues `#128`, `#130`, `#136`, `#137`, `#138`, `#139`, use
+`docs/reference/open-issue-contracts.md` as the behavior contract and route work through these modules.
+
+| Issue | Primary implementation files | Minimum validation focus |
+| --- | --- | --- |
+| `#128` tuple types | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen.rs` | `tests/golden_tests.rs`, `tests/unit_tests.rs`, compile-fail fixtures, `tests/execution_tests.rs` |
+| `#130` struct methods | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen.rs` | parser/resolver/typecheck tests, method call execution tests |
+| `#136` trait methods + dispatch | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/codegen.rs` | trait conformance tests, generic bound call tests, dispatch-path execution tests |
+| `#137` borrow completeness | `src/typecheck.rs` (borrow model), supporting IR/type utilities | borrow compile-fail matrix + run-pass safety cases |
+| `#138` constraints + `where` | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs` | generic-bound parser/typecheck tests and equivalence tests |
+| `#139` inference improvements | `src/typecheck.rs` (constraint solving/inference), related resolver/type utilities | inference-focused unit tests with ambiguity/failure cases |
+
 ## Test Infrastructure Map
 
 Primary orchestration is Make-based:
