@@ -31,12 +31,20 @@ pub struct Manifest {
     pub package_name: String,
     pub main: String,
     pub dependencies: Vec<ManifestDependency>,
+    pub native: NativeLinkConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ManifestDependency {
     pub name: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NativeLinkConfig {
+    pub libs: Vec<String>,
+    pub search_paths: Vec<String>,
+    pub objects: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -231,6 +239,13 @@ pub fn read_manifest(project_root: &Path) -> anyhow::Result<Option<Manifest>> {
     Ok(Some(parse_manifest(&text, &path)?))
 }
 
+pub fn native_link_config(project_root: &Path) -> anyhow::Result<NativeLinkConfig> {
+    let Some(manifest) = read_manifest(project_root)? else {
+        return Ok(NativeLinkConfig::default());
+    };
+    Ok(manifest.native)
+}
+
 pub fn lockfile_path(project_root: &Path) -> PathBuf {
     project_root.join(LOCKFILE_NAME)
 }
@@ -327,6 +342,7 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
     let mut package_name: Option<String> = None;
     let mut main: Option<String> = None;
     let mut dependencies = Vec::new();
+    let mut native = NativeLinkConfig::default();
 
     for (line_no, raw_line) in text.lines().enumerate() {
         let line = raw_line.split('#').next().unwrap_or_default().trim();
@@ -365,11 +381,29 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
                 name: key.to_string(),
                 path: dep_path,
             });
+            continue;
+        }
+
+        if section == "native" {
+            match key {
+                "libs" => native.libs = parse_string_list(value, path, line_no + 1)?,
+                "search" | "search_paths" => {
+                    native.search_paths = parse_string_list(value, path, line_no + 1)?
+                }
+                "objects" => native.objects = parse_string_list(value, path, line_no + 1)?,
+                _ => {}
+            }
         }
     }
 
     dependencies.sort();
     dependencies.dedup();
+    native.libs.sort();
+    native.libs.dedup();
+    native.search_paths.sort();
+    native.search_paths.dedup();
+    native.objects.sort();
+    native.objects.dedup();
 
     let package_name = package_name.unwrap_or_else(|| {
         path.parent()
@@ -383,6 +417,7 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
         package_name,
         main: main.unwrap_or_else(|| "src/main.aic".to_string()),
         dependencies,
+        native,
     })
 }
 
@@ -421,6 +456,27 @@ fn parse_string(value: &str, path: &Path, line_no: usize) -> anyhow::Result<Stri
         return Ok(value[1..value.len() - 1].to_string());
     }
     anyhow::bail!("expected quoted string at {}:{}", path.display(), line_no)
+}
+
+fn parse_string_list(value: &str, path: &Path, line_no: usize) -> anyhow::Result<Vec<String>> {
+    let value = value.trim();
+    if !value.starts_with('[') || !value.ends_with(']') {
+        anyhow::bail!(
+            "expected string array literal at {}:{} (for example [\"foo\", \"bar\"])",
+            path.display(),
+            line_no
+        );
+    }
+    let inner = value[1..value.len() - 1].trim();
+    if inner.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for part in inner.split(',') {
+        let item = parse_string(part.trim(), path, line_no)?;
+        out.push(item);
+    }
+    Ok(out)
 }
 
 fn compute_package_checksum(root: &Path) -> anyhow::Result<String> {
@@ -558,8 +614,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        compute_package_checksum, generate_and_write_lockfile, generate_lockfile, read_manifest,
-        resolve_dependency_context, PackageOptions,
+        compute_package_checksum, generate_and_write_lockfile, generate_lockfile,
+        native_link_config, read_manifest, resolve_dependency_context, PackageOptions,
     };
 
     #[test]
@@ -584,6 +640,28 @@ net = "deps/net"
         assert_eq!(manifest.package_name, "app");
         assert_eq!(manifest.main, "src/main.aic");
         assert_eq!(manifest.dependencies.len(), 2);
+    }
+
+    #[test]
+    fn parses_native_link_configuration() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("aic.toml"),
+            r#"[package]
+name = "ffi_app"
+main = "src/main.aic"
+
+[native]
+libs = ["m", "z"]
+search_paths = ["native/lib"]
+objects = ["native/libextra.a"]
+"#,
+        )
+        .expect("write manifest");
+        let native = native_link_config(dir.path()).expect("native config");
+        assert_eq!(native.libs, vec!["m".to_string(), "z".to_string()]);
+        assert_eq!(native.search_paths, vec!["native/lib".to_string()]);
+        assert_eq!(native.objects, vec!["native/libextra.a".to_string()]);
     }
 
     #[test]

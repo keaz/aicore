@@ -725,6 +725,148 @@ fn main() -> Int effects { io, time } {
 }
 
 #[test]
+fn exec_time_parse_and_format_roundtrip_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.time;
+import std.string;
+
+fn same_datetime(a: DateTime, b: DateTime) -> Int {
+    if a.year == b.year &&
+        a.month == b.month &&
+        a.day == b.day &&
+        a.hour == b.hour &&
+        a.minute == b.minute &&
+        a.second == b.second &&
+        a.millisecond == b.millisecond &&
+        a.offset_minutes == b.offset_minutes {
+        1
+    } else {
+        0
+    }
+}
+
+fn fallback() -> DateTime {
+    DateTime {
+        year: 0,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        millisecond: 0,
+        offset_minutes: 0,
+    }
+}
+
+fn main() -> Int effects { io, time } {
+    let parsed = match parse_rfc3339("2026-02-21T18:45:10.230+05:30") {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+    let normalized = match format_rfc3339(parsed) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let reparsed = match parse_rfc3339(normalized) {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+    let date_only = match parse_iso8601("2026-02-21") {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+    let iso_text = match format_iso8601(date_only) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let iso_reparsed = match parse_iso8601(iso_text) {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+
+    let roundtrip_ok = same_datetime(parsed, reparsed);
+    let rfc_shape_ok = if len(normalized) == 29 { 1 } else { 0 };
+    let iso_shape_ok = if len(iso_text) == 29 { 1 } else { 0 };
+    let iso_roundtrip_ok = same_datetime(date_only, iso_reparsed);
+    if roundtrip_ok + rfc_shape_ok + iso_shape_ok + iso_roundtrip_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_time_invalid_inputs_return_stable_error_variants() {
+    let src = r#"
+import std.io;
+import std.time;
+
+fn code(err: TimeError) -> Int {
+    match err {
+        InvalidFormat => 1,
+        InvalidDate => 2,
+        InvalidTime => 3,
+        InvalidOffset => 4,
+        InvalidInput => 5,
+        Internal => 6,
+    }
+}
+
+fn parse_code(v: Result[DateTime, TimeError]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => code(err),
+    }
+}
+
+fn format_code(v: Result[String, TimeError]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => code(err),
+    }
+}
+
+fn main() -> Int effects { io, time } {
+    let invalid_format = parse_code(parse_rfc3339("2026-02-21 18:45:10Z"));
+    let invalid_date = parse_code(parse_iso8601("2025-02-29"));
+    let invalid_time = parse_code(parse_iso8601("2026-02-21T24:00:00Z"));
+    let invalid_offset = parse_code(parse_rfc3339("2026-02-21T18:45:10.000+15:00"));
+    let bad_format_offset = format_code(format_iso8601(DateTime {
+        year: 2026,
+        month: 2,
+        day: 21,
+        hour: 8,
+        minute: 15,
+        second: 0,
+        millisecond: 0,
+        offset_minutes: 901,
+    }));
+
+    if invalid_format == 1 &&
+        invalid_date == 2 &&
+        invalid_time == 3 &&
+        invalid_offset == 4 &&
+        bad_format_offset == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_rand_seed_reproducibility_and_range() {
     let src = r#"
 import std.io;
@@ -1879,7 +2021,10 @@ fn main() -> Int effects { io } {
         &exe,
         dir.path(),
         ArtifactKind::Exe,
-        CompileOptions { debug_info: true },
+        CompileOptions {
+            debug_info: true,
+            ..CompileOptions::default()
+        },
     )
     .expect("clang build");
 

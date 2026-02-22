@@ -174,7 +174,10 @@ fn run_case(
         &exe,
         &tmp,
         ArtifactKind::Exe,
-        CompileOptions { debug_info },
+        CompileOptions {
+            debug_info,
+            ..CompileOptions::default()
+        },
     )?;
 
     let output = Command::new(&exe).output()?;

@@ -97,6 +97,46 @@ Rules:
 
 Example private-registry runbook: `examples/pkg/private_registry_readme.md`
 
+## Native Dependency Bridge (PKG-T3)
+
+AICore supports MVP C-ABI interop through explicit `extern` declarations and manifest-native linkage settings.
+
+### Source declaration rules
+
+```aic
+extern "C" fn zlibCompileFlags() -> Int;
+
+fn zlib_flags() -> Int {
+    unsafe { zlibCompileFlags() }
+}
+```
+
+Rules enforced by diagnostics:
+
+- only `extern "C"` is supported (`E2120`, backend guard `E5024`)
+- extern signatures must be plain declarations (no async/generics/effects/contracts) (`E2121`)
+- currently supported raw C ABI types are `Int`, `Bool`, and `()` (`E2123`)
+- calls to `extern` (and `unsafe fn`) require an explicit unsafe boundary (`unsafe { ... }` or `unsafe fn`) (`E2122`)
+
+### Manifest linkage
+
+Add a `[native]` table in `aic.toml`:
+
+```toml
+[native]
+libs = ["z"]
+search_paths = ["native/lib"]
+objects = ["native/startup.o"]
+```
+
+Link semantics:
+
+- `libs`: emitted as `-l<name>` during native link.
+- `search_paths`: emitted as `-L<path>`; relative paths are resolved from the project root.
+- `objects`: extra object files passed directly to the linker; relative paths are resolved from the project root.
+
+Example source file: `examples/pkg/ffi_zlib.aic`
+
 ## Build/Check Integration
 
 When `aic.lock` exists, frontend package loading verifies dependency checksums before typechecking/codegen.

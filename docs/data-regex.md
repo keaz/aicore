@@ -2,6 +2,11 @@
 
 This document defines the `std.regex` API contract implemented for `[DT-T1] std regex engine integration`.
 
+For the consolidated DT stack guide (regex/json/serde/url/http/datetime + cookbook), see:
+
+- `docs/data-text/README.md`
+- `docs/data-text/cookbook.md`
+
 ## Module surface
 
 ```aic
@@ -166,3 +171,27 @@ Behavior:
 ### Example
 
 See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/http_types.aic`.
+
+## Date Time Formatting and Parsing (`std.time`) - DT-T5
+
+Core types:
+
+- `TimeError`: `InvalidFormat`, `InvalidDate`, `InvalidTime`, `InvalidOffset`, `InvalidInput`, `Internal`
+- `DateTime`: `{ year, month, day, hour, minute, second, millisecond, offset_minutes }`
+
+Public APIs:
+
+- `parse_rfc3339(text: String) -> Result[DateTime, TimeError]`
+- `parse_iso8601(text: String) -> Result[DateTime, TimeError]`
+- `format_rfc3339(value: DateTime) -> Result[String, TimeError]`
+- `format_iso8601(value: DateTime) -> Result[String, TimeError]`
+
+Behavior:
+
+- RFC3339 parsing requires timezone (`Z` or `+/-HH:MM`) and `T` separator.
+- ISO8601 parser accepts date-only and timezone-optional forms.
+- Formatter output is deterministic with millisecond precision.
+
+Example:
+
+- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/audit_timestamps.aic`

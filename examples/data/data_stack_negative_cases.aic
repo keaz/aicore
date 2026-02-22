@@ -1,0 +1,77 @@
+import std.http;
+import std.io;
+import std.json;
+import std.regex;
+import std.time;
+
+fn regex_code(err: RegexError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidInput => 2,
+        NoMatch => 3,
+        UnsupportedFeature => 4,
+        TooComplex => 5,
+        Internal => 6,
+    }
+}
+
+fn json_code(err: JsonError) -> Int {
+    match err {
+        InvalidJson => 1,
+        InvalidType => 2,
+        MissingField => 3,
+        InvalidNumber => 4,
+        InvalidString => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn http_code(err: HttpError) -> Int {
+    match err {
+        InvalidMethod => 1,
+        InvalidStatus => 2,
+        InvalidHeaderName => 3,
+        InvalidHeaderValue => 4,
+        InvalidTarget => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn time_code(err: TimeError) -> Int {
+    match err {
+        InvalidFormat => 1,
+        InvalidDate => 2,
+        InvalidTime => 3,
+        InvalidOffset => 4,
+        InvalidInput => 5,
+        Internal => 6,
+    }
+}
+
+fn main() -> Int effects { io, time } {
+    let bad_regex = match compile_with_flags("[unterminated", no_flags()) {
+        Ok(_) => 0,
+        Err(err) => regex_code(err),
+    };
+    let bad_json = match parse("{\"name\":") {
+        Ok(_) => 0,
+        Err(err) => json_code(err),
+    };
+    let bad_method = match parse_method("TRACE") {
+        Ok(_) => 0,
+        Err(err) => http_code(err),
+    };
+    let bad_time = match parse_rfc3339("2026-02-21 18:45:10Z") {
+        Ok(_) => 0,
+        Err(err) => time_code(err),
+    };
+
+    if bad_regex == 1 && bad_json == 1 && bad_method == 1 && bad_time == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

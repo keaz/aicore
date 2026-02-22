@@ -1,0 +1,53 @@
+import std.http;
+import std.io;
+import std.url;
+
+fn url_code(err: UrlError) -> Int {
+    match err {
+        InvalidUrl => 1,
+        InvalidScheme => 2,
+        InvalidHost => 3,
+        InvalidPort => 4,
+        InvalidPath => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn http_code(err: HttpError) -> Int {
+    match err {
+        InvalidMethod => 1,
+        InvalidStatus => 2,
+        InvalidHeaderName => 3,
+        InvalidHeaderValue => 4,
+        InvalidTarget => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let bad_scheme = match parse("1tp://example.com") {
+        Ok(_) => 0,
+        Err(err) => url_code(err),
+    };
+    let bad_port = match parse("http://example.com:99999/x") {
+        Ok(_) => 0,
+        Err(err) => url_code(err),
+    };
+    let bad_method = match parse_method("TRACE") {
+        Ok(_) => 0,
+        Err(err) => http_code(err),
+    };
+    let bad_header = match header("Bad Header", "ok") {
+        Ok(_) => 0,
+        Err(err) => http_code(err),
+    };
+
+    if bad_scheme == 2 && bad_port == 4 && bad_method == 1 && bad_header == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

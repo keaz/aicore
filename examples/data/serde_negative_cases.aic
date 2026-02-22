@@ -1,0 +1,59 @@
+import std.io;
+import std.json;
+
+struct ConfigV2 {
+    host: String,
+    port: Int,
+    tls: Bool,
+}
+
+enum WireEvent {
+    Ping,
+    Data(Int),
+}
+
+fn code(err: JsonError) -> Int {
+    match err {
+        InvalidJson => 1,
+        InvalidType => 2,
+        MissingField => 3,
+        InvalidNumber => 4,
+        InvalidString => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let old_doc = match parse("{\"host\":\"svc\",\"port\":8080}") {
+        Ok(value) => value,
+        Err(_) => encode_null(),
+    };
+    let cfg_marker: Option[ConfigV2] = None();
+    let missing_field = match decode_with(old_doc, cfg_marker) {
+        Ok(_) => 0,
+        Err(err) => code(err),
+    };
+
+    let future_enum_base = object_empty();
+    let future_enum_with_tag = match object_set(future_enum_base, "tag", encode_int(9)) {
+        Ok(value) => value,
+        Err(_) => object_empty(),
+    };
+    let future_enum = match object_set(future_enum_with_tag, "value", encode_null()) {
+        Ok(value) => value,
+        Err(_) => object_empty(),
+    };
+    let event_marker: Option[WireEvent] = None();
+    let unknown_tag = match decode_with(future_enum, event_marker) {
+        Ok(_) => 0,
+        Err(err) => code(err),
+    };
+
+    if missing_field == 3 && unknown_tag == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

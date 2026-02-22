@@ -183,6 +183,10 @@ pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
             continue;
         };
 
+        if func.is_extern {
+            continue;
+        }
+
         let param_env = unconstrained_param_env(func);
         let requires_discharged = func
             .requires
@@ -793,6 +797,9 @@ fn build_invariant_helpers(
             symbol: ir::SymbolId(alloc.next_symbol()),
             name: helper_name,
             is_async: false,
+            is_unsafe: false,
+            is_extern: false,
+            extern_abi: None,
             generics: spec.generics.clone(),
             params,
             ret_type,
@@ -880,6 +887,9 @@ fn rewrite_struct_inits_in_expr(
         }
         ir::ExprKind::Try { expr } => {
             rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
+        }
+        ir::ExprKind::UnsafeBlock { block } => {
+            rewrite_struct_inits_in_block(block, helper_names, field_orders, alloc);
         }
         ir::ExprKind::StructInit { name, fields } => {
             for (_, value, _) in fields.iter_mut() {
@@ -1042,6 +1052,9 @@ fn lower_ensures_in_expr(
         }
         ir::ExprKind::Try { expr } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
+        }
+        ir::ExprKind::UnsafeBlock { block } => {
+            lower_ensures_in_block(block, ensures, ret_type, function_name, alloc, false);
         }
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields.iter_mut() {
@@ -1274,6 +1287,12 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         ir::ExprKind::Borrow { expr, .. } => {
             max = max.max(max_node_expr(expr));
         }
+        ir::ExprKind::Await { expr } | ir::ExprKind::Try { expr } => {
+            max = max.max(max_node_expr(expr));
+        }
+        ir::ExprKind::UnsafeBlock { block } => {
+            max = max.max(max_node_block(block));
+        }
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, expr, _) in fields {
                 max = max.max(max_node_expr(expr));
@@ -1355,6 +1374,9 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
         },
         ir::ExprKind::Try { expr } => ir::ExprKind::Try {
             expr: Box::new(clone_expr(expr, alloc)),
+        },
+        ir::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
+            block: clone_block(block, alloc),
         },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
             name: name.clone(),
@@ -1506,6 +1528,9 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
         },
         ir::ExprKind::Try { expr } => ir::ExprKind::Try {
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
+        },
+        ir::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
+            block: clone_block(block, alloc),
         },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
             name: name.clone(),
@@ -1747,6 +1772,7 @@ fn make(x: Int) -> NonEmpty {
             ir::ExprKind::Borrow { expr, .. } => count_asserts_in_expr(expr),
             ir::ExprKind::Await { expr } => count_asserts_in_expr(expr),
             ir::ExprKind::Try { expr } => count_asserts_in_expr(expr),
+            ir::ExprKind::UnsafeBlock { block } => count_asserts_in_block(block),
             ir::ExprKind::StructInit { fields, .. } => fields
                 .iter()
                 .map(|(_, value, _)| count_asserts_in_expr(value))

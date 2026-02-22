@@ -16,6 +16,14 @@ fn run_aic(args: &[&str]) -> std::process::Output {
         .expect("run aic")
 }
 
+fn run_aic_in_dir(cwd: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_aic"))
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run aic in dir")
+}
+
 fn run_aic_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_aic"));
     command.args(args).current_dir(repo_root());
@@ -236,6 +244,81 @@ fn pkg_publish_search_install_roundtrip() {
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr)
     );
+}
+
+#[test]
+fn build_links_native_c_library_from_manifest_native_section() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    fs::create_dir_all(project.path().join("native")).expect("mkdir native");
+
+    fs::write(
+        project.path().join("aic.toml"),
+        r#"[package]
+name = "ffi_demo"
+version = "0.1.0"
+main = "src/main.aic"
+
+[native]
+libs = ["ffiadd"]
+search_paths = ["native"]
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.path().join("src/main.aic"),
+        r#"module ffi_demo.main;
+import std.io;
+
+extern "C" fn ffi_add42(x: Int) -> Int;
+
+fn add42(x: Int) -> Int {
+    unsafe { ffi_add42(x) }
+}
+
+fn main() -> Int effects { io } {
+    print_int(add42(0));
+    0
+}
+"#,
+    )
+    .expect("write source");
+    fs::write(
+        project.path().join("native/add.c"),
+        r#"long ffi_add42(long x) { return x + 42; }"#,
+    )
+    .expect("write c source");
+
+    let compile_obj = Command::new("clang")
+        .args(["-O0", "-c", "native/add.c", "-o", "native/add.o"])
+        .current_dir(project.path())
+        .output()
+        .expect("compile c object");
+    assert!(
+        compile_obj.status.success(),
+        "clang stderr={}",
+        String::from_utf8_lossy(&compile_obj.stderr)
+    );
+    let archive = Command::new("ar")
+        .args(["rcs", "native/libffiadd.a", "native/add.o"])
+        .current_dir(project.path())
+        .output()
+        .expect("archive static lib");
+    assert!(
+        archive.status.success(),
+        "ar stderr={}",
+        String::from_utf8_lossy(&archive.stderr)
+    );
+
+    let run = run_aic_in_dir(project.path(), &["run", "src/main.aic"]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
 }
 
 #[test]

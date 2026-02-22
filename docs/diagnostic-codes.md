@@ -30,6 +30,7 @@ Recent core-language additions:
 - `E1052`: invalid `async` item form (expected `async fn`).
 - `E1053-E1059`: trait/impl declaration syntax errors.
 - `E1060-E1062`: assignment statement parsing errors.
+- `E1063-E1068`: `extern`/`unsafe` parsing and declaration form errors.
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.
@@ -59,9 +60,14 @@ Recent core-language additions:
 - `E2116`: registry/index/package content IO or integrity failure.
 - `E2117`: private registry authentication missing or invalid.
 - `E2118`: registry configuration or credential source is invalid.
+- `E2120`: invalid or unsupported extern ABI declaration.
+- `E2121`: extern function signature uses unsupported language features.
+- `E2122`: extern call requires explicit unsafe boundary.
+- `E2123`: unsupported type in extern C-ABI signature.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 - `E5023`: backend does not yet lower guarded match arms.
+- `E5024`: backend extern wrapper/link ABI mismatch or unsupported extern lowering.
 
 ## Change policy
 

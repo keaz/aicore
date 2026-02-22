@@ -580,6 +580,28 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net } {
         path.join("std/time.aic"),
         r#"module std.time;
 
+import std.result;
+
+enum TimeError {
+    InvalidFormat,
+    InvalidDate,
+    InvalidTime,
+    InvalidOffset,
+    InvalidInput,
+    Internal,
+}
+
+struct DateTime {
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int,
+    minute: Int,
+    second: Int,
+    millisecond: Int,
+    offset_minutes: Int,
+}
+
 fn aic_time_now_ms_intrinsic() -> Int effects { time } {
     0
 }
@@ -590,6 +612,26 @@ fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
 
 fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
     ()
+}
+
+fn aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
+    let out: Result[DateTime, TimeError] = Err(InvalidFormat());
+    out
+}
+
+fn aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
+    let out: Result[DateTime, TimeError] = Err(InvalidFormat());
+    out
+}
+
+fn aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
+    let out: Result[String, TimeError] = Ok("");
+    out
+}
+
+fn aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
+    let out: Result[String, TimeError] = Ok("");
+    out
 }
 
 fn now_ms() -> Int effects { time } {
@@ -606,6 +648,22 @@ fn monotonic_ms() -> Int effects { time } {
 
 fn sleep_ms(ms: Int) -> () effects { time } {
     aic_time_sleep_ms_intrinsic(ms)
+}
+
+fn parse_rfc3339(text: String) -> Result[DateTime, TimeError] effects { time } {
+    aic_time_parse_rfc3339_intrinsic(text)
+}
+
+fn parse_iso8601(text: String) -> Result[DateTime, TimeError] effects { time } {
+    aic_time_parse_iso8601_intrinsic(text)
+}
+
+fn format_rfc3339(value: DateTime) -> Result[String, TimeError] effects { time } {
+    aic_time_format_rfc3339_intrinsic(value)
+}
+
+fn format_iso8601(value: DateTime) -> Result[String, TimeError] effects { time } {
+    aic_time_format_iso8601_intrinsic(value)
 }
 
 fn deadline_after_ms(timeout_ms: Int) -> Int effects { time } {

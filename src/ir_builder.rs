@@ -70,6 +70,9 @@ impl Builder {
             symbol,
             name: func.name.clone(),
             is_async: func.is_async,
+            is_unsafe: func.is_unsafe,
+            is_extern: func.is_extern,
+            extern_abi: func.extern_abi.clone(),
             generics: func
                 .generics
                 .iter()
@@ -301,6 +304,9 @@ impl Builder {
             },
             ast::ExprKind::Try { expr } => ir::ExprKind::Try {
                 expr: Box::new(self.lower_expr(expr)),
+            },
+            ast::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
+                block: self.lower_block(block),
             },
             ast::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
                 name: name.clone(),

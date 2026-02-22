@@ -835,6 +835,24 @@ fn has_unsafe_keyword(source: &str) -> bool {
     let mut escaped = false;
     let mut line_comment = false;
     let mut block_comment_depth = 0u32;
+    let mut pending_unsafe = false;
+
+    let finalize_token = |token: &mut String, pending_unsafe: &mut bool| -> bool {
+        if token.is_empty() {
+            return false;
+        }
+        if *pending_unsafe {
+            if matches!(token.as_str(), "fn" | "impl" | "trait" | "extern") {
+                return true;
+            }
+            *pending_unsafe = false;
+        }
+        if token == "unsafe" {
+            *pending_unsafe = true;
+        }
+        token.clear();
+        false
+    };
 
     while let Some(ch) = chars.next() {
         if line_comment {
@@ -885,50 +903,126 @@ fn has_unsafe_keyword(source: &str) -> bool {
 
         if ch == '/' && chars.peek() == Some(&'/') {
             chars.next();
-            if token == "unsafe" {
+            if finalize_token(&mut token, &mut pending_unsafe) {
                 return true;
             }
-            token.clear();
             line_comment = true;
             continue;
         }
         if ch == '/' && chars.peek() == Some(&'*') {
             chars.next();
-            if token == "unsafe" {
+            if finalize_token(&mut token, &mut pending_unsafe) {
                 return true;
             }
-            token.clear();
             block_comment_depth = 1;
             continue;
         }
         if ch == '"' {
-            if token == "unsafe" {
+            if finalize_token(&mut token, &mut pending_unsafe) {
                 return true;
             }
-            token.clear();
+            pending_unsafe = false;
             in_string = true;
             continue;
         }
         if ch == '\'' {
-            if token == "unsafe" {
+            if finalize_token(&mut token, &mut pending_unsafe) {
                 return true;
             }
-            token.clear();
+            pending_unsafe = false;
             in_char = true;
             continue;
         }
 
+        if ch == 'b' && chars.peek() == Some(&'r') {
+            let mut probe = chars.clone();
+            probe.next();
+            let mut hash_count = 0usize;
+            while probe.peek() == Some(&'#') {
+                probe.next();
+                hash_count += 1;
+            }
+            if probe.peek() == Some(&'"') {
+                if finalize_token(&mut token, &mut pending_unsafe) {
+                    return true;
+                }
+                pending_unsafe = false;
+                chars.next();
+                for _ in 0..hash_count {
+                    chars.next();
+                }
+                chars.next();
+                consume_raw_string(&mut chars, hash_count);
+                continue;
+            }
+        }
+        if ch == 'r' {
+            let mut probe = chars.clone();
+            let mut hash_count = 0usize;
+            while probe.peek() == Some(&'#') {
+                probe.next();
+                hash_count += 1;
+            }
+            if probe.peek() == Some(&'"') {
+                if finalize_token(&mut token, &mut pending_unsafe) {
+                    return true;
+                }
+                pending_unsafe = false;
+                for _ in 0..hash_count {
+                    chars.next();
+                }
+                chars.next();
+                consume_raw_string(&mut chars, hash_count);
+                continue;
+            }
+        }
+
         if ch.is_ascii_alphanumeric() || ch == '_' {
             token.push(ch);
-        } else {
-            if token == "unsafe" {
+            continue;
+        }
+
+        if finalize_token(&mut token, &mut pending_unsafe) {
+            return true;
+        }
+
+        if pending_unsafe {
+            if ch == '{' {
                 return true;
             }
-            token.clear();
+            if !ch.is_whitespace() {
+                pending_unsafe = false;
+            }
         }
     }
 
-    token == "unsafe"
+    if finalize_token(&mut token, &mut pending_unsafe) {
+        return true;
+    }
+
+    false
+}
+
+fn consume_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, hash_count: usize) {
+    while let Some(ch) = chars.next() {
+        if ch != '"' {
+            continue;
+        }
+        let mut probe = chars.clone();
+        let mut matched = true;
+        for _ in 0..hash_count {
+            if probe.next() != Some('#') {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            for _ in 0..hash_count {
+                chars.next();
+            }
+            return;
+        }
+    }
 }
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> {
@@ -992,7 +1086,8 @@ mod tests {
 
     use super::{
         check_compatibility_policy, compatibility_policy, generate_provenance,
-        generate_repro_manifest, read_lockfile_packages, verify_provenance, write_provenance,
+        generate_repro_manifest, has_unsafe_keyword, read_lockfile_packages, verify_provenance,
+        write_provenance,
     };
 
     #[test]
@@ -1086,5 +1181,23 @@ version = "1.0.0"
         let policy = compatibility_policy();
         let problems = check_compatibility_policy(root, &policy);
         assert!(problems.is_empty(), "problems={problems:#?}");
+    }
+
+    #[test]
+    fn unsafe_keyword_scan_ignores_strings_and_raw_strings() {
+        assert!(!has_unsafe_keyword(r#"let s = "unsafe fn f() {}";"#));
+        assert!(!has_unsafe_keyword("\"unsafe\" => TokenKind::KwUnsafe,"));
+        assert!(!has_unsafe_keyword("let s = r#\"unsafe fn f() {}\"#;"));
+        assert!(!has_unsafe_keyword("let s = br##\"unsafe { block }\"##;"));
+        assert!(!has_unsafe_keyword(
+            "let src = r#\"extern \\\"C\\\" fn c_abs(x: Int) -> Int; unsafe fn wrap(x: Int) -> Int { unsafe { c_abs(x) } }\"#;"
+        ));
+        assert!(has_unsafe_keyword("unsafe fn real() {}"));
+    }
+
+    #[test]
+    fn unsafe_keyword_scan_ignores_lexer_keyword_table() {
+        let lexer = fs::read_to_string("src/lexer.rs").expect("read lexer");
+        assert!(!has_unsafe_keyword(&lexer));
     }
 }

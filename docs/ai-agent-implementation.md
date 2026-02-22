@@ -109,12 +109,19 @@ Notes:
   - `docs/io-runtime/net-time-rand.md`
   - `docs/io-runtime/error-model.md`
   - `docs/io-runtime/lifecycle-playbook.md`
-- Data/regex contract and example:
-- Data/regex/url/http contract and examples:
+- Data/text/regex/url/http/datetime contracts and examples:
+  - `docs/data-text/README.md`
+  - `docs/data-text/cookbook.md`
   - `docs/data-regex.md`
   - `examples/data/log_parse_regex.aic`
-  - `examples/data/http_types.aic`
+  - `examples/data/config_json.aic`
   - `examples/data/serde_models.aic`
+  - `examples/data/serde_negative_cases.aic`
+  - `examples/data/http_types.aic`
+  - `examples/data/audit_timestamps.aic`
+  - `examples/data/ingest_transform_emit.aic`
+  - `examples/data/data_stack_negative_cases.aic`
+  - `examples/data/url_http_negative_cases.aic`
 
 ### Manifest + lockfile workflow (E6-T2)
 
@@ -128,6 +135,32 @@ Notes:
 Diagnostics:
 
 - `E2106`: lockfile drift (`aic.toml` vs `aic.lock`).
+
+### Native dependency bridge (PKG-T3)
+
+`src/package_workflow.rs`, `src/typecheck.rs`, `src/codegen.rs`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
+
+- Frontend syntax:
+  - `extern "C" fn ...;`
+  - `unsafe fn ...`
+  - expression `unsafe { ... }`
+- Typechecker/diagnostic contract:
+  - `E2120`: missing/unsupported extern ABI
+  - `E2121`: extern signature must be plain (no async/generics/effects/contracts)
+  - `E2122`: calling `extern` or `unsafe fn` requires an explicit unsafe boundary
+  - `E2123`: unsupported C-ABI signature type (MVP support: `Int`, `Bool`, `()`)
+- Backend contract:
+  - extern declarations lower to wrapper functions + raw native symbol declarations
+  - backend emits `E5024` for unsupported extern ABI/lowering mismatches
+- Manifest native linkage:
+  - `aic.toml` `[native]` fields: `libs`, `search_paths` (or `search`), `objects`
+  - CLI build/run resolves relative paths from project root and passes `-L`, `-l`, and object paths to the linker
+
+Implementation and test references:
+
+- `tests/unit_tests.rs` (ABI/unsafe diagnostics)
+- `tests/e7_cli_tests.rs` (`build_links_native_c_library_from_manifest_native_section`)
+- `examples/pkg/ffi_zlib.aic`
 
 ### Checksum verification + offline cache (E6-T3)
 

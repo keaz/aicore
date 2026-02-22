@@ -358,6 +358,7 @@ fn render_expr(expr: &ir::Expr) -> String {
             format!("{} {{ {} }}", name, rendered)
         }
         ir::ExprKind::FieldAccess { base, field } => format!("{}.{}", render_expr(base), field),
+        ir::ExprKind::UnsafeBlock { .. } => "unsafe { ... }".to_string(),
     }
 }
 

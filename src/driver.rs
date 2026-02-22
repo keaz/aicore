@@ -4,7 +4,7 @@ use std::process::Command;
 
 use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions,
+    CompileOptions, LinkOptions,
 };
 use crate::contracts::{lower_runtime_asserts, verify_static};
 use crate::diagnostics::{Diagnostic, Severity};
@@ -14,6 +14,7 @@ use crate::ir;
 use crate::ir_builder;
 use crate::package_loader;
 use crate::package_loader::LoadOptions;
+use crate::package_workflow::{native_link_config, NativeLinkConfig};
 use crate::resolver::{self, Resolution};
 use crate::typecheck::{self, TypecheckOutput};
 
@@ -162,6 +163,8 @@ pub fn build_with_artifact_options(
     artifact: BuildArtifact,
     debug_info: bool,
 ) -> anyhow::Result<PathBuf> {
+    let project_root = resolve_project_root(path);
+    let link = resolve_native_link_options(&project_root)?;
     let front = run_frontend(path)?;
     if has_errors(&front.diagnostics) {
         anyhow::bail!("build failed due to diagnostics")
@@ -181,7 +184,7 @@ pub fn build_with_artifact_options(
         output,
         &work_dir,
         artifact.to_codegen(),
-        CompileOptions { debug_info },
+        CompileOptions { debug_info, link },
     )?;
     Ok(output)
 }
@@ -230,5 +233,56 @@ impl BuildArtifact {
             BuildArtifact::Obj => ArtifactKind::Obj,
             BuildArtifact::Lib => ArtifactKind::Lib,
         }
+    }
+}
+
+fn resolve_project_root(path: &Path) -> PathBuf {
+    let fallback = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    let mut dir = fallback.clone();
+
+    loop {
+        if dir.join("aic.toml").exists() {
+            return dir;
+        }
+        let Some(parent) = dir.parent() else {
+            return fallback;
+        };
+        dir = parent.to_path_buf();
+    }
+}
+
+fn resolve_native_link_options(project_root: &Path) -> anyhow::Result<LinkOptions> {
+    let native = native_link_config(project_root)?;
+    Ok(native_to_link_options(project_root, &native))
+}
+
+fn native_to_link_options(project_root: &Path, native: &NativeLinkConfig) -> LinkOptions {
+    LinkOptions {
+        search_paths: native
+            .search_paths
+            .iter()
+            .map(|path| resolve_native_path(project_root, path))
+            .collect(),
+        libs: native.libs.clone(),
+        objects: native
+            .objects
+            .iter()
+            .map(|path| resolve_native_path(project_root, path))
+            .collect(),
+    }
+}
+
+fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
     }
 }

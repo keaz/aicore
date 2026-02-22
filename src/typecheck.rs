@@ -22,6 +22,9 @@ pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> Type
 #[derive(Debug, Clone)]
 struct FnSig {
     is_async: bool,
+    is_unsafe: bool,
+    is_extern: bool,
+    extern_abi: Option<String>,
     params: Vec<String>,
     ret: String,
     effects: BTreeSet<String>,
@@ -41,7 +44,9 @@ struct Checker<'a> {
     call_graph: BTreeMap<String, Vec<CallEdge>>,
     current_function: Option<String>,
     current_function_is_async: bool,
+    current_function_is_unsafe: bool,
     current_function_ret_type: Option<String>,
+    unsafe_depth: usize,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
@@ -132,6 +137,9 @@ impl<'a> Checker<'a> {
                 name.clone(),
                 FnSig {
                     is_async: info.is_async,
+                    is_unsafe: info.is_unsafe,
+                    is_extern: info.is_extern,
+                    extern_abi: info.extern_abi.clone(),
                     params,
                     ret: types
                         .get(&info.ret_type)
@@ -156,6 +164,9 @@ impl<'a> Checker<'a> {
             "print_int".to_string(),
             FnSig {
                 is_async: false,
+                is_unsafe: false,
+                is_extern: false,
+                extern_abi: None,
                 params: vec!["Int".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -167,6 +178,9 @@ impl<'a> Checker<'a> {
             "print_str".to_string(),
             FnSig {
                 is_async: false,
+                is_unsafe: false,
+                is_extern: false,
+                extern_abi: None,
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -178,6 +192,9 @@ impl<'a> Checker<'a> {
             "len".to_string(),
             FnSig {
                 is_async: false,
+                is_unsafe: false,
+                is_extern: false,
+                extern_abi: None,
                 params: vec!["String".to_string()],
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
@@ -189,6 +206,9 @@ impl<'a> Checker<'a> {
             "panic".to_string(),
             FnSig {
                 is_async: false,
+                is_unsafe: false,
+                is_extern: false,
+                extern_abi: None,
                 params: vec!["String".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
@@ -209,7 +229,9 @@ impl<'a> Checker<'a> {
             call_graph: BTreeMap::new(),
             current_function: None,
             current_function_is_async: false,
+            current_function_is_unsafe: false,
             current_function_ret_type: None,
+            unsafe_depth: 0,
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
@@ -254,9 +276,13 @@ impl<'a> Checker<'a> {
         let previous_enforce = self.enforce_import_visibility;
         let previous_function = self.current_function.replace(func.name.clone());
         let previous_async = self.current_function_is_async;
+        let previous_unsafe = self.current_function_is_unsafe;
         let previous_ret = self.current_function_ret_type.clone();
+        let previous_unsafe_depth = self.unsafe_depth;
         self.enforce_import_visibility = self.should_enforce_import_visibility(&func.name);
         self.current_function_is_async = func.is_async;
+        self.current_function_is_unsafe = func.is_unsafe;
+        self.unsafe_depth = 0;
         self.call_graph.entry(func.name.clone()).or_default();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
@@ -278,6 +304,18 @@ impl<'a> Checker<'a> {
             .unwrap_or_else(|| "<?>".to_string());
         self.current_function_ret_type = Some(ret_type.clone());
         self.check_generic_arity(&ret_type, func.span);
+
+        if func.is_extern {
+            self.check_extern_function_signature(func, &ret_type, &locals);
+            self.effect_usage.insert(func.name.clone(), BTreeSet::new());
+            self.enforce_import_visibility = previous_enforce;
+            self.current_function = previous_function;
+            self.current_function_is_async = previous_async;
+            self.current_function_is_unsafe = previous_unsafe;
+            self.current_function_ret_type = previous_ret;
+            self.unsafe_depth = previous_unsafe_depth;
+            return;
+        }
 
         for generic in &func.generics {
             for bound in &generic.bounds {
@@ -416,7 +454,9 @@ impl<'a> Checker<'a> {
         self.enforce_import_visibility = previous_enforce;
         self.current_function = previous_function;
         self.current_function_is_async = previous_async;
+        self.current_function_is_unsafe = previous_unsafe;
         self.current_function_ret_type = previous_ret;
+        self.unsafe_depth = previous_unsafe_depth;
     }
 
     fn should_enforce_import_visibility(&self, function_name: &str) -> bool {
@@ -427,6 +467,100 @@ impl<'a> Checker<'a> {
             return true;
         };
         modules.len() == 1 && modules.contains(entry_module)
+    }
+
+    fn check_extern_function_signature(
+        &mut self,
+        func: &ir::Function,
+        ret_type: &str,
+        locals: &BTreeMap<String, String>,
+    ) {
+        match func.extern_abi.as_deref() {
+            Some("C") => {}
+            Some(other) => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2120",
+                        format!(
+                            "unsupported extern ABI '{}' on function '{}'",
+                            other, func.name
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("use `extern \"C\" fn ...;` for currently supported native interop"),
+                );
+            }
+            None => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2120",
+                        format!(
+                            "extern function '{}' is missing an ABI declaration",
+                            func.name
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("declare extern functions as `extern \"C\" fn ...;`"),
+                );
+            }
+        }
+
+        if func.is_async
+            || !func.generics.is_empty()
+            || !func.effects.is_empty()
+            || func.requires.is_some()
+            || func.ensures.is_some()
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2121",
+                    format!(
+                        "extern function '{}' must be a plain signature without async/generics/effects/contracts",
+                        func.name
+                    ),
+                    self.file,
+                    func.span,
+                )
+                .with_help("declare the raw extern signature, then add a separate wrapper function"),
+            );
+        }
+
+        for param in &func.params {
+            let ty = locals
+                .get(&param.name)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            if !is_c_abi_compatible_type(&ty) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2123",
+                        format!(
+                            "extern function '{}' parameter '{}' has unsupported C ABI type '{}'",
+                            func.name, param.name, ty
+                        ),
+                        self.file,
+                        param.span,
+                    )
+                    .with_help("supported extern C types in MVP are Int, Bool, and ()"),
+                );
+            }
+        }
+        if !is_c_abi_compatible_type(ret_type) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2123",
+                    format!(
+                        "extern function '{}' return type '{}' is not C ABI-compatible",
+                        func.name, ret_type
+                    ),
+                    self.file,
+                    func.span,
+                )
+                .with_help("use Int/Bool/() for raw extern signatures and convert in wrapper code"),
+            );
+        }
     }
 
     fn record_call_edge(&mut self, callee: &str, span: crate::span::Span) {
@@ -774,6 +908,12 @@ impl<'a> Checker<'a> {
                         self.check_borrow_expr(&arm.body, &mut arm_mutability, &mut arm_state);
                     self.release_temp_borrows(&arm_borrows, &mut arm_state);
                 }
+                Vec::new()
+            }
+            ir::ExprKind::UnsafeBlock { block } => {
+                let mut block_mutability = mutability.clone();
+                let mut block_state = state.clone();
+                self.check_borrow_block(block, &mut block_mutability, &mut block_state);
                 Vec::new()
             }
             ir::ExprKind::Binary { lhs, rhs, .. } => {
@@ -1425,6 +1565,28 @@ impl<'a> Checker<'a> {
                                 expr.span,
                             )
                             .with_help("add `import std.string;`"),
+                        );
+                    }
+
+                    if (sig.is_extern || sig.is_unsafe)
+                        && !(self.current_function_is_unsafe || self.unsafe_depth > 0)
+                    {
+                        let target = if sig.is_extern {
+                            let abi = sig.extern_abi.as_deref().unwrap_or("<?>");
+                            format!("extern \"{}\" function '{}'", abi, rendered_path)
+                        } else {
+                            format!("unsafe function '{}'", rendered_path)
+                        };
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2122",
+                                format!("call to {} requires an explicit unsafe boundary", target),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help(
+                                "wrap this call in `unsafe { ... }` or use an `unsafe fn` wrapper",
+                            ),
                         );
                     }
 
@@ -2091,6 +2253,13 @@ impl<'a> Checker<'a> {
                 }
 
                 args[0].clone()
+            }
+            ir::ExprKind::UnsafeBlock { block } => {
+                let previous_depth = self.unsafe_depth;
+                self.unsafe_depth += 1;
+                let ty = self.check_block(block, locals, "()", allowed_effects, ctx, contract_mode);
+                self.unsafe_depth = previous_depth;
+                ty
             }
             ir::ExprKind::StructInit { name, fields } => {
                 let Some(info) = self.resolution.structs.get(name).cloned() else {
@@ -3301,6 +3470,16 @@ fn extract_generic_args(ty: &str) -> Option<Vec<String>> {
     }
     let inner = &ty[start + 1..end];
     Some(split_top_level(inner))
+}
+
+fn is_c_abi_compatible_type(ty: &str) -> bool {
+    if ty == "()" {
+        return true;
+    }
+    if contains_unresolved_type(ty) {
+        return false;
+    }
+    matches!(base_type_name(ty), "Int" | "Bool") && extract_generic_args(ty).is_none()
 }
 
 fn split_top_level(input: &str) -> Vec<String> {

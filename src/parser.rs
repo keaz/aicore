@@ -78,7 +78,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> Option<Item> {
-        if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
+        if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
+            self.parse_extern_function().map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
+            let start = self.current_span().start;
+            self.bump();
+            if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1068",
+                    "expected `fn` after `unsafe` item modifier",
+                    self.file,
+                    self.current_span(),
+                ));
+                return None;
+            }
+            self.parse_function(false, true, start).map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
             let start = self.current_span().start;
             self.bump();
             if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
@@ -90,10 +105,10 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(true, start).map(Item::Function)
+            self.parse_function(true, false, start).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
             let start = self.current_span().start;
-            self.parse_function(false, start).map(Item::Function)
+            self.parse_function(false, false, start).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
             self.parse_struct().map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
@@ -107,7 +122,7 @@ impl<'a> Parser<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1003",
-                    "expected item declaration (`fn`, `async fn`, `struct`, `enum`, `trait`, `impl`)",
+                    "expected item declaration (`fn`, `async fn`, `unsafe fn`, `extern \"C\" fn`, `struct`, `enum`, `trait`, `impl`)",
                     self.file,
                     span,
                 )
@@ -117,7 +132,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_function(&mut self, is_async: bool, start: usize) -> Option<Function> {
+    fn parse_function(
+        &mut self,
+        is_async: bool,
+        is_unsafe: bool,
+        start: usize,
+    ) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
         let generics = self.parse_generics();
@@ -181,6 +201,9 @@ impl<'a> Parser<'a> {
         Some(Function {
             name,
             is_async,
+            is_unsafe,
+            is_extern: false,
+            extern_abi: None,
             generics,
             params,
             ret_type,
@@ -188,6 +211,113 @@ impl<'a> Parser<'a> {
             requires,
             ensures,
             body,
+            span,
+        })
+    }
+
+    fn parse_extern_function(&mut self) -> Option<Function> {
+        let start = self.current_span().start;
+        self.bump(); // extern
+        let abi_token = self.current().clone();
+        let abi = match abi_token.kind {
+            TokenKind::String(abi) => {
+                self.bump();
+                abi
+            }
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1063",
+                        "expected ABI string after `extern` (for example `extern \"C\" fn ...;`)",
+                        self.file,
+                        abi_token.span,
+                    )
+                    .with_help("use `extern \"C\" fn name(...) -> Ret;` for C ABI declarations"),
+                );
+                return None;
+            }
+        };
+
+        if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+            self.diagnostics.push(Diagnostic::error(
+                "E1064",
+                "expected `fn` after extern ABI declaration",
+                self.file,
+                self.current_span(),
+            ));
+            return None;
+        }
+        self.bump(); // fn
+
+        let (name, _) = self.expect_ident("E1004", "expected function name")?;
+        let generics = self.parse_generics();
+        if !generics.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1065",
+                    "extern function declarations cannot declare generic parameters",
+                    self.file,
+                    self.previous_span(),
+                )
+                .with_help("declare concrete C ABI parameter and return types"),
+            );
+        }
+        self.expect(
+            |k| matches!(k, TokenKind::LParen),
+            "E1005",
+            "expected '(' after function name",
+        )?;
+        let params = self.parse_params()?;
+        self.expect(
+            |k| matches!(k, TokenKind::Arrow),
+            "E1006",
+            "expected '->' with function return type",
+        )?;
+        let ret_type = self.parse_type()?;
+
+        if self.at_kind(|k| {
+            matches!(
+                k,
+                TokenKind::KwEffects | TokenKind::KwRequires | TokenKind::KwEnsures
+            )
+        }) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1066",
+                    "extern function declarations cannot have effects/contracts",
+                    self.file,
+                    self.current_span(),
+                )
+                .with_help("declare `extern` signatures only; wrap them in normal functions for effects/contracts"),
+            );
+            while !self.at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::Eof)) {
+                self.bump();
+            }
+        }
+
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1067",
+            "expected ';' after extern function declaration",
+        )?;
+        let span = Span::new(start, semi.end);
+        Some(Function {
+            name,
+            is_async: false,
+            is_unsafe: false,
+            is_extern: true,
+            extern_abi: Some(abi),
+            generics,
+            params,
+            ret_type,
+            effects: Vec::new(),
+            requires: None,
+            ensures: None,
+            body: Block {
+                stmts: Vec::new(),
+                tail: None,
+                span: Span::new(semi.start, semi.end),
+            },
             span,
         })
     }
@@ -1001,6 +1131,14 @@ impl<'a> Parser<'a> {
             }
             TokenKind::KwIf => self.parse_if_expr(),
             TokenKind::KwMatch => self.parse_match_expr(),
+            TokenKind::KwUnsafe => {
+                self.bump();
+                let block = self.parse_block()?;
+                Some(Expr {
+                    span: Span::new(token.span.start, block.span.end),
+                    kind: ExprKind::UnsafeBlock { block },
+                })
+            }
             TokenKind::Ident(name) => {
                 self.bump();
                 if self.at_kind(|k| matches!(k, TokenKind::LBrace))
@@ -1513,6 +1651,48 @@ async fn main() -> Int {
         let src = "async struct Bad { x: Int }";
         let (_program, diagnostics) = parse(src, "test.aic");
         assert!(diagnostics.iter().any(|d| d.code == "E1052"));
+    }
+
+    #[test]
+    fn parses_extern_c_function_and_unsafe_block() {
+        let src = r#"
+extern "C" fn c_abs(x: Int) -> Int;
+
+fn wrap(x: Int) -> Int {
+    unsafe { c_abs(x) }
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        assert_eq!(program.items.len(), 2);
+        let extern_fn = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(extern_fn.is_extern);
+        assert_eq!(extern_fn.extern_abi.as_deref(), Some("C"));
+
+        let wrap_fn = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = wrap_fn.body.tail.as_ref().expect("tail");
+        assert!(matches!(tail.kind, ExprKind::UnsafeBlock { .. }));
+    }
+
+    #[test]
+    fn reports_unsafe_item_without_fn() {
+        let src = "unsafe struct Bad { x: Int }";
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.iter().any(|d| d.code == "E1068"));
+    }
+
+    #[test]
+    fn reports_extern_without_abi_string() {
+        let src = "extern fn c_abs(x: Int) -> Int;";
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.iter().any(|d| d.code == "E1063"));
     }
 
     #[test]

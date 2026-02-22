@@ -138,6 +138,12 @@ pub struct Function {
     pub name: String,
     #[serde(default)]
     pub is_async: bool,
+    #[serde(default)]
+    pub is_unsafe: bool,
+    #[serde(default)]
+    pub is_extern: bool,
+    #[serde(default)]
+    pub extern_abi: Option<String>,
     pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret_type: TypeId,
@@ -292,6 +298,9 @@ pub enum ExprKind {
     },
     Try {
         expr: Box<Expr>,
+    },
+    UnsafeBlock {
+        block: Block,
     },
     StructInit {
         name: String,

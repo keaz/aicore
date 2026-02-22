@@ -25,6 +25,9 @@ pub struct Resolution {
 pub struct FunctionInfo {
     pub symbol: ir::SymbolId,
     pub is_async: bool,
+    pub is_unsafe: bool,
+    pub is_extern: bool,
+    pub extern_abi: Option<String>,
     pub generics: Vec<String>,
     pub generic_bounds: BTreeMap<String, Vec<String>>,
     pub param_types: Vec<ir::TypeId>,
@@ -152,6 +155,9 @@ pub fn resolve_with_item_modules(
                     .or_insert_with(|| FunctionInfo {
                         symbol: f.symbol,
                         is_async: f.is_async,
+                        is_unsafe: f.is_unsafe,
+                        is_extern: f.is_extern,
+                        extern_abi: f.extern_abi.clone(),
                         generics: f.generics.iter().map(|g| g.name.clone()).collect(),
                         generic_bounds: f
                             .generics

@@ -41,8 +41,45 @@ pub fn format_program(program: &ir::Program) -> String {
 }
 
 fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::TypeId, String>) {
+    if f.is_extern {
+        out.push_str("extern \"");
+        out.push_str(f.extern_abi.as_deref().unwrap_or("C"));
+        out.push_str("\" fn ");
+        out.push_str(&f.name);
+        format_generic_params(out, &f.generics);
+        out.push('(');
+        out.push_str(
+            &f.params
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{}: {}",
+                        p.name,
+                        type_map
+                            .get(&p.ty)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        out.push_str(") -> ");
+        out.push_str(
+            type_map
+                .get(&f.ret_type)
+                .map(|s| s.as_str())
+                .unwrap_or("<?>"),
+        );
+        out.push_str(";\n");
+        return;
+    }
+
     if f.is_async {
         out.push_str("async ");
+    }
+    if f.is_unsafe {
+        out.push_str("unsafe ");
     }
     out.push_str("fn ");
     out.push_str(&f.name);
@@ -356,6 +393,10 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
                 out.push(')');
             }
             out.push('?');
+        }
+        ir::ExprKind::UnsafeBlock { block } => {
+            out.push_str("unsafe ");
+            format_block(out, block, &BTreeMap::new(), 0);
         }
         ir::ExprKind::StructInit { name, fields } => {
             out.push_str(name);

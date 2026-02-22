@@ -1,0 +1,14 @@
+module pkg.ffi_zlib;
+
+import std.io;
+
+extern "C" fn zlibCompileFlags() -> Int;
+
+fn zlib_compile_flags() -> Int {
+    unsafe { zlibCompileFlags() }
+}
+
+fn main() -> Int effects { io } {
+    print_int(zlib_compile_flags());
+    0
+}

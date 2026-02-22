@@ -1,0 +1,72 @@
+import std.io;
+import std.string;
+import std.time;
+
+fn fallback() -> DateTime {
+    DateTime {
+        year: 0,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        millisecond: 0,
+        offset_minutes: 0,
+    }
+}
+
+fn code(err: TimeError) -> Int {
+    match err {
+        InvalidFormat => 1,
+        InvalidDate => 2,
+        InvalidTime => 3,
+        InvalidOffset => 4,
+        InvalidInput => 5,
+        Internal => 6,
+    }
+}
+
+fn main() -> Int effects { io, time } {
+    let audit = match parse_rfc3339("2026-02-21T18:45:10.230+05:30") {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+    let audit_text = match format_rfc3339(audit) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let scheduler = match parse_iso8601("2026-02-21T13:15:10.230Z") {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+    let scheduler_text = match format_iso8601(scheduler) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let scheduler_roundtrip = match parse_iso8601(scheduler_text) {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+
+    let roundtrip = match parse_rfc3339(audit_text) {
+        Ok(value) => value,
+        Err(_) => fallback(),
+    };
+
+    let invalid = match parse_rfc3339("2026-02-31T13:00:00.000Z") {
+        Ok(_) => 0,
+        Err(err) => code(err),
+    };
+
+    if len(audit_text) == 29 &&
+        len(scheduler_text) == 29 &&
+        roundtrip.offset_minutes == 330 &&
+        scheduler_roundtrip.offset_minutes == 0 &&
+        invalid == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

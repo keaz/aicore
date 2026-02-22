@@ -233,6 +233,124 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_extern_call_requires_explicit_unsafe_boundary() {
+    let src = r#"
+extern "C" fn c_abs(x: Int) -> Int;
+
+fn wrap(x: Int) -> Int {
+    c_abs(x)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    let Some(diag) = out.diagnostics.iter().find(|d| d.code == "E2122") else {
+        panic!("expected E2122, got {:#?}", out.diagnostics);
+    };
+    assert!(
+        diag.help.iter().any(|h| h.contains("unsafe { ... }")),
+        "expected unsafe fix hint in E2122 help, got {diag:#?}"
+    );
+}
+
+#[test]
+fn unit_extern_call_inside_unsafe_block_is_allowed() {
+    let src = r#"
+extern "C" fn c_abs(x: Int) -> Int;
+
+fn wrap(x: Int) -> Int {
+    unsafe { c_abs(x) }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E2122"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_extern_abi_mismatch_reports_e2120() {
+    let src = r#"
+extern "Rust" fn c_abs(x: Int) -> Int;
+fn wrap(x: Int) -> Int {
+    unsafe { c_abs(x) }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    let Some(diag) = out.diagnostics.iter().find(|d| d.code == "E2120") else {
+        panic!("expected E2120, got {:#?}", out.diagnostics);
+    };
+    assert!(
+        diag.help.iter().any(|h| h.contains("extern \"C\"")),
+        "expected fix hint in E2120 help, got {diag:#?}"
+    );
+}
+
+#[test]
+fn unit_extern_signature_rejects_non_c_abi_types() {
+    let src = r#"
+extern "C" fn c_strlen(s: String) -> Int;
+fn wrap(s: String) -> Int {
+    unsafe { c_strlen(s) }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2123"));
+}
+
+#[test]
+fn unit_unsafe_fn_call_requires_explicit_unsafe_boundary() {
+    let src = r#"
+unsafe fn unchecked_add_one(x: Int) -> Int {
+    x + 1
+}
+
+fn wrap(x: Int) -> Int {
+    unchecked_add_one(x)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2122"));
+}
+
+#[test]
+fn unit_unsafe_fn_call_inside_unsafe_block_is_allowed() {
+    let src = r#"
+unsafe fn unchecked_add_one(x: Int) -> Int {
+    x + 1
+}
+
+fn wrap(x: Int) -> Int {
+    unsafe { unchecked_add_one(x) }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E2122"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_result_propagation_accepts_matching_result_types() {
     let src = r#"
 fn parse_num(x: Int) -> Result[Int, Int] {
@@ -1068,6 +1186,34 @@ fn unit_std_time_public_apis_delegate_to_runtime_intrinsics() {
         "std/time.aic",
         "sleep_ms",
         "aic_time_sleep_ms_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "parse_rfc3339",
+        "aic_time_parse_rfc3339_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "parse_iso8601",
+        "aic_time_parse_iso8601_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "format_rfc3339",
+        "aic_time_format_rfc3339_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &time_source,
+        "std/time.aic",
+        "format_iso8601",
+        "aic_time_format_iso8601_intrinsic",
         1,
     );
 }

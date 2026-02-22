@@ -4,8 +4,8 @@ use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
 };
 use aicore::codegen::{
-    compile_with_clang, compile_with_clang_artifact_with_options, emit_llvm,
-    emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions,
+    compile_with_clang_artifact_with_options, emit_llvm, emit_llvm_with_options, ArtifactKind,
+    CodegenOptions, CompileOptions, LinkOptions,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::diagnostic_explain::{explain, explain_text};
@@ -21,7 +21,7 @@ use aicore::package_registry::{
     publish_with_options as pkg_publish_with_options,
     search_with_options as pkg_search_with_options, RegistryClientOptions,
 };
-use aicore::package_workflow::generate_and_write_lockfile;
+use aicore::package_workflow::{generate_and_write_lockfile, native_link_config, NativeLinkConfig};
 use aicore::parser;
 use aicore::project::init_project;
 use aicore::release_ops::{
@@ -553,6 +553,8 @@ fn run_cli() -> anyhow::Result<i32> {
             debug_info,
             offline,
         } => {
+            let project_root = resolve_project_root(&input);
+            let link = resolve_native_link_options(&project_root)?;
             let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
             if has_errors(&front.diagnostics) {
                 print!("{}", diagnostics_pretty(&front.diagnostics));
@@ -578,7 +580,7 @@ fn run_cli() -> anyhow::Result<i32> {
                     &out,
                     &work,
                     artifact.to_codegen(),
-                    CompileOptions { debug_info },
+                    CompileOptions { debug_info, link },
                 )?;
                 println!("built {}", out.display());
                 EXIT_OK
@@ -865,6 +867,8 @@ fn print_harness_report(report: &aicore::test_harness::HarnessReport) {
 }
 
 fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32> {
+    let project_root = resolve_project_root(input);
+    let link = resolve_native_link_options(&project_root)?;
     let front = run_frontend_with_options(input, FrontendOptions { offline })?;
     if has_errors(&front.diagnostics) {
         print!("{}", diagnostics_pretty(&front.diagnostics));
@@ -881,8 +885,47 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
     };
 
     let work = std::env::temp_dir().join("aicore_build");
-    compile_with_clang(&llvm.llvm_ir, output, &work)?;
+    compile_with_clang_artifact_with_options(
+        &llvm.llvm_ir,
+        output,
+        &work,
+        ArtifactKind::Exe,
+        CompileOptions {
+            debug_info: false,
+            link,
+        },
+    )?;
     Ok(EXIT_OK)
+}
+
+fn resolve_native_link_options(project_root: &Path) -> anyhow::Result<LinkOptions> {
+    let native = native_link_config(project_root)?;
+    Ok(native_to_link_options(project_root, &native))
+}
+
+fn native_to_link_options(project_root: &Path, native: &NativeLinkConfig) -> LinkOptions {
+    LinkOptions {
+        search_paths: native
+            .search_paths
+            .iter()
+            .map(|path| resolve_native_path(project_root, path))
+            .collect(),
+        libs: native.libs.clone(),
+        objects: native
+            .objects
+            .iter()
+            .map(|path| resolve_native_path(project_root, path))
+            .collect(),
+    }
+}
+
+fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
+    }
 }
 
 fn default_build_output_name(input: &Path, artifact: BuildArtifact) -> PathBuf {

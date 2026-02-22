@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,6 +11,9 @@ use crate::ir;
 
 #[derive(Debug, Clone)]
 struct FnSig {
+    is_extern: bool,
+    extern_symbol: Option<String>,
+    extern_abi: Option<String>,
     params: Vec<LType>,
     ret: LType,
 }
@@ -245,9 +248,17 @@ pub enum ArtifactKind {
     Lib,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LinkOptions {
+    pub search_paths: Vec<PathBuf>,
+    pub libs: Vec<String>,
+    pub objects: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CompileOptions {
     pub debug_info: bool,
+    pub link: LinkOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,6 +345,7 @@ pub fn compile_with_clang_artifact_with_options(
                 command.arg("-g");
             }
             command.arg("-O0").arg(&ll_path).arg(&runtime_path);
+            append_link_options(&mut command, &options.link);
             if cfg!(not(target_os = "windows")) {
                 command.arg("-pthread");
             }
@@ -521,6 +533,18 @@ fn render_command(command: &Command) -> String {
     out
 }
 
+fn append_link_options(command: &mut Command, link: &LinkOptions) {
+    for path in &link.search_paths {
+        command.arg("-L").arg(path);
+    }
+    for object in &link.objects {
+        command.arg(object);
+    }
+    for lib in &link.libs {
+        command.arg(format!("-l{lib}"));
+    }
+}
+
 fn collect_type_templates(
     program: &ir::Program,
     type_map: &BTreeMap<ir::TypeId, String>,
@@ -629,6 +653,7 @@ struct Generator<'a> {
     temp_counter: usize,
     label_counter: usize,
     fn_sigs: BTreeMap<String, FnSig>,
+    extern_decls: BTreeSet<String>,
     type_map: BTreeMap<ir::TypeId, String>,
     struct_templates: BTreeMap<String, StructTemplate>,
     enum_templates: BTreeMap<String, EnumTemplate>,
@@ -665,6 +690,7 @@ impl<'a> Generator<'a> {
             temp_counter: 0,
             label_counter: 0,
             fn_sigs: BTreeMap::new(),
+            extern_decls: BTreeSet::new(),
             type_map,
             struct_templates,
             enum_templates,
@@ -690,6 +716,18 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_time_now_ms()\n");
         text.push_str("declare i64 @aic_rt_time_monotonic_ms()\n");
         text.push_str("declare void @aic_rt_time_sleep_ms(i64)\n\n");
+        text.push_str(
+            "declare i64 @aic_rt_time_parse_rfc3339(i8*, i64, i64, i64*, i64*, i64*, i64*, i64*, i64*, i64*, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_time_parse_iso8601(i8*, i64, i64, i64*, i64*, i64*, i64*, i64*, i64*, i64*, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_time_format_rfc3339(i64, i64, i64, i64, i64, i64, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_time_format_iso8601(i64, i64, i64, i64, i64, i64, i64, i64, i8**, i64*)\n\n",
+        );
         text.push_str("declare void @aic_rt_rand_seed(i64)\n");
         text.push_str("declare i64 @aic_rt_rand_next()\n");
         text.push_str("declare i64 @aic_rt_rand_range(i64, i64)\n\n");
@@ -792,6 +830,13 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n\n",
         );
+        if !self.extern_decls.is_empty() {
+            for decl in &self.extern_decls {
+                text.push_str(decl);
+                text.push('\n');
+            }
+            text.push('\n');
+        }
 
         for global in &self.globals {
             text.push_str(global);
@@ -820,9 +865,13 @@ impl<'a> Generator<'a> {
 
     fn generate(&mut self) {
         self.collect_fn_sigs();
+        self.gen_extern_wrappers();
 
         for item in &self.program.items {
             if let ir::Item::Function(func) = item {
+                if func.is_extern {
+                    continue;
+                }
                 if func.generics.is_empty() {
                     self.gen_function(func);
                 } else if let Some(instances) = self.generic_fn_instances.get(&func.name).cloned() {
@@ -851,8 +900,20 @@ impl<'a> Generator<'a> {
                     .collect::<Option<Vec<_>>>();
                 let ret = self.type_from_id(func.ret_type, func.span);
                 if let (Some(params), Some(ret)) = (params, ret) {
-                    self.fn_sigs
-                        .insert(func.name.clone(), FnSig { params, ret });
+                    self.fn_sigs.insert(
+                        func.name.clone(),
+                        FnSig {
+                            is_extern: func.is_extern,
+                            extern_symbol: if func.is_extern {
+                                Some(func.name.clone())
+                            } else {
+                                None
+                            },
+                            extern_abi: func.extern_abi.clone(),
+                            params,
+                            ret,
+                        },
+                    );
                 }
             }
         }
@@ -932,6 +993,9 @@ impl<'a> Generator<'a> {
         self.fn_sigs.insert(
             "print_int".to_string(),
             FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
                 params: vec![LType::Int],
                 ret: LType::Unit,
             },
@@ -939,6 +1003,9 @@ impl<'a> Generator<'a> {
         self.fn_sigs.insert(
             "print_str".to_string(),
             FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
                 params: vec![LType::String],
                 ret: LType::Unit,
             },
@@ -946,6 +1013,9 @@ impl<'a> Generator<'a> {
         self.fn_sigs.insert(
             "len".to_string(),
             FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
                 params: vec![LType::String],
                 ret: LType::Int,
             },
@@ -953,10 +1023,115 @@ impl<'a> Generator<'a> {
         self.fn_sigs.insert(
             "panic".to_string(),
             FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
                 params: vec![LType::String],
                 ret: LType::Unit,
             },
         );
+    }
+
+    fn gen_extern_wrappers(&mut self) {
+        for item in &self.program.items {
+            let ir::Item::Function(func) = item else {
+                continue;
+            };
+            if !func.is_extern {
+                continue;
+            }
+
+            let Some(sig) = self.fn_sigs.get(&func.name).cloned() else {
+                continue;
+            };
+            if !sig.is_extern {
+                continue;
+            }
+            let abi = sig.extern_abi.clone().unwrap_or_else(|| "<?>".to_string());
+            if abi != "C" {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E5024",
+                        format!(
+                            "backend only supports extern \"C\"; function '{}' uses extern \"{}\"",
+                            func.name, abi
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("change the declaration to `extern \"C\" fn ...;`"),
+                );
+                continue;
+            }
+
+            let Some(raw_symbol) = sig.extern_symbol.clone() else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5024",
+                    format!(
+                        "extern function '{}' is missing a native symbol name",
+                        func.name
+                    ),
+                    self.file,
+                    func.span,
+                ));
+                continue;
+            };
+
+            let raw_params = sig
+                .params
+                .iter()
+                .map(llvm_type)
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.extern_decls.insert(format!(
+                "declare {} @{}({})",
+                llvm_type(&sig.ret),
+                raw_symbol,
+                raw_params
+            ));
+
+            let wrapper_name = mangle(&func.name);
+            let wrapper_params = sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let call_args = sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            self.out.push(format!(
+                "define {} @{}({}) {{",
+                llvm_type(&sig.ret),
+                wrapper_name,
+                wrapper_params
+            ));
+            self.out.push("entry:".to_string());
+            if sig.ret == LType::Unit {
+                self.out
+                    .push(format!("  call void @{}({})", raw_symbol, call_args));
+                self.out.push("  ret void".to_string());
+            } else {
+                let out = self.new_temp();
+                self.out.push(format!(
+                    "  {} = call {} @{}({})",
+                    out,
+                    llvm_type(&sig.ret),
+                    raw_symbol,
+                    call_args
+                ));
+                self.out
+                    .push(format!("  ret {} {}", llvm_type(&sig.ret), out));
+            }
+            self.out.push("}".to_string());
+            self.out.push(String::new());
+        }
     }
 
     fn gen_function(&mut self, func: &ir::Function) {
@@ -968,6 +1143,9 @@ impl<'a> Generator<'a> {
 
     fn gen_monomorphized_function(&mut self, func: &ir::Function, inst: &GenericFnInstance) {
         let sig = FnSig {
+            is_extern: false,
+            extern_symbol: None,
+            extern_abi: None,
             params: inst.params.clone(),
             ret: inst.ret.clone(),
         };
@@ -1348,6 +1526,7 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Borrow { expr: inner, .. } => self.gen_expr(inner, fctx),
             ir::ExprKind::Await { expr: inner } => self.gen_expr(inner, fctx),
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
+            ir::ExprKind::UnsafeBlock { block } => self.gen_block(block, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {
                 let lv = self.gen_expr(lhs, fctx)?;
                 let rv = self.gen_expr(rhs, fctx)?;
@@ -1853,6 +2032,9 @@ impl<'a> Generator<'a> {
             if matches.len() == 1 {
                 let instance = matches[0];
                 return Some(FnSig {
+                    is_extern: false,
+                    extern_symbol: None,
+                    extern_abi: None,
                     params: instance.params.clone(),
                     ret: instance.ret.clone(),
                 });
@@ -1881,6 +2063,10 @@ impl<'a> Generator<'a> {
             "now_ms" | "aic_time_now_ms_intrinsic" => "now_ms",
             "monotonic_ms" | "aic_time_monotonic_ms_intrinsic" => "monotonic_ms",
             "sleep_ms" | "aic_time_sleep_ms_intrinsic" => "sleep_ms",
+            "parse_rfc3339" | "aic_time_parse_rfc3339_intrinsic" => "parse_rfc3339",
+            "parse_iso8601" | "aic_time_parse_iso8601_intrinsic" => "parse_iso8601",
+            "format_rfc3339" | "aic_time_format_rfc3339_intrinsic" => "format_rfc3339",
+            "format_iso8601" | "aic_time_format_iso8601_intrinsic" => "format_iso8601",
             _ => return None,
         };
 
@@ -1893,6 +2079,38 @@ impl<'a> Generator<'a> {
             )),
             "sleep_ms" if self.sig_matches_shape(name, &["Int"], "()") => {
                 Some(self.gen_time_sleep_call(name, args, span, fctx))
+            }
+            "parse_rfc3339"
+                if self.sig_matches_shape(name, &["String"], "Result[DateTime, TimeError]") =>
+            {
+                Some(self.gen_time_parse_call(name, "aic_rt_time_parse_rfc3339", args, span, fctx))
+            }
+            "parse_iso8601"
+                if self.sig_matches_shape(name, &["String"], "Result[DateTime, TimeError]") =>
+            {
+                Some(self.gen_time_parse_call(name, "aic_rt_time_parse_iso8601", args, span, fctx))
+            }
+            "format_rfc3339"
+                if self.sig_matches_shape(name, &["DateTime"], "Result[String, TimeError]") =>
+            {
+                Some(self.gen_time_format_call(
+                    name,
+                    "aic_rt_time_format_rfc3339",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "format_iso8601"
+                if self.sig_matches_shape(name, &["DateTime"], "Result[String, TimeError]") =>
+            {
+                Some(self.gen_time_format_call(
+                    name,
+                    "aic_rt_time_format_iso8601",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             _ => None,
         }
@@ -1974,6 +2192,511 @@ impl<'a> Generator<'a> {
         Some(Value {
             ty: LType::Unit,
             repr: None,
+        })
+    }
+
+    fn gen_time_parse_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let text = self.gen_expr(&args[0], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&text, args[0].span, fctx)?;
+        let year_slot = self.new_temp();
+        let month_slot = self.new_temp();
+        let day_slot = self.new_temp();
+        let hour_slot = self.new_temp();
+        let minute_slot = self.new_temp();
+        let second_slot = self.new_temp();
+        let millis_slot = self.new_temp();
+        let offset_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", year_slot));
+        fctx.lines.push(format!("  {} = alloca i64", month_slot));
+        fctx.lines.push(format!("  {} = alloca i64", day_slot));
+        fctx.lines.push(format!("  {} = alloca i64", hour_slot));
+        fctx.lines.push(format!("  {} = alloca i64", minute_slot));
+        fctx.lines.push(format!("  {} = alloca i64", second_slot));
+        fctx.lines.push(format!("  {} = alloca i64", millis_slot));
+        fctx.lines.push(format!("  {} = alloca i64", offset_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i64* {}, i64* {}, i64* {}, i64* {}, i64* {}, i64* {}, i64* {}, i64* {})",
+            err,
+            runtime_fn,
+            ptr,
+            len,
+            cap,
+            year_slot,
+            month_slot,
+            day_slot,
+            hour_slot,
+            minute_slot,
+            second_slot,
+            millis_slot,
+            offset_slot
+        ));
+
+        let year = self.new_temp();
+        let month = self.new_temp();
+        let day = self.new_temp();
+        let hour = self.new_temp();
+        let minute = self.new_temp();
+        let second = self.new_temp();
+        let millis = self.new_temp();
+        let offset = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", year, year_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", month, month_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", day, day_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", hour, hour_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", minute, minute_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", second, second_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", millis, millis_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", offset, offset_slot));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+
+        let ok_payload = self.build_datetime_struct_value(
+            &ok_ty,
+            Value {
+                ty: LType::Int,
+                repr: Some(year),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(month),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(day),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(hour),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(minute),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(second),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(millis),
+            },
+            Value {
+                ty: LType::Int,
+                repr: Some(offset),
+            },
+            span,
+            fctx,
+        )?;
+        self.wrap_time_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_time_format_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let datetime = self.gen_expr(&args[0], fctx)?;
+        let (year, month, day, hour, minute, second, millis, offset) =
+            self.datetime_parts(&datetime, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64 {}, i64 {}, i64 {}, i64 {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            runtime_fn,
+            year.repr.clone().unwrap_or_else(|| "0".to_string()),
+            month.repr.clone().unwrap_or_else(|| "0".to_string()),
+            day.repr.clone().unwrap_or_else(|| "0".to_string()),
+            hour.repr.clone().unwrap_or_else(|| "0".to_string()),
+            minute.repr.clone().unwrap_or_else(|| "0".to_string()),
+            second.repr.clone().unwrap_or_else(|| "0".to_string()),
+            millis.repr.clone().unwrap_or_else(|| "0".to_string()),
+            offset.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_time_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn build_datetime_struct_value(
+        &mut self,
+        datetime_ty: &LType,
+        year: Value,
+        month: Value,
+        day: Value,
+        hour: Value,
+        minute: Value,
+        second: Value,
+        millisecond: Value,
+        offset_minutes: Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = datetime_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "expected DateTime struct, found '{}'",
+                    render_type(datetime_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "DateTime" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected DateTime struct, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let mut ordered = Vec::new();
+        for field in &layout.fields {
+            let value = match field.name.as_str() {
+                "year" => year.clone(),
+                "month" => month.clone(),
+                "day" => day.clone(),
+                "hour" => hour.clone(),
+                "minute" => minute.clone(),
+                "second" => second.clone(),
+                "millisecond" => millisecond.clone(),
+                "offset_minutes" => offset_minutes.clone(),
+                _ => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5011",
+                        format!("DateTime contains unsupported field '{}'", field.name),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+            };
+            ordered.push(value);
+        }
+        self.build_struct_value(layout, &ordered, span, fctx)
+    }
+
+    fn datetime_parts(
+        &mut self,
+        datetime: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(Value, Value, Value, Value, Value, Value, Value, Value)> {
+        let LType::Struct(layout) = &datetime.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "expected DateTime struct value",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "DateTime" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("expected DateTime struct value, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let datetime_repr = datetime
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&datetime.ty));
+        let datetime_llvm_ty = llvm_type(&datetime.ty);
+        let mut year = None;
+        let mut month = None;
+        let mut day = None;
+        let mut hour = None;
+        let mut minute = None;
+        let mut second = None;
+        let mut millisecond = None;
+        let mut offset_minutes = None;
+        for (index, field) in layout.fields.iter().enumerate() {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                reg, datetime_llvm_ty, datetime_repr, index
+            ));
+            let value = Value {
+                ty: field.ty.clone(),
+                repr: Some(reg),
+            };
+            match field.name.as_str() {
+                "year" => year = Some(value),
+                "month" => month = Some(value),
+                "day" => day = Some(value),
+                "hour" => hour = Some(value),
+                "minute" => minute = Some(value),
+                "second" => second = Some(value),
+                "millisecond" => millisecond = Some(value),
+                "offset_minutes" => offset_minutes = Some(value),
+                _ => {}
+            }
+        }
+        let Some(year) = year else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing year field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(month) = month else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing month field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(day) = day else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing day field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(hour) = hour else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing hour field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(minute) = minute else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing minute field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(second) = second else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing second field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(millisecond) = millisecond else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing millisecond field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(offset_minutes) = offset_minutes else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime is missing offset_minutes field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if year.ty != LType::Int
+            || month.ty != LType::Int
+            || day.ty != LType::Int
+            || hour.ty != LType::Int
+            || minute.ty != LType::Int
+            || second.ty != LType::Int
+            || millisecond.ty != LType::Int
+            || offset_minutes.ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "DateTime fields must all be Int",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some((
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond,
+            offset_minutes,
+        ))
+    }
+
+    fn wrap_time_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "time builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_time_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("time_ok");
+        let err_label = self.new_label("time_err");
+        let cont_label = self.new_label("time_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
         })
     }
 
@@ -7697,6 +8420,9 @@ impl<'a> Generator<'a> {
             .or_else(|| {
                 if name == "aic_json_serde_encode_intrinsic" {
                     Some(FnSig {
+                        is_extern: false,
+                        extern_symbol: None,
+                        extern_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
@@ -7754,6 +8480,9 @@ impl<'a> Generator<'a> {
             .or_else(|| {
                 if name == "aic_json_serde_decode_intrinsic" {
                     Some(FnSig {
+                        is_extern: false,
+                        extern_symbol: None,
+                        extern_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
@@ -7810,6 +8539,9 @@ impl<'a> Generator<'a> {
             .or_else(|| {
                 if name == "aic_json_serde_schema_intrinsic" {
                     Some(FnSig {
+                        is_extern: false,
+                        extern_symbol: None,
+                        extern_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
@@ -9994,6 +10726,32 @@ impl<'a> Generator<'a> {
                 (4, "Io"),
             ],
             "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_time_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "TimeError",
+            "time",
+            &[
+                (1, "InvalidFormat"),
+                (2, "InvalidDate"),
+                (3, "InvalidTime"),
+                (4, "InvalidOffset"),
+                (5, "InvalidInput"),
+                (6, "Internal"),
+            ],
+            "Internal",
             err_code,
             span,
             fctx,
@@ -12208,6 +12966,546 @@ void aic_rt_time_sleep_ms(long ms) {
         }
     }
 #endif
+}
+
+static int aic_rt_time_parse_digits(
+    const char* text,
+    size_t len,
+    size_t* pos,
+    size_t count,
+    long* out_value
+) {
+    if (text == NULL || pos == NULL || out_value == NULL) {
+        return 0;
+    }
+    if (*pos + count > len) {
+        return 0;
+    }
+    long value = 0;
+    for (size_t idx = 0; idx < count; idx++) {
+        char ch = text[*pos + idx];
+        if (ch < '0' || ch > '9') {
+            return 0;
+        }
+        value = (value * 10L) + (long)(ch - '0');
+    }
+    *pos += count;
+    *out_value = value;
+    return 1;
+}
+
+static int aic_rt_time_expect_char(const char* text, size_t len, size_t* pos, char expected) {
+    if (text == NULL || pos == NULL) {
+        return 0;
+    }
+    if (*pos >= len || text[*pos] != expected) {
+        return 0;
+    }
+    *pos += 1;
+    return 1;
+}
+
+static int aic_rt_time_is_leap_year(long year) {
+    if (year % 4 != 0) {
+        return 0;
+    }
+    if (year % 100 != 0) {
+        return 1;
+    }
+    return (year % 400) == 0;
+}
+
+static long aic_rt_time_days_in_month(long year, long month) {
+    switch (month) {
+        case 1:
+        case 3:
+        case 5:
+        case 7:
+        case 8:
+        case 10:
+        case 12:
+            return 31;
+        case 4:
+        case 6:
+        case 9:
+        case 11:
+            return 30;
+        case 2:
+            return aic_rt_time_is_leap_year(year) ? 29 : 28;
+        default:
+            return 0;
+    }
+}
+
+static long aic_rt_time_validate_date(long year, long month, long day) {
+    if (year < 0 || year > 9999) {
+        return 2;  // InvalidDate
+    }
+    long dim = aic_rt_time_days_in_month(year, month);
+    if (dim <= 0) {
+        return 2;  // InvalidDate
+    }
+    if (day < 1 || day > dim) {
+        return 2;  // InvalidDate
+    }
+    return 0;
+}
+
+static long aic_rt_time_validate_clock(long hour, long minute, long second, long millisecond) {
+    if (hour < 0 || hour > 23) {
+        return 3;  // InvalidTime
+    }
+    if (minute < 0 || minute > 59) {
+        return 3;  // InvalidTime
+    }
+    if (second < 0 || second > 59) {
+        return 3;  // InvalidTime
+    }
+    if (millisecond < 0 || millisecond > 999) {
+        return 3;  // InvalidTime
+    }
+    return 0;
+}
+
+static long aic_rt_time_validate_offset(long offset_minutes) {
+    long abs_offset = offset_minutes < 0 ? -offset_minutes : offset_minutes;
+    if (abs_offset > 14 * 60) {
+        return 4;  // InvalidOffset
+    }
+    if ((abs_offset % 60) > 59) {
+        return 4;  // InvalidOffset
+    }
+    return 0;
+}
+
+static long aic_rt_time_parse_datetime(
+    const char* text_ptr,
+    long text_len,
+    int require_t_separator,
+    int require_seconds,
+    int require_timezone,
+    int allow_date_only,
+    int allow_compact_offset,
+    long* out_year,
+    long* out_month,
+    long* out_day,
+    long* out_hour,
+    long* out_minute,
+    long* out_second,
+    long* out_millisecond,
+    long* out_offset_minutes
+) {
+    if (out_year == NULL || out_month == NULL || out_day == NULL || out_hour == NULL ||
+        out_minute == NULL || out_second == NULL || out_millisecond == NULL ||
+        out_offset_minutes == NULL) {
+        return 5;  // InvalidInput
+    }
+    *out_year = 0;
+    *out_month = 0;
+    *out_day = 0;
+    *out_hour = 0;
+    *out_minute = 0;
+    *out_second = 0;
+    *out_millisecond = 0;
+    *out_offset_minutes = 0;
+
+    if (text_ptr == NULL || text_len <= 0) {
+        return 5;  // InvalidInput
+    }
+
+    size_t len = (size_t)text_len;
+    size_t pos = 0;
+    long year = 0;
+    long month = 0;
+    long day = 0;
+    long hour = 0;
+    long minute = 0;
+    long second = 0;
+    long millisecond = 0;
+    long offset_minutes = 0;
+
+    if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 4, &year)) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_expect_char(text_ptr, len, &pos, '-')) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &month)) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_expect_char(text_ptr, len, &pos, '-')) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &day)) {
+        return 1;  // InvalidFormat
+    }
+
+    long date_rc = aic_rt_time_validate_date(year, month, day);
+    if (date_rc != 0) {
+        return date_rc;
+    }
+
+    if (pos == len) {
+        if (!allow_date_only) {
+            return 1;  // InvalidFormat
+        }
+        *out_year = year;
+        *out_month = month;
+        *out_day = day;
+        *out_hour = 0;
+        *out_minute = 0;
+        *out_second = 0;
+        *out_millisecond = 0;
+        *out_offset_minutes = 0;
+        return 0;
+    }
+
+    char separator = text_ptr[pos];
+    if (separator != 'T') {
+        if (require_t_separator || separator != ' ') {
+            return 1;  // InvalidFormat
+        }
+    }
+    pos += 1;
+
+    if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &hour)) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_expect_char(text_ptr, len, &pos, ':')) {
+        return 1;  // InvalidFormat
+    }
+    if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &minute)) {
+        return 1;  // InvalidFormat
+    }
+
+    int has_seconds = 0;
+    if (pos < len && text_ptr[pos] == ':') {
+        pos += 1;
+        if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &second)) {
+            return 1;  // InvalidFormat
+        }
+        has_seconds = 1;
+    } else if (require_seconds) {
+        return 1;  // InvalidFormat
+    }
+
+    if (pos < len && text_ptr[pos] == '.') {
+        if (!has_seconds) {
+            return 1;  // InvalidFormat
+        }
+        pos += 1;
+        long fraction = 0;
+        size_t digits = 0;
+        while (pos < len && text_ptr[pos] >= '0' && text_ptr[pos] <= '9') {
+            if (digits >= 3) {
+                return 1;  // InvalidFormat
+            }
+            fraction = (fraction * 10L) + (long)(text_ptr[pos] - '0');
+            digits += 1;
+            pos += 1;
+        }
+        if (digits == 0) {
+            return 1;  // InvalidFormat
+        }
+        if (digits == 1) {
+            millisecond = fraction * 100L;
+        } else if (digits == 2) {
+            millisecond = fraction * 10L;
+        } else {
+            millisecond = fraction;
+        }
+    }
+
+    long time_rc = aic_rt_time_validate_clock(hour, minute, second, millisecond);
+    if (time_rc != 0) {
+        return time_rc;
+    }
+
+    if (pos == len) {
+        if (require_timezone) {
+            return 1;  // InvalidFormat
+        }
+        *out_year = year;
+        *out_month = month;
+        *out_day = day;
+        *out_hour = hour;
+        *out_minute = minute;
+        *out_second = second;
+        *out_millisecond = millisecond;
+        *out_offset_minutes = 0;
+        return 0;
+    }
+
+    char tz_marker = text_ptr[pos];
+    if (tz_marker == 'Z') {
+        offset_minutes = 0;
+        pos += 1;
+    } else if (tz_marker == '+' || tz_marker == '-') {
+        long tz_hour = 0;
+        long tz_minute = 0;
+        int sign = tz_marker == '-' ? -1 : 1;
+        pos += 1;
+        if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &tz_hour)) {
+            return 1;  // InvalidFormat
+        }
+        if (pos < len && text_ptr[pos] == ':') {
+            pos += 1;
+            if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &tz_minute)) {
+                return 1;  // InvalidFormat
+            }
+        } else if (allow_compact_offset) {
+            if (pos + 2 <= len) {
+                if (!aic_rt_time_parse_digits(text_ptr, len, &pos, 2, &tz_minute)) {
+                    return 1;  // InvalidFormat
+                }
+            } else if (pos == len) {
+                tz_minute = 0;
+            } else {
+                return 1;  // InvalidFormat
+            }
+        } else {
+            return 1;  // InvalidFormat
+        }
+        if (tz_minute > 59) {
+            return 4;  // InvalidOffset
+        }
+        offset_minutes = sign * (tz_hour * 60L + tz_minute);
+        long offset_rc = aic_rt_time_validate_offset(offset_minutes);
+        if (offset_rc != 0) {
+            return offset_rc;
+        }
+    } else {
+        return 1;  // InvalidFormat
+    }
+
+    if (pos != len) {
+        return 1;  // InvalidFormat
+    }
+
+    *out_year = year;
+    *out_month = month;
+    *out_day = day;
+    *out_hour = hour;
+    *out_minute = minute;
+    *out_second = second;
+    *out_millisecond = millisecond;
+    *out_offset_minutes = offset_minutes;
+    return 0;
+}
+
+long aic_rt_time_parse_rfc3339(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    long* out_year,
+    long* out_month,
+    long* out_day,
+    long* out_hour,
+    long* out_minute,
+    long* out_second,
+    long* out_millisecond,
+    long* out_offset_minutes
+) {
+    (void)text_cap;
+    return aic_rt_time_parse_datetime(
+        text_ptr,
+        text_len,
+        1,
+        1,
+        1,
+        0,
+        0,
+        out_year,
+        out_month,
+        out_day,
+        out_hour,
+        out_minute,
+        out_second,
+        out_millisecond,
+        out_offset_minutes
+    );
+}
+
+long aic_rt_time_parse_iso8601(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    long* out_year,
+    long* out_month,
+    long* out_day,
+    long* out_hour,
+    long* out_minute,
+    long* out_second,
+    long* out_millisecond,
+    long* out_offset_minutes
+) {
+    (void)text_cap;
+    return aic_rt_time_parse_datetime(
+        text_ptr,
+        text_len,
+        0,
+        0,
+        0,
+        1,
+        1,
+        out_year,
+        out_month,
+        out_day,
+        out_hour,
+        out_minute,
+        out_second,
+        out_millisecond,
+        out_offset_minutes
+    );
+}
+
+long aic_rt_time_format_rfc3339(
+    long year,
+    long month,
+    long day,
+    long hour,
+    long minute,
+    long second,
+    long millisecond,
+    long offset_minutes,
+    char** out_ptr,
+    long* out_len
+) {
+    if (out_ptr == NULL || out_len == NULL) {
+        return 5;  // InvalidInput
+    }
+    *out_ptr = NULL;
+    *out_len = 0;
+
+    long date_rc = aic_rt_time_validate_date(year, month, day);
+    if (date_rc != 0) {
+        return date_rc;
+    }
+    long time_rc = aic_rt_time_validate_clock(hour, minute, second, millisecond);
+    if (time_rc != 0) {
+        return time_rc;
+    }
+    long offset_rc = aic_rt_time_validate_offset(offset_minutes);
+    if (offset_rc != 0) {
+        return offset_rc;
+    }
+
+    size_t text_len = offset_minutes == 0 ? 24 : 29;
+    char* text = (char*)malloc(text_len + 1);
+    if (text == NULL) {
+        return 6;  // Internal
+    }
+
+    int written = 0;
+    if (offset_minutes == 0) {
+        written = snprintf(
+            text,
+            text_len + 1,
+            "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ldZ",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond
+        );
+    } else {
+        long abs_offset = offset_minutes < 0 ? -offset_minutes : offset_minutes;
+        long tz_hour = abs_offset / 60;
+        long tz_minute = abs_offset % 60;
+        char sign = offset_minutes < 0 ? '-' : '+';
+        written = snprintf(
+            text,
+            text_len + 1,
+            "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ld%c%02ld:%02ld",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond,
+            sign,
+            tz_hour,
+            tz_minute
+        );
+    }
+
+    if (written < 0 || (size_t)written != text_len) {
+        free(text);
+        return 6;  // Internal
+    }
+
+    *out_ptr = text;
+    *out_len = (long)text_len;
+    return 0;
+}
+
+long aic_rt_time_format_iso8601(
+    long year,
+    long month,
+    long day,
+    long hour,
+    long minute,
+    long second,
+    long millisecond,
+    long offset_minutes,
+    char** out_ptr,
+    long* out_len
+) {
+    if (out_ptr == NULL || out_len == NULL) {
+        return 5;  // InvalidInput
+    }
+    *out_ptr = NULL;
+    *out_len = 0;
+
+    long date_rc = aic_rt_time_validate_date(year, month, day);
+    if (date_rc != 0) {
+        return date_rc;
+    }
+    long time_rc = aic_rt_time_validate_clock(hour, minute, second, millisecond);
+    if (time_rc != 0) {
+        return time_rc;
+    }
+    long offset_rc = aic_rt_time_validate_offset(offset_minutes);
+    if (offset_rc != 0) {
+        return offset_rc;
+    }
+
+    long abs_offset = offset_minutes < 0 ? -offset_minutes : offset_minutes;
+    long tz_hour = abs_offset / 60;
+    long tz_minute = abs_offset % 60;
+    char sign = offset_minutes < 0 ? '-' : '+';
+    size_t text_len = 29;
+    char* text = (char*)malloc(text_len + 1);
+    if (text == NULL) {
+        return 6;  // Internal
+    }
+
+    int written = snprintf(
+        text,
+        text_len + 1,
+        "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ld%c%02ld:%02ld",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        millisecond,
+        sign,
+        tz_hour,
+        tz_minute
+    );
+    if (written < 0 || (size_t)written != text_len) {
+        free(text);
+        return 6;  // Internal
+    }
+
+    *out_ptr = text;
+    *out_len = (long)text_len;
+    return 0;
 }
 
 static unsigned long long aic_rt_rand_state = 0x9e3779b97f4a7c15ULL;
@@ -18610,6 +19908,45 @@ fn main() -> Int {
     }
 
     #[test]
+    fn deterministic_codegen_is_stable_across_100_iterations() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("determinism_100x.aic");
+        fs::write(
+            &file,
+            r#"
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+fn main() -> Int {
+    let a = add(20, 22);
+    if a == 42 { 1 } else { 0 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let expected = emit_llvm(&lowered, &file.to_string_lossy())
+            .expect("llvm")
+            .llvm_ir;
+
+        for _ in 0..100 {
+            let current = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+            assert_eq!(
+                current.llvm_ir, expected,
+                "codegen must remain byte-identical across repeated compiles"
+            );
+        }
+    }
+
+    #[test]
     fn emits_debug_metadata_and_panic_line_mapping() {
         let dir = tempdir().expect("tempdir");
         let file = dir.path().join("panic_line_map.aic");
@@ -18694,6 +20031,18 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare void @aic_rt_time_sleep_ms(i64)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_time_parse_rfc3339(i8*, i64, i64, i64*, i64*, i64*, i64*, i64*, i64*, i64*, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_time_parse_iso8601(i8*, i64, i64, i64*, i64*, i64*, i64*, i64*, i64*, i64*, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_time_format_rfc3339(i64, i64, i64, i64, i64, i64, i64, i64, i8**, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_time_format_iso8601(i64, i64, i64, i64, i64, i64, i64, i64, i8**, i64*)"
+        ));
         assert!(output
             .llvm_ir
             .contains("declare void @aic_rt_rand_seed(i64)"));
@@ -18766,6 +20115,10 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
         assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));
         assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(long ms)"));
+        assert!(runtime_c_source().contains("long aic_rt_time_parse_rfc3339("));
+        assert!(runtime_c_source().contains("long aic_rt_time_parse_iso8601("));
+        assert!(runtime_c_source().contains("long aic_rt_time_format_rfc3339("));
+        assert!(runtime_c_source().contains("long aic_rt_time_format_iso8601("));
         assert!(runtime_c_source().contains("void aic_rt_rand_seed(long seed)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
