@@ -77,6 +77,7 @@ test-exec:
 test-e7:
 	$(CARGO) test --locked --test e7_cli_tests
 	$(CARGO) test --locked --test lsp_smoke_tests
+	$(CARGO) test --locked --test agent_recipe_tests
 
 test-e8:
 	$(CARGO) test --locked --test e8_conformance_tests
@@ -123,6 +124,11 @@ docs-check:
 	@test -f docs/llvm-backend.md
 	@test -f docs/agent-tooling/protocol-v1.md
 	@test -f docs/agent-tooling/incremental-daemon.md
+	@test -f docs/agent-recipes/README.md
+	@test -f docs/agent-recipes/feature-loop.md
+	@test -f docs/agent-recipes/bugfix-loop.md
+	@test -f docs/agent-recipes/refactor-loop.md
+	@test -f docs/agent-recipes/diagnostics-loop.md
 	@test -f docs/agent-tooling/schemas/parse-response.schema.json
 	@test -f docs/agent-tooling/schemas/check-response.schema.json
 	@test -f docs/agent-tooling/schemas/build-response.schema.json

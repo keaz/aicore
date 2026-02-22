@@ -33,6 +33,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | Diagnostic explain command | Implemented (`aic explain`) |
 | LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
 | Incremental check/build daemon | Implemented (`aic daemon`) |
+| Agent cookbook workflows | Implemented (`docs/agent-recipes/`) |
 | Built-in fixture harness | Implemented (`aic test`) |
 | Verification/fuzzing/performance gates | Implemented (E8 conformance + differential + matrix + perf budgets) |
 | Release reproducibility manifest pipeline | Implemented (`aic release manifest`, `verify-manifest`) |
@@ -162,6 +163,7 @@ Commands:
 - `std/`: minimal standard library modules
 - `examples/`: runnable and checker-focused examples
 - `docs/`: MVP language and compiler specs
+  - includes executable agent recipes in `docs/agent-recipes/`
 - `tests/`: golden, unit, and execution tests
 - `tools/vscode-aic/`: prototype VS Code extension wiring to `aic lsp`
 

@@ -91,6 +91,13 @@ aic daemon
 - Methods: `check`, `build`, `stats`, `shutdown`.
 - Reference: `docs/agent-tooling/incremental-daemon.md`.
 
+Agent cookbook references:
+
+- `docs/agent-recipes/feature-loop.md`
+- `docs/agent-recipes/bugfix-loop.md`
+- `docs/agent-recipes/refactor-loop.md`
+- `docs/agent-recipes/diagnostics-loop.md`
+
 ## Breaking-change policy
 
 Any command/flag/output shape changes require a contract version bump and migration notes in docs.

@@ -388,6 +388,26 @@ Diagnostics:
 - Example:
   - `examples/agent/incremental_demo/`
 
+### Agent cookbook and task recipes (AG-T5)
+
+- Recipe docs:
+  - `docs/agent-recipes/README.md`
+  - `docs/agent-recipes/feature-loop.md`
+  - `docs/agent-recipes/bugfix-loop.md`
+  - `docs/agent-recipes/refactor-loop.md`
+  - `docs/agent-recipes/diagnostics-loop.md`
+- Coverage:
+  - feature delivery loop
+  - bugfix/autofix loop
+  - deterministic refactor loop
+  - diagnostics triage loop
+- Recipe quality gates:
+  - each recipe includes protocol fixture references and fallback behavior
+  - docs-as-tests execute command blocks between recipe markers
+- Validation tests:
+  - `tests/agent_recipe_tests.rs`
+  - `make test-e7` includes recipe docs-as-tests execution
+
 ## E8 Summary (Verification + Fuzzing + Performance Gates)
 
 ### Conformance suites (E8-T1)
