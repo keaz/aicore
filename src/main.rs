@@ -8,6 +8,7 @@ use aicore::codegen::{
     CodegenOptions, CompileOptions, LinkOptions,
 };
 use aicore::contracts::lower_runtime_asserts;
+use aicore::daemon;
 use aicore::diag_fixes::apply_safe_fixes;
 use aicore::diagnostic_explain::{explain, explain_text};
 use aicore::diagnostics::Severity;
@@ -135,6 +136,7 @@ enum Command {
         baseline: PathBuf,
     },
     Lsp,
+    Daemon,
     Test {
         #[arg(default_value = ".")]
         path: PathBuf,
@@ -917,6 +919,10 @@ fn run_cli() -> anyhow::Result<i32> {
         }
         Command::Lsp => {
             lsp::run_stdio()?;
+            EXIT_OK
+        }
+        Command::Daemon => {
+            daemon::run_stdio()?;
             EXIT_OK
         }
         Command::Test { path, mode, json } => {

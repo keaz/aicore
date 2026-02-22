@@ -122,6 +122,7 @@ docs-check:
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
 	@test -f docs/agent-tooling/protocol-v1.md
+	@test -f docs/agent-tooling/incremental-daemon.md
 	@test -f docs/agent-tooling/schemas/parse-response.schema.json
 	@test -f docs/agent-tooling/schemas/check-response.schema.json
 	@test -f docs/agent-tooling/schemas/build-response.schema.json
@@ -161,6 +162,7 @@ docs-check:
 	@grep -q "aic doc" README.md
 	@grep -q "aic explain" README.md
 	@grep -q "aic lsp" README.md
+	@grep -q "aic daemon" README.md
 	@grep -q "aic test" README.md
 	@grep -q "aic run" README.md
 	@grep -q "aic release" README.md

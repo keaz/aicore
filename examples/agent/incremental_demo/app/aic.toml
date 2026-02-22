@@ -1,0 +1,7 @@
+[package]
+name = "inc_app"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+inc_dep = { path = "../dep" }

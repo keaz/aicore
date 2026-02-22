@@ -365,6 +365,29 @@ Diagnostics:
 - Sample fixtures:
   - `examples/e7/harness/`
 
+### Deterministic incremental daemon (AG-T4)
+
+- Server entrypoint: `aic daemon` (`src/daemon.rs`)
+- Transport: line-delimited JSON-RPC 2.0 over stdio.
+- Implemented methods:
+  - `check`
+  - `build`
+  - `stats`
+  - `shutdown`
+- Cache strategy:
+  - frontend cache keyed by canonical input + `offline` + content fingerprint
+  - build cache keyed by canonical input + output + artifact + `debug_info` + content fingerprint
+- Invalidation:
+  - fingerprints include package checksum + resolved dependency checksums + dependency-context markers
+  - dependency edits force deterministic cache misses
+- Determinism verification:
+  - build responses include `output_sha256`
+  - warm/cold parity tests compare artifact digests
+- Docs:
+  - `docs/agent-tooling/incremental-daemon.md`
+- Example:
+  - `examples/agent/incremental_demo/`
+
 ## E8 Summary (Verification + Fuzzing + Performance Gates)
 
 ### Conformance suites (E8-T1)

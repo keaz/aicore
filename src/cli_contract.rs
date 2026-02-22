@@ -125,6 +125,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json-rpc"],
     },
     CommandContract {
+        name: "daemon",
+        description: "Run deterministic incremental check/build daemon on stdio",
+        stable_flags: &[],
+        output_modes: &["json-rpc"],
+    },
+    CommandContract {
         name: "test",
         description: "Run AIC fixture harness categories",
         stable_flags: &["--mode", "--json"],

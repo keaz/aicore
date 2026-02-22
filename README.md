@@ -32,6 +32,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 | SARIF diagnostics export | Implemented (`aic check --sarif`) |
 | Diagnostic explain command | Implemented (`aic explain`) |
 | LSP server (diagnostics/hover/definition/format) | Implemented (`aic lsp`) |
+| Incremental check/build daemon | Implemented (`aic daemon`) |
 | Built-in fixture harness | Implemented (`aic test`) |
 | Verification/fuzzing/performance gates | Implemented (E8 conformance + differential + matrix + perf budgets) |
 | Release reproducibility manifest pipeline | Implemented (`aic release manifest`, `verify-manifest`) |
@@ -125,6 +126,7 @@ cargo run -- std-compat --check --baseline docs/std-api-baseline.json
 cargo run -- check examples/e7/diag_errors.aic --sarif
 cargo run -- explain E2001
 cargo run -- lsp
+cargo run -- daemon
 cargo run -- test examples/e7/harness --json
 cargo run -- contract --json
 cargo run -- release manifest --output target/release/repro-manifest.json
@@ -148,6 +150,7 @@ Commands:
 - `aic std-compat`
 - `aic explain`
 - `aic lsp`
+- `aic daemon`
 - `aic test`
 - `aic contract`
 - `aic release`

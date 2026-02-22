@@ -1,0 +1,9 @@
+module inc_app.main;
+
+import std.io;
+import inc_dep.main;
+
+fn main() -> Int effects { io } {
+    print_int(inc_dep.main.base() + 2);
+    0
+}

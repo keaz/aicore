@@ -16,6 +16,7 @@ Commands:
   doc         
   std-compat  
   lsp         
+  daemon      
   test        
   contract    
   release     

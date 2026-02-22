@@ -1,0 +1,5 @@
+module inc_dep.main;
+
+fn base() -> Int {
+    40
+}

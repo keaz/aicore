@@ -1,7 +1,9 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -31,6 +33,60 @@ fn run_aic_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Outpu
         command.env(key, value);
     }
     command.output().expect("run aic with env")
+}
+
+struct DaemonHarness {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl DaemonHarness {
+    fn spawn(cwd: &std::path::Path) -> Self {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_aic"))
+            .arg("daemon")
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn daemon");
+        let stdin = child.stdin.take().expect("daemon stdin");
+        let stdout = BufReader::new(child.stdout.take().expect("daemon stdout"));
+        Self {
+            child,
+            stdin,
+            stdout,
+        }
+    }
+
+    fn request(&mut self, payload: &Value) -> Value {
+        let encoded = serde_json::to_string(payload).expect("encode request");
+        self.stdin
+            .write_all(encoded.as_bytes())
+            .expect("write request");
+        self.stdin.write_all(b"\n").expect("newline");
+        self.stdin.flush().expect("flush request");
+
+        let mut line = String::new();
+        let read = self
+            .stdout
+            .read_line(&mut line)
+            .expect("read daemon response");
+        assert!(read > 0, "daemon closed unexpectedly");
+        serde_json::from_str(&line).expect("decode daemon response")
+    }
+
+    fn shutdown(&mut self) {
+        let _ = self.request(&json!({
+            "jsonrpc": "2.0",
+            "id": 99_999,
+            "method": "shutdown",
+            "params": {}
+        }));
+        let status = self.child.wait().expect("wait daemon");
+        assert!(status.success(), "daemon exited with non-zero status");
+    }
 }
 
 #[test]
@@ -299,6 +355,48 @@ fn write_workspace_demo(root: &std::path::Path) {
     fs::write(
         root.join("packages/app/src/main.aic"),
         "module app_pkg.main;\nimport util_pkg.main;\nfn main() -> Int { util_pkg.main.value() }\n",
+    )
+    .expect("write app source");
+}
+
+fn write_incremental_daemon_demo(root: &std::path::Path) {
+    fs::create_dir_all(root.join("dep/src")).expect("mkdir dep");
+    fs::create_dir_all(root.join("app/src")).expect("mkdir app");
+
+    fs::write(
+        root.join("dep/aic.toml"),
+        "[package]\nname = \"inc_dep\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write dep manifest");
+    fs::write(
+        root.join("dep/src/main.aic"),
+        "module inc_dep.main;\nfn base() -> Int { 40 }\n",
+    )
+    .expect("write dep source");
+
+    fs::write(
+        root.join("app/aic.toml"),
+        concat!(
+            "[package]\n",
+            "name = \"inc_app\"\n",
+            "version = \"0.1.0\"\n",
+            "main = \"src/main.aic\"\n\n",
+            "[dependencies]\n",
+            "inc_dep = { path = \"../dep\" }\n",
+        ),
+    )
+    .expect("write app manifest");
+    fs::write(
+        root.join("app/src/main.aic"),
+        concat!(
+            "module inc_app.main;\n",
+            "import std.io;\n",
+            "import inc_dep.main;\n",
+            "fn main() -> Int effects { io } {\n",
+            "  print_int(inc_dep.main.base() + 2);\n",
+            "  0\n",
+            "}\n",
+        ),
     )
     .expect("write app source");
 }
@@ -606,6 +704,157 @@ fn workspace_build_is_incremental_for_unchanged_members() {
         third_stdout.matches("built ").count() >= 2,
         "expected rebuild of changed package and dependents; stdout={third_stdout}"
     );
+}
+
+#[test]
+fn daemon_cache_invalidation_tracks_dependency_content_hashes() {
+    let demo = tempdir().expect("demo");
+    write_incremental_daemon_demo(demo.path());
+    let app_entry = demo.path().join("app/src/main.aic");
+    let dep_source = demo.path().join("dep/src/main.aic");
+    let app_entry_str = app_entry.to_string_lossy().to_string();
+
+    let mut daemon = DaemonHarness::spawn(&repo_root());
+    let first = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "check",
+        "params": { "input": app_entry_str }
+    }));
+    assert!(first.get("error").is_none(), "first={first:#}");
+    assert_eq!(first["result"]["cache_hit"], false);
+    assert_eq!(first["result"]["has_errors"], false);
+    assert_eq!(first["result"]["diagnostics"], json!([]));
+    let fingerprint_a = first["result"]["fingerprint"]
+        .as_str()
+        .expect("fingerprint a")
+        .to_string();
+
+    let second = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "check",
+        "params": { "input": app_entry.to_string_lossy() }
+    }));
+    assert!(second.get("error").is_none(), "second={second:#}");
+    assert_eq!(second["result"]["cache_hit"], true);
+    assert_eq!(second["result"]["fingerprint"], fingerprint_a);
+
+    fs::write(
+        dep_source,
+        "module inc_dep.main;\nfn base() -> Int { 41 }\n",
+    )
+    .expect("rewrite dep source");
+
+    let third = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "check",
+        "params": { "input": app_entry.to_string_lossy() }
+    }));
+    assert!(third.get("error").is_none(), "third={third:#}");
+    assert_eq!(third["result"]["cache_hit"], false);
+    assert_eq!(third["result"]["has_errors"], false);
+    assert_ne!(
+        third["result"]["fingerprint"]
+            .as_str()
+            .expect("fingerprint b"),
+        fingerprint_a
+    );
+
+    let stats = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "stats",
+        "params": {}
+    }));
+    assert!(stats.get("error").is_none(), "stats={stats:#}");
+    assert!(stats["result"]["frontend_cache_hits"].as_u64().unwrap_or(0) >= 1);
+    assert!(
+        stats["result"]["frontend_cache_misses"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 2
+    );
+    daemon.shutdown();
+}
+
+#[test]
+fn daemon_warm_and_cold_builds_are_deterministic() {
+    let demo = tempdir().expect("demo");
+    write_incremental_daemon_demo(demo.path());
+    let app_entry = demo.path().join("app/src/main.aic");
+    let out_a = demo.path().join("app_bin_a");
+
+    let mut daemon = DaemonHarness::spawn(&repo_root());
+    let check = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "check",
+        "params": { "input": app_entry.to_string_lossy() }
+    }));
+    assert!(check.get("error").is_none(), "check={check:#}");
+    assert_eq!(check["result"]["cache_hit"], false);
+    assert_eq!(check["result"]["has_errors"], false);
+
+    let cold_build = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "build",
+        "params": {
+            "input": app_entry.to_string_lossy(),
+            "output": out_a.to_string_lossy(),
+            "artifact": "exe"
+        }
+    }));
+    assert!(cold_build.get("error").is_none(), "cold={cold_build:#}");
+    assert_eq!(cold_build["result"]["cache_hit"], false);
+    assert_eq!(cold_build["result"]["frontend_cache_hit"], true);
+    assert_eq!(cold_build["result"]["has_errors"], false);
+    let cold_hash = cold_build["result"]["output_sha256"]
+        .as_str()
+        .expect("cold hash")
+        .to_string();
+    let cold_ms = cold_build["result"]["duration_ms"].as_u64().unwrap_or(0);
+
+    let warm_build = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "build",
+        "params": {
+            "input": app_entry.to_string_lossy(),
+            "output": out_a.to_string_lossy(),
+            "artifact": "exe"
+        }
+    }));
+    assert!(warm_build.get("error").is_none(), "warm={warm_build:#}");
+    assert_eq!(warm_build["result"]["cache_hit"], true);
+    assert_eq!(warm_build["result"]["output_sha256"], cold_hash);
+    let warm_ms = warm_build["result"]["duration_ms"].as_u64().unwrap_or(0);
+    assert!(
+        warm_ms <= cold_ms.saturating_add(5),
+        "expected warm build to be no slower than cold: warm={warm_ms} cold={cold_ms}"
+    );
+    daemon.shutdown();
+
+    let mut second_daemon = DaemonHarness::spawn(&repo_root());
+    let cold_again = second_daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 13,
+        "method": "build",
+        "params": {
+            "input": app_entry.to_string_lossy(),
+            "output": out_a.to_string_lossy(),
+            "artifact": "exe"
+        }
+    }));
+    assert!(
+        cold_again.get("error").is_none(),
+        "cold_again={cold_again:#}"
+    );
+    assert_eq!(cold_again["result"]["cache_hit"], false);
+    assert_eq!(cold_again["result"]["output_sha256"], cold_hash);
+    second_daemon.shutdown();
 }
 
 #[test]

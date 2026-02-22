@@ -3,6 +3,7 @@ pub mod cli_contract;
 pub mod codegen;
 pub mod conformance;
 pub mod contracts;
+pub mod daemon;
 pub mod diag_fixes;
 pub mod diagnostic_codes;
 pub mod diagnostic_explain;

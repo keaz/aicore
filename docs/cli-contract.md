@@ -43,6 +43,7 @@ Published parse/check/build/fix schemas:
 - `aic doc`
 - `aic std-compat`
 - `aic lsp`
+- `aic daemon`
 - `aic test`
 - `aic contract`
 - `aic release`
@@ -79,6 +80,16 @@ aic diag apply-fixes <file-or-workspace> --json
 - Dry-run mode computes deterministic edit plans without writing files.
 - Apply mode writes only non-conflicting safe edits.
 - Conflicts are reported in `conflicts[]` and produce non-zero exit.
+
+Incremental daemon API:
+
+```bash
+aic daemon
+```
+
+- Protocol: line-delimited JSON-RPC 2.0 over stdio.
+- Methods: `check`, `build`, `stats`, `shutdown`.
+- Reference: `docs/agent-tooling/incremental-daemon.md`.
 
 ## Breaking-change policy
 

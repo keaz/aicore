@@ -1,0 +1,4 @@
+[package]
+name = "inc_dep"
+version = "0.1.0"
+main = "src/main.aic"
