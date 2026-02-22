@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "dataset": "examples/e8/large_project_bench",
+  "targets": {
+    "linux": {
+      "dataset": "examples/e8/large_project_bench",
+      "parser_ms": 40.0,
+      "typecheck_ms": 70.0,
+      "codegen_ms": 90.0
+    },
+    "macos": {
+      "dataset": "examples/e8/large_project_bench",
+      "parser_ms": 70.0,
+      "typecheck_ms": 120.0,
+      "codegen_ms": 160.0
+    },
+    "windows": {
+      "dataset": "examples/e8/large_project_bench",
+      "parser_ms": 90.0,
+      "typecheck_ms": 150.0,
+      "codegen_ms": 200.0
+    }
+  }
+}

@@ -490,17 +490,20 @@ Diagnostics:
 ### Performance budgets (E8-T5)
 
 - Budget policy:
-  - `docs/perf-budget.json`
-- Baseline:
-  - `docs/perf-baseline.json`
+  - `benchmarks/service_baseline/budget.v1.json`
+- Target baselines:
+  - `benchmarks/service_baseline/baselines.v1.json`
 - Dataset stability lock:
-  - `docs/perf-dataset-fingerprint.txt`
+  - `benchmarks/service_baseline/dataset-fingerprint.txt`
 - Runner:
-  - `run_perf_gate(...)` in `src/perf_gate.rs`
+  - `run_perf_gate(...)` and `build_trend_report(...)` in `src/perf_gate.rs`
 - Report artifact:
   - `target/e8/perf-report.json`
+  - `target/e8/perf-report-<target>.json`
+  - `target/e8/perf-trend-<target>.json`
 - CI:
-  - `make test-e8` in Linux full validation job; report uploaded as artifact.
+  - `make test-e8` in Linux full validation job.
+  - per-target perf gate run in `execution-matrix` job (Linux + macOS) with perf artifacts uploaded.
 
 ## E9 Summary (Release Security + Operations)
 

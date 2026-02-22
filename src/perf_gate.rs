@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
@@ -34,6 +35,14 @@ pub struct PerfBaseline {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PerfTargetBaselines {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    pub dataset: String,
+    pub targets: BTreeMap<String, PerfBaseline>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerfMetrics {
     pub parser_ms: f64,
     pub typecheck_ms: f64,
@@ -52,6 +61,30 @@ pub struct PerfReport {
     pub violations: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PerfTrendMetric {
+    pub observed_ms: f64,
+    pub baseline_ms: f64,
+    pub delta_pct: f64,
+    pub budget_max_ms: f64,
+    pub regression_limit_ms: f64,
+    pub within_budget: bool,
+    pub within_regression_limit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PerfTrendReport {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    pub dataset: String,
+    pub target: String,
+    pub regression_tolerance_pct: f64,
+    pub dataset_fingerprint: String,
+    pub parser: PerfTrendMetric,
+    pub typecheck: PerfTrendMetric,
+    pub codegen: PerfTrendMetric,
+}
+
 pub fn load_budget(path: &Path) -> anyhow::Result<PerfBudget> {
     let raw = fs::read_to_string(path)?;
     Ok(serde_json::from_str::<PerfBudget>(&raw)?)
@@ -60,6 +93,23 @@ pub fn load_budget(path: &Path) -> anyhow::Result<PerfBudget> {
 pub fn load_baseline(path: &Path) -> anyhow::Result<PerfBaseline> {
     let raw = fs::read_to_string(path)?;
     Ok(serde_json::from_str::<PerfBaseline>(&raw)?)
+}
+
+pub fn load_target_baselines(path: &Path) -> anyhow::Result<PerfTargetBaselines> {
+    let raw = fs::read_to_string(path)?;
+    Ok(serde_json::from_str::<PerfTargetBaselines>(&raw)?)
+}
+
+pub fn host_target_label() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macos",
+        "windows" => "windows",
+        _ => "linux",
+    }
+}
+
+pub fn baseline_for_target(manifest: &PerfTargetBaselines, target: &str) -> Option<PerfBaseline> {
+    manifest.targets.get(target).cloned()
 }
 
 pub fn run_perf_gate(
@@ -124,6 +174,37 @@ pub fn run_perf_gate(
         budget: budget.clone(),
         baseline: baseline.cloned(),
         violations,
+    })
+}
+
+pub fn build_trend_report(report: &PerfReport, target: &str) -> Option<PerfTrendReport> {
+    let baseline = report.baseline.as_ref()?;
+    let tolerance = 1.0 + (report.budget.regression_tolerance_pct / 100.0);
+
+    Some(PerfTrendReport {
+        schema_version: default_schema_version(),
+        dataset: report.dataset.clone(),
+        target: target.to_string(),
+        regression_tolerance_pct: report.budget.regression_tolerance_pct,
+        dataset_fingerprint: report.metrics.dataset_fingerprint.clone(),
+        parser: build_trend_metric(
+            report.metrics.parser_ms,
+            baseline.parser_ms,
+            report.budget.parser_ms_max,
+            tolerance,
+        ),
+        typecheck: build_trend_metric(
+            report.metrics.typecheck_ms,
+            baseline.typecheck_ms,
+            report.budget.typecheck_ms_max,
+            tolerance,
+        ),
+        codegen: build_trend_metric(
+            report.metrics.codegen_ms,
+            baseline.codegen_ms,
+            report.budget.codegen_ms_max,
+            tolerance,
+        ),
     })
 }
 
@@ -202,6 +283,41 @@ pub fn write_report(path: &Path, report: &PerfReport) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(report)?;
     fs::write(path, json)?;
     Ok(())
+}
+
+pub fn write_trend_report(path: &Path, report: &PerfTrendReport) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(report)?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+fn build_trend_metric(
+    observed_ms: f64,
+    baseline_ms: f64,
+    budget_max_ms: f64,
+    tolerance: f64,
+) -> PerfTrendMetric {
+    let regression_limit_ms = round_ms(baseline_ms * tolerance);
+    let delta_pct = if baseline_ms.abs() < f64::EPSILON {
+        0.0
+    } else {
+        round_ms(((observed_ms - baseline_ms) / baseline_ms) * 100.0)
+    };
+    let within_budget = observed_ms <= budget_max_ms;
+    let within_regression_limit = observed_ms <= regression_limit_ms;
+
+    PerfTrendMetric {
+        observed_ms,
+        baseline_ms,
+        delta_pct,
+        budget_max_ms,
+        regression_limit_ms,
+        within_budget,
+        within_regression_limit,
+    }
 }
 
 fn check_budget_max(metric: &str, observed: f64, max_allowed: f64, violations: &mut Vec<String>) {
@@ -298,11 +414,18 @@ fn default_regression_tolerance_pct() -> f64 {
     25.0
 }
 
+fn default_schema_version() -> u32 {
+    1
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::{check_budget_max, check_regression, dataset_fingerprint};
+    use super::{
+        build_trend_report, check_budget_max, check_regression, dataset_fingerprint, PerfBaseline,
+        PerfBudget, PerfMetrics, PerfReport,
+    };
 
     #[test]
     fn reports_budget_violation_when_metric_exceeds_cap() {
@@ -335,5 +458,44 @@ mod tests {
         let hash_a = dataset_fingerprint(&root_a, &files_a);
         let hash_b = dataset_fingerprint(&root_b, &files_b);
         assert_eq!(hash_a, hash_b);
+    }
+
+    #[test]
+    fn trend_report_is_deterministic_for_fixed_inputs() {
+        let report = PerfReport {
+            dataset: "examples/e8/large_project_bench".to_string(),
+            metrics: PerfMetrics {
+                parser_ms: 50.0,
+                typecheck_ms: 60.0,
+                codegen_ms: 70.0,
+                file_count: 3,
+                total_bytes: 1234,
+                dataset_fingerprint: "abc123".to_string(),
+            },
+            budget: PerfBudget {
+                dataset: "examples/e8/large_project_bench".to_string(),
+                iterations: 3,
+                parser_ms_max: 120.0,
+                typecheck_ms_max: 120.0,
+                codegen_ms_max: 120.0,
+                regression_tolerance_pct: 10.0,
+            },
+            baseline: Some(PerfBaseline {
+                dataset: "examples/e8/large_project_bench".to_string(),
+                parser_ms: 40.0,
+                typecheck_ms: 50.0,
+                codegen_ms: 60.0,
+            }),
+            violations: Vec::new(),
+        };
+
+        let a = build_trend_report(&report, "linux").expect("build trend report");
+        let b = build_trend_report(&report, "linux").expect("build trend report");
+
+        assert_eq!(a, b);
+        assert_eq!(a.parser.delta_pct, 25.0);
+        assert_eq!(a.typecheck.delta_pct, 20.0);
+        assert_eq!(a.codegen.delta_pct, 16.667);
+        assert!(!a.codegen.within_regression_limit);
     }
 }

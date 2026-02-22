@@ -128,6 +128,20 @@ jobs:
       - name: Run host execution matrix suite
         run: cargo test --locked --test e8_matrix_tests
 
+      - name: Run host perf gate suite
+        run: cargo test --locked --test e8_perf_tests
+
+      - name: Upload E8 perf trend artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e8-perf-${{ matrix.os }}
+          path: |
+            target/e8/perf-report.json
+            target/e8/perf-report-*.json
+            target/e8/perf-trend-*.json
+          if-no-files-found: ignore
+
   cross-platform-build:
     name: Cross Platform Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

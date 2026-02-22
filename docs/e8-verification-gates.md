@@ -83,12 +83,21 @@ Platform delta policy:
 
 ## E8-T5: Performance budget enforcement
 
-- Budget policy: `docs/perf-budget.json`
-- Baseline: `docs/perf-baseline.json`
-- Dataset fingerprint lock: `docs/perf-dataset-fingerprint.txt`
+- Benchmark suite: `benchmarks/service_baseline/`
+- Budget policy (versioned): `benchmarks/service_baseline/budget.v1.json`
+- Target baselines (versioned): `benchmarks/service_baseline/baselines.v1.json`
+- Dataset fingerprint lock: `benchmarks/service_baseline/dataset-fingerprint.txt`
 - Benchmark/perf gate engine: `src/perf_gate.rs`
 - Test: `tests/e8_perf_tests.rs`
-- CI artifact: `target/e8/perf-report.json`
+- CI artifacts:
+  - `target/e8/perf-report.json`
+  - `target/e8/perf-report-<target>.json`
+  - `target/e8/perf-trend-<target>.json`
+
+The perf gate loads host-target baseline data (`linux`/`macos`/`windows`) and fails when:
+
+- absolute budget limits are exceeded
+- regression limits (`baseline * (1 + tolerance%)`) are exceeded
 
 Run locally:
 
