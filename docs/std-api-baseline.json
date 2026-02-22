@@ -139,12 +139,52 @@
     {
       "module": "std.env",
       "kind": "fn",
+      "signature": "aic_env_all_vars_intrinsic() -> Vec[EnvEntry] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_arch_intrinsic() -> String effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_arg_at_intrinsic(index: Int) -> Option[String] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_arg_count_intrinsic() -> Int effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_args_intrinsic() -> Vec[String] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
       "signature": "aic_env_cwd_intrinsic() -> Result[String, EnvError] effects { env, fs }"
     },
     {
       "module": "std.env",
       "kind": "fn",
+      "signature": "aic_env_exit_intrinsic(code: Int) -> () effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
       "signature": "aic_env_get_intrinsic(key: String) -> Result[String, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_home_dir_intrinsic() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "aic_env_os_name_intrinsic() -> String effects { env }"
     },
     {
       "module": "std.env",
@@ -164,12 +204,57 @@
     {
       "module": "std.env",
       "kind": "fn",
+      "signature": "aic_env_temp_dir_intrinsic() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "all_vars() -> Vec[EnvEntry] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "arch() -> String effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "arg_at(index: Int) -> Option[String] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "arg_count() -> Int effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "args() -> Vec[String] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
       "signature": "cwd() -> Result[String, EnvError] effects { env, fs }"
     },
     {
       "module": "std.env",
       "kind": "fn",
+      "signature": "exit(code: Int) -> () effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
       "signature": "get(key: String) -> Result[String, EnvError] effects { env }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "home_dir() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "os_name() -> String effects { env }"
     },
     {
       "module": "std.env",
@@ -187,9 +272,29 @@
       "signature": "set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs }"
     },
     {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "temp_dir() -> Result[String, EnvError] effects { env, fs }"
+    },
+    {
+      "module": "std.env",
+      "kind": "struct",
+      "signature": "EnvEntry { key: String, value: String }"
+    },
+    {
+      "module": "std.env",
+      "kind": "struct",
+      "signature": "Vec[T] { ptr: Int, len: Int, cap: Int }"
+    },
+    {
       "module": "std.fs",
       "kind": "enum",
       "signature": "FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Io }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -204,6 +309,11 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
@@ -214,7 +324,37 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -224,7 +364,42 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -244,7 +419,17 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "append_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -259,6 +444,11 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "create_symlink(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "delete(path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
@@ -269,7 +459,37 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "file_read_line(file: FileHandle) -> Result[Option[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "file_write_str(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "list_dir(path: String) -> Result[Vec[String], FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "metadata(path: String) -> Result[FsMetadata, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "mkdir(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "mkdir_all(path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -279,7 +499,42 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "open_append(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "open_read(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "open_write(path: String) -> Result[FileHandle, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "read_bytes(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "read_symlink(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "read_text(path: String) -> Result[String, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "rmdir(path: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "set_readonly(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -299,7 +554,17 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "write_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FileHandle { handle: Int }"
     },
     {
       "module": "std.fs",
@@ -518,8 +783,323 @@
     },
     {
       "module": "std.io",
+      "kind": "enum",
+      "signature": "IoError { EndOfInput, InvalidInput, Io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "enum",
+      "signature": "Reader { ReadStdin, ReadFile(FileHandle), ReadTcp(TcpReader) }"
+    },
+    {
+      "module": "std.io",
+      "kind": "enum",
+      "signature": "Writer { WriteStdout, WriteStderr, WriteFile(FileHandle), WriteTcp(Int) }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_eprint_int_intrinsic(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_eprint_str_intrinsic(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_flush_stderr_intrinsic() -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_flush_stdout_intrinsic() -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_panic_intrinsic(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_print_bool_intrinsic(x: Bool) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_print_float_intrinsic(x: Float) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_print_int_intrinsic(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_print_str_intrinsic(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_println_bool_intrinsic(x: Bool) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_println_int_intrinsic(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_println_str_intrinsic(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "close_reader(reader: Reader) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "close_stderr_writer() -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "close_stdout_writer() -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "close_writer(writer: Writer) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "eprint_int(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "eprint_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "file_appender(path: String) -> Result[Writer, IoError] effects { fs }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "file_reader(path: String) -> Result[Reader, IoError] effects { fs }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "file_writer(path: String) -> Result[Writer, IoError] effects { fs }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "flush_stderr() -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "flush_stderr_stream() -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "flush_stdout() -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "flush_stdout_stream() -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "flush_stream(writer: Writer) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_env_error(err: EnvError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_fs_error(err: FsError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_net_error(err: NetError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_proc_error(err: ProcError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_end_of_input() -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_int_result() -> Result[Int, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_int_result_with(err: IoError) -> Result[Int, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_option_string(err: IoError) -> Result[Option[String], IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_reader_result() -> Result[Reader, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_string_result() -> Result[String, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_err_writer_result() -> Result[Writer, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_invalid_input() -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_is_end_of_input(err: IoError) -> Bool"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_bool_false() -> Result[Bool, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_bool_true() -> Result[Bool, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_int(value: Int) -> Result[Int, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_int_one() -> Result[Int, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_int_zero() -> Result[Int, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_none_string() -> Result[Option[String], IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_ok_some_string(value: String) -> Result[Option[String], IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_other() -> IoError"
+    },
+    {
+      "module": "std.io",
       "kind": "fn",
       "signature": "panic(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "print_bool(x: Bool) -> () effects { io }"
     },
     {
       "module": "std.io",
@@ -535,6 +1115,121 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "print_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "println_bool(x: Bool) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "println_int(x: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "println_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "prompt(message: String) -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "read_char() -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "read_int() -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "read_line() -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "read_stream(reader: Reader) -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "read_stream_optional(reader: Reader) -> Result[Option[String], IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "stderr_writer() -> Writer"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "stdin_reader() -> Reader"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "stdout_writer() -> Writer"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "stream_copy(reader: Reader, writer: Writer) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "tcp_connect_reader(addr: String, timeout_ms: Int, max_bytes: Int) -> Result[Reader, IoError] effects { net }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "tcp_connect_writer(addr: String, timeout_ms: Int) -> Result[Writer, IoError] effects { net }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "tcp_reader(handle: Int, max_bytes: Int, timeout_ms: Int) -> Reader"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "tcp_writer(handle: Int) -> Writer"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "write_file_stream(file: FileHandle, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "write_stderr_stream(content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "write_stdout_stream(content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "write_tcp_stream(handle: Int, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "struct",
+      "signature": "TcpReader { handle: Int, max_bytes: Int, timeout_ms: Int }"
     },
     {
       "module": "std.json",
@@ -1049,7 +1744,22 @@
     {
       "module": "std.proc",
       "kind": "fn",
+      "signature": "aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_is_running_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
       "signature": "aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_pipe_chain_intrinsic(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env }"
     },
     {
       "module": "std.proc",
@@ -1064,12 +1774,32 @@
     {
       "module": "std.proc",
       "kind": "fn",
+      "signature": "aic_proc_run_timeout_intrinsic(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "aic_proc_run_with_intrinsic(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
       "signature": "aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
       "signature": "aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "current_pid() -> Result[Int, ProcError] effects { proc }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "is_running(handle: Int) -> Result[Bool, ProcError] effects { proc }"
     },
     {
       "module": "std.proc",
@@ -1084,7 +1814,22 @@
     {
       "module": "std.proc",
       "kind": "fn",
+      "signature": "pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
       "signature": "run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env }"
     },
     {
       "module": "std.proc",
@@ -1100,6 +1845,11 @@
       "module": "std.proc",
       "kind": "struct",
       "signature": "ProcOutput { status: Int, stdout: String, stderr: String }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "struct",
+      "signature": "RunOptions { stdin: String, cwd: String, env: Vec[String], timeout_ms: Int }"
     },
     {
       "module": "std.rand",
@@ -1289,6 +2039,11 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "aic_string_format_intrinsic(template: String, args: Vec[String]) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int]"
     },
     {
@@ -1395,6 +2150,11 @@
       "module": "std.string",
       "kind": "fn",
       "signature": "float_to_string(v: Float) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "format(template: String, args: Vec[String]) -> String"
     },
     {
       "module": "std.string",
@@ -1644,12 +2404,177 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "aic_vec_append_intrinsic[T](left: Vec[T], right: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_clear_intrinsic[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_contains_intrinsic[T](v: Vec[T], value: T) -> Bool"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_first_intrinsic[T](v: Vec[T]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_get_intrinsic[T](v: Vec[T], index: Int) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_index_of_intrinsic[T](v: Vec[T], value: T) -> Option[Int]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_insert_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_last_intrinsic[T](v: Vec[T]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_new_intrinsic[T]() -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_of_intrinsic[T](value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_pop_intrinsic[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_push_intrinsic[T](v: Vec[T], value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_remove_at_intrinsic[T](v: Vec[T], index: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_reverse_intrinsic[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_set_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_slice_intrinsic[T](v: Vec[T], start: Int, end: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "append[T](left: Vec[T], right: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "clear[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "contains[T](v: Vec[T], value: T) -> Bool"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "first[T](v: Vec[T]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "get[T](v: Vec[T], index: Int) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "index_of[T](v: Vec[T], value: T) -> Option[Int]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "insert[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "is_empty[T](v: Vec[T]) -> Bool"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "last[T](v: Vec[T]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "new_vec[T]() -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "pop[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "push[T](v: Vec[T], value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "remove_at[T](v: Vec[T], index: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "reverse[T](v: Vec[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "set[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "slice[T](v: Vec[T], start: Int, end: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "vec_cap[T](v: Vec[T]) -> Int"
     },
     {
       "module": "std.vec",
       "kind": "fn",
       "signature": "vec_len[T](v: Vec[T]) -> Int"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "vec_of[T](value: T) -> Vec[T]"
     },
     {
       "module": "std.vec",

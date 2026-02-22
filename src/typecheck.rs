@@ -1718,8 +1718,16 @@ impl<'a> Checker<'a> {
                         ));
                         return "<?>".to_string();
                     }
-                    let err =
-                        self.check_expr(&args[0], locals, allowed_effects, ctx, contract_mode);
+                    let expected_err = expected_ty
+                        .and_then(|expected| self.extract_result_error_expected(expected));
+                    let err = self.check_expr_with_expected(
+                        &args[0],
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_err.as_deref(),
+                    );
                     return format!("Result[<?>, {}]", err);
                 }
 
@@ -2163,7 +2171,14 @@ impl<'a> Checker<'a> {
                 }
 
                 if !qualified {
-                    let candidates = self.find_variants(&name);
+                    let mut candidates = self.find_variants(&name);
+                    if candidates.len() > 1 {
+                        if let Some(expected_enum) = expected_ty
+                            .and_then(|expected| self.extract_expected_enum_name(expected))
+                        {
+                            candidates.retain(|c| c.enum_name == expected_enum);
+                        }
+                    }
                     if candidates.len() > 1 {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -3684,6 +3699,27 @@ impl<'a> Checker<'a> {
                 );
             }
         }
+    }
+
+    fn extract_result_error_expected(&self, expected: &str) -> Option<String> {
+        if base_type_name(expected) == "Result" {
+            return extract_generic_args(expected).and_then(|args| args.get(1).cloned());
+        }
+        if base_type_name(expected) == "Async" {
+            let inner = extract_generic_args(expected).and_then(|args| args.into_iter().next())?;
+            if base_type_name(&inner) == "Result" {
+                return extract_generic_args(&inner).and_then(|args| args.get(1).cloned());
+            }
+        }
+        None
+    }
+
+    fn extract_expected_enum_name(&self, expected: &str) -> Option<String> {
+        let base = base_type_name(expected);
+        if self.resolution.enums.contains_key(base) {
+            return Some(base.to_string());
+        }
+        None
     }
 
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {

@@ -1,0 +1,16 @@
+import std.io;
+
+fn main() -> Int effects { io } {
+    eprint_str("[warn] ");
+    eprint_int(7);
+    eprint_str(" events");
+    flush_stderr();
+
+    println_str("stdout");
+    print_bool(true);
+    print_bool(false);
+    println_bool(true);
+    println_int(42);
+    flush_stdout();
+    0
+}

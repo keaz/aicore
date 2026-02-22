@@ -1,0 +1,43 @@
+module example.io.env_config;
+
+import std.io;
+import std.env;
+import std.string;
+import std.vec;
+
+fn ok_bool(v: Result[Bool, EnvError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, env, fs } {
+    let set_ok = ok_bool(env.set("AIC_ENV_CONFIG_MODE", "enabled"));
+    let read_ok = match env.get("AIC_ENV_CONFIG_MODE") {
+        Ok(value) => if len(value) == 7 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let rm_ok = ok_bool(env.remove("AIC_ENV_CONFIG_MODE"));
+
+    let cwd_ok = match env.cwd() {
+        Ok(value) => if len(value) > 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let os_ok = if len(env.os_name()) > 0 { 1 } else { 0 };
+    let arch_ok = if len(env.arch()) > 0 { 1 } else { 0 };
+    let args_ok = if vec_len(env.args()) >= 0 { 1 } else { 0 };
+
+    let arg0_ok = match env.arg_at(0) {
+        Some(value) => if len(value) >= 0 { 1 } else { 0 },
+        None => 1,
+    };
+
+    if set_ok + read_ok + rm_ok + cwd_ok + os_ok + arch_ok + args_ok + arg0_ok == 8 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -763,6 +763,18 @@ impl<'a> Generator<'a> {
         text.push_str("declare void @aic_rt_print_int(i64)\n");
         text.push_str("declare void @aic_rt_print_float(double)\n");
         text.push_str("declare void @aic_rt_print_str(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_read_line(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_read_int(i64*)\n");
+        text.push_str("declare i64 @aic_rt_read_char(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_prompt(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_eprint_str(i8*, i64, i64)\n");
+        text.push_str("declare void @aic_rt_eprint_int(i64)\n");
+        text.push_str("declare void @aic_rt_println_str(i8*, i64, i64)\n");
+        text.push_str("declare void @aic_rt_println_int(i64)\n");
+        text.push_str("declare void @aic_rt_print_bool(i64)\n");
+        text.push_str("declare void @aic_rt_println_bool(i64)\n");
+        text.push_str("declare void @aic_rt_flush_stdout()\n");
+        text.push_str("declare void @aic_rt_flush_stderr()\n");
         text.push_str("declare i64 @aic_rt_strlen(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_string_contains(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_string_starts_with(i8*, i64, i64, i8*, i64, i64)\n");
@@ -918,7 +930,18 @@ impl<'a> Generator<'a> {
             "declare i64 @aic_rt_proc_run(i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n",
         );
         text.push_str(
-            "declare i64 @aic_rt_proc_pipe(i8*, i64, i64, i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n\n",
+            "declare i64 @aic_rt_proc_pipe(i8*, i64, i64, i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_proc_run_with(i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i64, i64*, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str("declare i64 @aic_rt_proc_is_running(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_proc_current_pid(i64*)\n");
+        text.push_str(
+            "declare i64 @aic_rt_proc_run_timeout(i8*, i64, i64, i64, i64*, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_proc_pipe_chain(i8*, i64, i64, i64*, i8**, i64*, i8**, i64*)\n\n",
         );
         text.push_str("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_local_addr(i64, i8**, i64*)\n");
@@ -1848,7 +1871,7 @@ impl<'a> Generator<'a> {
                 cond,
                 then_block,
                 else_block,
-            } => self.gen_if(cond, then_block, else_block, fctx),
+            } => self.gen_if(cond, then_block, else_block, expected_ty, fctx),
             ir::ExprKind::While { cond, body } => self.gen_while(cond, body, fctx),
             ir::ExprKind::Loop { body } => self.gen_loop(body, fctx),
             ir::ExprKind::Break { expr: break_expr } => {
@@ -1858,9 +1881,9 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
-            } => self.gen_match(scrutinee, arms, fctx),
+            } => self.gen_match(scrutinee, arms, expected_ty, fctx),
             ir::ExprKind::StructInit { name, fields } => {
-                self.gen_struct_init(name, fields, expr.span, fctx)
+                self.gen_struct_init(name, fields, expected_ty, expr.span, fctx)
             }
             ir::ExprKind::FieldAccess { base, field } => {
                 self.gen_field_access(base, field, expr.span, fctx)
@@ -2046,11 +2069,11 @@ impl<'a> Generator<'a> {
         };
         let builtin_name = qualified_builtin_intrinsic(call_path).unwrap_or(name);
 
-        if let Some(value) = self.gen_variant_constructor(name, args, span, fctx) {
+        if let Some(value) = self.gen_variant_constructor(name, args, expected_ty, span, fctx) {
             return value;
         }
 
-        if name == "print_int" {
+        if name == "print_int" || name == "aic_io_print_int_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -2080,7 +2103,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if name == "print_str" {
+        if name == "print_str" || name == "aic_io_print_str_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -2111,7 +2134,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if name == "print_float" {
+        if name == "print_float" || name == "aic_io_print_float_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -2176,7 +2199,7 @@ impl<'a> Generator<'a> {
             return result;
         }
 
-        if name == "panic" {
+        if name == "panic" || name == "aic_io_panic_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -2204,6 +2227,10 @@ impl<'a> Generator<'a> {
                 ty: LType::Unit,
                 repr: None,
             });
+        }
+
+        if let Some(result) = self.gen_io_builtin_call(builtin_name, args, span, fctx) {
+            return result;
         }
 
         if let Some(result) = self.gen_time_builtin_call(builtin_name, args, span, fctx) {
@@ -2452,6 +2479,892 @@ impl<'a> Generator<'a> {
             }
         }
         None
+    }
+
+    fn gen_io_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "read_line" | "aic_io_read_line_intrinsic" => "read_line",
+            "read_int" | "aic_io_read_int_intrinsic" => "read_int",
+            "read_char" | "aic_io_read_char_intrinsic" => "read_char",
+            "prompt" | "aic_io_prompt_intrinsic" => "prompt",
+            "eprint_str" | "aic_io_eprint_str_intrinsic" => "eprint_str",
+            "eprint_int" | "aic_io_eprint_int_intrinsic" => "eprint_int",
+            "println_str" | "aic_io_println_str_intrinsic" => "println_str",
+            "println_int" | "aic_io_println_int_intrinsic" => "println_int",
+            "print_bool" | "aic_io_print_bool_intrinsic" => "print_bool",
+            "println_bool" | "aic_io_println_bool_intrinsic" => "println_bool",
+            "flush_stdout" | "aic_io_flush_stdout_intrinsic" => "flush_stdout",
+            "flush_stderr" | "aic_io_flush_stderr_intrinsic" => "flush_stderr",
+            "aic_io_write_stdout_intrinsic" => "io_write_stdout",
+            "aic_io_write_stderr_intrinsic" => "io_write_stderr",
+            "aic_io_file_read_line_intrinsic" => "io_file_read_line",
+            "aic_io_file_write_str_intrinsic" => "io_file_write_str",
+            "aic_io_file_close_intrinsic" => "io_file_close",
+            "aic_io_tcp_send_intrinsic" => "io_tcp_send",
+            "aic_io_tcp_recv_intrinsic" => "io_tcp_recv",
+            "aic_io_tcp_close_intrinsic" => "io_tcp_close",
+            _ => return None,
+        };
+
+        match canonical {
+            "read_line" if self.sig_matches_shape(name, &[], "Result[String, IoError]") => {
+                Some(self.gen_io_string_result_noarg_call(
+                    name,
+                    "aic_rt_read_line",
+                    args,
+                    "read_line",
+                    span,
+                    fctx,
+                ))
+            }
+            "read_int" if self.sig_matches_shape(name, &[], "Result[Int, IoError]") => {
+                Some(self.gen_io_int_result_noarg_call(
+                    name,
+                    "aic_rt_read_int",
+                    args,
+                    "read_int",
+                    span,
+                    fctx,
+                ))
+            }
+            "read_char" if self.sig_matches_shape(name, &[], "Result[String, IoError]") => {
+                Some(self.gen_io_string_result_noarg_call(
+                    name,
+                    "aic_rt_read_char",
+                    args,
+                    "read_char",
+                    span,
+                    fctx,
+                ))
+            }
+            "prompt" if self.sig_matches_shape(name, &["String"], "Result[String, IoError]") => {
+                Some(self.gen_io_prompt_call(name, args, span, fctx))
+            }
+            "eprint_str" if self.sig_matches_shape(name, &["String"], "()") => Some(
+                self.gen_io_string_void_call("aic_rt_eprint_str", args, "eprint_str", span, fctx),
+            ),
+            "eprint_int" if self.sig_matches_shape(name, &["Int"], "()") => {
+                Some(self.gen_io_int_void_call("aic_rt_eprint_int", args, "eprint_int", span, fctx))
+            }
+            "println_str" if self.sig_matches_shape(name, &["String"], "()") => Some(
+                self.gen_io_string_void_call("aic_rt_println_str", args, "println_str", span, fctx),
+            ),
+            "println_int" if self.sig_matches_shape(name, &["Int"], "()") => Some(
+                self.gen_io_int_void_call("aic_rt_println_int", args, "println_int", span, fctx),
+            ),
+            "print_bool" if self.sig_matches_shape(name, &["Bool"], "()") => Some(
+                self.gen_io_bool_void_call("aic_rt_print_bool", args, "print_bool", span, fctx),
+            ),
+            "println_bool" if self.sig_matches_shape(name, &["Bool"], "()") => Some(
+                self.gen_io_bool_void_call("aic_rt_println_bool", args, "println_bool", span, fctx),
+            ),
+            "flush_stdout" if self.sig_matches_shape(name, &[], "()") => Some(
+                self.gen_io_flush_call("aic_rt_flush_stdout", args, "flush_stdout", span, fctx),
+            ),
+            "flush_stderr" if self.sig_matches_shape(name, &[], "()") => Some(
+                self.gen_io_flush_call("aic_rt_flush_stderr", args, "flush_stderr", span, fctx),
+            ),
+            "io_write_stdout"
+                if self.sig_matches_shape(name, &["String"], "Result[Int, IoError]") =>
+            {
+                Some(self.gen_io_write_string_call(
+                    name,
+                    "aic_rt_print_str",
+                    args,
+                    "aic_io_write_stdout_intrinsic",
+                    span,
+                    fctx,
+                ))
+            }
+            "io_write_stderr"
+                if self.sig_matches_shape(name, &["String"], "Result[Int, IoError]") =>
+            {
+                Some(self.gen_io_write_string_call(
+                    name,
+                    "aic_rt_eprint_str",
+                    args,
+                    "aic_io_write_stderr_intrinsic",
+                    span,
+                    fctx,
+                ))
+            }
+            "io_file_read_line"
+                if self.sig_matches_shape(
+                    name,
+                    &["FileHandle"],
+                    "Result[Option[String], IoError]",
+                ) =>
+            {
+                Some(self.gen_io_file_read_line_call(name, args, span, fctx))
+            }
+            "io_file_write_str"
+                if self.sig_matches_shape(
+                    name,
+                    &["FileHandle", "String"],
+                    "Result[Int, IoError]",
+                ) =>
+            {
+                Some(self.gen_io_file_write_str_call(name, args, span, fctx))
+            }
+            "io_file_close"
+                if self.sig_matches_shape(name, &["FileHandle"], "Result[Bool, IoError]") =>
+            {
+                Some(self.gen_io_file_close_call(name, args, span, fctx))
+            }
+            "io_tcp_send"
+                if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, IoError]") =>
+            {
+                Some(self.gen_io_tcp_send_call(name, args, span, fctx))
+            }
+            "io_tcp_recv"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[String, IoError]",
+                ) =>
+            {
+                Some(self.gen_io_tcp_recv_call(name, args, span, fctx))
+            }
+            "io_tcp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, IoError]") => {
+                Some(self.gen_io_tcp_close_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_io_string_result_noarg_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects zero arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8** {}, i64* {})",
+            err, runtime_fn, out_ptr_slot, out_len_slot
+        ));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, payload, &err, span, fctx)
+    }
+
+    fn gen_io_int_result_noarg_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects zero arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_value_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_value_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64* {})",
+            err, runtime_fn, out_value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_value, out_value_slot
+        ));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_io_prompt_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "prompt expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let message = self.gen_expr(&args[0], fctx)?;
+        if message.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "prompt expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&message, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_prompt(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, payload, &err, span, fctx)
+    }
+
+    fn gen_io_write_string_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        fctx.lines.push(format!(
+            "  call void @{}(i8* {}, i64 {}, i64 {})",
+            runtime_fn, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(len),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, "0", span, fctx)
+    }
+
+    fn map_fs_err_to_io_code(&mut self, fs_err: &str, fctx: &mut FnCtx) -> String {
+        let is_not_found = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 1", is_not_found, fs_err));
+        let mapped_non_invalid = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 1, i64 3",
+            mapped_non_invalid, is_not_found
+        ));
+        let is_invalid = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 4", is_invalid, fs_err));
+        let mapped_non_ok = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 2, i64 {}",
+            mapped_non_ok, is_invalid, mapped_non_invalid
+        ));
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, fs_err));
+        let mapped = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 {}",
+            mapped, is_ok, mapped_non_ok
+        ));
+        mapped
+    }
+
+    fn map_net_err_to_io_code(&mut self, net_err: &str, fctx: &mut FnCtx) -> String {
+        let is_timeout = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 4", is_timeout, net_err));
+        let mapped_non_invalid = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 1, i64 3",
+            mapped_non_invalid, is_timeout
+        ));
+        let is_invalid = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 6", is_invalid, net_err));
+        let mapped_non_ok = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 2, i64 {}",
+            mapped_non_ok, is_invalid, mapped_non_invalid
+        ));
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, net_err));
+        let mapped = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 {}",
+            mapped, is_ok, mapped_non_ok
+        ));
+        mapped
+    }
+
+    fn gen_io_file_read_line_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_file_read_line_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "aic_io_file_read_line_intrinsic",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_has_line_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_has_line_slot));
+        let fs_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_read_line(i64 {}, i8** {}, i64* {}, i64* {})",
+            fs_err, handle, out_ptr_slot, out_len_slot, out_has_line_slot
+        ));
+        let io_err = self.map_fs_err_to_io_code(&fs_err, fctx);
+
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_has_line = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_has_line, out_has_line_slot
+        ));
+        let has_line = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_line, out_has_line));
+        let line_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let option_value =
+            self.wrap_option_with_condition(&ok_ty, line_value, &has_line, span, fctx)?;
+        self.wrap_io_result(&result_ty, option_value, &io_err, span, fctx)
+    }
+
+    fn gen_io_file_write_str_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_file_write_str_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let content = self.gen_expr(&args[1], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "aic_io_file_write_str_intrinsic",
+            args[0].span,
+            fctx,
+        )?;
+        if content.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_io_file_write_str_intrinsic expects (FileHandle, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&content, args[1].span, fctx)?;
+        let fs_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_write_str(i64 {}, i8* {}, i64 {}, i64 {})",
+            fs_err, handle, ptr, len, cap
+        ));
+        let io_err = self.map_fs_err_to_io_code(&fs_err, fctx);
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(len),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
+    }
+
+    fn gen_io_file_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_file_close_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "aic_io_file_close_intrinsic",
+            args[0].span,
+            fctx,
+        )?;
+        let fs_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_close(i64 {})",
+            fs_err, handle
+        ));
+        let io_err = self.map_fs_err_to_io_code(&fs_err, fctx);
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
+    }
+
+    fn gen_io_tcp_send_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_tcp_send_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_io_tcp_send_intrinsic expects (Int, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", sent_slot));
+        let net_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_send(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            net_err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            ptr,
+            len,
+            cap,
+            sent_slot
+        ));
+        let io_err = self.map_net_err_to_io_code(&net_err, fctx);
+        let sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", sent, sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
+    }
+
+    fn gen_io_tcp_recv_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_tcp_recv_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_io_tcp_recv_intrinsic expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let net_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_recv(i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            net_err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let io_err = self.map_net_err_to_io_code(&net_err, fctx);
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
+    }
+
+    fn gen_io_tcp_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_tcp_close_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_io_tcp_close_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let net_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_close(i64 {})",
+            net_err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let io_err = self.map_net_err_to_io_code(&net_err, fctx);
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
+    }
+
+    fn gen_io_string_void_call(
+        &mut self,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        fctx.lines.push(format!(
+            "  call void @{}(i8* {}, i64 {}, i64 {})",
+            runtime_fn, ptr, len, cap
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_io_int_void_call(
+        &mut self,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        fctx.lines.push(format!(
+            "  call void @{}(i64 {})",
+            runtime_fn,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_io_bool_void_call(
+        &mut self,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bool"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let bool_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            bool_i64,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        fctx.lines
+            .push(format!("  call void @{}(i64 {})", runtime_fn, bool_i64));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_io_flush_call(
+        &mut self,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects zero arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        fctx.lines.push(format!("  call void @{}()", runtime_fn));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
     }
 
     fn gen_time_builtin_call(
@@ -3016,6 +3929,90 @@ impl<'a> Generator<'a> {
             millisecond,
             offset_minutes,
         ))
+    }
+
+    fn wrap_io_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "io builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_io_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("io_ok");
+        let err_label = self.new_label("io_err");
+        let cont_label = self.new_label("io_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
     }
 
     fn wrap_time_result(
@@ -9438,6 +10435,11 @@ impl<'a> Generator<'a> {
             "kill" | "aic_proc_kill_intrinsic" => "kill",
             "run" | "aic_proc_run_intrinsic" => "run",
             "pipe" | "aic_proc_pipe_intrinsic" => "pipe",
+            "run_with" | "aic_proc_run_with_intrinsic" => "run_with",
+            "is_running" | "aic_proc_is_running_intrinsic" => "is_running",
+            "current_pid" | "aic_proc_current_pid_intrinsic" => "current_pid",
+            "run_timeout" | "aic_proc_run_timeout_intrinsic" => "run_timeout",
+            "pipe_chain" | "aic_proc_pipe_chain_intrinsic" => "pipe_chain",
             _ => return None,
         };
 
@@ -9462,6 +10464,39 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_proc_pipe_call(name, args, span, fctx))
+            }
+            "run_with"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "RunOptions"],
+                    "Result[ProcOutput, ProcError]",
+                ) =>
+            {
+                Some(self.gen_proc_run_with_call(name, args, span, fctx))
+            }
+            "is_running" if self.sig_matches_shape(name, &["Int"], "Result[Bool, ProcError]") => {
+                Some(self.gen_proc_is_running_call(name, args, span, fctx))
+            }
+            "current_pid" if self.sig_matches_shape(name, &[], "Result[Int, ProcError]") => {
+                Some(self.gen_proc_current_pid_call(name, args, span, fctx))
+            }
+            "run_timeout"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "Int"],
+                    "Result[ProcOutput, ProcError]",
+                ) =>
+            {
+                Some(self.gen_proc_run_timeout_call(name, args, span, fctx))
+            }
+            "pipe_chain"
+                if self.sig_matches_shape(
+                    name,
+                    &["Vec[String]"],
+                    "Result[ProcOutput, ProcError]",
+                ) =>
+            {
+                Some(self.gen_proc_pipe_chain_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -9742,6 +10777,454 @@ impl<'a> Generator<'a> {
             span,
             fctx,
         )
+    }
+
+    fn gen_proc_run_with_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "run_with expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let command = self.gen_expr(&args[0], fctx)?;
+        if command.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "run_with expects (String, RunOptions)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let options = self.gen_expr(&args[1], fctx)?;
+        let (stdin_value, cwd_value, env_value, timeout_value) =
+            self.proc_run_options_parts(&options, args[1].span, fctx)?;
+
+        let (command_ptr, command_len, command_cap) =
+            self.string_parts(&command, args[0].span, fctx)?;
+        let (stdin_ptr, stdin_len, stdin_cap) =
+            self.string_parts(&stdin_value, args[1].span, fctx)?;
+        let (cwd_ptr, cwd_len, cwd_cap) = self.string_parts(&cwd_value, args[1].span, fctx)?;
+        let (env_ptr, env_len, env_cap) =
+            self.vec_ptr_len_cap_i8(&env_value, args[1].span, fctx)?;
+
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let stdout_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stdout_ptr_slot));
+        let stdout_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stdout_len_slot));
+        let stderr_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stderr_ptr_slot));
+        let stderr_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stderr_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_run_with(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err,
+            command_ptr,
+            command_len,
+            command_cap,
+            stdin_ptr,
+            stdin_len,
+            stdin_cap,
+            cwd_ptr,
+            cwd_len,
+            cwd_cap,
+            env_ptr,
+            env_len,
+            env_cap,
+            timeout_value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot
+        ));
+        self.build_proc_output_result(
+            name,
+            &err,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_proc_is_running_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "is_running expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "is_running expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+
+        let running_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", running_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_is_running(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            running_slot
+        ));
+        let running_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            running_raw, running_slot
+        ));
+        let running = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", running, running_raw));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(running),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_proc_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_proc_current_pid_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "current_pid expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let pid_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", pid_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_current_pid(i64* {})",
+            err, pid_slot
+        ));
+        let pid = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", pid, pid_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(pid),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_proc_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_proc_run_timeout_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "run_timeout expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let command = self.gen_expr(&args[0], fctx)?;
+        let timeout_ms = self.gen_expr(&args[1], fctx)?;
+        if command.ty != LType::String || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "run_timeout expects (String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&command, args[0].span, fctx)?;
+
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let stdout_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stdout_ptr_slot));
+        let stdout_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stdout_len_slot));
+        let stderr_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stderr_ptr_slot));
+        let stderr_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stderr_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_run_timeout(i8* {}, i64 {}, i64 {}, i64 {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err,
+            ptr,
+            len,
+            cap,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot
+        ));
+        self.build_proc_output_result(
+            name,
+            &err,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_proc_pipe_chain_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "pipe_chain expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let stages = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _, _) = self.vec_element_info(&stages.ty, "pipe_chain", args[0].span)?;
+        if elem_ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "pipe_chain expects Vec[String]",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (stages_ptr, stages_len, stages_cap) =
+            self.vec_ptr_len_cap_i8(&stages, args[0].span, fctx)?;
+
+        let status_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", status_slot));
+        let stdout_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stdout_ptr_slot));
+        let stdout_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stdout_len_slot));
+        let stderr_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", stderr_ptr_slot));
+        let stderr_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", stderr_len_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_proc_pipe_chain(i8* {}, i64 {}, i64 {}, i64* {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            err,
+            stages_ptr,
+            stages_len,
+            stages_cap,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot
+        ));
+        self.build_proc_output_result(
+            name,
+            &err,
+            status_slot,
+            stdout_ptr_slot,
+            stdout_len_slot,
+            stderr_ptr_slot,
+            stderr_len_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn proc_run_options_parts(
+        &mut self,
+        options: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(Value, Value, Value, Value)> {
+        let LType::Struct(layout) = &options.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "run_with expects RunOptions",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "RunOptions" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("run_with expects RunOptions, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let options_repr = options
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&options.ty));
+        let options_llvm_ty = llvm_type(&options.ty);
+        let mut stdin_value = None;
+        let mut cwd_value = None;
+        let mut env_value = None;
+        let mut timeout_value = None;
+        for (index, field) in layout.fields.iter().enumerate() {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, {}",
+                reg, options_llvm_ty, options_repr, index
+            ));
+            let value = Value {
+                ty: field.ty.clone(),
+                repr: Some(reg),
+            };
+            match field.name.as_str() {
+                "stdin" => stdin_value = Some(value),
+                "cwd" => cwd_value = Some(value),
+                "env" => env_value = Some(value),
+                "timeout_ms" => timeout_value = Some(value),
+                _ => {}
+            }
+        }
+
+        let Some(stdin_value) = stdin_value else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions is missing `stdin` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(cwd_value) = cwd_value else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions is missing `cwd` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(env_value) = env_value else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions is missing `env` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(timeout_value) = timeout_value else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions is missing `timeout_ms` field",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        if stdin_value.ty != LType::String
+            || cwd_value.ty != LType::String
+            || timeout_value.ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions fields must be stdin: String, cwd: String, env: Vec[String], timeout_ms: Int",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (env_elem, _, _) = self.vec_element_info(&env_value.ty, "RunOptions.env", span)?;
+        if env_elem != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "RunOptions.env must be Vec[String]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some((stdin_value, cwd_value, env_value, timeout_value))
     }
 
     fn build_proc_output_result(
@@ -16790,6 +18273,25 @@ impl<'a> Generator<'a> {
         self.build_no_payload_enum_with_tag(layout, &tag, span, fctx)
     }
 
+    fn build_io_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "IoError",
+            "io",
+            &[(1, "EndOfInput"), (2, "InvalidInput"), (3, "Io")],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
     fn build_fs_error_from_code(
         &mut self,
         err_ty: &LType,
@@ -17179,6 +18681,7 @@ impl<'a> Generator<'a> {
         &mut self,
         name: &str,
         fields: &[(String, ir::Expr, crate::span::Span)],
+        expected_ty: Option<&LType>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
@@ -17190,6 +18693,15 @@ impl<'a> Generator<'a> {
                 span,
             ));
             return None;
+        };
+        let expected_layout = if let Some(LType::Struct(layout)) = expected_ty {
+            if base_type_name(&layout.repr) == name {
+                Some(layout.clone())
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         let mut provided = BTreeMap::new();
@@ -17206,48 +18718,60 @@ impl<'a> Generator<'a> {
                 ));
                 continue;
             }
-            let value = self.gen_expr(field_expr, fctx)?;
+            let field_expected = expected_layout.as_ref().and_then(|layout| {
+                layout
+                    .fields
+                    .iter()
+                    .find(|info| info.name == *field_name)
+                    .map(|info| &info.ty)
+            });
+            let value = self.gen_expr_with_expected(field_expr, field_expected, fctx)?;
             provided.insert(field_name.clone(), (value, *field_span));
         }
 
-        let mut bindings = BTreeMap::new();
-        for (field_name, expected_ty) in &template.fields {
-            let Some((value, _)) = provided.get(field_name) else {
-                continue;
-            };
-            let actual = render_type(&value.ty);
-            infer_generic_bindings(expected_ty, &actual, &template.generics, &mut bindings);
-        }
-        for generic in &template.generics {
-            let fallback = self
-                .active_type_bindings
-                .as_ref()
-                .and_then(|map| map.get(generic))
-                .cloned()
-                .unwrap_or_else(|| "Int".to_string());
-            bindings.entry(generic.clone()).or_insert(fallback);
-        }
-
-        let applied_args = template
-            .generics
-            .iter()
-            .map(|g| {
-                bindings
-                    .get(g)
+        let (ty, layout) = if let Some(layout) = expected_layout.clone() {
+            (LType::Struct(layout.clone()), layout)
+        } else {
+            let mut bindings = BTreeMap::new();
+            for (field_name, expected_ty) in &template.fields {
+                let Some((value, _)) = provided.get(field_name) else {
+                    continue;
+                };
+                let actual = render_type(&value.ty);
+                infer_generic_bindings(expected_ty, &actual, &template.generics, &mut bindings);
+            }
+            for generic in &template.generics {
+                let fallback = self
+                    .active_type_bindings
+                    .as_ref()
+                    .and_then(|map| map.get(generic))
                     .cloned()
-                    .unwrap_or_else(|| "Int".to_string())
-            })
-            .collect::<Vec<_>>();
-        let applied_repr = render_applied_type_from_parts(name, &applied_args);
-        let ty = self.parse_type_repr(&applied_repr, span)?;
-        let LType::Struct(layout) = ty.clone() else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5004",
-                format!("failed to lower struct layout for '{}'", applied_repr),
-                self.file,
-                span,
-            ));
-            return None;
+                    .unwrap_or_else(|| "Int".to_string());
+                bindings.entry(generic.clone()).or_insert(fallback);
+            }
+
+            let applied_args = template
+                .generics
+                .iter()
+                .map(|g| {
+                    bindings
+                        .get(g)
+                        .cloned()
+                        .unwrap_or_else(|| "Int".to_string())
+                })
+                .collect::<Vec<_>>();
+            let applied_repr = render_applied_type_from_parts(name, &applied_args);
+            let ty = self.parse_type_repr(&applied_repr, span)?;
+            let LType::Struct(layout) = ty.clone() else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5004",
+                    format!("failed to lower struct layout for '{}'", applied_repr),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+            (ty, layout)
         };
 
         let mut acc = "undef".to_string();
@@ -17359,12 +18883,22 @@ impl<'a> Generator<'a> {
         &mut self,
         name: &str,
         args: &[ir::Expr],
+        expected_ty: Option<&LType>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
-        let Some(candidates) = self.variant_ctors.get(name).cloned() else {
+        let Some(mut candidates) = self.variant_ctors.get(name).cloned() else {
             return None;
         };
+        let expected_layout = if let Some(LType::Enum(layout)) = expected_ty {
+            Some(layout.clone())
+        } else {
+            None
+        };
+        if let Some(LType::Enum(layout)) = expected_ty {
+            let expected_enum = base_type_name(&layout.repr);
+            candidates.retain(|candidate| candidate.enum_name == expected_enum);
+        }
         if args.len() > 1 {
             self.diagnostics.push(Diagnostic::error(
                 "E5009",
@@ -17375,14 +18909,43 @@ impl<'a> Generator<'a> {
             return Some(None);
         }
 
+        let payload_expected_ty = if args.len() == 1 {
+            expected_layout.as_ref().and_then(|layout| {
+                candidates.iter().find_map(|candidate| {
+                    if base_type_name(&layout.repr) != candidate.enum_name {
+                        return None;
+                    }
+                    layout
+                        .variants
+                        .get(candidate.variant_index)
+                        .and_then(|variant| variant.payload.clone())
+                })
+            })
+        } else {
+            None
+        };
         let payload_value = if args.len() == 1 {
-            Some(self.gen_expr(&args[0], fctx)?)
+            Some(self.gen_expr_with_expected(&args[0], payload_expected_ty.as_ref(), fctx)?)
         } else {
             None
         };
 
         let mut chosen: Option<(EnumLayoutType, usize)> = None;
         for candidate in candidates {
+            if let Some(layout) = expected_layout.as_ref() {
+                if base_type_name(&layout.repr) != candidate.enum_name {
+                    continue;
+                }
+                let Some(variant) = layout.variants.get(candidate.variant_index) else {
+                    continue;
+                };
+                let payload_arity = usize::from(variant.payload.is_some());
+                if payload_arity != args.len() {
+                    continue;
+                }
+                chosen = Some((layout.clone(), candidate.variant_index));
+                break;
+            }
             let Some(template) = self.enum_templates.get(&candidate.enum_name) else {
                 continue;
             };
@@ -18009,6 +19572,7 @@ impl<'a> Generator<'a> {
         cond_expr: &ir::Expr,
         then_block: &ir::Block,
         else_block: &ir::Block,
+        expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let cond = self.gen_expr(cond_expr, fctx)?;
@@ -18041,7 +19605,7 @@ impl<'a> Generator<'a> {
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", then_label));
         fctx.current_label = then_label.clone();
-        let then_value = self.gen_block(then_block, fctx);
+        let then_value = self.gen_block_with_expected_tail(then_block, expected_ty, fctx);
         let then_terminated = fctx.terminated;
         if !then_terminated {
             if let Some(value) = then_value {
@@ -18081,7 +19645,7 @@ impl<'a> Generator<'a> {
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", else_label));
         fctx.current_label = else_label.clone();
-        let else_value = self.gen_block(else_block, fctx);
+        let else_value = self.gen_block_with_expected_tail(else_block, expected_ty, fctx);
         let else_terminated = fctx.terminated;
         if !else_terminated {
             if let Some(value) = else_value {
@@ -18155,13 +19719,14 @@ impl<'a> Generator<'a> {
         &mut self,
         scrutinee_expr: &ir::Expr,
         arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let scrutinee = self.gen_expr(scrutinee_expr, fctx)?;
 
         match scrutinee.ty.clone() {
-            LType::Bool => self.gen_match_bool(scrutinee, arms, fctx),
-            LType::Enum(layout) => self.gen_match_enum(scrutinee, &layout, arms, fctx),
+            LType::Bool => self.gen_match_bool(scrutinee, arms, expected_ty, fctx),
+            LType::Enum(layout) => self.gen_match_enum(scrutinee, &layout, arms, expected_ty, fctx),
             _ => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5016",
@@ -18178,6 +19743,7 @@ impl<'a> Generator<'a> {
         &mut self,
         scrutinee: Value,
         arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
@@ -18238,7 +19804,7 @@ impl<'a> Generator<'a> {
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", then_label));
         self.bind_bool_match_pattern(true_pattern, true, fctx);
-        let tv = self.gen_expr(&true_arm.body, fctx);
+        let tv = self.gen_expr_with_expected(&true_arm.body, expected_ty, fctx);
         let t_term = fctx.terminated;
         if !t_term {
             if let Some(tv) = tv {
@@ -18277,7 +19843,7 @@ impl<'a> Generator<'a> {
         fctx.terminated = false;
         fctx.lines.push(format!("{}:", else_label));
         self.bind_bool_match_pattern(false_pattern, false, fctx);
-        let ev = self.gen_expr(&false_arm.body, fctx);
+        let ev = self.gen_expr_with_expected(&false_arm.body, expected_ty, fctx);
         let e_term = fctx.terminated;
         if !e_term {
             if let Some(ev) = ev {
@@ -18349,6 +19915,7 @@ impl<'a> Generator<'a> {
         scrutinee: Value,
         layout: &EnumLayoutType,
         arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
@@ -18500,7 +20067,7 @@ impl<'a> Generator<'a> {
                 _ => {}
             }
 
-            let arm_value = self.gen_expr(&arm.body, fctx);
+            let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
             let arm_terminated = fctx.terminated;
             if !arm_terminated {
                 terminated_all = false;
@@ -18970,6 +20537,22 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         .get(call_path.len().saturating_sub(2))
         .map(String::as_str)?;
     match (qualifier, name) {
+        ("io", "print_int") => Some("aic_io_print_int_intrinsic"),
+        ("io", "print_str") => Some("aic_io_print_str_intrinsic"),
+        ("io", "print_float") => Some("aic_io_print_float_intrinsic"),
+        ("io", "read_line") => Some("aic_io_read_line_intrinsic"),
+        ("io", "read_int") => Some("aic_io_read_int_intrinsic"),
+        ("io", "read_char") => Some("aic_io_read_char_intrinsic"),
+        ("io", "prompt") => Some("aic_io_prompt_intrinsic"),
+        ("io", "eprint_str") => Some("aic_io_eprint_str_intrinsic"),
+        ("io", "eprint_int") => Some("aic_io_eprint_int_intrinsic"),
+        ("io", "println_str") => Some("aic_io_println_str_intrinsic"),
+        ("io", "println_int") => Some("aic_io_println_int_intrinsic"),
+        ("io", "print_bool") => Some("aic_io_print_bool_intrinsic"),
+        ("io", "println_bool") => Some("aic_io_println_bool_intrinsic"),
+        ("io", "flush_stdout") => Some("aic_io_flush_stdout_intrinsic"),
+        ("io", "flush_stderr") => Some("aic_io_flush_stderr_intrinsic"),
+        ("io", "panic") => Some("aic_io_panic_intrinsic"),
         ("time", "now_ms") => Some("aic_time_now_ms_intrinsic"),
         ("time", "monotonic_ms") => Some("aic_time_monotonic_ms_intrinsic"),
         ("time", "sleep_ms") => Some("aic_time_sleep_ms_intrinsic"),
@@ -19090,6 +20673,11 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("proc", "kill") => Some("aic_proc_kill_intrinsic"),
         ("proc", "run") => Some("aic_proc_run_intrinsic"),
         ("proc", "pipe") => Some("aic_proc_pipe_intrinsic"),
+        ("proc", "run_with") => Some("aic_proc_run_with_intrinsic"),
+        ("proc", "is_running") => Some("aic_proc_is_running_intrinsic"),
+        ("proc", "current_pid") => Some("aic_proc_current_pid_intrinsic"),
+        ("proc", "run_timeout") => Some("aic_proc_run_timeout_intrinsic"),
+        ("proc", "pipe_chain") => Some("aic_proc_pipe_chain_intrinsic"),
         ("net", "tcp_listen") => Some("aic_net_tcp_listen_intrinsic"),
         ("net", "tcp_local_addr") => Some("aic_net_tcp_local_addr_intrinsic"),
         ("net", "tcp_accept") => Some("aic_net_tcp_accept_intrinsic"),
@@ -19616,6 +21204,279 @@ void aic_rt_print_float(double x) {
 void aic_rt_print_str(const char* ptr, long len, long cap) {
     (void)cap;
     if (ptr == NULL) {
+        fputs("<null>", stdout);
+        return;
+    }
+    if (len < 0) {
+        fputs("<invalid-string>", stdout);
+        return;
+    }
+    fwrite(ptr, 1, (size_t)len, stdout);
+}
+
+static int aic_rt_io_is_space(unsigned char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
+}
+
+static size_t aic_rt_io_utf8_char_width(unsigned char lead) {
+    if ((lead & 0x80) == 0x00) {
+        return 1;
+    }
+    if ((lead & 0xE0) == 0xC0) {
+        return 2;
+    }
+    if ((lead & 0xF0) == 0xE0) {
+        return 3;
+    }
+    if ((lead & 0xF8) == 0xF0) {
+        return 4;
+    }
+    return 0;
+}
+
+long aic_rt_read_line(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    size_t cap = 128;
+    char* line = (char*)malloc(cap + 1);
+    if (line == NULL) {
+        return 3;
+    }
+
+    size_t len = 0;
+    int ch = EOF;
+    while ((ch = fgetc(stdin)) != EOF) {
+        if (ch == '\n') {
+            break;
+        }
+        if (ch == '\r') {
+            int next = fgetc(stdin);
+            if (next != '\n' && next != EOF) {
+                ungetc(next, stdin);
+            }
+            break;
+        }
+        if (len + 1 >= cap) {
+            size_t next_cap = cap * 2;
+            if (next_cap <= cap || next_cap > SIZE_MAX - 1) {
+                free(line);
+                return 3;
+            }
+            char* grown = (char*)realloc(line, next_cap + 1);
+            if (grown == NULL) {
+                free(line);
+                return 3;
+            }
+            line = grown;
+            cap = next_cap;
+        }
+        line[len++] = (char)ch;
+    }
+
+    if (ch == EOF && ferror(stdin)) {
+        clearerr(stdin);
+        free(line);
+        return 3;
+    }
+    if (ch == EOF && len == 0) {
+        free(line);
+        return 1;
+    }
+
+    line[len] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = line;
+    } else {
+        free(line);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)len;
+    }
+    return 0;
+}
+
+long aic_rt_read_int(long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+
+    char* line = NULL;
+    long line_len = 0;
+    long line_err = aic_rt_read_line(&line, &line_len);
+    if (line_err != 0) {
+        return line_err;
+    }
+    if (line == NULL) {
+        return 2;
+    }
+
+    char* start = line;
+    while (*start != '\0' && aic_rt_io_is_space((unsigned char)*start)) {
+        start += 1;
+    }
+    if (*start == '\0') {
+        free(line);
+        return 2;
+    }
+
+    errno = 0;
+    char* tail = NULL;
+    long parsed = strtol(start, &tail, 10);
+    if (tail == start || errno == ERANGE) {
+        free(line);
+        return 2;
+    }
+    while (tail != NULL && *tail != '\0' && aic_rt_io_is_space((unsigned char)*tail)) {
+        tail += 1;
+    }
+    if (tail == NULL || *tail != '\0') {
+        free(line);
+        return 2;
+    }
+
+    if (out_value != NULL) {
+        *out_value = parsed;
+    }
+    free(line);
+    return 0;
+}
+
+long aic_rt_read_char(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    char* line = NULL;
+    long line_len = 0;
+    long line_err = aic_rt_read_line(&line, &line_len);
+    if (line_err != 0) {
+        return line_err;
+    }
+    if (line == NULL || line_len <= 0) {
+        free(line);
+        return 2;
+    }
+
+    size_t n = (size_t)line_len;
+    if ((long)n != line_len || n == 0) {
+        free(line);
+        return 2;
+    }
+    const unsigned char* bytes = (const unsigned char*)line;
+    size_t width = aic_rt_io_utf8_char_width(bytes[0]);
+    if (width == 0 || width != n) {
+        free(line);
+        return 2;
+    }
+    for (size_t i = 1; i < width; ++i) {
+        if ((bytes[i] & 0xC0) != 0x80) {
+            free(line);
+            return 2;
+        }
+    }
+
+    unsigned long codepoint = 0;
+    if (width == 1) {
+        codepoint = bytes[0];
+        if (codepoint > 0x7F) {
+            free(line);
+            return 2;
+        }
+    } else if (width == 2) {
+        codepoint = ((unsigned long)(bytes[0] & 0x1F) << 6) |
+            (unsigned long)(bytes[1] & 0x3F);
+        if (codepoint < 0x80) {
+            free(line);
+            return 2;
+        }
+    } else if (width == 3) {
+        codepoint = ((unsigned long)(bytes[0] & 0x0F) << 12) |
+            ((unsigned long)(bytes[1] & 0x3F) << 6) |
+            (unsigned long)(bytes[2] & 0x3F);
+        if (codepoint < 0x800 || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+            free(line);
+            return 2;
+        }
+    } else {
+        codepoint = ((unsigned long)(bytes[0] & 0x07) << 18) |
+            ((unsigned long)(bytes[1] & 0x3F) << 12) |
+            ((unsigned long)(bytes[2] & 0x3F) << 6) |
+            (unsigned long)(bytes[3] & 0x3F);
+        if (codepoint < 0x10000 || codepoint > 0x10FFFF) {
+            free(line);
+            return 2;
+        }
+    }
+
+    if (out_ptr != NULL) {
+        *out_ptr = line;
+    } else {
+        free(line);
+    }
+    if (out_len != NULL) {
+        *out_len = line_len;
+    }
+    return 0;
+}
+
+long aic_rt_prompt(
+    const char* message_ptr,
+    long message_len,
+    long message_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)message_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (message_len < 0 || (message_len > 0 && message_ptr == NULL)) {
+        return 2;
+    }
+    if (message_len > 0) {
+        size_t target = (size_t)message_len;
+        size_t written = fwrite(message_ptr, 1, target, stdout);
+        if (written != target) {
+            return 3;
+        }
+    }
+    if (fflush(stdout) != 0) {
+        return 3;
+    }
+    return aic_rt_read_line(out_ptr, out_len);
+}
+
+void aic_rt_eprint_str(const char* ptr, long len, long cap) {
+    (void)cap;
+    if (ptr == NULL) {
+        fputs("<null>", stderr);
+        return;
+    }
+    if (len < 0) {
+        fputs("<invalid-string>", stderr);
+        return;
+    }
+    fwrite(ptr, 1, (size_t)len, stderr);
+}
+
+void aic_rt_eprint_int(long x) {
+    fprintf(stderr, "%ld", x);
+}
+
+void aic_rt_println_str(const char* ptr, long len, long cap) {
+    (void)cap;
+    if (ptr == NULL) {
         printf("<null>\n");
         return;
     }
@@ -19625,6 +21486,34 @@ void aic_rt_print_str(const char* ptr, long len, long cap) {
     }
     fwrite(ptr, 1, (size_t)len, stdout);
     fputc('\n', stdout);
+}
+
+void aic_rt_println_int(long x) {
+    printf("%ld\n", x);
+}
+
+void aic_rt_print_bool(long value) {
+    if (value != 0) {
+        fputs("true", stdout);
+    } else {
+        fputs("false", stdout);
+    }
+}
+
+void aic_rt_println_bool(long value) {
+    if (value != 0) {
+        fputs("true\n", stdout);
+    } else {
+        fputs("false\n", stdout);
+    }
+}
+
+void aic_rt_flush_stdout(void) {
+    fflush(stdout);
+}
+
+void aic_rt_flush_stderr(void) {
+    fflush(stderr);
 }
 
 long aic_rt_strlen(const char* ptr, long len, long cap) {
@@ -25125,6 +27014,419 @@ static long aic_rt_proc_decode_wait_status(int status) {
 #endif
 }
 
+static long aic_rt_proc_write_text_file(const char* path, const char* text) {
+    if (path == NULL) {
+        return 3;
+    }
+    FILE* f = fopen(path, "wb");
+    if (f == NULL) {
+        return aic_rt_proc_map_errno(errno);
+    }
+    const char* effective = text == NULL ? "" : text;
+    size_t n = strlen(effective);
+    if (n > 0) {
+        size_t wrote = fwrite(effective, 1, n, f);
+        if (wrote != n) {
+            fclose(f);
+            return 4;
+        }
+    }
+    if (fclose(f) != 0) {
+        return 4;
+    }
+    return 0;
+}
+
+static long aic_rt_proc_validate_env_items(const AicString* items, long count) {
+    if (count < 0) {
+        return 3;
+    }
+    if (count == 0) {
+        return 0;
+    }
+    if (items == NULL) {
+        return 3;
+    }
+    size_t count_n = (size_t)count;
+    for (size_t i = 0; i < count_n; ++i) {
+        long item_len_long = items[i].len;
+        const char* item_ptr = items[i].ptr;
+        if (item_len_long <= 0 || item_ptr == NULL) {
+            return 3;
+        }
+        size_t item_len = (size_t)item_len_long;
+        if (memchr(item_ptr, '\0', item_len) != NULL) {
+            return 3;
+        }
+        const char* eq = memchr(item_ptr, '=', item_len);
+        if (eq == NULL || eq == item_ptr) {
+            return 3;
+        }
+    }
+    return 0;
+}
+
+#ifndef _WIN32
+static long aic_rt_proc_apply_env_items(const AicString* items, long count) {
+    if (count <= 0) {
+        return 0;
+    }
+    size_t count_n = (size_t)count;
+    for (size_t i = 0; i < count_n; ++i) {
+        long item_len_long = items[i].len;
+        const char* item_ptr = items[i].ptr;
+        if (item_len_long <= 0 || item_ptr == NULL) {
+            return 3;
+        }
+        size_t item_len = (size_t)item_len_long;
+        char* owned = (char*)malloc(item_len + 1);
+        if (owned == NULL) {
+            return 4;
+        }
+        memcpy(owned, item_ptr, item_len);
+        owned[item_len] = '\0';
+        char* eq = strchr(owned, '=');
+        if (eq == NULL || eq == owned) {
+            free(owned);
+            return 3;
+        }
+        *eq = '\0';
+        if (setenv(owned, eq + 1, 1) != 0) {
+            int err = errno;
+            free(owned);
+            return aic_rt_proc_map_errno(err);
+        }
+        free(owned);
+    }
+    return 0;
+}
+
+static long aic_rt_proc_wait_for_pid(
+    pid_t pid,
+    long timeout_ms,
+    int* out_status,
+    int* out_timed_out
+) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+    if (out_timed_out != NULL) {
+        *out_timed_out = 0;
+    }
+    if (timeout_ms < 0) {
+        return 3;
+    }
+
+    int status = 0;
+    if (timeout_ms == 0) {
+        pid_t rc = waitpid(pid, &status, 0);
+        while (rc < 0 && errno == EINTR) {
+            rc = waitpid(pid, &status, 0);
+        }
+        if (rc < 0) {
+            return aic_rt_proc_map_errno(errno);
+        }
+        if (out_status != NULL) {
+            *out_status = status;
+        }
+        return 0;
+    }
+
+    struct timespec start;
+    if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
+        return aic_rt_proc_map_errno(errno);
+    }
+    while (1) {
+        pid_t rc = waitpid(pid, &status, WNOHANG);
+        if (rc == pid) {
+            if (out_status != NULL) {
+                *out_status = status;
+            }
+            return 0;
+        }
+        if (rc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return aic_rt_proc_map_errno(errno);
+        }
+
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            return aic_rt_proc_map_errno(errno);
+        }
+        long elapsed_ms = (long)(now.tv_sec - start.tv_sec) * 1000L;
+        elapsed_ms += (long)((now.tv_nsec - start.tv_nsec) / 1000000L);
+        if (elapsed_ms >= timeout_ms) {
+            if (kill(pid, SIGKILL) != 0 && errno != ESRCH) {
+                return aic_rt_proc_map_errno(errno);
+            }
+            rc = waitpid(pid, &status, 0);
+            while (rc < 0 && errno == EINTR) {
+                rc = waitpid(pid, &status, 0);
+            }
+            if (rc < 0) {
+                return aic_rt_proc_map_errno(errno);
+            }
+            if (out_status != NULL) {
+                *out_status = status;
+            }
+            if (out_timed_out != NULL) {
+                *out_timed_out = 1;
+            }
+            return 0;
+        }
+        struct timespec pause;
+        pause.tv_sec = 0;
+        pause.tv_nsec = 5 * 1000000L;
+        (void)nanosleep(&pause, NULL);
+    }
+}
+
+static long aic_rt_proc_run_shell_with_options(
+    const char* command,
+    const char* stdin_text,
+    const char* cwd,
+    const AicString* env_items,
+    long env_count,
+    long timeout_ms,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = NULL;
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = 0;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = NULL;
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = 0;
+    }
+    if (command == NULL || command[0] == '\0') {
+        return 3;
+    }
+    if (timeout_ms < 0) {
+        return 3;
+    }
+    long env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
+    if (env_valid != 0) {
+        return env_valid;
+    }
+
+    char* stdout_path = NULL;
+    char* stderr_path = NULL;
+    char* stdin_path = NULL;
+    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    if (mk_out != 0) {
+        free(stdout_path);
+        return mk_out;
+    }
+    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    if (mk_err != 0) {
+        remove(stdout_path);
+        free(stdout_path);
+        free(stderr_path);
+        return mk_err;
+    }
+    long mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
+    if (mk_in != 0) {
+        remove(stdout_path);
+        remove(stderr_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return mk_in;
+    }
+    long wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
+    if (wrote != 0) {
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return wrote;
+    }
+
+    int setup_pipe[2];
+    if (pipe(setup_pipe) != 0) {
+        int err = errno;
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return aic_rt_proc_map_errno(err);
+    }
+    int flags = fcntl(setup_pipe[1], F_GETFD);
+    if (flags >= 0) {
+        (void)fcntl(setup_pipe[1], F_SETFD, flags | FD_CLOEXEC);
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        int err = errno;
+        close(setup_pipe[0]);
+        close(setup_pipe[1]);
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return aic_rt_proc_map_errno(err);
+    }
+    if (pid == 0) {
+        close(setup_pipe[0]);
+        int out_fd = open(stdout_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (out_fd < 0) {
+            int child_err = errno;
+            (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+            _exit(126);
+        }
+        int err_fd = open(stderr_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (err_fd < 0) {
+            int child_err = errno;
+            (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+            close(out_fd);
+            _exit(126);
+        }
+        int in_fd = open(stdin_path, O_RDONLY);
+        if (in_fd < 0) {
+            int child_err = errno;
+            (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+            close(out_fd);
+            close(err_fd);
+            _exit(126);
+        }
+        if (dup2(in_fd, STDIN_FILENO) < 0 ||
+            dup2(out_fd, STDOUT_FILENO) < 0 ||
+            dup2(err_fd, STDERR_FILENO) < 0) {
+            int child_err = errno;
+            (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+            close(in_fd);
+            close(out_fd);
+            close(err_fd);
+            _exit(126);
+        }
+        close(in_fd);
+        close(out_fd);
+        close(err_fd);
+
+        if (cwd != NULL && cwd[0] != '\0' && chdir(cwd) != 0) {
+            int child_err = errno;
+            (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+            _exit(126);
+        }
+
+        long env_applied = aic_rt_proc_apply_env_items(env_items, env_count);
+        if (env_applied != 0) {
+            int mapped = (int)(-env_applied);
+            (void)write(setup_pipe[1], &mapped, sizeof(mapped));
+            _exit(126);
+        }
+
+        execl("/bin/sh", "sh", "-c", command, (char*)NULL);
+        int child_err = errno;
+        (void)write(setup_pipe[1], &child_err, sizeof(child_err));
+        _exit(127);
+    }
+
+    close(setup_pipe[1]);
+    int setup_result = 0;
+    ssize_t setup_n = read(setup_pipe[0], &setup_result, sizeof(setup_result));
+    close(setup_pipe[0]);
+    if (setup_n < 0) {
+        int err = errno;
+        (void)waitpid(pid, NULL, 0);
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return aic_rt_proc_map_errno(err);
+    }
+    if (setup_n > 0) {
+        (void)waitpid(pid, NULL, 0);
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        if (setup_result < 0) {
+            return (long)(-setup_result);
+        }
+        return aic_rt_proc_map_errno(setup_result);
+    }
+
+    int wait_status = 0;
+    int timed_out = 0;
+    long waited = aic_rt_proc_wait_for_pid(pid, timeout_ms, &wait_status, &timed_out);
+    if (waited != 0) {
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return waited;
+    }
+
+    long stdout_n = 0;
+    long stderr_n = 0;
+    char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
+    char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
+    remove(stdout_path);
+    remove(stderr_path);
+    remove(stdin_path);
+    free(stdout_path);
+    free(stderr_path);
+    free(stdin_path);
+    if (stdout_text == NULL || stderr_text == NULL) {
+        free(stdout_text);
+        free(stderr_text);
+        return 4;
+    }
+
+    if (out_status != NULL) {
+        if (timed_out) {
+            *out_status = 124;
+        } else {
+            *out_status = aic_rt_proc_decode_wait_status(wait_status);
+        }
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = stdout_text;
+    } else {
+        free(stdout_text);
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = stdout_n;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = stderr_text;
+    } else {
+        free(stderr_text);
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = stderr_n;
+    }
+    return 0;
+}
+#endif
+
 static long aic_rt_proc_run_shell(
     const char* command,
     long* out_status,
@@ -25319,6 +27621,69 @@ long aic_rt_proc_wait(long handle, long* out_status) {
 #endif
 }
 
+long aic_rt_proc_is_running(long handle, long* out_running) {
+    AIC_RT_SANDBOX_BLOCK_PROC("is_running", 2);
+    if (out_running != NULL) {
+        *out_running = 0;
+    }
+#ifdef _WIN32
+    (void)handle;
+    return 5;
+#else
+    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    int status = 0;
+    pid_t rc = waitpid(aic_rt_proc_table[slot].pid, &status, WNOHANG);
+    if (rc == 0) {
+        if (out_running != NULL) {
+            *out_running = 1;
+        }
+        return 0;
+    }
+    if (rc == aic_rt_proc_table[slot].pid) {
+        aic_rt_proc_table[slot].active = 0;
+        if (out_running != NULL) {
+            *out_running = 0;
+        }
+        return 0;
+    }
+    if (errno == ECHILD
+#ifdef ESRCH
+        || errno == ESRCH
+#endif
+    ) {
+        aic_rt_proc_table[slot].active = 0;
+        if (out_running != NULL) {
+            *out_running = 0;
+        }
+        return 0;
+    }
+    return aic_rt_proc_map_errno(errno);
+#endif
+}
+
+long aic_rt_proc_current_pid(long* out_pid) {
+    AIC_RT_SANDBOX_BLOCK_PROC("current_pid", 2);
+    if (out_pid != NULL) {
+        *out_pid = 0;
+    }
+#ifdef _WIN32
+    if (out_pid != NULL) {
+        *out_pid = (long)GetCurrentProcessId();
+    }
+#else
+    if (out_pid != NULL) {
+        *out_pid = (long)getpid();
+    }
+#endif
+    return 0;
+}
+
 long aic_rt_proc_kill(long handle) {
     AIC_RT_SANDBOX_BLOCK_PROC("kill", 2);
 #ifdef _WIN32
@@ -25413,6 +27778,207 @@ long aic_rt_proc_pipe(
     );
     free(command);
     return result;
+}
+
+long aic_rt_proc_run_with(
+    const char* command_ptr,
+    long command_len,
+    long command_cap,
+    const char* stdin_ptr,
+    long stdin_len,
+    long stdin_cap,
+    const char* cwd_ptr,
+    long cwd_len,
+    long cwd_cap,
+    const char* env_ptr,
+    long env_len,
+    long env_cap,
+    long timeout_ms,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    (void)command_cap;
+    (void)stdin_cap;
+    (void)cwd_cap;
+    (void)env_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("run_with", 2);
+    char* command = aic_rt_fs_copy_slice(command_ptr, command_len);
+    char* stdin_text = aic_rt_fs_copy_slice(stdin_ptr, stdin_len);
+    char* cwd = aic_rt_fs_copy_slice(cwd_ptr, cwd_len);
+    if (command == NULL || stdin_text == NULL || cwd == NULL || command[0] == '\0' || env_len < 0) {
+        free(command);
+        free(stdin_text);
+        free(cwd);
+        return 3;
+    }
+
+    const AicString* env_items = NULL;
+    if (env_len > 0) {
+        if (env_ptr == NULL) {
+            free(command);
+            free(stdin_text);
+            free(cwd);
+            return 3;
+        }
+        env_items = (const AicString*)(const void*)env_ptr;
+    }
+
+#ifdef _WIN32
+    (void)timeout_ms;
+    (void)out_status;
+    (void)out_stdout_ptr;
+    (void)out_stdout_len;
+    (void)out_stderr_ptr;
+    (void)out_stderr_len;
+    free(command);
+    free(stdin_text);
+    free(cwd);
+    return 4;
+#else
+    long result = aic_rt_proc_run_shell_with_options(
+        command,
+        stdin_text,
+        cwd,
+        env_items,
+        env_len,
+        timeout_ms,
+        out_status,
+        out_stdout_ptr,
+        out_stdout_len,
+        out_stderr_ptr,
+        out_stderr_len
+    );
+    free(command);
+    free(stdin_text);
+    free(cwd);
+    return result;
+#endif
+}
+
+long aic_rt_proc_run_timeout(
+    const char* command_ptr,
+    long command_len,
+    long command_cap,
+    long timeout_ms,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    (void)command_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("run_timeout", 2);
+    char* command = aic_rt_fs_copy_slice(command_ptr, command_len);
+    if (command == NULL || command[0] == '\0') {
+        free(command);
+        return 3;
+    }
+#ifdef _WIN32
+    (void)timeout_ms;
+    (void)out_status;
+    (void)out_stdout_ptr;
+    (void)out_stdout_len;
+    (void)out_stderr_ptr;
+    (void)out_stderr_len;
+    free(command);
+    return 4;
+#else
+    long result = aic_rt_proc_run_shell_with_options(
+        command,
+        "",
+        "",
+        NULL,
+        0,
+        timeout_ms,
+        out_status,
+        out_stdout_ptr,
+        out_stdout_len,
+        out_stderr_ptr,
+        out_stderr_len
+    );
+    free(command);
+    return result;
+#endif
+}
+
+long aic_rt_proc_pipe_chain(
+    const char* stages_ptr,
+    long stages_len,
+    long stages_cap,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    (void)stages_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("pipe_chain", 2);
+    if (stages_len <= 0 || stages_ptr == NULL) {
+        return 3;
+    }
+#ifdef _WIN32
+    (void)out_status;
+    (void)out_stdout_ptr;
+    (void)out_stdout_len;
+    (void)out_stderr_ptr;
+    (void)out_stderr_len;
+    return 4;
+#else
+    const AicString* stages = (const AicString*)(const void*)stages_ptr;
+    size_t count = (size_t)stages_len;
+    size_t total = 0;
+    for (size_t i = 0; i < count; ++i) {
+        long stage_len_long = stages[i].len;
+        const char* stage_ptr = stages[i].ptr;
+        if (stage_len_long <= 0 || stage_ptr == NULL) {
+            return 3;
+        }
+        size_t stage_len = (size_t)stage_len_long;
+        if (total > SIZE_MAX - stage_len) {
+            return 4;
+        }
+        total += stage_len;
+        if (i + 1 < count) {
+            if (total > SIZE_MAX - 3) {
+                return 4;
+            }
+            total += 3;
+        }
+    }
+    char* command = (char*)malloc(total + 1);
+    if (command == NULL) {
+        return 4;
+    }
+    size_t pos = 0;
+    for (size_t i = 0; i < count; ++i) {
+        size_t stage_len = (size_t)stages[i].len;
+        memcpy(command + pos, stages[i].ptr, stage_len);
+        pos += stage_len;
+        if (i + 1 < count) {
+            memcpy(command + pos, " | ", 3);
+            pos += 3;
+        }
+    }
+    command[pos] = '\0';
+    long result = aic_rt_proc_run_shell_with_options(
+        command,
+        "",
+        "",
+        NULL,
+        0,
+        0,
+        out_status,
+        out_stdout_ptr,
+        out_stdout_len,
+        out_stderr_ptr,
+        out_stderr_len
+    );
+    free(command);
+    return result;
+#endif
 }
 
 #ifdef _WIN32

@@ -1,0 +1,72 @@
+module example.io.file_processor;
+
+import std.io;
+import std.fs;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
+    match v {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    }
+}
+
+fn line_len(v: Result[Option[String], FsError]) -> Int {
+    match v {
+        Ok(value) => match value {
+            Some(line) => len(line),
+            None => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn at_eof(v: Result[Option[String], FsError]) -> Int {
+    match v {
+        Ok(value) => match value {
+            None => 1,
+            Some(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote_input = ok_bool(write_text("file_processor.in", "alpha\nbeta\ngamma"));
+
+    let reader = unwrap_handle(open_read("file_processor.in"));
+    let writer = unwrap_handle(open_write("file_processor.out"));
+
+    let l1 = line_len(file_read_line(reader));
+    let l2 = line_len(file_read_line(reader));
+    let l3 = line_len(file_read_line(reader));
+    let eof = at_eof(file_read_line(reader));
+
+    let write_mark_a = ok_bool(file_write_str(writer, "processed="));
+    let write_mark_b = ok_bool(file_write_str(writer, "3"));
+
+    let close_reader = ok_bool(file_close(reader));
+    let close_writer = ok_bool(file_close(writer));
+
+    let out_len = match read_text("file_processor.out") {
+        Ok(text) => len(text),
+        Err(_) => 0,
+    };
+
+    let cleanup = ok_bool(delete("file_processor.in")) + ok_bool(delete("file_processor.out"));
+
+    if wrote_input + write_mark_a + write_mark_b + close_reader + close_writer + eof + cleanup == 8
+        && l1 == 5 && l2 == 4 && l3 == 5 && out_len > 0 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

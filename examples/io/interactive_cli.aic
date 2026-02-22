@@ -1,0 +1,54 @@
+import std.io;
+
+fn io_err_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn read_name() -> String effects { io } {
+    match prompt("Name: ") {
+        Ok(value) => value,
+        Err(_) => "guest",
+    }
+}
+
+fn read_score() -> Int effects { io } {
+    println_str("Score:");
+    match read_int() {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn read_initial() -> String effects { io } {
+    println_str("Initial:");
+    match read_char() {
+        Ok(value) => value,
+        Err(_) => "?",
+    }
+}
+
+fn read_note() -> String effects { io } {
+    println_str("Note:");
+    match read_line() {
+        Ok(value) => value,
+        Err(err) => if io_err_code(err) == 1 { "(none)" } else { "(invalid)" },
+    }
+}
+
+fn main() -> Int effects { io } {
+    let name = read_name();
+    let score = read_score();
+    let initial = read_initial();
+    let note = read_note();
+
+    println_str("Summary");
+    println_str(name);
+    println_int(score);
+    println_str(initial);
+    println_str(note);
+    0
+}

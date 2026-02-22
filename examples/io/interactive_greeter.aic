@@ -1,0 +1,48 @@
+module example.io.interactive_greeter;
+
+import std.io;
+
+fn io_err_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int effects { io } {
+    println_str("Interactive greeter");
+    flush_stdout();
+
+    let name = match prompt("Name: ") {
+        Ok(value) => value,
+        Err(err) => if io_err_code(err) == 1 { "guest" } else { "invalid" },
+    };
+
+    println_str("Initial:");
+    let initial = match read_char() {
+        Ok(value) => value,
+        Err(_) => "?",
+    };
+
+    println_str("Lucky number:");
+    let lucky = match read_int() {
+        Ok(value) => value,
+        Err(_) => 0,
+    };
+
+    println_str("Note:");
+    let note = match read_line() {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    println_str("Summary");
+    println_str(name);
+    println_str(initial);
+    println_int(lucky);
+    println_str(note);
+    eprint_str("interactive_greeter complete");
+    flush_stderr();
+    0
+}

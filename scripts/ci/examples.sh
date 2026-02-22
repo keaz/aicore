@@ -33,6 +33,10 @@ check_pass=(
   "examples/e6/std_smoke.aic"
   "examples/io/fs_backup.aic"
   "examples/io/fs_all_ops.aic"
+  "examples/io/stream_copy.aic"
+  "examples/io/error_handling.aic"
+  "examples/io/interactive_cli.aic"
+  "examples/io/stderr_logging.aic"
   "examples/io/cli_file_pipeline.aic"
   "examples/io/process_pipeline.aic"
   "examples/io/tcp_echo.aic"
@@ -40,6 +44,11 @@ check_pass=(
   "examples/io/http_router.aic"
   "examples/io/retry_with_jitter.aic"
   "examples/io/worker_pool.aic"
+  "examples/io/interactive_greeter.aic"
+  "examples/io/file_processor.aic"
+  "examples/io/log_tee.aic"
+  "examples/io/env_config.aic"
+  "examples/io/subprocess_pipeline.aic"
   "examples/data/log_parse_regex.aic"
   "examples/data/join_module_qualification.aic"
   "examples/data/map_headers.aic"
@@ -110,6 +119,8 @@ run_pass=(
   "examples/e6/std_smoke.aic"
   "examples/io/fs_backup.aic"
   "examples/io/fs_all_ops.aic"
+  "examples/io/stream_copy.aic"
+  "examples/io/error_handling.aic"
   "examples/io/cli_file_pipeline.aic"
   "examples/io/process_pipeline.aic"
   "examples/io/tcp_echo.aic"
@@ -117,6 +128,10 @@ run_pass=(
   "examples/io/http_router.aic"
   "examples/io/retry_with_jitter.aic"
   "examples/io/worker_pool.aic"
+  "examples/io/file_processor.aic"
+  "examples/io/log_tee.aic"
+  "examples/io/env_config.aic"
+  "examples/io/subprocess_pipeline.aic"
   "examples/data/log_parse_regex.aic"
   "examples/data/join_module_qualification.aic"
   "examples/data/map_headers.aic"
@@ -194,6 +209,23 @@ expect_run_value() {
   fi
 }
 
+expect_run_exit_code() {
+  local file="$1"
+  local expected="$2"
+  local binary="$ARTIFACT_DIR/$(basename "$file" .aic).exit_check"
+  "${AIC[@]}" build "$file" -o "$binary" >/tmp/aic-example.out
+  set +e
+  "$binary" >/tmp/aic-example.out 2>/tmp/aic-example.err
+  local got=$?
+  set -e
+  if [[ "$got" != "$expected" ]]; then
+    echo "unexpected exit code for $file: expected '$expected' got '$got'" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+}
+
 expect_build_artifact() {
   local file="$1"
   local artifact="$2"
@@ -233,8 +265,14 @@ case "$MODE" in
     expect_run_value "examples/e6/std_smoke.aic" "1"
     expect_run_value "examples/io/fs_backup.aic" "42"
     expect_run_value "examples/io/fs_all_ops.aic" "42"
+    expect_run_value "examples/io/stream_copy.aic" "42"
+    expect_run_value "examples/io/error_handling.aic" "42"
     expect_run_value "examples/io/cli_file_pipeline.aic" "42"
-    expect_run_value "examples/io/process_pipeline.aic" "42"
+    expect_run_exit_code "examples/io/process_pipeline.aic" "42"
+    expect_run_value "examples/io/file_processor.aic" "42"
+    expect_run_value "examples/io/log_tee.aic" "42"
+    expect_run_value "examples/io/env_config.aic" "42"
+    expect_run_value "examples/io/subprocess_pipeline.aic" "42"
     expect_run_value "examples/io/tcp_echo.aic" "42"
     expect_run_value "examples/io/http_server_hello.aic" "42"
     expect_run_value "examples/io/http_router.aic" "42"

@@ -16,7 +16,7 @@ fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_
     let param_ok = if len(param_key) == 0 {
         1
     } else {
-        match map.get(found.params, param_key) {
+        match aic_map_get_intrinsic(found.params, param_key) {
             Some(value) => string_eq(value, param_value),
             None => 0,
         }

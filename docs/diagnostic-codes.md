@@ -80,6 +80,25 @@ Recent core-language additions:
 - `E5025`: backend encountered `break` outside a loop.
 - `E5026`: backend encountered `continue` outside a loop.
 
+## IO + Runtime Quick Reference
+
+The table below captures high-frequency IO/runtime diagnostics with deterministic trigger guidance from the current implementation.
+
+| Code | Trigger (current behavior) | Deterministic remediation |
+|---|---|---|
+| `E2001` | Effectful call is used without required `effects { ... }` declaration. | Add the missing effects to the enclosing function signature. |
+| `E2002` | An effectful call appears inside a contract (`requires`/`ensures`/invariant), which must remain pure. | Remove side effects from contracts; move checks into executable code paths. |
+| `E2003` | Unknown effect name in a function signature. | Use only known effects: `io, fs, net, time, rand, env, proc, concurrency`. |
+| `E2004` | Duplicate effect listed in one function signature. | Remove duplicates; keep one declaration per effect. |
+| `E2005` | Transitive effect required through call graph but not declared at caller boundary. | Declare the transitive effect at the root function or refactor call boundaries. |
+| `E2006` | Concurrency resource protocol violation (operation on already-closed channel/mutex handle). | Recreate resource before reuse or reorder close/use lifecycle. |
+| `E5023` | Backend hit a guarded `match` arm (guard lowering not supported yet). | Hoist guard logic outside `match` or remove guards in codegen-targeted paths. |
+| `E5024` | Unsupported extern backend lowering path (currently only `extern \"C\"` is supported). | Use `extern \"C\"` plain signatures and wrapper functions. |
+| `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |
+| `E5026` | `continue` reached backend outside loop context. | Ensure `continue` is only emitted inside `loop`/`while`. |
+| `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
+| `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
+
 ## Change policy
 
 - Never reuse a retired code for a different semantic error.

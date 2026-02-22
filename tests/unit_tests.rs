@@ -853,6 +853,124 @@ fn unit_init_project_emits_canonical_source() {
 }
 
 #[test]
+fn unit_std_io_public_apis_delegate_to_runtime_intrinsics() {
+    let io_source = fs::read_to_string("std/io.aic").expect("read std/io.aic");
+
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "print_int",
+        "aic_io_print_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "print_str",
+        "aic_io_print_str_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "print_float",
+        "aic_io_print_float_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "read_line",
+        "aic_io_read_line_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "read_int",
+        "aic_io_read_int_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "read_char",
+        "aic_io_read_char_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "prompt",
+        "aic_io_prompt_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "eprint_str",
+        "aic_io_eprint_str_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "eprint_int",
+        "aic_io_eprint_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "println_str",
+        "aic_io_println_str_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "println_int",
+        "aic_io_println_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "print_bool",
+        "aic_io_print_bool_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "println_bool",
+        "aic_io_println_bool_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "flush_stdout",
+        "aic_io_flush_stdout_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "flush_stderr",
+        "aic_io_flush_stderr_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "panic",
+        "aic_io_panic_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_std_fs_public_apis_delegate_to_runtime_intrinsics() {
     let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
 
@@ -2255,6 +2373,29 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
         "diagnostics={:#?}",
         out.diagnostics
     );
+}
+
+#[test]
+fn unit_std_io_effect_is_enforced() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+
+fn main() -> Int {
+    read_line();
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2001"));
 }
 
 #[test]

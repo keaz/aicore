@@ -1,0 +1,37 @@
+module example.io.error_handling;
+
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let fs_missing: FsError = NotFound();
+    let fs_invalid: FsError = InvalidInput();
+    let net_timeout: NetError = Timeout();
+    let proc_invalid: ProcError = InvalidInput();
+    let env_missing: EnvError = NotFound();
+
+    let score =
+        io_code(from_fs_error(fs_missing)) * 10000 +
+        io_code(from_fs_error(fs_invalid)) * 1000 +
+        io_code(from_net_error(net_timeout)) * 100 +
+        io_code(from_proc_error(proc_invalid)) * 10 +
+        io_code(from_env_error(env_missing));
+
+    if score == 12121 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

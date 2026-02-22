@@ -1,0 +1,37 @@
+module example.io.log_tee;
+
+import std.io;
+import std.fs;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let reset = ok_bool(write_text("log_tee.log", ""));
+    let add_a = ok_bool(append_text("log_tee.log", "INFO startup\n"));
+    let add_b = ok_bool(append_text("log_tee.log", "WARN fallback\n"));
+
+    println_str("INFO startup");
+    eprint_str("WARN fallback");
+    flush_stdout();
+    flush_stderr();
+
+    let audit = match read_text("log_tee.log") {
+        Ok(text) => if string.contains(text, "INFO") && string.contains(text, "WARN") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let cleanup = ok_bool(delete("log_tee.log"));
+
+    if reset + add_a + add_b + audit + cleanup == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

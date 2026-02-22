@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use aicore::codegen::{
     compile_with_clang, compile_with_clang_artifact, compile_with_clang_artifact_with_options,
@@ -10,9 +11,10 @@ use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
 use tempfile::tempdir;
 
-fn compile_and_run_with_setup_and_args<F>(
+fn compile_and_run_with_setup_and_args_and_input<F>(
     source: &str,
     args: &[&str],
+    stdin_input: &str,
     setup: F,
 ) -> (i32, String, String)
 where
@@ -36,11 +38,21 @@ where
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
 
     setup(dir.path());
-    let output = Command::new(exe)
+    let mut child = Command::new(exe)
         .current_dir(dir.path())
         .args(args)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("run exe");
+    {
+        let mut stdin = child.stdin.take().expect("child stdin");
+        stdin
+            .write_all(stdin_input.as_bytes())
+            .expect("write stdin");
+    }
+    let output = child.wait_with_output().expect("run exe");
     (
         output.status.code().unwrap_or(1),
         String::from_utf8_lossy(&output.stdout).to_string(),
@@ -52,7 +64,18 @@ fn compile_and_run_with_setup<F>(source: &str, setup: F) -> (i32, String, String
 where
     F: FnOnce(&Path),
 {
-    compile_and_run_with_setup_and_args(source, &[], setup)
+    compile_and_run_with_setup_and_args_and_input(source, &[], "", setup)
+}
+
+fn compile_and_run_with_setup_and_args<F>(
+    source: &str,
+    args: &[&str],
+    setup: F,
+) -> (i32, String, String)
+where
+    F: FnOnce(&Path),
+{
+    compile_and_run_with_setup_and_args_and_input(source, args, "", setup)
 }
 
 fn compile_and_run(source: &str) -> (i32, String, String) {
@@ -61,6 +84,10 @@ fn compile_and_run(source: &str) -> (i32, String, String) {
 
 fn compile_and_run_with_args(source: &str, args: &[&str]) -> (i32, String, String) {
     compile_and_run_with_setup_and_args(source, args, |_| {})
+}
+
+fn compile_and_run_with_input(source: &str, stdin_input: &str) -> (i32, String, String) {
+    compile_and_run_with_setup_and_args_and_input(source, &[], stdin_input, |_| {})
 }
 
 fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
@@ -1055,7 +1082,7 @@ fn unwrap_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs, env } {
     let wrote = unwrap_bool(write_text("a.txt", "ab"));
     let appended = unwrap_bool(append_text("a.txt", "cd"));
     let copied = unwrap_bool(copy("a.txt", "b.txt"));
@@ -1084,12 +1111,12 @@ import std.io;
 import std.fs;
 import std.vec;
 
-fn main() -> Int effects { io, fs } {
-    let tmp_file = match temp_file("aic_io_test_") {
+fn main() -> Int effects { io, fs, env } {
+    let tmp_file = match fs.temp_file("aic_io_test_") {
         Ok(path) => path,
         Err(_) => "",
     };
-    let tmp_dir = match temp_dir("aic_io_test_") {
+    let tmp_dir = match fs.temp_dir("aic_io_test_") {
         Ok(path) => path,
         Err(_) => "",
     };
@@ -1542,7 +1569,7 @@ fn main() -> Int effects { io, env, fs } {
     let os_ok = if os_linux + os_macos + os_windows == 1 { 1 } else { 0 };
     let arch_ok = if len(arch()) > 0 { 1 } else { 0 };
 
-    let score = vars_ok + home_ok(home_dir()) + temp_ok(temp_dir()) + os_ok + arch_ok;
+    let score = vars_ok + home_ok(env.home_dir()) + temp_ok(env.temp_dir()) + os_ok + arch_ok;
     if score == 5 {
         print_int(42);
     } else {
@@ -2122,11 +2149,10 @@ fn main() -> Int effects { io, concurrency } {
 #[test]
 fn exec_proc_run_pipe_spawn_wait_and_kill() {
     let src = r#"
-import std.io;
 import std.proc;
 import std.string;
 
-fn main() -> Int effects { io, proc, env } {
+fn main() -> Int effects { proc, env } {
     let run_out = match run("echo out; echo err 1>&2; exit 7") {
         Ok(out) => out,
         Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
@@ -2158,16 +2184,155 @@ fn main() -> Int effects { io, proc, env } {
     let wait_ok = if waited == 5 { 1 } else { 0 };
 
     if run_status_ok + run_stdout_ok + run_stderr_ok + pipe_ok + wait_ok + kill_missing == 6 {
-        print_int(42);
+        42
     } else {
-        print_int(0);
-    };
-    0
+        0
+    }
 }
 "#;
     let (code, stdout, stderr) = compile_and_run(src);
-    assert_eq!(code, 0, "stderr={stderr}");
-    assert_eq!(stdout, "42\n");
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_proc_run_with_stdin_env_cwd_and_timeout() {
+    let src = r#"
+import std.proc;
+import std.string;
+import std.vec;
+
+fn invalid_input_code(err: ProcError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { proc, env } {
+    let opts = RunOptions {
+        stdin: "from-stdin",
+        cwd: "workdir",
+        env: vec.vec_of("AIC_PROC_ENV=from-env"),
+        timeout_ms: 0,
+    };
+    let out = match run_with("cat input.txt; printf '|'; printf \"$AIC_PROC_ENV\"; printf '|'; cat", opts) {
+        Ok(value) => value,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+
+    let empty_env: Vec[String] = vec.new_vec();
+    let timeout_opts = RunOptions {
+        stdin: "",
+        cwd: "",
+        env: empty_env,
+        timeout_ms: 50,
+    };
+    let run_with_timeout = match run_with("sleep 2", timeout_opts) {
+        Ok(value) => if value.status == 124 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let run_timeout_ok = match run_timeout("sleep 2", 50) {
+        Ok(value) => if value.status == 124 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let invalid_timeout = match run_timeout("echo ok", -1) {
+        Ok(_) => 0,
+        Err(err) => invalid_input_code(err),
+    };
+
+    let run_with_ok = if out.status == 0 &&
+        string.contains(out.stdout, "cwd-data|from-env|from-stdin") &&
+        len(out.stderr) == 0 {
+        1
+    } else {
+        0
+    };
+
+    if run_with_ok + run_with_timeout + run_timeout_ok + invalid_timeout == 4 {
+        42
+    } else {
+        0
+    }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        let workdir = root.join("workdir");
+        fs::create_dir_all(&workdir).expect("mkdir workdir");
+        fs::write(workdir.join("input.txt"), "cwd-data").expect("write workdir input");
+    });
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_proc_pipe_chain_is_running_and_current_pid() {
+    let src = r#"
+import std.proc;
+import std.string;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn invalid_input_code(err: ProcError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { proc, env } {
+    let mut stages: Vec[String] = vec.vec_of("echo beta");
+    stages = vec.push(stages, "tr a-z A-Z");
+    let chained = match pipe_chain(stages) {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let chain_ok = if chained.status == 0 && string.contains(chained.stdout, "BETA") { 1 } else { 0 };
+    let empty_stages: Vec[String] = vec.new_vec();
+    let empty_chain = match pipe_chain(empty_stages) {
+        Ok(_) => 0,
+        Err(err) => invalid_input_code(err),
+    };
+
+    let handle = match spawn("sleep 1") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let running_now = match is_running(handle) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let waited = match wait(handle) {
+        Ok(code) => if code == 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let running_after_wait = match is_running(handle) {
+        Ok(_) => 0,
+        Err(err) => match err {
+            UnknownProcess => 1,
+            _ => 0,
+        },
+    };
+    let pid_ok = match current_pid() {
+        Ok(pid) => if pid > 1 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if chain_ok + empty_chain + running_now + waited + running_after_wait + pid_ok == 6 {
+        42
+    } else {
+        0
+    }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -2346,15 +2511,15 @@ import std.map;
 import std.string;
 
 fn request_matches(req: Request) -> Int {
-    let query_name = match map.get(req.query, "name") {
+    let query_name = match aic_map_get_intrinsic(req.query, "name") {
         Some(v) => v,
         None => "",
     };
-    let host = match map.get(req.headers, "host") {
+    let host = match aic_map_get_intrinsic(req.headers, "host") {
         Some(v) => v,
         None => "",
     };
-    let trace = match map.get(req.headers, "x-trace") {
+    let trace = match aic_map_get_intrinsic(req.headers, "x-trace") {
         Some(v) => v,
         None => "",
     };
@@ -3091,7 +3256,7 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     let expected = "{\"kind\":\"struct\",\"name\":\"Model\",\"fields\":[{\"name\":\"status\",\"type\":{\"kind\":\"enum\",\"name\":\"Status\",\"tag_encoding\":\"indexed\",\"variants\":[{\"name\":\"Active\",\"tag\":0,\"payload\":null},{\"name\":\"Suspended\",\"tag\":1,\"payload\":null}]}},{\"name\":\"user\",\"type\":{\"kind\":\"struct\",\"name\":\"User\",\"fields\":[{\"name\":\"id\",\"type\":{\"kind\":\"int\"}},{\"name\":\"name\",\"type\":{\"kind\":\"string\"}}]}}]}";
-    let expected_stdout = format!("{expected}\n{expected}\n");
+    let expected_stdout = format!("{expected}{expected}");
     assert_eq!(stdout, expected_stdout);
 }
 
@@ -3297,6 +3462,327 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "234512345\n");
+}
+
+#[test]
+fn exec_io_read_variants_and_prompt_behaviors() {
+    let src = r#"
+import std.io;
+import std.string;
+
+fn io_err_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn ok_len(v: Result[String, IoError], n: Int) -> Int {
+    match v {
+        Ok(text) => if len(text) == n { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn ok_char(v: Result[String, IoError], expected: String) -> Int {
+    match v {
+        Ok(text) => if len(text) == len(expected) && starts_with(text, expected) { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn expect_err(v: Result[String, IoError], code: Int) -> Int {
+    match v {
+        Err(err) => if io_err_code(err) == code { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let name_ok = ok_len(prompt("prompt> "), 5);
+    let char_ok = ok_char(read_char(), "Q");
+    let invalid_char = expect_err(read_char(), 2);
+    let eof_line = expect_err(read_line(), 1);
+
+    if name_ok + char_ok + invalid_char + eof_line == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_input(src, "Alice\r\nQ\nab\r\n");
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "prompt> 42\n");
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn exec_io_read_int_reports_invalid_and_end_of_input() {
+    let src = r#"
+import std.io;
+
+fn io_err_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn expect_ok(v: Result[Int, IoError], expected: Int) -> Int {
+    match v {
+        Ok(n) => if n == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn expect_err(v: Result[Int, IoError], code: Int) -> Int {
+    match v {
+        Err(err) => if io_err_code(err) == code { 1 } else { 0 },
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let ok_value = expect_ok(read_int(), 99);
+    let invalid = expect_err(read_int(), 2);
+    let eof = expect_err(read_int(), 1);
+
+    if ok_value + invalid + eof == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_input(src, " 99 \nnope\n");
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn exec_io_stderr_stdout_separation_and_newline_semantics() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    eprint_str("err:");
+    eprint_int(7);
+    flush_stderr();
+
+    println_str("alpha");
+    println_int(12);
+    print_bool(true);
+    print_bool(false);
+    println_bool(true);
+    flush_stdout();
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "alpha\n12\ntruefalsetrue\n");
+    assert_eq!(stderr, "err:7");
+}
+
+#[test]
+fn exec_io_error_conversion_helpers_are_stable() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let fs_missing: FsError = NotFound();
+    let fs_invalid: FsError = InvalidInput();
+    let net_timeout: NetError = Timeout();
+    let proc_invalid: ProcError = InvalidInput();
+    let env_missing: EnvError = NotFound();
+
+    let score =
+        io_code(from_fs_error(fs_missing)) * 10000 +
+        io_code(from_fs_error(fs_invalid)) * 1000 +
+        io_code(from_net_error(net_timeout)) * 100 +
+        io_code(from_proc_error(proc_invalid)) * 10 +
+        io_code(from_env_error(env_missing));
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "12121\n");
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn exec_io_stream_helpers_cover_stdin_stdout_and_stderr() {
+    let src = r#"
+import std.io;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } {
+    let reader = stdin_reader();
+    let out = stdout_writer();
+    let err = stderr_writer();
+
+    let read_ok = match read_stream(reader) {
+        Ok(text) => if len(text) == 5 && starts_with(text, "Alice") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let eof_ok = match read_stream_optional(reader) {
+        Ok(value) => match value {
+            None => 1,
+            Some(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let out_ok = match write_stream(out, "hello-") {
+        Ok(n) => if n == 6 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let err_ok = match write_stream(err, "warn") {
+        Ok(n) => if n == 4 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let flush_ok =
+        match flush_stream(out) {
+            Ok(v) => bool_to_int(v),
+            Err(_) => 0,
+        } +
+        match flush_stream(err) {
+            Ok(v) => bool_to_int(v),
+            Err(_) => 0,
+        };
+
+    if read_ok + eof_ok + out_ok + err_ok + flush_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_input(src, "Alice\n");
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "hello-42\n");
+    assert_eq!(stderr, "warn");
+}
+
+#[test]
+fn exec_io_stream_copy_supports_file_and_tcp_streams() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.net;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } {
+    match close_reader(reader) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    }
+}
+
+fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } {
+    match close_writer(writer) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs, net } {
+    let file_reader_stream = match file_reader("stream_input.txt") {
+        Ok(value) => value,
+        Err(_) => stdin_reader(),
+    };
+    let file_writer_stream = match file_writer("stream_output.txt") {
+        Ok(value) => value,
+        Err(_) => stdout_writer(),
+    };
+    let copied_ok = match stream_copy(file_reader_stream, file_writer_stream) {
+        Ok(written) => if written == 10 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let copied_text_ok = match fs.read_text("stream_output.txt") {
+        Ok(text) => if len(text) == 10 && starts_with(text, "payload-42") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let file_close_ok = close_reader_ok(file_reader_stream) + close_writer_ok(file_writer_stream);
+
+    let listener = match net.tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let local_addr = match net.tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match net.tcp_connect(local_addr, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let server = match net.tcp_accept(listener, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+
+    let writer_stream = tcp_writer(client);
+    let reader_stream = tcp_reader(server, 64, 1000);
+    let sent_ok = match write_stream(writer_stream, "echo") {
+        Ok(written) => if written == 4 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let recv_ok = match read_stream(reader_stream) {
+        Ok(text) => if len(text) == 4 && starts_with(text, "echo") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let tcp_close_ok =
+        close_writer_ok(writer_stream) +
+        close_reader_ok(reader_stream) +
+        match net.tcp_close(listener) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        };
+
+    if copied_ok + copied_text_ok + file_close_ok + sent_ok + recv_ok + tcp_close_ok == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        fs::write(root.join("stream_input.txt"), "payload-42").expect("write stream input");
+    });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+    assert_eq!(stderr, "");
 }
 
 #[test]

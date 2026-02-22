@@ -13,7 +13,7 @@ fn string_eq(left: String, right: String) -> Int {
 }
 
 fn request_ok(req: Request) -> Int {
-    let name = match map.get(req.query, "name") {
+    let name = match aic_map_get_intrinsic(req.query, "name") {
         Some(v) => v,
         None => "",
     };

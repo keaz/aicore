@@ -11,7 +11,7 @@ import std.vec;
 import std.option;
 import std.result;
 
-fn main() -> Int effects { io, fs, net, time, rand, concurrency } {
+fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } {
     let _a = exists("data.txt");
     let _b = read_text("data.txt");
     write_text("out.txt", "ok");
@@ -21,7 +21,7 @@ fn main() -> Int effects { io, fs, net, time, rand, concurrency } {
     let _meta = metadata("out.txt");
     let _entries = walk_dir(".");
     let _tmp_file = temp_file("std_smoke_");
-    let _tmp_dir = temp_dir("std_smoke_");
+    let _tmp_dir = fs.temp_dir("std_smoke_");
     delete("out-moved.txt");
     let _listen = tcp_listen("127.0.0.1:0");
     let _local = tcp_local_addr(1);

@@ -1,21 +1,500 @@
 module std.io;
 
+import std.result;
+import std.option;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+enum IoError {
+    EndOfInput,
+    InvalidInput,
+    Io,
+}
+
+struct TcpReader {
+    handle: Int,
+    max_bytes: Int,
+    timeout_ms: Int,
+}
+
+enum Reader {
+    ReadStdin,
+    ReadFile(FileHandle),
+    ReadTcp(TcpReader),
+}
+
+enum Writer {
+    WriteStdout,
+    WriteStderr,
+    WriteFile(FileHandle),
+    WriteTcp(Int),
+}
+
+fn io_end_of_input() -> IoError {
+    let out: IoError = EndOfInput();
+    out
+}
+
+fn io_invalid_input() -> IoError {
+    let out: IoError = InvalidInput();
+    out
+}
+
+fn io_other() -> IoError {
+    let out: IoError = Io();
+    out
+}
+
+fn io_err_string_result() -> Result[String, IoError] {
+    let out: Result[String, IoError] = Err(io_other());
+    out
+}
+
+fn io_err_reader_result() -> Result[Reader, IoError] {
+    let out: Result[Reader, IoError] = Err(io_other());
+    out
+}
+
+fn io_err_writer_result() -> Result[Writer, IoError] {
+    let out: Result[Writer, IoError] = Err(io_other());
+    out
+}
+
+fn io_err_int_result() -> Result[Int, IoError] {
+    let out: Result[Int, IoError] = Err(io_other());
+    out
+}
+
+fn io_err_int_result_with(err: IoError) -> Result[Int, IoError] {
+    let out: Result[Int, IoError] = Err(err);
+    out
+}
+
+fn io_ok_int_zero() -> Result[Int, IoError] {
+    let out: Result[Int, IoError] = Ok(0);
+    out
+}
+
+fn io_ok_int_one() -> Result[Int, IoError] {
+    let out: Result[Int, IoError] = Ok(1);
+    out
+}
+
+fn io_ok_int(value: Int) -> Result[Int, IoError] {
+    let out: Result[Int, IoError] = Ok(value);
+    out
+}
+
+fn io_ok_bool_true() -> Result[Bool, IoError] {
+    let out: Result[Bool, IoError] = Ok(true);
+    out
+}
+
+fn io_ok_bool_false() -> Result[Bool, IoError] {
+    let out: Result[Bool, IoError] = Ok(false);
+    out
+}
+
+fn io_ok_none_string() -> Result[Option[String], IoError] {
+    let out: Result[Option[String], IoError] = Ok(None());
+    out
+}
+
+fn io_ok_some_string(value: String) -> Result[Option[String], IoError] {
+    let out: Result[Option[String], IoError] = Ok(Some(value));
+    out
+}
+
+fn io_err_option_string(err: IoError) -> Result[Option[String], IoError] {
+    let out: Result[Option[String], IoError] = Err(err);
+    out
+}
+
+fn io_is_end_of_input(err: IoError) -> Bool {
+    match err {
+        EndOfInput => true,
+        _ => false,
+    }
+}
+
+fn aic_io_print_int_intrinsic(x: Int) -> () effects { io } {
+    ()
+}
+
+fn aic_io_print_str_intrinsic(x: String) -> () effects { io } {
+    ()
+}
+
+fn aic_io_print_float_intrinsic(x: Float) -> () effects { io } {
+    ()
+}
+
+fn aic_io_panic_intrinsic(message: String) -> () effects { io } {
+    ()
+}
+
+fn aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io } {
+    let out: Result[String, IoError] = Err(EndOfInput());
+    out
+}
+
+fn aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io } {
+    let out: Result[Int, IoError] = Err(InvalidInput());
+    out
+}
+
+fn aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io } {
+    let out: Result[String, IoError] = Err(EndOfInput());
+    out
+}
+
+fn aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects { io } {
+    let out: Result[String, IoError] = Err(EndOfInput());
+    out
+}
+
+fn aic_io_eprint_str_intrinsic(x: String) -> () effects { io } {
+    ()
+}
+
+fn aic_io_eprint_int_intrinsic(x: Int) -> () effects { io } {
+    ()
+}
+
+fn aic_io_println_str_intrinsic(x: String) -> () effects { io } {
+    ()
+}
+
+fn aic_io_println_int_intrinsic(x: Int) -> () effects { io } {
+    ()
+}
+
+fn aic_io_print_bool_intrinsic(x: Bool) -> () effects { io } {
+    ()
+}
+
+fn aic_io_println_bool_intrinsic(x: Bool) -> () effects { io } {
+    ()
+}
+
+fn aic_io_flush_stdout_intrinsic() -> () effects { io } {
+    ()
+}
+
+fn aic_io_flush_stderr_intrinsic() -> () effects { io } {
+    ()
+}
+
+fn aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
+    let _content = content;
+    io_err_int_result()
+}
+
+fn aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
+    let _content = content;
+    io_err_int_result()
+}
+
+fn aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], IoError] effects { io } {
+    let _file = file;
+    io_err_option_string(io_other())
+}
+
+fn aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Int, IoError] effects { io } {
+    let _file = file;
+    let _content = content;
+    io_err_int_result()
+}
+
+fn aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effects { io } {
+    let _file = file;
+    io_ok_bool_true()
+}
+
+fn aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoError] effects { io } {
+    let _handle = handle;
+    let _content = content;
+    io_err_int_result()
+}
+
+fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, IoError] effects { io } {
+    let _handle = handle;
+    let _max_bytes = max_bytes;
+    let _timeout_ms = timeout_ms;
+    io_err_string_result()
+}
+
+fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io } {
+    let _handle = handle;
+    io_ok_bool_true()
+}
+
+fn from_fs_error(err: FsError) -> IoError {
+    match err {
+        NotFound => io_end_of_input(),
+        InvalidInput => io_invalid_input(),
+        _ => io_other(),
+    }
+}
+
+fn from_net_error(err: NetError) -> IoError {
+    match err {
+        Timeout => io_end_of_input(),
+        InvalidInput => io_invalid_input(),
+        _ => io_other(),
+    }
+}
+
+fn from_proc_error(err: ProcError) -> IoError {
+    match err {
+        UnknownProcess => io_end_of_input(),
+        InvalidInput => io_invalid_input(),
+        _ => io_other(),
+    }
+}
+
+fn from_env_error(err: EnvError) -> IoError {
+    match err {
+        NotFound => io_end_of_input(),
+        InvalidInput => io_invalid_input(),
+        _ => io_other(),
+    }
+}
+
+fn stdin_reader() -> Reader {
+    ReadStdin()
+}
+
+fn stdout_writer() -> Writer {
+    WriteStdout()
+}
+
+fn stderr_writer() -> Writer {
+    WriteStderr()
+}
+
+fn tcp_reader(handle: Int, max_bytes: Int, timeout_ms: Int) -> Reader {
+    ReadTcp(TcpReader {
+        handle: handle,
+        max_bytes: max_bytes,
+        timeout_ms: timeout_ms,
+    })
+}
+
+fn tcp_writer(handle: Int) -> Writer {
+    WriteTcp(handle)
+}
+
+fn file_reader(path: String) -> Result[Reader, IoError] effects { fs } {
+    match open_read(path) {
+        Ok(file) => Ok(ReadFile(file)),
+        Err(err) => Err(from_fs_error(err)),
+    }
+}
+
+fn file_writer(path: String) -> Result[Writer, IoError] effects { fs } {
+    match open_write(path) {
+        Ok(file) => Ok(WriteFile(file)),
+        Err(err) => Err(from_fs_error(err)),
+    }
+}
+
+fn file_appender(path: String) -> Result[Writer, IoError] effects { fs } {
+    match open_append(path) {
+        Ok(file) => Ok(WriteFile(file)),
+        Err(err) => Err(from_fs_error(err)),
+    }
+}
+
+fn tcp_connect_reader(addr: String, timeout_ms: Int, max_bytes: Int) -> Result[Reader, IoError] effects { net } {
+    match tcp_connect(addr, timeout_ms) {
+        Ok(handle) => Ok(ReadTcp(TcpReader {
+            handle: handle,
+            max_bytes: max_bytes,
+            timeout_ms: timeout_ms,
+        })),
+        Err(err) => Err(from_net_error(err)),
+    }
+}
+
+fn tcp_connect_writer(addr: String, timeout_ms: Int) -> Result[Writer, IoError] effects { net } {
+    match tcp_connect(addr, timeout_ms) {
+        Ok(handle) => Ok(WriteTcp(handle)),
+        Err(err) => Err(from_net_error(err)),
+    }
+}
+
+fn read_stream(reader: Reader) -> Result[String, IoError] effects { io } {
+    match reader {
+        ReadStdin => read_line(),
+        ReadFile(file) => match aic_io_file_read_line_intrinsic(file) {
+            Ok(value) => match value {
+                Some(text) => Ok(text),
+                None => Err(io_end_of_input()),
+            },
+            Err(err) => Err(err),
+        },
+        ReadTcp(state) => aic_io_tcp_recv_intrinsic(state.handle, state.max_bytes, state.timeout_ms),
+    }
+}
+
+fn read_stream_optional(reader: Reader) -> Result[Option[String], IoError] effects { io } {
+    match read_stream(reader) {
+        Ok(text) => io_ok_some_string(text),
+        Err(err) => match err {
+            EndOfInput => io_ok_none_string(),
+            InvalidInput => io_err_option_string(io_invalid_input()),
+            Io => io_err_option_string(io_other()),
+        },
+    }
+}
+
+fn write_stdout_stream(content: String) -> Result[Int, IoError] effects { io } {
+    aic_io_write_stdout_intrinsic(content)
+}
+
+fn write_stderr_stream(content: String) -> Result[Int, IoError] effects { io } {
+    aic_io_write_stderr_intrinsic(content)
+}
+
+fn write_file_stream(file: FileHandle, content: String) -> Result[Int, IoError] effects { io } {
+    aic_io_file_write_str_intrinsic(file, content)
+}
+
+fn write_tcp_stream(handle: Int, content: String) -> Result[Int, IoError] effects { io } {
+    aic_io_tcp_send_intrinsic(handle, content)
+}
+
+fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io } {
+    match writer {
+        WriteStdout => write_stdout_stream(content),
+        WriteStderr => write_stderr_stream(content),
+        WriteFile(file) => write_file_stream(file, content),
+        WriteTcp(handle) => write_tcp_stream(handle, content),
+    }
+}
+
+fn flush_stdout_stream() -> Result[Bool, IoError] effects { io } {
+    aic_io_flush_stdout_intrinsic();
+    io_ok_bool_true()
+}
+
+fn flush_stderr_stream() -> Result[Bool, IoError] effects { io } {
+    aic_io_flush_stderr_intrinsic();
+    io_ok_bool_true()
+}
+
+fn flush_stream(writer: Writer) -> Result[Bool, IoError] effects { io } {
+    match writer {
+        WriteStdout => flush_stdout_stream(),
+        WriteStderr => flush_stderr_stream(),
+        _ => io_ok_bool_true(),
+    }
+}
+
+fn close_reader(reader: Reader) -> Result[Bool, IoError] effects { io } {
+    match reader {
+        ReadStdin => io_ok_bool_true(),
+        ReadFile(file) => aic_io_file_close_intrinsic(file),
+        ReadTcp(state) => aic_io_tcp_close_intrinsic(state.handle),
+    }
+}
+
+fn close_stdout_writer() -> Result[Bool, IoError] effects { io } {
+    aic_io_flush_stdout_intrinsic();
+    io_ok_bool_true()
+}
+
+fn close_stderr_writer() -> Result[Bool, IoError] effects { io } {
+    aic_io_flush_stderr_intrinsic();
+    io_ok_bool_true()
+}
+
+fn close_writer(writer: Writer) -> Result[Bool, IoError] effects { io } {
+    match writer {
+        WriteStdout => close_stdout_writer(),
+        WriteStderr => close_stderr_writer(),
+        WriteFile(file) => aic_io_file_close_intrinsic(file),
+        WriteTcp(handle) => aic_io_tcp_close_intrinsic(handle),
+    }
+}
+
+fn stream_copy(reader: Reader, writer: Writer) -> Result[Int, IoError] effects { io } {
+    match read_stream_optional(reader) {
+        Ok(next) => match next {
+            Some(chunk) => write_stream(writer, chunk),
+            None => io_ok_int_zero(),
+        },
+        Err(err) => io_err_int_result_with(err),
+    }
+}
+
 /// Print integer value to stdout.
 fn print_int(x: Int) -> () effects { io } {
-    ()
+    aic_io_print_int_intrinsic(x)
 }
 
 /// Print string value to stdout.
 fn print_str(x: String) -> () effects { io } {
-    ()
+    aic_io_print_str_intrinsic(x)
 }
 
 /// Print floating point value to stdout.
 fn print_float(x: Float) -> () effects { io } {
-    ()
+    aic_io_print_float_intrinsic(x)
+}
+
+fn read_line() -> Result[String, IoError] effects { io } {
+    aic_io_read_line_intrinsic()
+}
+
+fn read_int() -> Result[Int, IoError] effects { io } {
+    aic_io_read_int_intrinsic()
+}
+
+fn read_char() -> Result[String, IoError] effects { io } {
+    aic_io_read_char_intrinsic()
+}
+
+fn prompt(message: String) -> Result[String, IoError] effects { io } {
+    aic_io_prompt_intrinsic(message)
+}
+
+fn eprint_str(x: String) -> () effects { io } {
+    aic_io_eprint_str_intrinsic(x)
+}
+
+fn eprint_int(x: Int) -> () effects { io } {
+    aic_io_eprint_int_intrinsic(x)
+}
+
+fn println_str(x: String) -> () effects { io } {
+    aic_io_println_str_intrinsic(x)
+}
+
+fn println_int(x: Int) -> () effects { io } {
+    aic_io_println_int_intrinsic(x)
+}
+
+fn print_bool(x: Bool) -> () effects { io } {
+    aic_io_print_bool_intrinsic(x)
+}
+
+fn println_bool(x: Bool) -> () effects { io } {
+    aic_io_println_bool_intrinsic(x)
+}
+
+fn flush_stdout() -> () effects { io } {
+    aic_io_flush_stdout_intrinsic()
+}
+
+fn flush_stderr() -> () effects { io } {
+    aic_io_flush_stderr_intrinsic()
 }
 
 /// Abort execution with panic message.
 fn panic(message: String) -> () effects { io } {
-    ()
+    aic_io_panic_intrinsic(message)
 }

@@ -109,6 +109,16 @@ Notes:
   - `docs/io-runtime/net-time-rand.md`
   - `docs/io-runtime/error-model.md`
   - `docs/io-runtime/lifecycle-playbook.md`
+- Issue #123 IO reference set:
+  - `docs/io-api-reference.md`
+  - `docs/io-cookbook.md`
+  - `docs/io-agent-guide.md`
+  - `docs/io-migration.md`
+  - `examples/io/interactive_greeter.aic`
+  - `examples/io/file_processor.aic`
+  - `examples/io/log_tee.aic`
+  - `examples/io/env_config.aic`
+  - `examples/io/subprocess_pipeline.aic`
 - Data/text/regex/url/http/datetime contracts and examples:
   - `docs/data-text/README.md`
   - `docs/data-text/cookbook.md`

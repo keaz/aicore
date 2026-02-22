@@ -12,7 +12,7 @@ fn bool_ok(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs, env } {
     let wrote = bool_ok(write_text("io_all_a.txt", "ab"));
     let appended = bool_ok(append_text("io_all_a.txt", "cd"));
 
@@ -40,7 +40,7 @@ fn main() -> Int effects { io, fs } {
         Ok(path) => path,
         Err(_) => "",
     };
-    let tmp_dir = match temp_dir("aic_io_all_ops_") {
+    let tmp_dir = match fs.temp_dir("aic_io_all_ops_") {
         Ok(path) => path,
         Err(_) => "",
     };

@@ -1,0 +1,100 @@
+module example.io.stream_copy;
+
+import std.io;
+import std.fs;
+import std.net;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } {
+    match close_reader(reader) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    }
+}
+
+fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } {
+    match close_writer(writer) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs, net } {
+    let wrote = match fs.write_text("stream_copy_input.txt", "payload-42") {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let file_reader_stream = match file_reader("stream_copy_input.txt") {
+        Ok(value) => value,
+        Err(_) => stdin_reader(),
+    };
+    let file_writer_stream = match file_writer("stream_copy_output.txt") {
+        Ok(value) => value,
+        Err(_) => stdout_writer(),
+    };
+    let copied_ok = match stream_copy(file_reader_stream, file_writer_stream) {
+        Ok(written) => if written == 10 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let copied_text_ok = match fs.read_text("stream_copy_output.txt") {
+        Ok(text) => if len(text) == 10 && starts_with(text, "payload-42") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let file_close_ok = close_reader_ok(file_reader_stream) + close_writer_ok(file_writer_stream);
+
+    let listener = match net.tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let local_addr = match net.tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match net.tcp_connect(local_addr, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let server = match net.tcp_accept(listener, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+
+    let writer_stream = tcp_writer(client);
+    let reader_stream = tcp_reader(server, 64, 1000);
+    let sent_ok = match write_stream(writer_stream, "echo") {
+        Ok(written) => if written == 4 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let recv_ok = match read_stream(reader_stream) {
+        Ok(text) => if len(text) == 4 && starts_with(text, "echo") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let tcp_close_ok =
+        close_writer_ok(writer_stream) +
+        close_reader_ok(reader_stream) +
+        match net.tcp_close(listener) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        };
+
+    let cleanup =
+        match fs.delete("stream_copy_input.txt") {
+            Ok(_) => 1,
+            Err(_) => 0,
+        } +
+        match fs.delete("stream_copy_output.txt") {
+            Ok(_) => 1,
+            Err(_) => 0,
+        };
+
+    if wrote + copied_ok + copied_text_ok + file_close_ok + sent_ok + recv_ok + tcp_close_ok + cleanup == 12 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

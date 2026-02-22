@@ -1,0 +1,67 @@
+module example.io.subprocess_pipeline;
+
+import std.io;
+import std.proc;
+import std.string;
+import std.vec;
+
+fn fallback_output() -> ProcOutput {
+    ProcOutput {
+        status: 99,
+        stdout: "",
+        stderr: "",
+    }
+}
+
+fn main() -> Int effects { io, proc, env } {
+    let run_out = match run("printf 'hello'") {
+        Ok(value) => value,
+        Err(_) => fallback_output(),
+    };
+
+    let pipe_out = match pipe("printf 'alpha'", "cat") {
+        Ok(value) => value,
+        Err(_) => fallback_output(),
+    };
+
+    let opts = RunOptions {
+        stdin: "stdin-data",
+        cwd: ".",
+        env: vec.vec_of("AIC_PIPE_TOKEN=ok"),
+        timeout_ms: 0,
+    };
+
+    let with_out = match run_with(
+        "printf \"$AIC_PIPE_TOKEN\"; printf ':'; cat",
+        opts
+    ) {
+        Ok(value) => value,
+        Err(_) => fallback_output(),
+    };
+
+    let timeout_out = match run_timeout("sleep 2", 50) {
+        Ok(value) => value,
+        Err(_) => fallback_output(),
+    };
+
+    let mut stages: Vec[String] = vec.vec_of("printf 'one'");
+    stages = vec.push(stages, "cat");
+    let chain_out = match pipe_chain(stages) {
+        Ok(value) => value,
+        Err(_) => fallback_output(),
+    };
+
+    let ok =
+        (if run_out.status == 0 && len(run_out.stdout) > 0 { 1 } else { 0 }) +
+        (if pipe_out.status == 0 && len(pipe_out.stdout) > 0 { 1 } else { 0 }) +
+        (if with_out.status == 0 && string.contains(with_out.stdout, "ok:stdin-data") { 1 } else { 0 }) +
+        (if timeout_out.status == 124 { 1 } else { 0 }) +
+        (if chain_out.status == 0 && string.contains(chain_out.stdout, "one") { 1 } else { 0 });
+
+    if ok == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

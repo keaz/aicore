@@ -5,12 +5,12 @@ struct Pair[T, U] {
     right: U,
 }
 
-fn first[T, U](x: Pair[T, U]) -> T {
+fn pair_first[T, U](x: Pair[T, U]) -> T {
     x.left
 }
 
 fn main() -> Int effects { io } {
     let pair = Pair { left: 42, right: true };
-    print_int(first(pair));
+    print_int(pair_first(pair));
     0
 }

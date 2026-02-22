@@ -1,0 +1,337 @@
+# IO API Reference
+
+This file is the agent-facing reference for the current IO runtime surface.
+Source of truth is the current repository state in `std/*.aic` and runtime lowering in `src/codegen.rs`.
+
+## Scope
+
+Covered modules:
+
+- `std.io`
+- `std.fs`
+- `std.env`
+- `std.path`
+- `std.proc`
+- `std.net`
+- `std.time`
+- `std.rand`
+
+## Effect Taxonomy
+
+Known effects (from `src/effects.rs`):
+
+- `io`
+- `fs`
+- `net`
+- `time`
+- `rand`
+- `env`
+- `proc`
+- `concurrency`
+
+Typechecking enforces direct and transitive effect declarations (`E2001`, `E2005`).
+
+## Runtime Error Mapping
+
+The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
+
+| Module | Status-to-variant mapping |
+|---|---|
+| `IoError` | `1=EndOfInput`, `2=InvalidInput`, `3=Io` |
+| `FsError` | `1=NotFound`, `2=PermissionDenied`, `3=AlreadyExists`, `4=InvalidInput`, `5=Io` |
+| `EnvError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io` |
+| `ProcError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io`, `5=UnknownProcess` |
+| `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io` |
+| `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
+
+## `std.io`
+
+```aic
+enum IoError {
+    EndOfInput,
+    InvalidInput,
+    Io,
+}
+
+fn print_int(x: Int) -> () effects { io }
+fn print_str(x: String) -> () effects { io }
+fn print_float(x: Float) -> () effects { io }
+fn read_line() -> Result[String, IoError] effects { io }
+fn read_int() -> Result[Int, IoError] effects { io }
+fn read_char() -> Result[String, IoError] effects { io }
+fn prompt(message: String) -> Result[String, IoError] effects { io }
+fn eprint_str(x: String) -> () effects { io }
+fn eprint_int(x: Int) -> () effects { io }
+fn println_str(x: String) -> () effects { io }
+fn println_int(x: Int) -> () effects { io }
+fn print_bool(x: Bool) -> () effects { io }
+fn println_bool(x: Bool) -> () effects { io }
+fn flush_stdout() -> () effects { io }
+fn flush_stderr() -> () effects { io }
+fn panic(message: String) -> () effects { io }
+```
+
+Notes:
+
+- `prompt` writes the message, flushes stdout, then reads one line.
+- `read_char` expects a single UTF-8 scalar value from one input line.
+
+## `std.fs`
+
+```aic
+enum FsError {
+    NotFound,
+    PermissionDenied,
+    AlreadyExists,
+    InvalidInput,
+    Io,
+}
+
+struct FsMetadata {
+    is_file: Bool,
+    is_dir: Bool,
+    size: Int,
+}
+
+struct FileHandle {
+    handle: Int,
+}
+
+fn exists(path: String) -> Bool effects { fs }
+fn read_text(path: String) -> Result[String, FsError] effects { fs }
+fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }
+fn append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }
+fn copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }
+fn move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }
+fn delete(path: String) -> Result[Bool, FsError] effects { fs }
+fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs }
+fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs }
+fn temp_file(prefix: String) -> Result[String, FsError] effects { fs }
+fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs }
+fn read_bytes(path: String) -> Result[String, FsError] effects { fs }
+fn write_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }
+fn append_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }
+fn open_read(path: String) -> Result[FileHandle, FsError] effects { fs }
+fn open_write(path: String) -> Result[FileHandle, FsError] effects { fs }
+fn open_append(path: String) -> Result[FileHandle, FsError] effects { fs }
+fn file_read_line(file: FileHandle) -> Result[Option[String], FsError] effects { fs }
+fn file_write_str(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs }
+fn file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs }
+fn mkdir(path: String) -> Result[Bool, FsError] effects { fs }
+fn mkdir_all(path: String) -> Result[Bool, FsError] effects { fs }
+fn rmdir(path: String) -> Result[Bool, FsError] effects { fs }
+fn list_dir(path: String) -> Result[Vec[String], FsError] effects { fs }
+fn create_symlink(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs }
+fn read_symlink(path: String) -> Result[String, FsError] effects { fs }
+fn set_readonly(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs }
+```
+
+Notes:
+
+- File-handle table capacity is bounded (`1024` runtime slots).
+- `walk_dir` currently exposes count-only `Vec` payload semantics in codegen; use `vec_len(...)` as the stable operation.
+- `list_dir` returns concrete directory entry strings.
+- Windows caveats:
+  - `create_symlink` may fail with privilege-related errors.
+  - `read_symlink` currently returns `FsError::Io`.
+
+## `std.env`
+
+```aic
+enum EnvError {
+    NotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+}
+
+struct EnvEntry {
+    key: String,
+    value: String,
+}
+
+fn get(key: String) -> Result[String, EnvError] effects { env }
+fn set(key: String, value: String) -> Result[Bool, EnvError] effects { env }
+fn remove(key: String) -> Result[Bool, EnvError] effects { env }
+fn cwd() -> Result[String, EnvError] effects { env, fs }
+fn set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs }
+fn args() -> Vec[String] effects { env }
+fn arg_count() -> Int effects { env }
+fn arg_at(index: Int) -> Option[String] effects { env }
+fn exit(code: Int) -> () effects { env }
+fn all_vars() -> Vec[EnvEntry] effects { env }
+fn home_dir() -> Result[String, EnvError] effects { env, fs }
+fn temp_dir() -> Result[String, EnvError] effects { env, fs }
+fn os_name() -> String effects { env }
+fn arch() -> String effects { env }
+```
+
+Notes:
+
+- Invalid variable names (empty or containing `=`) map to `EnvError::InvalidInput`.
+- `args` and `all_vars` return snapshots of process state at call time.
+
+## `std.path`
+
+```aic
+fn join(left: String, right: String) -> String
+fn basename(path: String) -> String
+fn dirname(path: String) -> String
+fn extension(path: String) -> String
+fn is_abs(path: String) -> Bool
+```
+
+Notes:
+
+- Path helpers are pure (no effects).
+- `join` returns `right` directly when `right` is absolute.
+
+## `std.proc`
+
+```aic
+enum ProcError {
+    NotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+    UnknownProcess,
+}
+
+struct ProcOutput {
+    status: Int,
+    stdout: String,
+    stderr: String,
+}
+
+struct RunOptions {
+    stdin: String,
+    cwd: String,
+    env: Vec[String],
+    timeout_ms: Int,
+}
+
+fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env }
+fn wait(handle: Int) -> Result[Int, ProcError] effects { proc }
+fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc }
+fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc }
+fn current_pid() -> Result[Int, ProcError] effects { proc }
+fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env }
+```
+
+Notes:
+
+- `run`/`pipe` success is about launch/execution plumbing; check `ProcOutput.status` for command exit status.
+- Spawned-handle table capacity is bounded (`64` runtime slots).
+- Windows caveats:
+  - `spawn` returns `ProcError::Io`.
+  - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
+  - `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
+  - `run`, `pipe`, and `current_pid` remain available.
+
+## `std.net`
+
+```aic
+enum NetError {
+    NotFound,
+    PermissionDenied,
+    Refused,
+    Timeout,
+    AddressInUse,
+    InvalidInput,
+    Io,
+}
+
+struct UdpPacket {
+    from: String,
+    payload: String,
+}
+
+fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
+fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
+fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
+fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }
+fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }
+fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }
+fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
+fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
+fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
+fn udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }
+fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }
+fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
+fn dns_lookup(host: String) -> Result[String, NetError] effects { net }
+fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
+```
+
+Notes:
+
+- Network-handle table capacity is bounded (`128` runtime slots).
+- On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
+
+## `std.time`
+
+```aic
+enum TimeError {
+    InvalidFormat,
+    InvalidDate,
+    InvalidTime,
+    InvalidOffset,
+    InvalidInput,
+    Internal,
+}
+
+struct DateTime {
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int,
+    minute: Int,
+    second: Int,
+    millisecond: Int,
+    offset_minutes: Int,
+}
+
+fn now_ms() -> Int effects { time }
+fn now() -> Int effects { time }
+fn monotonic_ms() -> Int effects { time }
+fn sleep_ms(ms: Int) -> () effects { time }
+fn parse_rfc3339(text: String) -> Result[DateTime, TimeError] effects { time }
+fn parse_iso8601(text: String) -> Result[DateTime, TimeError] effects { time }
+fn format_rfc3339(value: DateTime) -> Result[String, TimeError] effects { time }
+fn format_iso8601(value: DateTime) -> Result[String, TimeError] effects { time }
+fn deadline_after_ms(timeout_ms: Int) -> Int effects { time }
+fn remaining_ms(deadline_ms: Int) -> Int effects { time }
+fn timeout_expired(deadline_ms: Int) -> Bool effects { time }
+fn sleep_until(deadline_ms: Int) -> () effects { time }
+```
+
+Notes:
+
+- `now()` is compatibility API and is deprecated in policy metadata in favor of `now_ms()`.
+- `parse_rfc3339` requires timezone and seconds.
+- `parse_iso8601` accepts date-only and timezone-optional forms.
+
+## `std.rand`
+
+```aic
+fn seed(seed_value: Int) -> () effects { rand }
+fn random_int() -> Int effects { rand }
+fn random_bool() -> Bool effects { rand }
+fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand }
+```
+
+Notes:
+
+- `seed(...)` makes sequences deterministic.
+- `random_range(a, b)` returns `a` when `b <= a`.
+
+## Deterministic Validation Commands
+
+```bash
+cargo run --quiet --bin aic -- std-compat
+cargo run --quiet --bin aic -- check examples/io/interactive_greeter.aic
+cargo run --quiet --bin aic -- explain E2001
+```

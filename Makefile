@@ -144,6 +144,10 @@ docs-check:
 	@test -f docs/io-filesystem.md
 	@test -f docs/io-process-env-path.md
 	@test -f docs/io-concurrency-runtime.md
+	@test -f docs/io-api-reference.md
+	@test -f docs/io-cookbook.md
+	@test -f docs/io-agent-guide.md
+	@test -f docs/io-migration.md
 	@test -f docs/io-runtime/README.md
 	@test -f docs/io-runtime/net-time-rand.md
 	@test -f docs/io-runtime/error-model.md
