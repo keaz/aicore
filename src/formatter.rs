@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::ast::{BinOp, UnaryOp};
+use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, UnaryOp};
 use crate::ir;
 
 pub fn format_program(program: &ir::Program) -> String {
@@ -41,6 +41,15 @@ pub fn format_program(program: &ir::Program) -> String {
 }
 
 fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::TypeId, String>) {
+    if let Some(name) = decode_internal_type_alias(&f.name) {
+        format_type_alias(out, name, f, type_map);
+        return;
+    }
+    if let Some(name) = decode_internal_const(&f.name) {
+        format_const(out, name, f, type_map);
+        return;
+    }
+
     if f.is_extern {
         out.push_str("extern \"");
         out.push_str(f.extern_abi.as_deref().unwrap_or("C"));
@@ -131,6 +140,49 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
     out.push(' ');
     format_block(out, &f.body, type_map, 0);
     out.push('\n');
+}
+
+fn format_type_alias(
+    out: &mut String,
+    name: &str,
+    f: &ir::Function,
+    type_map: &BTreeMap<ir::TypeId, String>,
+) {
+    out.push_str("type ");
+    out.push_str(name);
+    format_generic_params(out, &f.generics);
+    out.push_str(" = ");
+    out.push_str(
+        type_map
+            .get(&f.ret_type)
+            .map(|s| s.as_str())
+            .unwrap_or("<?>"),
+    );
+    out.push_str(";\n");
+}
+
+fn format_const(
+    out: &mut String,
+    name: &str,
+    f: &ir::Function,
+    type_map: &BTreeMap<ir::TypeId, String>,
+) {
+    out.push_str("const ");
+    out.push_str(name);
+    out.push_str(": ");
+    out.push_str(
+        type_map
+            .get(&f.ret_type)
+            .map(|s| s.as_str())
+            .unwrap_or("<?>"),
+    );
+    out.push_str(" = ");
+    if let Some(expr) = &f.body.tail {
+        format_expr(out, expr, 0, type_map);
+    } else {
+        out.push_str("()");
+    }
+    out.push_str(";\n");
 }
 
 fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::TypeId, String>) {

@@ -8,6 +8,19 @@ cargo run --quiet --bin aic -- std-compat
 
 The command prints JSON matching `/Users/kasunranasinghe/Projects/Rust/aicore/src/std_policy.rs` data structures.
 
+## `aic doc` outputs (human-readable + machine-readable)
+
+`aic doc <input> --output <dir>` emits both documentation formats from the same frontend/docgen pass:
+
+- `<dir>/index.md`: human-readable rendered API reference.
+- `<dir>/api.json`: machine-readable API index used by automation checks.
+
+Example generation command:
+
+```bash
+aic doc std/fs.aic --output target/docs-contract/std-fs-docs
+```
+
 ## Snapshot schema
 
 Top-level shape:

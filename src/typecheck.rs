@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::ast::BinOp;
+use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp};
 use crate::diagnostics::{Diagnostic, DiagnosticSpan};
 use crate::ir;
 use crate::resolver::{EnumInfo, Resolution, StructInfo};
@@ -32,6 +32,12 @@ struct FnSig {
     generic_bounds: BTreeMap<String, Vec<String>>,
 }
 
+#[derive(Debug, Clone)]
+struct AliasDef {
+    generics: Vec<String>,
+    target: String,
+}
+
 struct Checker<'a> {
     program: &'a ir::Program,
     resolution: &'a Resolution,
@@ -52,6 +58,8 @@ struct Checker<'a> {
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
+    type_aliases: BTreeMap<String, AliasDef>,
+    const_types: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
@@ -168,6 +176,37 @@ impl<'a> Checker<'a> {
         generic_arity.insert("Async".to_string(), 1);
         generic_arity.insert("Ref".to_string(), 1);
         generic_arity.insert("RefMut".to_string(), 1);
+        let mut type_aliases = BTreeMap::new();
+        let mut const_types = BTreeMap::new();
+
+        for item in &program.items {
+            let ir::Item::Function(func) = item else {
+                continue;
+            };
+
+            if let Some(alias_name) = decode_internal_type_alias(&func.name) {
+                type_aliases
+                    .entry(alias_name.to_string())
+                    .or_insert_with(|| AliasDef {
+                        generics: func.generics.iter().map(|g| g.name.clone()).collect(),
+                        target: types
+                            .get(&func.ret_type)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string()),
+                    });
+                continue;
+            }
+
+            if let Some(const_name) = decode_internal_const(&func.name) {
+                let declared_ty = types
+                    .get(&func.ret_type)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                const_types
+                    .entry(const_name.to_string())
+                    .or_insert_with(|| declared_ty.clone());
+            }
+        }
 
         for (name, info) in &resolution.functions {
             let mut params = Vec::new();
@@ -223,6 +262,9 @@ impl<'a> Checker<'a> {
         }
         for (name, info) in &resolution.enums {
             generic_arity.insert(name.clone(), info.generics.len());
+        }
+        for (name, alias) in &type_aliases {
+            generic_arity.insert(name.clone(), alias.generics.len());
         }
 
         // Minimal std signatures.
@@ -317,6 +359,8 @@ impl<'a> Checker<'a> {
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
+            type_aliases,
+            const_types,
         }
     }
 
@@ -324,7 +368,15 @@ impl<'a> Checker<'a> {
         self.check_no_null_boundary();
         for item in &self.program.items {
             match item {
-                ir::Item::Function(func) => self.check_function(func),
+                ir::Item::Function(func) => {
+                    if decode_internal_type_alias(&func.name).is_some() {
+                        self.check_type_alias_item(func);
+                    } else if decode_internal_const(&func.name).is_some() {
+                        self.check_const_item(func);
+                    } else {
+                        self.check_function(func);
+                    }
+                }
                 ir::Item::Struct(strukt) => self.check_struct_invariant(strukt),
                 ir::Item::Enum(enm) => self.check_enum_definition(enm),
                 ir::Item::Trait(_) | ir::Item::Impl(_) => {}
@@ -351,6 +403,129 @@ impl<'a> Checker<'a> {
             diagnostics: self.diagnostics,
             function_effect_usage: self.effect_usage,
             generic_instantiations,
+        }
+    }
+
+    fn check_type_alias_item(&mut self, func: &ir::Function) {
+        let target = self
+            .types
+            .get(&func.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        self.check_generic_arity(&target, func.span);
+    }
+
+    fn check_const_item(&mut self, func: &ir::Function) {
+        let Some(const_name) = decode_internal_const(&func.name) else {
+            return;
+        };
+        let declared_ty = self
+            .types
+            .get(&func.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        self.check_generic_arity(&declared_ty, func.span);
+        let Some(expr) = &func.body.tail else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1288",
+                format!(
+                    "const '{}' is missing an initializer expression",
+                    const_name
+                ),
+                self.file,
+                func.span,
+            ));
+            return;
+        };
+
+        self.validate_const_initializer(const_name, expr);
+
+        let mut locals = BTreeMap::new();
+        let mut ctx = ExprContext::default();
+        let expr_ty = self.check_expr_with_expected(
+            expr,
+            &mut locals,
+            &BTreeSet::new(),
+            &mut ctx,
+            true,
+            Some(&declared_ty),
+        );
+        if !self.types_compatible(&declared_ty, &expr_ty) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1288",
+                    format!(
+                        "const '{}' expects type '{}', found '{}'",
+                        const_name, declared_ty, expr_ty
+                    ),
+                    self.file,
+                    func.span,
+                )
+                .with_help("make the const initializer type match its annotation"),
+            );
+        }
+    }
+
+    fn validate_const_initializer(&mut self, const_name: &str, expr: &ir::Expr) {
+        match &expr.kind {
+            ir::ExprKind::Int(_)
+            | ir::ExprKind::Float(_)
+            | ir::ExprKind::Bool(_)
+            | ir::ExprKind::String(_)
+            | ir::ExprKind::Unit => {}
+            ir::ExprKind::Var(name) => {
+                if !self.const_types.contains_key(name) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1287",
+                            format!(
+                                "const '{}' initializer can only reference other constants, found '{}'",
+                                const_name, name
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("reference a previously declared const symbol"),
+                    );
+                }
+            }
+            ir::ExprKind::Unary { op, expr: inner } => match op {
+                crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::Not => {
+                    self.validate_const_initializer(const_name, inner);
+                }
+            },
+            ir::ExprKind::Binary { lhs, rhs, .. } => {
+                self.validate_const_initializer(const_name, lhs);
+                self.validate_const_initializer(const_name, rhs);
+            }
+            ir::ExprKind::Call { .. } => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1287",
+                        format!(
+                            "const '{}' initializer cannot call functions at compile time",
+                            const_name
+                        ),
+                        self.file,
+                        expr.span,
+                    )
+                    .with_help("use literals, operators, and other constants only"),
+                );
+            }
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1287",
+                        format!(
+                            "const '{}' initializer only supports literals, unary/binary operators, and const references",
+                            const_name
+                        ),
+                        self.file,
+                        expr.span,
+                    )
+                    .with_help("move non-constant logic into a function and assign its result at runtime"),
+                );
+            }
         }
     }
 
@@ -443,7 +618,7 @@ impl<'a> Checker<'a> {
                 &mut contract_ctx,
                 true,
             );
-            if ty != "Bool" {
+            if self.normalize_type(&ty) != "Bool" {
                 self.diagnostics.push(
                     Diagnostic::error(
                         "E1200",
@@ -467,7 +642,7 @@ impl<'a> Checker<'a> {
                 &mut contract_ctx,
                 true,
             );
-            if ty != "Bool" {
+            if self.normalize_type(&ty) != "Bool" {
                 self.diagnostics.push(
                     Diagnostic::error(
                         "E1201",
@@ -492,7 +667,7 @@ impl<'a> Checker<'a> {
         self.check_mutability_and_borrows(func);
         self.check_resource_protocols(func);
 
-        if !type_compatible(&ret_type, &body_ty) {
+        if !self.types_compatible(&ret_type, &body_ty) {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1202",
@@ -665,7 +840,12 @@ impl<'a> Checker<'a> {
             .items
             .iter()
             .filter_map(|item| match item {
-                ir::Item::Function(func) => Some(func.name.clone()),
+                ir::Item::Function(func)
+                    if decode_internal_type_alias(&func.name).is_none()
+                        && decode_internal_const(&func.name).is_none() =>
+                {
+                    Some(func.name.clone())
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1420,7 +1600,7 @@ impl<'a> Checker<'a> {
             }
             let mut ctx = ExprContext::default();
             let ty = self.check_expr(inv, &mut locals, &BTreeSet::new(), &mut ctx, true);
-            if ty != "Bool" {
+            if self.normalize_type(&ty) != "Bool" {
                 self.diagnostics.push(Diagnostic::error(
                     "E1203",
                     format!("invariant for struct '{}' must be Bool", strukt.name),
@@ -1479,7 +1659,7 @@ impl<'a> Checker<'a> {
                             contract_mode,
                             Some(&ann_ty),
                         );
-                        if !type_compatible(&ann_ty, &expr_ty) {
+                        if !self.types_compatible(&ann_ty, &expr_ty) {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1204",
@@ -1526,7 +1706,7 @@ impl<'a> Checker<'a> {
                         ));
                         continue;
                     };
-                    if !type_compatible(&target_ty, &expr_ty) {
+                    if !self.types_compatible(&target_ty, &expr_ty) {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1269",
@@ -1557,7 +1737,7 @@ impl<'a> Checker<'a> {
                     } else {
                         "()".to_string()
                     };
-                    if !type_compatible(ret_type, &ty) {
+                    if !self.types_compatible(ret_type, &ty) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1205",
                             format!(
@@ -1571,7 +1751,7 @@ impl<'a> Checker<'a> {
                 }
                 ir::Stmt::Assert { expr, span, .. } => {
                     let ty = self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
-                    if ty != "Bool" {
+                    if self.normalize_type(&ty) != "Bool" {
                         self.diagnostics.push(Diagnostic::error(
                             "E1206",
                             "assert expression must be Bool",
@@ -1625,6 +1805,9 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Unit => "()".to_string(),
             ir::ExprKind::Var(name) => {
                 if let Some(ty) = locals.get(name) {
+                    return ty.clone();
+                }
+                if let Some(ty) = self.const_types.get(name) {
                     return ty.clone();
                 }
                 if let Some(sig) = self.functions.get(name) {
@@ -2024,9 +2207,11 @@ impl<'a> Checker<'a> {
                         let Some(expected_raw) = sig.params.get(idx) else {
                             continue;
                         };
+                        let expected_norm = self.normalize_type(expected_raw);
+                        let arg_norm = self.normalize_type(arg_ty);
                         let inferred = infer_generic_bindings(
-                            expected_raw,
-                            arg_ty,
+                            &expected_norm,
+                            &arg_norm,
                             &generic_set,
                             &mut generic_bindings,
                         );
@@ -2048,18 +2233,21 @@ impl<'a> Checker<'a> {
 
                     if !sig.generic_params.is_empty() {
                         if let Some(expected) = expected_ty {
+                            let expected_norm = self.normalize_type(expected);
                             let expected_ret_hint =
-                                if sig.is_async && base_type_name(expected) == "Async" {
-                                    extract_generic_args(expected)
+                                if sig.is_async && base_type_name(&expected_norm) == "Async" {
+                                    extract_generic_args(&expected_norm)
                                         .and_then(|args| args.into_iter().next())
                                         .unwrap_or_else(|| expected.to_string())
                                 } else {
                                     expected.to_string()
                                 };
                             if !contains_unresolved_type(&expected_ret_hint) {
+                                let ret_norm = self.normalize_type(&sig.ret);
+                                let expected_ret_norm = self.normalize_type(&expected_ret_hint);
                                 infer_generic_bindings(
-                                    &sig.ret,
-                                    &expected_ret_hint,
+                                    &ret_norm,
+                                    &expected_ret_norm,
                                     &generic_set,
                                     &mut generic_bindings,
                                 );
@@ -2137,7 +2325,7 @@ impl<'a> Checker<'a> {
                         let Some(expected) = instantiated_params.get(idx) else {
                             continue;
                         };
-                        if !type_compatible(expected, arg_ty) {
+                        if !self.types_compatible(expected, arg_ty) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1214",
                                 format!(
@@ -2305,9 +2493,11 @@ impl<'a> Checker<'a> {
                                     ctx,
                                     contract_mode,
                                 );
+                                let payload_norm = self.normalize_type(payload_ty);
+                                let arg_norm = self.normalize_type(&arg_ty);
                                 let inferred = infer_generic_bindings(
-                                    payload_ty,
-                                    &arg_ty,
+                                    &payload_norm,
+                                    &arg_norm,
                                     &generic_set,
                                     &mut generic_bindings,
                                 );
@@ -2441,7 +2631,7 @@ impl<'a> Checker<'a> {
                     ctx,
                     contract_mode,
                 );
-                if !type_compatible(&declared_ret, &body_ty) {
+                if !self.types_compatible(&declared_ret, &body_ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1281",
                         format!(
@@ -2459,7 +2649,7 @@ impl<'a> Checker<'a> {
                         .zip(closure_param_tys.iter())
                         .enumerate()
                     {
-                        if !type_compatible(expected_param, actual_param) {
+                        if !self.types_compatible(expected_param, actual_param) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1285",
                                 format!(
@@ -2473,7 +2663,7 @@ impl<'a> Checker<'a> {
                             ));
                         }
                     }
-                    if !type_compatible(expected_ret, &declared_ret) {
+                    if !self.types_compatible(expected_ret, &declared_ret) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1286",
                             format!(
@@ -2494,7 +2684,7 @@ impl<'a> Checker<'a> {
                 else_block,
             } => {
                 let cond_ty = self.check_expr(cond, locals, allowed_effects, ctx, contract_mode);
-                if cond_ty != "Bool" {
+                if self.normalize_type(&cond_ty) != "Bool" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1219",
                         "if condition must be Bool",
@@ -2518,7 +2708,7 @@ impl<'a> Checker<'a> {
                     ctx,
                     contract_mode,
                 );
-                if !type_compatible(&then_ty, &else_ty) {
+                if !self.types_compatible(&then_ty, &else_ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1220",
                         format!(
@@ -2530,12 +2720,12 @@ impl<'a> Checker<'a> {
                     ));
                     "<?>".to_string()
                 } else {
-                    merge_types(&then_ty, &else_ty)
+                    self.merge_compatible_types(&then_ty, &else_ty)
                 }
             }
             ir::ExprKind::While { cond, body } => {
                 let cond_ty = self.check_expr(cond, locals, allowed_effects, ctx, contract_mode);
-                if cond_ty != "Bool" {
+                if self.normalize_type(&cond_ty) != "Bool" {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1273",
@@ -2582,7 +2772,7 @@ impl<'a> Checker<'a> {
                 let loop_ctx = ctx.loop_stack.last_mut().expect("checked non-empty stack");
                 match &loop_ctx.break_ty {
                     Some(expected) => {
-                        if !type_compatible(expected, &break_ty) {
+                        if !self.types_compatible(expected, &break_ty) {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1274",
@@ -2662,7 +2852,7 @@ impl<'a> Checker<'a> {
                             ctx,
                             contract_mode,
                         );
-                        if guard_ty != "Bool" {
+                        if self.normalize_type(&guard_ty) != "Bool" {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1270",
@@ -2698,7 +2888,7 @@ impl<'a> Checker<'a> {
                 } else {
                     let first = arm_types[0].clone();
                     for ty in arm_types.iter().skip(1) {
-                        if !type_compatible(&first, ty) {
+                        if !self.types_compatible(&first, ty) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1221",
                                 format!(
@@ -2713,7 +2903,7 @@ impl<'a> Checker<'a> {
                     }
                     arm_types
                         .into_iter()
-                        .reduce(|a, b| merge_types(&a, &b))
+                        .reduce(|a, b| self.merge_compatible_types(&a, &b))
                         .unwrap_or_else(|| "()".to_string())
                 }
             }
@@ -2724,9 +2914,10 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Unary { op, expr: inner } => {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
+                let ty_norm = self.normalize_type(&ty);
                 match op {
                     crate::ast::UnaryOp::Neg => {
-                        if ty != "Int" && ty != "Float" {
+                        if ty_norm != "Int" && ty_norm != "Float" {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1222",
                                 "unary '-' expects Int or Float",
@@ -2734,14 +2925,14 @@ impl<'a> Checker<'a> {
                                 inner.span,
                             ));
                         }
-                        if ty == "Float" {
+                        if ty_norm == "Float" {
                             "Float".to_string()
                         } else {
                             "Int".to_string()
                         }
                     }
                     crate::ast::UnaryOp::Not => {
-                        if ty != "Bool" {
+                        if ty_norm != "Bool" {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1223",
                                 "unary '!' expects Bool",
@@ -2766,6 +2957,7 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Await { expr: inner } => {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
+                let ty_norm = self.normalize_type(&ty);
                 if !self.current_function_is_async {
                     self.diagnostics.push(
                         Diagnostic::error(
@@ -2778,7 +2970,7 @@ impl<'a> Checker<'a> {
                     );
                 }
 
-                if base_type_name(&ty) != "Async" {
+                if base_type_name(&ty_norm) != "Async" {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1257",
@@ -2791,7 +2983,7 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 }
 
-                let args = extract_generic_args(&ty).unwrap_or_default();
+                let args = extract_generic_args(&ty_norm).unwrap_or_default();
                 if args.len() != 1 {
                     self.diagnostics.push(Diagnostic::error(
                         "E1257",
@@ -2805,7 +2997,8 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Try { expr: inner } => {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
-                if base_type_name(&ty) != "Result" {
+                let ty_norm = self.normalize_type(&ty);
+                if base_type_name(&ty_norm) != "Result" {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1260",
@@ -2818,7 +3011,7 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 }
 
-                let args = extract_generic_args(&ty).unwrap_or_default();
+                let args = extract_generic_args(&ty_norm).unwrap_or_default();
                 if args.len() != 2 {
                     self.diagnostics.push(Diagnostic::error(
                         "E1260",
@@ -2839,7 +3032,8 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 };
 
-                if base_type_name(&function_ret) != "Result" {
+                let function_ret_norm = self.normalize_type(&function_ret);
+                if base_type_name(&function_ret_norm) != "Result" {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1261",
@@ -2855,7 +3049,7 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 }
 
-                let fn_args = extract_generic_args(&function_ret).unwrap_or_default();
+                let fn_args = extract_generic_args(&function_ret_norm).unwrap_or_default();
                 if fn_args.len() != 2 {
                     self.diagnostics.push(Diagnostic::error(
                         "E1261",
@@ -2871,7 +3065,7 @@ impl<'a> Checker<'a> {
 
                 let expr_err = &args[1];
                 let fn_err = &fn_args[1];
-                if !type_compatible(fn_err, expr_err) {
+                if !self.types_compatible(fn_err, expr_err) {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1262",
@@ -2942,10 +3136,12 @@ impl<'a> Checker<'a> {
                         .unwrap_or_else(|| "<?>".to_string());
                     let found_ty =
                         self.check_expr(value, locals, allowed_effects, ctx, contract_mode);
+                    let expected_norm = self.normalize_type(&expected_ty);
+                    let found_norm = self.normalize_type(&found_ty);
 
                     let inferred = infer_generic_bindings(
-                        &expected_ty,
-                        &found_ty,
+                        &expected_norm,
+                        &found_norm,
                         &generic_set,
                         &mut generic_bindings,
                     );
@@ -2964,7 +3160,7 @@ impl<'a> Checker<'a> {
                     let expected_inst =
                         substitute_type_vars(&expected_ty, &generic_bindings, &generic_set);
 
-                    if !type_compatible(&expected_inst, &found_ty) {
+                    if !self.types_compatible(&expected_inst, &found_ty) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1226",
                             format!(
@@ -3019,6 +3215,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::FieldAccess { base, field } => {
                 let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
                 if let Some(info) = self.find_struct(&base_ty) {
+                    let base_ty_norm = self.normalize_type(&base_ty);
                     if let Some(field_ty_id) = info.fields.get(field) {
                         let field_ty = self
                             .types
@@ -3029,7 +3226,8 @@ impl<'a> Checker<'a> {
                             return field_ty;
                         }
 
-                        if let Some(bindings) = bindings_from_applied_type(&base_ty, &info.generics)
+                        if let Some(bindings) =
+                            bindings_from_applied_type(&base_ty_norm, &info.generics)
                         {
                             let generic_set =
                                 info.generics.iter().cloned().collect::<BTreeSet<_>>();
@@ -3081,7 +3279,8 @@ impl<'a> Checker<'a> {
         ctx: &mut ExprContext,
         contract_mode: bool,
     ) -> String {
-        let Some((param_tys, ret_ty)) = parse_fn_type(callee_ty) else {
+        let callee_ty_norm = self.normalize_type(callee_ty);
+        let Some((param_tys, ret_ty)) = parse_fn_type(&callee_ty_norm) else {
             self.diagnostics.push(Diagnostic::error(
                 "E1209",
                 "callee must be a function value of type Fn(...) -> ...",
@@ -3118,7 +3317,7 @@ impl<'a> Checker<'a> {
             let Some(expected) = param_tys.get(idx) else {
                 continue;
             };
-            if !type_compatible(expected, &found) {
+            if !self.types_compatible(expected, &found) {
                 self.diagnostics.push(Diagnostic::error(
                     "E1214",
                     format!(
@@ -3234,10 +3433,12 @@ impl<'a> Checker<'a> {
     }
 
     fn check_binary(&mut self, op: BinOp, lhs: &str, rhs: &str, span: crate::span::Span) -> String {
+        let lhs_norm = self.normalize_type(lhs);
+        let rhs_norm = self.normalize_type(rhs);
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                if lhs == rhs && (lhs == "Int" || lhs == "Float") {
-                    lhs.to_string()
+                if lhs_norm == rhs_norm && (lhs_norm == "Int" || lhs_norm == "Float") {
+                    lhs_norm
                 } else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
@@ -3252,7 +3453,7 @@ impl<'a> Checker<'a> {
                 }
             }
             BinOp::Mod => {
-                if lhs != "Int" || rhs != "Int" {
+                if lhs_norm != "Int" || rhs_norm != "Int" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
                         format!(
@@ -3266,7 +3467,7 @@ impl<'a> Checker<'a> {
                 "Int".to_string()
             }
             BinOp::Eq | BinOp::Ne => {
-                if !type_compatible(lhs, rhs) {
+                if !self.types_compatible(lhs, rhs) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1231",
                         format!(
@@ -3280,7 +3481,7 @@ impl<'a> Checker<'a> {
                 "Bool".to_string()
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if !(lhs == rhs && (lhs == "Int" || lhs == "Float")) {
+                if !(lhs_norm == rhs_norm && (lhs_norm == "Int" || lhs_norm == "Float")) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
                         "comparison operators require matching Int or Float operands",
@@ -3291,7 +3492,7 @@ impl<'a> Checker<'a> {
                 "Bool".to_string()
             }
             BinOp::And | BinOp::Or => {
-                if lhs != "Bool" || rhs != "Bool" {
+                if lhs_norm != "Bool" || rhs_norm != "Bool" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1233",
                         "logical operators require Bool operands",
@@ -3311,6 +3512,7 @@ impl<'a> Checker<'a> {
         locals: &mut BTreeMap<String, String>,
         bound_names: &mut BTreeSet<String>,
     ) {
+        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
         match &pattern.kind {
             ir::PatternKind::Wildcard => {}
             ir::PatternKind::Var(name) => {
@@ -3328,7 +3530,7 @@ impl<'a> Checker<'a> {
                 locals.insert(name.clone(), scrutinee_ty.to_string());
             }
             ir::PatternKind::Int(_v) => {
-                if scrutinee_ty != "Int" {
+                if normalized_scrutinee_ty != "Int" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1234",
                         format!(
@@ -3341,7 +3543,7 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Bool(_v) => {
-                if scrutinee_ty != "Bool" {
+                if normalized_scrutinee_ty != "Bool" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1235",
                         format!(
@@ -3354,7 +3556,7 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Unit => {
-                if scrutinee_ty != "()" {
+                if normalized_scrutinee_ty != "()" {
                     self.diagnostics.push(Diagnostic::error(
                         "E1236",
                         format!(
@@ -3434,7 +3636,7 @@ impl<'a> Checker<'a> {
                     for name in &first_names {
                         let a = first_bindings.get(name).expect("first binding present");
                         let b = bindings.get(name).expect("alternative binding present");
-                        if !type_compatible(a, b) {
+                        if !self.types_compatible(a, b) {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1272",
@@ -3474,7 +3676,7 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Variant { name, args } => {
-                if scrutinee_ty.starts_with("Option[") {
+                if normalized_scrutinee_ty.starts_with("Option[") {
                     match name.as_str() {
                         "None" => {
                             if !args.is_empty() {
@@ -3490,7 +3692,7 @@ impl<'a> Checker<'a> {
                             }
                         }
                         "Some" => {
-                            let inner = extract_generic_args(scrutinee_ty)
+                            let inner = extract_generic_args(&normalized_scrutinee_ty)
                                 .and_then(|mut v| {
                                     if v.len() == 1 {
                                         Some(v.remove(0))
@@ -3523,10 +3725,11 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
-                if scrutinee_ty.starts_with("Result[") {
+                if normalized_scrutinee_ty.starts_with("Result[") {
                     match name.as_str() {
                         "Ok" | "Err" => {
-                            let vars = extract_generic_args(scrutinee_ty).unwrap_or_default();
+                            let vars =
+                                extract_generic_args(&normalized_scrutinee_ty).unwrap_or_default();
                             let payload_ty = if name == "Ok" {
                                 vars.get(0).cloned().unwrap_or_else(|| "<?>".to_string())
                             } else {
@@ -3556,9 +3759,9 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
-                if let Some(enum_info) = self.find_enum(scrutinee_ty).cloned() {
+                if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty).cloned() {
                     let enum_bindings =
-                        bindings_from_applied_type(scrutinee_ty, &enum_info.generics);
+                        bindings_from_applied_type(&normalized_scrutinee_ty, &enum_info.generics);
                     if enum_bindings.is_none() && !enum_info.generics.is_empty() {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -3643,22 +3846,23 @@ impl<'a> Checker<'a> {
         seen: &mut BTreeSet<String>,
         wildcard_seen: &mut bool,
     ) {
+        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => {
                 *wildcard_seen = true;
             }
             ir::PatternKind::Int(v) => {
-                if scrutinee_ty == "Int" {
+                if normalized_scrutinee_ty == "Int" {
                     seen.insert(format!("int:{v}"));
                 }
             }
             ir::PatternKind::Bool(v) => {
-                if scrutinee_ty == "Bool" {
+                if normalized_scrutinee_ty == "Bool" {
                     seen.insert(if *v { "true" } else { "false" }.to_string());
                 }
             }
             ir::PatternKind::Unit => {
-                if scrutinee_ty == "()" {
+                if normalized_scrutinee_ty == "()" {
                     seen.insert("()".to_string());
                 }
             }
@@ -3668,19 +3872,19 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Variant { name, .. } => {
-                if scrutinee_ty.starts_with("Option[") {
+                if normalized_scrutinee_ty.starts_with("Option[") {
                     if name == "None" || name == "Some" {
                         seen.insert(name.clone());
                     }
                     return;
                 }
-                if scrutinee_ty.starts_with("Result[") {
+                if normalized_scrutinee_ty.starts_with("Result[") {
                     if name == "Ok" || name == "Err" {
                         seen.insert(name.clone());
                     }
                     return;
                 }
-                if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+                if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
                     if enum_info.variants.contains_key(name) {
                         seen.insert(name.clone());
                     }
@@ -3696,11 +3900,12 @@ impl<'a> Checker<'a> {
         seen: &BTreeSet<String>,
         wildcard_seen: bool,
     ) {
+        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
         if wildcard_seen {
             return;
         }
 
-        if scrutinee_ty == "Bool" {
+        if normalized_scrutinee_ty == "Bool" {
             let mut missing = Vec::new();
             if !seen.contains("true") {
                 missing.push("true");
@@ -3722,7 +3927,7 @@ impl<'a> Checker<'a> {
             return;
         }
 
-        if scrutinee_ty.starts_with("Option[") {
+        if normalized_scrutinee_ty.starts_with("Option[") {
             let mut missing = Vec::new();
             if !seen.contains("None") {
                 missing.push("None");
@@ -3747,7 +3952,7 @@ impl<'a> Checker<'a> {
             return;
         }
 
-        if scrutinee_ty.starts_with("Result[") {
+        if normalized_scrutinee_ty.starts_with("Result[") {
             let mut missing = Vec::new();
             if !seen.contains("Ok") {
                 missing.push("Ok");
@@ -3772,7 +3977,7 @@ impl<'a> Checker<'a> {
             return;
         }
 
-        if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+        if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
             let missing = enum_info
                 .variants
                 .keys()
@@ -3804,6 +4009,7 @@ impl<'a> Checker<'a> {
         seen: &BTreeSet<String>,
         wildcard_seen: bool,
     ) -> bool {
+        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
         if wildcard_seen {
             return true;
         }
@@ -3819,13 +4025,13 @@ impl<'a> Checker<'a> {
                 .iter()
                 .all(|p| self.arm_is_redundant(p, scrutinee_ty, seen, wildcard_seen)),
             ir::PatternKind::Variant { name, .. } => {
-                if scrutinee_ty.starts_with("Option[") {
+                if normalized_scrutinee_ty.starts_with("Option[") {
                     return (name == "None" || name == "Some") && seen.contains(name);
                 }
-                if scrutinee_ty.starts_with("Result[") {
+                if normalized_scrutinee_ty.starts_with("Result[") {
                     return (name == "Ok" || name == "Err") && seen.contains(name);
                 }
-                if self.find_enum(scrutinee_ty).is_some() {
+                if self.find_enum(&normalized_scrutinee_ty).is_some() {
                     return seen.contains(name);
                 }
                 false
@@ -3839,19 +4045,20 @@ impl<'a> Checker<'a> {
         seen: &BTreeSet<String>,
         wildcard_seen: bool,
     ) -> bool {
+        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
         if wildcard_seen {
             return true;
         }
-        if scrutinee_ty == "Bool" {
+        if normalized_scrutinee_ty == "Bool" {
             return seen.contains("true") && seen.contains("false");
         }
-        if scrutinee_ty.starts_with("Option[") {
+        if normalized_scrutinee_ty.starts_with("Option[") {
             return seen.contains("None") && seen.contains("Some");
         }
-        if scrutinee_ty.starts_with("Result[") {
+        if normalized_scrutinee_ty.starts_with("Result[") {
             return seen.contains("Ok") && seen.contains("Err");
         }
-        if let Some(enum_info) = self.find_enum(scrutinee_ty) {
+        if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
             return enum_info.variants.keys().all(|name| seen.contains(name));
         }
         false
@@ -3976,11 +4183,13 @@ impl<'a> Checker<'a> {
     }
 
     fn extract_result_error_expected(&self, expected: &str) -> Option<String> {
-        if base_type_name(expected) == "Result" {
-            return extract_generic_args(expected).and_then(|args| args.get(1).cloned());
+        let expected_norm = self.normalize_type(expected);
+        if base_type_name(&expected_norm) == "Result" {
+            return extract_generic_args(&expected_norm).and_then(|args| args.get(1).cloned());
         }
-        if base_type_name(expected) == "Async" {
-            let inner = extract_generic_args(expected).and_then(|args| args.into_iter().next())?;
+        if base_type_name(&expected_norm) == "Async" {
+            let inner =
+                extract_generic_args(&expected_norm).and_then(|args| args.into_iter().next())?;
             if base_type_name(&inner) == "Result" {
                 return extract_generic_args(&inner).and_then(|args| args.get(1).cloned());
             }
@@ -3989,7 +4198,8 @@ impl<'a> Checker<'a> {
     }
 
     fn extract_expected_enum_name(&self, expected: &str) -> Option<String> {
-        let base = base_type_name(expected);
+        let normalized = self.normalize_type(expected);
+        let base = base_type_name(&normalized);
         if self.resolution.enums.contains_key(base) {
             return Some(base.to_string());
         }
@@ -4013,13 +4223,87 @@ impl<'a> Checker<'a> {
     }
 
     fn find_enum(&self, ty: &str) -> Option<&EnumInfo> {
-        let base = base_type_name(ty);
+        let normalized = self.normalize_type(ty);
+        let base = base_type_name(&normalized);
         self.resolution.enums.get(base)
     }
 
     fn find_struct(&self, ty: &str) -> Option<&StructInfo> {
-        let base = base_type_name(ty);
+        let normalized = self.normalize_type(ty);
+        let base = base_type_name(&normalized);
         self.resolution.structs.get(base)
+    }
+
+    fn normalize_type(&self, ty: &str) -> String {
+        self.expand_aliases(ty, &mut BTreeSet::new())
+    }
+
+    fn expand_aliases(&self, ty: &str, visiting: &mut BTreeSet<String>) -> String {
+        let base = base_type_name(ty);
+        let normalized_args = extract_generic_args(ty).map(|args| {
+            args.iter()
+                .map(|arg| self.expand_aliases(arg, visiting))
+                .collect::<Vec<_>>()
+        });
+
+        let Some(alias) = self.type_aliases.get(base) else {
+            return if let Some(args) = normalized_args {
+                format!("{base}[{}]", args.join(", "))
+            } else {
+                ty.to_string()
+            };
+        };
+
+        if !visiting.insert(base.to_string()) {
+            return ty.to_string();
+        }
+
+        let expanded = if alias.generics.is_empty() {
+            self.expand_aliases(&alias.target, visiting)
+        } else if let Some(args) = normalized_args {
+            if args.len() != alias.generics.len() {
+                format!("{base}[{}]", args.join(", "))
+            } else {
+                let mut bindings = BTreeMap::new();
+                for (generic, arg) in alias.generics.iter().zip(args.iter()) {
+                    bindings.insert(generic.clone(), arg.clone());
+                }
+                let generic_set = alias.generics.iter().cloned().collect::<BTreeSet<_>>();
+                let substituted = substitute_type_vars(&alias.target, &bindings, &generic_set);
+                self.expand_aliases(&substituted, visiting)
+            }
+        } else {
+            ty.to_string()
+        };
+
+        visiting.remove(base);
+        expanded
+    }
+
+    fn types_compatible(&self, expected: &str, found: &str) -> bool {
+        let expected_norm = self.normalize_type(expected);
+        let found_norm = self.normalize_type(found);
+        type_compatible(&expected_norm, &found_norm)
+    }
+
+    fn merge_compatible_types(&self, left: &str, right: &str) -> String {
+        if left == right {
+            return left.to_string();
+        }
+        if !self.types_compatible(left, right) {
+            return "<?>".to_string();
+        }
+
+        if !contains_unresolved_type(left) {
+            return left.to_string();
+        }
+        if !contains_unresolved_type(right) {
+            return right.to_string();
+        }
+
+        let left_norm = self.normalize_type(left);
+        let right_norm = self.normalize_type(right);
+        merge_types(&left_norm, &right_norm)
     }
 }
 

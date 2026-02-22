@@ -29,6 +29,27 @@ cargo run --quiet --bin aic -- std-compat --check --baseline /Users/kasunranasin
 
 The check treats removed/changed symbols as breaking and additive symbols as compatible.
 
+## `aic doc` generation contract
+
+`aic doc <input> --output <dir>` creates `<dir>` when missing and always emits:
+
+- `index.md`: human-readable module documentation.
+- `api.json`: machine-readable module/item payload (`schema_version = 1`).
+
+Use these commands to validate module and std documentation generation behavior:
+
+<!-- std-api:docgen:start -->
+aic doc examples/e4/verified_abs.aic --output target/docs-contract/module-docs
+aic doc std/fs.aic --output target/docs-contract/std-fs-docs
+<!-- std-api:docgen:end -->
+
+Each command above must produce the following files inside its output directory:
+
+<!-- std-api:docgen-files:start -->
+index.md
+api.json
+<!-- std-api:docgen-files:end -->
+
 ## Module coverage
 
 Current baseline snapshot (`schema_version: 1`) contains `516` symbols across these modules.

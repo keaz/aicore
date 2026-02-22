@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -162,6 +164,10 @@ enum Command {
     },
     Lsp,
     Daemon,
+    Repl {
+        #[arg(long)]
+        json: bool,
+    },
     Test {
         #[arg(default_value = ".")]
         path: PathBuf,
@@ -972,6 +978,10 @@ fn run_cli() -> anyhow::Result<i32> {
             daemon::run_stdio()?;
             EXIT_OK
         }
+        Command::Repl { json } => {
+            run_repl(json)?;
+            EXIT_OK
+        }
         Command::Test { path, mode, json } => {
             let report = run_harness(&path, mode.to_harness_mode())?;
             if json {
@@ -1287,6 +1297,737 @@ fn run_cli() -> anyhow::Result<i32> {
     };
 
     Ok(exit)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ReplValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+    Unit,
+}
+
+impl ReplValue {
+    fn type_name(&self) -> &'static str {
+        match self {
+            ReplValue::Int(_) => "Int",
+            ReplValue::Float(_) => "Float",
+            ReplValue::Bool(_) => "Bool",
+            ReplValue::String(_) => "String",
+            ReplValue::Unit => "Unit",
+        }
+    }
+
+    fn render_text(&self) -> String {
+        match self {
+            ReplValue::Int(v) => v.to_string(),
+            ReplValue::Float(v) => {
+                let mut text = v.to_string();
+                if !text.contains('.') && !text.contains('e') && !text.contains('E') {
+                    text.push_str(".0");
+                }
+                text
+            }
+            ReplValue::Bool(v) => v.to_string(),
+            ReplValue::String(v) => format!("{v:?}"),
+            ReplValue::Unit => "()".to_string(),
+        }
+    }
+
+    fn to_json_value(&self) -> serde_json::Value {
+        match self {
+            ReplValue::Int(v) => serde_json::json!(v),
+            ReplValue::Float(v) => serde_json::json!(v),
+            ReplValue::Bool(v) => serde_json::json!(v),
+            ReplValue::String(v) => serde_json::json!(v),
+            ReplValue::Unit => serde_json::Value::Null,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ReplBinding {
+    value: ReplValue,
+    mutable: bool,
+}
+
+#[derive(Debug, Default)]
+struct ReplState {
+    env: BTreeMap<String, ReplBinding>,
+}
+
+impl ReplState {
+    fn new() -> Self {
+        let mut state = Self::default();
+        state.set_last(ReplValue::Unit);
+        state
+    }
+
+    fn set_last(&mut self, value: ReplValue) {
+        self.env.insert(
+            "_".to_string(),
+            ReplBinding {
+                value,
+                mutable: true,
+            },
+        );
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ReplEvalResult {
+    value: ReplValue,
+    binding: Option<String>,
+}
+
+fn run_repl(json: bool) -> anyhow::Result<()> {
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    let mut state = ReplState::new();
+
+    if json {
+        repl_emit_json(
+            &mut stdout,
+            &serde_json::json!({
+                "event": "ready",
+                "mode": "json",
+                "commands": [":type <expr>", ":effects <fn>", ":quit"],
+            }),
+        )?;
+    } else {
+        repl_emit_text(
+            &mut stdout,
+            "aic repl ready (:type <expr>, :effects <fn>, :quit)",
+        )?;
+    }
+
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(err) => {
+                let message = format!("stdin read failed: {err}");
+                if json {
+                    repl_emit_json(
+                        &mut stdout,
+                        &serde_json::json!({
+                            "event": "error",
+                            "message": message,
+                        }),
+                    )?;
+                } else {
+                    repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+                }
+                break;
+            }
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed == ":quit" {
+            if json {
+                repl_emit_json(&mut stdout, &serde_json::json!({ "event": "bye" }))?;
+            } else {
+                repl_emit_text(&mut stdout, "bye")?;
+            }
+            break;
+        }
+
+        if let Some(expr) = trimmed.strip_prefix(":type ") {
+            let expr = expr.trim();
+            match repl_eval_type(expr, &state) {
+                Ok(ty) => {
+                    if json {
+                        repl_emit_json(
+                            &mut stdout,
+                            &serde_json::json!({
+                                "event": "type",
+                                "type": ty,
+                            }),
+                        )?;
+                    } else {
+                        repl_emit_text(&mut stdout, &ty)?;
+                    }
+                }
+                Err(message) => {
+                    if json {
+                        repl_emit_json(
+                            &mut stdout,
+                            &serde_json::json!({
+                                "event": "error",
+                                "message": message,
+                            }),
+                        )?;
+                    } else {
+                        repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+                    }
+                }
+            }
+            continue;
+        }
+
+        if trimmed == ":type" {
+            let message = "missing expression; usage: :type <expr>".to_string();
+            if json {
+                repl_emit_json(
+                    &mut stdout,
+                    &serde_json::json!({
+                        "event": "error",
+                        "message": message,
+                    }),
+                )?;
+            } else {
+                repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+            }
+            continue;
+        }
+
+        if let Some(name) = trimmed.strip_prefix(":effects ") {
+            let name = name.trim();
+            match repl_effects_for(name) {
+                Some(effects) => {
+                    if json {
+                        repl_emit_json(
+                            &mut stdout,
+                            &serde_json::json!({
+                                "event": "effects",
+                                "function": name,
+                                "effects": effects,
+                            }),
+                        )?;
+                    } else {
+                        repl_emit_text(
+                            &mut stdout,
+                            &format!("{name} effects {}", repl_effects_text(effects)),
+                        )?;
+                    }
+                }
+                None => {
+                    let message = format!("unknown function `{name}`");
+                    if json {
+                        repl_emit_json(
+                            &mut stdout,
+                            &serde_json::json!({
+                                "event": "error",
+                                "message": message,
+                            }),
+                        )?;
+                    } else {
+                        repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+                    }
+                }
+            }
+            continue;
+        }
+
+        if trimmed == ":effects" {
+            let message = "missing function name; usage: :effects <fn>".to_string();
+            if json {
+                repl_emit_json(
+                    &mut stdout,
+                    &serde_json::json!({
+                        "event": "error",
+                        "message": message,
+                    }),
+                )?;
+            } else {
+                repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+            }
+            continue;
+        }
+
+        if trimmed.starts_with(':') {
+            let message = format!("unknown command `{trimmed}`");
+            if json {
+                repl_emit_json(
+                    &mut stdout,
+                    &serde_json::json!({
+                        "event": "error",
+                        "message": message,
+                    }),
+                )?;
+            } else {
+                repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+            }
+            continue;
+        }
+
+        match parse_repl_statement(trimmed).and_then(|stmt| eval_repl_statement(&stmt, &mut state))
+        {
+            Ok(result) => {
+                if json {
+                    repl_emit_json(
+                        &mut stdout,
+                        &serde_json::json!({
+                            "event": "result",
+                            "binding": result.binding,
+                            "value": result.value.to_json_value(),
+                            "type": result.value.type_name(),
+                        }),
+                    )?;
+                } else {
+                    let value = result.value.render_text();
+                    let ty = result.value.type_name();
+                    if let Some(name) = result.binding {
+                        repl_emit_text(&mut stdout, &format!("{name} = {value} : {ty}"))?;
+                    } else {
+                        repl_emit_text(&mut stdout, &format!("{value} : {ty}"))?;
+                    }
+                }
+            }
+            Err(message) => {
+                if json {
+                    repl_emit_json(
+                        &mut stdout,
+                        &serde_json::json!({
+                            "event": "error",
+                            "message": message,
+                        }),
+                    )?;
+                } else {
+                    repl_emit_text(&mut stdout, &format!("error: {message}"))?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn repl_emit_text(out: &mut impl Write, line: &str) -> anyhow::Result<()> {
+    writeln!(out, "{line}")?;
+    out.flush()?;
+    Ok(())
+}
+
+fn repl_emit_json(out: &mut impl Write, payload: &serde_json::Value) -> anyhow::Result<()> {
+    writeln!(out, "{}", serde_json::to_string(payload)?)?;
+    out.flush()?;
+    Ok(())
+}
+
+fn parse_repl_statement(line: &str) -> Result<aicore::ast::Stmt, String> {
+    let statement = if line.trim_end().ends_with(';') {
+        line.trim().to_string()
+    } else {
+        format!("{line};")
+    };
+    let source = format!("module repl.session;\nfn main() -> Int {{\n    {statement}\n    0\n}}\n");
+    let (program, diagnostics) = parser::parse(&source, "<repl>");
+    if diagnostics
+        .iter()
+        .any(|diag| matches!(diag.severity, Severity::Error))
+    {
+        return Err(repl_first_diagnostic(&diagnostics));
+    }
+    let program = program.ok_or_else(|| "parse failed".to_string())?;
+    let main_fn = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ast::Item::Function(func) => Some(func),
+            _ => None,
+        })
+        .ok_or_else(|| "parse failed: wrapper function missing".to_string())?;
+    let stmt = main_fn
+        .body
+        .stmts
+        .first()
+        .cloned()
+        .ok_or_else(|| "expected a single-line expression".to_string())?;
+    Ok(stmt)
+}
+
+fn repl_first_diagnostic(diagnostics: &[Diagnostic]) -> String {
+    let diag = diagnostics
+        .iter()
+        .find(|diag| matches!(diag.severity, Severity::Error))
+        .or_else(|| diagnostics.first());
+    match diag {
+        Some(diag) => {
+            let severity = match diag.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Note => "note",
+            };
+            format!("{severity}[{}]: {}", diag.code, diag.message)
+        }
+        None => "parse failed".to_string(),
+    }
+}
+
+fn repl_eval_type(expr_source: &str, state: &ReplState) -> Result<String, String> {
+    let stmt = parse_repl_statement(expr_source)?;
+    let expr = match stmt {
+        aicore::ast::Stmt::Expr { expr, .. } => expr,
+        _ => return Err(":type expects an expression".to_string()),
+    };
+    let value = eval_repl_expr(&expr, &state.env)?;
+    Ok(value.type_name().to_string())
+}
+
+fn repl_effects_for(name: &str) -> Option<&'static [&'static str]> {
+    match name {
+        "print_int" | "print_float" | "print_bool" | "print_string" => Some(&["io"]),
+        "len" | "replace" => Some(&[]),
+        _ => None,
+    }
+}
+
+fn repl_effects_text(effects: &[&str]) -> String {
+    if effects.is_empty() {
+        "{}".to_string()
+    } else {
+        format!("{{ {} }}", effects.join(", "))
+    }
+}
+
+fn eval_repl_statement(
+    stmt: &aicore::ast::Stmt,
+    state: &mut ReplState,
+) -> Result<ReplEvalResult, String> {
+    match stmt {
+        aicore::ast::Stmt::Let {
+            name,
+            mutable,
+            ty,
+            expr,
+            ..
+        } => {
+            if name == "_" {
+                return Err("`_` is reserved in repl".to_string());
+            }
+            if state.env.contains_key(name) {
+                return Err(format!("`{name}` is already defined"));
+            }
+            let value = eval_repl_expr(expr, &state.env)?;
+            if let Some(expected) = ty {
+                let expected_name = repl_type_expr_name(expected)?;
+                if expected_name != value.type_name() {
+                    return Err(format!(
+                        "type mismatch in `let {name}`: expected {expected_name}, got {}",
+                        value.type_name()
+                    ));
+                }
+            }
+            state.env.insert(
+                name.clone(),
+                ReplBinding {
+                    value: value.clone(),
+                    mutable: *mutable,
+                },
+            );
+            state.set_last(value.clone());
+            Ok(ReplEvalResult {
+                value,
+                binding: Some(name.clone()),
+            })
+        }
+        aicore::ast::Stmt::Assign { target, expr, .. } => {
+            let value = eval_repl_expr(expr, &state.env)?;
+            let Some(binding) = state.env.get_mut(target) else {
+                return Err(format!("unknown variable `{target}`"));
+            };
+            if !binding.mutable {
+                return Err(format!("cannot assign to immutable binding `{target}`"));
+            }
+            if binding.value.type_name() != value.type_name() {
+                return Err(format!(
+                    "type mismatch in assignment to `{target}`: expected {}, got {}",
+                    binding.value.type_name(),
+                    value.type_name()
+                ));
+            }
+            binding.value = value.clone();
+            state.set_last(value.clone());
+            Ok(ReplEvalResult {
+                value,
+                binding: Some(target.clone()),
+            })
+        }
+        aicore::ast::Stmt::Expr { expr, .. } => {
+            let value = eval_repl_expr(expr, &state.env)?;
+            state.set_last(value.clone());
+            Ok(ReplEvalResult {
+                value,
+                binding: None,
+            })
+        }
+        _ => Err("unsupported statement in repl; use expressions, let, or assignment".to_string()),
+    }
+}
+
+fn repl_type_expr_name(ty: &aicore::ast::TypeExpr) -> Result<&'static str, String> {
+    match &ty.kind {
+        aicore::ast::TypeKind::Unit => Ok("Unit"),
+        aicore::ast::TypeKind::Named { name, args } => {
+            if !args.is_empty() {
+                return Err("generic type annotations are not supported in repl".to_string());
+            }
+            match name.as_str() {
+                "Int" => Ok("Int"),
+                "Float" => Ok("Float"),
+                "Bool" => Ok("Bool"),
+                "String" => Ok("String"),
+                "Unit" => Ok("Unit"),
+                other => Err(format!("unsupported type annotation `{other}` in repl")),
+            }
+        }
+    }
+}
+
+fn eval_repl_expr(
+    expr: &aicore::ast::Expr,
+    env: &BTreeMap<String, ReplBinding>,
+) -> Result<ReplValue, String> {
+    use aicore::ast::{BinOp, ExprKind, UnaryOp};
+
+    match &expr.kind {
+        ExprKind::Int(v) => Ok(ReplValue::Int(*v)),
+        ExprKind::Float(v) => Ok(ReplValue::Float(*v)),
+        ExprKind::Bool(v) => Ok(ReplValue::Bool(*v)),
+        ExprKind::String(v) => Ok(ReplValue::String(v.clone())),
+        ExprKind::Unit => Ok(ReplValue::Unit),
+        ExprKind::Var(name) => env
+            .get(name)
+            .map(|binding| binding.value.clone())
+            .ok_or_else(|| format!("unknown variable `{name}`")),
+        ExprKind::Unary { op, expr } => {
+            let value = eval_repl_expr(expr, env)?;
+            match op {
+                UnaryOp::Neg => match value {
+                    ReplValue::Int(v) => Ok(ReplValue::Int(-v)),
+                    ReplValue::Float(v) => Ok(ReplValue::Float(-v)),
+                    other => Err(format!(
+                        "unary `-` expects number, got {}",
+                        other.type_name()
+                    )),
+                },
+                UnaryOp::Not => match value {
+                    ReplValue::Bool(v) => Ok(ReplValue::Bool(!v)),
+                    other => Err(format!("unary `!` expects Bool, got {}", other.type_name())),
+                },
+            }
+        }
+        ExprKind::Binary { op, lhs, rhs } => {
+            if matches!(op, BinOp::And) {
+                let left = eval_repl_expr(lhs, env)?;
+                let ReplValue::Bool(left_bool) = left else {
+                    return Err("`&&` expects Bool operands".to_string());
+                };
+                if !left_bool {
+                    return Ok(ReplValue::Bool(false));
+                }
+                let right = eval_repl_expr(rhs, env)?;
+                let ReplValue::Bool(right_bool) = right else {
+                    return Err("`&&` expects Bool operands".to_string());
+                };
+                return Ok(ReplValue::Bool(right_bool));
+            }
+            if matches!(op, BinOp::Or) {
+                let left = eval_repl_expr(lhs, env)?;
+                let ReplValue::Bool(left_bool) = left else {
+                    return Err("`||` expects Bool operands".to_string());
+                };
+                if left_bool {
+                    return Ok(ReplValue::Bool(true));
+                }
+                let right = eval_repl_expr(rhs, env)?;
+                let ReplValue::Bool(right_bool) = right else {
+                    return Err("`||` expects Bool operands".to_string());
+                };
+                return Ok(ReplValue::Bool(right_bool));
+            }
+
+            let left = eval_repl_expr(lhs, env)?;
+            let right = eval_repl_expr(rhs, env)?;
+            match op {
+                BinOp::Add => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a + b)),
+                    (ReplValue::Float(a), ReplValue::Float(b)) => Ok(ReplValue::Float(a + b)),
+                    (ReplValue::Int(a), ReplValue::Float(b)) => Ok(ReplValue::Float(a as f64 + b)),
+                    (ReplValue::Float(a), ReplValue::Int(b)) => Ok(ReplValue::Float(a + b as f64)),
+                    (ReplValue::String(a), ReplValue::String(b)) => {
+                        Ok(ReplValue::String(format!("{a}{b}")))
+                    }
+                    (a, b) => Err(format!(
+                        "`+` expects (Int,Int), (Float,Float), or (String,String); got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Sub => repl_eval_numeric_binop(left, right, "-", |a, b| a - b, |a, b| a - b),
+                BinOp::Mul => repl_eval_numeric_binop(left, right, "*", |a, b| a * b, |a, b| a * b),
+                BinOp::Div => match (left, right) {
+                    (ReplValue::Int(_), ReplValue::Int(0)) => {
+                        Err("division by zero is not allowed".to_string())
+                    }
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a / b)),
+                    (ReplValue::Float(_), ReplValue::Float(0.0))
+                    | (ReplValue::Float(_), ReplValue::Int(0))
+                    | (ReplValue::Int(_), ReplValue::Float(0.0)) => {
+                        Err("division by zero is not allowed".to_string())
+                    }
+                    (ReplValue::Float(a), ReplValue::Float(b)) => Ok(ReplValue::Float(a / b)),
+                    (ReplValue::Int(a), ReplValue::Float(b)) => Ok(ReplValue::Float(a as f64 / b)),
+                    (ReplValue::Float(a), ReplValue::Int(b)) => Ok(ReplValue::Float(a / b as f64)),
+                    (a, b) => Err(format!(
+                        "`/` expects numeric operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Mod => match (left, right) {
+                    (ReplValue::Int(_), ReplValue::Int(0)) => {
+                        Err("modulo by zero is not allowed".to_string())
+                    }
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a % b)),
+                    (a, b) => Err(format!(
+                        "`%` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Eq => Ok(ReplValue::Bool(repl_eq_values(&left, &right)?)),
+                BinOp::Ne => Ok(ReplValue::Bool(!repl_eq_values(&left, &right)?)),
+                BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                    repl_eval_order_comparison(*op, left, right)
+                }
+                BinOp::And | BinOp::Or => {
+                    Err("internal repl error: short-circuit op not handled".to_string())
+                }
+            }
+        }
+        kind => Err(format!(
+            "unsupported expression in repl: {}",
+            repl_expr_kind_name(kind)
+        )),
+    }
+}
+
+fn repl_eval_numeric_binop(
+    left: ReplValue,
+    right: ReplValue,
+    op_name: &str,
+    int_op: fn(i64, i64) -> i64,
+    float_op: fn(f64, f64) -> f64,
+) -> Result<ReplValue, String> {
+    match (left, right) {
+        (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(int_op(a, b))),
+        (ReplValue::Float(a), ReplValue::Float(b)) => Ok(ReplValue::Float(float_op(a, b))),
+        (ReplValue::Int(a), ReplValue::Float(b)) => Ok(ReplValue::Float(float_op(a as f64, b))),
+        (ReplValue::Float(a), ReplValue::Int(b)) => Ok(ReplValue::Float(float_op(a, b as f64))),
+        (a, b) => Err(format!(
+            "`{op_name}` expects numeric operands, got ({},{})",
+            a.type_name(),
+            b.type_name()
+        )),
+    }
+}
+
+fn repl_eq_values(left: &ReplValue, right: &ReplValue) -> Result<bool, String> {
+    match (left, right) {
+        (ReplValue::Int(a), ReplValue::Int(b)) => Ok(a == b),
+        (ReplValue::Float(a), ReplValue::Float(b)) => Ok(a == b),
+        (ReplValue::Int(a), ReplValue::Float(b)) => Ok((*a as f64) == *b),
+        (ReplValue::Float(a), ReplValue::Int(b)) => Ok(*a == (*b as f64)),
+        (ReplValue::Bool(a), ReplValue::Bool(b)) => Ok(a == b),
+        (ReplValue::String(a), ReplValue::String(b)) => Ok(a == b),
+        (ReplValue::Unit, ReplValue::Unit) => Ok(true),
+        (a, b) => Err(format!(
+            "cannot compare equality between {} and {}",
+            a.type_name(),
+            b.type_name()
+        )),
+    }
+}
+
+fn repl_eval_order_comparison(
+    op: aicore::ast::BinOp,
+    left: ReplValue,
+    right: ReplValue,
+) -> Result<ReplValue, String> {
+    use aicore::ast::BinOp;
+
+    let result = match (left, right) {
+        (ReplValue::Int(a), ReplValue::Int(b)) => repl_apply_order(op, a, b),
+        (ReplValue::Float(a), ReplValue::Float(b)) => repl_apply_order(op, a, b),
+        (ReplValue::Int(a), ReplValue::Float(b)) => repl_apply_order(op, a as f64, b),
+        (ReplValue::Float(a), ReplValue::Int(b)) => repl_apply_order(op, a, b as f64),
+        (ReplValue::String(a), ReplValue::String(b)) => repl_apply_order(op, a, b),
+        (a, b) => {
+            return Err(format!(
+                "`{}` expects comparable operands, got ({},{})",
+                match op {
+                    BinOp::Lt => "<",
+                    BinOp::Le => "<=",
+                    BinOp::Gt => ">",
+                    BinOp::Ge => ">=",
+                    BinOp::Add
+                    | BinOp::Sub
+                    | BinOp::Mul
+                    | BinOp::Div
+                    | BinOp::Mod
+                    | BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::And
+                    | BinOp::Or => "?",
+                },
+                a.type_name(),
+                b.type_name()
+            ));
+        }
+    };
+    Ok(ReplValue::Bool(result))
+}
+
+fn repl_apply_order<T: PartialOrd>(op: aicore::ast::BinOp, left: T, right: T) -> bool {
+    use aicore::ast::BinOp;
+
+    match op {
+        BinOp::Lt => left < right,
+        BinOp::Le => left <= right,
+        BinOp::Gt => left > right,
+        BinOp::Ge => left >= right,
+        BinOp::Add
+        | BinOp::Sub
+        | BinOp::Mul
+        | BinOp::Div
+        | BinOp::Mod
+        | BinOp::Eq
+        | BinOp::Ne
+        | BinOp::And
+        | BinOp::Or => false,
+    }
+}
+
+fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
+    match kind {
+        aicore::ast::ExprKind::Int(_) => "integer literal",
+        aicore::ast::ExprKind::Float(_) => "float literal",
+        aicore::ast::ExprKind::Bool(_) => "bool literal",
+        aicore::ast::ExprKind::String(_) => "string literal",
+        aicore::ast::ExprKind::Unit => "unit literal",
+        aicore::ast::ExprKind::Var(_) => "variable",
+        aicore::ast::ExprKind::Call { .. } => "function call",
+        aicore::ast::ExprKind::Closure { .. } => "closure",
+        aicore::ast::ExprKind::If { .. } => "if expression",
+        aicore::ast::ExprKind::While { .. } => "while expression",
+        aicore::ast::ExprKind::Loop { .. } => "loop expression",
+        aicore::ast::ExprKind::Break { .. } => "break expression",
+        aicore::ast::ExprKind::Continue => "continue expression",
+        aicore::ast::ExprKind::Match { .. } => "match expression",
+        aicore::ast::ExprKind::Binary { .. } => "binary expression",
+        aicore::ast::ExprKind::Unary { .. } => "unary expression",
+        aicore::ast::ExprKind::Borrow { .. } => "borrow expression",
+        aicore::ast::ExprKind::Await { .. } => "await expression",
+        aicore::ast::ExprKind::Try { .. } => "try expression",
+        aicore::ast::ExprKind::UnsafeBlock { .. } => "unsafe block",
+        aicore::ast::ExprKind::StructInit { .. } => "struct initializer",
+        aicore::ast::ExprKind::FieldAccess { .. } => "field access",
+    }
 }
 
 fn print_harness_report(report: &aicore::test_harness::HarnessReport) {

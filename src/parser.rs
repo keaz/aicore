@@ -80,6 +80,10 @@ impl<'a> Parser<'a> {
     fn parse_item(&mut self) -> Option<Item> {
         if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
             self.parse_extern_function().map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
+            self.parse_type_alias().map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwConst)) {
+            self.parse_const_item().map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
             let start = self.current_span().start;
             self.bump();
@@ -122,7 +126,7 @@ impl<'a> Parser<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1003",
-                    "expected item declaration (`fn`, `async fn`, `unsafe fn`, `extern \"C\" fn`, `struct`, `enum`, `trait`, `impl`)",
+                    "expected item declaration (`fn`, `async fn`, `unsafe fn`, `extern \"C\" fn`, `type`, `const`, `struct`, `enum`, `trait`, `impl`)",
                     self.file,
                     span,
                 )
@@ -482,6 +486,88 @@ impl<'a> Parser<'a> {
             trait_name,
             trait_args,
             span: Span::new(start, end),
+        })
+    }
+
+    fn parse_type_alias(&mut self) -> Option<Function> {
+        let start = self.current_span().start;
+        self.bump(); // type
+        let (alias_name, _) = self.expect_ident("E1075", "expected alias name after `type`")?;
+        let generics = self.parse_generics();
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1076",
+            "expected '=' in type alias declaration",
+        )?;
+        let target_ty = self.parse_type()?;
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1077",
+            "expected ';' after type alias declaration",
+        )?;
+
+        Some(Function {
+            name: encode_internal_type_alias(&alias_name),
+            is_async: false,
+            is_unsafe: false,
+            is_extern: false,
+            extern_abi: None,
+            generics,
+            params: Vec::new(),
+            ret_type: target_ty,
+            effects: Vec::new(),
+            requires: None,
+            ensures: None,
+            body: Block {
+                stmts: Vec::new(),
+                tail: None,
+                span: Span::new(semi.start, semi.end),
+            },
+            span: Span::new(start, semi.end),
+        })
+    }
+
+    fn parse_const_item(&mut self) -> Option<Function> {
+        let start = self.current_span().start;
+        self.bump(); // const
+        let (const_name, _) = self.expect_ident("E1078", "expected constant name after `const`")?;
+        self.expect(
+            |k| matches!(k, TokenKind::Colon),
+            "E1079",
+            "expected ':' after const name",
+        )?;
+        let const_ty = self.parse_type()?;
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1080",
+            "expected '=' in const declaration",
+        )?;
+        let expr = self.parse_expr()?;
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1081",
+            "expected ';' after const declaration",
+        )?;
+        let expr_span = expr.span;
+
+        Some(Function {
+            name: encode_internal_const(&const_name),
+            is_async: false,
+            is_unsafe: false,
+            is_extern: false,
+            extern_abi: None,
+            generics: Vec::new(),
+            params: Vec::new(),
+            ret_type: const_ty,
+            effects: Vec::new(),
+            requires: None,
+            ensures: None,
+            body: Block {
+                stmts: Vec::new(),
+                tail: Some(Box::new(expr)),
+                span: Span::new(expr_span.start, expr_span.end),
+            },
+            span: Span::new(start, semi.end),
         })
     }
 
@@ -1584,6 +1670,10 @@ impl<'a> Parser<'a> {
                     k,
                     TokenKind::KwAsync
                         | TokenKind::KwFn
+                        | TokenKind::KwType
+                        | TokenKind::KwConst
+                        | TokenKind::KwExtern
+                        | TokenKind::KwUnsafe
                         | TokenKind::KwStruct
                         | TokenKind::KwEnum
                         | TokenKind::KwTrait

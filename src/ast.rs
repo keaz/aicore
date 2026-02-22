@@ -1,6 +1,25 @@
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 
+pub const INTERNAL_TYPE_ALIAS_PREFIX: &str = "__aic_type_alias__";
+pub const INTERNAL_CONST_PREFIX: &str = "__aic_const__";
+
+pub fn encode_internal_type_alias(name: &str) -> String {
+    format!("{INTERNAL_TYPE_ALIAS_PREFIX}{name}")
+}
+
+pub fn decode_internal_type_alias(name: &str) -> Option<&str> {
+    name.strip_prefix(INTERNAL_TYPE_ALIAS_PREFIX)
+}
+
+pub fn encode_internal_const(name: &str) -> String {
+    format!("{INTERNAL_CONST_PREFIX}{name}")
+}
+
+pub fn decode_internal_const(name: &str) -> Option<&str> {
+    name.strip_prefix(INTERNAL_CONST_PREFIX)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Program {
     pub module: Option<ModuleDecl>,

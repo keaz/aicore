@@ -112,3 +112,8 @@ fn golden_case16_match_or_guard() {
 fn golden_case17_loop_control() {
     run_golden_case("case17_loop_control.aic");
 }
+
+#[test]
+fn golden_case18_type_alias_const() {
+    run_golden_case("case18_type_alias_const.aic");
+}

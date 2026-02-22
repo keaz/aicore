@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ast::{decode_internal_const, decode_internal_type_alias};
 use crate::diagnostics::Diagnostic;
 use crate::ir;
 
@@ -125,6 +126,50 @@ pub fn resolve_with_item_modules(
 
         match item {
             ir::Item::Function(f) => {
+                if let Some(alias_name) = decode_internal_type_alias(&f.name) {
+                    if let Some(existing_kind) = type_decl_kind_by_module_name
+                        .insert((module_name.clone(), alias_name.to_string()), "type")
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E1100",
+                                format!(
+                                    "duplicate symbol '{}', kinds '{}' and 'type'",
+                                    alias_name, existing_kind
+                                ),
+                                file,
+                                f.span,
+                            )
+                            .with_help(
+                                "rename one declaration to keep symbol names unique per module",
+                            ),
+                        );
+                    }
+                    continue;
+                }
+
+                if let Some(const_name) = decode_internal_const(&f.name) {
+                    if let Some(existing_kind) = value_decl_kind_by_module_name
+                        .insert((module_name, const_name.to_string()), "const")
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E1100",
+                                format!(
+                                    "duplicate symbol '{}', kinds '{}' and 'const'",
+                                    const_name, existing_kind
+                                ),
+                                file,
+                                f.span,
+                            )
+                            .with_help(
+                                "rename one declaration to keep symbol names unique per module",
+                            ),
+                        );
+                    }
+                    continue;
+                }
+
                 if let Some(existing_kind) = value_decl_kind_by_module_name
                     .insert((module_name.clone(), f.name.clone()), "fn")
                 {

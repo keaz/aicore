@@ -6,6 +6,14 @@ AICore exposes an LSP server via:
 aic lsp
 ```
 
+For interactive expression evaluation, AICore also exposes:
+
+```bash
+aic repl
+```
+
+Use `aic repl --json` for machine-consumable line-delimited JSON events (`ready`, `result`, `type`, `effects`, `error`, `bye`), which is useful for AI-agent tool integration.
+
 Implemented LSP capabilities:
 
 - diagnostics (`textDocument/publishDiagnostics`)
@@ -18,6 +26,16 @@ Implemented LSP capabilities:
 - semantic tokens (`textDocument/semanticTokens/full`)
 
 Autofix code actions are sourced from diagnostic `suggested_fixes` payloads and returned as deterministic quick-fix edits.
+
+## REPL commands
+
+Inside `aic repl`, supported commands are:
+
+- `:type <expr>`
+- `:effects <fn>`
+- `:quit`
+
+REPL state persists across entries for bindings/evaluated values during the session.
 
 ## VS Code setup
 

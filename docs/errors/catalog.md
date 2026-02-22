@@ -87,6 +87,13 @@ Each row includes a concise description plus compile-intent trigger/fix snippets
 | `E1072` | Function-type or closure parsing error. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |
 | `E1073` | Function-type or closure parsing error. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |
 | `E1074` | Function-type or closure parsing error. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |
+| `E1075` | Type alias declaration requires an identifier after `type`. | `type = Int;` | `type Count = Int;` |
+| `E1076` | Type alias declaration requires `=` before the target type. | `type Count Int;` | `type Count = Int;` |
+| `E1077` | Type alias declaration must end with `;`. | `type Count = Int` | `type Count = Int;` |
+| `E1078` | Const declaration requires an identifier after `const`. | `const : Int = 1;` | `const BASE: Int = 1;` |
+| `E1079` | Const declaration requires `:` after the const name. | `const BASE Int = 1;` | `const BASE: Int = 1;` |
+| `E1080` | Const declaration requires `=` before the initializer. | `const BASE: Int 1;` | `const BASE: Int = 1;` |
+| `E1081` | Const declaration must end with `;`. | `const BASE: Int = 1` | `const BASE: Int = 1;` |
 | `E1100` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1101` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1102` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
@@ -177,6 +184,8 @@ Each row includes a concise description plus compile-intent trigger/fix snippets
 | `E1284` | Closure parameter count mismatches expected Fn type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1285` | Closure parameter type mismatches expected Fn type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1286` | Closure return type mismatches expected Fn type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
+| `E1287` | Const initializer used an expression that is not compile-time evaluable. | `const BAD: Int = value();` | `const GOOD: Int = 1 + 2;` |
+| `E1288` | Const declaration type/initializer mismatch or missing initializer. | `const BAD: Int = true;` | `const GOOD: Int = 3;` |
 | `E1300` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1301` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E2001` | Effectful call used without required effects declaration. | `fn read_cfg() -> Result[String, FsError] { std.fs.read_file("cfg.txt") }` | `fn read_cfg() -> Result[String, FsError] effects { fs } { std.fs.read_file("cfg.txt") }` |

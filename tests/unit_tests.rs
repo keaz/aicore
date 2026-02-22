@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::{collections::BTreeSet, path::PathBuf};
 
+use aicore::codegen::emit_llvm;
 use aicore::contracts::verify_static;
 use aicore::diagnostics::Severity;
 use aicore::effects::check_effect_declarations;
@@ -3383,6 +3384,165 @@ fn unit_typecheck_rejects_null_symbol_at_ir_boundary() {
     assert!(diags.is_empty(), "resolver diags={diags:#?}");
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E1253"));
+}
+
+#[test]
+fn unit_type_alias_and_const_usage_typechecks() {
+    let src = r#"
+type Count = Int;
+type Score[T] = Result[T, Int];
+
+const BASE: Count = 40;
+const BONUS: Count = BASE + 2;
+
+fn wrap(v: Count) -> Score[Count] {
+    Ok(v)
+}
+
+fn main() -> Count {
+    let value: Score[Count] = wrap(BONUS);
+    match value {
+        Ok(n) => n,
+        Err(e) => e,
+    }
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(parse_diags.is_empty(), "parse diags={parse_diags:#?}");
+    let ir = build(&program.expect("program"));
+    let formatted = format_program(&ir);
+    assert!(formatted.contains("type Count = Int;"));
+    assert!(formatted.contains("const BONUS: Count = BASE + 2;"));
+
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(
+        resolve_diags.is_empty(),
+        "resolver diags={resolve_diags:#?}"
+    );
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "typecheck diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_codegen_supports_type_alias_and_const_items() {
+    let src = r#"
+type Count = Int;
+type Score[T] = Result[T, Int];
+
+const BASE: Count = 40;
+const STEP: Count = 1 + 1;
+const READY: Bool = (STEP == 2) && true;
+const BONUS: Count = BASE + STEP;
+const FINAL: Count = -(-BONUS);
+
+fn wrap(v: Count) -> Score[Count] {
+    Ok(v)
+}
+
+fn main() -> Count {
+    let score: Score[Count] = wrap(FINAL);
+    if READY {
+        match score {
+            Ok(v) => v,
+            Err(e) => e,
+        }
+    } else {
+        0
+    }
+}
+"#;
+    let ir = lower(src);
+    let llvm = emit_llvm(&ir, "unit.aic").expect("emit llvm");
+    assert!(
+        !llvm.llvm_ir.contains("__aic_type_alias__"),
+        "internal type alias pseudo-items must not be emitted as runtime functions"
+    );
+    assert!(
+        !llvm.llvm_ir.contains("__aic_const__"),
+        "internal const pseudo-items must not be emitted as runtime functions"
+    );
+    assert!(llvm.llvm_ir.contains("define i64 @aic_main()"));
+}
+
+#[test]
+fn unit_codegen_reports_unsupported_const_initializer_forms() {
+    let src = r#"
+const BAD: Int = if true { 1 } else { 2 };
+fn main() -> Int { BAD }
+"#;
+    let ir = lower(src);
+    let diags = match emit_llvm(&ir, "unit.aic") {
+        Ok(_) => panic!("expected codegen failure"),
+        Err(diags) => diags,
+    };
+    assert!(
+        diags.iter().any(|d| {
+            d.code == "E5023"
+                && d.message
+                    .contains("const 'BAD' initializer uses unsupported `if` expression")
+        }),
+        "diags={diags:#?}"
+    );
+}
+
+#[test]
+fn unit_type_alias_name_is_preserved_in_return_diagnostic() {
+    let src = r#"
+type Meter = Int;
+fn bad() -> Meter {
+    true
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(
+        resolve_diags.is_empty(),
+        "resolver diags={resolve_diags:#?}"
+    );
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out
+        .diagnostics
+        .iter()
+        .any(|d| d.code == "E1202" && d.message.contains("Meter")));
+}
+
+#[test]
+fn unit_const_initializer_rejects_function_calls() {
+    let src = r#"
+fn value() -> Int { 1 }
+const BAD: Int = value();
+fn main() -> Int { BAD }
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(
+        resolve_diags.is_empty(),
+        "resolver diags={resolve_diags:#?}"
+    );
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1287"));
+}
+
+#[test]
+fn unit_generic_type_alias_arity_is_checked() {
+    let src = r#"
+type Wrap[T] = Option[T];
+fn bad(x: Wrap[Int, Int]) -> Int {
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(
+        resolve_diags.is_empty(),
+        "resolver diags={resolve_diags:#?}"
+    );
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1250"));
 }
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {

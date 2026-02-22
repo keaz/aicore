@@ -20,6 +20,8 @@ pub enum TokenKind {
     KwExtern,
     KwUnsafe,
     KwFn,
+    KwType,
+    KwConst,
     KwStruct,
     KwEnum,
     KwTrait,
@@ -269,6 +271,8 @@ impl<'a> Lexer<'a> {
             "extern" => TokenKind::KwExtern,
             "unsafe" => TokenKind::KwUnsafe,
             "fn" => TokenKind::KwFn,
+            "type" => TokenKind::KwType,
+            "const" => TokenKind::KwConst,
             "struct" => TokenKind::KwStruct,
             "enum" => TokenKind::KwEnum,
             "trait" => TokenKind::KwTrait,
@@ -475,11 +479,13 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } }";
+        let src = "type Id = Int; const BASE: Int = 1; async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
-        assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
-        assert!(matches!(tokens[1].kind, TokenKind::KwFn));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwType)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwConst)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAsync)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwFn)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Arrow)));
         assert!(tokens
             .iter()

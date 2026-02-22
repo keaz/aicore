@@ -198,6 +198,9 @@ docs-check:
 	@grep -q "aic release" README.md
 	@grep -q "aic contract" README.md
 	@grep -q "docs/ai-agent-rest-guide.md" README.md
+	@$(CARGO) test --locked --test agent_recipe_tests tutorial_chapters_and_agent_steps_contract_is_deterministic -- --exact
+	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_explain_human_and_machine_readable_outputs -- --exact
+	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs -- --exact
 	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
 	@cargo run --quiet --bin aic -- release policy --check >/dev/null
 	@cargo run --quiet --bin aic -- release lts --check >/dev/null

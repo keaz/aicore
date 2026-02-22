@@ -1,0 +1,15 @@
+type Count = Int;
+
+type MaybeCount = Option[Count];
+
+const BASE: Count = 40;
+
+const BONUS: Count = BASE + 2;
+
+fn main() -> Count {
+    let computed: MaybeCount = Some(BONUS);
+    match computed {
+    Some(v) => v,
+    None => 0,
+}
+}

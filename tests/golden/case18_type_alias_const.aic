@@ -1,0 +1,19 @@
+type Count = Int;
+
+type Score[T] = Result[T, Int];
+
+const BASE: Count = 40;
+
+const BONUS: Count = BASE + 2;
+
+fn wrap(v: Count) -> Score[Count] {
+    Ok(v)
+}
+
+fn main() -> Count {
+    let result: Score[Count] = wrap(BONUS);
+    match result {
+    Ok(n) => n,
+    Err(e) => e,
+}
+}

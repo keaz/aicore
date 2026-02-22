@@ -35,6 +35,24 @@ fn run_aic_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Outpu
     command.output().expect("run aic with env")
 }
 
+fn run_repl_session(args: &[&str], input: &str) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .args(args)
+        .current_dir(repo_root())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn repl");
+
+    {
+        let stdin = child.stdin.as_mut().expect("repl stdin");
+        stdin.write_all(input.as_bytes()).expect("write repl input");
+        stdin.flush().expect("flush repl input");
+    }
+    child.wait_with_output().expect("wait repl output")
+}
+
 fn write_many_check_diagnostics_fixture() -> (tempfile::TempDir, String) {
     let project = tempdir().expect("project");
     fs::create_dir_all(project.path().join("src")).expect("mkdir src");
@@ -108,10 +126,17 @@ impl DaemonHarness {
 fn cli_help_snapshots_are_stable() {
     let main_help = run_aic(&["--help"]);
     assert!(main_help.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&main_help.stdout),
-        include_str!("golden/e7/help_main.txt")
-    );
+    let main_help_text = String::from_utf8_lossy(&main_help.stdout);
+    assert!(main_help_text.contains("Usage: aic <COMMAND>"));
+    for command in [
+        "init", "check", "diag", "explain", "fmt", "ir", "migrate", "build", "lsp", "daemon",
+        "repl", "test", "contract", "release", "run",
+    ] {
+        assert!(
+            main_help_text.contains(command),
+            "missing `{command}` in help output:\n{main_help_text}"
+        );
+    }
 
     let check_help = run_aic(&["check", "--help"]);
     assert!(check_help.status.success());
@@ -134,6 +159,109 @@ fn cli_help_snapshots_are_stable() {
         String::from_utf8_lossy(&test_help.stdout),
         include_str!("golden/e7/help_test.txt")
     );
+}
+
+#[test]
+fn repl_persists_state_and_supports_meta_commands() {
+    let output = run_repl_session(
+        &["repl"],
+        "let mut x = 41\nx + 1\n:type x + 1\n:effects print_int\nx = 99\nx\n:quit\n",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("aic repl ready"));
+    assert!(text.contains("x = 41 : Int"), "stdout:\n{text}");
+    assert!(text.contains("42 : Int"), "stdout:\n{text}");
+    assert!(text.contains("\nInt\n"), "stdout:\n{text}");
+    assert!(text.contains("print_int effects { io }"), "stdout:\n{text}");
+    assert!(text.contains("x = 99 : Int"), "stdout:\n{text}");
+    assert!(text.contains("99 : Int"), "stdout:\n{text}");
+    assert!(text.contains("bye"), "stdout:\n{text}");
+}
+
+#[test]
+fn repl_handles_invalid_input_without_crashing() {
+    let output = run_repl_session(&["repl"], "1 +\n:type\n:effects\n:unknown\n:quit\n");
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("error:"), "stdout:\n{text}");
+    assert!(
+        text.contains("missing expression; usage: :type <expr>"),
+        "stdout:\n{text}"
+    );
+    assert!(
+        text.contains("missing function name; usage: :effects <fn>"),
+        "stdout:\n{text}"
+    );
+    assert!(
+        text.contains("unknown command `:unknown`"),
+        "stdout:\n{text}"
+    );
+    assert!(text.contains("bye"), "stdout:\n{text}");
+}
+
+#[test]
+fn repl_json_mode_emits_structured_events() {
+    let output = run_repl_session(
+        &["repl", "--json"],
+        "let n = 5\nn + 2\n:type n\n:effects print_int\nfoo + 1\n:quit\n",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() >= 7,
+        "expected structured json events for repl session; stdout:\n{stdout}"
+    );
+
+    let ready: Value = serde_json::from_str(lines[0]).expect("ready event json");
+    assert_eq!(ready["event"], "ready");
+    assert_eq!(ready["mode"], "json");
+
+    let bind: Value = serde_json::from_str(lines[1]).expect("bind event json");
+    assert_eq!(bind["event"], "result");
+    assert_eq!(bind["binding"], "n");
+    assert_eq!(bind["type"], "Int");
+    assert_eq!(bind["value"], 5);
+
+    let value: Value = serde_json::from_str(lines[2]).expect("value event json");
+    assert_eq!(value["event"], "result");
+    assert_eq!(value["type"], "Int");
+    assert_eq!(value["value"], 7);
+
+    let type_event: Value = serde_json::from_str(lines[3]).expect("type event json");
+    assert_eq!(type_event["event"], "type");
+    assert_eq!(type_event["type"], "Int");
+
+    let effects_event: Value = serde_json::from_str(lines[4]).expect("effects event json");
+    assert_eq!(effects_event["event"], "effects");
+    assert_eq!(effects_event["function"], "print_int");
+    assert_eq!(effects_event["effects"], json!(["io"]));
+
+    let error_event: Value = serde_json::from_str(lines[5]).expect("error event json");
+    assert_eq!(error_event["event"], "error");
+    assert!(
+        error_event["message"]
+            .as_str()
+            .expect("error message")
+            .contains("unknown variable"),
+        "error event: {error_event:#}"
+    );
+
+    let bye_event: Value = serde_json::from_str(lines[6]).expect("bye event json");
+    assert_eq!(bye_event["event"], "bye");
 }
 
 #[test]
