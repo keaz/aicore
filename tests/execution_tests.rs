@@ -104,6 +104,51 @@ async fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_while_and_continue_flow() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let mut i = 5;
+    let mut total = 0;
+    while i > 0 {
+        if i == 3 {
+            i = i - 1;
+            continue;
+        } else {
+            ()
+        };
+        total = total + i;
+        i = i - 1;
+    };
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "12\n");
+}
+
+#[test]
+fn exec_loop_break_value() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let value = loop {
+        break 42
+    };
+    print_int(value);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_trait_bounded_generic_dispatch() {
     let src = r#"
 import std.io;

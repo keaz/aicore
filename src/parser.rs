@@ -1130,6 +1130,10 @@ impl<'a> Parser<'a> {
                 })
             }
             TokenKind::KwIf => self.parse_if_expr(),
+            TokenKind::KwWhile => self.parse_while_expr(),
+            TokenKind::KwLoop => self.parse_loop_expr(),
+            TokenKind::KwBreak => self.parse_break_expr(),
+            TokenKind::KwContinue => self.parse_continue_expr(),
             TokenKind::KwMatch => self.parse_match_expr(),
             TokenKind::KwUnsafe => {
                 self.bump();
@@ -1222,6 +1226,72 @@ impl<'a> Parser<'a> {
                 else_block,
             },
             span: Span::new(start, end),
+        })
+    }
+
+    fn parse_while_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // while
+        let cond = self.parse_expr()?;
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Some(Expr {
+            kind: ExprKind::While {
+                cond: Box::new(cond),
+                body,
+            },
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_loop_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // loop
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Some(Expr {
+            kind: ExprKind::Loop { body },
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_break_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // break
+        let expr = if self.break_has_value_start() {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+        let end = expr
+            .as_ref()
+            .map(|expr| expr.span.end)
+            .unwrap_or_else(|| self.previous_span().end);
+        Some(Expr {
+            kind: ExprKind::Break { expr },
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_continue_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // continue
+        Some(Expr {
+            kind: ExprKind::Continue,
+            span: Span::new(start, self.previous_span().end),
+        })
+    }
+
+    fn break_has_value_start(&self) -> bool {
+        !self.at_kind(|k| {
+            matches!(
+                k,
+                TokenKind::Semi
+                    | TokenKind::RBrace
+                    | TokenKind::RParen
+                    | TokenKind::Comma
+                    | TokenKind::Eof
+            )
         })
     }
 
@@ -1596,6 +1666,53 @@ fn f(x: Option[Int], ready: Bool) -> Int {
         assert_eq!(arms.len(), 2);
         assert!(arms[0].guard.is_some());
         assert!(matches!(arms[0].pattern.kind, PatternKind::Or { .. }));
+    }
+
+    #[test]
+    fn parses_while_loop_break_and_continue() {
+        let src = r#"
+fn f(mut_n: Int) -> Int {
+    let mut n = mut_n;
+    while n > 0 {
+        if n == 2 {
+            n = n - 1;
+            continue;
+        } else {
+            ()
+        };
+        n = n - 1;
+    };
+    loop {
+        break 42
+    }
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(matches!(
+            f.body.stmts[1],
+            crate::ast::Stmt::Expr {
+                expr: Expr {
+                    kind: ExprKind::While { .. },
+                    ..
+                },
+                ..
+            }
+        ));
+        let tail = f.body.tail.as_ref().expect("tail expression");
+        let ExprKind::Loop { body } = &tail.kind else {
+            panic!("expected loop tail");
+        };
+        assert!(matches!(
+            body.tail,
+            Some(ref expr)
+                if matches!(expr.kind, ExprKind::Break { .. })
+        ));
     }
 
     #[test]

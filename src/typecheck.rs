@@ -55,6 +55,12 @@ struct Checker<'a> {
 #[derive(Default)]
 struct ExprContext {
     effects_used: BTreeSet<String>,
+    loop_stack: Vec<LoopContext>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct LoopContext {
+    break_ty: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -809,6 +815,21 @@ impl<'a> Checker<'a> {
                 let mut else_state = state.clone();
                 self.check_resource_protocol_block(else_block, &mut else_state);
             }
+            ir::ExprKind::While { cond, body } => {
+                self.check_resource_protocol_expr_mode(cond, state, false);
+                let mut loop_state = state.clone();
+                self.check_resource_protocol_block(body, &mut loop_state);
+            }
+            ir::ExprKind::Loop { body } => {
+                let mut loop_state = state.clone();
+                self.check_resource_protocol_block(body, &mut loop_state);
+            }
+            ir::ExprKind::Break { expr } => {
+                if let Some(expr) = expr {
+                    self.check_resource_protocol_expr_mode(expr, state, false);
+                }
+            }
+            ir::ExprKind::Continue => {}
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -1097,6 +1118,29 @@ impl<'a> Checker<'a> {
                 self.check_borrow_block(else_block, &mut else_mutability, &mut else_state);
                 Vec::new()
             }
+            ir::ExprKind::While { cond, body } => {
+                let cond_borrows = self.check_borrow_expr(cond, mutability, state);
+                self.release_temp_borrows(&cond_borrows, state);
+
+                let mut loop_mutability = mutability.clone();
+                let mut loop_state = state.clone();
+                self.check_borrow_block(body, &mut loop_mutability, &mut loop_state);
+                Vec::new()
+            }
+            ir::ExprKind::Loop { body } => {
+                let mut loop_mutability = mutability.clone();
+                let mut loop_state = state.clone();
+                self.check_borrow_block(body, &mut loop_mutability, &mut loop_state);
+                Vec::new()
+            }
+            ir::ExprKind::Break { expr } => {
+                if let Some(expr) = expr {
+                    self.check_borrow_expr(expr, mutability, state)
+                } else {
+                    Vec::new()
+                }
+            }
+            ir::ExprKind::Continue => Vec::new(),
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -2188,6 +2232,92 @@ impl<'a> Checker<'a> {
                 } else {
                     merge_types(&then_ty, &else_ty)
                 }
+            }
+            ir::ExprKind::While { cond, body } => {
+                let cond_ty = self.check_expr(cond, locals, allowed_effects, ctx, contract_mode);
+                if cond_ty != "Bool" {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1273",
+                            format!("while condition must be Bool, found '{}'", cond_ty),
+                            self.file,
+                            cond.span,
+                        )
+                        .with_help("use a Bool expression as the while condition"),
+                    );
+                }
+                ctx.loop_stack.push(LoopContext {
+                    break_ty: Some("()".to_string()),
+                });
+                let _ = self.check_block(body, locals, "()", allowed_effects, ctx, contract_mode);
+                let loop_ctx = ctx.loop_stack.pop().unwrap_or_default();
+                loop_ctx.break_ty.unwrap_or_else(|| "()".to_string())
+            }
+            ir::ExprKind::Loop { body } => {
+                ctx.loop_stack.push(LoopContext { break_ty: None });
+                let _ = self.check_block(body, locals, "()", allowed_effects, ctx, contract_mode);
+                let loop_ctx = ctx.loop_stack.pop().unwrap_or_default();
+                loop_ctx.break_ty.unwrap_or_else(|| "()".to_string())
+            }
+            ir::ExprKind::Break { expr: break_expr } => {
+                if ctx.loop_stack.is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1275",
+                            "`break` may only be used inside a loop",
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("move `break` into a `while` or `loop` body"),
+                    );
+                    return "<?>".to_string();
+                }
+
+                let break_ty = if let Some(break_expr) = break_expr {
+                    self.check_expr(break_expr, locals, allowed_effects, ctx, contract_mode)
+                } else {
+                    "()".to_string()
+                };
+
+                let loop_ctx = ctx.loop_stack.last_mut().expect("checked non-empty stack");
+                match &loop_ctx.break_ty {
+                    Some(expected) => {
+                        if !type_compatible(expected, &break_ty) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1274",
+                                    format!(
+                                        "break type '{}' does not match loop break type '{}'",
+                                        break_ty, expected
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("ensure every `break` in the loop has the same type"),
+                            );
+                        }
+                        expected.clone()
+                    }
+                    None => {
+                        loop_ctx.break_ty = Some(break_ty.clone());
+                        break_ty
+                    }
+                }
+            }
+            ir::ExprKind::Continue => {
+                if ctx.loop_stack.is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1276",
+                            "`continue` may only be used inside a loop",
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("move `continue` into a `while` or `loop` body"),
+                    );
+                    return "<?>".to_string();
+                }
+                "()".to_string()
             }
             ir::ExprKind::Match {
                 expr: scrutinee,

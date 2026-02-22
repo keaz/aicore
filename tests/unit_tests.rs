@@ -233,6 +233,68 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_break_outside_loop_is_rejected() {
+    let src = r#"
+fn bad() -> Int {
+    break 1
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1275"));
+}
+
+#[test]
+fn unit_continue_outside_loop_is_rejected() {
+    let src = r#"
+fn bad() -> Int {
+    continue
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1276"));
+}
+
+#[test]
+fn unit_while_condition_must_be_bool() {
+    let src = r#"
+fn bad() -> Int {
+    while 1 {
+        ()
+    };
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1273"));
+}
+
+#[test]
+fn unit_loop_break_type_mismatch_is_rejected() {
+    let src = r#"
+fn bad() -> Int {
+    let _x = loop {
+        if true {
+            break 1
+        } else {
+            break false
+        }
+    };
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1274"));
+}
+
+#[test]
 fn unit_extern_call_requires_explicit_unsafe_boundary() {
     let src = r#"
 extern "C" fn c_abs(x: Int) -> Int;

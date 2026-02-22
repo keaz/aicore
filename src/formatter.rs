@@ -319,6 +319,24 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             out.push_str(" else ");
             format_block(out, else_block, &BTreeMap::new(), 0);
         }
+        ir::ExprKind::While { cond, body } => {
+            out.push_str("while ");
+            format_expr(out, cond, 0);
+            out.push(' ');
+            format_block(out, body, &BTreeMap::new(), 0);
+        }
+        ir::ExprKind::Loop { body } => {
+            out.push_str("loop ");
+            format_block(out, body, &BTreeMap::new(), 0);
+        }
+        ir::ExprKind::Break { expr } => {
+            out.push_str("break");
+            if let Some(expr) = expr {
+                out.push(' ');
+                format_expr(out, expr, 0);
+            }
+        }
+        ir::ExprKind::Continue => out.push_str("continue"),
         ir::ExprKind::Match { expr, arms } => {
             out.push_str("match ");
             format_expr(out, expr, 0);

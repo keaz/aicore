@@ -1251,6 +1251,7 @@ impl<'a> Generator<'a> {
             current_label: "entry".to_string(),
             ret_ty: sig.ret.clone(),
             debug_scope,
+            loop_stack: Vec::new(),
         };
         fctx.lines.push("entry:".to_string());
 
@@ -1606,6 +1607,12 @@ impl<'a> Generator<'a> {
                 then_block,
                 else_block,
             } => self.gen_if(cond, then_block, else_block, fctx),
+            ir::ExprKind::While { cond, body } => self.gen_while(cond, body, fctx),
+            ir::ExprKind::Loop { body } => self.gen_loop(body, fctx),
+            ir::ExprKind::Break { expr: break_expr } => {
+                self.gen_break(break_expr.as_deref(), expr.span, fctx)
+            }
+            ir::ExprKind::Continue => self.gen_continue(expr.span, fctx),
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -11669,6 +11676,229 @@ impl<'a> Generator<'a> {
         Some(acc)
     }
 
+    fn gen_while(
+        &mut self,
+        cond_expr: &ir::Expr,
+        body: &ir::Block,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let cond_label = self.new_label("while_cond");
+        let body_label = self.new_label("while_body");
+        let exit_label = self.new_label("while_exit");
+
+        let saved_scope = fctx.vars.clone();
+        let saved_terminated = fctx.terminated;
+
+        fctx.lines.push(format!("  br label %{}", cond_label));
+        fctx.loop_stack.push(LoopFrame {
+            break_label: exit_label.clone(),
+            continue_label: cond_label.clone(),
+            result_ty: None,
+            result_slot: None,
+        });
+
+        fctx.vars = saved_scope.clone();
+        fctx.terminated = false;
+        fctx.lines.push(format!("{}:", cond_label));
+        fctx.current_label = cond_label.clone();
+        let cond = self.gen_expr(cond_expr, fctx)?;
+        if cond.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5015",
+                "while condition must be Bool in codegen",
+                self.file,
+                cond_expr.span,
+            ));
+            return None;
+        }
+        if !fctx.terminated {
+            let cond_repr = cond.repr.unwrap_or_else(|| "0".to_string());
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                cond_repr, body_label, exit_label
+            ));
+        }
+
+        fctx.vars = saved_scope.clone();
+        fctx.terminated = false;
+        fctx.lines.push(format!("{}:", body_label));
+        fctx.current_label = body_label.clone();
+        let _ = self.gen_block(body, fctx);
+        if !fctx.terminated {
+            fctx.lines.push(format!("  br label %{}", cond_label));
+        }
+
+        let frame = fctx.loop_stack.pop().expect("loop frame");
+        fctx.vars = saved_scope;
+        fctx.terminated = saved_terminated;
+        fctx.lines.push(format!("{}:", exit_label));
+        fctx.current_label = exit_label;
+
+        if let (Some(slot), Some(result_ty)) = (frame.result_slot, frame.result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
+    fn gen_loop(&mut self, body: &ir::Block, fctx: &mut FnCtx) -> Option<Value> {
+        let body_label = self.new_label("loop_body");
+        let exit_label = self.new_label("loop_exit");
+
+        let saved_scope = fctx.vars.clone();
+        let saved_terminated = fctx.terminated;
+
+        fctx.lines.push(format!("  br label %{}", body_label));
+        fctx.loop_stack.push(LoopFrame {
+            break_label: exit_label.clone(),
+            continue_label: body_label.clone(),
+            result_ty: None,
+            result_slot: None,
+        });
+
+        fctx.vars = saved_scope.clone();
+        fctx.terminated = false;
+        fctx.lines.push(format!("{}:", body_label));
+        fctx.current_label = body_label.clone();
+        let _ = self.gen_block(body, fctx);
+        if !fctx.terminated {
+            fctx.lines.push(format!("  br label %{}", body_label));
+        }
+
+        let frame = fctx.loop_stack.pop().expect("loop frame");
+        fctx.vars = saved_scope;
+        fctx.terminated = saved_terminated;
+        fctx.lines.push(format!("{}:", exit_label));
+        fctx.current_label = exit_label;
+
+        if let (Some(slot), Some(result_ty)) = (frame.result_slot, frame.result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
+    fn gen_break(
+        &mut self,
+        break_expr: Option<&ir::Expr>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if fctx.loop_stack.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5025",
+                "`break` used outside of a loop during codegen",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let loop_index = fctx.loop_stack.len() - 1;
+        if let Some(break_expr) = break_expr {
+            let value = self.gen_expr(break_expr, fctx)?;
+            if fctx.loop_stack[loop_index].result_slot.is_none() {
+                let ptr = self.alloc_entry_slot(&value.ty, fctx);
+                fctx.loop_stack[loop_index].result_ty = Some(value.ty.clone());
+                fctx.loop_stack[loop_index].result_slot = Some(ptr);
+            }
+
+            let expected_ty = fctx.loop_stack[loop_index]
+                .result_ty
+                .clone()
+                .unwrap_or(LType::Unit);
+            if value.ty != expected_ty {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5007",
+                    format!(
+                        "loop break type mismatch in codegen: expected '{}', found '{}'",
+                        render_type(&expected_ty),
+                        render_type(&value.ty)
+                    ),
+                    self.file,
+                    span,
+                ));
+            }
+            if let Some(slot) = fctx.loop_stack[loop_index].result_slot.clone() {
+                let repr = coerce_repr(&value, &expected_ty);
+                fctx.lines.push(format!(
+                    "  store {} {}, {}* {}",
+                    llvm_type(&expected_ty),
+                    repr,
+                    llvm_type(&expected_ty),
+                    slot
+                ));
+            }
+        } else if let (Some(slot), Some(expected_ty)) = (
+            fctx.loop_stack[loop_index].result_slot.clone(),
+            fctx.loop_stack[loop_index].result_ty.clone(),
+        ) {
+            let repr = default_value(&expected_ty);
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&expected_ty),
+                repr,
+                llvm_type(&expected_ty),
+                slot
+            ));
+        }
+
+        let break_label = fctx.loop_stack[loop_index].break_label.clone();
+        fctx.lines.push(format!("  br label %{}", break_label));
+        fctx.terminated = true;
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_continue(&mut self, span: crate::span::Span, fctx: &mut FnCtx) -> Option<Value> {
+        let Some(frame) = fctx.loop_stack.last() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5026",
+                "`continue` used outside of a loop during codegen",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        fctx.lines
+            .push(format!("  br label %{}", frame.continue_label));
+        fctx.terminated = true;
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
     fn gen_if(
         &mut self,
         cond_expr: &ir::Expr,
@@ -12579,6 +12809,15 @@ struct FnCtx {
     current_label: String,
     ret_ty: LType,
     debug_scope: Option<usize>,
+    loop_stack: Vec<LoopFrame>,
+}
+
+#[derive(Debug, Clone)]
+struct LoopFrame {
+    break_label: String,
+    continue_label: String,
+    result_ty: Option<LType>,
+    result_slot: Option<String>,
 }
 
 fn find_local(scopes: &[BTreeMap<String, Local>], name: &str) -> Option<Local> {

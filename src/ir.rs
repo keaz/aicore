@@ -275,6 +275,17 @@ pub enum ExprKind {
         then_block: Block,
         else_block: Block,
     },
+    While {
+        cond: Box<Expr>,
+        body: Block,
+    },
+    Loop {
+        body: Block,
+    },
+    Break {
+        expr: Option<Box<Expr>>,
+    },
+    Continue,
     Match {
         expr: Box<Expr>,
         arms: Vec<MatchArm>,

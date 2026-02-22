@@ -274,6 +274,17 @@ impl Builder {
                 then_block: self.lower_block(then_block),
                 else_block: self.lower_block(else_block),
             },
+            ast::ExprKind::While { cond, body } => ir::ExprKind::While {
+                cond: Box::new(self.lower_expr(cond)),
+                body: self.lower_block(body),
+            },
+            ast::ExprKind::Loop { body } => ir::ExprKind::Loop {
+                body: self.lower_block(body),
+            },
+            ast::ExprKind::Break { expr } => ir::ExprKind::Break {
+                expr: expr.as_ref().map(|expr| Box::new(self.lower_expr(expr))),
+            },
+            ast::ExprKind::Continue => ir::ExprKind::Continue,
             ast::ExprKind::Match { expr, arms } => ir::ExprKind::Match {
                 expr: Box::new(self.lower_expr(expr)),
                 arms: arms

@@ -107,3 +107,8 @@ fn golden_case15_mutability_borrow() {
 fn golden_case16_match_or_guard() {
     run_golden_case("case16_match_or_guard.aic");
 }
+
+#[test]
+fn golden_case17_loop_control() {
+    run_golden_case("case17_loop_control.aic");
+}

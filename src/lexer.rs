@@ -29,6 +29,10 @@ pub enum TokenKind {
     KwIf,
     KwElse,
     KwMatch,
+    KwWhile,
+    KwLoop,
+    KwBreak,
+    KwContinue,
     KwTrue,
     KwFalse,
     KwRequires,
@@ -274,6 +278,10 @@ impl<'a> Lexer<'a> {
             "if" => TokenKind::KwIf,
             "else" => TokenKind::KwElse,
             "match" => TokenKind::KwMatch,
+            "while" => TokenKind::KwWhile,
+            "loop" => TokenKind::KwLoop,
+            "break" => TokenKind::KwBreak,
+            "continue" => TokenKind::KwContinue,
             "true" => TokenKind::KwTrue,
             "false" => TokenKind::KwFalse,
             "requires" => TokenKind::KwRequires,
@@ -413,7 +421,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; match x { Some(v) | None => v } }";
+        let src = "async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::KwAsync));
@@ -429,6 +437,12 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Pipe)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwAwait)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Question)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwWhile)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwLoop)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwBreak)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::KwContinue)));
     }
 
     #[test]

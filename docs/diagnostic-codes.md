@@ -51,6 +51,10 @@ Recent core-language additions:
 - `E1270`: match guard expression must be `Bool`.
 - `E1271`: or-pattern alternatives bind different variable sets.
 - `E1272`: or-pattern alternatives bind a variable with incompatible types.
+- `E1273`: `while` condition must be `Bool`.
+- `E1274`: `break` expression type does not match enclosing loop break type.
+- `E1275`: `break` used outside loop context.
+- `E1276`: `continue` used outside loop context.
 - `E2110`: invalid package install spec or version requirement.
 - `E2111`: package manifest read/write error for registry workflows.
 - `E2112`: duplicate package version publish attempted.
@@ -72,6 +76,8 @@ Recent core-language additions:
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 - `E5023`: backend does not yet lower guarded match arms.
 - `E5024`: backend extern wrapper/link ABI mismatch or unsupported extern lowering.
+- `E5025`: backend encountered `break` outside a loop.
+- `E5026`: backend encountered `continue` outside a loop.
 
 ## Change policy
 
