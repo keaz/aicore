@@ -31,5 +31,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nightly-fuzz-report
-          path: target/e8/nightly-fuzz-report.json
+          path: |
+            target/e8/nightly-fuzz-report.json
+            target/e8/fuzz-crashers
           if-no-files-found: ignore

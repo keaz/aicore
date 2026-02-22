@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use aicore::fuzzing::{load_corpus, replay_regressions, run_seeded_fuzz, FuzzConfig, FuzzTarget};
+use aicore::fuzzing::{
+    load_corpus, release_gate_ok, replay_regressions, run_seeded_fuzz, write_crash_repro_artifacts,
+    FuzzConfig, FuzzTarget,
+};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -32,6 +35,15 @@ fn fuzz_seeded_corpus_has_no_panics() {
             report.crashes.is_empty(),
             "fuzz crashes for {target:?}: {:#?}",
             report.crashes
+        );
+        assert_eq!(
+            report.total_crashes, 0,
+            "unexpected raw crashes: {report:#?}"
+        );
+        assert!(
+            report.triage.is_empty(),
+            "unexpected triage entries for {target:?}: {:#?}",
+            report.triage
         );
     }
 }
@@ -67,9 +79,25 @@ fn fuzz_nightly_stress_suite() {
         );
         reports.push(report);
     }
+    assert!(
+        release_gate_ok(&reports),
+        "nightly fuzz release gate failed: {:#?}",
+        reports
+    );
 
     let out_dir = repo_root().join("target/e8");
     fs::create_dir_all(&out_dir).expect("mkdir target/e8");
+    let crash_root = out_dir.join("fuzz-crashers");
+    for report in &reports {
+        let artifacts =
+            write_crash_repro_artifacts(report, &crash_root).expect("write crash repro artifacts");
+        assert_eq!(
+            artifacts.len(),
+            report.triage.len(),
+            "artifact count mismatch for {:#?}",
+            report
+        );
+    }
     fs::write(
         out_dir.join("nightly-fuzz-report.json"),
         serde_json::to_string_pretty(&reports).expect("json"),

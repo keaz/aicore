@@ -32,6 +32,11 @@ cargo test --locked --test e8_conformance_tests
 - Fuzz engine: `src/fuzzing.rs`
 - Tests: `tests/e8_fuzz_tests.rs`
 - Nightly workflow: `.github/workflows/nightly-fuzz.yml`
+- Crash triage:
+  - automatic dedup by panic signature
+  - deterministic crash input minimization
+  - reproducer artifact emission under `target/e8/fuzz-crashers/`
+- Release gate: unresolved triage entries fail fuzz gates (`release_gate_ok`)
 
 Run locally:
 

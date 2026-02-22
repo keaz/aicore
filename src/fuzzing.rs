@@ -1,8 +1,10 @@
 use std::any::Any;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::ir_builder;
 use crate::lexer;
@@ -49,7 +51,20 @@ pub struct FuzzRunReport {
     pub target: FuzzTarget,
     pub iterations: usize,
     pub corpus_cases: usize,
+    pub total_crashes: usize,
     pub crashes: Vec<FuzzCrash>,
+    pub triage: Vec<FuzzTriageCase>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FuzzTriageCase {
+    pub id: String,
+    pub target: FuzzTarget,
+    pub panic: String,
+    pub minimized_input: String,
+    pub first_iteration: usize,
+    pub seed: u64,
+    pub occurrences: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,11 +89,11 @@ pub fn load_corpus(root: &Path, target: FuzzTarget) -> anyhow::Result<Vec<String
 
 pub fn run_seeded_fuzz(target: FuzzTarget, corpus: &[String], config: FuzzConfig) -> FuzzRunReport {
     let mut rng = Lcg::new(config.seed);
-    let mut crashes = Vec::new();
+    let mut raw_crashes = Vec::new();
 
     for (idx, source) in corpus.iter().enumerate() {
         if let Some(panic) = run_target_catch(target, source) {
-            crashes.push(FuzzCrash {
+            raw_crashes.push(FuzzCrash {
                 target,
                 iteration: idx,
                 seed: config.seed,
@@ -91,7 +106,7 @@ pub fn run_seeded_fuzz(target: FuzzTarget, corpus: &[String], config: FuzzConfig
     for iteration in 0..config.iterations {
         let input = mutate_from_corpus(corpus, &mut rng, config.max_len);
         if let Some(panic) = run_target_catch(target, &input) {
-            crashes.push(FuzzCrash {
+            raw_crashes.push(FuzzCrash {
                 target,
                 iteration,
                 seed: config.seed,
@@ -101,11 +116,15 @@ pub fn run_seeded_fuzz(target: FuzzTarget, corpus: &[String], config: FuzzConfig
         }
     }
 
+    let (crashes, triage) = dedup_and_minimize_crashes(target, &raw_crashes);
+
     FuzzRunReport {
         target,
         iterations: config.iterations,
         corpus_cases: corpus.len(),
+        total_crashes: raw_crashes.len(),
         crashes,
+        triage,
     }
 }
 
@@ -130,6 +149,26 @@ pub fn replay_regressions(
         });
     }
     Ok(out)
+}
+
+pub fn release_gate_ok(reports: &[FuzzRunReport]) -> bool {
+    reports.iter().all(|report| report.triage.is_empty())
+}
+
+pub fn write_crash_repro_artifacts(
+    report: &FuzzRunReport,
+    out_root: &Path,
+) -> anyhow::Result<Vec<PathBuf>> {
+    let target_dir = out_root.join(target_dir_name(report.target));
+    fs::create_dir_all(&target_dir)?;
+
+    let mut files = Vec::new();
+    for case in &report.triage {
+        let path = target_dir.join(format!("{}.aic", case.id));
+        fs::write(&path, &case.minimized_input)?;
+        files.push(path);
+    }
+    Ok(files)
 }
 
 fn run_target_catch(target: FuzzTarget, source: &str) -> Option<String> {
@@ -157,6 +196,110 @@ fn run_target(target: FuzzTarget, source: &str) {
             }
         }
     }
+}
+
+fn dedup_and_minimize_crashes(
+    target: FuzzTarget,
+    raw: &[FuzzCrash],
+) -> (Vec<FuzzCrash>, Vec<FuzzTriageCase>) {
+    if raw.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut groups = BTreeMap::<String, Vec<&FuzzCrash>>::new();
+    for crash in raw {
+        groups.entry(crash.panic.clone()).or_default().push(crash);
+    }
+
+    let mut deduped = Vec::new();
+    let mut triage = Vec::new();
+
+    for (panic, mut group) in groups {
+        group.sort_by(|a, b| a.iteration.cmp(&b.iteration).then(a.seed.cmp(&b.seed)));
+        let first = group[0];
+        let minimized = minimize_input(&first.input, |candidate| {
+            run_target_catch(target, candidate).as_deref() == Some(panic.as_str())
+        });
+        let crash_id = crash_id(target, &panic, &minimized);
+
+        deduped.push(FuzzCrash {
+            target,
+            iteration: first.iteration,
+            seed: first.seed,
+            input: minimized.clone(),
+            panic: panic.clone(),
+        });
+        triage.push(FuzzTriageCase {
+            id: crash_id,
+            target,
+            panic: panic.clone(),
+            minimized_input: minimized,
+            first_iteration: first.iteration,
+            seed: first.seed,
+            occurrences: group.len(),
+        });
+    }
+
+    deduped.sort_by(|a, b| a.iteration.cmp(&b.iteration).then(a.panic.cmp(&b.panic)));
+    triage.sort_by(|a, b| {
+        a.first_iteration
+            .cmp(&b.first_iteration)
+            .then(a.panic.cmp(&b.panic))
+    });
+
+    (deduped, triage)
+}
+
+fn minimize_input<F>(input: &str, mut predicate: F) -> String
+where
+    F: FnMut(&str) -> bool,
+{
+    if input.is_empty() || !predicate(input) {
+        return input.to_string();
+    }
+
+    let mut bytes = input.as_bytes().to_vec();
+    let mut granularity = (bytes.len() / 2).max(1);
+
+    while granularity > 0 {
+        let mut reduced = false;
+        let mut index = 0usize;
+        while index < bytes.len() {
+            let end = (index + granularity).min(bytes.len());
+            if end <= index {
+                break;
+            }
+            let mut candidate = bytes.clone();
+            candidate.drain(index..end);
+            let candidate_text = String::from_utf8_lossy(&candidate).to_string();
+            if predicate(&candidate_text) {
+                bytes = candidate;
+                reduced = true;
+            } else {
+                index += granularity;
+            }
+        }
+
+        if !reduced {
+            if granularity == 1 {
+                break;
+            }
+            granularity /= 2;
+        }
+    }
+
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+fn crash_id(target: FuzzTarget, panic: &str, minimized_input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(format!("{target:?}").as_bytes());
+    hasher.update([0]);
+    hasher.update(panic.as_bytes());
+    hasher.update([0]);
+    hasher.update(minimized_input.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    digest[..12].to_string()
 }
 
 fn mutate_from_corpus(corpus: &[String], rng: &mut Lcg, max_len: usize) -> String {
@@ -286,7 +429,10 @@ impl Lcg {
 
 #[cfg(test)]
 mod tests {
-    use super::{FuzzConfig, Lcg};
+    use super::{
+        crash_id, minimize_input, release_gate_ok, FuzzConfig, FuzzRunReport, FuzzTarget,
+        FuzzTriageCase, Lcg,
+    };
 
     #[test]
     fn lcg_is_deterministic_for_same_seed() {
@@ -302,5 +448,50 @@ mod tests {
         let cfg = FuzzConfig::default();
         assert!(cfg.iterations > 0);
         assert!(cfg.max_len > 0);
+    }
+
+    #[test]
+    fn minimizes_input_deterministically() {
+        let minimized = minimize_input("xxpanicxx", |candidate| candidate.contains("panic"));
+        assert_eq!(minimized, "panic");
+    }
+
+    #[test]
+    fn crash_id_is_stable_for_same_payload() {
+        let a = crash_id(FuzzTarget::Parser, "boom", "abc");
+        let b = crash_id(FuzzTarget::Parser, "boom", "abc");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 12);
+    }
+
+    #[test]
+    fn release_gate_blocks_reports_with_unresolved_crashes() {
+        let clean = FuzzRunReport {
+            target: FuzzTarget::Lexer,
+            iterations: 1,
+            corpus_cases: 1,
+            total_crashes: 0,
+            crashes: Vec::new(),
+            triage: Vec::new(),
+        };
+        assert!(release_gate_ok(std::slice::from_ref(&clean)));
+
+        let failing = FuzzRunReport {
+            target: FuzzTarget::Lexer,
+            iterations: 1,
+            corpus_cases: 1,
+            total_crashes: 1,
+            crashes: Vec::new(),
+            triage: vec![FuzzTriageCase {
+                id: "deadbeefcafe".to_string(),
+                target: FuzzTarget::Lexer,
+                panic: "panic".to_string(),
+                minimized_input: "x".to_string(),
+                first_iteration: 0,
+                seed: 7,
+                occurrences: 1,
+            }],
+        };
+        assert!(!release_gate_ok(&[clean, failing]));
     }
 }
