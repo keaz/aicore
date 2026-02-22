@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
@@ -40,6 +41,7 @@ use aicore::sarif::diagnostics_to_sarif;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
+use aicore::telemetry;
 use aicore::test_harness::{run_harness, HarnessMode};
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -1181,7 +1183,32 @@ fn run_cli() -> anyhow::Result<i32> {
                 }
 
                 let run_args: Vec<String> = Vec::new();
-                let status = run_with_policy(&out, &run_args, &policy)?;
+                let trace_id = telemetry::current_trace_id();
+                let execute_started = Instant::now();
+                let status = run_with_policy(&out, &run_args, &policy, Some(&trace_id))?;
+                let attrs = std::collections::BTreeMap::from([
+                    (
+                        "input".to_string(),
+                        serde_json::json!(input.display().to_string()),
+                    ),
+                    (
+                        "profile".to_string(),
+                        serde_json::json!(policy.profile.clone()),
+                    ),
+                ]);
+                telemetry::emit_phase(
+                    "run",
+                    "execute",
+                    if status.success() { "ok" } else { "error" },
+                    execute_started.elapsed(),
+                    attrs.clone(),
+                );
+                telemetry::emit_metric(
+                    "run",
+                    "exit_code",
+                    status.code().unwrap_or(-1) as f64,
+                    attrs,
+                );
                 if status.success() {
                     EXIT_OK
                 } else {

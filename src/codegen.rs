@@ -2,12 +2,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use anyhow::Context;
+use serde_json::json;
 
 use crate::ast::{BinOp, UnaryOp};
 use crate::diagnostics::Diagnostic;
 use crate::ir;
+use crate::telemetry;
 
 #[derive(Debug, Clone)]
 struct FnSig {
@@ -278,11 +281,34 @@ pub fn emit_llvm_with_options(
     file: &str,
     options: CodegenOptions,
 ) -> Result<CodegenOutput, Vec<Diagnostic>> {
+    let started = Instant::now();
     let mut gen = Generator::new(program, file, options);
     gen.generate();
+    let mut attrs = BTreeMap::from([
+        ("file".to_string(), json!(file)),
+        ("debug_info".to_string(), json!(options.debug_info)),
+    ]);
     if !gen.diagnostics.is_empty() {
+        telemetry::emit_phase(
+            "codegen",
+            "llvm_emit",
+            "error",
+            started.elapsed(),
+            attrs.clone(),
+        );
+        attrs.insert(
+            "diagnostic_count".to_string(),
+            json!(gen.diagnostics.len() as u64),
+        );
+        telemetry::emit_metric(
+            "codegen",
+            "llvm_emit_diagnostic_count",
+            gen.diagnostics.len() as f64,
+            attrs,
+        );
         return Err(gen.diagnostics);
     }
+    telemetry::emit_phase("codegen", "llvm_emit", "ok", started.elapsed(), attrs);
     Ok(CodegenOutput {
         llvm_ir: gen.finish(),
     })
@@ -324,6 +350,7 @@ pub fn compile_with_clang_artifact_with_options(
     artifact: ArtifactKind,
     options: CompileOptions,
 ) -> anyhow::Result<PathBuf> {
+    let started = Instant::now();
     let toolchain = probe_toolchain()?;
     ensure_supported_toolchain(&toolchain)?;
 
@@ -407,6 +434,27 @@ pub fn compile_with_clang_artifact_with_options(
             run_checked_command(ar, &ar_bin, "archiving static library artifact")?;
         }
     }
+
+    telemetry::emit_phase(
+        "codegen",
+        "clang_compile",
+        "ok",
+        started.elapsed(),
+        BTreeMap::from([
+            (
+                "artifact".to_string(),
+                json!(match artifact {
+                    ArtifactKind::Exe => "exe",
+                    ArtifactKind::Obj => "obj",
+                    ArtifactKind::Lib => "lib",
+                }),
+            ),
+            (
+                "output".to_string(),
+                json!(output_path.to_string_lossy().to_string()),
+            ),
+        ]),
+    );
 
     Ok(output_path.to_path_buf())
 }
@@ -12897,12 +12945,17 @@ static int aic_rt_sandbox_allow_time(void) {
 static long aic_rt_sandbox_violation(const char* domain, const char* operation, long error_code) {
     if (aic_rt_sandbox_flag_enabled("AIC_SANDBOX_DIAGNOSTIC_JSON", 0)) {
         const char* profile = getenv("AIC_SANDBOX_PROFILE");
+        const char* trace_id = getenv("AIC_TRACE_ID");
         if (profile == NULL || profile[0] == '\0') {
             profile = "unknown";
         }
+        if (trace_id == NULL || trace_id[0] == '\0') {
+            trace_id = "unknown";
+        }
         fprintf(
             stderr,
-            "{\"code\":\"sandbox_policy_violation\",\"profile\":\"%s\",\"domain\":\"%s\",\"operation\":\"%s\"}\n",
+            "{\"code\":\"sandbox_policy_violation\",\"trace_id\":\"%s\",\"profile\":\"%s\",\"domain\":\"%s\",\"operation\":\"%s\"}\n",
+            trace_id,
             profile,
             domain == NULL ? "" : domain,
             operation == NULL ? "" : operation

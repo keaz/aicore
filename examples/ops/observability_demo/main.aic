@@ -1,0 +1,7 @@
+module examples.ops.observability_demo.main;
+import std.io;
+
+fn main() -> Int effects { io } {
+    print_int(42);
+    0
+}

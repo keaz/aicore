@@ -136,8 +136,23 @@ Custom profile format is JSON with `profile`, `permissions`, and optional `limit
 Disallowed runtime operations emit machine-readable diagnostics on stderr:
 
 ```json
-{"code":"sandbox_policy_violation","profile":"ops-test","domain":"fs","operation":"read_text"}
+{"code":"sandbox_policy_violation","trace_id":"ops-trace-001","profile":"ops-test","domain":"fs","operation":"read_text"}
 ```
+
+## Observability Telemetry
+
+Enable structured telemetry events for compiler/runtime phases:
+
+```bash
+AIC_TRACE_ID=ops-trace-001 \
+AIC_TELEMETRY_PATH=target/ops/telemetry.jsonl \
+aic check examples/ops/observability_demo/main.aic
+```
+
+Telemetry schema and runbook:
+
+- `docs/security-ops/telemetry.schema.json`
+- `docs/security-ops/telemetry.md`
 
 ## Local CI Integration
 

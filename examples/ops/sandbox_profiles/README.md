@@ -26,5 +26,5 @@ aic run examples/ops/sandbox_profiles/fs_blocked_demo.aic \
 When a disallowed operation is invoked, runtime emits machine-readable diagnostics on stderr:
 
 ```json
-{"code":"sandbox_policy_violation","profile":"strict","domain":"fs","operation":"read_text"}
+{"code":"sandbox_policy_violation","trace_id":"ops-trace-001","profile":"strict","domain":"fs","operation":"read_text"}
 ```

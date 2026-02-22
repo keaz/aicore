@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
+
+use serde_json::json;
 
 use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
@@ -16,6 +20,7 @@ use crate::package_loader;
 use crate::package_loader::LoadOptions;
 use crate::package_workflow::{native_link_config, NativeLinkConfig};
 use crate::resolver::{self, Resolution};
+use crate::telemetry;
 use crate::typecheck::{self, TypecheckOutput};
 
 pub struct FrontendOutput {
@@ -24,6 +29,28 @@ pub struct FrontendOutput {
     pub typecheck: TypecheckOutput,
     pub diagnostics: Vec<Diagnostic>,
     pub item_modules: Vec<Option<Vec<String>>>,
+    pub timings: FrontendTimings,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrontendTimings {
+    pub load_ms: f64,
+    pub ir_build_ms: f64,
+    pub effect_normalize_ms: f64,
+    pub resolve_ms: f64,
+    pub typecheck_ms: f64,
+    pub verify_ms: f64,
+}
+
+impl FrontendTimings {
+    pub fn total_ms(self) -> f64 {
+        self.load_ms
+            + self.ir_build_ms
+            + self.effect_normalize_ms
+            + self.resolve_ms
+            + self.typecheck_ms
+            + self.verify_ms
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,12 +74,15 @@ pub fn run_frontend_with_options(
     options: FrontendOptions,
 ) -> anyhow::Result<FrontendOutput> {
     let file = path.to_string_lossy().to_string();
+    let mut timings = FrontendTimings::default();
+    let load_started = Instant::now();
     let mut load = package_loader::load_entry_with_options(
         path,
         LoadOptions {
             offline: options.offline,
         },
     )?;
+    timings.load_ms = elapsed_ms(load_started);
     let mut diagnostics = Vec::new();
     diagnostics.append(&mut load.diagnostics);
 
@@ -87,20 +117,32 @@ pub fn run_frontend_with_options(
             typecheck: TypecheckOutput::default(),
             diagnostics,
             item_modules: Vec::new(),
+            timings,
         });
     };
 
+    let ir_build_started = Instant::now();
     let mut ir = ir_builder::build(&ast);
+    timings.ir_build_ms = elapsed_ms(ir_build_started);
+    let normalize_started = Instant::now();
     diagnostics.extend(normalize_effect_declarations(&mut ir, &file));
+    timings.effect_normalize_ms = elapsed_ms(normalize_started);
+
+    let resolve_started = Instant::now();
     let (resolution, resolve_diags) =
         resolver::resolve_with_item_modules(&ir, &file, Some(&load.item_modules));
+    timings.resolve_ms = elapsed_ms(resolve_started);
     diagnostics.extend(resolve_diags);
 
+    let typecheck_started = Instant::now();
     let typecheck = typecheck::check(&ir, &resolution, &file);
+    timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     diagnostics.extend(typecheck.diagnostics.iter().cloned());
 
+    let verify_started = Instant::now();
     diagnostics.extend(verify_static(&ir, &file));
+    timings.verify_ms = elapsed_ms(verify_started);
 
     diagnostics.sort_by(|a, b| {
         let a_pos = a.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
@@ -111,12 +153,56 @@ pub fn run_frontend_with_options(
             .then(a.message.cmp(&b.message))
     });
 
+    let attrs = BTreeMap::from([
+        ("input".to_string(), json!(file)),
+        ("offline".to_string(), json!(options.offline)),
+    ]);
+    telemetry::emit_phase(
+        "frontend",
+        "load",
+        "ok",
+        std::time::Duration::from_secs_f64(timings.load_ms / 1000.0),
+        attrs.clone(),
+    );
+    telemetry::emit_phase(
+        "frontend",
+        "ir_build",
+        "ok",
+        std::time::Duration::from_secs_f64(timings.ir_build_ms / 1000.0),
+        attrs.clone(),
+    );
+    telemetry::emit_phase(
+        "frontend",
+        "resolve",
+        "ok",
+        std::time::Duration::from_secs_f64(timings.resolve_ms / 1000.0),
+        attrs.clone(),
+    );
+    telemetry::emit_phase(
+        "frontend",
+        "typecheck",
+        if has_errors(&diagnostics) {
+            "error"
+        } else {
+            "ok"
+        },
+        std::time::Duration::from_secs_f64(timings.typecheck_ms / 1000.0),
+        attrs.clone(),
+    );
+    telemetry::emit_metric(
+        "frontend",
+        "diagnostic_count",
+        diagnostics.len() as f64,
+        attrs,
+    );
+
     Ok(FrontendOutput {
         ir,
         resolution,
         typecheck,
         diagnostics,
         item_modules: load.item_modules,
+        timings,
     })
 }
 
@@ -276,6 +362,10 @@ fn native_to_link_options(project_root: &Path, native: &NativeLinkConfig) -> Lin
             .map(|path| resolve_native_path(project_root, path))
             .collect(),
     }
+}
+
+fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1000.0
 }
 
 fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {

@@ -156,20 +156,21 @@ pub fn run_with_limits(
         limits: limits.cloned(),
         permissions: SandboxPermissions::allow_all(),
     };
-    run_with_policy(executable, args, &policy)
+    run_with_policy(executable, args, &policy, None)
 }
 
 pub fn run_with_policy(
     executable: &Path,
     args: &[String],
     policy: &SandboxPolicy,
+    trace_id: Option<&str>,
 ) -> anyhow::Result<ExitStatus> {
     policy.validate()?;
 
     if policy.limits.is_none() {
         let mut command = Command::new(executable);
         command.args(args);
-        apply_policy_env(&mut command, policy);
+        apply_policy_env(&mut command, policy, trace_id);
         return Ok(command.status()?);
     }
 
@@ -181,7 +182,7 @@ pub fn run_with_policy(
         command.arg("--");
         command.arg(executable);
         command.args(args);
-        apply_policy_env(&mut command, policy);
+        apply_policy_env(&mut command, policy, trace_id);
         return Ok(command.status()?);
     }
 
@@ -195,7 +196,7 @@ pub fn run_with_policy(
     }
 }
 
-fn apply_policy_env(command: &mut Command, policy: &SandboxPolicy) {
+fn apply_policy_env(command: &mut Command, policy: &SandboxPolicy, trace_id: Option<&str>) {
     command
         .env("AIC_SANDBOX_PROFILE", &policy.profile)
         .env("AIC_SANDBOX_ALLOW_FS", bool_env(policy.permissions.fs))
@@ -203,6 +204,13 @@ fn apply_policy_env(command: &mut Command, policy: &SandboxPolicy) {
         .env("AIC_SANDBOX_ALLOW_PROC", bool_env(policy.permissions.proc))
         .env("AIC_SANDBOX_ALLOW_TIME", bool_env(policy.permissions.time))
         .env("AIC_SANDBOX_DIAGNOSTIC_JSON", "1");
+    if let Some(value) = trace_id {
+        command.env("AIC_TRACE_ID", value);
+    } else if let Ok(value) = std::env::var("AIC_TRACE_ID") {
+        if !value.trim().is_empty() {
+            command.env("AIC_TRACE_ID", value);
+        }
+    }
 }
 
 fn bool_env(value: bool) -> &'static str {

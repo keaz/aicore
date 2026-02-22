@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use aicore::telemetry::read_events;
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -23,6 +24,15 @@ fn run_aic_with_env(args: &[&str], key: &str, value: &str) -> std::process::Outp
         .env(key, value)
         .output()
         .expect("run aic")
+}
+
+fn run_aic_with_envs(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_aic"));
+    command.args(args).current_dir(repo_root());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().expect("run aic")
 }
 
 fn first_sandbox_violation(stderr: &[u8]) -> serde_json::Value {
@@ -298,6 +308,72 @@ fn run_custom_sandbox_policy_blocks_multiple_domains_with_machine_readable_error
         assert_eq!(violation["domain"], expected_domain);
         assert_eq!(violation["operation"], expected_operation);
     }
+}
+
+#[test]
+fn telemetry_schema_contract_is_stable() {
+    let schema_path = repo_root().join("docs/security-ops/telemetry.schema.json");
+    let raw = fs::read_to_string(schema_path).expect("read telemetry schema");
+    let schema: serde_json::Value = serde_json::from_str(&raw).expect("parse telemetry schema");
+
+    assert_eq!(schema["properties"]["schema_version"]["const"], "1.0");
+    let required = schema["required"].as_array().expect("required array");
+    for field in [
+        "schema_version",
+        "event_index",
+        "timestamp_ms",
+        "trace_id",
+        "command",
+        "kind",
+        "attrs",
+    ] {
+        assert!(
+            required.contains(&serde_json::json!(field)),
+            "schema required fields missing {field}"
+        );
+    }
+}
+
+#[test]
+fn telemetry_trace_id_correlates_runtime_violation_and_event_log() {
+    let dir = tempdir().expect("tempdir");
+    let policy_path = dir.path().join("policy.json");
+    let telemetry_path = dir.path().join("telemetry.jsonl");
+    fs::write(
+        &policy_path,
+        r#"{
+  "profile": "telemetry-test",
+  "permissions": { "fs": false, "net": true, "proc": true, "time": true }
+}"#,
+    )
+    .expect("write policy");
+
+    let policy_arg = policy_path.to_string_lossy().to_string();
+    let telemetry_arg = telemetry_path.to_string_lossy().to_string();
+    let trace_id = "trace-ops-123";
+    let out = run_aic_with_envs(
+        &[
+            "run",
+            "examples/ops/sandbox_profiles/fs_blocked_demo.aic",
+            "--sandbox-config",
+            &policy_arg,
+        ],
+        &[
+            ("AIC_TRACE_ID", trace_id),
+            ("AIC_TELEMETRY_PATH", telemetry_arg.as_str()),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "stderr={:?}", out.stderr);
+
+    let violation = first_sandbox_violation(&out.stderr);
+    assert_eq!(violation["trace_id"], trace_id);
+
+    let events = read_events(&telemetry_path).expect("read telemetry events");
+    assert!(!events.is_empty(), "telemetry should contain events");
+    assert!(
+        events.iter().all(|event| event.trace_id == trace_id),
+        "all telemetry events should carry the provided trace id"
+    );
 }
 
 #[cfg(target_os = "linux")]
