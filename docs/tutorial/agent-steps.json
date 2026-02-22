@@ -1,0 +1,461 @@
+{
+  "schema_version": 1,
+  "format": "aicore-tutorial-agent-steps",
+  "ordering": "chapter_number_ascending",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "chapter_id": "01-hello-world",
+      "chapter_file": "docs/tutorial/01-hello-world.md",
+      "example_files": [
+        "examples/e5/hello_int.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "01.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/01-hello-world.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "01.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/01-hello-world.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "01.3",
+          "action": "run_command",
+          "command": "aic check examples/e5/hello_int.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "01.4",
+          "action": "run_command",
+          "command": "aic run examples/e5/hello_int.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "01.5",
+          "action": "verify_concept",
+          "assertion": "main returns Int and declares effects { io } when calling std.io functions"
+        }
+      ]
+    },
+    {
+      "chapter_number": 2,
+      "chapter_id": "02-types-and-variables",
+      "chapter_file": "docs/tutorial/02-types-and-variables.md",
+      "example_files": [
+        "examples/core/mut_vec.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "02.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/02-types-and-variables.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "02.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/02-types-and-variables.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "02.3",
+          "action": "run_command",
+          "command": "aic check examples/core/mut_vec.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "02.4",
+          "action": "run_command",
+          "command": "aic run examples/core/mut_vec.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "2"
+          ]
+        },
+        {
+          "step_id": "02.5",
+          "action": "verify_concept",
+          "assertion": "reassignment requires let mut and type annotations use colon syntax"
+        }
+      ]
+    },
+    {
+      "chapter_number": 3,
+      "chapter_id": "03-functions",
+      "chapter_file": "docs/tutorial/03-functions.md",
+      "example_files": [
+        "examples/core/async_ping.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "03.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/03-functions.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "03.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/03-functions.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "03.3",
+          "action": "run_command",
+          "command": "aic check examples/core/async_ping.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "03.4",
+          "action": "run_command",
+          "command": "aic run examples/core/async_ping.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "03.5",
+          "action": "verify_concept",
+          "assertion": "await is used only inside async functions and async calls preserve effect requirements"
+        }
+      ]
+    },
+    {
+      "chapter_number": 4,
+      "chapter_id": "04-control-flow",
+      "chapter_file": "docs/tutorial/04-control-flow.md",
+      "example_files": [
+        "examples/core/loop_control.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "04.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/04-control-flow.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "04.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/04-control-flow.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "04.3",
+          "action": "run_command",
+          "command": "aic check examples/core/loop_control.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "04.4",
+          "action": "run_command",
+          "command": "aic run examples/core/loop_control.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "04.5",
+          "action": "verify_concept",
+          "assertion": "while and loop expressions support continue and break value"
+        }
+      ]
+    },
+    {
+      "chapter_number": 5,
+      "chapter_id": "05-structs-and-enums",
+      "chapter_file": "docs/tutorial/05-structs-and-enums.md",
+      "example_files": [
+        "examples/e5/enum_match.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "05.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/05-structs-and-enums.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "05.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/05-structs-and-enums.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "05.3",
+          "action": "run_command",
+          "command": "aic check examples/e5/enum_match.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "05.4",
+          "action": "run_command",
+          "command": "aic run examples/e5/enum_match.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "05.5",
+          "action": "verify_concept",
+          "assertion": "enum variants are handled with exhaustive match arms"
+        }
+      ]
+    },
+    {
+      "chapter_number": 6,
+      "chapter_id": "06-generics",
+      "chapter_file": "docs/tutorial/06-generics.md",
+      "example_files": [
+        "examples/e5/generic_pair.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "06.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/06-generics.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "06.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/06-generics.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "06.3",
+          "action": "run_command",
+          "command": "aic check examples/e5/generic_pair.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "06.4",
+          "action": "run_command",
+          "command": "aic run examples/e5/generic_pair.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "06.5",
+          "action": "verify_concept",
+          "assertion": "generic parameters apply consistently across struct fields and function signatures"
+        }
+      ]
+    },
+    {
+      "chapter_number": 7,
+      "chapter_id": "07-error-handling",
+      "chapter_file": "docs/tutorial/07-error-handling.md",
+      "example_files": [
+        "examples/core/result_propagation.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "07.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/07-error-handling.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "07.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/07-error-handling.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "07.3",
+          "action": "run_command",
+          "command": "aic check examples/core/result_propagation.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "07.4",
+          "action": "run_command",
+          "command": "aic run examples/core/result_propagation.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "07.5",
+          "action": "verify_concept",
+          "assertion": "postfix question mark propagates Err and unwraps Ok in Result flows"
+        }
+      ]
+    },
+    {
+      "chapter_number": 8,
+      "chapter_id": "08-effects-and-contracts",
+      "chapter_file": "docs/tutorial/08-effects-and-contracts.md",
+      "example_files": [
+        "examples/e4/verified_abs.aic",
+        "examples/e4/effect_decl.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "08.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/08-effects-and-contracts.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "08.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/08-effects-and-contracts.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "08.3",
+          "action": "run_command",
+          "command": "aic check examples/e4/verified_abs.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "08.4",
+          "action": "run_command",
+          "command": "aic run examples/e4/verified_abs.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "7"
+          ]
+        },
+        {
+          "step_id": "08.5",
+          "action": "run_command",
+          "command": "aic check examples/e4/effect_decl.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "08.6",
+          "action": "run_command",
+          "command": "aic run examples/e4/effect_decl.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "1"
+          ]
+        },
+        {
+          "step_id": "08.7",
+          "action": "verify_concept",
+          "assertion": "effects must be declared by callers and contracts enforce requires or ensures obligations"
+        }
+      ]
+    },
+    {
+      "chapter_number": 9,
+      "chapter_id": "09-modules-and-packages",
+      "chapter_file": "docs/tutorial/09-modules-and-packages.md",
+      "example_files": [
+        "examples/e2/multi_file_app/src/main.aic",
+        "examples/e2/multi_file_app/src/math.aic",
+        "examples/pkg/consume_http_client.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "09.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/09-modules-and-packages.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "09.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/09-modules-and-packages.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "09.3",
+          "action": "run_command",
+          "command": "aic check examples/e2/multi_file_app/src/main.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "09.4",
+          "action": "run_command",
+          "command": "aic run examples/e2/multi_file_app/src/main.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "09.5",
+          "action": "run_command",
+          "command": "aic check examples/pkg/consume_http_client.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "09.6",
+          "action": "run_command",
+          "command": "aic run examples/pkg/consume_http_client.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "42"
+          ]
+        },
+        {
+          "step_id": "09.7",
+          "action": "verify_concept",
+          "assertion": "module imports are explicit and package-provided modules can be called via fully qualified names"
+        }
+      ]
+    },
+    {
+      "chapter_number": 10,
+      "chapter_id": "10-io",
+      "chapter_file": "docs/tutorial/10-io.md",
+      "example_files": [
+        "examples/io/stderr_logging.aic"
+      ],
+      "steps": [
+        {
+          "step_id": "10.1",
+          "action": "read_chapter",
+          "target": "docs/tutorial/10-io.md",
+          "section": "Goal"
+        },
+        {
+          "step_id": "10.2",
+          "action": "read_chapter",
+          "target": "docs/tutorial/10-io.md",
+          "section": "Syntax you need"
+        },
+        {
+          "step_id": "10.3",
+          "action": "run_command",
+          "command": "aic check examples/io/stderr_logging.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "10.4",
+          "action": "run_command",
+          "command": "aic run examples/io/stderr_logging.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "stdout",
+            "42"
+          ]
+        },
+        {
+          "step_id": "10.5",
+          "action": "verify_concept",
+          "assertion": "IO modules require explicit effect declarations that match the called runtime APIs"
+        }
+      ]
+    }
+  ]
+}

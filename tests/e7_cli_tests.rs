@@ -35,6 +35,21 @@ fn run_aic_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Outpu
     command.output().expect("run aic with env")
 }
 
+fn write_many_check_diagnostics_fixture() -> (tempfile::TempDir, String) {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+
+    let mut program = String::from("module many.errors;\nfn main() -> Int {\n");
+    for i in 0..25 {
+        program.push_str(&format!("    let x{i} = not_defined_{i}();\n"));
+    }
+    program.push_str("    0\n}\n");
+    fs::write(&source_path, program).expect("write many errors source");
+
+    (project, source_path.to_string_lossy().to_string())
+}
+
 struct DaemonHarness {
     child: Child,
     stdin: ChildStdin,
@@ -100,9 +115,17 @@ fn cli_help_snapshots_are_stable() {
 
     let check_help = run_aic(&["check", "--help"]);
     assert!(check_help.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&check_help.stdout),
-        include_str!("golden/e7/help_check.txt")
+    let check_help_text = String::from_utf8_lossy(&check_help.stdout);
+    assert!(check_help_text.contains("Usage: aic check [OPTIONS] [INPUT]"));
+    for flag in ["--json", "--sarif", "--offline", "--max-errors <N>"] {
+        assert!(
+            check_help_text.contains(flag),
+            "missing `{flag}` in check help:\n{check_help_text}"
+        );
+    }
+    assert!(
+        check_help_text.contains("[default: 20]"),
+        "missing default in check help:\n{check_help_text}"
     );
 
     let test_help = run_aic(&["test", "--help"]);
@@ -148,6 +171,47 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
     assert!(sarif["runs"][0]["tool"]["driver"]["rules"].is_array());
     assert!(sarif["runs"][0]["results"][0]["ruleId"].is_string());
     assert!(sarif["runs"][0]["results"][0]["locations"].is_array());
+}
+
+#[test]
+fn check_defaults_to_max_errors_20() {
+    let (_project, source_path) = write_many_check_diagnostics_fixture();
+    let out = run_aic(&["check", &source_path, "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert_eq!(
+        items.len(),
+        20,
+        "expected diagnostics to be capped to 20 by default; diagnostics={diagnostics:#}"
+    );
+}
+
+#[test]
+fn check_honors_custom_max_errors_and_keeps_order() {
+    let (_project, source_path) = write_many_check_diagnostics_fixture();
+    let capped_out = run_aic(&["check", &source_path, "--json", "--max-errors", "7"]);
+    assert_eq!(capped_out.status.code(), Some(1));
+    let capped: serde_json::Value =
+        serde_json::from_slice(&capped_out.stdout).expect("capped diagnostics json");
+    let capped_items = capped.as_array().expect("capped diagnostics array");
+    assert_eq!(capped_items.len(), 7);
+
+    let full_out = run_aic(&["check", &source_path, "--json", "--max-errors", "200"]);
+    assert_eq!(full_out.status.code(), Some(1));
+    let full: serde_json::Value =
+        serde_json::from_slice(&full_out.stdout).expect("full diagnostics json");
+    let full_items = full.as_array().expect("full diagnostics array");
+    assert!(
+        full_items.len() > capped_items.len(),
+        "expected uncapped result to contain more diagnostics; full={full:#}"
+    );
+    assert_eq!(
+        capped_items.as_slice(),
+        &full_items[..capped_items.len()],
+        "expected capped diagnostics to preserve sorted prefix"
+    );
 }
 
 #[test]

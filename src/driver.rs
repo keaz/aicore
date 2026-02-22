@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -145,14 +146,7 @@ pub fn run_frontend_with_options(
     diagnostics.extend(verify_static(&ir, &file));
     timings.verify_ms = elapsed_ms(verify_started);
 
-    diagnostics.sort_by(|a, b| {
-        let a_pos = a.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
-        let b_pos = b.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
-        a_pos
-            .cmp(&b_pos)
-            .then(a.code.cmp(&b.code))
-            .then(a.message.cmp(&b.message))
-    });
+    sort_diagnostics(&mut diagnostics);
 
     let attrs = BTreeMap::from([
         ("input".to_string(), json!(file)),
@@ -209,6 +203,28 @@ pub fn run_frontend_with_options(
 
 pub fn has_errors(diags: &[Diagnostic]) -> bool {
     diags.iter().any(|d| matches!(d.severity, Severity::Error))
+}
+
+pub fn sort_and_cap_diagnostics(
+    mut diagnostics: Vec<Diagnostic>,
+    max_errors: usize,
+) -> Vec<Diagnostic> {
+    sort_diagnostics(&mut diagnostics);
+    diagnostics.truncate(max_errors);
+    diagnostics
+}
+
+pub fn sort_diagnostics(diagnostics: &mut [Diagnostic]) {
+    diagnostics.sort_by(diagnostic_cmp);
+}
+
+fn diagnostic_cmp(a: &Diagnostic, b: &Diagnostic) -> Ordering {
+    let a_pos = a.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
+    let b_pos = b.spans.first().map(|s| s.start).unwrap_or(usize::MAX);
+    a_pos
+        .cmp(&b_pos)
+        .then(a.code.cmp(&b.code))
+        .then(a.message.cmp(&b.message))
 }
 
 pub fn format_source(path: &Path, write: bool) -> anyhow::Result<String> {

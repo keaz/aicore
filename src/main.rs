@@ -12,9 +12,12 @@ use aicore::contracts::lower_runtime_asserts;
 use aicore::daemon;
 use aicore::diag_fixes::apply_safe_fixes;
 use aicore::diagnostic_explain::{explain, explain_text};
-use aicore::diagnostics::Severity;
+use aicore::diagnostics::{Diagnostic, Severity};
 use aicore::docgen::generate_docs;
-use aicore::driver::{diagnostics_pretty, has_errors, run_frontend_with_options, FrontendOptions};
+use aicore::driver::{
+    diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
+    FrontendOptions,
+};
 use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
@@ -46,6 +49,8 @@ use aicore::telemetry;
 use aicore::test_harness::{run_harness, HarnessMode};
 use clap::{Parser, Subcommand, ValueEnum};
 
+const DEFAULT_MAX_ERRORS: usize = 20;
+
 #[derive(Parser)]
 #[command(name = "aic", version, about = "AICore compiler")]
 struct Cli {
@@ -68,6 +73,13 @@ enum Command {
         sarif: bool,
         #[arg(long)]
         offline: bool,
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = DEFAULT_MAX_ERRORS,
+            value_parser = parse_max_errors
+        )]
+        max_errors: usize,
     },
     Diag {
         #[command(subcommand)]
@@ -378,6 +390,17 @@ fn main() {
     std::process::exit(exit);
 }
 
+fn parse_max_errors(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("invalid value `{value}` for --max-errors"))?;
+    if parsed == 0 {
+        Err("--max-errors must be greater than 0".to_string())
+    } else {
+        Ok(parsed)
+    }
+}
+
 fn run_cli() -> anyhow::Result<i32> {
     let cli = Cli::parse();
 
@@ -392,31 +415,11 @@ fn run_cli() -> anyhow::Result<i32> {
             json,
             sarif,
             offline,
+            max_errors,
         } => {
-            let workspace_diags = if input.is_dir() {
-                match workspace_build_plan(&input) {
-                    Ok(Some(plan)) => {
-                        let mut all = Vec::new();
-                        for member in &plan.members {
-                            let entry = member.root.join(&member.main);
-                            let front =
-                                run_frontend_with_options(&entry, FrontendOptions { offline })?;
-                            all.extend(front.diagnostics);
-                        }
-                        Some(all)
-                    }
-                    Ok(None) => None,
-                    Err(diag) => Some(vec![diag]),
-                }
-            } else {
-                None
-            };
-
-            let diagnostics = if let Some(diags) = workspace_diags {
-                diags
-            } else {
-                run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
-            };
+            let diagnostics = collect_diagnostics(&input, offline)?;
+            let has_any_errors = has_errors(&diagnostics);
+            let diagnostics = sort_and_cap_diagnostics(diagnostics, max_errors);
 
             if sarif {
                 let sarif = diagnostics_to_sarif(&diagnostics, "aic", env!("CARGO_PKG_VERSION"));
@@ -429,7 +432,7 @@ fn run_cli() -> anyhow::Result<i32> {
                 print!("{}", diagnostics_pretty(&diagnostics));
             }
 
-            if has_errors(&diagnostics) {
+            if has_any_errors {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
                 EXIT_OK
@@ -448,30 +451,7 @@ fn run_cli() -> anyhow::Result<i32> {
                 json,
                 offline,
             }) => {
-                let workspace_diags = if input.is_dir() {
-                    match workspace_build_plan(&input) {
-                        Ok(Some(plan)) => {
-                            let mut all = Vec::new();
-                            for member in &plan.members {
-                                let entry = member.root.join(&member.main);
-                                let front =
-                                    run_frontend_with_options(&entry, FrontendOptions { offline })?;
-                                all.extend(front.diagnostics);
-                            }
-                            Some(all)
-                        }
-                        Ok(None) => None,
-                        Err(diag) => Some(vec![diag]),
-                    }
-                } else {
-                    None
-                };
-
-                let diagnostics = if let Some(diags) = workspace_diags {
-                    diags
-                } else {
-                    run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
-                };
+                let diagnostics = collect_diagnostics(&input, offline)?;
 
                 let response = apply_safe_fixes(&diagnostics, dry_run)?;
                 if json {
@@ -503,30 +483,7 @@ fn run_cli() -> anyhow::Result<i32> {
                 }
             }
             None => {
-                let workspace_diags = if input.is_dir() {
-                    match workspace_build_plan(&input) {
-                        Ok(Some(plan)) => {
-                            let mut all = Vec::new();
-                            for member in &plan.members {
-                                let entry = member.root.join(&member.main);
-                                let front =
-                                    run_frontend_with_options(&entry, FrontendOptions { offline })?;
-                                all.extend(front.diagnostics);
-                            }
-                            Some(all)
-                        }
-                        Ok(None) => None,
-                        Err(diag) => Some(vec![diag]),
-                    }
-                } else {
-                    None
-                };
-
-                let diagnostics = if let Some(diags) = workspace_diags {
-                    diags
-                } else {
-                    run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
-                };
+                let diagnostics = collect_diagnostics(&input, offline)?;
 
                 if sarif {
                     let sarif =
@@ -1382,6 +1339,28 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
         },
     )?;
     Ok(EXIT_OK)
+}
+
+fn collect_diagnostics(input: &Path, offline: bool) -> anyhow::Result<Vec<Diagnostic>> {
+    if input.is_dir() {
+        match workspace_build_plan(input) {
+            Ok(Some(plan)) => {
+                let mut all = Vec::new();
+                for member in &plan.members {
+                    let entry = member.root.join(&member.main);
+                    let front = run_frontend_with_options(&entry, FrontendOptions { offline })?;
+                    all.extend(front.diagnostics);
+                }
+                Ok(all)
+            }
+            Ok(None) => {
+                Ok(run_frontend_with_options(input, FrontendOptions { offline })?.diagnostics)
+            }
+            Err(diag) => Ok(vec![diag]),
+        }
+    } else {
+        Ok(run_frontend_with_options(input, FrontendOptions { offline })?.diagnostics)
+    }
 }
 
 fn resolve_native_link_options(project_root: &Path) -> anyhow::Result<LinkOptions> {
