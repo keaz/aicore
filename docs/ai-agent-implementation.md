@@ -194,6 +194,33 @@ Implementation and test references:
 - `tests/e7_cli_tests.rs` (`pkg_trust_policy_enforces_signatures_and_emits_audit_records`)
 - `examples/pkg/policy_enforced_project/`
 
+### Monorepo workspace support (PKG-T5)
+
+`src/package_workflow.rs` now models workspace package graphs, shared lockfiles, and deterministic build ordering.
+
+- Workspace root manifest:
+  - `aic.workspace.toml` with `[workspace].members = [ ... ]`
+- Deterministic graph/order:
+  - workspace package dependencies are inferred from member manifests
+  - build order is topological with lexical tie-breaks for determinism
+- Shared lockfile:
+  - `aic lock` on a workspace root (or a member package) writes one shared `aic.lock` at workspace root
+  - lockfile includes per-member dependency path metadata for scoped resolution
+- Workspace diagnostics:
+  - `E2125`: invalid workspace manifest/member metadata
+  - `E2126`: workspace package dependency cycle
+- CLI integration:
+  - `aic check <workspace-root>` runs all members in deterministic order
+  - `aic build <workspace-root>` emits artifacts to `target/workspace/<package>/`
+  - workspace build fingerprints skip unchanged members (`up-to-date`)
+
+Implementation and test references:
+
+- `src/package_workflow.rs`
+- `src/main.rs`
+- `tests/e7_cli_tests.rs` (`workspace_check_and_build_execute_in_deterministic_order`, `workspace_cycle_is_reported_as_diagnostic`, `workspace_build_is_incremental_for_unchanged_members`)
+- `examples/pkg/workspace_demo/`
+
 ### Checksum verification + offline cache (E6-T3)
 
 `src/package_workflow.rs`:

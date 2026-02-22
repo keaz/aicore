@@ -172,6 +172,45 @@ fn write_consumer_project(root: &std::path::Path) {
     .expect("write consumer source");
 }
 
+fn write_workspace_demo(root: &std::path::Path) {
+    fs::create_dir_all(root.join("packages/util/src")).expect("mkdir util");
+    fs::create_dir_all(root.join("packages/app/src")).expect("mkdir app");
+    fs::write(
+        root.join("aic.workspace.toml"),
+        "[workspace]\nmembers = [\"packages/app\", \"packages/util\"]\n",
+    )
+    .expect("write workspace manifest");
+
+    fs::write(
+        root.join("packages/util/aic.toml"),
+        "[package]\nname = \"util_pkg\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write util manifest");
+    fs::write(
+        root.join("packages/util/src/main.aic"),
+        "module util_pkg.main;\nfn value() -> Int { 42 }\n",
+    )
+    .expect("write util source");
+
+    fs::write(
+        root.join("packages/app/aic.toml"),
+        concat!(
+            "[package]\n",
+            "name = \"app_pkg\"\n",
+            "version = \"0.1.0\"\n",
+            "main = \"src/main.aic\"\n\n",
+            "[dependencies]\n",
+            "util_pkg = { path = \"../util\" }\n",
+        ),
+    )
+    .expect("write app manifest");
+    fs::write(
+        root.join("packages/app/src/main.aic"),
+        "module app_pkg.main;\nimport util_pkg.main;\nfn main() -> Int { util_pkg.main.value() }\n",
+    )
+    .expect("write app source");
+}
+
 #[test]
 fn pkg_publish_search_install_roundtrip() {
     let registry = tempdir().expect("registry");
@@ -319,6 +358,162 @@ fn main() -> Int effects { io } {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}
+
+#[test]
+fn workspace_check_and_build_execute_in_deterministic_order() {
+    let workspace = tempdir().expect("workspace");
+    write_workspace_demo(workspace.path());
+
+    let check = run_aic(&["check", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let build = run_aic(&["build", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build stdout={}\nstderr={}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&build.stdout);
+    let util_pos = stdout
+        .find("target/workspace/util_pkg/libmain.a")
+        .expect("util build line");
+    let app_pos = stdout
+        .find("target/workspace/app_pkg/libmain.a")
+        .expect("app build line");
+    assert!(
+        util_pos < app_pos,
+        "workspace build order must be deterministic"
+    );
+
+    let root = fs::canonicalize(workspace.path()).expect("canonical workspace root");
+    assert!(root.join("target/workspace/util_pkg/libmain.a").exists());
+    assert!(root.join("target/workspace/app_pkg/libmain.a").exists());
+}
+
+#[test]
+fn workspace_lockfile_is_shared_and_offline_check_works() {
+    let workspace = tempdir().expect("workspace");
+    write_workspace_demo(workspace.path());
+
+    let lock = run_aic(&["lock", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(
+        lock.status.code(),
+        Some(0),
+        "lock stdout={}\nstderr={}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+
+    assert!(workspace.path().join("aic.lock").exists());
+    assert!(!workspace.path().join("packages/app/aic.lock").exists());
+
+    let offline = run_aic(&[
+        "check",
+        workspace.path().to_str().expect("workspace path"),
+        "--offline",
+    ]);
+    assert_eq!(
+        offline.status.code(),
+        Some(0),
+        "offline stdout={}\nstderr={}",
+        String::from_utf8_lossy(&offline.stdout),
+        String::from_utf8_lossy(&offline.stderr)
+    );
+}
+
+#[test]
+fn workspace_cycle_is_reported_as_diagnostic() {
+    let workspace = tempdir().expect("workspace");
+    fs::create_dir_all(workspace.path().join("packages/a/src")).expect("mkdir a");
+    fs::create_dir_all(workspace.path().join("packages/b/src")).expect("mkdir b");
+    fs::write(
+        workspace.path().join("aic.workspace.toml"),
+        "[workspace]\nmembers = [\"packages/a\", \"packages/b\"]\n",
+    )
+    .expect("write workspace manifest");
+    fs::write(
+        workspace.path().join("packages/a/aic.toml"),
+        concat!(
+            "[package]\n",
+            "name = \"a_pkg\"\n",
+            "version = \"0.1.0\"\n",
+            "main = \"src/main.aic\"\n\n",
+            "[dependencies]\n",
+            "b_pkg = { path = \"../b\" }\n",
+        ),
+    )
+    .expect("write a manifest");
+    fs::write(
+        workspace.path().join("packages/a/src/main.aic"),
+        "module a_pkg.main;\nfn main() -> Int { 0 }\n",
+    )
+    .expect("write a source");
+    fs::write(
+        workspace.path().join("packages/b/aic.toml"),
+        concat!(
+            "[package]\n",
+            "name = \"b_pkg\"\n",
+            "version = \"0.1.0\"\n",
+            "main = \"src/main.aic\"\n\n",
+            "[dependencies]\n",
+            "a_pkg = { path = \"../a\" }\n",
+        ),
+    )
+    .expect("write b manifest");
+    fs::write(
+        workspace.path().join("packages/b/src/main.aic"),
+        "module b_pkg.main;\nfn main() -> Int { 0 }\n",
+    )
+    .expect("write b source");
+
+    let check = run_aic(&[
+        "check",
+        workspace.path().to_str().expect("workspace path"),
+        "--json",
+    ]);
+    assert_eq!(check.status.code(), Some(1));
+    let diagnostics: serde_json::Value = serde_json::from_slice(&check.stdout).expect("json diags");
+    assert!(diagnostics.is_array());
+    assert_eq!(diagnostics[0]["code"], "E2126");
+}
+
+#[test]
+fn workspace_build_is_incremental_for_unchanged_members() {
+    let workspace = tempdir().expect("workspace");
+    write_workspace_demo(workspace.path());
+
+    let first = run_aic(&["build", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(first.status.code(), Some(0));
+
+    let second = run_aic(&["build", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(second.status.code(), Some(0));
+    let second_stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(second_stdout.contains("up-to-date"));
+
+    fs::write(
+        workspace.path().join("packages/util/src/main.aic"),
+        "module util_pkg.main;\nfn value() -> Int { 7 }\n",
+    )
+    .expect("rewrite util source");
+
+    let third = run_aic(&["build", workspace.path().to_str().expect("workspace path")]);
+    assert_eq!(third.status.code(), Some(0));
+    let third_stdout = String::from_utf8_lossy(&third.stdout);
+    assert!(third_stdout.contains("target/workspace/util_pkg/libmain.a"));
+    assert!(third_stdout.contains("target/workspace/app_pkg/libmain.a"));
+    assert!(
+        third_stdout.matches("built ").count() >= 2,
+        "expected rebuild of changed package and dependents; stdout={third_stdout}"
+    );
 }
 
 #[test]
@@ -576,6 +771,27 @@ fn pkg_install_lockfile_is_deterministic() {
 fn pkg_example_consumes_local_http_client_module() {
     let check = run_aic(&["check", "examples/pkg/consume_http_client.aic"]);
     assert_eq!(check.status.code(), Some(0));
+}
+
+#[test]
+fn pkg_workspace_demo_example_checks_and_builds() {
+    let check = run_aic(&["check", "examples/pkg/workspace_demo"]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let build = run_aic(&["build", "examples/pkg/workspace_demo"]);
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build stdout={}\nstderr={}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
 }
 
 #[test]

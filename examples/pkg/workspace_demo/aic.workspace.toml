@@ -1,0 +1,2 @@
+[workspace]
+members = ["packages/app", "packages/tool", "packages/util"]

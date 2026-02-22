@@ -1,0 +1,4 @@
+module tool_pkg.main;
+
+fn ping() -> Int { 1 }
+fn main() -> Int { ping() }

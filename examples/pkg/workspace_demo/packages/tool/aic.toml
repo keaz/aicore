@@ -1,0 +1,4 @@
+[package]
+name = "tool_pkg"
+version = "0.1.0"
+main = "src/main.aic"

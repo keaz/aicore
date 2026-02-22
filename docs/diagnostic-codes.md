@@ -66,6 +66,8 @@ Recent core-language additions:
 - `E2122`: extern call requires explicit unsafe boundary.
 - `E2123`: unsupported type in extern C-ABI signature.
 - `E2124`: package signature verification/trusted-key validation failure.
+- `E2125`: workspace manifest/member metadata is invalid or inconsistent.
+- `E2126`: workspace package dependency cycle detected.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 - `E5023`: backend does not yet lower guarded match arms.

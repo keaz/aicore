@@ -21,7 +21,10 @@ use aicore::package_registry::{
     publish_with_options as pkg_publish_with_options,
     search_with_options as pkg_search_with_options, RegistryClientOptions,
 };
-use aicore::package_workflow::{generate_and_write_lockfile, native_link_config, NativeLinkConfig};
+use aicore::package_workflow::{
+    compute_package_checksum_for_path, generate_and_write_lockfile, native_link_config,
+    workspace_build_plan, NativeLinkConfig,
+};
 use aicore::parser;
 use aicore::project::init_project;
 use aicore::release_ops::{
@@ -341,20 +344,43 @@ fn run_cli() -> anyhow::Result<i32> {
             sarif,
             offline,
         } => {
-            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            let workspace_diags = if input.is_dir() {
+                match workspace_build_plan(&input) {
+                    Ok(Some(plan)) => {
+                        let mut all = Vec::new();
+                        for member in &plan.members {
+                            let entry = member.root.join(&member.main);
+                            let front =
+                                run_frontend_with_options(&entry, FrontendOptions { offline })?;
+                            all.extend(front.diagnostics);
+                        }
+                        Some(all)
+                    }
+                    Ok(None) => None,
+                    Err(diag) => Some(vec![diag]),
+                }
+            } else {
+                None
+            };
+
+            let diagnostics = if let Some(diags) = workspace_diags {
+                diags
+            } else {
+                run_frontend_with_options(&input, FrontendOptions { offline })?.diagnostics
+            };
+
             if sarif {
-                let sarif =
-                    diagnostics_to_sarif(&front.diagnostics, "aic", env!("CARGO_PKG_VERSION"));
+                let sarif = diagnostics_to_sarif(&diagnostics, "aic", env!("CARGO_PKG_VERSION"));
                 println!("{}", serde_json::to_string_pretty(&sarif)?);
             } else if json {
-                println!("{}", serde_json::to_string_pretty(&front.diagnostics)?);
-            } else if front.diagnostics.is_empty() {
+                println!("{}", serde_json::to_string_pretty(&diagnostics)?);
+            } else if diagnostics.is_empty() {
                 println!("check: ok");
             } else {
-                print!("{}", diagnostics_pretty(&front.diagnostics));
+                print!("{}", diagnostics_pretty(&diagnostics));
             }
 
-            if has_errors(&front.diagnostics) {
+            if has_errors(&diagnostics) {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
                 EXIT_OK
@@ -559,37 +585,165 @@ fn run_cli() -> anyhow::Result<i32> {
             debug_info,
             offline,
         } => {
-            let project_root = resolve_project_root(&input);
-            let link = resolve_native_link_options(&project_root)?;
-            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
-            if has_errors(&front.diagnostics) {
-                print!("{}", diagnostics_pretty(&front.diagnostics));
-                EXIT_DIAGNOSTIC_ERROR
-            } else {
-                let lowered = lower_runtime_asserts(&front.ir);
-                let llvm = match emit_llvm_with_options(
-                    &lowered,
-                    &input.to_string_lossy(),
-                    CodegenOptions { debug_info },
-                ) {
-                    Ok(v) => v,
-                    Err(diags) => {
-                        print!("{}", diagnostics_pretty(&diags));
-                        return Ok(EXIT_DIAGNOSTIC_ERROR);
-                    }
-                };
+            if input.is_dir() {
+                match workspace_build_plan(&input) {
+                    Ok(Some(plan)) => {
+                        if output.is_some() {
+                            eprintln!("--output is not supported for workspace builds");
+                            return Ok(EXIT_USAGE_ERROR);
+                        }
 
-                let out = output.unwrap_or_else(|| default_build_output_name(&input, artifact));
-                let work = std::env::temp_dir().join("aicore_build");
-                compile_with_clang_artifact_with_options(
-                    &llvm.llvm_ir,
-                    &out,
-                    &work,
-                    artifact.to_codegen(),
-                    CompileOptions { debug_info, link },
-                )?;
-                println!("built {}", out.display());
-                EXIT_OK
+                        let workspace_artifact = match artifact {
+                            BuildArtifact::Exe => BuildArtifact::Lib,
+                            other => other,
+                        };
+
+                        let mut member_fingerprints =
+                            std::collections::BTreeMap::<String, String>::new();
+                        for member in &plan.members {
+                            let entry = member.root.join(&member.main);
+                            let source_fingerprint =
+                                compute_package_checksum_for_path(&member.root)?;
+                            let mut fingerprint = format!("self={source_fingerprint}\n");
+                            for dep in &member.workspace_dependencies {
+                                let dep_fingerprint = member_fingerprints
+                                    .get(dep)
+                                    .cloned()
+                                    .unwrap_or_else(|| "missing".to_string());
+                                fingerprint.push_str(&format!("{dep}={dep_fingerprint}\n"));
+                            }
+
+                            let link = resolve_native_link_options(&member.root)?;
+                            let front =
+                                run_frontend_with_options(&entry, FrontendOptions { offline })?;
+                            if has_errors(&front.diagnostics) {
+                                print!("{}", diagnostics_pretty(&front.diagnostics));
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+
+                            let lowered = lower_runtime_asserts(&front.ir);
+                            let llvm = match emit_llvm_with_options(
+                                &lowered,
+                                &entry.to_string_lossy(),
+                                CodegenOptions { debug_info },
+                            ) {
+                                Ok(v) => v,
+                                Err(diags) => {
+                                    print!("{}", diagnostics_pretty(&diags));
+                                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                                }
+                            };
+
+                            let out = workspace_output_path(
+                                &plan.root,
+                                &member.name,
+                                &entry,
+                                workspace_artifact,
+                            );
+                            let fingerprint_path = out
+                                .parent()
+                                .unwrap_or_else(|| std::path::Path::new("."))
+                                .join(".aic-fingerprint");
+                            if out.exists() && fingerprint_path.exists() {
+                                if let Ok(existing) = std::fs::read_to_string(&fingerprint_path) {
+                                    if existing == fingerprint {
+                                        println!("up-to-date {}", out.display());
+                                        member_fingerprints
+                                            .insert(member.name.clone(), fingerprint.clone());
+                                        continue;
+                                    }
+                                }
+                            }
+                            if let Some(parent) = out.parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            let work = fresh_work_dir("workspace-build");
+                            compile_with_clang_artifact_with_options(
+                                &llvm.llvm_ir,
+                                &out,
+                                &work,
+                                workspace_artifact.to_codegen(),
+                                CompileOptions { debug_info, link },
+                            )?;
+                            std::fs::write(&fingerprint_path, &fingerprint)?;
+                            member_fingerprints.insert(member.name.clone(), fingerprint);
+                            println!("built {}", out.display());
+                        }
+                        EXIT_OK
+                    }
+                    Ok(None) => {
+                        let project_root = resolve_project_root(&input);
+                        let link = resolve_native_link_options(&project_root)?;
+                        let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+                        if has_errors(&front.diagnostics) {
+                            print!("{}", diagnostics_pretty(&front.diagnostics));
+                            EXIT_DIAGNOSTIC_ERROR
+                        } else {
+                            let lowered = lower_runtime_asserts(&front.ir);
+                            let llvm = match emit_llvm_with_options(
+                                &lowered,
+                                &input.to_string_lossy(),
+                                CodegenOptions { debug_info },
+                            ) {
+                                Ok(v) => v,
+                                Err(diags) => {
+                                    print!("{}", diagnostics_pretty(&diags));
+                                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                                }
+                            };
+
+                            let out = output
+                                .unwrap_or_else(|| default_build_output_name(&input, artifact));
+                            let work = fresh_work_dir("build");
+                            compile_with_clang_artifact_with_options(
+                                &llvm.llvm_ir,
+                                &out,
+                                &work,
+                                artifact.to_codegen(),
+                                CompileOptions { debug_info, link },
+                            )?;
+                            println!("built {}", out.display());
+                            EXIT_OK
+                        }
+                    }
+                    Err(diag) => {
+                        print!("{}", diagnostics_pretty(&[diag]));
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
+                }
+            } else {
+                let project_root = resolve_project_root(&input);
+                let link = resolve_native_link_options(&project_root)?;
+                let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+                if has_errors(&front.diagnostics) {
+                    print!("{}", diagnostics_pretty(&front.diagnostics));
+                    EXIT_DIAGNOSTIC_ERROR
+                } else {
+                    let lowered = lower_runtime_asserts(&front.ir);
+                    let llvm = match emit_llvm_with_options(
+                        &lowered,
+                        &input.to_string_lossy(),
+                        CodegenOptions { debug_info },
+                    ) {
+                        Ok(v) => v,
+                        Err(diags) => {
+                            print!("{}", diagnostics_pretty(&diags));
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+
+                    let out = output.unwrap_or_else(|| default_build_output_name(&input, artifact));
+                    let work = fresh_work_dir("build");
+                    compile_with_clang_artifact_with_options(
+                        &llvm.llvm_ir,
+                        &out,
+                        &work,
+                        artifact.to_codegen(),
+                        CompileOptions { debug_info, link },
+                    )?;
+                    println!("built {}", out.display());
+                    EXIT_OK
+                }
             }
         }
         Command::Doc {
@@ -890,7 +1044,7 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
         }
     };
 
-    let work = std::env::temp_dir().join("aicore_build");
+    let work = fresh_work_dir("run");
     compile_with_clang_artifact_with_options(
         &llvm.llvm_ir,
         output,
@@ -944,6 +1098,27 @@ fn default_build_output_name(input: &Path, artifact: BuildArtifact) -> PathBuf {
         BuildArtifact::Obj => PathBuf::from(format!("{stem}.o")),
         BuildArtifact::Lib => PathBuf::from(format!("lib{stem}.a")),
     }
+}
+
+fn workspace_output_path(
+    workspace_root: &Path,
+    package_name: &str,
+    entry: &Path,
+    artifact: BuildArtifact,
+) -> PathBuf {
+    workspace_root
+        .join("target/workspace")
+        .join(package_name)
+        .join(default_build_output_name(entry, artifact))
+}
+
+fn fresh_work_dir(tag: &str) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}"))
 }
 
 impl BuildArtifact {

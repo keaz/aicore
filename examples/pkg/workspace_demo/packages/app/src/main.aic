@@ -1,0 +1,5 @@
+module app_pkg.main;
+
+import util_pkg.main;
+
+fn main() -> Int { util_pkg.main.value() }

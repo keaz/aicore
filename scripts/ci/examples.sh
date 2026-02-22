@@ -52,6 +52,7 @@ check_pass=(
   "examples/e6/deprecated_api_use.aic"
   "examples/pkg/ffi_zlib.aic"
   "examples/pkg/policy_enforced_project"
+  "examples/pkg/workspace_demo"
   "examples/e6/pkg_app"
   "examples/e7/cli_smoke.aic"
   "examples/e7/test_harness_sample.aic"

@@ -1,0 +1,3 @@
+module util_pkg.main;
+
+fn value() -> Int { 42 }

@@ -191,6 +191,39 @@ Example project:
 
 - `examples/pkg/policy_enforced_project/`
 
+## Monorepo Workspace Support (PKG-T5)
+
+AICore supports deterministic multi-package workspaces via a root manifest:
+
+```toml
+[workspace]
+members = ["packages/app", "packages/util", "packages/tool"]
+```
+
+Workspace behavior:
+
+- Build/check walks workspace members in deterministic topological order.
+- Package cycles are rejected with a clear cycle diagnostic (`E2126`).
+- A single shared lockfile is generated at the workspace root: `aic.lock`.
+- Member package dependency contexts resolve through the shared lockfile metadata.
+
+Workspace commands:
+
+```bash
+aic check examples/pkg/workspace_demo
+aic lock examples/pkg/workspace_demo
+aic build examples/pkg/workspace_demo
+```
+
+Build output:
+
+- Workspace builds write artifacts to `target/workspace/<package-name>/` (default workspace build emits library artifacts).
+- Repeated builds use deterministic fingerprints and print `up-to-date` for unchanged members.
+
+Example workspace:
+
+- `examples/pkg/workspace_demo/`
+
 ## Build/Check Integration
 
 When `aic.lock` exists, frontend package loading verifies dependency checksums before typechecking/codegen.
