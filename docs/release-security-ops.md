@@ -105,6 +105,7 @@ aic release policy --check
 aic run examples/option_match.aic --sandbox none
 aic run examples/option_match.aic --sandbox ci
 aic run examples/option_match.aic --sandbox strict
+aic run examples/ops/sandbox_profiles/fs_blocked_demo.aic --sandbox-config examples/ops/sandbox_profiles/profiles/strict.json
 ```
 
 Profile policy:
@@ -114,6 +115,29 @@ Profile policy:
 - `strict`: tighter limits for untrusted samples
 
 Linux implementation uses `prlimit`.
+
+Custom profile format is JSON with `profile`, `permissions`, and optional `limits`:
+
+```json
+{
+  "profile": "ops-test",
+  "permissions": { "fs": false, "net": false, "proc": false, "time": false },
+  "limits": {
+    "profile": "ops-test",
+    "cpu_seconds": 10,
+    "memory_bytes": 536870912,
+    "file_bytes": 33554432,
+    "max_open_files": 128,
+    "max_processes": 32
+  }
+}
+```
+
+Disallowed runtime operations emit machine-readable diagnostics on stderr:
+
+```json
+{"code":"sandbox_policy_violation","profile":"ops-test","domain":"fs","operation":"read_text"}
+```
 
 ## Local CI Integration
 

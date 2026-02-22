@@ -1,0 +1,17 @@
+{
+  "profile": "prod",
+  "permissions": {
+    "fs": true,
+    "net": false,
+    "proc": false,
+    "time": true
+  },
+  "limits": {
+    "profile": "prod",
+    "cpu_seconds": 10,
+    "memory_bytes": 536870912,
+    "file_bytes": 33554432,
+    "max_open_files": 128,
+    "max_processes": 32
+  }
+}

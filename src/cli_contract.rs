@@ -109,7 +109,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "run",
         description: "Build and execute entry program",
-        stable_flags: &["--offline", "--sandbox"],
+        stable_flags: &["--offline", "--sandbox", "--sandbox-config"],
         output_modes: &["text"],
     },
     CommandContract {

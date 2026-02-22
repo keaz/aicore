@@ -12867,6 +12867,87 @@ typedef struct {
     long cap;
 } AicVec;
 
+static int aic_rt_sandbox_flag_enabled(const char* name, int default_value) {
+    const char* value = getenv(name);
+    if (value == NULL || value[0] == '\0') {
+        return default_value;
+    }
+    if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "FALSE") == 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int aic_rt_sandbox_allow_fs(void) {
+    return aic_rt_sandbox_flag_enabled("AIC_SANDBOX_ALLOW_FS", 1);
+}
+
+static int aic_rt_sandbox_allow_net(void) {
+    return aic_rt_sandbox_flag_enabled("AIC_SANDBOX_ALLOW_NET", 1);
+}
+
+static int aic_rt_sandbox_allow_proc(void) {
+    return aic_rt_sandbox_flag_enabled("AIC_SANDBOX_ALLOW_PROC", 1);
+}
+
+static int aic_rt_sandbox_allow_time(void) {
+    return aic_rt_sandbox_flag_enabled("AIC_SANDBOX_ALLOW_TIME", 1);
+}
+
+static long aic_rt_sandbox_violation(const char* domain, const char* operation, long error_code) {
+    if (aic_rt_sandbox_flag_enabled("AIC_SANDBOX_DIAGNOSTIC_JSON", 0)) {
+        const char* profile = getenv("AIC_SANDBOX_PROFILE");
+        if (profile == NULL || profile[0] == '\0') {
+            profile = "unknown";
+        }
+        fprintf(
+            stderr,
+            "{\"code\":\"sandbox_policy_violation\",\"profile\":\"%s\",\"domain\":\"%s\",\"operation\":\"%s\"}\n",
+            profile,
+            domain == NULL ? "" : domain,
+            operation == NULL ? "" : operation
+        );
+        fflush(stderr);
+    }
+    return error_code;
+}
+
+#define AIC_RT_SANDBOX_BLOCK_FS(op, code) \
+    do { \
+        if (!aic_rt_sandbox_allow_fs()) { \
+            return aic_rt_sandbox_violation("fs", op, code); \
+        } \
+    } while (0)
+
+#define AIC_RT_SANDBOX_BLOCK_NET(op, code) \
+    do { \
+        if (!aic_rt_sandbox_allow_net()) { \
+            return aic_rt_sandbox_violation("net", op, code); \
+        } \
+    } while (0)
+
+#define AIC_RT_SANDBOX_BLOCK_PROC(op, code) \
+    do { \
+        if (!aic_rt_sandbox_allow_proc()) { \
+            return aic_rt_sandbox_violation("proc", op, code); \
+        } \
+    } while (0)
+
+#define AIC_RT_SANDBOX_BLOCK_TIME(op, code) \
+    do { \
+        if (!aic_rt_sandbox_allow_time()) { \
+            return aic_rt_sandbox_violation("time", op, code); \
+        } \
+    } while (0)
+
+#define AIC_RT_SANDBOX_BLOCK_TIME_VOID(op) \
+    do { \
+        if (!aic_rt_sandbox_allow_time()) { \
+            (void)aic_rt_sandbox_violation("time", op, 5); \
+            return; \
+        } \
+    } while (0)
+
 void aic_rt_print_int(long x) {
     printf("%ld\n", x);
 }
@@ -12912,6 +12993,10 @@ long aic_rt_vec_cap(unsigned char* ptr, long len, long cap) {
 }
 
 long aic_rt_time_now_ms(void) {
+    if (!aic_rt_sandbox_allow_time()) {
+        (void)aic_rt_sandbox_violation("time", "now_ms", 5);
+        return 0;
+    }
 #ifdef _WIN32
     FILETIME ft;
     ULARGE_INTEGER ticks;
@@ -12934,6 +13019,10 @@ long aic_rt_time_now_ms(void) {
 }
 
 long aic_rt_time_monotonic_ms(void) {
+    if (!aic_rt_sandbox_allow_time()) {
+        (void)aic_rt_sandbox_violation("time", "monotonic_ms", 5);
+        return 0;
+    }
 #ifdef _WIN32
     return (long)GetTickCount64();
 #else
@@ -12948,6 +13037,7 @@ long aic_rt_time_monotonic_ms(void) {
 }
 
 void aic_rt_time_sleep_ms(long ms) {
+    AIC_RT_SANDBOX_BLOCK_TIME_VOID("sleep_ms");
     if (ms <= 0) {
         return;
     }
@@ -13307,6 +13397,7 @@ long aic_rt_time_parse_rfc3339(
     long* out_offset_minutes
 ) {
     (void)text_cap;
+    AIC_RT_SANDBOX_BLOCK_TIME("parse_rfc3339", 5);
     return aic_rt_time_parse_datetime(
         text_ptr,
         text_len,
@@ -13340,6 +13431,7 @@ long aic_rt_time_parse_iso8601(
     long* out_offset_minutes
 ) {
     (void)text_cap;
+    AIC_RT_SANDBOX_BLOCK_TIME("parse_iso8601", 5);
     return aic_rt_time_parse_datetime(
         text_ptr,
         text_len,
@@ -13371,6 +13463,7 @@ long aic_rt_time_format_rfc3339(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_TIME("format_rfc3339", 5);
     if (out_ptr == NULL || out_len == NULL) {
         return 5;  // InvalidInput
     }
@@ -13454,6 +13547,7 @@ long aic_rt_time_format_iso8601(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_TIME("format_iso8601", 5);
     if (out_ptr == NULL || out_len == NULL) {
         return 5;  // InvalidInput
     }
@@ -13620,6 +13714,10 @@ static int aic_rt_fs_invalid_input_path(const char* path) {
 
 long aic_rt_fs_exists(const char* path_ptr, long path_len, long path_cap) {
     (void)path_cap;
+    if (!aic_rt_sandbox_allow_fs()) {
+        (void)aic_rt_sandbox_violation("fs", "exists", 2);
+        return 0;
+    }
     char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
     if (path == NULL) {
         return 0;
@@ -13642,6 +13740,7 @@ long aic_rt_fs_read_text(
     long* out_len
 ) {
     (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("read_text", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -13715,6 +13814,7 @@ long aic_rt_fs_write_text(
 ) {
     (void)path_cap;
     (void)content_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("write_text", 2);
     if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
         return 4;
     }
@@ -13759,6 +13859,7 @@ long aic_rt_fs_append_text(
 ) {
     (void)path_cap;
     (void)content_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("append_text", 2);
     if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
         return 4;
     }
@@ -13803,6 +13904,7 @@ long aic_rt_fs_copy(
 ) {
     (void)from_cap;
     (void)to_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("copy", 2);
     char* from_path = aic_rt_fs_copy_slice(from_ptr, from_len);
     char* to_path = aic_rt_fs_copy_slice(to_ptr, to_len);
     if (from_path == NULL || to_path == NULL) {
@@ -13881,6 +13983,7 @@ long aic_rt_fs_move(
 ) {
     (void)from_cap;
     (void)to_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("move", 2);
     char* from_path = aic_rt_fs_copy_slice(from_ptr, from_len);
     char* to_path = aic_rt_fs_copy_slice(to_ptr, to_len);
     if (from_path == NULL || to_path == NULL) {
@@ -13905,6 +14008,7 @@ long aic_rt_fs_move(
 
 long aic_rt_fs_delete(const char* path_ptr, long path_len, long path_cap) {
     (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("delete", 2);
     char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
     if (path == NULL) {
         return 4;
@@ -13931,6 +14035,7 @@ long aic_rt_fs_metadata(
     long* out_size
 ) {
     (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("metadata", 2);
     if (out_is_file != NULL) {
         *out_is_file = 0;
     }
@@ -13975,6 +14080,7 @@ long aic_rt_fs_walk_dir(
     long* out_count
 ) {
     (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("walk_dir", 2);
     if (out_count != NULL) {
         *out_count = 0;
     }
@@ -14055,6 +14161,7 @@ long aic_rt_fs_temp_file(
     long* out_len
 ) {
     (void)prefix_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("temp_file", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -14135,6 +14242,7 @@ long aic_rt_fs_temp_dir(
     long* out_len
 ) {
     (void)prefix_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("temp_dir", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -14901,6 +15009,7 @@ static AicProcSlot aic_rt_proc_table[AIC_RT_PROC_TABLE_CAP];
 
 long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_cap, long* out_handle) {
     (void)command_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("spawn", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -14947,6 +15056,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
 }
 
 long aic_rt_proc_wait(long handle, long* out_status) {
+    AIC_RT_SANDBOX_BLOCK_PROC("wait", 2);
     if (out_status != NULL) {
         *out_status = 0;
     }
@@ -14975,6 +15085,7 @@ long aic_rt_proc_wait(long handle, long* out_status) {
 }
 
 long aic_rt_proc_kill(long handle) {
+    AIC_RT_SANDBOX_BLOCK_PROC("kill", 2);
 #ifdef _WIN32
     (void)handle;
     return 5;
@@ -15006,6 +15117,7 @@ long aic_rt_proc_run(
     long* out_stderr_len
 ) {
     (void)command_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("run", 2);
     char* command = aic_rt_fs_copy_slice(command_ptr, command_len);
     if (command == NULL || command[0] == '\0') {
         free(command);
@@ -15038,6 +15150,7 @@ long aic_rt_proc_pipe(
 ) {
     (void)left_cap;
     (void)right_cap;
+    AIC_RT_SANDBOX_BLOCK_PROC("pipe", 2);
     char* left = aic_rt_fs_copy_slice(left_ptr, left_len);
     char* right = aic_rt_fs_copy_slice(right_ptr, right_len);
     if (left == NULL || right == NULL || left[0] == '\0' || right[0] == '\0') {
@@ -15733,6 +15846,7 @@ long aic_rt_conc_mutex_close(long handle) {
 
 #ifdef _WIN32
 long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_listen", 2);
     (void)addr_ptr;
     (void)addr_len;
     (void)addr_cap;
@@ -15743,6 +15857,7 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
 }
 
 long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_local_addr", 2);
     (void)handle;
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -15754,6 +15869,7 @@ long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
 }
 
 long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_accept", 2);
     (void)listener;
     (void)timeout_ms;
     if (out_handle != NULL) {
@@ -15769,6 +15885,7 @@ long aic_rt_net_tcp_connect(
     long timeout_ms,
     long* out_handle
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_connect", 2);
     (void)addr_ptr;
     (void)addr_len;
     (void)addr_cap;
@@ -15786,6 +15903,7 @@ long aic_rt_net_tcp_send(
     long payload_cap,
     long* out_sent
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_send", 2);
     (void)handle;
     (void)payload_ptr;
     (void)payload_len;
@@ -15803,6 +15921,7 @@ long aic_rt_net_tcp_recv(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_recv", 2);
     (void)handle;
     (void)max_bytes;
     (void)timeout_ms;
@@ -15816,11 +15935,13 @@ long aic_rt_net_tcp_recv(
 }
 
 long aic_rt_net_tcp_close(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_close", 2);
     (void)handle;
     return 7;
 }
 
 long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_bind", 2);
     (void)addr_ptr;
     (void)addr_len;
     (void)addr_cap;
@@ -15831,6 +15952,7 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
 }
 
 long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_local_addr", 2);
     (void)handle;
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -15851,6 +15973,7 @@ long aic_rt_net_udp_send_to(
     long payload_cap,
     long* out_sent
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_send_to", 2);
     (void)handle;
     (void)addr_ptr;
     (void)addr_len;
@@ -15873,6 +15996,7 @@ long aic_rt_net_udp_recv_from(
     char** out_payload_ptr,
     long* out_payload_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_recv_from", 2);
     (void)handle;
     (void)max_bytes;
     (void)timeout_ms;
@@ -15892,6 +16016,7 @@ long aic_rt_net_udp_recv_from(
 }
 
 long aic_rt_net_udp_close(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_close", 2);
     (void)handle;
     return 7;
 }
@@ -15903,6 +16028,7 @@ long aic_rt_net_dns_lookup(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
     (void)host_ptr;
     (void)host_len;
     (void)host_cap;
@@ -15922,6 +16048,7 @@ long aic_rt_net_dns_reverse(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("dns_reverse", 2);
     (void)addr_ptr;
     (void)addr_len;
     (void)addr_cap;
@@ -16236,6 +16363,7 @@ static char* aic_rt_net_format_sockaddr(const struct sockaddr* addr, socklen_t a
 
 long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
     (void)addr_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_listen", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -16291,6 +16419,7 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
 }
 
 long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_local_addr", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -16324,6 +16453,7 @@ long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
 }
 
 long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_accept", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -16352,6 +16482,7 @@ long aic_rt_net_tcp_connect(
     long* out_handle
 ) {
     (void)addr_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_connect", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -16463,6 +16594,7 @@ long aic_rt_net_tcp_send(
     long* out_sent
 ) {
     (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_send", 2);
     if (out_sent != NULL) {
         *out_sent = 0;
     }
@@ -16509,6 +16641,7 @@ long aic_rt_net_tcp_recv(
     char** out_ptr,
     long* out_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_recv", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -16550,6 +16683,7 @@ long aic_rt_net_tcp_recv(
 }
 
 long aic_rt_net_tcp_close(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_close", 2);
     AicNetSlot* slot = aic_rt_net_get_slot(handle);
     if (slot == NULL || (slot->kind != AIC_RT_NET_KIND_TCP_LISTENER && slot->kind != AIC_RT_NET_KIND_TCP_STREAM)) {
         return 6;
@@ -16561,6 +16695,7 @@ long aic_rt_net_tcp_close(long handle) {
 
 long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
     (void)addr_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("udp_bind", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -16609,6 +16744,7 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
 }
 
 long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_local_addr", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -16651,6 +16787,7 @@ long aic_rt_net_udp_send_to(
 ) {
     (void)addr_cap;
     (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("udp_send_to", 2);
     if (out_sent != NULL) {
         *out_sent = 0;
     }
@@ -16721,6 +16858,7 @@ long aic_rt_net_udp_recv_from(
     char** out_payload_ptr,
     long* out_payload_len
 ) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_recv_from", 2);
     if (out_from_ptr != NULL) {
         *out_from_ptr = NULL;
     }
@@ -16796,6 +16934,7 @@ long aic_rt_net_udp_recv_from(
 }
 
 long aic_rt_net_udp_close(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("udp_close", 2);
     AicNetSlot* slot = aic_rt_net_get_slot(handle);
     if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
         return 6;
@@ -16813,6 +16952,7 @@ long aic_rt_net_dns_lookup(
     long* out_len
 ) {
     (void)host_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -16883,6 +17023,7 @@ long aic_rt_net_dns_reverse(
     long* out_len
 ) {
     (void)addr_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("dns_reverse", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }

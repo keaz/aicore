@@ -1,0 +1,17 @@
+{
+  "profile": "strict",
+  "permissions": {
+    "fs": false,
+    "net": false,
+    "proc": false,
+    "time": false
+  },
+  "limits": {
+    "profile": "strict",
+    "cpu_seconds": 5,
+    "memory_bytes": 268435456,
+    "file_bytes": 8388608,
+    "max_open_files": 64,
+    "max_processes": 16
+  }
+}

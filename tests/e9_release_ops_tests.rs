@@ -25,6 +25,15 @@ fn run_aic_with_env(args: &[&str], key: &str, value: &str) -> std::process::Outp
         .expect("run aic")
 }
 
+fn first_sandbox_violation(stderr: &[u8]) -> serde_json::Value {
+    let text = String::from_utf8_lossy(stderr);
+    let line = text
+        .lines()
+        .find(|line| line.contains("\"sandbox_policy_violation\""))
+        .unwrap_or_else(|| panic!("missing sandbox violation json in stderr: {text}"));
+    serde_json::from_str::<serde_json::Value>(line).expect("parse sandbox violation json line")
+}
+
 #[test]
 fn release_manifest_generation_and_verification_are_deterministic() {
     let dir = tempdir().expect("tempdir");
@@ -245,9 +254,78 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
     }
 }
 
+#[test]
+fn run_custom_sandbox_policy_blocks_multiple_domains_with_machine_readable_errors() {
+    let dir = tempdir().expect("tempdir");
+    let policy_path = dir.path().join("ops-policy.json");
+    fs::write(
+        &policy_path,
+        r#"{
+  "profile": "ops-test",
+  "permissions": { "fs": false, "net": false, "proc": false, "time": false }
+}"#,
+    )
+    .expect("write policy");
+    let policy_arg = policy_path.to_string_lossy().to_string();
+
+    for (example, expected_domain, expected_operation) in [
+        (
+            "examples/ops/sandbox_profiles/fs_blocked_demo.aic",
+            "fs",
+            "read_text",
+        ),
+        (
+            "examples/ops/sandbox_profiles/net_blocked_demo.aic",
+            "net",
+            "dns_lookup",
+        ),
+        (
+            "examples/ops/sandbox_profiles/proc_blocked_demo.aic",
+            "proc",
+            "run",
+        ),
+        (
+            "examples/ops/sandbox_profiles/time_blocked_demo.aic",
+            "time",
+            "parse_rfc3339",
+        ),
+    ] {
+        let out = run_aic(&["run", example, "--sandbox-config", &policy_arg]);
+        assert_eq!(out.status.code(), Some(0), "stderr={:?}", out.stderr);
+        let violation = first_sandbox_violation(&out.stderr);
+        assert_eq!(violation["code"], "sandbox_policy_violation");
+        assert_eq!(violation["profile"], "ops-test");
+        assert_eq!(violation["domain"], expected_domain);
+        assert_eq!(violation["operation"], expected_operation);
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn run_supports_ci_sandbox_profile() {
     let out = run_aic(&["run", "examples/option_match.aic", "--sandbox", "ci"]);
     assert_eq!(out.status.code(), Some(0));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn strict_profile_selection_blocks_fs_while_none_allows_it() {
+    let strict = run_aic(&[
+        "run",
+        "examples/ops/sandbox_profiles/fs_blocked_demo.aic",
+        "--sandbox",
+        "strict",
+    ]);
+    assert_eq!(strict.status.code(), Some(0), "stderr={:?}", strict.stderr);
+    let violation = first_sandbox_violation(&strict.stderr);
+    assert_eq!(violation["profile"], "strict");
+    assert_eq!(violation["domain"], "fs");
+
+    let none = run_aic(&[
+        "run",
+        "examples/ops/sandbox_profiles/fs_blocked_demo.aic",
+        "--sandbox",
+        "none",
+    ]);
+    assert_eq!(none.status.code(), Some(1), "stderr={:?}", none.stderr);
 }

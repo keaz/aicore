@@ -35,7 +35,7 @@ use aicore::release_ops::{
     read_repro_manifest, run_security_audit, verify_checksum_file, verify_provenance,
     verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
 };
-use aicore::sandbox::{run_with_limits, SandboxProfile};
+use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
@@ -162,6 +162,8 @@ enum Command {
         offline: bool,
         #[arg(long, value_enum, default_value = "none")]
         sandbox: SandboxProfileArg,
+        #[arg(long)]
+        sandbox_config: Option<PathBuf>,
     },
 }
 
@@ -1156,24 +1158,30 @@ fn run_cli() -> anyhow::Result<i32> {
             input,
             offline,
             sandbox,
+            sandbox_config,
         } => {
             let out = std::env::temp_dir().join("aicore_run_bin");
             let build_code = build_file(&input, &out, offline)?;
             if build_code != EXIT_OK {
                 build_code
             } else {
-                if !cfg!(target_os = "linux") && !matches!(sandbox, SandboxProfileArg::None) {
+                let profile_policy = sandbox.to_profile().policy();
+                let policy = if let Some(config_path) = sandbox_config {
+                    load_sandbox_policy(&config_path)?
+                } else {
+                    profile_policy
+                };
+
+                if !cfg!(target_os = "linux") && policy.limits.is_some() {
                     eprintln!(
                         "sandbox profile '{}' requires Linux `prlimit`; use --sandbox none",
-                        sandbox.to_profile().as_str()
+                        policy.profile
                     );
                     return Ok(EXIT_USAGE_ERROR);
                 }
 
-                let profile = sandbox.to_profile();
-                let limits = profile.limits();
                 let run_args: Vec<String> = Vec::new();
-                let status = run_with_limits(&out, &run_args, limits.as_ref())?;
+                let status = run_with_policy(&out, &run_args, &policy)?;
                 if status.success() {
                     EXIT_OK
                 } else {

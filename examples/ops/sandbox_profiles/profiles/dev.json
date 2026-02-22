@@ -1,0 +1,9 @@
+{
+  "profile": "dev",
+  "permissions": {
+    "fs": true,
+    "net": true,
+    "proc": true,
+    "time": true
+  }
+}

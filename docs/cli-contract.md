@@ -53,6 +53,7 @@ Stable `run` flags include:
 
 - `--offline`
 - `--sandbox` (`none|ci|strict`)
+- `--sandbox-config` (JSON policy file path)
 
 Stable `pkg` flags include:
 

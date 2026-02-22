@@ -1,0 +1,14 @@
+module examples.ops.sandbox_profiles.proc_blocked_demo;
+
+import std.proc;
+
+fn main() -> Int effects { proc, env } {
+    let result = proc.run("echo sandbox");
+    match result {
+        Ok(_) => 1,
+        Err(err) => match err {
+            PermissionDenied() => 0,
+            _ => 2,
+        },
+    }
+}

@@ -1,0 +1,17 @@
+{
+  "profile": "ci",
+  "permissions": {
+    "fs": true,
+    "net": false,
+    "proc": false,
+    "time": true
+  },
+  "limits": {
+    "profile": "ci",
+    "cpu_seconds": 30,
+    "memory_bytes": 1073741824,
+    "file_bytes": 67108864,
+    "max_open_files": 256,
+    "max_processes": 64
+  }
+}

@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitStatus};
 
@@ -20,6 +21,55 @@ pub struct SandboxLimits {
     pub max_processes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxPermissions {
+    pub fs: bool,
+    pub net: bool,
+    pub proc: bool,
+    pub time: bool,
+}
+
+impl SandboxPermissions {
+    fn allow_all() -> Self {
+        Self {
+            fs: true,
+            net: true,
+            proc: true,
+            time: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxPolicy {
+    pub profile: String,
+    #[serde(default)]
+    pub limits: Option<SandboxLimits>,
+    #[serde(default = "SandboxPermissions::allow_all")]
+    pub permissions: SandboxPermissions,
+}
+
+impl SandboxPolicy {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.profile.trim().is_empty() {
+            anyhow::bail!("sandbox policy requires non-empty `profile`");
+        }
+        if let Some(limits) = &self.limits {
+            if limits.cpu_seconds == 0
+                || limits.memory_bytes == 0
+                || limits.file_bytes == 0
+                || limits.max_open_files == 0
+                || limits.max_processes == 0
+            {
+                anyhow::bail!(
+                    "sandbox policy limits must be positive for cpu/memory/file/open_files/processes"
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 impl SandboxProfile {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -38,27 +88,60 @@ impl SandboxProfile {
         }
     }
 
-    pub fn limits(self) -> Option<SandboxLimits> {
+    pub fn policy(self) -> SandboxPolicy {
         match self {
-            Self::None => None,
-            Self::Ci => Some(SandboxLimits {
+            Self::None => SandboxPolicy {
+                profile: "none".to_string(),
+                limits: None,
+                permissions: SandboxPermissions::allow_all(),
+            },
+            Self::Ci => SandboxPolicy {
                 profile: "ci".to_string(),
-                cpu_seconds: 30,
-                memory_bytes: 1024 * 1024 * 1024,
-                file_bytes: 64 * 1024 * 1024,
-                max_open_files: 256,
-                max_processes: 64,
-            }),
-            Self::Strict => Some(SandboxLimits {
+                limits: Some(SandboxLimits {
+                    profile: "ci".to_string(),
+                    cpu_seconds: 30,
+                    memory_bytes: 1024 * 1024 * 1024,
+                    file_bytes: 64 * 1024 * 1024,
+                    max_open_files: 256,
+                    max_processes: 64,
+                }),
+                permissions: SandboxPermissions {
+                    fs: true,
+                    net: false,
+                    proc: false,
+                    time: true,
+                },
+            },
+            Self::Strict => SandboxPolicy {
                 profile: "strict".to_string(),
-                cpu_seconds: 5,
-                memory_bytes: 256 * 1024 * 1024,
-                file_bytes: 8 * 1024 * 1024,
-                max_open_files: 64,
-                max_processes: 16,
-            }),
+                limits: Some(SandboxLimits {
+                    profile: "strict".to_string(),
+                    cpu_seconds: 5,
+                    memory_bytes: 256 * 1024 * 1024,
+                    file_bytes: 8 * 1024 * 1024,
+                    max_open_files: 64,
+                    max_processes: 16,
+                }),
+                permissions: SandboxPermissions {
+                    fs: false,
+                    net: false,
+                    proc: false,
+                    time: false,
+                },
+            },
         }
     }
+
+    pub fn limits(self) -> Option<SandboxLimits> {
+        self.policy().limits
+    }
+}
+
+pub fn load_policy(path: &Path) -> anyhow::Result<SandboxPolicy> {
+    let raw = fs::read_to_string(path)?;
+    let policy = serde_json::from_str::<SandboxPolicy>(&raw)?;
+    policy.validate()?;
+    Ok(policy)
 }
 
 pub fn run_with_limits(
@@ -66,18 +149,39 @@ pub fn run_with_limits(
     args: &[String],
     limits: Option<&SandboxLimits>,
 ) -> anyhow::Result<ExitStatus> {
-    if limits.is_none() {
-        return Ok(Command::new(executable).args(args).status()?);
+    let policy = SandboxPolicy {
+        profile: limits
+            .map(|value| value.profile.clone())
+            .unwrap_or_else(|| "none".to_string()),
+        limits: limits.cloned(),
+        permissions: SandboxPermissions::allow_all(),
+    };
+    run_with_policy(executable, args, &policy)
+}
+
+pub fn run_with_policy(
+    executable: &Path,
+    args: &[String],
+    policy: &SandboxPolicy,
+) -> anyhow::Result<ExitStatus> {
+    policy.validate()?;
+
+    if policy.limits.is_none() {
+        let mut command = Command::new(executable);
+        command.args(args);
+        apply_policy_env(&mut command, policy);
+        return Ok(command.status()?);
     }
 
     #[cfg(target_os = "linux")]
     {
-        let limits = limits.expect("checked above");
+        let limits = policy.limits.as_ref().expect("checked above");
         let mut command = Command::new("prlimit");
         command.args(prlimit_args(limits));
         command.arg("--");
         command.arg(executable);
         command.args(args);
+        apply_policy_env(&mut command, policy);
         return Ok(command.status()?);
     }
 
@@ -88,6 +192,24 @@ pub fn run_with_limits(
         Err(anyhow::anyhow!(
             "sandbox profiles require Linux `prlimit`; use --sandbox none on this platform"
         ))
+    }
+}
+
+fn apply_policy_env(command: &mut Command, policy: &SandboxPolicy) {
+    command
+        .env("AIC_SANDBOX_PROFILE", &policy.profile)
+        .env("AIC_SANDBOX_ALLOW_FS", bool_env(policy.permissions.fs))
+        .env("AIC_SANDBOX_ALLOW_NET", bool_env(policy.permissions.net))
+        .env("AIC_SANDBOX_ALLOW_PROC", bool_env(policy.permissions.proc))
+        .env("AIC_SANDBOX_ALLOW_TIME", bool_env(policy.permissions.time))
+        .env("AIC_SANDBOX_DIAGNOSTIC_JSON", "1");
+}
+
+fn bool_env(value: bool) -> &'static str {
+    if value {
+        "1"
+    } else {
+        "0"
     }
 }
 
@@ -104,7 +226,11 @@ pub fn prlimit_args(limits: &SandboxLimits) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::SandboxProfile;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{load_policy, SandboxProfile};
 
     #[test]
     fn parses_known_profiles() {
@@ -128,6 +254,69 @@ mod tests {
         assert!(strict.cpu_seconds < ci.cpu_seconds);
         assert!(strict.memory_bytes < ci.memory_bytes);
         assert!(strict.file_bytes < ci.file_bytes);
+    }
+
+    #[test]
+    fn built_in_profile_permissions_match_expected_policies() {
+        let ci = SandboxProfile::Ci.policy();
+        assert!(ci.permissions.fs);
+        assert!(!ci.permissions.net);
+        assert!(!ci.permissions.proc);
+        assert!(ci.permissions.time);
+
+        let strict = SandboxProfile::Strict.policy();
+        assert!(!strict.permissions.fs);
+        assert!(!strict.permissions.net);
+        assert!(!strict.permissions.proc);
+        assert!(!strict.permissions.time);
+    }
+
+    #[test]
+    fn loads_custom_policy_file() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("sandbox-policy.json");
+        fs::write(
+            &path,
+            r#"{
+  "profile": "custom-ci",
+  "permissions": { "fs": true, "net": false, "proc": false, "time": true },
+  "limits": {
+    "profile": "custom-ci",
+    "cpu_seconds": 20,
+    "memory_bytes": 536870912,
+    "file_bytes": 16777216,
+    "max_open_files": 128,
+    "max_processes": 32
+  }
+}"#,
+        )
+        .expect("write policy");
+
+        let policy = load_policy(&path).expect("load policy");
+        assert_eq!(policy.profile, "custom-ci");
+        assert!(policy.permissions.fs);
+        assert!(!policy.permissions.net);
+        assert!(policy.limits.is_some());
+    }
+
+    #[test]
+    fn rejects_invalid_custom_policy() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("bad-policy.json");
+        fs::write(
+            &path,
+            r#"{
+  "profile": "",
+  "permissions": { "fs": true, "net": true, "proc": true, "time": true }
+}"#,
+        )
+        .expect("write policy");
+
+        let err = load_policy(&path).expect_err("policy should fail");
+        assert!(
+            err.to_string().contains("non-empty `profile`"),
+            "err={err:#}"
+        );
     }
 
     #[cfg(target_os = "linux")]
