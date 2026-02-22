@@ -1,0 +1,8 @@
+module lsp_workspace.main;
+
+import lsp_workspace.math;
+import lsp_workspace.ops;
+
+fn main() -> Int {
+    ops.double_plus(math.base())
+}

@@ -28,6 +28,29 @@ struct SymbolDecl {
     span: Span,
 }
 
+const LSP_KEYWORDS: &[&str] = &[
+    "fn", "let", "mut", "if", "else", "match", "return", "struct", "enum", "trait", "impl",
+    "import", "module", "unsafe", "async", "await",
+];
+
+const SEMANTIC_TOKEN_TYPES: &[&str] = &[
+    "namespace",
+    "function",
+    "struct",
+    "enum",
+    "interface",
+    "keyword",
+    "variable",
+];
+
+#[derive(Debug, Clone, Copy)]
+struct SemanticToken {
+    line: usize,
+    character: usize,
+    length: usize,
+    token_type: usize,
+}
+
 pub fn run_stdio() -> anyhow::Result<()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -81,7 +104,19 @@ impl LspServer {
                                 },
                                 "hoverProvider": true,
                                 "definitionProvider": true,
-                                "documentFormattingProvider": true
+                                "documentFormattingProvider": true,
+                                "completionProvider": {
+                                    "resolveProvider": false
+                                },
+                                "renameProvider": true,
+                                "codeActionProvider": true,
+                                "semanticTokensProvider": {
+                                    "legend": {
+                                        "tokenTypes": SEMANTIC_TOKEN_TYPES,
+                                        "tokenModifiers": []
+                                    },
+                                    "full": true
+                                }
                             },
                             "serverInfo": {
                                 "name": "aic-lsp",
@@ -191,6 +226,46 @@ impl LspServer {
                     }));
                 }
             }
+            "textDocument/completion" => {
+                if let Some(id) = id {
+                    let result = self.completion_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/rename" => {
+                if let Some(id) = id {
+                    let result = self.rename_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/codeAction" => {
+                if let Some(id) = id {
+                    let result = self.code_action_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/semanticTokens/full" => {
+                if let Some(id) = id {
+                    let result = self.semantic_tokens_full_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
             _ => {
                 if let Some(id) = id {
                     outbound.push(json!({
@@ -283,6 +358,285 @@ impl LspServer {
                 "newText": formatted
             }
         ]))
+    }
+
+    fn completion_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let Some(path) = uri_to_path(&uri) else {
+            return Ok(json!([]));
+        };
+        let declarations = build_symbol_index(&path)?;
+        let mut items = Vec::new();
+        for (name, decls) in declarations {
+            let first = &decls[0];
+            items.push(json!({
+                "label": name,
+                "kind": completion_kind(&first.kind),
+                "detail": first.signature,
+                "sortText": format!("1-{}", first.name)
+            }));
+        }
+        for keyword in LSP_KEYWORDS {
+            items.push(json!({
+                "label": keyword,
+                "kind": 14,
+                "detail": "keyword",
+                "sortText": format!("2-{}", keyword)
+            }));
+        }
+        items.sort_by(|a, b| {
+            a["sortText"]
+                .as_str()
+                .cmp(&b["sortText"].as_str())
+                .then(a["label"].as_str().cmp(&b["label"].as_str()))
+        });
+        Ok(json!(items))
+    }
+
+    fn rename_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let (uri, line, character) = request_position(message)?;
+        let new_name = message
+            .get("params")
+            .and_then(|p| p.get("newName"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if new_name.is_empty() {
+            return Ok(Value::Null);
+        }
+
+        let source = self.document_text(&uri)?;
+        let Some(old_name) = word_at_position(&source, line, character) else {
+            return Ok(Value::Null);
+        };
+        if old_name == new_name {
+            return Ok(json!({ "changes": {} }));
+        }
+
+        let Some(entry_path) = uri_to_path(&uri) else {
+            return Ok(Value::Null);
+        };
+        let root = find_project_root(&entry_path);
+        let mut files = Vec::new();
+        collect_aic_files(&root, &mut files)?;
+        files.sort();
+
+        let mut changes = BTreeMap::<String, Vec<Value>>::new();
+        for file in files {
+            let file_source = fs::read_to_string(&file)?;
+            let mut edits = find_word_occurrences(&file_source, &old_name)
+                .into_iter()
+                .map(|(start, end)| {
+                    json!({
+                        "range": offset_range_to_lsp_range(&file_source, start, end),
+                        "newText": new_name.clone()
+                    })
+                })
+                .collect::<Vec<_>>();
+            if edits.is_empty() {
+                continue;
+            }
+            edits.sort_by(|a, b| {
+                a["range"]["start"]["line"]
+                    .as_u64()
+                    .cmp(&b["range"]["start"]["line"].as_u64())
+                    .then(
+                        a["range"]["start"]["character"]
+                            .as_u64()
+                            .cmp(&b["range"]["start"]["character"].as_u64()),
+                    )
+            });
+            changes.insert(path_to_uri(&file), edits);
+        }
+
+        Ok(json!({ "changes": changes }))
+    }
+
+    fn code_action_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let Some(path) = uri_to_path(&uri) else {
+            return Ok(json!([]));
+        };
+        let front = run_frontend(&path)?;
+        let canonical_target = fs::canonicalize(&path).unwrap_or(path.clone());
+        let source = self.document_text(&uri)?;
+
+        let requested_range = message
+            .get("params")
+            .and_then(|p| p.get("range"))
+            .cloned()
+            .unwrap_or_else(|| full_document_range(&source));
+
+        let mut actions = Vec::new();
+        for diag in &front.diagnostics {
+            let Some(diag_span) = diag.spans.first() else {
+                continue;
+            };
+            let span_path = PathBuf::from(&diag_span.file);
+            let canonical_span = fs::canonicalize(&span_path).unwrap_or(span_path);
+            if canonical_span != canonical_target {
+                continue;
+            }
+            let Some(lsp_diag) = lsp_diagnostic_for_file(diag, &canonical_target) else {
+                continue;
+            };
+            for fix in &diag.suggested_fixes {
+                let (Some(start), Some(end), Some(replacement)) =
+                    (fix.start, fix.end, fix.replacement.clone())
+                else {
+                    continue;
+                };
+                let range = offset_range_to_lsp_range(&source, start, end);
+                if !ranges_intersect(&requested_range, &range) {
+                    continue;
+                }
+                actions.push(json!({
+                    "title": format!("aic: {}", fix.message),
+                    "kind": "quickfix",
+                    "diagnostics": [lsp_diag.clone()],
+                    "edit": {
+                        "changes": {
+                            uri.clone(): [
+                                {
+                                    "range": range,
+                                    "newText": replacement
+                                }
+                            ]
+                        }
+                    }
+                }));
+            }
+        }
+
+        actions.sort_by(|a, b| a["title"].as_str().cmp(&b["title"].as_str()));
+        Ok(json!(actions))
+    }
+
+    fn semantic_tokens_full_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!({ "data": [] }));
+        }
+        let source = self.document_text(&uri)?;
+        let (program, diagnostics) = parser::parse(&source, &uri);
+        if diagnostics.iter().any(|d| d.is_error()) {
+            return Ok(json!({ "data": [] }));
+        }
+        let Some(program) = program else {
+            return Ok(json!({ "data": [] }));
+        };
+
+        let mut tokens = Vec::new();
+        for item in &program.items {
+            match item {
+                ast::Item::Function(func) => {
+                    if let Some(offset) = find_name_offset_in_span(&source, &func.name, func.span) {
+                        tokens.push(SemanticToken {
+                            line: offset_to_line_char(&source, offset).0,
+                            character: offset_to_line_char(&source, offset).1,
+                            length: func.name.chars().count(),
+                            token_type: 1,
+                        });
+                    }
+                }
+                ast::Item::Struct(strukt) => {
+                    if let Some(offset) =
+                        find_name_offset_in_span(&source, &strukt.name, strukt.span)
+                    {
+                        tokens.push(SemanticToken {
+                            line: offset_to_line_char(&source, offset).0,
+                            character: offset_to_line_char(&source, offset).1,
+                            length: strukt.name.chars().count(),
+                            token_type: 2,
+                        });
+                    }
+                }
+                ast::Item::Enum(enm) => {
+                    if let Some(offset) = find_name_offset_in_span(&source, &enm.name, enm.span) {
+                        tokens.push(SemanticToken {
+                            line: offset_to_line_char(&source, offset).0,
+                            character: offset_to_line_char(&source, offset).1,
+                            length: enm.name.chars().count(),
+                            token_type: 3,
+                        });
+                    }
+                }
+                ast::Item::Trait(trait_def) => {
+                    if let Some(offset) =
+                        find_name_offset_in_span(&source, &trait_def.name, trait_def.span)
+                    {
+                        tokens.push(SemanticToken {
+                            line: offset_to_line_char(&source, offset).0,
+                            character: offset_to_line_char(&source, offset).1,
+                            length: trait_def.name.chars().count(),
+                            token_type: 4,
+                        });
+                    }
+                }
+                ast::Item::Impl(_) => {}
+            }
+        }
+
+        for keyword in LSP_KEYWORDS {
+            for (start, end) in find_word_occurrences(&source, keyword) {
+                let (line, character) = offset_to_line_char(&source, start);
+                tokens.push(SemanticToken {
+                    line,
+                    character,
+                    length: end.saturating_sub(start),
+                    token_type: 5,
+                });
+            }
+        }
+
+        tokens.sort_by(|a, b| a.line.cmp(&b.line).then(a.character.cmp(&b.character)));
+        let mut data = Vec::<u32>::new();
+        let mut prev_line = 0usize;
+        let mut prev_char = 0usize;
+        for token in tokens {
+            let delta_line = token.line.saturating_sub(prev_line);
+            let delta_start = if delta_line == 0 {
+                token.character.saturating_sub(prev_char)
+            } else {
+                token.character
+            };
+            data.push(delta_line as u32);
+            data.push(delta_start as u32);
+            data.push(token.length as u32);
+            data.push(token.token_type as u32);
+            data.push(0);
+            prev_line = token.line;
+            prev_char = token.character;
+        }
+
+        Ok(json!({ "data": data }))
     }
 
     fn publish_diagnostics(&self, uri: &str) -> anyhow::Result<Option<Value>> {
@@ -554,6 +908,100 @@ fn render_type_expr(ty: &ast::TypeExpr) -> String {
             }
         }
     }
+}
+
+fn completion_kind(kind: &str) -> i32 {
+    match kind {
+        "function" => 3,
+        "struct" => 22,
+        "enum" => 13,
+        "trait" => 8,
+        "impl" => 9,
+        _ => 1,
+    }
+}
+
+fn find_word_occurrences(source: &str, needle: &str) -> Vec<(usize, usize)> {
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut cursor = 0usize;
+    while cursor <= source.len() {
+        let hay = &source[cursor..];
+        let Some(rel) = hay.find(needle) else {
+            break;
+        };
+        let start = cursor + rel;
+        let end = start + needle.len();
+        if is_word_boundary(source.as_bytes(), start, end) {
+            out.push((start, end));
+        }
+        cursor = end;
+    }
+    out
+}
+
+fn is_word_boundary(bytes: &[u8], start: usize, end: usize) -> bool {
+    let left_ok = if start == 0 {
+        true
+    } else {
+        !is_word_byte(bytes[start - 1])
+    };
+    let right_ok = if end >= bytes.len() {
+        true
+    } else {
+        !is_word_byte(bytes[end])
+    };
+    left_ok && right_ok
+}
+
+fn offset_range_to_lsp_range(source: &str, start: usize, end: usize) -> Value {
+    let (start_line, start_char) = offset_to_line_char(source, start);
+    let (end_line, end_char) = offset_to_line_char(source, end.max(start));
+    json!({
+        "start": { "line": start_line, "character": start_char },
+        "end": { "line": end_line, "character": end_char }
+    })
+}
+
+fn find_name_offset_in_span(source: &str, name: &str, span: Span) -> Option<usize> {
+    if name.is_empty() {
+        return None;
+    }
+    let start = span.start.min(source.len());
+    let end = span.end.min(source.len());
+    if start >= end {
+        return source.find(name);
+    }
+    source[start..end].find(name).map(|rel| start + rel)
+}
+
+fn ranges_intersect(lhs: &Value, rhs: &Value) -> bool {
+    let a = range_tuple(lhs);
+    let b = range_tuple(rhs);
+    match (a, b) {
+        (
+            Some((as_line, as_char, ae_line, ae_char)),
+            Some((bs_line, bs_char, be_line, be_char)),
+        ) => {
+            let a_start = (as_line, as_char);
+            let a_end = (ae_line, ae_char);
+            let b_start = (bs_line, bs_char);
+            let b_end = (be_line, be_char);
+            a_start < b_end && b_start < a_end
+        }
+        _ => true,
+    }
+}
+
+fn range_tuple(range: &Value) -> Option<(u64, u64, u64, u64)> {
+    Some((
+        range.get("start")?.get("line")?.as_u64()?,
+        range.get("start")?.get("character")?.as_u64()?,
+        range.get("end")?.get("line")?.as_u64()?,
+        range.get("end")?.get("character")?.as_u64()?,
+    ))
 }
 
 fn find_project_root(entry: &Path) -> PathBuf {

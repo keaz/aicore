@@ -3,8 +3,10 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
+use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -74,6 +76,13 @@ fn lsp_hover_definition_and_formatting_smoke() {
     assert_eq!(init["result"]["capabilities"]["definitionProvider"], true);
     assert_eq!(
         init["result"]["capabilities"]["documentFormattingProvider"],
+        true
+    );
+    assert!(init["result"]["capabilities"]["completionProvider"].is_object());
+    assert_eq!(init["result"]["capabilities"]["renameProvider"], true);
+    assert_eq!(init["result"]["capabilities"]["codeActionProvider"], true);
+    assert_eq!(
+        init["result"]["capabilities"]["semanticTokensProvider"]["full"],
         true
     );
 
@@ -155,6 +164,142 @@ fn lsp_hover_definition_and_formatting_smoke() {
     let formatting = read_message(&mut stdout);
     assert_eq!(formatting["id"], 4);
     assert!(formatting["result"].is_array());
+
+    let completion_start = Instant::now();
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": {"uri": uri},
+                "position": {"line": 4, "character": 3}
+            }
+        }),
+    );
+    let completion = read_message(&mut stdout);
+    assert_eq!(completion["id"], 6);
+    let completion_items = completion["result"].as_array().expect("completion array");
+    assert!(
+        completion_items.iter().any(|item| item["label"] == "add"),
+        "completion={completion:#}"
+    );
+    assert!(
+        completion_start.elapsed() <= Duration::from_millis(750),
+        "completion latency too high: {:?}",
+        completion_start.elapsed()
+    );
+
+    let rename_start = Instant::now();
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "textDocument/rename",
+            "params": {
+                "textDocument": {"uri": uri},
+                "position": {"line": 4, "character": 3},
+                "newName": "sum"
+            }
+        }),
+    );
+    let rename = read_message(&mut stdout);
+    assert_eq!(rename["id"], 7);
+    let changes = rename["result"]["changes"]
+        .as_object()
+        .expect("rename changes");
+    let has_main = changes
+        .keys()
+        .any(|k| k.ends_with("examples/e7/lsp_project/src/main.aic"));
+    let has_math = changes
+        .keys()
+        .any(|k| k.ends_with("examples/e7/lsp_project/src/math.aic"));
+    assert!(has_main && has_math, "rename={rename:#}");
+    assert!(
+        rename_start.elapsed() <= Duration::from_millis(750),
+        "rename latency too high: {:?}",
+        rename_start.elapsed()
+    );
+
+    let semantic_start = Instant::now();
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "textDocument/semanticTokens/full",
+            "params": {
+                "textDocument": {"uri": uri}
+            }
+        }),
+    );
+    let semantic = read_message(&mut stdout);
+    assert_eq!(semantic["id"], 8);
+    assert!(semantic["result"]["data"].as_array().is_some());
+    assert!(
+        !semantic["result"]["data"]
+            .as_array()
+            .expect("token array")
+            .is_empty(),
+        "semantic={semantic:#}"
+    );
+    assert!(
+        semantic_start.elapsed() <= Duration::from_millis(750),
+        "semantic token latency too high: {:?}",
+        semantic_start.elapsed()
+    );
+
+    let fix_dir = tempdir().expect("tempdir");
+    let fix_file = fix_dir.path().join("fixable.aic");
+    let fix_uri = file_uri(&fix_file);
+    let fix_source = "module fix.main;\nfn main() -> Int {\n  let x = 1\n  x\n}\n";
+    fs::write(&fix_file, fix_source).expect("write fix source");
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": fix_uri,
+                    "languageId": "aic",
+                    "version": 1,
+                    "text": fix_source
+                }
+            }
+        }),
+    );
+    let _fix_publish = read_message(&mut stdout);
+
+    let action_start = Instant::now();
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "textDocument/codeAction",
+            "params": {
+                "textDocument": {"uri": fix_uri},
+                "range": {
+                    "start": {"line": 2, "character": 2},
+                    "end": {"line": 2, "character": 12}
+                },
+                "context": { "diagnostics": [] }
+            }
+        }),
+    );
+    let actions = read_message(&mut stdout);
+    assert_eq!(actions["id"], 9);
+    let action_items = actions["result"].as_array().expect("action array");
+    assert!(!action_items.is_empty(), "actions={actions:#}");
+    assert_eq!(action_items[0]["kind"], "quickfix");
+    assert!(
+        action_start.elapsed() <= Duration::from_millis(750),
+        "code action latency too high: {:?}",
+        action_start.elapsed()
+    );
 
     send_message(
         &mut stdin,

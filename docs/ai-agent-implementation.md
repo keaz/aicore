@@ -341,12 +341,17 @@ Diagnostics:
   - `initialize`, `shutdown`
   - `textDocument/didOpen`, `textDocument/didChange`, `textDocument/didSave`
   - `textDocument/hover`, `textDocument/definition`, `textDocument/formatting`
+  - `textDocument/completion`, `textDocument/rename`
+  - `textDocument/codeAction`, `textDocument/semanticTokens/full`
 - Diagnostics parity:
   - LSP diagnostics are built from frontend diagnostics and filtered by file.
+- Autofix integration:
+  - code actions are emitted from diagnostic `suggested_fixes` with deterministic quick-fix edits
 - IDE docs:
   - `docs/ide-integration.md`
 - Sample workspace:
   - `examples/e7/lsp_project/`
+  - `examples/agent/lsp_workspace/`
 
 ### Built-in fixture harness (E7-T5)
 

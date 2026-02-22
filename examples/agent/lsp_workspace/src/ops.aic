@@ -1,0 +1,5 @@
+module lsp_workspace.ops;
+
+fn double_plus(x: Int) -> Int {
+    x + x + 0
+}
