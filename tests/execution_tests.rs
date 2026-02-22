@@ -10,7 +10,11 @@ use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
 use tempfile::tempdir;
 
-fn compile_and_run_with_setup<F>(source: &str, setup: F) -> (i32, String, String)
+fn compile_and_run_with_setup_and_args<F>(
+    source: &str,
+    args: &[&str],
+    setup: F,
+) -> (i32, String, String)
 where
     F: FnOnce(&Path),
 {
@@ -34,6 +38,7 @@ where
     setup(dir.path());
     let output = Command::new(exe)
         .current_dir(dir.path())
+        .args(args)
         .output()
         .expect("run exe");
     (
@@ -43,8 +48,19 @@ where
     )
 }
 
+fn compile_and_run_with_setup<F>(source: &str, setup: F) -> (i32, String, String)
+where
+    F: FnOnce(&Path),
+{
+    compile_and_run_with_setup_and_args(source, &[], setup)
+}
+
 fn compile_and_run(source: &str) -> (i32, String, String) {
     compile_and_run_with_setup(source, |_| {})
+}
+
+fn compile_and_run_with_args(source: &str, args: &[&str]) -> (i32, String, String) {
+    compile_and_run_with_setup_and_args(source, args, |_| {})
 }
 
 fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
@@ -222,6 +238,208 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "2\n");
+}
+
+#[test]
+fn exec_vec_push_pop_lifecycle_and_bounds() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 10);
+    v = vec.push(v, 20);
+
+    let len_after_push_ok = if vec.vec_len(v) == 2 { 1 } else { 0 };
+    let first_ok = if opt_int_or(vec.first(v), -1) == 10 { 1 } else { 0 };
+    let last_ok = if opt_int_or(vec.last(v), -1) == 20 { 1 } else { 0 };
+    let oob_get_ok = match vec.get(v, 5) {
+        None => 1,
+        Some(_) => 0,
+    };
+
+    v = vec.pop(v);
+    let after_pop_len_ok = if vec.vec_len(v) == 1 { 1 } else { 0 };
+    let after_pop_value_ok = if opt_int_or(vec.get(v, 0), -1) == 10 { 1 } else { 0 };
+
+    v = vec.pop(v);
+    v = vec.pop(v);
+    let empty_ok = if vec.is_empty(v) { 1 } else { 0 };
+    let empty_first_ok = match vec.first(v) {
+        None => 1,
+        Some(_) => 0,
+    };
+    let empty_last_ok = match vec.last(v) {
+        None => 1,
+        Some(_) => 0,
+    };
+
+    let score = len_after_push_ok + first_ok + last_ok + oob_get_ok +
+        after_pop_len_ok + after_pop_value_ok + empty_ok + empty_first_ok + empty_last_ok;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "9\n");
+}
+
+#[test]
+fn exec_vec_set_insert_remove_reverse_slice_append() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut v: Vec[Int] = vec.vec_of(2);
+    v = vec.insert(v, 0, 1);
+    v = vec.push(v, 4);
+    v = vec.insert(v, 2, 3);
+    v = vec.set(v, 3, 40);
+    v = vec.remove_at(v, 1);
+    v = vec.reverse(v);
+
+    let s = vec.slice(v, 1, 3);
+    let a = vec.append(s, vec.vec_of(9));
+    let set_oob = vec.set(a, 8, 0);
+    let insert_oob = vec.insert(set_oob, 9, 5);
+    let remove_oob = vec.remove_at(insert_oob, 9);
+
+    let len_ok = if vec.vec_len(remove_oob) == 3 { 1 } else { 0 };
+    let e0_ok = if opt_int_or(vec.get(remove_oob, 0), -1) == 3 { 1 } else { 0 };
+    let e1_ok = if opt_int_or(vec.get(remove_oob, 1), -1) == 1 { 1 } else { 0 };
+    let e2_ok = if opt_int_or(vec.get(remove_oob, 2), -1) == 9 { 1 } else { 0 };
+    let oob_len_ok = if vec.vec_len(remove_oob) == vec.vec_len(a) { 1 } else { 0 };
+    let head_ok = if opt_int_or(vec.get(remove_oob, 0), -1) == 3 { 1 } else { 0 };
+    let tail_ok = if opt_int_or(vec.last(remove_oob), -1) == 9 { 1 } else { 0 };
+
+    let score = len_ok + e0_ok + e1_ok + e2_ok + oob_len_ok + head_ok + tail_ok;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "7\n");
+}
+
+#[test]
+fn exec_vec_contains_index_of_monomorphized_types() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut vs: Vec[String] = vec.new_vec();
+    vs = vec.push(vs, "red");
+    vs = vec.push(vs, "blue");
+    let str_contains_ok = if vec.contains(vs, "blue") { 1 } else { 0 };
+    let str_index_ok = if opt_int_or(vec.index_of(vs, "red"), -1) == 0 { 1 } else { 0 };
+    let str_missing_ok = if opt_int_or(vec.index_of(vs, "green"), -1) == -1 { 1 } else { 0 };
+
+    let mut vb: Vec[Bool] = vec.new_vec();
+    vb = vec.push(vb, true);
+    vb = vec.push(vb, false);
+    let bool_contains_ok = if vec.contains(vb, false) { 1 } else { 0 };
+    let bool_index_ok = if opt_int_or(vec.index_of(vb, false), -1) == 1 { 1 } else { 0 };
+
+    let mut vo: Vec[Option[Int]] = vec.new_vec();
+    vo = vec.push(vo, None());
+    vo = vec.push(vo, Some(7));
+    let opt_contains_none_ok = if vec.contains(vo, None()) { 1 } else { 0 };
+    let opt_contains_some_ok = if vec.contains(vo, Some(7)) { 1 } else { 0 };
+    let opt_index_ok = if opt_int_or(vec.index_of(vo, Some(7)), -1) == 1 { 1 } else { 0 };
+
+    let score = str_contains_ok + str_index_ok + str_missing_ok +
+        bool_contains_ok + bool_index_ok +
+        opt_contains_none_ok + opt_contains_some_ok + opt_index_ok;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "8\n");
+}
+
+#[test]
+fn exec_vec_empty_edge_cases() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut v: Vec[Int] = vec.new_vec();
+    let get_empty_ok = match vec.get(v, 0) {
+        None => 1,
+        Some(_) => 0,
+    };
+    let first_empty_ok = match vec.first(v) {
+        None => 1,
+        Some(_) => 0,
+    };
+    let last_empty_ok = match vec.last(v) {
+        None => 1,
+        Some(_) => 0,
+    };
+    let contains_empty_ok = if vec.contains(v, 1) { 0 } else { 1 };
+    let index_empty_ok = if opt_int_or(vec.index_of(v, 1), -1) == -1 { 1 } else { 0 };
+
+    let reversed = vec.reverse(v);
+    let reversed_ok = if vec.vec_len(reversed) == 0 { 1 } else { 0 };
+    let sliced = vec.slice(v, 0, 4);
+    let sliced_ok = if vec.vec_len(sliced) == 0 { 1 } else { 0 };
+    let empty2: Vec[Int] = vec.new_vec();
+    let appended = vec.append(v, empty2);
+    let appended_ok = if vec.vec_len(appended) == 0 { 1 } else { 0 };
+
+    v = vec.push(v, 5);
+    v = vec.clear(v);
+    let clear_ok = if vec.is_empty(v) { 1 } else { 0 };
+    v = vec.remove_at(v, 0);
+    v = vec.pop(v);
+    v = vec.set(v, 0, 1);
+    let stable_empty_ok = if vec.vec_len(v) == 0 { 1 } else { 0 };
+
+    let score = get_empty_ok + first_empty_ok + last_empty_ok + contains_empty_ok + index_empty_ok +
+        reversed_ok + sliced_ok + appended_ok + clear_ok + stable_empty_ok;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "10\n");
 }
 
 #[test]
@@ -422,6 +640,84 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_string_format_positional_placeholders_and_composition() {
+    let src = r#"
+import std.io;
+import std.string;
+import std.vec;
+
+fn main() -> Int effects { io } {
+    let empty_args: Vec[String] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+
+    let out0 = format("plain-text", empty_args);
+    let ok0 = if len(out0) == 10 && starts_with(out0, "plain") { 1 } else { 0 };
+
+    let out1 = format("x{0}y", split("A", ","));
+    let ok1 = if len(out1) == 3 && string.contains(out1, "A") { 1 } else { 0 };
+
+    let out2 = format("{0}-{1}", split("left,right", ","));
+    let ok2 = if starts_with(out2, "left-") && ends_with(out2, "right") { 1 } else { 0 };
+
+    let out5 = format("{0}{1}{2}{3}{4}", split("a,b,c,d,e", ","));
+    let ok5 = if len(out5) == 5 && starts_with(out5, "ab") && ends_with(out5, "de") {
+        1
+    } else {
+        0
+    };
+
+    let missing = format("x{0}-{2}-z", split("left,right", ","));
+    let missing_ok =
+        if starts_with(missing, "xleft-") && string.contains(missing, "{2}") && ends_with(missing, "-z") {
+            1
+        } else {
+            0
+        };
+
+    let int_text = int_to_string(-2048);
+    let int_direct_ok = if len(int_text) == 5 && starts_with(int_text, "-") { 1 } else { 0 };
+    let int_args = split("left7right", int_to_string(7));
+    let int_compose_ok = if len(format("{0}:{1}", int_args)) == 10 { 1 } else { 0 };
+
+    let bool_true_text = bool_to_string(true);
+    let bool_false_text = bool_to_string(false);
+    let bool_direct_ok =
+        if len(bool_true_text) == 4 && len(bool_false_text) == 5 {
+            1
+        } else {
+            0
+        };
+    let bool_args = split("uptruedown", bool_to_string(true));
+    let bool_compose_ok = if starts_with(format("{0}|{1}", bool_args), "up|") { 1 } else { 0 };
+
+    let score =
+        ok0 +
+        ok1 +
+        ok2 +
+        ok5 +
+        missing_ok +
+        int_direct_ok +
+        int_compose_ok +
+        bool_direct_ok +
+        bool_compose_ok;
+
+    if score == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_string_ops_full_surface_and_edge_cases() {
     let src = r#"
 import std.io;
@@ -466,13 +762,13 @@ fn result_err_non_empty(v: Result[Int, String]) -> Int {
 }
 
 fn main() -> Int effects { io } {
-    let contains_ok = if contains("alpha beta", "pha") { 1 } else { 0 };
+    let contains_ok = if string.contains("alpha beta", "pha") { 1 } else { 0 };
     let starts_ok = if starts_with("alpha beta", "alpha") { 1 } else { 0 };
     let ends_ok = if ends_with("alpha beta", "beta") { 1 } else { 0 };
 
-    let idx_first_ok = if opt_int_or(index_of("banana", "na"), -1) == 2 { 1 } else { 0 };
+    let idx_first_ok = if opt_int_or(string.index_of("banana", "na"), -1) == 2 { 1 } else { 0 };
     let idx_last_ok = if opt_int_or(last_index_of("banana", "na"), -1) == 4 { 1 } else { 0 };
-    let idx_none_ok = if opt_int_or(index_of("banana", "zz"), -1) == -1 { 1 } else { 0 };
+    let idx_none_ok = if opt_int_or(string.index_of("banana", "zz"), -1) == -1 { 1 } else { 0 };
 
     let sub_ok = if len(substring("header", 1, 4)) == 3 { 1 } else { 0 };
     let sub_oob_ok = if len(substring("abc", 9, 12)) == 0 { 1 } else { 0 };
@@ -595,7 +891,7 @@ fn main() -> Int effects { io } {
     let parts_ok = if vec_len(line_parts) == 3 { 1 } else { 0 };
     let line_roundtrip_ok = if len(join(line_parts, " ")) == len(request_line) { 1 } else { 0 };
     let method_ok = if starts_with(request_line, "GET ") { 1 } else { 0 };
-    let target_ok = if contains(request_line, "/api/users") { 1 } else { 0 };
+    let target_ok = if string.contains(request_line, "/api/users") { 1 } else { 0 };
     let version_ok = if ends_with(request_line, "HTTP/1.1") { 1 } else { 0 };
 
     let header = "Content-Length: 12";
@@ -606,7 +902,7 @@ fn main() -> Int effects { io } {
 
     let query = "page=12";
     let query_parts_ok = if opt_vec_len(split_first(query, "=")) == 2 { 1 } else { 0 };
-    let page_idx_ok = if opt_int_or(index_of(query, "="), -1) == 4 { 1 } else { 0 };
+    let page_idx_ok = if opt_int_or(string.index_of(query, "="), -1) == 4 { 1 } else { 0 };
 
     let score =
         parts_ok +
@@ -893,6 +1189,225 @@ fn main() -> Int effects { io, fs } {
 }
 
 #[test]
+fn exec_fs_bytes_roundtrip() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote = ok_bool(write_bytes("bytes.bin", "abc"));
+    let appended = ok_bool(append_bytes("bytes.bin", "XYZ"));
+    let payload = match read_bytes("bytes.bin") {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let payload_ok = if len(payload) == 6 && starts_with(payload, "ab") && ends_with(payload, "XYZ") {
+        1
+    } else {
+        0
+    };
+    let removed = ok_bool(delete("bytes.bin"));
+    if wrote + appended + payload_ok + removed == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_file_read_line_and_close() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
+    match v {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    }
+}
+
+fn starts(v: Result[Option[String], FsError], prefix: String) -> Int {
+    match v {
+        Ok(value) => match value {
+            Some(line) => if starts_with(line, prefix) { 1 } else { 0 },
+            None => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn eof(v: Result[Option[String], FsError]) -> Int {
+    match v {
+        Ok(value) => match value {
+            None => 1,
+            Some(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let writer = unwrap_handle(open_write("lines.txt"));
+    let writer_ok = if writer.handle > 0 { 1 } else { 0 };
+    let wrote = ok_bool(file_write_str(writer, "alpha\nbeta\ngamma"));
+    let closed_writer = ok_bool(file_close(writer));
+
+    let reader = unwrap_handle(open_read("lines.txt"));
+    let reader_ok = if reader.handle > 0 { 1 } else { 0 };
+    let first = starts(file_read_line(reader), "alpha");
+    let second = starts(file_read_line(reader), "beta");
+    let third = starts(file_read_line(reader), "gamma");
+    let done = eof(file_read_line(reader));
+    let closed_reader = ok_bool(file_close(reader));
+    let removed = ok_bool(delete("lines.txt"));
+
+    let score = writer_ok + reader_ok + wrote + closed_writer + first + second + third + done + closed_reader + removed;
+    if score == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_mkdir_all_nested_directories() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.path;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let root = "tree_root";
+    let level1 = path.join(root, "a");
+    let level2 = path.join(level1, "b");
+
+    let made = ok_bool(mkdir_all(level2));
+    let root_ok = match metadata(root) {
+        Ok(m) => if m.is_dir { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let leaf_ok = match metadata(level2) {
+        Ok(m) => if m.is_dir { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let rm2 = ok_bool(rmdir(level2));
+    let rm1 = ok_bool(rmdir(level1));
+    let rm0 = ok_bool(rmdir(root));
+
+    if made + root_ok + leaf_ok + rm2 + rm1 + rm0 == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_list_dir_immediate_children_only() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.path;
+import std.string;
+import std.vec;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let root = "list_root";
+    let nested = path.join(root, "nested");
+    let top_file = path.join(root, "top.txt");
+    let inner_file = path.join(nested, "inner.txt");
+
+    let mk_root = ok_bool(mkdir(root));
+    let mk_nested = ok_bool(mkdir(nested));
+    let wrote_top = ok_bool(write_text(top_file, "top"));
+    let wrote_inner = ok_bool(write_text(inner_file, "inner"));
+
+    let count_ok = match list_dir(root) {
+        Ok(entries) => if vec_len(entries) == 2 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let names_ok = match list_dir(root) {
+        Ok(entries) => if string.contains(string.join(entries, "|"), "top.txt") &&
+            string.contains(string.join(entries, "|"), "nested") {
+            if string.contains(string.join(entries, "|"), "inner.txt") { 0 } else { 1 }
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+    let list_score = count_ok + names_ok;
+
+    let removed_inner = ok_bool(delete(inner_file));
+    let removed_top = ok_bool(delete(top_file));
+    let rm_nested = ok_bool(rmdir(nested));
+    let rm_root = ok_bool(rmdir(root));
+
+    let score =
+        mk_root + mk_nested + wrote_top + wrote_inner + list_score +
+        removed_inner + removed_top + rm_nested + rm_root;
+    if score == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_env_and_path_apis_roundtrip() {
     let src = r#"
 import std.io;
@@ -908,34 +1423,34 @@ fn ok_bool(v: Result[Bool, EnvError]) -> Int {
 }
 
 fn main() -> Int effects { io, env, fs } {
-    let original = match cwd() {
+    let original = match env.cwd() {
         Ok(path) => path,
         Err(_) => "",
     };
-    let set_ok = ok_bool(set("AIC_EXEC_ENV_KEY", "value-xyz"));
-    let got_len = match get("AIC_EXEC_ENV_KEY") {
+    let set_ok = ok_bool(env.set("AIC_EXEC_ENV_KEY", "value-xyz"));
+    let got_len = match env.get("AIC_EXEC_ENV_KEY") {
         Ok(value) => len(value),
         Err(_) => 0,
     };
-    let rm_ok = ok_bool(remove("AIC_EXEC_ENV_KEY"));
-    let missing_ok = match get("AIC_EXEC_ENV_KEY") {
+    let rm_ok = ok_bool(env.remove("AIC_EXEC_ENV_KEY"));
+    let missing_ok = match env.get("AIC_EXEC_ENV_KEY") {
         Ok(_) => 0,
         Err(err) => match err {
             NotFound => 1,
             _ => 0,
         },
     };
-    let cwd_set_ok = ok_bool(set_cwd("."));
-    let now = match cwd() {
+    let cwd_set_ok = ok_bool(env.set_cwd("."));
+    let now = match env.cwd() {
         Ok(path) => path,
         Err(_) => "",
     };
     let joined = path.join(now, "alpha.txt");
-    let base_len = len(basename(joined));
-    let dir_len = len(dirname(joined));
-    let ext_len = len(extension(joined));
-    let abs_ok = if is_abs(now) { 1 } else { 0 };
-    let restore_ok = ok_bool(set_cwd(original));
+    let base_len = len(path.basename(joined));
+    let dir_len = len(path.dirname(joined));
+    let ext_len = len(path.extension(joined));
+    let abs_ok = if path.is_abs(now) { 1 } else { 0 };
+    let restore_ok = ok_bool(env.set_cwd(original));
 
     let score = set_ok + rm_ok + missing_ok + cwd_set_ok + abs_ok + restore_ok;
     if score == 6 && got_len == 9 && base_len == 9 && dir_len > 0 && ext_len == 3 {
@@ -949,6 +1464,129 @@ fn main() -> Int effects { io, env, fs } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_env_args_and_arg_at_roundtrip() {
+    let src = r#"
+import std.io;
+import std.env;
+import std.vec;
+import std.string;
+
+fn main() -> Int effects { io, env } {
+    let values = args();
+    let count = arg_count();
+    let same_count = if vec_len(values) == count { 1 } else { 0 };
+    let first_ok = match arg_at(0) {
+        Some(v) => if len(v) > 0 { 1 } else { 0 },
+        None => 0,
+    };
+    let second_ok = match arg_at(1) {
+        Some(v) => if len(v) == 5 && starts_with(v, "alpha") { 1 } else { 0 },
+        None => 0,
+    };
+    let third_ok = match arg_at(2) {
+        Some(v) => if len(v) == 4 && starts_with(v, "beta") { 1 } else { 0 },
+        None => 0,
+    };
+    let missing_ok = match arg_at(999) {
+        Some(_) => 0,
+        None => 1,
+    };
+
+    if same_count + first_ok + second_ok + third_ok + missing_ok == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_args(src, &["alpha", "beta"]);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_env_listing_and_platform_helpers_are_stable() {
+    let src = r#"
+import std.io;
+import std.env;
+import std.vec;
+import std.string;
+
+fn home_ok(v: Result[String, EnvError]) -> Int {
+    match v {
+        Ok(path) => if len(path) > 0 { 1 } else { 0 },
+        Err(err) => match err {
+            NotFound => 1,
+            _ => 0,
+        },
+    }
+}
+
+fn temp_ok(v: Result[String, EnvError]) -> Int {
+    match v {
+        Ok(path) => if len(path) > 0 { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, env, fs } {
+    let vars_ok = if vec_len(all_vars()) > 0 { 1 } else { 0 };
+    let os = os_name();
+    let os_linux = if len(os) == 5 && starts_with(os, "linux") { 1 } else { 0 };
+    let os_macos = if len(os) == 5 && starts_with(os, "macos") { 1 } else { 0 };
+    let os_windows = if len(os) == 7 && starts_with(os, "windows") { 1 } else { 0 };
+    let os_ok = if os_linux + os_macos + os_windows == 1 { 1 } else { 0 };
+    let arch_ok = if len(arch()) > 0 { 1 } else { 0 };
+
+    let score = vars_ok + home_ok(home_dir()) + temp_ok(temp_dir()) + os_ok + arch_ok;
+    if score == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_env_exit_sets_process_exit_code() {
+    let src_ok = r#"
+import std.io;
+import std.env;
+
+fn main() -> Int effects { io, env } {
+    print_int(1);
+    exit(0);
+    print_int(2);
+    0
+}
+"#;
+    let (code_ok, stdout_ok, stderr_ok) = compile_and_run(src_ok);
+    assert_eq!(code_ok, 0, "stderr={stderr_ok}");
+    assert_eq!(stdout_ok, "1\n");
+
+    let src_err = r#"
+import std.io;
+import std.env;
+
+fn main() -> Int effects { io, env } {
+    print_int(1);
+    exit(1);
+    print_int(2);
+    0
+}
+"#;
+    let (code_err, stdout_err, stderr_err) = compile_and_run(src_err);
+    assert_eq!(code_err, 1, "stderr={stderr_err}");
+    assert_eq!(stdout_err, "1\n");
 }
 
 #[test]
@@ -987,9 +1625,17 @@ fn main() -> Int effects { io } {
     };
     let size_ok = if map.size(m5) == 2 { 1 } else { 0 };
     let keys_join = string.join(map.keys(m5), ",");
-    let keys_order_ok = if opt_int_or(index_of(keys_join, "accept,x-id"), -1) == 0 { 1 } else { 0 };
+    let keys_order_ok = if opt_int_or(string.index_of(keys_join, "accept,x-id"), -1) == 0 {
+        1
+    } else {
+        0
+    };
     let values_join = string.join(map.values(m5), ",");
-    let values_order_ok = if opt_int_or(index_of(values_join, "text/plain,42"), -1) == 0 { 1 } else { 0 };
+    let values_order_ok = if opt_int_or(string.index_of(values_join, "text/plain,42"), -1) == 0 {
+        1
+    } else {
+        0
+    };
     let entries_len_ok = if vec_len(map.entries(m5)) == 2 { 1 } else { 0 };
 
     let score =
@@ -1045,7 +1691,7 @@ fn main() -> Int effects { io } {
     let size_ok = if map.size(m5) == 2 { 1 } else { 0 };
     let has_c = if map.contains_key(m5, "c") { 1 } else { 0 };
     let keys_join = string.join(map.keys(m5), ",");
-    let keys_order_ok = if opt_int_or(index_of(keys_join, "b,c"), -1) == 0 { 1 } else { 0 };
+    let keys_order_ok = if opt_int_or(string.index_of(keys_join, "b,c"), -1) == 0 { 1 } else { 0 };
     let values_len_ok = if vec_len(map.values(m5)) == 2 { 1 } else { 0 };
     let entries_len_ok = if vec_len(map.entries(m5)) == 2 { 1 } else { 0 };
 
@@ -1713,12 +2359,12 @@ fn request_matches(req: Request) -> Int {
         None => "",
     };
 
-    let method_ok = if contains(req.method, "GET") && len(req.method) == 3 { 1 } else { 0 };
-    let path_ok = if contains(req.path, "/hello") && len(req.path) == 6 { 1 } else { 0 };
-    let query_ok = if contains(query_name, "Kasun") && len(query_name) == 5 { 1 } else { 0 };
-    let host_ok = if contains(host, "localhost") && len(host) == 9 { 1 } else { 0 };
-    let trace_ok = if contains(trace, "abc") && len(trace) == 3 { 1 } else { 0 };
-    let body_ok = if contains(req.body, "hello") && len(req.body) == 5 { 1 } else { 0 };
+    let method_ok = if string.contains(req.method, "GET") && len(req.method) == 3 { 1 } else { 0 };
+    let path_ok = if string.contains(req.path, "/hello") && len(req.path) == 6 { 1 } else { 0 };
+    let query_ok = if string.contains(query_name, "Kasun") && len(query_name) == 5 { 1 } else { 0 };
+    let host_ok = if string.contains(host, "localhost") && len(host) == 9 { 1 } else { 0 };
+    let trace_ok = if string.contains(trace, "abc") && len(trace) == 3 { 1 } else { 0 };
+    let body_ok = if string.contains(req.body, "hello") && len(req.body) == 5 { 1 } else { 0 };
 
     if method_ok == 1 && path_ok == 1 && query_ok == 1 &&
        host_ok == 1 && trace_ok == 1 && body_ok == 1 {
@@ -1765,8 +2411,8 @@ fn main() -> Int effects { io, net } {
         Ok(text) => text,
         Err(_) => "",
     };
-    let wire_ok = if contains(wire, "HTTP/1.1 200 OK") &&
-        contains(wire, "content-length: 2") &&
+    let wire_ok = if string.contains(wire, "HTTP/1.1 200 OK") &&
+        string.contains(wire, "content-length: 2") &&
         ends_with(wire, "ok") {
         1
     } else {

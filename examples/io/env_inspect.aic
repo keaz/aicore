@@ -1,0 +1,34 @@
+module example.io.env_inspect;
+
+import std.io;
+import std.env;
+import std.vec;
+import std.string;
+
+fn home_len() -> Int effects { env, fs } {
+    match home_dir() {
+        Ok(path) => len(path),
+        Err(_) => 0,
+    }
+}
+
+fn temp_len() -> Int effects { env, fs } {
+    match temp_dir() {
+        Ok(path) => len(path),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, env, fs } {
+    let vars_count = vec_len(all_vars());
+    let os_len = len(os_name());
+    let arch_len = len(arch());
+    let score = if vars_count > 0 && temp_len() > 0 && os_len > 0 && arch_len > 0 {
+        42
+    } else {
+        0
+    };
+    let _home = home_len();
+    print_int(score);
+    0
+}

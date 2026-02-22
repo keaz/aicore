@@ -1,0 +1,22 @@
+module example.io.cli_args;
+
+import std.io;
+import std.env;
+import std.vec;
+import std.string;
+
+fn main() -> Int effects { io, env } {
+    let values = args();
+    let count = arg_count();
+    let same_count = if vec_len(values) == count { 1 } else { 0 };
+    let first_ok = match arg_at(0) {
+        Some(v) => if len(v) > 0 { 1 } else { 0 },
+        None => 0,
+    };
+    let missing_ok = match arg_at(999) {
+        Some(_) => 0,
+        None => 1,
+    };
+    print_int(same_count + first_ok + missing_ok);
+    0
+}

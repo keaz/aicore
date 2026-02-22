@@ -709,6 +709,7 @@ struct Generator<'a> {
     enum_templates: BTreeMap<String, EnumTemplate>,
     variant_ctors: BTreeMap<String, Vec<VariantCtor>>,
     generic_fn_instances: BTreeMap<String, Vec<GenericFnInstance>>,
+    generic_fn_instances_by_symbol: BTreeMap<ir::SymbolId, Vec<GenericFnInstance>>,
     active_type_bindings: Option<BTreeMap<String, String>>,
 }
 
@@ -747,6 +748,7 @@ impl<'a> Generator<'a> {
             enum_templates,
             variant_ctors,
             generic_fn_instances: BTreeMap::new(),
+            generic_fn_instances_by_symbol: BTreeMap::new(),
             active_type_bindings: None,
         }
     }
@@ -798,8 +800,27 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare void @aic_rt_string_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
+        text.push_str(
+            "declare void @aic_rt_string_format(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
         text.push_str("declare i64 @aic_rt_vec_len(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_cap(i8*, i64, i64)\n");
+        text.push_str("declare void @aic_rt_vec_new(i8**, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_vec_of(i8*, i64, i8**, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_vec_get(i8*, i64, i64, i64, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_push(i8**, i64*, i64*, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_pop(i8**, i64*, i64*, i64)\n");
+        text.push_str("declare i64 @aic_rt_vec_set(i8*, i64, i64, i64, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_insert(i8**, i64*, i64*, i64, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_remove_at(i8**, i64*, i64*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_vec_contains(i8*, i64, i64, i64, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_index_of(i8*, i64, i64, i64, i64, i8*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_vec_reverse(i8*, i64, i64, i64)\n");
+        text.push_str(
+            "declare i64 @aic_rt_vec_slice(i8*, i64, i64, i64, i64, i64, i8**, i64*, i64*)\n",
+        );
+        text.push_str("declare i64 @aic_rt_vec_append(i8**, i64*, i64*, i64, i8*, i64, i64)\n");
+        text.push_str("declare void @aic_rt_vec_clear(i8**, i64*, i64*)\n");
         text.push_str("declare void @aic_rt_panic(i8*, i64, i64, i64, i64)\n\n");
         text.push_str("declare i64 @aic_rt_time_now_ms()\n");
         text.push_str("declare i64 @aic_rt_time_monotonic_ms()\n");
@@ -841,6 +862,32 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_fs_walk_dir(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_temp_file(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_temp_dir(i8*, i64, i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_fs_read_bytes(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_write_bytes(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_append_bytes(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_open_read(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_open_write(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_open_append(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_file_read_line(i64, i8**, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_file_write_str(i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_file_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_mkdir(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_mkdir_all(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_rmdir(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_list_dir(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_create_symlink(i8*, i64, i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_read_symlink(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_set_readonly(i8*, i64, i64, i64)\n\n");
+        text.push_str("declare void @aic_rt_env_set_args(i32, i8**)\n");
+        text.push_str("declare void @aic_rt_env_args(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_env_arg_count()\n");
+        text.push_str("declare i64 @aic_rt_env_arg_at(i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_exit(i64)\n");
+        text.push_str("declare void @aic_rt_env_all_vars(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_env_home_dir(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_env_temp_dir(i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_env_os_name(i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_env_arch(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_get(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_set(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_env_remove(i8*, i64, i64)\n");
@@ -991,7 +1038,11 @@ impl<'a> Generator<'a> {
                 }
                 if func.generics.is_empty() {
                     self.gen_function(func);
-                } else if let Some(instances) = self.generic_fn_instances.get(&func.name).cloned() {
+                } else if let Some(instances) = self
+                    .generic_fn_instances_by_symbol
+                    .get(&func.symbol)
+                    .cloned()
+                {
                     for instance in instances {
                         self.gen_monomorphized_function(func, &instance);
                     }
@@ -1003,11 +1054,16 @@ impl<'a> Generator<'a> {
     }
 
     fn collect_fn_sigs(&mut self) {
-        let mut function_items = BTreeMap::new();
+        let mut function_items_by_symbol = BTreeMap::new();
+        let mut function_items_by_name: BTreeMap<String, Vec<&ir::Function>> = BTreeMap::new();
         let mut name_counts: BTreeMap<String, usize> = BTreeMap::new();
         for item in &self.program.items {
             if let ir::Item::Function(func) = item {
-                function_items.insert(func.name.clone(), func);
+                function_items_by_symbol.insert(func.symbol, func);
+                function_items_by_name
+                    .entry(func.name.clone())
+                    .or_default()
+                    .push(func);
                 let count = name_counts.entry(func.name.clone()).or_insert(0);
                 let llvm_name = if *count == 0 {
                     mangle(&func.name)
@@ -1050,7 +1106,28 @@ impl<'a> Generator<'a> {
             .iter()
             .filter(|inst| inst.kind == ir::GenericInstantiationKind::Function)
         {
-            let Some(func) = function_items.get(&inst.name).copied() else {
+            let func = if let Some(symbol) = inst.symbol {
+                function_items_by_symbol.get(&symbol).copied()
+            } else {
+                match function_items_by_name.get(&inst.name) {
+                    Some(items) if items.len() == 1 => items.first().copied(),
+                    Some(items) if items.len() > 1 => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5019",
+                            format!(
+                                "ambiguous generic function instantiation '{}': {} symbols match; include symbol metadata",
+                                inst.name,
+                                items.len()
+                            ),
+                            self.file,
+                            self.program.span,
+                        ));
+                        None
+                    }
+                    _ => None,
+                }
+            };
+            let Some(func) = func else {
                 continue;
             };
             if func.generics.len() != inst.type_args.len() {
@@ -1101,17 +1178,28 @@ impl<'a> Generator<'a> {
                 continue;
             };
 
+            let instance = GenericFnInstance {
+                mangled: inst.mangled.clone(),
+                params,
+                ret,
+                bindings,
+            };
             self.generic_fn_instances
                 .entry(func.name.clone())
                 .or_default()
-                .push(GenericFnInstance {
-                    mangled: inst.mangled.clone(),
-                    params,
-                    ret,
-                    bindings,
-                });
+                .push(instance.clone());
+            if let Some(symbol) = inst.symbol {
+                self.generic_fn_instances_by_symbol
+                    .entry(symbol)
+                    .or_default()
+                    .push(instance);
+            }
         }
         for instances in self.generic_fn_instances.values_mut() {
+            instances.sort_by(|a, b| a.mangled.cmp(&b.mangled));
+            instances.dedup_by(|a, b| a.mangled == b.mangled);
+        }
+        for instances in self.generic_fn_instances_by_symbol.values_mut() {
             instances.sort_by(|a, b| a.mangled.cmp(&b.mangled));
             instances.dedup_by(|a, b| a.mangled == b.mangled);
         }
@@ -1438,8 +1526,11 @@ impl<'a> Generator<'a> {
         let Some(main_sig) = self.fn_sigs.get("main").cloned() else {
             return;
         };
-        self.out.push("define i32 @main() {".to_string());
+        self.out
+            .push("define i32 @main(i32 %argc, i8** %argv) {".to_string());
         self.out.push("entry:".to_string());
+        self.out
+            .push("  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)".to_string());
         match main_sig.ret {
             LType::Int => {
                 let r = self.new_temp();
@@ -2131,6 +2222,10 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_map_builtin_call(builtin_name, args, span, expected_ty, fctx)
+        {
+            return result;
+        }
+        if let Some(result) = self.gen_vec_builtin_call(builtin_name, args, span, expected_ty, fctx)
         {
             return result;
         }
@@ -3924,6 +4019,22 @@ impl<'a> Generator<'a> {
             "walk_dir" | "aic_fs_walk_dir_intrinsic" => "walk_dir",
             "temp_file" | "aic_fs_temp_file_intrinsic" => "temp_file",
             "temp_dir" | "aic_fs_temp_dir_intrinsic" => "temp_dir",
+            "read_bytes" | "aic_fs_read_bytes_intrinsic" => "read_bytes",
+            "write_bytes" | "aic_fs_write_bytes_intrinsic" => "write_bytes",
+            "append_bytes" | "aic_fs_append_bytes_intrinsic" => "append_bytes",
+            "open_read" | "aic_fs_open_read_intrinsic" => "open_read",
+            "open_write" | "aic_fs_open_write_intrinsic" => "open_write",
+            "open_append" | "aic_fs_open_append_intrinsic" => "open_append",
+            "file_read_line" | "aic_fs_file_read_line_intrinsic" => "file_read_line",
+            "file_write_str" | "aic_fs_file_write_str_intrinsic" => "file_write_str",
+            "file_close" | "aic_fs_file_close_intrinsic" => "file_close",
+            "mkdir" | "aic_fs_mkdir_intrinsic" => "mkdir",
+            "mkdir_all" | "aic_fs_mkdir_all_intrinsic" => "mkdir_all",
+            "rmdir" | "aic_fs_rmdir_intrinsic" => "rmdir",
+            "list_dir" | "aic_fs_list_dir_intrinsic" => "list_dir",
+            "create_symlink" | "aic_fs_create_symlink_intrinsic" => "create_symlink",
+            "read_symlink" | "aic_fs_read_symlink_intrinsic" => "read_symlink",
+            "set_readonly" | "aic_fs_set_readonly_intrinsic" => "set_readonly",
             _ => return None,
         };
 
@@ -3933,6 +4044,22 @@ impl<'a> Generator<'a> {
             }
             "read_text" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
                 Some(self.gen_fs_string_result_call(name, "aic_rt_fs_read_text", args, span, fctx))
+            }
+            "read_bytes"
+                if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") =>
+            {
+                Some(self.gen_fs_string_result_call(name, "aic_rt_fs_read_bytes", args, span, fctx))
+            }
+            "read_symlink"
+                if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") =>
+            {
+                Some(self.gen_fs_string_result_call(
+                    name,
+                    "aic_rt_fs_read_symlink",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "temp_file" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
                 Some(self.gen_fs_string_result_call(name, "aic_rt_fs_temp_file", args, span, fctx))
@@ -3950,6 +4077,16 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_fs_write_like_call(name, "aic_rt_fs_append_text", args, span, fctx))
             }
+            "write_bytes"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_write_bytes", args, span, fctx))
+            }
+            "append_bytes"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(name, "aic_rt_fs_append_bytes", args, span, fctx))
+            }
             "copy"
                 if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
             {
@@ -3960,8 +4097,61 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_fs_write_like_call(name, "aic_rt_fs_move", args, span, fctx))
             }
+            "create_symlink"
+                if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_like_call(
+                    name,
+                    "aic_rt_fs_create_symlink",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
             "delete" if self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") => {
-                Some(self.gen_fs_delete_call(name, args, span, fctx))
+                Some(self.gen_fs_path_bool_result_call(
+                    name,
+                    "aic_rt_fs_delete",
+                    "delete",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "mkdir" if self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") => {
+                Some(self.gen_fs_path_bool_result_call(
+                    name,
+                    "aic_rt_fs_mkdir",
+                    "mkdir",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "mkdir_all" if self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") => {
+                Some(self.gen_fs_path_bool_result_call(
+                    name,
+                    "aic_rt_fs_mkdir_all",
+                    "mkdir_all",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "rmdir" if self.sig_matches_shape(name, &["String"], "Result[Bool, FsError]") => {
+                Some(self.gen_fs_path_bool_result_call(
+                    name,
+                    "aic_rt_fs_rmdir",
+                    "rmdir",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "set_readonly"
+                if self.sig_matches_shape(name, &["String", "Bool"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_set_readonly_call(name, args, span, fctx))
             }
             "metadata"
                 if self.sig_matches_shape(name, &["String"], "Result[FsMetadata, FsError]") =>
@@ -3972,6 +4162,70 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["String"], "Result[Vec[String], FsError]") =>
             {
                 Some(self.gen_fs_walk_dir_call(name, args, span, fctx))
+            }
+            "list_dir"
+                if self.sig_matches_shape(name, &["String"], "Result[Vec[String], FsError]") =>
+            {
+                Some(self.gen_fs_list_dir_call(name, args, span, fctx))
+            }
+            "open_read"
+                if self.sig_matches_shape(name, &["String"], "Result[FileHandle, FsError]") =>
+            {
+                Some(self.gen_fs_open_file_call(
+                    name,
+                    "aic_rt_fs_open_read",
+                    "open_read",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "open_write"
+                if self.sig_matches_shape(name, &["String"], "Result[FileHandle, FsError]") =>
+            {
+                Some(self.gen_fs_open_file_call(
+                    name,
+                    "aic_rt_fs_open_write",
+                    "open_write",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "open_append"
+                if self.sig_matches_shape(name, &["String"], "Result[FileHandle, FsError]") =>
+            {
+                Some(self.gen_fs_open_file_call(
+                    name,
+                    "aic_rt_fs_open_append",
+                    "open_append",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "file_read_line"
+                if self.sig_matches_shape(
+                    name,
+                    &["FileHandle"],
+                    "Result[Option[String], FsError]",
+                ) =>
+            {
+                Some(self.gen_fs_file_read_line_call(name, args, span, fctx))
+            }
+            "file_write_str"
+                if self.sig_matches_shape(
+                    name,
+                    &["FileHandle", "String"],
+                    "Result[Bool, FsError]",
+                ) =>
+            {
+                Some(self.gen_fs_file_write_str_call(name, args, span, fctx))
+            }
+            "file_close"
+                if self.sig_matches_shape(name, &["FileHandle"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_file_close_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -4125,9 +4379,11 @@ impl<'a> Generator<'a> {
         self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
-    fn gen_fs_delete_call(
+    fn gen_fs_path_bool_result_call(
         &mut self,
         name: &str,
+        runtime_fn: &str,
+        op_name: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -4135,7 +4391,7 @@ impl<'a> Generator<'a> {
         if args.len() != 1 {
             self.diagnostics.push(Diagnostic::error(
                 "E5010",
-                "delete expects one argument",
+                format!("{op_name} expects one argument"),
                 self.file,
                 span,
             ));
@@ -4145,7 +4401,7 @@ impl<'a> Generator<'a> {
         if path.ty != LType::String {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "delete expects String",
+                format!("{op_name} expects String"),
                 self.file,
                 args[0].span,
             ));
@@ -4154,8 +4410,323 @@ impl<'a> Generator<'a> {
         let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
         let err = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_fs_delete(i8* {}, i64 {}, i64 {})",
-            err, ptr, len, cap
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {})",
+            err, runtime_fn, ptr, len, cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_open_file_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        op_name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{op_name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{op_name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let out_handle_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, out_handle_slot
+        ));
+        let out_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_handle, out_handle_slot
+        ));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(ok_layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{op_name} expects Result[FileHandle, FsError] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&ok_layout.repr) != "FileHandle"
+            || ok_layout.fields.len() != 1
+            || ok_layout.fields[0].name != "handle"
+            || ok_layout.fields[0].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{op_name} expects Result[FileHandle, FsError] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_payload = self.build_struct_value(
+            &ok_layout,
+            &[Value {
+                ty: LType::Int,
+                repr: Some(out_handle),
+            }],
+            span,
+            fctx,
+        )?;
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_file_write_str_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "file_write_str expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let content = self.gen_expr(&args[1], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "file_write_str",
+            args[0].span,
+            fctx,
+        )?;
+        if content.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "file_write_str expects (FileHandle, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&content, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_write_str(i64 {}, i8* {}, i64 {}, i64 {})",
+            err, handle, ptr, len, cap
+        ));
+
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_file_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "file_close expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "file_close",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_close(i64 {})",
+            err, handle
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_file_read_line_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "file_read_line expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let file = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &file,
+            "FileHandle",
+            "file_read_line",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let out_has_line_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_has_line_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_file_read_line(i64 {}, i8** {}, i64* {}, i64* {})",
+            err, handle, out_ptr_slot, out_len_slot, out_has_line_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let out_has_line = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_has_line, out_has_line_slot
+        ));
+        let has_line = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_line, out_has_line));
+        let line_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let option_value =
+            self.wrap_option_with_condition(&ok_ty, line_value, &has_line, span, fctx)?;
+        self.wrap_fs_result(&result_ty, option_value, &err, span, fctx)
+    }
+
+    fn gen_fs_set_readonly_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "set_readonly expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        let readonly = self.gen_expr(&args[1], fctx)?;
+        if path.ty != LType::String || readonly.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "set_readonly expects (String, Bool)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let readonly_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            readonly_i64,
+            readonly.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_set_readonly(i8* {}, i64 {}, i64 {}, i64 {})",
+            err, ptr, len, cap, readonly_i64
         ));
         let ok_payload = Value {
             ty: LType::Bool,
@@ -4356,6 +4927,68 @@ impl<'a> Generator<'a> {
         self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
+    fn gen_fs_list_dir_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "list_dir expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "list_dir expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let out_items_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_fs_list_dir(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, ptr, len, cap, out_items_slot, out_count_slot
+        ));
+        let out_items = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+        let ok_payload =
+            self.build_vec_string_payload_from_ptr(&out_items, &out_count, span, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     fn wrap_fs_result(
         &mut self,
         result_ty: &LType,
@@ -4454,6 +5087,15 @@ impl<'a> Generator<'a> {
             "remove" | "aic_env_remove_intrinsic" => "remove",
             "cwd" | "aic_env_cwd_intrinsic" => "cwd",
             "set_cwd" | "aic_env_set_cwd_intrinsic" => "set_cwd",
+            "args" | "aic_env_args_intrinsic" => "args",
+            "arg_count" | "aic_env_arg_count_intrinsic" => "arg_count",
+            "arg_at" | "aic_env_arg_at_intrinsic" => "arg_at",
+            "exit" | "aic_env_exit_intrinsic" => "exit",
+            "all_vars" | "aic_env_all_vars_intrinsic" => "all_vars",
+            "home_dir" | "aic_env_home_dir_intrinsic" => "home_dir",
+            "temp_dir" | "aic_env_temp_dir_intrinsic" => "temp_dir",
+            "os_name" | "aic_env_os_name_intrinsic" => "os_name",
+            "arch" | "aic_env_arch_intrinsic" => "arch",
             _ => return None,
         };
 
@@ -4478,6 +5120,47 @@ impl<'a> Generator<'a> {
             }
             "set_cwd" if self.sig_matches_shape(name, &["String"], "Result[Bool, EnvError]") => {
                 Some(self.gen_env_set_cwd_call(name, args, span, fctx))
+            }
+            "args" if self.sig_matches_shape(name, &[], "Vec[String]") => {
+                Some(self.gen_env_args_call(name, args, span, fctx))
+            }
+            "arg_count" if self.sig_matches_shape(name, &[], "Int") => {
+                Some(self.gen_env_arg_count_call(args, span, fctx))
+            }
+            "arg_at" if self.sig_matches_shape(name, &["Int"], "Option[String]") => {
+                Some(self.gen_env_arg_at_call(name, args, span, fctx))
+            }
+            "exit" if self.sig_matches_shape(name, &["Int"], "()") => {
+                Some(self.gen_env_exit_call(name, args, span, fctx))
+            }
+            "all_vars" if self.sig_matches_shape(name, &[], "Vec[EnvEntry]") => {
+                Some(self.gen_env_all_vars_call(name, args, span, fctx))
+            }
+            "home_dir" if self.sig_matches_shape(name, &[], "Result[String, EnvError]") => {
+                Some(self.gen_env_string_result_noarg_call(
+                    name,
+                    "aic_rt_env_home_dir",
+                    args,
+                    "home_dir",
+                    span,
+                    fctx,
+                ))
+            }
+            "temp_dir" if self.sig_matches_shape(name, &[], "Result[String, EnvError]") => {
+                Some(self.gen_env_string_result_noarg_call(
+                    name,
+                    "aic_rt_env_temp_dir",
+                    args,
+                    "temp_dir",
+                    span,
+                    fctx,
+                ))
+            }
+            "os_name" if self.sig_matches_shape(name, &[], "String") => Some(
+                self.gen_env_string_noarg_call("aic_rt_env_os_name", args, "os_name", span, fctx),
+            ),
+            "arch" if self.sig_matches_shape(name, &[], "String") => {
+                Some(self.gen_env_string_noarg_call("aic_rt_env_arch", args, "arch", span, fctx))
             }
             _ => None,
         }
@@ -4726,6 +5409,293 @@ impl<'a> Generator<'a> {
             return None;
         };
         self.wrap_env_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_env_args_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "args expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_items_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_env_args(i8** {}, i64* {})",
+            out_items_slot, out_count_slot
+        ));
+        let out_items = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.build_vec_string_from_raw_parts(&result_ty, &out_items, &out_count, span, fctx)
+    }
+
+    fn gen_env_arg_count_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "arg_count expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let count = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @aic_rt_env_arg_count()", count));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(count),
+        })
+    }
+
+    fn gen_env_arg_at_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "arg_at expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let index = self.gen_expr(&args[0], fctx)?;
+        if index.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "arg_at expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_env_arg_at(i64 {}, i8** {}, i64* {})",
+            found,
+            index.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let found_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+    }
+
+    fn gen_env_exit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "exit expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let code = self.gen_expr(&args[0], fctx)?;
+        if code.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "exit expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        if !self.sig_matches_shape(name, &["Int"], "()") {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "exit expects signature '(Int) -> ()'",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        fctx.lines.push(format!(
+            "  call void @aic_rt_exit(i64 {})",
+            code.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_env_all_vars_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "all_vars expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_items_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_env_all_vars(i8** {}, i64* {})",
+            out_items_slot, out_count_slot
+        ));
+        let out_items = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
+    }
+
+    fn gen_env_string_result_noarg_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects zero arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8** {}, i64* {})",
+            err, runtime_fn, out_ptr_slot, out_len_slot
+        ));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_env_result(&result_ty, payload, &err, span, fctx)
+    }
+
+    fn gen_env_string_noarg_call(
+        &mut self,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects zero arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @{}(i8** {}, i64* {})",
+            runtime_fn, out_ptr_slot, out_len_slot
+        ));
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }
 
     fn wrap_env_result(
@@ -5608,6 +6578,1143 @@ impl<'a> Generator<'a> {
         self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
     }
 
+    fn gen_vec_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "aic_vec_new_intrinsic" => "new_vec",
+            "aic_vec_of_intrinsic" => "vec_of",
+            "aic_vec_get_intrinsic" => "get",
+            "aic_vec_first_intrinsic" => "first",
+            "aic_vec_last_intrinsic" => "last",
+            "aic_vec_push_intrinsic" => "push",
+            "aic_vec_pop_intrinsic" => "pop",
+            "aic_vec_set_intrinsic" => "set",
+            "aic_vec_insert_intrinsic" => "insert",
+            "aic_vec_remove_at_intrinsic" => "remove_at",
+            "aic_vec_contains_intrinsic" => "contains",
+            "aic_vec_index_of_intrinsic" => "index_of",
+            "aic_vec_reverse_intrinsic" => "reverse",
+            "aic_vec_slice_intrinsic" => "slice",
+            "aic_vec_append_intrinsic" => "append",
+            "aic_vec_clear_intrinsic" => "clear",
+            _ => return None,
+        };
+        match canonical {
+            "new_vec" => Some(self.gen_vec_new_call(name, args, span, expected_ty, fctx)),
+            "vec_of" => Some(self.gen_vec_of_call(name, args, span, expected_ty, fctx)),
+            "get" => Some(self.gen_vec_get_call(args, span, fctx)),
+            "first" => Some(self.gen_vec_first_call(args, span, fctx)),
+            "last" => Some(self.gen_vec_last_call(args, span, fctx)),
+            "push" => Some(self.gen_vec_push_call(args, span, fctx)),
+            "pop" => Some(self.gen_vec_pop_call(args, span, fctx)),
+            "set" => Some(self.gen_vec_set_call(args, span, fctx)),
+            "insert" => Some(self.gen_vec_insert_call(args, span, fctx)),
+            "remove_at" => Some(self.gen_vec_remove_at_call(args, span, fctx)),
+            "contains" => Some(self.gen_vec_contains_call(args, span, fctx)),
+            "index_of" => Some(self.gen_vec_index_of_call(args, span, fctx)),
+            "reverse" => Some(self.gen_vec_reverse_call(args, span, fctx)),
+            "slice" => Some(self.gen_vec_slice_call(args, span, fctx)),
+            "append" => Some(self.gen_vec_append_call(args, span, fctx)),
+            "clear" => Some(self.gen_vec_clear_call(args, span, fctx)),
+            _ => None,
+        }
+    }
+
+    fn vec_result_ty(
+        &mut self,
+        name: &str,
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+    ) -> Option<LType> {
+        let canonical_name = match name {
+            "aic_vec_new_intrinsic" => "new_vec",
+            "aic_vec_of_intrinsic" => "vec_of",
+            "aic_vec_get_intrinsic" => "get",
+            "aic_vec_first_intrinsic" => "first",
+            "aic_vec_last_intrinsic" => "last",
+            "aic_vec_push_intrinsic" => "push",
+            "aic_vec_pop_intrinsic" => "pop",
+            "aic_vec_set_intrinsic" => "set",
+            "aic_vec_insert_intrinsic" => "insert",
+            "aic_vec_remove_at_intrinsic" => "remove_at",
+            "aic_vec_contains_intrinsic" => "contains",
+            "aic_vec_index_of_intrinsic" => "index_of",
+            "aic_vec_reverse_intrinsic" => "reverse",
+            "aic_vec_slice_intrinsic" => "slice",
+            "aic_vec_append_intrinsic" => "append",
+            "aic_vec_clear_intrinsic" => "clear",
+            _ => name,
+        };
+        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        if let Some(result_ty) = self.fn_sigs.get(canonical_name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        if let Some(expected) = expected_ty {
+            return Some(expected.clone());
+        }
+        self.diagnostics.push(Diagnostic::error(
+            "E5012",
+            format!("unknown function '{name}' in codegen"),
+            self.file,
+            span,
+        ));
+        None
+    }
+
+    fn vec_element_info(
+        &mut self,
+        vec_ty: &LType,
+        context: &str,
+        span: crate::span::Span,
+    ) -> Option<(LType, String, i64)> {
+        let LType::Struct(layout) = vec_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Vec[T], found '{}'", render_type(vec_ty)),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Vec" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Vec[T], found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        if layout.fields.len() != 3
+            || layout.fields[0].ty != LType::Int
+            || layout.fields[1].ty != LType::Int
+            || layout.fields[2].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Vec[T] layout with ptr/len/cap Int fields"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let Some(args) = extract_generic_args(&layout.repr) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "{context} expects applied Vec[T] type, found '{}'",
+                    layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "{context} expects one Vec type argument, found '{}'",
+                    layout.repr
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let elem_repr = args[0].clone();
+        let Some(elem_ty) = self.parse_type_repr(&elem_repr, span) else {
+            return None;
+        };
+        let normalized = elem_repr.replace(' ', "");
+        let elem_kind = match normalized.as_str() {
+            "Int" => 1,
+            "Bool" => 2,
+            "String" => 3,
+            "Option[Int]" => 4,
+            _ => 0,
+        };
+        Some((elem_ty, elem_repr, elem_kind))
+    }
+
+    fn vec_elem_size(&mut self, elem_ty: &LType, fctx: &mut FnCtx) -> String {
+        let elem_ptr = self.new_temp();
+        let llvm_elem_ty = llvm_type(elem_ty);
+        fctx.lines.push(format!(
+            "  {} = getelementptr {}, {}* null, i64 1",
+            elem_ptr, llvm_elem_ty, llvm_elem_ty
+        ));
+        let elem_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            elem_size, llvm_elem_ty, elem_ptr
+        ));
+        elem_size
+    }
+
+    fn value_to_i8_ptr(&mut self, value: &Value, fctx: &mut FnCtx) -> String {
+        let slot = self.alloc_entry_slot(&value.ty, fctx);
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&value.ty),
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&value.ty)),
+            llvm_type(&value.ty),
+            slot
+        ));
+        let out = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {}* {} to i8*",
+            out,
+            llvm_type(&value.ty),
+            slot
+        ));
+        out
+    }
+
+    fn vec_ptr_len_cap_i8(
+        &mut self,
+        vec_value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        let (ptr_int, len, cap) = self.vec_parts(vec_value, span, fctx)?;
+        let ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = inttoptr i64 {} to i8*", ptr, ptr_int));
+        Some((ptr, len, cap))
+    }
+
+    fn vec_slots_from_value(
+        &mut self,
+        vec_value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(vec_value, span, fctx)?;
+        let ptr_slot = self.new_temp();
+        let len_slot = self.new_temp();
+        let cap_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", cap_slot));
+        fctx.lines
+            .push(format!("  store i8* {}, i8** {}", ptr, ptr_slot));
+        fctx.lines
+            .push(format!("  store i64 {}, i64* {}", len, len_slot));
+        fctx.lines
+            .push(format!("  store i64 {}, i64* {}", cap, cap_slot));
+        Some((ptr_slot, len_slot, cap_slot))
+    }
+
+    fn build_vec_value_from_parts(
+        &mut self,
+        expected_ty: &LType,
+        ptr_i8: &str,
+        len: &str,
+        cap: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = expected_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "vec builtin expects Vec return type, found '{}'",
+                    render_type(expected_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Vec"
+            || layout.fields.len() != 3
+            || layout.fields[0].ty != LType::Int
+            || layout.fields[1].ty != LType::Int
+            || layout.fields[2].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("vec builtin expects Vec[T] layout, found '{}'", layout.repr),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ptr_as_int = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = ptrtoint i8* {} to i64", ptr_as_int, ptr_i8));
+        self.build_struct_value(
+            layout,
+            &[
+                Value {
+                    ty: LType::Int,
+                    repr: Some(ptr_as_int),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(len.to_string()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(cap.to_string()),
+                },
+            ],
+            span,
+            fctx,
+        )
+    }
+
+    fn load_vec_from_slots(
+        &mut self,
+        expected_ty: &LType,
+        ptr_slot: &str,
+        len_slot: &str,
+        cap_slot: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let ptr = self.new_temp();
+        let len = self.new_temp();
+        let cap = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", ptr, ptr_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", len, len_slot));
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", cap, cap_slot));
+        self.build_vec_value_from_parts(expected_ty, &ptr, &len, &cap, span, fctx)
+    }
+
+    fn gen_vec_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "new_vec expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let result_ty = self.vec_result_ty(name, span, expected_ty)?;
+        let _ = self.vec_element_info(&result_ty, "new_vec", span)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        let out_cap_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_cap_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_vec_new(i8** {}, i64* {}, i64* {})",
+            out_ptr_slot, out_len_slot, out_cap_slot
+        ));
+        self.load_vec_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            &out_cap_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_of_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "vec_of expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        let canonical_name = match name {
+            "aic_vec_of_intrinsic" => "vec_of",
+            _ => name,
+        };
+        let result_ty = if let Some(expected) = expected_ty {
+            expected.clone()
+        } else if let Some(known) = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| self.fn_sigs.get(canonical_name).map(|sig| sig.ret.clone()))
+        {
+            known
+        } else {
+            let inferred = format!("Vec[{}]", render_type(&value.ty));
+            self.parse_type_repr(&inferred, span)?
+        };
+        let (elem_ty, elem_repr, _elem_kind) = self.vec_element_info(&result_ty, "vec_of", span)?;
+        if value.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "vec_of value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&value.ty)
+                ),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let value_ptr = self.value_to_i8_ptr(&value, fctx);
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        let out_cap_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_cap_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_of(i8* {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            _err, value_ptr, elem_size, out_ptr_slot, out_len_slot, out_cap_slot
+        ));
+        self.load_vec_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            &out_cap_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_get_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "get expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let index_value = self.gen_expr(&args[1], fctx)?;
+        if index_value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "get expects Int index",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "get", args[0].span)?;
+        let option_ty = self.parse_type_repr(&format!("Option[{}]", elem_repr), span)?;
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let out_slot = self.alloc_entry_slot(&elem_ty, fctx);
+        let out_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {}* {} to i8*",
+            out_ptr,
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_get(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {})",
+            found,
+            ptr,
+            len,
+            cap,
+            index_value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size,
+            out_ptr
+        ));
+        let has_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_value, found));
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&elem_ty),
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        self.wrap_option_with_condition(
+            &option_ty,
+            Value {
+                ty: elem_ty,
+                repr: Some(loaded),
+            },
+            &has_value,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_first_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "first expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "first", args[0].span)?;
+        let option_ty = self.parse_type_repr(&format!("Option[{}]", elem_repr), span)?;
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let out_slot = self.alloc_entry_slot(&elem_ty, fctx);
+        let out_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {}* {} to i8*",
+            out_ptr,
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_get(i8* {}, i64 {}, i64 {}, i64 0, i64 {}, i8* {})",
+            found, ptr, len, cap, elem_size, out_ptr
+        ));
+        let has_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_value, found));
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&elem_ty),
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        self.wrap_option_with_condition(
+            &option_ty,
+            Value {
+                ty: elem_ty,
+                repr: Some(loaded),
+            },
+            &has_value,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_last_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "last expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "last", args[0].span)?;
+        let option_ty = self.parse_type_repr(&format!("Option[{}]", elem_repr), span)?;
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let out_slot = self.alloc_entry_slot(&elem_ty, fctx);
+        let out_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {}* {} to i8*",
+            out_ptr,
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        let index = self.new_temp();
+        fctx.lines.push(format!("  {} = sub i64 {}, 1", index, len));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_get(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {})",
+            found, ptr, len, cap, index, elem_size, out_ptr
+        ));
+        let has_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_value, found));
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&elem_ty),
+            llvm_type(&elem_ty),
+            out_slot
+        ));
+        self.wrap_option_with_condition(
+            &option_ty,
+            Value {
+                ty: elem_ty,
+                repr: Some(loaded),
+            },
+            &has_value,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_push_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "push expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "push", args[0].span)?;
+        if value.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "push value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&value.ty)
+                ),
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let value_ptr = self.value_to_i8_ptr(&value, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_push(i8** {}, i64* {}, i64* {}, i64 {}, i8* {})",
+            _err, ptr_slot, len_slot, cap_slot, elem_size, value_ptr
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_pop_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "pop expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "pop", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_pop(i8** {}, i64* {}, i64* {}, i64 {})",
+            _err, ptr_slot, len_slot, cap_slot, elem_size
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_set_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "set expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let index = self.gen_expr(&args[1], fctx)?;
+        let value = self.gen_expr(&args[2], fctx)?;
+        if index.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "set expects Int index",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "set", args[0].span)?;
+        if value.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "set value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&value.ty)
+                ),
+                self.file,
+                args[2].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let value_ptr = self.value_to_i8_ptr(&value, fctx);
+        let _updated = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_set(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {})",
+            _updated,
+            ptr,
+            len,
+            cap,
+            index.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size,
+            value_ptr
+        ));
+        Some(vec_value)
+    }
+
+    fn gen_vec_insert_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "insert expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let index = self.gen_expr(&args[1], fctx)?;
+        let value = self.gen_expr(&args[2], fctx)?;
+        if index.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "insert expects Int index",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (elem_ty, elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "insert", args[0].span)?;
+        if value.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "insert value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&value.ty)
+                ),
+                self.file,
+                args[2].span,
+            ));
+            return None;
+        }
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let value_ptr = self.value_to_i8_ptr(&value, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_insert(i8** {}, i64* {}, i64* {}, i64 {}, i64 {}, i8* {})",
+            _err,
+            ptr_slot,
+            len_slot,
+            cap_slot,
+            index.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size,
+            value_ptr
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_remove_at_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "remove_at expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let index = self.gen_expr(&args[1], fctx)?;
+        if index.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "remove_at expects Int index",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "remove_at", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_remove_at(i8** {}, i64* {}, i64* {}, i64 {}, i64 {})",
+            _err,
+            ptr_slot,
+            len_slot,
+            cap_slot,
+            index.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_contains_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "contains expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let needle = self.gen_expr(&args[1], fctx)?;
+        let (elem_ty, elem_repr, elem_kind) =
+            self.vec_element_info(&vec_value.ty, "contains", args[0].span)?;
+        if needle.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "contains value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&needle.ty)
+                ),
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let needle_ptr = self.value_to_i8_ptr(&needle, fctx);
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_contains(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {})",
+            raw, ptr, len, cap, elem_kind, elem_size, needle_ptr
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", out, raw));
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(out),
+        })
+    }
+
+    fn gen_vec_index_of_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "index_of expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let needle = self.gen_expr(&args[1], fctx)?;
+        let (elem_ty, elem_repr, elem_kind) =
+            self.vec_element_info(&vec_value.ty, "index_of", args[0].span)?;
+        if needle.ty != elem_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "index_of value type mismatch: expected '{}', found '{}'",
+                    elem_repr,
+                    render_type(&needle.ty)
+                ),
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let option_ty = self.parse_type_repr("Option[Int]", span)?;
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let needle_ptr = self.value_to_i8_ptr(&needle, fctx);
+        let out_index_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_index_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_index_slot));
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_index_of(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {}, i64* {})",
+            found, ptr, len, cap, elem_kind, elem_size, needle_ptr, out_index_slot
+        ));
+        let has_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_value, found));
+        let out_index = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_index, out_index_slot
+        ));
+        self.wrap_option_with_condition(
+            &option_ty,
+            Value {
+                ty: LType::Int,
+                repr: Some(out_index),
+            },
+            &has_value,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_reverse_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "reverse expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "reverse", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_reverse(i8* {}, i64 {}, i64 {}, i64 {})",
+            _err, ptr, len, cap, elem_size
+        ));
+        Some(vec_value)
+    }
+
+    fn gen_vec_slice_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "slice expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let start = self.gen_expr(&args[1], fctx)?;
+        let end = self.gen_expr(&args[2], fctx)?;
+        if start.ty != LType::Int || end.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "slice expects Int start/end",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "slice", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        let out_cap_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_cap_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_slice(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            _err,
+            ptr,
+            len,
+            cap,
+            start.repr.clone().unwrap_or_else(|| "0".to_string()),
+            end.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size,
+            out_ptr_slot,
+            out_len_slot,
+            out_cap_slot
+        ));
+        self.load_vec_from_slots(
+            &vec_value.ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            &out_cap_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_append_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "append expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let left = self.gen_expr(&args[0], fctx)?;
+        let right = self.gen_expr(&args[1], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&left.ty, "append", args[0].span)?;
+        if left.ty != right.ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "append expects matching Vec types, found '{}' and '{}'",
+                    render_type(&left.ty),
+                    render_type(&right.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (right_ptr, right_len, right_cap) =
+            self.vec_ptr_len_cap_i8(&right, args[1].span, fctx)?;
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&left, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_append(i8** {}, i64* {}, i64* {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            _err,
+            ptr_slot,
+            len_slot,
+            cap_slot,
+            elem_size,
+            right_ptr,
+            right_len,
+            right_cap
+        ));
+        self.load_vec_from_slots(&left.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_clear_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "clear expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let _ = self.vec_element_info(&vec_value.ty, "clear", args[0].span)?;
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        fctx.lines.push(format!(
+            "  call void @aic_rt_vec_clear(i8** {}, i64* {}, i64* {})",
+            ptr_slot, len_slot, cap_slot
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
     fn gen_string_builtin_call(
         &mut self,
         name: &str,
@@ -5638,6 +7745,7 @@ impl<'a> Generator<'a> {
             "float_to_string" | "aic_string_float_to_string_intrinsic" => "float_to_string",
             "bool_to_string" | "aic_string_bool_to_string_intrinsic" => "bool_to_string",
             "join" | "aic_string_join_intrinsic" => "join",
+            "format" | "aic_string_format_intrinsic" => "format",
             _ => return None,
         };
 
@@ -5769,6 +7877,9 @@ impl<'a> Generator<'a> {
             }
             "join" if self.sig_matches_shape(name, &["Vec[String]", "String"], "String") => {
                 Some(self.gen_string_join_call(args, span, fctx))
+            }
+            "format" if self.sig_matches_shape(name, &["String", "Vec[String]"], "String") => {
+                Some(self.gen_string_format_call(args, span, fctx))
             }
             _ => None,
         }
@@ -6737,6 +8848,59 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!(
             "  call void @aic_rt_string_join(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
             parts_ptr, parts_len, parts_cap, sep_ptr, sep_len, sep_cap, out_ptr_slot, out_len_slot
+        ));
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
+    fn gen_string_format_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "format expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let template = self.gen_expr(&args[0], fctx)?;
+        let format_args = self.gen_expr(&args[1], fctx)?;
+        if template.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "format expects (String, Vec[String])",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (template_ptr, template_len, template_cap) =
+            self.string_parts(&template, args[0].span, fctx)?;
+        let (args_ptr_int, args_len, args_cap) =
+            self.vec_parts(&format_args, args[1].span, fctx)?;
+        let args_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = inttoptr i64 {} to i8*",
+            args_ptr, args_ptr_int
+        ));
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_string_format(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            template_ptr,
+            template_len,
+            template_cap,
+            args_ptr,
+            args_len,
+            args_cap,
+            out_ptr_slot,
+            out_len_slot
         ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }
@@ -16838,11 +19002,36 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("fs", "walk_dir") => Some("aic_fs_walk_dir_intrinsic"),
         ("fs", "temp_file") => Some("aic_fs_temp_file_intrinsic"),
         ("fs", "temp_dir") => Some("aic_fs_temp_dir_intrinsic"),
+        ("fs", "read_bytes") => Some("aic_fs_read_bytes_intrinsic"),
+        ("fs", "write_bytes") => Some("aic_fs_write_bytes_intrinsic"),
+        ("fs", "append_bytes") => Some("aic_fs_append_bytes_intrinsic"),
+        ("fs", "open_read") => Some("aic_fs_open_read_intrinsic"),
+        ("fs", "open_write") => Some("aic_fs_open_write_intrinsic"),
+        ("fs", "open_append") => Some("aic_fs_open_append_intrinsic"),
+        ("fs", "file_read_line") => Some("aic_fs_file_read_line_intrinsic"),
+        ("fs", "file_write_str") => Some("aic_fs_file_write_str_intrinsic"),
+        ("fs", "file_close") => Some("aic_fs_file_close_intrinsic"),
+        ("fs", "mkdir") => Some("aic_fs_mkdir_intrinsic"),
+        ("fs", "mkdir_all") => Some("aic_fs_mkdir_all_intrinsic"),
+        ("fs", "rmdir") => Some("aic_fs_rmdir_intrinsic"),
+        ("fs", "list_dir") => Some("aic_fs_list_dir_intrinsic"),
+        ("fs", "create_symlink") => Some("aic_fs_create_symlink_intrinsic"),
+        ("fs", "read_symlink") => Some("aic_fs_read_symlink_intrinsic"),
+        ("fs", "set_readonly") => Some("aic_fs_set_readonly_intrinsic"),
         ("env", "get") => Some("aic_env_get_intrinsic"),
         ("env", "set") => Some("aic_env_set_intrinsic"),
         ("env", "remove") => Some("aic_env_remove_intrinsic"),
         ("env", "cwd") => Some("aic_env_cwd_intrinsic"),
         ("env", "set_cwd") => Some("aic_env_set_cwd_intrinsic"),
+        ("env", "args") => Some("aic_env_args_intrinsic"),
+        ("env", "arg_count") => Some("aic_env_arg_count_intrinsic"),
+        ("env", "arg_at") => Some("aic_env_arg_at_intrinsic"),
+        ("env", "exit") => Some("aic_env_exit_intrinsic"),
+        ("env", "all_vars") => Some("aic_env_all_vars_intrinsic"),
+        ("env", "home_dir") => Some("aic_env_home_dir_intrinsic"),
+        ("env", "temp_dir") => Some("aic_env_temp_dir_intrinsic"),
+        ("env", "os_name") => Some("aic_env_os_name_intrinsic"),
+        ("env", "arch") => Some("aic_env_arch_intrinsic"),
         ("map", "new_map") => Some("aic_map_new_intrinsic"),
         ("map", "insert") => Some("aic_map_insert_intrinsic"),
         ("map", "get") => Some("aic_map_get_intrinsic"),
@@ -16852,6 +19041,22 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("map", "keys") => Some("aic_map_keys_intrinsic"),
         ("map", "values") => Some("aic_map_values_intrinsic"),
         ("map", "entries") => Some("aic_map_entries_intrinsic"),
+        ("vec", "new_vec") => Some("aic_vec_new_intrinsic"),
+        ("vec", "vec_of") => Some("aic_vec_of_intrinsic"),
+        ("vec", "get") => Some("aic_vec_get_intrinsic"),
+        ("vec", "first") => Some("aic_vec_first_intrinsic"),
+        ("vec", "last") => Some("aic_vec_last_intrinsic"),
+        ("vec", "push") => Some("aic_vec_push_intrinsic"),
+        ("vec", "pop") => Some("aic_vec_pop_intrinsic"),
+        ("vec", "set") => Some("aic_vec_set_intrinsic"),
+        ("vec", "insert") => Some("aic_vec_insert_intrinsic"),
+        ("vec", "remove_at") => Some("aic_vec_remove_at_intrinsic"),
+        ("vec", "contains") => Some("aic_vec_contains_intrinsic"),
+        ("vec", "index_of") => Some("aic_vec_index_of_intrinsic"),
+        ("vec", "reverse") => Some("aic_vec_reverse_intrinsic"),
+        ("vec", "slice") => Some("aic_vec_slice_intrinsic"),
+        ("vec", "append") => Some("aic_vec_append_intrinsic"),
+        ("vec", "clear") => Some("aic_vec_clear_intrinsic"),
         ("string", "contains") => Some("aic_string_contains_intrinsic"),
         ("string", "starts_with") => Some("aic_string_starts_with_intrinsic"),
         ("string", "ends_with") => Some("aic_string_ends_with_intrinsic"),
@@ -16874,6 +19079,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("string", "float_to_string") => Some("aic_string_float_to_string_intrinsic"),
         ("string", "bool_to_string") => Some("aic_string_bool_to_string_intrinsic"),
         ("string", "join") => Some("aic_string_join_intrinsic"),
+        ("string", "format") => Some("aic_string_format_intrinsic"),
         ("path", "join") => Some("aic_path_join_intrinsic"),
         ("path", "basename") => Some("aic_path_basename_intrinsic"),
         ("path", "dirname") => Some("aic_path_dirname_intrinsic"),
@@ -17285,8 +19491,15 @@ typedef struct {
     long value;
 } AicMapEntryInt;
 
+typedef struct {
+    AicString key;
+    AicString value;
+} AicEnvEntry;
+
 static AicMapSlot* aic_rt_maps = NULL;
 static size_t aic_rt_maps_len = 0;
+static int aic_rt_argc = 0;
+static char** aic_rt_argv = NULL;
 
 static int aic_rt_sandbox_flag_enabled(const char* name, int default_value) {
     const char* value = getenv(name);
@@ -17438,6 +19651,627 @@ long aic_rt_vec_cap(unsigned char* ptr, long len, long cap) {
         return 0;
     }
     return cap;
+}
+
+static int aic_rt_vec_checked_non_negative_long(long value, size_t* out_value) {
+    if (out_value == NULL || value < 0) {
+        return 0;
+    }
+    size_t n = (size_t)value;
+    if ((long)n != value) {
+        return 0;
+    }
+    *out_value = n;
+    return 1;
+}
+
+static int aic_rt_vec_validate_parts(
+    const unsigned char* ptr,
+    long len,
+    long cap,
+    size_t* out_len,
+    size_t* out_cap
+) {
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    if (!aic_rt_vec_checked_non_negative_long(len, &len_n) ||
+        !aic_rt_vec_checked_non_negative_long(cap, &cap_n)) {
+        return 0;
+    }
+    if (len_n > cap_n) {
+        return 0;
+    }
+    if (cap_n > 0 && ptr == NULL) {
+        return 0;
+    }
+    if (out_len != NULL) {
+        *out_len = len_n;
+    }
+    if (out_cap != NULL) {
+        *out_cap = cap_n;
+    }
+    return 1;
+}
+
+static void aic_rt_vec_set_empty(unsigned char** out_ptr, long* out_len, long* out_cap) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_cap != NULL) {
+        *out_cap = 0;
+    }
+}
+
+static int aic_rt_vec_load_slots(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    size_t* out_len,
+    size_t* out_cap
+) {
+    if (io_ptr == NULL || io_len == NULL || io_cap == NULL) {
+        return 0;
+    }
+    if (!aic_rt_vec_validate_parts(*io_ptr, *io_len, *io_cap, out_len, out_cap)) {
+        aic_rt_vec_set_empty(io_ptr, io_len, io_cap);
+        if (out_len != NULL) {
+            *out_len = 0;
+        }
+        if (out_cap != NULL) {
+            *out_cap = 0;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int aic_rt_vec_ensure_capacity(
+    unsigned char** io_ptr,
+    long* io_cap,
+    size_t need,
+    size_t elem_size
+) {
+    if (io_ptr == NULL || io_cap == NULL || elem_size == 0) {
+        return 1;
+    }
+    size_t cap_n = 0;
+    if (!aic_rt_vec_checked_non_negative_long(*io_cap, &cap_n)) {
+        return 1;
+    }
+    if (need <= cap_n) {
+        return 0;
+    }
+    size_t next_cap = cap_n == 0 ? 4 : cap_n;
+    while (next_cap < need) {
+        if (next_cap > SIZE_MAX / 2) {
+            next_cap = need;
+            break;
+        }
+        next_cap *= 2;
+    }
+    if (next_cap < need ||
+        next_cap > (size_t)LONG_MAX ||
+        next_cap > SIZE_MAX / elem_size) {
+        return 1;
+    }
+    void* grown = realloc(*io_ptr, next_cap * elem_size);
+    if (grown == NULL) {
+        return 1;
+    }
+    *io_ptr = (unsigned char*)grown;
+    *io_cap = (long)next_cap;
+    return 0;
+}
+
+static int aic_rt_vec_string_equal(const unsigned char* lhs, const unsigned char* rhs, size_t elem_size) {
+    if (elem_size < sizeof(AicString)) {
+        return elem_size == 0 || memcmp(lhs, rhs, elem_size) == 0;
+    }
+    const AicString* left = (const AicString*)(const void*)lhs;
+    const AicString* right = (const AicString*)(const void*)rhs;
+    if (left->len != right->len) {
+        return 0;
+    }
+    if (left->len < 0) {
+        return 0;
+    }
+    if (left->len == 0) {
+        return 1;
+    }
+    if (left->ptr == NULL || right->ptr == NULL) {
+        return 0;
+    }
+    return memcmp(left->ptr, right->ptr, (size_t)left->len) == 0;
+}
+
+static int aic_rt_vec_item_equal(
+    const unsigned char* lhs,
+    const unsigned char* rhs,
+    long elem_kind,
+    size_t elem_size
+) {
+    if (elem_kind == 3) {
+        return aic_rt_vec_string_equal(lhs, rhs, elem_size);
+    }
+    return elem_size == 0 || memcmp(lhs, rhs, elem_size) == 0;
+}
+
+void aic_rt_vec_new(unsigned char** out_ptr, long* out_len, long* out_cap) {
+    aic_rt_vec_set_empty(out_ptr, out_len, out_cap);
+}
+
+long aic_rt_vec_of(
+    const unsigned char* value_ptr,
+    long elem_size,
+    unsigned char** out_ptr,
+    long* out_len,
+    long* out_cap
+) {
+    aic_rt_vec_set_empty(out_ptr, out_len, out_cap);
+    size_t elem_n = 0;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        value_ptr == NULL) {
+        return 1;
+    }
+    unsigned char* out = (unsigned char*)malloc(elem_n);
+    if (out == NULL) {
+        return 1;
+    }
+    memcpy(out, value_ptr, elem_n);
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = 1;
+    }
+    if (out_cap != NULL) {
+        *out_cap = 1;
+    }
+    return 0;
+}
+
+long aic_rt_vec_get(
+    const unsigned char* ptr,
+    long len,
+    long cap,
+    long index,
+    long elem_size,
+    unsigned char* out_value
+) {
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (out_value == NULL ||
+        index < 0 ||
+        !aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    size_t idx = (size_t)index;
+    if (idx >= len_n || idx > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    memcpy(out_value, ptr + (idx * elem_n), elem_n);
+    return 1;
+}
+
+long aic_rt_vec_push(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long elem_size,
+    const unsigned char* value_ptr
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    (void)cap_n;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        value_ptr == NULL ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    if (len_n >= (size_t)LONG_MAX || len_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    size_t need = len_n + 1;
+    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
+        *io_ptr == NULL ||
+        len_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    memcpy(*io_ptr + (len_n * elem_n), value_ptr, elem_n);
+    *io_len = (long)need;
+    return 0;
+}
+
+long aic_rt_vec_pop(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long elem_size
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    (void)cap_n;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    if (len_n == 0) {
+        return 0;
+    }
+    len_n -= 1;
+    if (*io_ptr != NULL && len_n <= SIZE_MAX / elem_n) {
+        memset(*io_ptr + (len_n * elem_n), 0, elem_n);
+    }
+    *io_len = (long)len_n;
+    return 0;
+}
+
+long aic_rt_vec_set(
+    unsigned char* ptr,
+    long len,
+    long cap,
+    long index,
+    long elem_size,
+    const unsigned char* value_ptr
+) {
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (index < 0 ||
+        value_ptr == NULL ||
+        !aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    size_t idx = (size_t)index;
+    if (idx >= len_n || idx > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    memcpy(ptr + (idx * elem_n), value_ptr, elem_n);
+    return 1;
+}
+
+long aic_rt_vec_insert(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long index,
+    long elem_size,
+    const unsigned char* value_ptr
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    (void)cap_n;
+    if (index < 0 ||
+        value_ptr == NULL ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    size_t idx = (size_t)index;
+    if (idx > len_n || len_n >= (size_t)LONG_MAX || len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    size_t need = len_n + 1;
+    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
+        *io_ptr == NULL ||
+        len_n > SIZE_MAX / elem_n ||
+        idx > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    unsigned char* base = *io_ptr;
+    size_t tail = len_n - idx;
+    if (tail > 0) {
+        memmove(
+            base + ((idx + 1) * elem_n),
+            base + (idx * elem_n),
+            tail * elem_n
+        );
+    }
+    memcpy(base + (idx * elem_n), value_ptr, elem_n);
+    *io_len = (long)need;
+    return 1;
+}
+
+long aic_rt_vec_remove_at(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long index,
+    long elem_size
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    (void)cap_n;
+    if (index < 0 ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    size_t idx = (size_t)index;
+    if (idx >= len_n || len_n > SIZE_MAX / elem_n || idx > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    unsigned char* base = *io_ptr;
+    size_t tail = len_n - idx - 1;
+    if (tail > 0) {
+        memmove(
+            base + (idx * elem_n),
+            base + ((idx + 1) * elem_n),
+            tail * elem_n
+        );
+    }
+    len_n -= 1;
+    if (base != NULL && len_n <= SIZE_MAX / elem_n) {
+        memset(base + (len_n * elem_n), 0, elem_n);
+    }
+    *io_len = (long)len_n;
+    return 1;
+}
+
+long aic_rt_vec_contains(
+    const unsigned char* ptr,
+    long len,
+    long cap,
+    long elem_kind,
+    long elem_size,
+    const unsigned char* value_ptr
+) {
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (value_ptr == NULL ||
+        !aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    for (size_t i = 0; i < len_n; ++i) {
+        const unsigned char* item = ptr + (i * elem_n);
+        if (aic_rt_vec_item_equal(item, value_ptr, elem_kind, elem_n)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_vec_index_of(
+    const unsigned char* ptr,
+    long len,
+    long cap,
+    long elem_kind,
+    long elem_size,
+    const unsigned char* value_ptr,
+    long* out_index
+) {
+    if (out_index != NULL) {
+        *out_index = 0;
+    }
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (value_ptr == NULL ||
+        !aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    for (size_t i = 0; i < len_n; ++i) {
+        const unsigned char* item = ptr + (i * elem_n);
+        if (aic_rt_vec_item_equal(item, value_ptr, elem_kind, elem_n)) {
+            if (out_index != NULL) {
+                if (i > (size_t)LONG_MAX) {
+                    *out_index = LONG_MAX;
+                } else {
+                    *out_index = (long)i;
+                }
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_vec_reverse(
+    unsigned char* ptr,
+    long len,
+    long cap,
+    long elem_size
+) {
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (!aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n <= 1 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    unsigned char* tmp = (unsigned char*)malloc(elem_n);
+    if (tmp == NULL) {
+        return 1;
+    }
+    size_t left = 0;
+    size_t right = len_n - 1;
+    while (left < right) {
+        unsigned char* a = ptr + (left * elem_n);
+        unsigned char* b = ptr + (right * elem_n);
+        memcpy(tmp, a, elem_n);
+        memcpy(a, b, elem_n);
+        memcpy(b, tmp, elem_n);
+        left += 1;
+        right -= 1;
+    }
+    free(tmp);
+    return 0;
+}
+
+long aic_rt_vec_slice(
+    const unsigned char* ptr,
+    long len,
+    long cap,
+    long start,
+    long end,
+    long elem_size,
+    unsigned char** out_ptr,
+    long* out_len,
+    long* out_cap
+) {
+    aic_rt_vec_set_empty(out_ptr, out_len, out_cap);
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (!aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        len_n > SIZE_MAX / elem_n) {
+        return 0;
+    }
+    long from = start < 0 ? 0 : start;
+    long to = end < 0 ? 0 : end;
+    if (from > len) {
+        from = len;
+    }
+    if (to > len) {
+        to = len;
+    }
+    if (to < from) {
+        to = from;
+    }
+    size_t from_n = 0;
+    size_t to_n = 0;
+    if (!aic_rt_vec_checked_non_negative_long(from, &from_n) ||
+        !aic_rt_vec_checked_non_negative_long(to, &to_n) ||
+        to_n < from_n) {
+        return 0;
+    }
+    size_t count = to_n - from_n;
+    if (count == 0) {
+        return 0;
+    }
+    if (count > (size_t)LONG_MAX ||
+        count > SIZE_MAX / elem_n ||
+        from_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    size_t bytes = count * elem_n;
+    unsigned char* out = (unsigned char*)malloc(bytes);
+    if (out == NULL) {
+        return 1;
+    }
+    memcpy(out, ptr + (from_n * elem_n), bytes);
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)count;
+    }
+    if (out_cap != NULL) {
+        *out_cap = (long)count;
+    }
+    return 0;
+}
+
+long aic_rt_vec_append(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long elem_size,
+    const unsigned char* other_ptr,
+    long other_len,
+    long other_cap
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t other_len_n = 0;
+    size_t other_cap_n = 0;
+    (void)cap_n;
+    (void)other_cap_n;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    if (!aic_rt_vec_validate_parts(other_ptr, other_len, other_cap, &other_len_n, &other_cap_n)) {
+        other_len_n = 0;
+    }
+    if (other_len_n == 0) {
+        return 0;
+    }
+    if (len_n > SIZE_MAX - other_len_n ||
+        len_n + other_len_n > (size_t)LONG_MAX ||
+        len_n > SIZE_MAX / elem_n ||
+        other_len_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    int self_alias = (other_ptr == *io_ptr);
+    size_t need = len_n + other_len_n;
+    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
+        *io_ptr == NULL) {
+        return 1;
+    }
+    const unsigned char* src = self_alias ? *io_ptr : other_ptr;
+    memmove(
+        *io_ptr + (len_n * elem_n),
+        src,
+        other_len_n * elem_n
+    );
+    *io_len = (long)need;
+    return 0;
+}
+
+void aic_rt_vec_clear(unsigned char** io_ptr, long* io_len, long* io_cap) {
+    if (io_ptr != NULL) {
+        free(*io_ptr);
+        *io_ptr = NULL;
+    }
+    if (io_len != NULL) {
+        *io_len = 0;
+    }
+    if (io_cap != NULL) {
+        *io_cap = 0;
+    }
 }
 
 long aic_rt_time_now_ms(void) {
@@ -18160,6 +20994,157 @@ static int aic_rt_fs_invalid_input_path(const char* path) {
     return path == NULL || path[0] == '\0';
 }
 
+#define AIC_RT_FS_FILE_TABLE_CAP 1024
+typedef struct {
+    int in_use;
+    FILE* file;
+} AicFsFileSlot;
+static AicFsFileSlot aic_rt_fs_file_table[AIC_RT_FS_FILE_TABLE_CAP];
+
+static AicFsFileSlot* aic_rt_fs_file_slot(long handle) {
+    if (handle <= 0 || handle > AIC_RT_FS_FILE_TABLE_CAP) {
+        return NULL;
+    }
+    AicFsFileSlot* slot = &aic_rt_fs_file_table[handle - 1];
+    if (!slot->in_use || slot->file == NULL) {
+        return NULL;
+    }
+    return slot;
+}
+
+static long aic_rt_fs_store_file_handle(FILE* file, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (file == NULL) {
+        return 5;
+    }
+    for (long i = 0; i < AIC_RT_FS_FILE_TABLE_CAP; ++i) {
+        if (!aic_rt_fs_file_table[i].in_use) {
+            aic_rt_fs_file_table[i].in_use = 1;
+            aic_rt_fs_file_table[i].file = file;
+            if (out_handle != NULL) {
+                *out_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    fclose(file);
+    return 5;
+}
+
+static int aic_rt_fs_is_sep(char ch) {
+    return ch == '/' || ch == '\\';
+}
+
+#ifdef _WIN32
+static int aic_rt_fs_is_drive_letter(char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+}
+#endif
+
+static long aic_rt_fs_mkdir_allow_existing(const char* path) {
+#ifdef _WIN32
+    if (_mkdir(path) == 0) {
+        return 0;
+    }
+#else
+    if (mkdir(path, 0777) == 0) {
+        return 0;
+    }
+#endif
+    int err = errno;
+    if (err == EEXIST) {
+        struct stat info;
+        if (stat(path, &info) == 0) {
+#ifdef _WIN32
+            if ((info.st_mode & _S_IFDIR) != 0) {
+                return 0;
+            }
+#else
+            if (S_ISDIR(info.st_mode)) {
+                return 0;
+            }
+#endif
+        }
+        return 3;
+    }
+    return aic_rt_fs_map_errno(err);
+}
+
+static void aic_rt_fs_free_string_items(AicString* items, size_t count) {
+    if (items == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free((void*)items[i].ptr);
+    }
+    free(items);
+}
+
+static void aic_rt_fs_write_string_items(char** out_ptr, long* out_count, AicString* items, size_t count) {
+    if (out_count != NULL) {
+        if (count > (size_t)LONG_MAX) {
+            *out_count = 0;
+        } else {
+            *out_count = (long)count;
+        }
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = (char*)items;
+    } else {
+        aic_rt_fs_free_string_items(items, count);
+    }
+}
+
+static long aic_rt_fs_push_string_item(
+    AicString** items,
+    size_t* len,
+    size_t* cap,
+    const char* text
+) {
+    if (items == NULL || len == NULL || cap == NULL || text == NULL) {
+        return 4;
+    }
+    if (*len >= *cap) {
+        size_t next_cap = *cap == 0 ? 8 : *cap;
+        while (next_cap <= *len) {
+            if (next_cap > SIZE_MAX / 2) {
+                return 5;
+            }
+            next_cap *= 2;
+        }
+        if (next_cap > SIZE_MAX / sizeof(AicString)) {
+            return 5;
+        }
+        AicString* grown = (AicString*)realloc(*items, next_cap * sizeof(AicString));
+        if (grown == NULL) {
+            return 5;
+        }
+        for (size_t i = *cap; i < next_cap; ++i) {
+            grown[i].ptr = NULL;
+            grown[i].len = 0;
+            grown[i].cap = 0;
+        }
+        *items = grown;
+        *cap = next_cap;
+    }
+
+    size_t text_len = strlen(text);
+    if (text_len > (size_t)LONG_MAX) {
+        return 5;
+    }
+    char* text_copy = aic_rt_fs_copy_slice(text, (long)text_len);
+    if (text_copy == NULL && text_len > 0) {
+        return 5;
+    }
+    (*items)[*len].ptr = text_copy;
+    (*items)[*len].len = (long)text_len;
+    (*items)[*len].cap = (long)text_len;
+    *len += 1;
+    return 0;
+}
+
 long aic_rt_fs_exists(const char* path_ptr, long path_len, long path_cap) {
     (void)path_cap;
     if (!aic_rt_sandbox_allow_fs()) {
@@ -18764,6 +21749,962 @@ long aic_rt_fs_temp_dir(
     }
     return 0;
 #endif
+}
+
+long aic_rt_fs_read_bytes(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    return aic_rt_fs_read_text(path_ptr, path_len, path_cap, out_ptr, out_len);
+}
+
+long aic_rt_fs_write_bytes(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* content_ptr,
+    long content_len,
+    long content_cap
+) {
+    return aic_rt_fs_write_text(path_ptr, path_len, path_cap, content_ptr, content_len, content_cap);
+}
+
+long aic_rt_fs_append_bytes(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* content_ptr,
+    long content_len,
+    long content_cap
+) {
+    return aic_rt_fs_append_text(path_ptr, path_len, path_cap, content_ptr, content_len, content_cap);
+}
+
+static long aic_rt_fs_open_file_mode(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    const char* mode,
+    long* out_handle
+) {
+    (void)path_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+    FILE* file = fopen(path, mode);
+    int err = errno;
+    free(path);
+    if (file == NULL) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return aic_rt_fs_store_file_handle(file, out_handle);
+}
+
+long aic_rt_fs_open_read(const char* path_ptr, long path_len, long path_cap, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_FS("open_read", 2);
+    return aic_rt_fs_open_file_mode(path_ptr, path_len, path_cap, "rb", out_handle);
+}
+
+long aic_rt_fs_open_write(const char* path_ptr, long path_len, long path_cap, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_FS("open_write", 2);
+    return aic_rt_fs_open_file_mode(path_ptr, path_len, path_cap, "wb", out_handle);
+}
+
+long aic_rt_fs_open_append(const char* path_ptr, long path_len, long path_cap, long* out_handle) {
+    AIC_RT_SANDBOX_BLOCK_FS("open_append", 2);
+    return aic_rt_fs_open_file_mode(path_ptr, path_len, path_cap, "ab", out_handle);
+}
+
+long aic_rt_fs_file_read_line(long handle, char** out_ptr, long* out_len, long* out_has_line) {
+    AIC_RT_SANDBOX_BLOCK_FS("file_read_line", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_has_line != NULL) {
+        *out_has_line = 0;
+    }
+    AicFsFileSlot* slot = aic_rt_fs_file_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+
+    size_t cap = 128;
+    char* line = (char*)malloc(cap + 1);
+    if (line == NULL) {
+        return 5;
+    }
+    size_t len = 0;
+    int ch = EOF;
+    while ((ch = fgetc(slot->file)) != EOF) {
+        if (ch == '\n') {
+            break;
+        }
+        if (ch == '\r') {
+            int next = fgetc(slot->file);
+            if (next != '\n' && next != EOF) {
+                ungetc(next, slot->file);
+            }
+            break;
+        }
+        if (len + 1 >= cap) {
+            size_t next_cap = cap * 2;
+            if (next_cap <= cap || next_cap > SIZE_MAX - 1) {
+                free(line);
+                return 5;
+            }
+            char* grown = (char*)realloc(line, next_cap + 1);
+            if (grown == NULL) {
+                free(line);
+                return 5;
+            }
+            line = grown;
+            cap = next_cap;
+        }
+        line[len++] = (char)ch;
+    }
+
+    if (ch == EOF && ferror(slot->file)) {
+        int err = errno;
+        free(line);
+        return aic_rt_fs_map_errno(err);
+    }
+    if (ch == EOF && len == 0) {
+        free(line);
+        return 0;
+    }
+
+    line[len] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = line;
+    } else {
+        free(line);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)len;
+    }
+    if (out_has_line != NULL) {
+        *out_has_line = 1;
+    }
+    return 0;
+}
+
+long aic_rt_fs_file_write_str(
+    long handle,
+    const char* content_ptr,
+    long content_len,
+    long content_cap
+) {
+    (void)content_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("file_write_str", 2);
+    if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
+        return 4;
+    }
+    AicFsFileSlot* slot = aic_rt_fs_file_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    size_t target = (size_t)content_len;
+    if (target > 0) {
+        size_t written = fwrite(content_ptr, 1, target, slot->file);
+        if (written != target) {
+            return aic_rt_fs_map_errno(errno);
+        }
+    }
+    if (fflush(slot->file) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
+}
+
+long aic_rt_fs_file_close(long handle) {
+    AIC_RT_SANDBOX_BLOCK_FS("file_close", 2);
+    if (handle <= 0 || handle > AIC_RT_FS_FILE_TABLE_CAP) {
+        return 4;
+    }
+    AicFsFileSlot* slot = &aic_rt_fs_file_table[handle - 1];
+    if (!slot->in_use || slot->file == NULL) {
+        return 4;
+    }
+    FILE* file = slot->file;
+    slot->in_use = 0;
+    slot->file = NULL;
+    if (fclose(file) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
+}
+
+long aic_rt_fs_mkdir(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("mkdir", 2);
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+#ifdef _WIN32
+    int rc = _mkdir(path);
+#else
+    int rc = mkdir(path, 0777);
+#endif
+    int err = errno;
+    free(path);
+    if (rc != 0) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return 0;
+}
+
+long aic_rt_fs_mkdir_all(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("mkdir_all", 2);
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    size_t n = strlen(path);
+    while (n > 1 && aic_rt_fs_is_sep(path[n - 1])) {
+        path[n - 1] = '\0';
+        n -= 1;
+    }
+
+    size_t start = 0;
+#ifdef _WIN32
+    if (n >= 2 && aic_rt_fs_is_drive_letter(path[0]) && path[1] == ':') {
+        start = 2;
+    }
+    if (n > start && aic_rt_fs_is_sep(path[start])) {
+        start += 1;
+    }
+#else
+    if (path[0] == '/') {
+        start = 1;
+    }
+#endif
+    if (n <= start) {
+        free(path);
+        return 0;
+    }
+
+    for (size_t i = start; i <= n; ++i) {
+        if (i != n && !aic_rt_fs_is_sep(path[i])) {
+            continue;
+        }
+        char saved = path[i];
+        path[i] = '\0';
+        if (path[0] != '\0') {
+            long rc = aic_rt_fs_mkdir_allow_existing(path);
+            if (rc != 0) {
+                free(path);
+                return rc;
+            }
+        }
+        path[i] = saved;
+    }
+    free(path);
+    return 0;
+}
+
+long aic_rt_fs_rmdir(const char* path_ptr, long path_len, long path_cap) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("rmdir", 2);
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+#ifdef _WIN32
+    int rc = _rmdir(path);
+#else
+    int rc = rmdir(path);
+#endif
+    int err = errno;
+    free(path);
+    if (rc != 0) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return 0;
+}
+
+long aic_rt_fs_list_dir(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_count
+) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("list_dir", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    AicString* items = NULL;
+    size_t len = 0;
+    size_t cap = 0;
+
+#ifdef _WIN32
+    size_t path_n = strlen(path);
+    const char* suffix =
+        (path_n > 0 && aic_rt_fs_is_sep(path[path_n - 1])) ? "*" : "\\*";
+    size_t pattern_len = path_n + strlen(suffix) + 1;
+    char* pattern = (char*)malloc(pattern_len);
+    if (pattern == NULL) {
+        free(path);
+        return 5;
+    }
+    snprintf(pattern, pattern_len, "%s%s", path, suffix);
+
+    WIN32_FIND_DATAA entry;
+    HANDLE find = FindFirstFileA(pattern, &entry);
+    free(pattern);
+    if (find == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        free(path);
+        return aic_rt_fs_map_win_error(err);
+    }
+    do {
+        const char* name = entry.cFileName;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        long push_err = aic_rt_fs_push_string_item(&items, &len, &cap, name);
+        if (push_err != 0) {
+            FindClose(find);
+            free(path);
+            aic_rt_fs_free_string_items(items, len);
+            return push_err;
+        }
+    } while (FindNextFileA(find, &entry) != 0);
+    FindClose(find);
+#else
+    DIR* dir = opendir(path);
+    if (dir == NULL) {
+        int err = errno;
+        free(path);
+        return aic_rt_fs_map_errno(err);
+    }
+    struct dirent* entry = NULL;
+    while ((entry = readdir(dir)) != NULL) {
+        const char* name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        long push_err = aic_rt_fs_push_string_item(&items, &len, &cap, name);
+        if (push_err != 0) {
+            closedir(dir);
+            free(path);
+            aic_rt_fs_free_string_items(items, len);
+            return push_err;
+        }
+    }
+    if (closedir(dir) != 0) {
+        int err = errno;
+        free(path);
+        aic_rt_fs_free_string_items(items, len);
+        return aic_rt_fs_map_errno(err);
+    }
+#endif
+
+    free(path);
+    aic_rt_fs_write_string_items(out_ptr, out_count, items, len);
+    return 0;
+}
+
+long aic_rt_fs_create_symlink(
+    const char* target_ptr,
+    long target_len,
+    long target_cap,
+    const char* link_ptr,
+    long link_len,
+    long link_cap
+) {
+    (void)target_cap;
+    (void)link_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("create_symlink", 2);
+    char* target = aic_rt_fs_copy_slice(target_ptr, target_len);
+    char* link_path = aic_rt_fs_copy_slice(link_ptr, link_len);
+    if (target == NULL || link_path == NULL) {
+        free(target);
+        free(link_path);
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(target) || aic_rt_fs_invalid_input_path(link_path)) {
+        free(target);
+        free(link_path);
+        return 4;
+    }
+#ifdef _WIN32
+    DWORD flags = 0;
+    DWORD attrs = GetFileAttributesA(target);
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+    }
+#ifdef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+    flags |= SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+#endif
+    if (CreateSymbolicLinkA(link_path, target, flags) == 0) {
+        DWORD err = GetLastError();
+        free(target);
+        free(link_path);
+        return aic_rt_fs_map_win_error(err);
+    }
+#else
+    if (symlink(target, link_path) != 0) {
+        int err = errno;
+        free(target);
+        free(link_path);
+        return aic_rt_fs_map_errno(err);
+    }
+#endif
+    free(target);
+    free(link_path);
+    return 0;
+}
+
+long aic_rt_fs_read_symlink(
+    const char* path_ptr,
+    long path_len,
+    long path_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("read_symlink", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+#ifdef _WIN32
+    free(path);
+    return 5;
+#else
+    size_t cap = 256;
+    char* out = NULL;
+    while (1) {
+        if (cap > SIZE_MAX - 1) {
+            free(path);
+            free(out);
+            return 5;
+        }
+        char* grown = (char*)realloc(out, cap + 1);
+        if (grown == NULL) {
+            free(path);
+            free(out);
+            return 5;
+        }
+        out = grown;
+        ssize_t n = readlink(path, out, cap);
+        if (n < 0) {
+            int err = errno;
+            free(path);
+            free(out);
+            return aic_rt_fs_map_errno(err);
+        }
+        if ((size_t)n < cap) {
+            out[n] = '\0';
+            free(path);
+            if (out_ptr != NULL) {
+                *out_ptr = out;
+            } else {
+                free(out);
+            }
+            if (out_len != NULL) {
+                *out_len = (long)n;
+            }
+            return 0;
+        }
+        if (cap > SIZE_MAX / 2) {
+            free(path);
+            free(out);
+            return 5;
+        }
+        cap *= 2;
+    }
+#endif
+}
+
+long aic_rt_fs_set_readonly(const char* path_ptr, long path_len, long path_cap, long readonly) {
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("set_readonly", 2);
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+#ifdef _WIN32
+    int mode = readonly != 0 ? _S_IREAD : (_S_IREAD | _S_IWRITE);
+    int rc = _chmod(path, mode);
+#else
+    struct stat info;
+    if (stat(path, &info) != 0) {
+        int err = errno;
+        free(path);
+        return aic_rt_fs_map_errno(err);
+    }
+    mode_t next_mode = info.st_mode;
+    if (readonly != 0) {
+        next_mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
+    } else {
+        next_mode |= S_IWUSR;
+    }
+    int rc = chmod(path, next_mode);
+#endif
+    int err = errno;
+    free(path);
+    if (rc != 0) {
+        return aic_rt_fs_map_errno(err);
+    }
+    return 0;
+}
+
+void aic_rt_env_set_args(int argc, char** argv) {
+    if (argc < 0) {
+        argc = 0;
+    }
+    aic_rt_argc = argc;
+    aic_rt_argv = argv;
+}
+
+static char* aic_rt_env_copy_bytes(const char* src, size_t len) {
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (len > 0 && src != NULL) {
+        memcpy(out, src, len);
+    }
+    out[len] = '\0';
+    return out;
+}
+
+static void aic_rt_env_write_string_out(char** out_ptr, long* out_len, char* owned) {
+    long len = 0;
+    if (owned != NULL) {
+        len = (long)strlen(owned);
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = owned;
+    } else {
+        free(owned);
+    }
+}
+
+static void aic_rt_env_free_arg_items(AicString* items, size_t count) {
+    if (items == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free((void*)items[i].ptr);
+    }
+    free(items);
+}
+
+static void aic_rt_env_write_arg_items_out(
+    char** out_ptr,
+    long* out_count,
+    AicString* items,
+    size_t count
+) {
+    if (count > (size_t)LONG_MAX) {
+        if (out_count != NULL) {
+            *out_count = 0;
+        }
+        if (out_ptr != NULL) {
+            *out_ptr = NULL;
+        }
+        aic_rt_env_free_arg_items(items, count);
+        return;
+    }
+    if (out_count != NULL) {
+        *out_count = (long)count;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = (char*)items;
+    } else {
+        aic_rt_env_free_arg_items(items, count);
+    }
+}
+
+void aic_rt_env_args(char** out_ptr, long* out_count) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    if (aic_rt_argc <= 0 || aic_rt_argv == NULL) {
+        return;
+    }
+    size_t count = (size_t)aic_rt_argc;
+    AicString* items = (AicString*)calloc(count, sizeof(AicString));
+    if (items == NULL) {
+        return;
+    }
+    size_t out_index = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const char* value = aic_rt_argv[i] == NULL ? "" : aic_rt_argv[i];
+        size_t len = strlen(value);
+        char* owned = aic_rt_env_copy_bytes(value, len);
+        if (owned == NULL) {
+            aic_rt_env_free_arg_items(items, out_index);
+            return;
+        }
+        items[out_index].ptr = owned;
+        items[out_index].len = (long)len;
+        items[out_index].cap = (long)len;
+        out_index += 1;
+    }
+    aic_rt_env_write_arg_items_out(out_ptr, out_count, items, out_index);
+}
+
+long aic_rt_env_arg_count(void) {
+    if (aic_rt_argc < 0) {
+        return 0;
+    }
+    return (long)aic_rt_argc;
+}
+
+long aic_rt_env_arg_at(long index, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (index < 0 || index >= (long)aic_rt_argc || aic_rt_argv == NULL) {
+        return 0;
+    }
+    const char* value = aic_rt_argv[index] == NULL ? "" : aic_rt_argv[index];
+    size_t len = strlen(value);
+    char* owned = aic_rt_env_copy_bytes(value, len);
+    if (owned == NULL) {
+        return 0;
+    }
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+    return 1;
+}
+
+void aic_rt_exit(long code) {
+    exit((int)code);
+}
+
+typedef struct {
+    const char* key_ptr;
+    size_t key_len;
+    const char* value_ptr;
+    size_t value_len;
+} AicEnvPair;
+
+static void aic_rt_env_free_entries(AicEnvEntry* entries, size_t count) {
+    if (entries == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free((void*)entries[i].key.ptr);
+        free((void*)entries[i].value.ptr);
+    }
+    free(entries);
+}
+
+static void aic_rt_env_write_entries_out(
+    char** out_ptr,
+    long* out_count,
+    AicEnvEntry* entries,
+    size_t count
+) {
+    if (count > (size_t)LONG_MAX) {
+        if (out_count != NULL) {
+            *out_count = 0;
+        }
+        if (out_ptr != NULL) {
+            *out_ptr = NULL;
+        }
+        aic_rt_env_free_entries(entries, count);
+        return;
+    }
+    if (out_count != NULL) {
+        *out_count = (long)count;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = (char*)entries;
+    } else {
+        aic_rt_env_free_entries(entries, count);
+    }
+}
+
+static int aic_rt_env_split_pair(const char* entry, AicEnvPair* out_pair) {
+    if (entry == NULL || out_pair == NULL) {
+        return 0;
+    }
+    const char* eq = strchr(entry, '=');
+    if (eq == NULL || eq == entry) {
+        return 0;
+    }
+    out_pair->key_ptr = entry;
+    out_pair->key_len = (size_t)(eq - entry);
+    out_pair->value_ptr = eq + 1;
+    out_pair->value_len = strlen(eq + 1);
+    return 1;
+}
+
+#ifndef _WIN32
+extern char** environ;
+#endif
+
+void aic_rt_env_all_vars(char** out_ptr, long* out_count) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+
+#ifdef _WIN32
+    LPCH env_block = GetEnvironmentStringsA();
+    if (env_block == NULL) {
+        return;
+    }
+    size_t count = 0;
+    for (LPCH cursor = env_block; *cursor != '\0'; cursor += strlen(cursor) + 1) {
+        AicEnvPair pair;
+        if (aic_rt_env_split_pair(cursor, &pair)) {
+            count += 1;
+        }
+    }
+    AicEnvEntry* entries = count == 0 ? NULL : (AicEnvEntry*)calloc(count, sizeof(AicEnvEntry));
+    if (count > 0 && entries == NULL) {
+        FreeEnvironmentStringsA(env_block);
+        return;
+    }
+    size_t out_index = 0;
+    for (LPCH cursor = env_block; *cursor != '\0'; cursor += strlen(cursor) + 1) {
+        AicEnvPair pair;
+        if (!aic_rt_env_split_pair(cursor, &pair)) {
+            continue;
+        }
+        char* key_owned = aic_rt_env_copy_bytes(pair.key_ptr, pair.key_len);
+        char* value_owned = aic_rt_env_copy_bytes(pair.value_ptr, pair.value_len);
+        if (key_owned == NULL || value_owned == NULL) {
+            free(key_owned);
+            free(value_owned);
+            aic_rt_env_free_entries(entries, out_index);
+            FreeEnvironmentStringsA(env_block);
+            return;
+        }
+        entries[out_index].key.ptr = key_owned;
+        entries[out_index].key.len = (long)pair.key_len;
+        entries[out_index].key.cap = (long)pair.key_len;
+        entries[out_index].value.ptr = value_owned;
+        entries[out_index].value.len = (long)pair.value_len;
+        entries[out_index].value.cap = (long)pair.value_len;
+        out_index += 1;
+    }
+    FreeEnvironmentStringsA(env_block);
+    aic_rt_env_write_entries_out(out_ptr, out_count, entries, out_index);
+#else
+    if (environ == NULL) {
+        return;
+    }
+    size_t count = 0;
+    for (char** cursor = environ; *cursor != NULL; ++cursor) {
+        AicEnvPair pair;
+        if (aic_rt_env_split_pair(*cursor, &pair)) {
+            count += 1;
+        }
+    }
+    AicEnvEntry* entries = count == 0 ? NULL : (AicEnvEntry*)calloc(count, sizeof(AicEnvEntry));
+    if (count > 0 && entries == NULL) {
+        return;
+    }
+    size_t out_index = 0;
+    for (char** cursor = environ; *cursor != NULL; ++cursor) {
+        AicEnvPair pair;
+        if (!aic_rt_env_split_pair(*cursor, &pair)) {
+            continue;
+        }
+        char* key_owned = aic_rt_env_copy_bytes(pair.key_ptr, pair.key_len);
+        char* value_owned = aic_rt_env_copy_bytes(pair.value_ptr, pair.value_len);
+        if (key_owned == NULL || value_owned == NULL) {
+            free(key_owned);
+            free(value_owned);
+            aic_rt_env_free_entries(entries, out_index);
+            return;
+        }
+        entries[out_index].key.ptr = key_owned;
+        entries[out_index].key.len = (long)pair.key_len;
+        entries[out_index].key.cap = (long)pair.key_len;
+        entries[out_index].value.ptr = value_owned;
+        entries[out_index].value.len = (long)pair.value_len;
+        entries[out_index].value.cap = (long)pair.value_len;
+        out_index += 1;
+    }
+    aic_rt_env_write_entries_out(out_ptr, out_count, entries, out_index);
+#endif
+}
+
+long aic_rt_env_home_dir(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+#ifdef _WIN32
+    const char* profile = getenv("USERPROFILE");
+    if (profile != NULL && profile[0] != '\0') {
+        char* owned = aic_rt_env_copy_bytes(profile, strlen(profile));
+        if (owned == NULL) {
+            return 4;
+        }
+        aic_rt_env_write_string_out(out_ptr, out_len, owned);
+        return 0;
+    }
+    const char* drive = getenv("HOMEDRIVE");
+    const char* path = getenv("HOMEPATH");
+    if (drive == NULL || drive[0] == '\0' || path == NULL || path[0] == '\0') {
+        return 1;
+    }
+    size_t drive_len = strlen(drive);
+    size_t path_len = strlen(path);
+    char* owned = (char*)malloc(drive_len + path_len + 1);
+    if (owned == NULL) {
+        return 4;
+    }
+    memcpy(owned, drive, drive_len);
+    memcpy(owned + drive_len, path, path_len);
+    owned[drive_len + path_len] = '\0';
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+    return 0;
+#else
+    const char* home = getenv("HOME");
+    if (home == NULL || home[0] == '\0') {
+        return 1;
+    }
+    char* owned = aic_rt_env_copy_bytes(home, strlen(home));
+    if (owned == NULL) {
+        return 4;
+    }
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+    return 0;
+#endif
+}
+
+long aic_rt_env_temp_dir(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+#ifdef _WIN32
+    char buffer[MAX_PATH + 1];
+    DWORD n = GetTempPathA(MAX_PATH, buffer);
+    if (n == 0 || n > MAX_PATH) {
+        return 4;
+    }
+    char* owned = aic_rt_env_copy_bytes(buffer, strlen(buffer));
+    if (owned == NULL) {
+        return 4;
+    }
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+    return 0;
+#else
+    const char* tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+    char* owned = aic_rt_env_copy_bytes(tmp, strlen(tmp));
+    if (owned == NULL) {
+        return 4;
+    }
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+    return 0;
+#endif
+}
+
+void aic_rt_env_os_name(char** out_ptr, long* out_len) {
+#ifdef _WIN32
+    const char* value = "windows";
+#elif defined(__APPLE__) && defined(__MACH__)
+    const char* value = "macos";
+#elif defined(__linux__)
+    const char* value = "linux";
+#else
+    const char* value = "unknown";
+#endif
+    char* owned = aic_rt_env_copy_bytes(value, strlen(value));
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
+}
+
+void aic_rt_env_arch(char** out_ptr, long* out_len) {
+#if defined(__x86_64__) || defined(_M_X64)
+    const char* value = "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const char* value = "aarch64";
+#elif defined(__i386__) || defined(_M_IX86)
+    const char* value = "x86";
+#elif defined(__arm__) || defined(_M_ARM)
+    const char* value = "arm";
+#elif defined(__riscv) && __riscv_xlen == 64
+    const char* value = "riscv64";
+#else
+    const char* value = "unknown";
+#endif
+    char* owned = aic_rt_env_copy_bytes(value, strlen(value));
+    aic_rt_env_write_string_out(out_ptr, out_len, owned);
 }
 
 static long aic_rt_env_map_errno(int err) {
@@ -20709,6 +24650,146 @@ void aic_rt_string_join(
         }
     }
     out[total] = '\0';
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_string_format(
+    const char* template_ptr,
+    long template_len,
+    long template_cap,
+    const char* args_ptr,
+    long args_len,
+    long args_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)template_cap;
+    (void)args_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (!aic_rt_string_slice_valid(template_ptr, template_len) || args_len < 0) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t template_n = (size_t)template_len;
+    size_t arg_count = (size_t)args_len;
+    const AicString* args = NULL;
+    if (arg_count > 0) {
+        if (args_ptr == NULL) {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        args = (const AicString*)(const void*)args_ptr;
+        for (size_t idx = 0; idx < arg_count; ++idx) {
+            long arg_len_long = args[idx].len;
+            const char* arg_ptr = args[idx].ptr;
+            if (arg_len_long < 0 || (arg_len_long > 0 && arg_ptr == NULL)) {
+                aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                return;
+            }
+        }
+    }
+
+    size_t total = 0;
+    size_t in_pos = 0;
+    while (in_pos < template_n) {
+        if (template_ptr[in_pos] == '{') {
+            size_t cursor = in_pos + 1;
+            size_t index = 0;
+            int has_digits = 0;
+            int overflow = 0;
+            while (cursor < template_n && template_ptr[cursor] >= '0' && template_ptr[cursor] <= '9') {
+                size_t digit = (size_t)(template_ptr[cursor] - '0');
+                has_digits = 1;
+                if (index > (SIZE_MAX - digit) / 10) {
+                    overflow = 1;
+                    break;
+                }
+                index = index * 10 + digit;
+                cursor += 1;
+            }
+            if (!overflow && has_digits && cursor < template_n && template_ptr[cursor] == '}') {
+                if (index < arg_count) {
+                    size_t arg_len = (size_t)args[index].len;
+                    if (total > SIZE_MAX - arg_len) {
+                        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                        return;
+                    }
+                    total += arg_len;
+                } else {
+                    size_t placeholder_len = cursor - in_pos + 1;
+                    if (total > SIZE_MAX - placeholder_len) {
+                        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                        return;
+                    }
+                    total += placeholder_len;
+                }
+                in_pos = cursor + 1;
+                continue;
+            }
+        }
+        if (total == SIZE_MAX) {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        total += 1;
+        in_pos += 1;
+    }
+
+    if (total > (size_t)LONG_MAX) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    char* out = (char*)malloc(total + 1);
+    if (out == NULL) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t out_pos = 0;
+    in_pos = 0;
+    while (in_pos < template_n) {
+        if (template_ptr[in_pos] == '{') {
+            size_t cursor = in_pos + 1;
+            size_t index = 0;
+            int has_digits = 0;
+            int overflow = 0;
+            while (cursor < template_n && template_ptr[cursor] >= '0' && template_ptr[cursor] <= '9') {
+                size_t digit = (size_t)(template_ptr[cursor] - '0');
+                has_digits = 1;
+                if (index > (SIZE_MAX - digit) / 10) {
+                    overflow = 1;
+                    break;
+                }
+                index = index * 10 + digit;
+                cursor += 1;
+            }
+            if (!overflow && has_digits && cursor < template_n && template_ptr[cursor] == '}') {
+                if (index < arg_count) {
+                    size_t arg_len = (size_t)args[index].len;
+                    if (arg_len > 0) {
+                        memcpy(out + out_pos, args[index].ptr, arg_len);
+                        out_pos += arg_len;
+                    }
+                } else {
+                    size_t placeholder_len = cursor - in_pos + 1;
+                    memcpy(out + out_pos, template_ptr + in_pos, placeholder_len);
+                    out_pos += placeholder_len;
+                }
+                in_pos = cursor + 1;
+                continue;
+            }
+        }
+        out[out_pos++] = template_ptr[in_pos];
+        in_pos += 1;
+    }
+    out[out_pos] = '\0';
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
@@ -27540,6 +31621,48 @@ fn main() -> Int effects { io } {
         ));
         assert!(output
             .llvm_ir
+            .contains("declare void @aic_rt_vec_new(i8**, i64*, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_of(i8*, i64, i8**, i64*, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_get(i8*, i64, i64, i64, i64, i8*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_push(i8**, i64*, i64*, i64, i8*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_pop(i8**, i64*, i64*, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_set(i8*, i64, i64, i64, i64, i8*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_insert(i8**, i64*, i64*, i64, i64, i8*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_remove_at(i8**, i64*, i64*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_contains(i8*, i64, i64, i64, i64, i8*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_index_of(i8*, i64, i64, i64, i64, i8*, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_reverse(i8*, i64, i64, i64)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_vec_slice(i8*, i64, i64, i64, i64, i64, i8**, i64*, i64*)"
+        ));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_append(i8**, i64*, i64*, i64, i8*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_vec_clear(i8**, i64*, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_fs_metadata(i8*, i64, i64, i64*, i64*, i64*)"));
         assert!(output
             .llvm_ir
@@ -27685,6 +31808,20 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_string_contains("));
         assert!(runtime_c_source().contains("long aic_rt_string_parse_int("));
         assert!(runtime_c_source().contains("void aic_rt_string_join("));
+        assert!(runtime_c_source().contains("void aic_rt_vec_new("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_of("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_get("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_push("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_pop("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_set("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_insert("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_remove_at("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_contains("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_index_of("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_reverse("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_slice("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_append("));
+        assert!(runtime_c_source().contains("void aic_rt_vec_clear("));
         assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
         assert!(
             runtime_c_source().contains("long aic_rt_map_new(long value_kind, long* out_handle)")

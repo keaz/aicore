@@ -45,10 +45,10 @@ fn main() -> Int effects { io } {
     let header_parts = split_first("Content-Type: application/json", ":");
 
     let checks =
-        (if contains("alpha beta", "pha") { 1 } else { 0 }) +
+        (if string.contains("alpha beta", "pha") { 1 } else { 0 }) +
         (if starts_with("alpha beta", "alpha") { 1 } else { 0 }) +
         (if ends_with("alpha beta", "beta") { 1 } else { 0 }) +
-        (if opt_int_or(index_of("banana", "na"), -1) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(string.index_of("banana", "na"), -1) == 2 { 1 } else { 0 }) +
         (if opt_int_or(last_index_of("banana", "na"), -1) == 4 { 1 } else { 0 }) +
         (if len(substring("header", 1, 4)) == 3 { 1 } else { 0 }) +
         (if opt_string_len(char_at("abc", 1)) == 1 { 1 } else { 0 }) +

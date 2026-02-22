@@ -177,6 +177,8 @@ enum Command {
         sandbox: SandboxProfileArg,
         #[arg(long)]
         sandbox_config: Option<PathBuf>,
+        #[arg(last = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 
@@ -1270,6 +1272,7 @@ fn run_cli() -> anyhow::Result<i32> {
             offline,
             sandbox,
             sandbox_config,
+            args,
         } => {
             let out = std::env::temp_dir().join("aicore_run_bin");
             let build_code = build_file(&input, &out, offline)?;
@@ -1291,10 +1294,9 @@ fn run_cli() -> anyhow::Result<i32> {
                     return Ok(EXIT_USAGE_ERROR);
                 }
 
-                let run_args: Vec<String> = Vec::new();
                 let trace_id = telemetry::current_trace_id();
                 let execute_started = Instant::now();
-                let status = run_with_policy(&out, &run_args, &policy, Some(&trace_id))?;
+                let status = run_with_policy(&out, &args, &policy, Some(&trace_id))?;
                 let attrs = std::collections::BTreeMap::from([
                     (
                         "input".to_string(),

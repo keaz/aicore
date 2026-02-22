@@ -5,7 +5,7 @@ import std.map;
 import std.string;
 
 fn string_eq(left: String, right: String) -> Int {
-    if len(left) == len(right) && contains(left, right) {
+    if len(left) == len(right) && string.contains(left, right) {
         1
     } else {
         0
@@ -56,7 +56,7 @@ fn main() -> Int effects { io, net } {
         Ok(text) => text,
         Err(_) => "",
     };
-    let wire_ok = if contains(wire, "HTTP/1.1 200 OK") && ends_with(wire, "hello") {
+    let wire_ok = if string.contains(wire, "HTTP/1.1 200 OK") && ends_with(wire, "hello") {
         1
     } else {
         0

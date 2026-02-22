@@ -4,7 +4,7 @@ import std.router;
 import std.string;
 
 fn string_eq(left: String, right: String) -> Int {
-    if len(left) == len(right) && contains(left, right) {
+    if len(left) == len(right) && string.contains(left, right) {
         1
     } else {
         0

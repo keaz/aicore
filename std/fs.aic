@@ -1,5 +1,6 @@
 module std.fs;
 
+import std.option;
 import std.result;
 import std.vec;
 
@@ -15,6 +16,10 @@ struct FsMetadata {
     is_file: Bool,
     is_dir: Bool,
     size: Int,
+}
+
+struct FileHandle {
+    handle: Int,
 }
 
 // Internal compiler/runtime intrinsics lowered by the LLVM backend.
@@ -81,6 +86,90 @@ fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects 
     out
 }
 
+fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
+    let out: Result[String, FsError] = Ok("");
+    out
+}
+
+fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
+    out
+}
+
+fn aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
+    out
+}
+
+fn aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
+    out
+}
+
+fn aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], FsError] effects { fs } {
+    let out: Result[Option[String], FsError] = Ok(None());
+    out
+}
+
+fn aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
+    let out: Result[Vec[String], FsError] = Ok(Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    });
+    out
+}
+
+fn aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
+fn aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
+    let out: Result[String, FsError] = Ok("");
+    out
+}
+
+fn aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs } {
+    let out: Result[Bool, FsError] = Ok(true);
+    out
+}
+
 fn exists(path: String) -> Bool effects { fs } {
     aic_fs_exists_intrinsic(path)
 }
@@ -123,4 +212,71 @@ fn temp_file(prefix: String) -> Result[String, FsError] effects { fs } {
 
 fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
     aic_fs_temp_dir_intrinsic(prefix)
+}
+
+fn read_bytes(path: String) -> Result[String, FsError] effects { fs } {
+    aic_fs_read_bytes_intrinsic(path)
+}
+
+fn write_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_write_bytes_intrinsic(path, content)
+}
+
+fn append_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_append_bytes_intrinsic(path, content)
+}
+
+fn open_read(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    aic_fs_open_read_intrinsic(path)
+}
+
+fn open_write(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    aic_fs_open_write_intrinsic(path)
+}
+
+fn open_append(path: String) -> Result[FileHandle, FsError] effects { fs } {
+    aic_fs_open_append_intrinsic(path)
+}
+
+fn file_read_line(file: FileHandle) -> Result[Option[String], FsError] effects { fs } {
+    aic_fs_file_read_line_intrinsic(file)
+}
+
+fn file_write_str(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_file_write_str_intrinsic(file, content)
+}
+
+fn file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_file_close_intrinsic(file)
+}
+
+fn mkdir(path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_mkdir_intrinsic(path)
+}
+
+fn mkdir_all(path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_mkdir_all_intrinsic(path)
+}
+
+fn rmdir(path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_rmdir_intrinsic(path)
+}
+
+fn list_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
+    aic_fs_list_dir_intrinsic(path)
+}
+
+/// On Windows, creating symbolic links may require elevated privileges and can return
+/// PermissionDenied/Io when the OS denies the operation.
+fn create_symlink(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_create_symlink_intrinsic(target_path, link_path)
+}
+
+/// On Windows, read_symlink is currently unsupported and returns Io.
+fn read_symlink(path: String) -> Result[String, FsError] effects { fs } {
+    aic_fs_read_symlink_intrinsic(path)
+}
+
+fn set_readonly(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_set_readonly_intrinsic(path, readonly)
 }

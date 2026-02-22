@@ -1,0 +1,30 @@
+module example.io.string_format;
+
+import std.io;
+import std.string;
+import std.vec;
+
+fn main() -> Int effects { io } {
+    let empty_args: Vec[String] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+
+    let greeting = format("hello, {0}!", split("world", ","));
+    let missing = format("still here: {2}", split("a,b", ","));
+
+    let numeric_template = int_to_string(12345);
+    let numeric = format(numeric_template, empty_args);
+    let truthy = format(bool_to_string(true), empty_args);
+
+    if len(greeting) == 13 &&
+        string.contains(missing, "{2}") &&
+        len(numeric) == 5 &&
+        len(truthy) == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

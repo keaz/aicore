@@ -1,0 +1,31 @@
+import std.fs;
+import std.io;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let wrote_src = ok_bool(write_bytes("source.bin", "abc123"));
+    let copied = match read_bytes("source.bin") {
+        Ok(bytes) => ok_bool(write_bytes("copy.bin", bytes)),
+        Err(_) => 0,
+    };
+    let verify = match read_bytes("copy.bin") {
+        Ok(bytes) => if len(bytes) == 6 && starts_with(bytes, "ab") { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let removed_src = ok_bool(delete("source.bin"));
+    let removed_copy = ok_bool(delete("copy.bin"));
+
+    if wrote_src + copied + verify + removed_src + removed_copy == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

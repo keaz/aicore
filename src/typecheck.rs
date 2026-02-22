@@ -2141,10 +2141,14 @@ impl<'a> Checker<'a> {
                             })
                             .collect::<Vec<_>>();
                         if applied.iter().all(|arg| !contains_unresolved_type(arg)) {
-                            let symbol = self
-                                .resolution
-                                .functions
-                                .get(&resolved_name)
+                            let symbol = resolved_module
+                                .as_ref()
+                                .and_then(|module| {
+                                    self.resolution
+                                        .module_function_infos
+                                        .get(&(module.clone(), resolved_name.clone()))
+                                })
+                                .or_else(|| self.resolution.functions.get(&resolved_name))
                                 .map(|f| f.symbol);
                             self.record_instantiation(
                                 ir::GenericInstantiationKind::Function,

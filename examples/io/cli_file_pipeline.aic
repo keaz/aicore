@@ -22,7 +22,7 @@ fn ok_env(v: Result[Bool, EnvError]) -> Int {
 }
 
 fn main() -> Int effects { io, fs, env, time } {
-    let scratch = match temp_dir("cli_pipeline_") {
+    let scratch = match fs.temp_dir("cli_pipeline_") {
         Ok(path) => path,
         Err(_) => ".",
     };
@@ -30,34 +30,34 @@ fn main() -> Int effects { io, fs, env, time } {
     let input_path = path.join(scratch, "input.txt");
     let output_path = path.join(scratch, "output.txt");
 
-    let write_ok = match write_text(input_path, "hello") {
+    let write_ok = match fs.write_text(input_path, "hello") {
         Ok(_) => 1,
         Err(_) => 0,
     };
-    let append_ok = match append_text(input_path, "-world") {
+    let append_ok = match fs.append_text(input_path, "-world") {
         Ok(_) => 1,
         Err(_) => 0,
     };
 
-    let copied = match read_text(input_path) {
-        Ok(content) => match write_text(output_path, content) {
+    let copied = match fs.read_text(input_path) {
+        Ok(content) => match fs.write_text(output_path, content) {
             Ok(_) => 1,
             Err(_) => 0,
         },
         Err(_) => 0,
     };
 
-    let meta_ok = match metadata(output_path) {
+    let meta_ok = match fs.metadata(output_path) {
         Ok(meta) => if meta.is_file && meta.size > 0 { 1 } else { 0 },
         Err(_) => 0,
     };
 
-    let env_set = ok_env(set("AIC_CLI_PIPELINE_LAST", output_path));
-    let env_rm = ok_env(remove("AIC_CLI_PIPELINE_LAST"));
+    let env_set = ok_env(env.set("AIC_CLI_PIPELINE_LAST", output_path));
+    let env_rm = ok_env(env.remove("AIC_CLI_PIPELINE_LAST"));
 
-    sleep_ms(0);
+    time.sleep_ms(0);
 
-    let cleanup = ok_bool(delete(input_path)) + ok_bool(delete(output_path)) + ok_bool(delete(scratch));
+    let cleanup = ok_bool(fs.delete(input_path)) + ok_bool(fs.delete(output_path)) + ok_bool(fs.delete(scratch));
 
     if write_ok + append_ok + copied + meta_ok + env_set + env_rm == 6 && cleanup >= 2 {
         print_int(42);

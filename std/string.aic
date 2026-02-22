@@ -113,6 +113,10 @@ fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
     ""
 }
 
+fn aic_string_format_intrinsic(template: String, args: Vec[String]) -> String {
+    ""
+}
+
 fn contains(haystack: String, needle: String) -> Bool {
     aic_string_contains_intrinsic(haystack, needle)
 }
@@ -199,4 +203,8 @@ fn bool_to_string(b: Bool) -> String {
 
 fn join(parts: Vec[String], separator: String) -> String {
     aic_string_join_intrinsic(parts, separator)
+}
+
+fn format(template: String, args: Vec[String]) -> String {
+    aic_string_format_intrinsic(template, args)
 }

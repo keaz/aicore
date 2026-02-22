@@ -1034,6 +1034,124 @@ fn unit_std_map_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_vec_public_apis_delegate_to_runtime_intrinsics() {
+    let vec_source = fs::read_to_string("std/vec.aic").expect("read std/vec.aic");
+
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "new_vec",
+        "aic_vec_new_intrinsic",
+        0,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "vec_of",
+        "aic_vec_of_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "get",
+        "aic_vec_get_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "first",
+        "aic_vec_first_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "last",
+        "aic_vec_last_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "push",
+        "aic_vec_push_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "pop",
+        "aic_vec_pop_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "set",
+        "aic_vec_set_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "insert",
+        "aic_vec_insert_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "remove_at",
+        "aic_vec_remove_at_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "contains",
+        "aic_vec_contains_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "index_of",
+        "aic_vec_index_of_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "reverse",
+        "aic_vec_reverse_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "slice",
+        "aic_vec_slice_intrinsic",
+        3,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "append",
+        "aic_vec_append_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "clear",
+        "aic_vec_clear_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_std_path_public_apis_delegate_to_runtime_intrinsics() {
     let path_source = fs::read_to_string("std/path.aic").expect("read std/path.aic");
 
@@ -2015,9 +2133,9 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _meta = metadata("foo.txt");
     let _walk = walk_dir(".");
     let _tmp_file = temp_file("unit_");
-    let _tmp_dir = temp_dir("unit_");
+    let _tmp_dir = fs.temp_dir("unit_");
     let _env_get = env.get("HOME");
-    let _env_set = set("AIC_UNIT_TMP", "1");
+    let _env_set = env.set("AIC_UNIT_TMP", "1");
     let _env_rm = env.remove("AIC_UNIT_TMP");
     let _cwd = cwd();
     let _set_cwd = set_cwd(".");
@@ -2088,10 +2206,10 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
     let _close_mutex = close_mutex(IntMutex { handle: 1 });
     let _n = len("abc");
-    let _contains = contains("abc", "b");
+    let _contains = string.contains("abc", "b");
     let _starts = starts_with("abc", "a");
     let _ends = ends_with("abc", "c");
-    let _index = index_of("abc", "b");
+    let _index = string.index_of("abc", "b");
     let _last = last_index_of("abcb", "b");
     let _sub = substring("abc", 0, 2);
     let _char = char_at("abc", 1);
@@ -2108,6 +2226,22 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _int_s = int_to_string(42);
     let _bool_s = bool_to_string(true);
     let _joined_parts = string.join(_parts, "|");
+    let _v0: Vec[Int] = vec.new_vec();
+    let _v1 = vec.push(_v0, 1);
+    let _v2 = vec.insert(_v1, 0, 0);
+    let _v3 = vec.set(_v2, 1, 2);
+    let _v4 = vec.remove_at(_v3, 0);
+    let _v5 = vec.pop(_v4);
+    let _v6 = vec.reverse(_v5);
+    let _v7 = vec.slice(_v6, 0, 1);
+    let _v8 = vec.append(_v7, vec.vec_of(9));
+    let _v9 = vec.clear(_v8);
+    let _vg = vec.get(_v9, 0);
+    let _vf = vec.first(_v9);
+    let _vl = vec.last(_v9);
+    let _vc = vec.contains(_v9, 0);
+    let _vi = vec.index_of(_v9, 0);
+    let _ve = vec.is_empty(_v9);
     print_int(1);
     0
 }

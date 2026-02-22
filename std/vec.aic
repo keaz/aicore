@@ -1,18 +1,179 @@
 module std.vec;
 
-/// Minimal Vec representation for typechecking and ABI docs.
+import std.option;
+
 struct Vec[T] {
     ptr: Int,
     len: Int,
     cap: Int,
 }
 
-/// Return vector length.
 fn vec_len[T](v: Vec[T]) -> Int {
     v.len
 }
 
-/// Return vector capacity.
 fn vec_cap[T](v: Vec[T]) -> Int {
     v.cap
+}
+
+fn aic_vec_new_intrinsic[T]() -> Vec[T] {
+    Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    }
+}
+
+fn aic_vec_of_intrinsic[T](value: T) -> Vec[T] {
+    let _value = value;
+    Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    }
+}
+
+fn aic_vec_get_intrinsic[T](v: Vec[T], index: Int) -> Option[T] {
+    let _v = v;
+    let _index = index;
+    let out: Option[T] = None();
+    out
+}
+
+fn aic_vec_first_intrinsic[T](v: Vec[T]) -> Option[T] {
+    let _v = v;
+    let out: Option[T] = None();
+    out
+}
+
+fn aic_vec_last_intrinsic[T](v: Vec[T]) -> Option[T] {
+    let _v = v;
+    let out: Option[T] = None();
+    out
+}
+
+fn aic_vec_push_intrinsic[T](v: Vec[T], value: T) -> Vec[T] {
+    let _value = value;
+    v
+}
+
+fn aic_vec_pop_intrinsic[T](v: Vec[T]) -> Vec[T] {
+    v
+}
+
+fn aic_vec_set_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
+    let _index = index;
+    let _value = value;
+    v
+}
+
+fn aic_vec_insert_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
+    let _index = index;
+    let _value = value;
+    v
+}
+
+fn aic_vec_remove_at_intrinsic[T](v: Vec[T], index: Int) -> Vec[T] {
+    let _index = index;
+    v
+}
+
+fn aic_vec_contains_intrinsic[T](v: Vec[T], value: T) -> Bool {
+    let _v = v;
+    let _value = value;
+    false
+}
+
+fn aic_vec_index_of_intrinsic[T](v: Vec[T], value: T) -> Option[Int] {
+    let _v = v;
+    let _value = value;
+    let out: Option[Int] = None();
+    out
+}
+
+fn aic_vec_reverse_intrinsic[T](v: Vec[T]) -> Vec[T] {
+    v
+}
+
+fn aic_vec_slice_intrinsic[T](v: Vec[T], start: Int, end: Int) -> Vec[T] {
+    let _start = start;
+    let _end = end;
+    v
+}
+
+fn aic_vec_append_intrinsic[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
+    let _right = right;
+    left
+}
+
+fn aic_vec_clear_intrinsic[T](v: Vec[T]) -> Vec[T] {
+    v
+}
+
+fn new_vec[T]() -> Vec[T] {
+    aic_vec_new_intrinsic()
+}
+
+fn vec_of[T](value: T) -> Vec[T] {
+    aic_vec_of_intrinsic(value)
+}
+
+fn get[T](v: Vec[T], index: Int) -> Option[T] {
+    aic_vec_get_intrinsic(v, index)
+}
+
+fn first[T](v: Vec[T]) -> Option[T] {
+    aic_vec_first_intrinsic(v)
+}
+
+fn last[T](v: Vec[T]) -> Option[T] {
+    aic_vec_last_intrinsic(v)
+}
+
+fn push[T](v: Vec[T], value: T) -> Vec[T] {
+    aic_vec_push_intrinsic(v, value)
+}
+
+fn pop[T](v: Vec[T]) -> Vec[T] {
+    aic_vec_pop_intrinsic(v)
+}
+
+fn set[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
+    aic_vec_set_intrinsic(v, index, value)
+}
+
+fn insert[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
+    aic_vec_insert_intrinsic(v, index, value)
+}
+
+fn remove_at[T](v: Vec[T], index: Int) -> Vec[T] {
+    aic_vec_remove_at_intrinsic(v, index)
+}
+
+fn contains[T](v: Vec[T], value: T) -> Bool {
+    aic_vec_contains_intrinsic(v, value)
+}
+
+fn index_of[T](v: Vec[T], value: T) -> Option[Int] {
+    aic_vec_index_of_intrinsic(v, value)
+}
+
+fn is_empty[T](v: Vec[T]) -> Bool {
+    vec_len(v) == 0
+}
+
+fn reverse[T](v: Vec[T]) -> Vec[T] {
+    aic_vec_reverse_intrinsic(v)
+}
+
+fn slice[T](v: Vec[T], start: Int, end: Int) -> Vec[T] {
+    aic_vec_slice_intrinsic(v, start, end)
+}
+
+fn append[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
+    aic_vec_append_intrinsic(left, right)
+}
+
+fn clear[T](v: Vec[T]) -> Vec[T] {
+    aic_vec_clear_intrinsic(v)
 }

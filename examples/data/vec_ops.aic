@@ -1,0 +1,63 @@
+import std.io;
+import std.option;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut nums: Vec[Int] = vec.new_vec();
+    nums = vec.push(nums, 2);
+    nums = vec.push(nums, 4);
+    nums = vec.insert(nums, 1, 3);
+    nums = vec.set(nums, 0, 1);
+
+    let base_ok =
+        (if vec.vec_len(nums) == 3 { 1 } else { 0 }) +
+        (if opt_int_or(vec.first(nums), -1) == 1 { 1 } else { 0 }) +
+        (if opt_int_or(vec.last(nums), -1) == 4 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(nums, 1), -1) == 3 { 1 } else { 0 }) +
+        (if opt_int_or(vec.index_of(nums, 4), -1) == 2 { 1 } else { 0 }) +
+        (if vec.contains(nums, 3) { 1 } else { 0 });
+
+    let reversed = vec.reverse(nums);
+    let sliced = vec.slice(reversed, 0, 2);
+    let appended = vec.append(sliced, vec.vec_of(9));
+    let removed = vec.remove_at(appended, 1);
+    let popped = vec.pop(removed);
+    let emptied = vec.clear(popped);
+
+    let transform_ok =
+        (if vec.vec_len(appended) == 3 { 1 } else { 0 }) +
+        (if opt_int_or(vec.last(appended), -1) == 9 { 1 } else { 0 }) +
+        (if vec.vec_len(removed) == 2 { 1 } else { 0 }) +
+        (if opt_int_or(vec.get(removed, 1), -1) == 9 { 1 } else { 0 }) +
+        (if vec.vec_len(popped) == 1 { 1 } else { 0 }) +
+        (if opt_int_or(vec.first(popped), -1) == 4 { 1 } else { 0 });
+
+    let empty_ok =
+        (if vec.is_empty(emptied) { 1 } else { 0 }) +
+        (match vec.get(emptied, 0) {
+            None => 1,
+            Some(_) => 0,
+        }) +
+        (match vec.first(emptied) {
+            None => 1,
+            Some(_) => 0,
+        }) +
+        (match vec.last(emptied) {
+            None => 1,
+            Some(_) => 0,
+        });
+
+    if base_ok + transform_ok + empty_ok == 16 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
