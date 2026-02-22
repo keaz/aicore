@@ -177,3 +177,42 @@ fn append[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
 fn clear[T](v: Vec[T]) -> Vec[T] {
     aic_vec_clear_intrinsic(v)
 }
+
+fn map_vec[T, U](v: Vec[T], mapper: Fn(T) -> U) -> Vec[U] {
+    let mut out: Vec[U] = new_vec();
+    let mut i = 0;
+    while i < v.len {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => aic_vec_push_intrinsic(out, mapper(value)),
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn filter_vec[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Vec[T] {
+    let mut out: Vec[T] = new_vec();
+    let mut i = 0;
+    while i < v.len {
+        out = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => if predicate(value) { aic_vec_push_intrinsic(out, value) } else { out },
+            None => out,
+        };
+        i = i + 1;
+    };
+    out
+}
+
+fn fold_vec[T, S](v: Vec[T], init: S, reducer: Fn(S, T) -> S) -> S {
+    let mut acc = init;
+    let mut i = 0;
+    while i < v.len {
+        acc = match aic_vec_get_intrinsic(v, i) {
+            Some(value) => reducer(acc, value),
+            None => acc,
+        };
+        i = i + 1;
+    };
+    acc
+}

@@ -585,6 +585,40 @@ impl<'a> Parser<'a> {
             end = seg_span.end;
         }
 
+        if full_name == "Fn" && self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+            self.bump();
+            let mut args = Vec::new();
+            while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                let arg = self.parse_type()?;
+                args.push(arg);
+                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+            self.expect(
+                |k| matches!(k, TokenKind::RParen),
+                "E1069",
+                "expected ')' after Fn parameter types",
+            )?;
+            self.expect(
+                |k| matches!(k, TokenKind::Arrow),
+                "E1070",
+                "expected '->' after Fn parameter list",
+            )?;
+            let ret = self.parse_type()?;
+            end = ret.span.end;
+            args.push(ret);
+            return Some(TypeExpr {
+                kind: TypeKind::Named {
+                    name: full_name,
+                    args,
+                },
+                span: Span::new(start, end),
+            });
+        }
+
         let mut args = Vec::new();
         if self.at_kind(|k| matches!(k, TokenKind::LBracket)) {
             self.bump();
@@ -942,6 +976,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary(&mut self) -> Option<Expr> {
+        if self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+            return self.parse_closure_expr();
+        }
         if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
             let start = self.current_span().start;
             self.bump();
@@ -996,6 +1033,61 @@ impl<'a> Parser<'a> {
             });
         }
         self.parse_postfix()
+    }
+
+    fn parse_closure_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.expect(
+            |k| matches!(k, TokenKind::Pipe),
+            "E1071",
+            "expected '|' to start closure expression",
+        )?;
+
+        let mut params = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+            let param_start = self.current_span().start;
+            let (name, name_span) =
+                self.expect_ident("E1072", "expected closure parameter name")?;
+            let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
+                self.bump();
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            let param_end = ty.as_ref().map(|t| t.span.end).unwrap_or(name_span.end);
+            params.push(ClosureParam {
+                name,
+                ty,
+                span: Span::new(param_start, param_end),
+            });
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+
+        self.expect(
+            |k| matches!(k, TokenKind::Pipe),
+            "E1073",
+            "expected '|' to end closure parameters",
+        )?;
+        self.expect(
+            |k| matches!(k, TokenKind::Arrow),
+            "E1074",
+            "expected '->' after closure parameters",
+        )?;
+        let ret_type = self.parse_type()?;
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Some(Expr {
+            kind: ExprKind::Closure {
+                params,
+                ret_type,
+                body,
+            },
+            span: Span::new(start, end),
+        })
     }
 
     fn parse_postfix(&mut self) -> Option<Expr> {
@@ -1604,7 +1696,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{Expr, ExprKind, Item, PatternKind};
+    use crate::ast::{Expr, ExprKind, Item, PatternKind, Stmt};
 
     #[test]
     fn parses_simple_function() {
@@ -1768,6 +1860,31 @@ async fn main() -> Int {
             Item::Function(f) => assert!(f.is_async),
             _ => panic!("expected function"),
         }
+    }
+
+    #[test]
+    fn parses_closure_expression_and_fn_type() {
+        let src = r#"
+fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+fn main() -> Int {
+    let inc = |x: Int| -> Int { x + 1 };
+    apply(inc, 41)
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let main_fn = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let Stmt::Let { expr, .. } = &main_fn.body.stmts[0] else {
+            panic!("expected let stmt");
+        };
+        assert!(matches!(expr.kind, ExprKind::Closure { .. }));
     }
 
     #[test]

@@ -1,0 +1,26 @@
+import std.io;
+import std.vec;
+
+fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+fn add2(x: Int) -> Int {
+    x + 2
+}
+
+fn main() -> Int effects { io } {
+    let offset = 5;
+    let plus_offset = |x: Int| -> Int { x + offset };
+
+    let mut values: Vec[Int] = new_vec();
+    values = push(values, 1);
+    values = push(values, 2);
+    values = push(values, 3);
+
+    let mapped = map_vec(values, plus_offset);
+    let total = fold_vec(mapped, 0, |acc: Int, value: Int| -> Int { acc + value });
+
+    print_int(apply(add2, total));
+    0
+}

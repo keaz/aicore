@@ -89,6 +89,14 @@ pub struct Param {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClosureParam {
+    pub name: String,
+    #[serde(default)]
+    pub ty: Option<TypeExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructDef {
     pub name: String,
     pub generics: Vec<GenericParam>,
@@ -211,6 +219,11 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+    },
+    Closure {
+        params: Vec<ClosureParam>,
+        ret_type: TypeExpr,
+        body: Block,
     },
     If {
         cond: Box<Expr>,

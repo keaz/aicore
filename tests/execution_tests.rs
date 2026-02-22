@@ -147,6 +147,66 @@ async fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_first_class_fn_value_from_named_function() {
+    let src = r#"
+import std.io;
+
+fn add2(x: Int) -> Int {
+    x + 2
+}
+
+fn apply(f: Fn(Int) -> Int, value: Int) -> Int {
+    f(value)
+}
+
+fn main() -> Int effects { io } {
+    print_int(apply(add2, 40));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_closure_literal_invocation() {
+    let src = r#"
+import std.io;
+
+fn apply(f: Fn(Int) -> Int, value: Int) -> Int {
+    f(value)
+}
+
+fn main() -> Int effects { io } {
+    let inc = |x: Int| -> Int { x + 1 };
+    print_int(apply(inc, 41));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_closure_capture_from_outer_scope() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let base = 41;
+    let add = |x: Int| -> Int { x + base };
+    print_int(add(1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_while_and_continue_flow() {
     let src = r#"
 import std.io;

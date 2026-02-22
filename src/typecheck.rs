@@ -849,6 +849,10 @@ impl<'a> Checker<'a> {
                 }
                 self.check_resource_protocol_call(callee, args, expr.span, state, allow_closed_use);
             }
+            ir::ExprKind::Closure { body, .. } => {
+                let mut closure_state = state.clone();
+                self.check_resource_protocol_block(body, &mut closure_state);
+            }
             ir::ExprKind::If {
                 cond,
                 then_block,
@@ -1146,6 +1150,12 @@ impl<'a> Checker<'a> {
                     borrows.extend(self.check_borrow_expr(arg, mutability, state));
                 }
                 borrows
+            }
+            ir::ExprKind::Closure { body, .. } => {
+                let mut closure_mutability = mutability.clone();
+                let mut closure_state = state.clone();
+                self.check_borrow_block(body, &mut closure_mutability, &mut closure_state);
+                Vec::new()
             }
             ir::ExprKind::If {
                 cond,
@@ -1617,17 +1627,64 @@ impl<'a> Checker<'a> {
                 if let Some(ty) = locals.get(name) {
                     return ty.clone();
                 }
-                if self.functions.contains_key(name) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            "E1207",
-                            format!("function '{}' cannot be used as a value", name),
-                            self.file,
-                            expr.span,
-                        )
-                        .with_help("call the function with parentheses"),
-                    );
-                    return "<?>".to_string();
+                if let Some(sig) = self.functions.get(name) {
+                    if self
+                        .resolution
+                        .function_modules
+                        .get(name)
+                        .map(|mods| mods.len() > 1)
+                        .unwrap_or(false)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2104",
+                                format!("ambiguous callable '{}' from multiple modules", name),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help("qualify the function or add a type annotation"),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    if !sig.generic_params.is_empty() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1282",
+                                format!(
+                                    "generic function '{}' cannot be used as a value without specialization",
+                                    name
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help("wrap it in a closure with concrete argument/return types"),
+                        );
+                        return "<?>".to_string();
+                    }
+                    if !sig.effects.is_empty() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1283",
+                                format!(
+                                    "effectful function '{}' cannot be used as a first-class value",
+                                    name
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help(
+                                "wrap the call in a pure closure or keep a direct call site with explicit effects",
+                            ),
+                        );
+                        return "<?>".to_string();
+                    }
+
+                    let mut ret = sig.ret.clone();
+                    if sig.is_async {
+                        ret = format!("Async[{ret}]");
+                    }
+                    return render_fn_type(&sig.params, &ret);
                 }
                 self.diagnostics.push(Diagnostic::error(
                     "E1208",
@@ -1639,13 +1696,18 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Call { callee, args } => {
                 let Some(call_path) = self.extract_callee_path(callee) else {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E1209",
-                        "callee must be a function or constructor path",
-                        self.file,
-                        callee.span,
-                    ));
-                    return "<?>".to_string();
+                    let callee_ty =
+                        self.check_expr(callee, locals, allowed_effects, ctx, contract_mode);
+                    return self.check_fn_value_call(
+                        &callee_ty,
+                        "<expr>",
+                        args,
+                        expr.span,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                    );
                 };
                 let Some(name) = call_path.last().cloned() else {
                     self.diagnostics.push(Diagnostic::error(
@@ -1658,6 +1720,23 @@ impl<'a> Checker<'a> {
                 };
                 let qualified = call_path.len() > 1;
                 let rendered_path = call_path.join(".");
+
+                if !qualified {
+                    if let Some(local_ty) = locals.get(&name).cloned() {
+                        if parse_fn_type(&local_ty).is_some() {
+                            return self.check_fn_value_call(
+                                &local_ty,
+                                &rendered_path,
+                                args,
+                                expr.span,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                            );
+                        }
+                    }
+                }
 
                 // Option / Result constructors.
                 if !qualified && name == "Some" {
@@ -2301,6 +2380,114 @@ impl<'a> Checker<'a> {
                 ));
                 "<?>".to_string()
             }
+            ir::ExprKind::Closure {
+                params,
+                ret_type,
+                body,
+            } => {
+                let declared_ret = self
+                    .types
+                    .get(ret_type)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                self.check_generic_arity(&declared_ret, expr.span);
+
+                let expected_fn = expected_ty.and_then(parse_fn_type);
+                if let Some((expected_params, _)) = &expected_fn {
+                    if expected_params.len() != params.len() {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1284",
+                            format!(
+                                "closure expected {} parameter(s) from context, found {}",
+                                expected_params.len(),
+                                params.len()
+                            ),
+                            self.file,
+                            expr.span,
+                        ));
+                    }
+                }
+
+                let mut closure_locals = locals.clone();
+                let mut closure_param_tys = Vec::new();
+                for (_idx, param) in params.iter().enumerate() {
+                    let param_ty = if let Some(ty) = param.ty {
+                        self.types
+                            .get(&ty)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string())
+                    } else {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1280",
+                                format!("cannot infer type for closure parameter '{}'", param.name),
+                                self.file,
+                                param.span,
+                            )
+                            .with_help("add an explicit closure parameter type"),
+                        );
+                        "<?>".to_string()
+                    };
+                    self.check_generic_arity(&param_ty, param.span);
+                    closure_locals.insert(param.name.clone(), param_ty.clone());
+                    closure_param_tys.push(param_ty);
+                }
+
+                let body_ty = self.check_block(
+                    body,
+                    &mut closure_locals,
+                    &declared_ret,
+                    allowed_effects,
+                    ctx,
+                    contract_mode,
+                );
+                if !type_compatible(&declared_ret, &body_ty) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1281",
+                        format!(
+                            "closure body type '{}' does not match declared return '{}'",
+                            body_ty, declared_ret
+                        ),
+                        self.file,
+                        body.span,
+                    ));
+                }
+
+                if let Some((expected_params, expected_ret)) = &expected_fn {
+                    for (idx, (expected_param, actual_param)) in expected_params
+                        .iter()
+                        .zip(closure_param_tys.iter())
+                        .enumerate()
+                    {
+                        if !type_compatible(expected_param, actual_param) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1285",
+                                format!(
+                                    "closure parameter {} expected '{}', found '{}'",
+                                    idx + 1,
+                                    expected_param,
+                                    actual_param
+                                ),
+                                self.file,
+                                expr.span,
+                            ));
+                        }
+                    }
+                    if !type_compatible(expected_ret, &declared_ret) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1286",
+                            format!(
+                                "closure return '{}' does not match expected '{}'",
+                                declared_ret, expected_ret
+                            ),
+                            self.file,
+                            expr.span,
+                        ));
+                    }
+                }
+
+                render_fn_type(&closure_param_tys, &declared_ret)
+            }
             ir::ExprKind::If {
                 cond,
                 then_block,
@@ -2883,6 +3070,73 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn check_fn_value_call(
+        &mut self,
+        callee_ty: &str,
+        rendered_callee: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> String {
+        let Some((param_tys, ret_ty)) = parse_fn_type(callee_ty) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1209",
+                "callee must be a function value of type Fn(...) -> ...",
+                self.file,
+                span,
+            ));
+            return "<?>".to_string();
+        };
+
+        if args.len() != param_tys.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!(
+                    "callable '{}' expects {} args, got {}",
+                    rendered_callee,
+                    param_tys.len(),
+                    args.len()
+                ),
+                self.file,
+                span,
+            ));
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            let expected = param_tys.get(idx).map(String::as_str);
+            let found = self.check_expr_with_expected(
+                arg,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                expected,
+            );
+            let Some(expected) = param_tys.get(idx) else {
+                continue;
+            };
+            if !type_compatible(expected, &found) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1214",
+                    format!(
+                        "argument {} to '{}' expected '{}', found '{}'",
+                        idx + 1,
+                        rendered_callee,
+                        expected,
+                        found
+                    ),
+                    self.file,
+                    arg.span,
+                ));
+            }
+        }
+
+        ret_ty
+    }
+
     fn resolve_qualifier_module(&self, qualifier: &[String]) -> Option<String> {
         if qualifier.is_empty() {
             return None;
@@ -2934,6 +3188,26 @@ impl<'a> Checker<'a> {
 
     fn check_generic_arity(&mut self, ty: &str, span: crate::span::Span) {
         let base = base_type_name(ty).to_string();
+        if base == "Fn" {
+            let provided = extract_generic_args(ty).map(|a| a.len()).unwrap_or(0);
+            if provided == 0 {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1250",
+                        "generic arity mismatch for 'Fn': expected at least 1 type argument",
+                        self.file,
+                        span,
+                    )
+                    .with_help("use `Fn(...) -> Ret` with at least a return type"),
+                );
+            }
+            if let Some(args) = extract_generic_args(ty) {
+                for arg in args {
+                    self.check_generic_arity(&arg, span);
+                }
+            }
+            return;
+        }
         if let Some(expected) = self.generic_arity.get(&base).copied() {
             let provided = extract_generic_args(ty).map(|a| a.len()).unwrap_or(0);
             if provided != expected {
@@ -3779,6 +4053,25 @@ fn type_compatible(expected: &str, found: &str) -> bool {
         .iter()
         .zip(found_args.iter())
         .all(|(exp, got)| type_compatible(exp, got))
+}
+
+fn parse_fn_type(ty: &str) -> Option<(Vec<String>, String)> {
+    if base_type_name(ty) != "Fn" {
+        return None;
+    }
+    let args = extract_generic_args(ty)?;
+    if args.is_empty() {
+        return None;
+    }
+    let mut params = args;
+    let ret = params.pop()?;
+    Some((params, ret))
+}
+
+fn render_fn_type(params: &[String], ret: &str) -> String {
+    let mut args = params.to_vec();
+    args.push(ret.to_string());
+    format!("Fn[{}]", args.join(", "))
 }
 
 fn instantiation_kind_tag(kind: &ir::GenericInstantiationKind) -> &'static str {

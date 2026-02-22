@@ -163,6 +163,14 @@ pub struct Param {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClosureParam {
+    pub name: String,
+    #[serde(default)]
+    pub ty: Option<TypeId>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructDef {
     pub symbol: SymbolId,
     pub name: String,
@@ -270,6 +278,11 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+    },
+    Closure {
+        params: Vec<ClosureParam>,
+        ret_type: TypeId,
+        body: Block,
     },
     If {
         cond: Box<Expr>,

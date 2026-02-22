@@ -120,12 +120,12 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
 
     if let Some(req) = &f.requires {
         out.push_str(" requires ");
-        format_expr(out, req, 0);
+        format_expr(out, req, 0, type_map);
     }
 
     if let Some(ens) = &f.ensures {
         out.push_str(" ensures ");
-        format_expr(out, ens, 0);
+        format_expr(out, ens, 0, type_map);
     }
 
     out.push(' ');
@@ -148,7 +148,7 @@ fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::Ty
     out.push('}');
     if let Some(inv) = &s.invariant {
         out.push_str(" invariant ");
-        format_expr(out, inv, 0);
+        format_expr(out, inv, 0, type_map);
     }
     out.push('\n');
 }
@@ -245,30 +245,30 @@ fn format_block(
                     out.push_str(type_map.get(ty).map(|s| s.as_str()).unwrap_or("<?>"));
                 }
                 out.push_str(" = ");
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
                 out.push_str(";\n");
             }
             ir::Stmt::Assign { target, expr, .. } => {
                 out.push_str(target);
                 out.push_str(" = ");
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
                 out.push_str(";\n");
             }
             ir::Stmt::Expr { expr, .. } => {
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
                 out.push_str(";\n");
             }
             ir::Stmt::Return { expr, .. } => {
                 out.push_str("return");
                 if let Some(expr) = expr {
                     out.push(' ');
-                    format_expr(out, expr, 0);
+                    format_expr(out, expr, 0, type_map);
                 }
                 out.push_str(";\n");
             }
             ir::Stmt::Assert { expr, message, .. } => {
                 out.push_str("assert ");
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
                 out.push_str("; // ");
                 out.push_str(message);
                 out.push('\n');
@@ -278,14 +278,19 @@ fn format_block(
 
     if let Some(tail) = &block.tail {
         out.push_str(&" ".repeat(indent + 4));
-        format_expr(out, tail, 0);
+        format_expr(out, tail, 0, type_map);
         out.push('\n');
     }
     out.push_str(&" ".repeat(indent));
     out.push('}');
 }
 
-fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
+fn format_expr(
+    out: &mut String,
+    expr: &ir::Expr,
+    parent_prec: u8,
+    type_map: &BTreeMap<ir::TypeId, String>,
+) {
     match &expr.kind {
         ir::ExprKind::Int(v) => out.push_str(&v.to_string()),
         ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
@@ -298,15 +303,37 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
         ir::ExprKind::Unit => out.push_str("()"),
         ir::ExprKind::Var(v) => out.push_str(v),
         ir::ExprKind::Call { callee, args } => {
-            format_expr(out, callee, 10);
+            format_expr(out, callee, 10, type_map);
             out.push('(');
             for (idx, arg) in args.iter().enumerate() {
                 if idx > 0 {
                     out.push_str(", ");
                 }
-                format_expr(out, arg, 0);
+                format_expr(out, arg, 0, type_map);
             }
             out.push(')');
+        }
+        ir::ExprKind::Closure {
+            params,
+            ret_type,
+            body,
+        } => {
+            out.push('|');
+            for (idx, param) in params.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&param.name);
+                if let Some(ty) = param.ty {
+                    out.push_str(": ");
+                    out.push_str(type_map.get(&ty).map(|s| s.as_str()).unwrap_or("<?>"));
+                }
+            }
+            out.push('|');
+            out.push_str(" -> ");
+            out.push_str(type_map.get(ret_type).map(|s| s.as_str()).unwrap_or("<?>"));
+            out.push(' ');
+            format_block(out, body, type_map, 0);
         }
         ir::ExprKind::If {
             cond,
@@ -314,43 +341,43 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             else_block,
         } => {
             out.push_str("if ");
-            format_expr(out, cond, 0);
+            format_expr(out, cond, 0, type_map);
             out.push(' ');
-            format_block(out, then_block, &BTreeMap::new(), 0);
+            format_block(out, then_block, type_map, 0);
             out.push_str(" else ");
-            format_block(out, else_block, &BTreeMap::new(), 0);
+            format_block(out, else_block, type_map, 0);
         }
         ir::ExprKind::While { cond, body } => {
             out.push_str("while ");
-            format_expr(out, cond, 0);
+            format_expr(out, cond, 0, type_map);
             out.push(' ');
-            format_block(out, body, &BTreeMap::new(), 0);
+            format_block(out, body, type_map, 0);
         }
         ir::ExprKind::Loop { body } => {
             out.push_str("loop ");
-            format_block(out, body, &BTreeMap::new(), 0);
+            format_block(out, body, type_map, 0);
         }
         ir::ExprKind::Break { expr } => {
             out.push_str("break");
             if let Some(expr) = expr {
                 out.push(' ');
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
             }
         }
         ir::ExprKind::Continue => out.push_str("continue"),
         ir::ExprKind::Match { expr, arms } => {
             out.push_str("match ");
-            format_expr(out, expr, 0);
+            format_expr(out, expr, 0, type_map);
             out.push_str(" {\n");
             for arm in arms {
                 out.push_str("    ");
                 format_pattern(out, &arm.pattern);
                 if let Some(guard) = &arm.guard {
                     out.push_str(" if ");
-                    format_expr(out, guard, 0);
+                    format_expr(out, guard, 0, type_map);
                 }
                 out.push_str(" => ");
-                format_expr(out, &arm.body, 0);
+                format_expr(out, &arm.body, 0, type_map);
                 out.push_str(",\n");
             }
             out.push('}');
@@ -361,11 +388,11 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, lhs, prec);
+            format_expr(out, lhs, prec, type_map);
             out.push(' ');
             out.push_str(op_str);
             out.push(' ');
-            format_expr(out, rhs, prec + 1);
+            format_expr(out, rhs, prec + 1, type_map);
             if needs_paren {
                 out.push(')');
             }
@@ -376,14 +403,14 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
                 UnaryOp::Not => "!",
             };
             out.push_str(token);
-            format_expr(out, expr, 9);
+            format_expr(out, expr, 9, type_map);
         }
         ir::ExprKind::Borrow { mutable, expr } => {
             out.push('&');
             if *mutable {
                 out.push_str("mut ");
             }
-            format_expr(out, expr, 9);
+            format_expr(out, expr, 9, type_map);
         }
         ir::ExprKind::Await { expr } => {
             let needs_paren = matches!(
@@ -394,7 +421,7 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, expr, 9);
+            format_expr(out, expr, 9, type_map);
             if needs_paren {
                 out.push(')');
             }
@@ -407,7 +434,7 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, expr, 10);
+            format_expr(out, expr, 10, type_map);
             if needs_paren {
                 out.push(')');
             }
@@ -415,7 +442,7 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
         }
         ir::ExprKind::UnsafeBlock { block } => {
             out.push_str("unsafe ");
-            format_block(out, block, &BTreeMap::new(), 0);
+            format_block(out, block, type_map, 0);
         }
         ir::ExprKind::StructInit { name, fields } => {
             out.push_str(name);
@@ -426,12 +453,12 @@ fn format_expr(out: &mut String, expr: &ir::Expr, parent_prec: u8) {
                 }
                 out.push_str(field);
                 out.push_str(": ");
-                format_expr(out, expr, 0);
+                format_expr(out, expr, 0, type_map);
             }
             out.push('}');
         }
         ir::ExprKind::FieldAccess { base, field } => {
-            format_expr(out, base, 10);
+            format_expr(out, base, 10, type_map);
             out.push('.');
             out.push_str(field);
         }

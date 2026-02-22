@@ -884,6 +884,9 @@ fn rewrite_struct_inits_in_expr(
                 rewrite_struct_inits_in_expr(arg, helper_names, field_orders, alloc);
             }
         }
+        ir::ExprKind::Closure { body, .. } => {
+            rewrite_struct_inits_in_block(body, helper_names, field_orders, alloc);
+        }
         ir::ExprKind::If {
             cond,
             then_block,
@@ -1062,6 +1065,9 @@ fn lower_ensures_in_expr(
             for arg in args {
                 lower_ensures_in_expr(arg, ensures, ret_type, function_name, alloc);
             }
+        }
+        ir::ExprKind::Closure { body, .. } => {
+            lower_ensures_in_block(body, ensures, ret_type, function_name, alloc, false);
         }
         ir::ExprKind::If {
             cond,
@@ -1313,6 +1319,9 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
                 max = max.max(max_node_expr(arg));
             }
         }
+        ir::ExprKind::Closure { body, .. } => {
+            max = max.max(max_node_block(body));
+        }
         ir::ExprKind::If {
             cond,
             then_block,
@@ -1390,6 +1399,15 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
         ir::ExprKind::Call { callee, args } => ir::ExprKind::Call {
             callee: Box::new(clone_expr(callee, alloc)),
             args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
+        },
+        ir::ExprKind::Closure {
+            params,
+            ret_type,
+            body,
+        } => ir::ExprKind::Closure {
+            params: params.clone(),
+            ret_type: *ret_type,
+            body: clone_block(body, alloc),
         },
         ir::ExprKind::If {
             cond,
@@ -1553,6 +1571,15 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .iter()
                 .map(|a| substitute_result_var(a, result_name, alloc))
                 .collect(),
+        },
+        ir::ExprKind::Closure {
+            params,
+            ret_type,
+            body,
+        } => ir::ExprKind::Closure {
+            params: params.clone(),
+            ret_type: *ret_type,
+            body: clone_block(body, alloc),
         },
         ir::ExprKind::If {
             cond,
@@ -1881,6 +1908,7 @@ fn make(x: Int) -> NonEmpty {
                 count_asserts_in_expr(callee)
                     + args.iter().map(count_asserts_in_expr).sum::<usize>()
             }
+            ir::ExprKind::Closure { body, .. } => count_asserts_in_block(body),
             ir::ExprKind::Binary { lhs, rhs, .. } => {
                 count_asserts_in_expr(lhs) + count_asserts_in_expr(rhs)
             }

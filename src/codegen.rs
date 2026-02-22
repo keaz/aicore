@@ -28,8 +28,16 @@ enum LType {
     Bool,
     Unit,
     String,
+    Fn(FnLayoutType),
     Struct(StructLayoutType),
     Enum(EnumLayoutType),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FnLayoutType {
+    repr: String,
+    params: Vec<LType>,
+    ret: Box<LType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -711,6 +719,9 @@ struct Generator<'a> {
     generic_fn_instances: BTreeMap<String, Vec<GenericFnInstance>>,
     generic_fn_instances_by_symbol: BTreeMap<ir::SymbolId, Vec<GenericFnInstance>>,
     active_type_bindings: Option<BTreeMap<String, String>>,
+    closure_counter: usize,
+    deferred_fn_defs: Vec<Vec<String>>,
+    fn_value_adapters: BTreeMap<String, String>,
 }
 
 impl<'a> Generator<'a> {
@@ -750,6 +761,9 @@ impl<'a> Generator<'a> {
             generic_fn_instances: BTreeMap::new(),
             generic_fn_instances_by_symbol: BTreeMap::new(),
             active_type_bindings: None,
+            closure_counter: 0,
+            deferred_fn_defs: Vec::new(),
+            fn_value_adapters: BTreeMap::new(),
         }
     }
 
@@ -1061,6 +1075,7 @@ impl<'a> Generator<'a> {
                 }
                 if func.generics.is_empty() {
                     self.gen_function(func);
+                    self.flush_deferred_fn_defs();
                 } else if let Some(instances) = self
                     .generic_fn_instances_by_symbol
                     .get(&func.symbol)
@@ -1068,6 +1083,7 @@ impl<'a> Generator<'a> {
                 {
                     for instance in instances {
                         self.gen_monomorphized_function(func, &instance);
+                        self.flush_deferred_fn_defs();
                     }
                 }
             }
@@ -1785,6 +1801,8 @@ impl<'a> Generator<'a> {
                         ty: local.ty,
                         repr: Some(reg),
                     })
+                } else if let Some(sig) = self.fn_sigs.get(name).cloned() {
+                    self.gen_function_value(name, &sig, expr.span, fctx)
                 } else {
                     self.diagnostics.push(Diagnostic::error(
                         "E5001",
@@ -1847,14 +1865,18 @@ impl<'a> Generator<'a> {
                 self.gen_binary(*op, lv, rv, fctx, expr.span)
             }
             ir::ExprKind::Call { callee, args } => {
+                if let ir::ExprKind::Var(name) = &callee.kind {
+                    if let Some(local) = find_local(&fctx.vars, name) {
+                        if matches!(local.ty, LType::Fn(_)) {
+                            let callee_value = self.gen_expr(callee, fctx)?;
+                            return self.gen_fn_value_call(callee_value, args, expr.span, fctx);
+                        }
+                    }
+                }
+
                 let Some(path) = extract_callee_path(callee) else {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5003",
-                        "codegen expects callable names or qualified paths",
-                        self.file,
-                        callee.span,
-                    ));
-                    return None;
+                    let callee_value = self.gen_expr(callee, fctx)?;
+                    return self.gen_fn_value_call(callee_value, args, expr.span, fctx);
                 };
                 if path.last().is_none() {
                     self.diagnostics.push(Diagnostic::error(
@@ -1867,6 +1889,11 @@ impl<'a> Generator<'a> {
                 }
                 self.gen_call(&path, args, expr.span, expected_ty, fctx)
             }
+            ir::ExprKind::Closure {
+                params,
+                ret_type,
+                body,
+            } => self.gen_closure_value(params, *ret_type, body, expr.span, fctx),
             ir::ExprKind::If {
                 cond,
                 then_block,
@@ -2421,6 +2448,585 @@ impl<'a> Generator<'a> {
                 repr: Some(reg),
             })
         }
+    }
+
+    fn fn_layout_from_signature(&self, sig: &FnSig) -> FnLayoutType {
+        FnLayoutType {
+            repr: render_applied_type("Fn", &{
+                let mut all = sig.params.clone();
+                all.push(sig.ret.clone());
+                all
+            }),
+            params: sig.params.clone(),
+            ret: Box::new(sig.ret.clone()),
+        }
+    }
+
+    fn gen_function_value(
+        &mut self,
+        name: &str,
+        sig: &FnSig,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let has_definition = self.program.items.iter().any(|item| {
+            matches!(
+                item,
+                ir::Item::Function(func) if func.generics.is_empty() && func.name == name
+            )
+        });
+        if !has_definition {
+            self.diagnostics.push(Diagnostic::error(
+                "E5034",
+                format!(
+                    "function '{}' cannot be lowered as a first-class value in codegen",
+                    name
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let adapter = self.ensure_fn_value_adapter(name, sig);
+        let layout = self.fn_layout_from_signature(sig);
+        self.build_fn_value_from_symbol(&adapter, &layout, "null", fctx)
+    }
+
+    fn ensure_fn_value_adapter(&mut self, name: &str, sig: &FnSig) -> String {
+        let key = format!(
+            "{}({})->{}",
+            name,
+            sig.params
+                .iter()
+                .map(render_type)
+                .collect::<Vec<_>>()
+                .join(","),
+            render_type(&sig.ret)
+        );
+        if let Some(existing) = self.fn_value_adapters.get(&key) {
+            return existing.clone();
+        }
+
+        let target = mangle(name);
+        let adapter = format!(
+            "__aic_fn_adapter_{}_{}",
+            mangle(name),
+            self.fn_value_adapters.len()
+        );
+        let mut lines = Vec::new();
+        let mut params = vec!["i8* %env".to_string()];
+        params.extend(
+            sig.params
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx)),
+        );
+        let call_args = sig
+            .params
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!(
+            "define {} @{}({}) {{",
+            llvm_type(&sig.ret),
+            adapter,
+            params.join(", ")
+        ));
+        lines.push("entry:".to_string());
+        lines.push("  ; adapter ignores closure env for plain functions".to_string());
+        lines.push("  %env.ignore = ptrtoint i8* %env to i64".to_string());
+        if sig.ret == LType::Unit {
+            lines.push(format!("  call void @{}({})", target, call_args));
+            lines.push("  ret void".to_string());
+        } else {
+            let tmp = self.new_temp();
+            lines.push(format!(
+                "  {} = call {} @{}({})",
+                tmp,
+                llvm_type(&sig.ret),
+                target,
+                call_args
+            ));
+            lines.push(format!("  ret {} {}", llvm_type(&sig.ret), tmp));
+        }
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+        self.fn_value_adapters.insert(key, adapter.clone());
+        adapter
+    }
+
+    fn build_fn_value_from_symbol(
+        &mut self,
+        symbol: &str,
+        layout: &FnLayoutType,
+        env_ptr: &str,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let fn_sig_text = format!(
+            "{} (i8*{})*",
+            llvm_type(&layout.ret),
+            if layout.params.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ", {}",
+                    layout
+                        .params
+                        .iter()
+                        .map(llvm_type)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        );
+        let fn_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {} @{} to i8*",
+            fn_ptr, fn_sig_text, symbol
+        ));
+        let pair_ty = llvm_type(&LType::Fn(layout.clone()));
+        let v0 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i8* {}, 0",
+            v0, pair_ty, fn_ptr
+        ));
+        let v1 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i8* {}, 1",
+            v1, pair_ty, v0, env_ptr
+        ));
+        Some(Value {
+            ty: LType::Fn(layout.clone()),
+            repr: Some(v1),
+        })
+    }
+
+    fn gen_fn_value_call(
+        &mut self,
+        callee: Value,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Fn(layout) = callee.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5032",
+                "indirect call expects callee of type Fn(...) -> ...",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        if args.len() != layout.params.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5013",
+                format!(
+                    "function value call arity mismatch: expected {}, got {}",
+                    layout.params.len(),
+                    args.len()
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut rendered = Vec::new();
+        for (idx, expr) in args.iter().enumerate() {
+            let value = self.gen_expr(expr, fctx)?;
+            let expected = &layout.params[idx];
+            if value.ty != *expected {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5014",
+                    format!(
+                        "indirect call argument {} expected '{}', found '{}'",
+                        idx + 1,
+                        render_type(expected),
+                        render_type(&value.ty)
+                    ),
+                    self.file,
+                    expr.span,
+                ));
+                return None;
+            }
+            rendered.push(format!(
+                "{} {}",
+                llvm_type(expected),
+                value.repr.unwrap_or_else(|| default_value(expected))
+            ));
+        }
+
+        let callee_repr = callee
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&callee.ty));
+        let pair_ty = llvm_type(&callee.ty);
+
+        let fn_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            fn_raw, pair_ty, callee_repr
+        ));
+        let env_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 1",
+            env_raw, pair_ty, callee_repr
+        ));
+
+        let typed_fn = self.new_temp();
+        let fn_sig_text = format!(
+            "{} (i8*{})*",
+            llvm_type(&layout.ret),
+            if layout.params.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ", {}",
+                    layout
+                        .params
+                        .iter()
+                        .map(llvm_type)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        );
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}",
+            typed_fn, fn_raw, fn_sig_text
+        ));
+
+        let mut call_args = vec![format!("i8* {}", env_raw)];
+        call_args.extend(rendered);
+
+        if *layout.ret == LType::Unit {
+            fctx.lines.push(format!(
+                "  call void {}({})",
+                typed_fn,
+                call_args.join(", ")
+            ));
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        let out = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call {} {}({})",
+            out,
+            llvm_type(&layout.ret),
+            typed_fn,
+            call_args.join(", ")
+        ));
+        Some(Value {
+            ty: (*layout.ret).clone(),
+            repr: Some(out),
+        })
+    }
+
+    fn gen_closure_value(
+        &mut self,
+        params: &[ir::ClosureParam],
+        ret_type: ir::TypeId,
+        body: &ir::Block,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let capture_names = self.collect_closure_capture_names(params, body);
+        let mut captures = Vec::new();
+        for name in capture_names {
+            let Some(local) = find_local(&fctx.vars, &name) else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5031",
+                    format!("closure capture '{}' is not available in this scope", name),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+            captures.push((name, local));
+        }
+
+        let mut param_tys = Vec::new();
+        for param in params {
+            let Some(ty_id) = param.ty else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5033",
+                    format!(
+                        "closure parameter '{}' requires an explicit type",
+                        param.name
+                    ),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+            let ty = self.type_from_id(ty_id, param.span)?;
+            param_tys.push(ty);
+        }
+        let ret = self.type_from_id(ret_type, span)?;
+        let layout = FnLayoutType {
+            repr: render_applied_type("Fn", &{
+                let mut all = param_tys.clone();
+                all.push(ret.clone());
+                all
+            }),
+            params: param_tys.clone(),
+            ret: Box::new(ret.clone()),
+        };
+
+        let env_ptr = self.alloc_closure_env(&captures, fctx)?;
+
+        let closure_name = format!("__aic_closure_{}", self.closure_counter);
+        self.closure_counter += 1;
+        self.emit_closure_helper(&closure_name, params, &param_tys, &ret, body, &captures);
+        self.build_fn_value_from_symbol(&closure_name, &layout, &env_ptr, fctx)
+    }
+
+    fn closure_env_layout(&self, captures: &[(String, Local)]) -> StructLayoutType {
+        StructLayoutType {
+            repr: "__ClosureEnv".to_string(),
+            fields: captures
+                .iter()
+                .map(|(name, local)| StructFieldType {
+                    name: name.clone(),
+                    ty: local.ty.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    fn alloc_closure_env(
+        &mut self,
+        captures: &[(String, Local)],
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        if captures.is_empty() {
+            return Some("null".to_string());
+        }
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+        let env_layout = self.closure_env_layout(captures);
+        let env_ty = LType::Struct(env_layout);
+        let env_llvm = llvm_type(&env_ty);
+
+        let env_tmp = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", env_tmp, env_llvm));
+
+        for (idx, (_name, local)) in captures.iter().enumerate() {
+            let field_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* {}, i32 0, i32 {}",
+                field_ptr, env_llvm, env_llvm, env_tmp, idx
+            ));
+            let captured = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                captured,
+                llvm_type(&local.ty),
+                llvm_type(&local.ty),
+                local.ptr
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&local.ty),
+                captured,
+                llvm_type(&local.ty),
+                field_ptr
+            ));
+        }
+
+        let size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            size_ptr, env_llvm, env_llvm
+        ));
+        let size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            size, env_llvm, size_ptr
+        ));
+
+        let env_heap = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i8* @malloc(i64 {})", env_heap, size));
+        let env_heap_typed = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            env_heap_typed, env_heap, env_llvm
+        ));
+        let env_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            env_value, env_llvm, env_llvm, env_tmp
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            env_llvm, env_value, env_llvm, env_heap_typed
+        ));
+        Some(env_heap)
+    }
+
+    fn emit_closure_helper(
+        &mut self,
+        closure_name: &str,
+        params: &[ir::ClosureParam],
+        param_tys: &[LType],
+        ret_ty: &LType,
+        body: &ir::Block,
+        captures: &[(String, Local)],
+    ) {
+        let mut param_defs = vec!["i8* %env".to_string()];
+        param_defs.extend(
+            param_tys
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx)),
+        );
+
+        let mut fctx = FnCtx {
+            lines: vec!["entry:".to_string()],
+            vars: vec![BTreeMap::new()],
+            terminated: false,
+            current_label: "entry".to_string(),
+            ret_ty: ret_ty.clone(),
+            debug_scope: None,
+            loop_stack: Vec::new(),
+        };
+
+        if captures.is_empty() {
+            fctx.lines
+                .push("  %env_ignore = ptrtoint i8* %env to i64".to_string());
+        } else {
+            let env_layout = self.closure_env_layout(captures);
+            let env_ty = LType::Struct(env_layout);
+            let env_llvm = llvm_type(&env_ty);
+            let env_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = bitcast i8* %env to {}*", env_ptr, env_llvm));
+            for (idx, (name, local)) in captures.iter().enumerate() {
+                let field_ptr = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = getelementptr inbounds {}, {}* {}, i32 0, i32 {}",
+                    field_ptr, env_llvm, env_llvm, env_ptr, idx
+                ));
+                let captured = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load {}, {}* {}",
+                    captured,
+                    llvm_type(&local.ty),
+                    llvm_type(&local.ty),
+                    field_ptr
+                ));
+                let slot = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca {}", slot, llvm_type(&local.ty)));
+                fctx.lines.push(format!(
+                    "  store {} {}, {}* {}",
+                    llvm_type(&local.ty),
+                    captured,
+                    llvm_type(&local.ty),
+                    slot
+                ));
+                fctx.vars.last_mut().expect("scope").insert(
+                    name.clone(),
+                    Local {
+                        ty: local.ty.clone(),
+                        ptr: slot,
+                    },
+                );
+            }
+        }
+
+        for (idx, param) in params.iter().enumerate() {
+            let Some(ty) = param_tys.get(idx).cloned() else {
+                continue;
+            };
+            let ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", ptr, llvm_type(&ty)));
+            fctx.lines.push(format!(
+                "  store {} %arg{}, {}* {}",
+                llvm_type(&ty),
+                idx,
+                llvm_type(&ty),
+                ptr
+            ));
+            fctx.vars
+                .last_mut()
+                .expect("scope")
+                .insert(param.name.clone(), Local { ty, ptr });
+        }
+
+        let tail = self.gen_block_with_expected_tail(body, Some(ret_ty), &mut fctx);
+        if !fctx.terminated {
+            match ret_ty {
+                LType::Unit => fctx.lines.push("  ret void".to_string()),
+                _ => {
+                    let value = tail.unwrap_or(Value {
+                        ty: ret_ty.clone(),
+                        repr: Some(default_value(ret_ty)),
+                    });
+                    if value.ty != *ret_ty {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5035",
+                            "closure body return type does not match declared type",
+                            self.file,
+                            body.span,
+                        ));
+                        fctx.lines.push(format!(
+                            "  ret {} {}",
+                            llvm_type(ret_ty),
+                            default_value(ret_ty)
+                        ));
+                    } else {
+                        fctx.lines.push(format!(
+                            "  ret {} {}",
+                            llvm_type(ret_ty),
+                            value.repr.unwrap_or_else(|| default_value(ret_ty))
+                        ));
+                    }
+                }
+            }
+        }
+
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "define {} @{}({}) {{",
+            llvm_type(ret_ty),
+            closure_name,
+            param_defs.join(", ")
+        ));
+        lines.extend(fctx.lines);
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+    }
+
+    fn collect_closure_capture_names(
+        &self,
+        params: &[ir::ClosureParam],
+        body: &ir::Block,
+    ) -> Vec<String> {
+        let mut known_functions = self.fn_sigs.keys().cloned().collect::<BTreeSet<_>>();
+        known_functions.insert("Some".to_string());
+        known_functions.insert("None".to_string());
+        known_functions.insert("Ok".to_string());
+        known_functions.insert("Err".to_string());
+
+        let mut scopes = vec![params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect::<BTreeSet<_>>()];
+        let mut captures = BTreeSet::new();
+        collect_closure_captures_block(body, &mut scopes, &mut captures, &known_functions);
+        captures.into_iter().collect()
     }
 
     fn sig_matches_shape(&self, name: &str, params: &[&str], ret: &str) -> bool {
@@ -16150,6 +16756,15 @@ impl<'a> Generator<'a> {
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
             LType::String => self.json_encode_string_runtime(value, span, fctx),
             LType::Unit => self.json_encode_null_runtime(span, fctx),
+            LType::Fn(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON encoding of function values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
+            }
             LType::Struct(layout) => self.json_encode_struct(value, layout, span, fctx),
             LType::Enum(layout) => self.json_encode_enum(value, layout, span, fctx),
         }
@@ -16425,6 +17040,15 @@ impl<'a> Generator<'a> {
                     },
                     err_code: err,
                 })
+            }
+            LType::Fn(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON decoding into function values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
             }
             LType::Struct(layout) => self.json_decode_struct(layout, json, span, fctx),
             LType::Enum(layout) => self.json_decode_enum(layout, json, span, fctx),
@@ -16752,6 +17376,10 @@ impl<'a> Generator<'a> {
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
             LType::String => Some("{\"kind\":\"string\"}".to_string()),
             LType::Unit => Some("{\"kind\":\"unit\"}".to_string()),
+            LType::Fn(layout) => Some(format!(
+                "{{\"kind\":\"function\",\"name\":\"{}\"}}",
+                json_escape_string(&layout.repr)
+            )),
             LType::Struct(layout) => {
                 if stack.iter().any(|name| name == &layout.repr) {
                     return Some(format!(
@@ -20231,6 +20859,33 @@ impl<'a> Generator<'a> {
         let base = base_type_name(repr);
         let arg_texts = extract_generic_args(repr).unwrap_or_default();
 
+        if base == "Fn" {
+            if arg_texts.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5019",
+                    "Fn type must declare at least a return type",
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            let args = arg_texts
+                .iter()
+                .map(|text| self.parse_type_repr(text, span))
+                .collect::<Option<Vec<_>>>()?;
+            let mut params = args;
+            let ret = params.pop()?;
+            return Some(LType::Fn(FnLayoutType {
+                repr: render_applied_type("Fn", &{
+                    let mut all = params.clone();
+                    all.push(ret.clone());
+                    all
+                }),
+                params,
+                ret: Box::new(ret),
+            }));
+        }
+
         if let Some(template) = self.struct_templates.get(base).cloned() {
             if template.generics.len() != arg_texts.len() {
                 self.diagnostics.push(Diagnostic::error(
@@ -20461,6 +21116,16 @@ impl<'a> Generator<'a> {
         fctx.lines.push(call);
     }
 
+    fn flush_deferred_fn_defs(&mut self) {
+        if self.deferred_fn_defs.is_empty() {
+            return;
+        }
+        for def in self.deferred_fn_defs.drain(..) {
+            self.out.extend(def);
+            self.out.push(String::new());
+        }
+    }
+
     fn new_temp(&mut self) -> String {
         let n = self.temp_counter;
         self.temp_counter += 1;
@@ -20525,6 +21190,144 @@ fn extract_callee_path(callee: &ir::Expr) -> Option<Vec<String>> {
         Some(out)
     } else {
         None
+    }
+}
+
+fn is_declared_in_scopes(scopes: &[BTreeSet<String>], name: &str) -> bool {
+    scopes.iter().rev().any(|scope| scope.contains(name))
+}
+
+fn collect_closure_captures_block(
+    block: &ir::Block,
+    scopes: &mut Vec<BTreeSet<String>>,
+    captures: &mut BTreeSet<String>,
+    known_functions: &BTreeSet<String>,
+) {
+    scopes.push(BTreeSet::new());
+    for stmt in &block.stmts {
+        match stmt {
+            ir::Stmt::Let { name, expr, .. } => {
+                collect_closure_captures_expr(expr, scopes, captures, known_functions);
+                if let Some(scope) = scopes.last_mut() {
+                    scope.insert(name.clone());
+                }
+            }
+            ir::Stmt::Assign { target, expr, .. } => {
+                if !is_declared_in_scopes(scopes, target) && !known_functions.contains(target) {
+                    captures.insert(target.clone());
+                }
+                collect_closure_captures_expr(expr, scopes, captures, known_functions);
+            }
+            ir::Stmt::Expr { expr, .. } | ir::Stmt::Assert { expr, .. } => {
+                collect_closure_captures_expr(expr, scopes, captures, known_functions);
+            }
+            ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => collect_closure_captures_expr(expr, scopes, captures, known_functions),
+            ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_closure_captures_expr(tail, scopes, captures, known_functions);
+    }
+    scopes.pop();
+}
+
+fn collect_closure_captures_expr(
+    expr: &ir::Expr,
+    scopes: &mut Vec<BTreeSet<String>>,
+    captures: &mut BTreeSet<String>,
+    known_functions: &BTreeSet<String>,
+) {
+    match &expr.kind {
+        ir::ExprKind::Var(name) => {
+            if !is_declared_in_scopes(scopes, name) && !known_functions.contains(name) {
+                captures.insert(name.clone());
+            }
+        }
+        ir::ExprKind::Call { callee, args } => {
+            if let Some(path) = extract_callee_path(callee) {
+                if path.len() == 1 {
+                    let name = &path[0];
+                    if is_declared_in_scopes(scopes, name) && !known_functions.contains(name) {
+                        captures.insert(name.clone());
+                    }
+                } else {
+                    collect_closure_captures_expr(callee, scopes, captures, known_functions);
+                }
+            } else {
+                collect_closure_captures_expr(callee, scopes, captures, known_functions);
+            }
+            for arg in args {
+                collect_closure_captures_expr(arg, scopes, captures, known_functions);
+            }
+        }
+        ir::ExprKind::Closure { params, body, .. } => {
+            let mut param_scope = BTreeSet::new();
+            for param in params {
+                param_scope.insert(param.name.clone());
+            }
+            scopes.push(param_scope);
+            collect_closure_captures_block(body, scopes, captures, known_functions);
+            scopes.pop();
+        }
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_closure_captures_expr(cond, scopes, captures, known_functions);
+            collect_closure_captures_block(then_block, scopes, captures, known_functions);
+            collect_closure_captures_block(else_block, scopes, captures, known_functions);
+        }
+        ir::ExprKind::While { cond, body } => {
+            collect_closure_captures_expr(cond, scopes, captures, known_functions);
+            collect_closure_captures_block(body, scopes, captures, known_functions);
+        }
+        ir::ExprKind::Loop { body } => {
+            collect_closure_captures_block(body, scopes, captures, known_functions);
+        }
+        ir::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_closure_captures_expr(expr, scopes, captures, known_functions);
+            }
+        }
+        ir::ExprKind::Continue => {}
+        ir::ExprKind::Match { expr, arms } => {
+            collect_closure_captures_expr(expr, scopes, captures, known_functions);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_closure_captures_expr(guard, scopes, captures, known_functions);
+                }
+                collect_closure_captures_expr(&arm.body, scopes, captures, known_functions);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_closure_captures_expr(lhs, scopes, captures, known_functions);
+            collect_closure_captures_expr(rhs, scopes, captures, known_functions);
+        }
+        ir::ExprKind::Unary { expr, .. }
+        | ir::ExprKind::Borrow { expr, .. }
+        | ir::ExprKind::Await { expr }
+        | ir::ExprKind::Try { expr } => {
+            collect_closure_captures_expr(expr, scopes, captures, known_functions);
+        }
+        ir::ExprKind::UnsafeBlock { block } => {
+            collect_closure_captures_block(block, scopes, captures, known_functions);
+        }
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_closure_captures_expr(value, scopes, captures, known_functions);
+            }
+        }
+        ir::ExprKind::FieldAccess { base, .. } => {
+            collect_closure_captures_expr(base, scopes, captures, known_functions);
+        }
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit => {}
     }
 }
 
@@ -20761,6 +21564,7 @@ fn llvm_type(ty: &LType) -> String {
         LType::Bool => "i1".to_string(),
         LType::Unit => "void".to_string(),
         LType::String => "{ i8*, i64, i64 }".to_string(),
+        LType::Fn(_) => "{ i8*, i8* }".to_string(),
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()
@@ -20794,6 +21598,7 @@ fn default_value(ty: &LType) -> String {
         LType::Bool => "0".to_string(),
         LType::Unit => String::new(),
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
+        LType::Fn(_) => "{ i8* null, i8* null }".to_string(),
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()
@@ -20828,6 +21633,7 @@ fn render_type(ty: &LType) -> String {
         LType::Bool => "Bool".to_string(),
         LType::Unit => "()".to_string(),
         LType::String => "String".to_string(),
+        LType::Fn(layout) => layout.repr.clone(),
         LType::Struct(layout) => layout.repr.clone(),
         LType::Enum(layout) => layout.repr.clone(),
     }

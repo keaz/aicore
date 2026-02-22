@@ -322,6 +322,14 @@ fn render_expr(expr: &ir::Expr) -> String {
             let args = args.iter().map(render_expr).collect::<Vec<_>>().join(", ");
             format!("{}({})", render_expr(callee), args)
         }
+        ir::ExprKind::Closure { params, .. } => {
+            let rendered = params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("|{}| -> ... {{ ... }}", rendered)
+        }
         ir::ExprKind::If { cond, .. } => {
             format!("if {} {{ ... }} else {{ ... }}", render_expr(cond))
         }

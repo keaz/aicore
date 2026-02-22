@@ -247,6 +247,48 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_fn_type_and_closure_typecheck() {
+    let src = r#"
+fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+fn main() -> Int {
+    let inc = |x: Int| -> Int { x + 1 };
+    apply(inc, 41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_closure_parameter_requires_explicit_type() {
+    let src = r#"
+fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+fn main() -> Int {
+    let inc = |x| -> Int { x + 1 };
+    apply(inc, 41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1280"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_break_outside_loop_is_rejected() {
     let src = r#"
 fn bad() -> Int {

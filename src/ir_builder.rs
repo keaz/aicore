@@ -266,6 +266,22 @@ impl Builder {
                 callee: Box::new(self.lower_expr(callee)),
                 args: args.iter().map(|a| self.lower_expr(a)).collect(),
             },
+            ast::ExprKind::Closure {
+                params,
+                ret_type,
+                body,
+            } => ir::ExprKind::Closure {
+                params: params
+                    .iter()
+                    .map(|param| ir::ClosureParam {
+                        name: param.name.clone(),
+                        ty: param.ty.as_ref().map(|ty| self.lower_type(ty)),
+                        span: param.span,
+                    })
+                    .collect(),
+                ret_type: self.lower_type(ret_type),
+                body: self.lower_block(body),
+            },
             ast::ExprKind::If {
                 cond,
                 then_block,

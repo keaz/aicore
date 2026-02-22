@@ -32,6 +32,7 @@ Recent core-language additions:
 - `E1053-E1059`: trait/impl declaration syntax errors.
 - `E1060-E1062`: assignment statement parsing errors.
 - `E1063-E1068`: `extern`/`unsafe` parsing and declaration form errors.
+- `E1069-E1074`: `Fn(...) -> ...` type and closure literal parsing errors.
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.
@@ -56,6 +57,13 @@ Recent core-language additions:
 - `E1274`: `break` expression type does not match enclosing loop break type.
 - `E1275`: `break` used outside loop context.
 - `E1276`: `continue` used outside loop context.
+- `E1280`: closure parameter type must be explicit.
+- `E1281`: closure body type does not match declared closure return type.
+- `E1282`: generic function value cannot be used without specialization.
+- `E1283`: effectful function cannot be converted to first-class function value.
+- `E1284`: closure parameter count mismatches expected `Fn(...) -> ...` context.
+- `E1285`: closure parameter type mismatches expected `Fn(...) -> ...` context.
+- `E1286`: closure return type mismatches expected `Fn(...) -> ...` context.
 - `E2110`: invalid package install spec or version requirement.
 - `E2111`: package manifest read/write error for registry workflows.
 - `E2112`: duplicate package version publish attempted.
@@ -79,6 +87,12 @@ Recent core-language additions:
 - `E5024`: backend extern wrapper/link ABI mismatch or unsupported extern lowering.
 - `E5025`: backend encountered `break` outside a loop.
 - `E5026`: backend encountered `continue` outside a loop.
+- `E5031`: closure capture is unavailable in the current lowering scope.
+- `E5032`: indirect call target is not a first-class `Fn(...) -> ...` value.
+- `E5033`: closure parameter type is missing during backend lowering.
+- `E5034`: backend cannot lower the referenced function as a first-class function value.
+- `E5035`: closure helper return type mismatch during backend lowering.
+- `E5036`: JSON encode/decode for function values is unsupported.
 
 ## IO + Runtime Quick Reference
 
