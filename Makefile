@@ -122,6 +122,11 @@ docs-check:
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
 	@test -f docs/package-workflow.md
+	@test -f docs/package-ecosystem/README.md
+	@test -f docs/package-ecosystem/publish-consume.md
+	@test -f docs/package-ecosystem/workspaces-and-locks.md
+	@test -f docs/package-ecosystem/ffi-and-supply-chain.md
+	@test -f docs/package-ecosystem/failure-playbooks.md
 	@test -f docs/io-filesystem.md
 	@test -f docs/io-process-env-path.md
 	@test -f docs/io-concurrency-runtime.md

@@ -221,6 +221,32 @@ Implementation and test references:
 - `tests/e7_cli_tests.rs` (`workspace_check_and_build_execute_in_deterministic_order`, `workspace_cycle_is_reported_as_diagnostic`, `workspace_build_is_incremental_for_unchanged_members`)
 - `examples/pkg/workspace_demo/`
 
+### Agent-grade package ecosystem documentation (PKG-T6)
+
+`docs/package-ecosystem/` now provides end-to-end machine-first runbooks for PKG-T1..PKG-T5.
+
+- `README.md`:
+  - capability map and deterministic contract summary
+  - canonical runnable examples list
+- `publish-consume.md`:
+  - public publish/search/install flow
+  - private registry scopes/auth/mirror flow
+  - expected deterministic failure codes (`E2114`, `E2117`, `E2118`)
+- `workspaces-and-locks.md`:
+  - workspace manifest model
+  - shared lockfile semantics and offline behavior
+  - workspace diagnostics (`E2126`, `E2108`, `E2109`)
+- `ffi-and-supply-chain.md`:
+  - extern/native linking safety rules and diagnostics
+  - trust/signature verification workflow (`E2119`, `E2124`)
+- `failure-playbooks.md`:
+  - resolver conflict, auth/config, provenance, lock/cache incident response steps
+
+Validation hooks:
+
+- `Makefile` `docs-check` now requires the package ecosystem doc set files.
+- `tests/e7_cli_tests.rs` + `scripts/ci/examples.sh` exercise the documented package examples and flows.
+
 ### Checksum verification + offline cache (E6-T3)
 
 `src/package_workflow.rs`:
