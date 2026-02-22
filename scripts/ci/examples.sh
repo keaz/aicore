@@ -77,10 +77,12 @@ check_pass=(
   "examples/core/trait_sort.aic"
   "examples/core/result_propagation.aic"
   "examples/core/mut_vec.aic"
+  "examples/core/loop_control.aic"
   "examples/core/pattern_or.aic"
   "examples/core/pattern_guard_check.aic"
   "examples/verify/file_protocol.aic"
   "examples/verify/range_proofs.aic"
+  "examples/verify/qv_contract_proof_fixed.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -89,6 +91,7 @@ check_fail=(
   "examples/io/effect_misuse_fs.aic"
   "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
   "examples/verify/file_protocol_invalid.aic"
+  "examples/verify/qv_contract_proof_fail.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -130,8 +133,10 @@ run_pass=(
   "examples/core/trait_sort.aic"
   "examples/core/result_propagation.aic"
   "examples/core/mut_vec.aic"
+  "examples/core/loop_control.aic"
   "examples/core/pattern_or.aic"
   "examples/verify/range_proofs.aic"
+  "examples/verify/qv_contract_proof_fixed.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
@@ -244,8 +249,10 @@ case "$MODE" in
     expect_run_value "examples/core/trait_sort.aic" "42"
     expect_run_value "examples/core/result_propagation.aic" "42"
     expect_run_value "examples/core/mut_vec.aic" "2"
+    expect_run_value "examples/core/loop_control.aic" "42"
     expect_run_value "examples/core/pattern_or.aic" "42"
     expect_run_value "examples/verify/range_proofs.aic" "9"
+    expect_run_value "examples/verify/qv_contract_proof_fixed.aic" "7"
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then
@@ -274,6 +281,12 @@ case "$MODE" in
     "${AIC[@]}" migrate "$MIGRATION_DIR" --report "$ARTIFACT_DIR/migration_report.json" >/dev/null
     python3 -m json.tool "$ARTIFACT_DIR/migration_report.json" >/dev/null
     "${AIC[@]}" check "$MIGRATION_DIR/src/main.aic" >/dev/null
+    "${AIC[@]}" release manifest --root . --output "$ARTIFACT_DIR/repro-manifest.json" --source-date-epoch 1700000000 >/dev/null
+    "${AIC[@]}" release sbom --root . --output "$ARTIFACT_DIR/sbom.json" --source-date-epoch 1700000000 >/dev/null
+    "${AIC[@]}" release policy --check >/dev/null
+    "${AIC[@]}" release lts --check >/dev/null
+    "${AIC[@]}" release security-audit --json >"$ARTIFACT_DIR/security_audit.json"
+    python3 -m json.tool "$ARTIFACT_DIR/security_audit.json" >/dev/null
     expect_build_artifact "examples/e5/object_link_main.aic" "obj" "$ARTIFACT_DIR/object_link_main.o"
     expect_build_artifact "examples/e5/object_link_main.aic" "lib" "$ARTIFACT_DIR/libobject_link_main.a"
     for entry in "${run_fail[@]}"; do

@@ -1,0 +1,25 @@
+import std.io;
+
+fn main() -> Int effects { io } {
+    let mut n = 9;
+    let mut acc = 0;
+    while n > 0 {
+        if n == 3 {
+            n = n - 1;
+            continue;
+        } else {
+            ()
+        };
+        acc = acc + n;
+        n = n - 1;
+    };
+    let verified = loop {
+        if acc == 42 {
+            break 1
+        } else {
+            break 0
+        }
+    };
+    print_int(acc * verified);
+    0
+}
