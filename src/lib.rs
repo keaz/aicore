@@ -18,6 +18,7 @@ pub mod ir_builder;
 pub mod lexer;
 pub mod lsp;
 pub mod package_loader;
+pub mod package_registry;
 pub mod package_workflow;
 pub mod parser;
 pub mod perf_gate;

@@ -1,0 +1,5 @@
+module http_client.main;
+
+fn get_status_code() -> Int {
+    42
+}

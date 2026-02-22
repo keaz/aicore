@@ -16,6 +16,9 @@ use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
 use aicore::lsp;
+use aicore::package_registry::{
+    install as pkg_install, publish as pkg_publish, search as pkg_search,
+};
 use aicore::package_workflow::generate_and_write_lockfile;
 use aicore::parser;
 use aicore::project::init_project;
@@ -92,6 +95,10 @@ enum Command {
     Lock {
         #[arg(default_value = ".")]
         path: PathBuf,
+    },
+    Pkg {
+        #[command(subcommand)]
+        command: PkgCommand,
     },
     Build {
         #[arg(default_value = "src/main.aic")]
@@ -228,6 +235,35 @@ enum ReleaseCommand {
         json: bool,
         #[arg(long)]
         check: bool,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum PkgCommand {
+    Publish {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        registry: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    Search {
+        query: Option<String>,
+        #[arg(long)]
+        registry: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    Install {
+        #[arg(required = true)]
+        specs: Vec<String>,
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        registry: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -378,6 +414,100 @@ fn run_cli() -> anyhow::Result<i32> {
             println!("generated {}", lock_path.display());
             EXIT_OK
         }
+        Command::Pkg { command } => match command {
+            PkgCommand::Publish {
+                path,
+                registry,
+                json,
+            } => {
+                let root = resolve_project_root(&path);
+                match pkg_publish(&root, registry.as_deref()) {
+                    Ok(result) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            println!(
+                                "published {}@{} ({})",
+                                result.package, result.version, result.checksum
+                            );
+                            println!("registry path: {}", result.registry_path);
+                        }
+                        EXIT_OK
+                    }
+                    Err(diag) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&vec![diag])?);
+                        } else {
+                            print!("{}", diagnostics_pretty(&[diag]));
+                        }
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
+                }
+            }
+            PkgCommand::Search {
+                query,
+                registry,
+                json,
+            } => match pkg_search(query.as_deref(), registry.as_deref()) {
+                Ok(results) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&results)?);
+                    } else if results.is_empty() {
+                        println!("no packages found");
+                    } else {
+                        for result in results {
+                            println!(
+                                "{} latest={} versions={}",
+                                result.package,
+                                result.latest,
+                                result.versions.join(",")
+                            );
+                        }
+                    }
+                    EXIT_OK
+                }
+                Err(diag) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&vec![diag])?);
+                    } else {
+                        print!("{}", diagnostics_pretty(&[diag]));
+                    }
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+            },
+            PkgCommand::Install {
+                specs,
+                path,
+                registry,
+                json,
+            } => {
+                let root = resolve_project_root(&path);
+                match pkg_install(&root, &specs, registry.as_deref()) {
+                    Ok(result) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        } else {
+                            for item in &result.installed {
+                                println!(
+                                    "installed {}@{} ({}) -> {}",
+                                    item.package, item.version, item.requirement, item.path
+                                );
+                            }
+                            println!("updated lockfile {}", result.lockfile);
+                        }
+                        EXIT_OK
+                    }
+                    Err(diag) => {
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&vec![diag])?);
+                        } else {
+                            print!("{}", diagnostics_pretty(&[diag]));
+                        }
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
+                }
+            }
+        },
         Command::Build {
             input,
             output,

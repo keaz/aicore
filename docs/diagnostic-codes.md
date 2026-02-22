@@ -50,6 +50,13 @@ Recent core-language additions:
 - `E1270`: match guard expression must be `Bool`.
 - `E1271`: or-pattern alternatives bind different variable sets.
 - `E1272`: or-pattern alternatives bind a variable with incompatible types.
+- `E2110`: invalid package install spec or version requirement.
+- `E2111`: package manifest read/write error for registry workflows.
+- `E2112`: duplicate package version publish attempted.
+- `E2113`: package metadata missing/invalid (`[package].name` or `[package].version`).
+- `E2114`: semantic version resolution conflict across install requirements.
+- `E2115`: package/version not found in configured registry.
+- `E2116`: registry/index/package content IO or integrity failure.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
 - `E5023`: backend does not yet lower guarded match arms.

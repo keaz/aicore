@@ -25,6 +25,7 @@ Current contract version: `1.0`
 - `aic ir`
 - `aic ir-migrate`
 - `aic lock`
+- `aic pkg` (`publish`, `install`, `search`)
 - `aic build`
 - `aic doc`
 - `aic std-compat`

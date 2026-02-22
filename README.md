@@ -116,6 +116,9 @@ cargo run -- build examples/e5/object_link_main.aic --artifact obj -o object_lin
 cargo run -- build examples/e5/panic_line_map.aic --debug-info -o panic_dbg
 cargo run -- lock examples/e6/pkg_app
 cargo run -- check examples/e6/pkg_app --offline
+cargo run -- pkg publish examples/e6/pkg_app
+cargo run -- pkg search pkg
+cargo run -- pkg install util@^1.0.0 --path examples/e6/pkg_app
 cargo run -- doc examples/e6/doc_sample.aic -o docs/api
 cargo run -- std-compat --check --baseline docs/std-api-baseline.json
 cargo run -- check examples/e7/diag_errors.aic --sarif
@@ -138,6 +141,7 @@ Commands:
 - `aic ir --emit json|text`
 - `aic ir-migrate`
 - `aic lock`
+- `aic pkg`
 - `aic build`
 - `aic doc`
 - `aic std-compat`

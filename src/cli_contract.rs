@@ -58,6 +58,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text"],
     },
     CommandContract {
+        name: "pkg",
+        description: "Publish/install/search package registry workflows",
+        stable_flags: &["subcommands", "--json", "--registry"],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "build",
         description: "Build executable/object/static-library artifacts",
         stable_flags: &["--artifact", "--debug-info", "--offline"],

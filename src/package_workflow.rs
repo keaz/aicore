@@ -446,6 +446,10 @@ fn compute_package_checksum(root: &Path) -> anyhow::Result<String> {
     Ok(format!("sha256:{hex}"))
 }
 
+pub fn compute_package_checksum_for_path(root: &Path) -> anyhow::Result<String> {
+    compute_package_checksum(root)
+}
+
 fn collect_checksum_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> anyhow::Result<()> {
     if !dir.exists() {
         return Ok(());

@@ -1,0 +1,9 @@
+module pkg.consume_http_client;
+
+import std.io;
+import http_client.main;
+
+fn main() -> Int effects { io } {
+    print_int(http_client.main.get_status_code());
+    0
+}

@@ -1,5 +1,8 @@
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+
+use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -122,4 +125,247 @@ fn test_harness_runs_categories_and_reports_json() {
         serde_json::from_slice(&compile_fail_mode.stdout).expect("compile-fail report");
     assert_eq!(report["total"], 1);
     assert_eq!(report["failed"], 0);
+}
+
+fn write_pkg_project(root: &std::path::Path, name: &str, version: &str, module: &str, body: &str) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nmain = \"src/main.aic\"\n"),
+    )
+    .expect("write manifest");
+    fs::write(
+        root.join("src/main.aic"),
+        format!("module {module}.main;\n{body}\n"),
+    )
+    .expect("write source");
+}
+
+#[test]
+fn pkg_publish_search_install_roundtrip() {
+    let registry = tempdir().expect("registry");
+    let package = tempdir().expect("package");
+    let consumer = tempdir().expect("consumer");
+
+    write_pkg_project(
+        package.path(),
+        "http_client",
+        "1.2.0",
+        "http_client",
+        "fn get() -> Int { 42 }",
+    );
+
+    let publish = run_aic(&[
+        "pkg",
+        "publish",
+        package.path().to_str().expect("pkg path"),
+        "--registry",
+        registry.path().to_str().expect("registry path"),
+    ]);
+    assert_eq!(publish.status.code(), Some(0));
+
+    let search = run_aic(&[
+        "pkg",
+        "search",
+        "http",
+        "--registry",
+        registry.path().to_str().expect("registry path"),
+        "--json",
+    ]);
+    assert_eq!(search.status.code(), Some(0));
+    let search_json: serde_json::Value =
+        serde_json::from_slice(&search.stdout).expect("search json");
+    assert!(search_json.is_array());
+    assert_eq!(search_json[0]["package"], "http_client");
+    assert_eq!(search_json[0]["latest"], "1.2.0");
+
+    fs::create_dir_all(consumer.path().join("src")).expect("mkdir consumer src");
+    fs::write(
+        consumer.path().join("aic.toml"),
+        "[package]\nname = \"consumer_app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write consumer manifest");
+    fs::write(
+        consumer.path().join("src/main.aic"),
+        "module consumer_app.main;\nimport http_client.main;\nfn main() -> Int { http_client.main.get() }\n",
+    )
+    .expect("write consumer source");
+
+    let install = run_aic(&[
+        "pkg",
+        "install",
+        "http_client@^1.0.0",
+        "--path",
+        consumer.path().to_str().expect("consumer path"),
+        "--registry",
+        registry.path().to_str().expect("registry path"),
+    ]);
+    assert_eq!(install.status.code(), Some(0));
+
+    assert!(consumer.path().join("deps/http_client/aic.toml").exists());
+    assert!(consumer.path().join("aic.lock").exists());
+
+    let check = run_aic(&["check", consumer.path().to_str().expect("consumer path")]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+#[test]
+fn pkg_install_conflict_is_diagnostic_and_json_structured() {
+    let registry = tempdir().expect("registry");
+    let package_v1 = tempdir().expect("package v1");
+    let package_v2 = tempdir().expect("package v2");
+    let consumer = tempdir().expect("consumer");
+
+    write_pkg_project(
+        package_v1.path(),
+        "netlib",
+        "1.0.0",
+        "netlib",
+        "fn v() -> Int { 1 }",
+    );
+    write_pkg_project(
+        package_v2.path(),
+        "netlib",
+        "2.0.0",
+        "netlib",
+        "fn v() -> Int { 2 }",
+    );
+
+    let publish_v1 = run_aic(&[
+        "pkg",
+        "publish",
+        package_v1.path().to_str().expect("pkg v1"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(publish_v1.status.code(), Some(0));
+
+    let publish_v2 = run_aic(&[
+        "pkg",
+        "publish",
+        package_v2.path().to_str().expect("pkg v2"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(publish_v2.status.code(), Some(0));
+
+    fs::create_dir_all(consumer.path().join("src")).expect("mkdir consumer src");
+    fs::write(
+        consumer.path().join("aic.toml"),
+        "[package]\nname = \"consumer_app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write consumer manifest");
+    fs::write(
+        consumer.path().join("src/main.aic"),
+        "module consumer_app.main;\nfn main() -> Int { 0 }\n",
+    )
+    .expect("write consumer source");
+
+    let install = run_aic(&[
+        "pkg",
+        "install",
+        "netlib@^1.0.0",
+        "netlib@^2.0.0",
+        "--path",
+        consumer.path().to_str().expect("consumer"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+        "--json",
+    ]);
+    assert_eq!(install.status.code(), Some(1));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&install.stdout).expect("diagnostics");
+    assert!(diagnostics.is_array());
+    assert_eq!(diagnostics[0]["code"], "E2114");
+}
+
+#[test]
+fn pkg_install_lockfile_is_deterministic() {
+    let registry = tempdir().expect("registry");
+    let package_v1 = tempdir().expect("package v1");
+    let package_v2 = tempdir().expect("package v2");
+    let consumer = tempdir().expect("consumer");
+
+    write_pkg_project(
+        package_v1.path(),
+        "utilpkg",
+        "1.0.0",
+        "utilpkg",
+        "fn v() -> Int { 1 }",
+    );
+    write_pkg_project(
+        package_v2.path(),
+        "utilpkg",
+        "1.1.0",
+        "utilpkg",
+        "fn v() -> Int { 2 }",
+    );
+
+    let publish_v1 = run_aic(&[
+        "pkg",
+        "publish",
+        package_v1.path().to_str().expect("pkg v1"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(publish_v1.status.code(), Some(0));
+
+    let publish_v2 = run_aic(&[
+        "pkg",
+        "publish",
+        package_v2.path().to_str().expect("pkg v2"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(publish_v2.status.code(), Some(0));
+
+    fs::create_dir_all(consumer.path().join("src")).expect("mkdir consumer src");
+    fs::write(
+        consumer.path().join("aic.toml"),
+        "[package]\nname = \"consumer_app\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write consumer manifest");
+    fs::write(
+        consumer.path().join("src/main.aic"),
+        "module consumer_app.main;\nfn main() -> Int { 0 }\n",
+    )
+    .expect("write consumer source");
+
+    let install_1 = run_aic(&[
+        "pkg",
+        "install",
+        "utilpkg@^1.0.0",
+        "--path",
+        consumer.path().to_str().expect("consumer"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(install_1.status.code(), Some(0));
+    let first_lock = fs::read_to_string(consumer.path().join("aic.lock")).expect("lock 1");
+
+    let install_2 = run_aic(&[
+        "pkg",
+        "install",
+        "utilpkg@^1.0.0",
+        "--path",
+        consumer.path().to_str().expect("consumer"),
+        "--registry",
+        registry.path().to_str().expect("registry"),
+    ]);
+    assert_eq!(install_2.status.code(), Some(0));
+    let second_lock = fs::read_to_string(consumer.path().join("aic.lock")).expect("lock 2");
+
+    assert_eq!(first_lock, second_lock);
+}
+
+#[test]
+fn pkg_example_consumes_local_http_client_module() {
+    let check = run_aic(&["check", "examples/pkg/consume_http_client.aic"]);
+    assert_eq!(check.status.code(), Some(0));
 }

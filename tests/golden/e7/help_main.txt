@@ -11,6 +11,7 @@ Commands:
   ir          
   ir-migrate  
   lock        
+  pkg         
   build       
   doc         
   std-compat  

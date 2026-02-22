@@ -40,6 +40,29 @@ aic lock <project-dir>
 - resolved path
 - package checksum (`sha256:...`)
 
+## Registry CLI (PKG-T1)
+
+Package lifecycle commands:
+
+```bash
+aic pkg publish <project-dir> [--registry <path>]
+aic pkg search <query> [--registry <path>]
+aic pkg install <name@requirement>... [--path <project-dir>] [--registry <path>]
+```
+
+Version requirement forms:
+
+- wildcard: `*`
+- exact: `1.2.3` or `=1.2.3`
+- caret: `^1.2.0`
+- tilde: `~1.2.3`
+- comparator sets: `>=1.0.0,<2.0.0`
+
+Install writes dependencies to `aic.toml` (`[dependencies]`) and regenerates `aic.lock`.
+Resolver behavior is deterministic: matching versions are sorted by semantic version and the highest compatible version is selected.
+
+Example consumer source: `examples/pkg/consume_http_client.aic`
+
 ## Build/Check Integration
 
 When `aic.lock` exists, frontend package loading verifies dependency checksums before typechecking/codegen.
