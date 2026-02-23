@@ -1,0 +1,61 @@
+module std.log;
+
+enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+fn aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io } {
+    let _level = level;
+    let _message = message;
+    ()
+}
+
+fn aic_log_set_level_intrinsic(level: Int) -> () effects { io } {
+    let _level = level;
+    ()
+}
+
+fn aic_log_set_json_output_intrinsic(enabled: Bool) -> () effects { io } {
+    let _enabled = enabled;
+    ()
+}
+
+fn level_code(level: LogLevel) -> Int {
+    match level {
+        Debug => 0,
+        Info => 1,
+        Warn => 2,
+        Error => 3,
+    }
+}
+
+fn log(level: LogLevel, message: String) -> () effects { io } {
+    aic_log_emit_intrinsic(level_code(level), message)
+}
+
+fn debug(message: String) -> () effects { io } {
+    log(Debug(), message)
+}
+
+fn info(message: String) -> () effects { io } {
+    log(Info(), message)
+}
+
+fn warn(message: String) -> () effects { io } {
+    log(Warn(), message)
+}
+
+fn error(message: String) -> () effects { io } {
+    log(Error(), message)
+}
+
+fn set_level(level: LogLevel) -> () effects { io } {
+    aic_log_set_level_intrinsic(level_code(level))
+}
+
+fn set_json_output(enabled: Bool) -> () effects { io } {
+    aic_log_set_json_output_intrinsic(enabled)
+}

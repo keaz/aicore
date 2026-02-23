@@ -1,0 +1,33 @@
+module example.io.error_context_chain;
+
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let fs_chain_ctx = with_context(from_fs_error_with_context(NotFound(), "open config"), "bootstrap");
+    let chain = error_chain(fs_chain_ctx);
+
+    let score =
+        io_code(io_error(from_fs_error_with_context(NotFound(), "open config"))) * 1000 +
+        io_code(io_error(from_net_error_with_context(Timeout(), "dial upstream"))) * 100 +
+        io_code(io_error(from_proc_error_with_context(InvalidInput(), "spawn child"))) * 10 +
+        io_code(io_error(from_env_error_with_context(NotFound(), "load HOME")));
+
+    if chain == "open config -> fs.NotFound -> io.EndOfInput -> bootstrap" && score == 1121 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

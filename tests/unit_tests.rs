@@ -2664,6 +2664,43 @@ fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_config_load_json_has_success_and_error_paths() {
+    let source = fs::read_to_string("std/config.aic").expect("read std/config.aic");
+
+    assert!(source.contains(
+        "fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs }"
+    ));
+    assert!(source.contains("match read_text(path)"));
+    assert!(source.contains("match parse(text)"));
+    assert!(source.contains("match decode_with(parsed, marker)"));
+    assert!(source.contains("Ok(config) => Ok(config)"));
+    assert!(source.contains("Err(err) => Err(map_fs_error(err))"));
+    assert!(source.contains("Err(err) => Err(map_json_error(err))"));
+}
+
+#[test]
+fn unit_std_config_env_prefix_and_missing_key_paths_present() {
+    let source = fs::read_to_string("std/config.aic").expect("read std/config.aic");
+
+    assert!(source
+        .contains("fn load_env_prefix(prefix: String) -> Map[String, String] effects { env }"));
+    assert!(source.contains("starts_with(entry.key, prefix)"));
+    assert!(source.contains("substring(entry.key, prefix_len, key_len)"));
+
+    assert!(source.contains(
+        "fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String"
+    ));
+    assert!(source.contains("Some(value) => value"));
+    assert!(source.contains("None => fallback"));
+
+    assert!(source.contains(
+        "fn require(config: Map[String, String], key: String) -> Result[String, ConfigError]"
+    ));
+    assert!(source.contains("Some(value) => Ok(value)"));
+    assert!(source.contains("None => Err(MissingKey())"));
+}
+
+#[test]
 fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
 
@@ -2848,6 +2885,7 @@ import std.path;
 import std.map;
 import std.set;
 import std.proc;
+import std.log;
 import std.string;
 import std.vec;
 import std.option;
@@ -2883,16 +2921,30 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _header_entries = map.entries(_header_map);
     let _header_size = map.size(_header_map);
     let _header_removed = map.remove(_header_map, "accept");
-    let _set0 = set.new_set();
-    let _set1 = set.set_add(_set0, "accept");
-    let _set2 = set.set_add(_set1, "x-id");
-    let _set3 = set.set_discard(_set2, "accept");
-    let _set_has = set.set_has(_set3, "x-id");
-    let _set_union = set.union(_set3, set.set_add(set.new_set(), "trace-id"));
+    let _set0: Set[String] = set.new_set();
+    let _set1 = set.add(_set0, "accept");
+    let _set2 = set.add(_set1, "x-id");
+    let _set3 = set.discard(_set2, "accept");
+    let _set_has = set.has(_set3, "x-id");
+    let _set4: Set[String] = set.new_set();
+    let _set4 = set.add(_set4, "trace-id");
+    let _set_union = set.union(_set3, _set4);
     let _set_inter = set.intersection(_set_union, _set3);
     let _set_diff = set.difference(_set_union, _set3);
     let _set_vec = set.to_vec(_set_union);
     let _set_size = set.set_size(_set_union);
+    let _int_set0: Set[Int] = set.new_set();
+    let _int_set1 = set.add(_int_set0, 7);
+    let _int_set2 = set.discard(_int_set1, 7);
+    let _int_set_has = set.has(_int_set2, 7);
+    let _bool_set0: Set[Bool] = set.new_set();
+    let _bool_set1 = set.add(_bool_set0, true);
+    let _bool_set2 = set.discard(_bool_set1, false);
+    let _bool_set_has = set.has(_bool_set2, true);
+    let _log_level = Info();
+    log.set_level(_log_level);
+    log.set_json_output(true);
+    log.info("unit-smoke");
     let _base = basename(_path_join);
     let _dir = dirname(_path_join);
     let _ext = extension(_path_join);
@@ -4116,6 +4168,97 @@ fn bad(x: Wrap[Int, Int]) -> Int {
     );
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E1250"));
+}
+
+#[test]
+fn unit_error_context_chain_helpers_typecheck() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int {
+    let fs_chain_ctx = with_context(from_fs_error_with_context(NotFound(), "open config"), "bootstrap");
+    let chain = error_chain(fs_chain_ctx);
+
+    let score =
+        io_code(io_error(from_fs_error_with_context(NotFound(), "open config"))) * 1000 +
+        io_code(io_error(from_net_error_with_context(Timeout(), "dial upstream"))) * 100 +
+        io_code(io_error(from_proc_error_with_context(InvalidInput(), "spawn child"))) * 10 +
+        io_code(io_error(from_env_error_with_context(NotFound(), "load HOME")));
+
+    if chain == "open config -> fs.NotFound -> io.EndOfInput -> bootstrap" {
+        score
+    } else {
+        0
+    }
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_io_error_mapping_without_context_remains_compatible() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int {
+    io_code(from_fs_error(NotFound())) * 10000 +
+    io_code(from_fs_error(InvalidInput())) * 1000 +
+    io_code(from_net_error(Timeout())) * 100 +
+    io_code(from_proc_error(InvalidInput())) * 10 +
+    io_code(from_env_error(NotFound()))
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
 }
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {

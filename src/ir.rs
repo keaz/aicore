@@ -238,6 +238,18 @@ pub struct Block {
     pub span: Span,
 }
 
+impl Block {
+    pub fn lexical_drop_order(&self) -> Vec<SymbolId> {
+        self.stmts
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::Let { symbol, .. } => Some(*symbol),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Stmt {
     Let {

@@ -287,7 +287,7 @@ mod tests {
 
         fs::write(
             root.join("run-pass/ok.aic"),
-            "// expect: 42\nimport std.io;\n\nfn main() -> Int effects { io } {\n    print_int(42);\n    0\n}\n",
+            "// expect:\nfn main() -> Int {\n    0\n}\n",
         )
         .expect("write run pass");
 

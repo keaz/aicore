@@ -38,6 +38,9 @@ use aicore::package_workflow::{
     workspace_build_plan, NativeLinkConfig,
 };
 use aicore::parser;
+use aicore::perf_gate::{
+    build_trend_report, host_target_label, load_budget, load_compare_baseline, run_perf_gate,
+};
 use aicore::project::init_project;
 use aicore::release_ops::{
     check_compatibility_policy, check_lts_policy, compatibility_policy,
@@ -102,6 +105,14 @@ enum Command {
         report: Option<PathBuf>,
         #[arg(long)]
         offline: bool,
+    },
+    Bench {
+        #[arg(long, default_value = "benchmarks/service_baseline/budget.v1.json")]
+        budget: PathBuf,
+        #[arg(short, long, default_value = "bench.json")]
+        output: PathBuf,
+        #[arg(long, value_name = "BASELINE_JSON")]
+        compare: Option<PathBuf>,
     },
     Diag {
         #[command(subcommand)]
@@ -503,6 +514,47 @@ fn run_cli() -> anyhow::Result<i32> {
                 .map(|result| result.passed)
                 .unwrap_or(true)
             {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
+            }
+        }
+        Command::Bench {
+            budget,
+            output,
+            compare,
+        } => {
+            let root = std::env::current_dir()?;
+            let budget_spec = load_budget(&budget)?;
+            let baseline = match compare.as_deref() {
+                Some(path) => Some(load_compare_baseline(path)?),
+                None => None,
+            };
+            let report = run_perf_gate(&root, &budget_spec, baseline.as_ref())?;
+            let target = host_target_label();
+            let trend = build_trend_report(&report, target);
+            let ok = report.violations.is_empty();
+
+            let payload = serde_json::json!({
+                "phase": "bench",
+                "schema_version": "1.0",
+                "target": target,
+                "ok": ok,
+                "budget_path": budget.display().to_string(),
+                "output_path": output.display().to_string(),
+                "compare_path": compare.as_ref().map(|path| path.display().to_string()),
+                "report": report,
+                "trend": trend,
+            });
+
+            if let Some(parent) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)?;
+            }
+            let json = serde_json::to_string_pretty(&payload)?;
+            std::fs::write(&output, &json)?;
+            println!("{json}");
+
+            if ok {
                 EXIT_OK
             } else {
                 EXIT_DIAGNOSTIC_ERROR

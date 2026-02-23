@@ -1323,7 +1323,24 @@ impl<'a> Checker<'a> {
             self.release_temp_borrows(&temp_borrows, state);
         }
 
-        for owner in introduced_persistent_borrows.into_iter().rev() {
+        let drop_order = block.lexical_drop_order();
+        let introduced = introduced_persistent_borrows
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let mut release_order = drop_order
+            .iter()
+            .copied()
+            .filter(|symbol| introduced.contains(symbol))
+            .collect::<Vec<_>>();
+        if release_order.len() != introduced.len() {
+            for symbol in &introduced_persistent_borrows {
+                if !release_order.contains(symbol) {
+                    release_order.push(*symbol);
+                }
+            }
+        }
+        for owner in release_order.drain(..).rev() {
             self.release_persistent_borrow(owner, state);
         }
         for (name, previous) in introduced_bindings.into_iter().rev() {

@@ -47,6 +47,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "bench",
+        description: "Run benchmark dataset with deterministic machine-readable output",
+        stable_flags: &["--budget", "--output", "--compare"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "diag",
         description: "Alias of check focused on diagnostics output",
         stable_flags: &[

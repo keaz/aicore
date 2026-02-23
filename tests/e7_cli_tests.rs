@@ -86,6 +86,40 @@ fn write_profile_demo_project(root: &std::path::Path) {
     .expect("write profile demo source");
 }
 
+fn write_bench_fixture(root: &std::path::Path) -> (PathBuf, String) {
+    let dataset_rel = "benchdata";
+    let dataset_dir = root.join(dataset_rel);
+    fs::create_dir_all(&dataset_dir).expect("mkdir bench dataset");
+
+    let mut source = String::from("module bench.demo;\n");
+    for index in 0..220 {
+        source.push_str(&format!("fn value_{index}() -> Int {{ {index} }}\n"));
+    }
+    source.push_str("fn main() -> Int {\n    value_219()\n}\n");
+    fs::write(dataset_dir.join("main.aic"), source).expect("write bench source");
+
+    let budget_path = root.join("budget.json");
+    fs::write(
+        &budget_path,
+        format!(
+            concat!(
+                "{{\n",
+                "  \"dataset\": \"{dataset_rel}\",\n",
+                "  \"iterations\": 1,\n",
+                "  \"parser_ms_max\": 10000.0,\n",
+                "  \"typecheck_ms_max\": 10000.0,\n",
+                "  \"codegen_ms_max\": 10000.0,\n",
+                "  \"regression_tolerance_pct\": 10.0\n",
+                "}}\n"
+            ),
+            dataset_rel = dataset_rel
+        ),
+    )
+    .expect("write bench budget");
+
+    (budget_path, dataset_rel.to_string())
+}
+
 fn make_diag(code: &str, message: &str, file: &str, start: usize, end: usize) -> Diagnostic {
     Diagnostic {
         code: code.to_string(),
@@ -163,8 +197,8 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "coverage", "diag", "explain", "fmt", "ir", "migrate", "build", "lsp",
-        "daemon", "repl", "test", "contract", "release", "run",
+        "init", "check", "coverage", "bench", "diag", "explain", "fmt", "ir", "migrate", "build",
+        "lsp", "daemon", "repl", "test", "contract", "release", "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -186,6 +220,20 @@ fn cli_help_snapshots_are_stable() {
         check_help_text.contains("[default: 20]"),
         "missing default in check help:\n{check_help_text}"
     );
+
+    let bench_help = run_aic(&["bench", "--help"]);
+    assert!(bench_help.status.success());
+    let bench_help_text = String::from_utf8_lossy(&bench_help.stdout);
+    for flag in [
+        "--budget <BUDGET>",
+        "--output <OUTPUT>",
+        "--compare <BASELINE_JSON>",
+    ] {
+        assert!(
+            bench_help_text.contains(flag),
+            "missing `{flag}` in bench help:\n{bench_help_text}"
+        );
+    }
 
     let run_help = run_aic(&["run", "--help"]);
     assert!(run_help.status.success());
@@ -504,6 +552,113 @@ fn coverage_check_enforces_minimum_percentage() {
 }
 
 #[test]
+fn bench_command_emits_json_and_writes_report_file() {
+    let project = tempdir().expect("project");
+    let (budget_path, dataset_rel) = write_bench_fixture(project.path());
+    let output_path = project.path().join("target/bench/bench.json");
+
+    let budget = budget_path.to_string_lossy().to_string();
+    let output = output_path.to_string_lossy().to_string();
+    let result = run_aic_in_dir(
+        project.path(),
+        &["bench", "--budget", &budget, "--output", &output],
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "bench stdout={}\nstderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout_json: serde_json::Value =
+        serde_json::from_slice(&result.stdout).expect("bench stdout json");
+    let file_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&output_path).expect("read bench output file"))
+            .expect("bench output file json");
+    assert_eq!(stdout_json, file_json);
+    assert_eq!(stdout_json["phase"], "bench");
+    assert_eq!(stdout_json["schema_version"], "1.0");
+    assert_eq!(stdout_json["ok"], true);
+    assert_eq!(stdout_json["report"]["dataset"], dataset_rel);
+    assert_eq!(stdout_json["output_path"], output);
+    assert!(stdout_json["compare_path"].is_null());
+    assert!(stdout_json["trend"].is_null());
+    assert!(stdout_json["report"]["metrics"]["dataset_fingerprint"].is_string());
+    assert!(stdout_json["report"]["violations"]
+        .as_array()
+        .expect("violations array")
+        .is_empty());
+}
+
+#[test]
+fn bench_compare_reports_regressions_and_fails() {
+    let project = tempdir().expect("project");
+    let (budget_path, dataset_rel) = write_bench_fixture(project.path());
+    let baseline_path = project.path().join("compare-baseline.json");
+    fs::write(
+        &baseline_path,
+        format!(
+            concat!(
+                "{{\n",
+                "  \"dataset\": \"{}\",\n",
+                "  \"parser_ms\": -1.0,\n",
+                "  \"typecheck_ms\": -1.0,\n",
+                "  \"codegen_ms\": -1.0\n",
+                "}}\n"
+            ),
+            dataset_rel
+        ),
+    )
+    .expect("write compare baseline");
+    let output_path = project.path().join("target/bench/bench-compare.json");
+
+    let budget = budget_path.to_string_lossy().to_string();
+    let baseline = baseline_path.to_string_lossy().to_string();
+    let output = output_path.to_string_lossy().to_string();
+    let result = run_aic_in_dir(
+        project.path(),
+        &[
+            "bench",
+            "--budget",
+            &budget,
+            "--output",
+            &output,
+            "--compare",
+            &baseline,
+        ],
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "bench compare stdout={}\nstderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let output_json: serde_json::Value =
+        serde_json::from_slice(&result.stdout).expect("bench compare json");
+    assert_eq!(output_json["phase"], "bench");
+    assert_eq!(output_json["ok"], false);
+    assert_eq!(output_json["compare_path"], baseline);
+    assert_eq!(output_json["report"]["baseline"]["dataset"], dataset_rel);
+    assert_eq!(
+        output_json["trend"]["parser"]["within_regression_limit"],
+        false
+    );
+    assert!(output_json["report"]["violations"]
+        .as_array()
+        .expect("violations array")
+        .iter()
+        .any(|entry| {
+            entry
+                .as_str()
+                .unwrap_or_default()
+                .contains("regression exceeded")
+        }));
+}
+
+#[test]
 fn static_contract_verifier_emits_discharge_and_residual_notes() {
     let out = run_aic(&["check", "examples/verify/range_proofs.aic", "--json"]);
     assert_eq!(out.status.code(), Some(0));
@@ -582,6 +737,27 @@ fn explain_and_contract_commands_work() {
         .expect("commands")
         .iter()
         .any(|c| c["name"] == "coverage"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "bench"));
+    let bench_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "bench")
+        .expect("bench command contract");
+    assert!(bench_contract["stable_flags"]
+        .as_array()
+        .expect("bench stable flags")
+        .iter()
+        .any(|flag| flag == "--compare"));
+    assert!(bench_contract["stable_flags"]
+        .as_array()
+        .expect("bench stable flags")
+        .iter()
+        .any(|flag| flag == "--output"));
     let run_contract = contract_json["commands"]
         .as_array()
         .expect("commands")

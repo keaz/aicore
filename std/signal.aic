@@ -1,0 +1,71 @@
+module std.signal;
+
+import std.result;
+
+enum Signal {
+    SigInt,
+    SigTerm,
+    SigHup,
+}
+
+enum SignalError {
+    UnsupportedPlatform,
+    InvalidSignal,
+    PermissionDenied,
+    Internal,
+}
+
+fn aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] effects { proc } {
+    let _signal_code = signal_code;
+    let out: Result[Bool, SignalError] = Err(Internal());
+    out
+}
+
+fn aic_signal_wait_intrinsic() -> Result[Int, SignalError] effects { proc } {
+    let out: Result[Int, SignalError] = Err(Internal());
+    out
+}
+
+fn signal_code(signal: Signal) -> Int {
+    match signal {
+        SigInt => 2,
+        SigTerm => 15,
+        SigHup => 1,
+    }
+}
+
+fn signal_from_code(signal_code: Int) -> Signal {
+    if signal_code == 2 {
+        SigInt()
+    } else if signal_code == 15 {
+        SigTerm()
+    } else {
+        SigHup()
+    }
+}
+
+/// Register one shutdown-related POSIX signal.
+/// Supported signals are SIGINT, SIGTERM, and SIGHUP.
+fn register(signal: Signal) -> Result[Bool, SignalError] effects { proc } {
+    aic_signal_register_intrinsic(signal_code(signal))
+}
+
+/// Register SIGINT, SIGTERM, and SIGHUP.
+/// Returns the first error immediately.
+fn register_shutdown_handlers() -> Result[Bool, SignalError] effects { proc } {
+    match register(SigHup()) {
+        Err(err) => Err(err),
+        Ok(_) => match register(SigInt()) {
+            Err(err) => Err(err),
+            Ok(_) => register(SigTerm()),
+        },
+    }
+}
+
+/// Block until one registered signal arrives.
+fn wait_for_signal() -> Result[Signal, SignalError] effects { proc } {
+    match aic_signal_wait_intrinsic() {
+        Ok(code) => Ok(signal_from_code(code)),
+        Err(err) => Err(err),
+    }
+}
