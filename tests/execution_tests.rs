@@ -2684,6 +2684,45 @@ fn main() -> Int effects { io, rand } {
     assert_eq!(stdout, "42\n");
 }
 
+#[test]
+fn exec_rand_and_time_honor_test_mode_env_overrides() {
+    let src = r#"
+import std.io;
+import std.rand;
+import std.time;
+
+fn main() -> Int effects { io, rand, time } {
+    let now = now_ms();
+    let first = random_int();
+
+    seed(42);
+    let replay_a = random_int();
+    seed(42);
+    let replay_b = random_int();
+
+    if now == 0 && first == replay_a && replay_a == replay_b {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup_and_args_and_input_and_env(
+        src,
+        &[],
+        "",
+        &[
+            ("AIC_TEST_MODE", "1"),
+            ("AIC_TEST_SEED", "42"),
+            ("AIC_TEST_TIME_MS", "0"),
+        ],
+        |_| {},
+    );
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_concurrency_worker_pool_is_deterministic() {

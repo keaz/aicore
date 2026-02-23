@@ -142,7 +142,15 @@ fn run_pass_case(path: &Path) -> anyhow::Result<String> {
     let exe = tmp.join("run-pass-bin");
     compile_with_clang(&llvm.llvm_ir, &exe, &tmp)?;
 
-    let output = Command::new(&exe).output()?;
+    let mut command = Command::new(&exe);
+    command.env("AIC_TEST_MODE", "1");
+    if std::env::var_os("AIC_TEST_SEED").is_none() {
+        command.env("AIC_TEST_SEED", "0");
+    }
+    if std::env::var_os("AIC_TEST_TIME_MS").is_none() {
+        command.env("AIC_TEST_TIME_MS", "1767225600000");
+    }
+    let output = command.output()?;
     let _ = fs::remove_dir_all(&tmp);
     if !output.status.success() {
         anyhow::bail!(
@@ -305,6 +313,41 @@ mod tests {
 
         let report = run_harness(root, HarnessMode::All).expect("run harness");
         assert_eq!(report.total, 3);
+        assert_eq!(report.failed, 0, "report={:#?}", report);
+    }
+
+    #[test]
+    fn harness_run_pass_uses_deterministic_test_mode_seed_and_time() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("run-pass")).expect("mkdir run-pass");
+
+        fs::write(
+            root.join("run-pass/deterministic_time_rand.aic"),
+            concat!(
+                "// expect: 42\n",
+                "import std.io;\n",
+                "import std.time;\n",
+                "import std.rand;\n",
+                "\n",
+                "fn main() -> Int effects { io, time, rand } {\n",
+                "    let now = now_ms();\n",
+                "    let first = random_int();\n",
+                "    seed(0);\n",
+                "    let replay = random_int();\n",
+                "    if now == 1767225600000 && first == replay {\n",
+                "        print_int(42);\n",
+                "    } else {\n",
+                "        print_int(0);\n",
+                "    };\n",
+                "    0\n",
+                "}\n",
+            ),
+        )
+        .expect("write deterministic run-pass case");
+
+        let report = run_harness(root, HarnessMode::RunPass).expect("run harness");
+        assert_eq!(report.total, 1);
         assert_eq!(report.failed, 0, "report={:#?}", report);
     }
 }

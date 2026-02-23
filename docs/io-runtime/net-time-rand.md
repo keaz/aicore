@@ -73,6 +73,9 @@ fn sleep_until(deadline_ms: Int) -> () effects { time }
 - `now_ms` is wall clock time.
 - `monotonic_ms` is monotonic runtime clock for deadlines/timeouts.
 - Use `deadline_after_ms` + `remaining_ms` to avoid negative sleeps.
+- Deterministic test-mode overrides:
+  - `AIC_TEST_TIME_MS=<ms>` forces `now_ms()` to the provided millisecond value.
+  - `AIC_TEST_MODE=1` forces `now_ms()` to `2026-01-01T00:00:00Z` (`1767225600000`) when `AIC_TEST_TIME_MS` is unset.
 
 ### Example
 
@@ -94,6 +97,10 @@ fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand }
 - Seeded runs are deterministic for reproducible workflows.
 - `random_range(a, a)` returns `a`.
 - Use explicit seeds in tests and CI examples.
+- Deterministic test-mode overrides:
+  - `AIC_TEST_SEED=<seed>` forces process-level RNG seed on first random call.
+  - `AIC_TEST_MODE=1` forces deterministic default seed when `AIC_TEST_SEED` is unset.
+  - `aic test` sets deterministic test-mode environment by default (`AIC_TEST_MODE=1`, default seed/time when unset).
 
 ### Example
 

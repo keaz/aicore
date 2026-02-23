@@ -26470,10 +26470,55 @@ void aic_rt_vec_clear(unsigned char** io_ptr, long* io_len, long* io_cap) {
     }
 }
 
+static int aic_rt_env_truthy(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+    const char* value = getenv(name);
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    if (strcmp(value, "0") == 0 ||
+        strcmp(value, "false") == 0 ||
+        strcmp(value, "off") == 0 ||
+        strcmp(value, "no") == 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int aic_rt_env_parse_long(const char* name, long* out_value) {
+    if (name == NULL || out_value == NULL) {
+        return 0;
+    }
+    const char* raw = getenv(name);
+    if (raw == NULL || raw[0] == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char* end_ptr = NULL;
+    long long parsed = strtoll(raw, &end_ptr, 10);
+    if (errno != 0 || end_ptr == raw || *end_ptr != '\0') {
+        return 0;
+    }
+    if (parsed < (long long)LONG_MIN || parsed > (long long)LONG_MAX) {
+        return 0;
+    }
+    *out_value = (long)parsed;
+    return 1;
+}
+
 long aic_rt_time_now_ms(void) {
     if (!aic_rt_sandbox_allow_time()) {
         (void)aic_rt_sandbox_violation("time", "now_ms", 5);
         return 0;
+    }
+    long test_time_ms = 0;
+    if (aic_rt_env_parse_long("AIC_TEST_TIME_MS", &test_time_ms)) {
+        return test_time_ms;
+    }
+    if (aic_rt_env_truthy("AIC_TEST_MODE")) {
+        return (long)1767225600000LL;
     }
 #ifdef _WIN32
     FILETIME ft;
@@ -27209,6 +27254,21 @@ static unsigned long long aic_rt_rand_step(void) {
 
 static void aic_rt_rand_ensure_seeded(void) {
     if (aic_rt_rand_seeded) {
+        return;
+    }
+    long forced_seed = 0;
+    if (aic_rt_env_parse_long("AIC_TEST_SEED", &forced_seed)) {
+        unsigned long long seed = (unsigned long long)forced_seed;
+        if (seed == 0) {
+            seed = 0x9e3779b97f4a7c15ULL;
+        }
+        aic_rt_rand_state = seed;
+        aic_rt_rand_seeded = 1;
+        return;
+    }
+    if (aic_rt_env_truthy("AIC_TEST_MODE")) {
+        aic_rt_rand_state = 0x9e3779b97f4a7c15ULL;
+        aic_rt_rand_seeded = 1;
         return;
     }
     unsigned long long seed = (unsigned long long)aic_rt_time_now_ms();
@@ -40567,11 +40627,14 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_time_parse_iso8601("));
         assert!(runtime_c_source().contains("long aic_rt_time_format_rfc3339("));
         assert!(runtime_c_source().contains("long aic_rt_time_format_iso8601("));
+        assert!(runtime_c_source().contains("AIC_TEST_TIME_MS"));
+        assert!(runtime_c_source().contains("AIC_TEST_MODE"));
         assert!(runtime_c_source().contains("long aic_rt_signal_register(long signal_code)"));
         assert!(runtime_c_source().contains("long aic_rt_signal_wait(long* out_signal_code)"));
         assert!(runtime_c_source().contains("void aic_rt_rand_seed(long seed)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
+        assert!(runtime_c_source().contains("AIC_TEST_SEED"));
         assert!(runtime_c_source().contains("long aic_rt_conc_spawn(long value, long delay_ms"));
         assert!(runtime_c_source().contains("long aic_rt_conc_join(long handle, long* out_value)"));
         assert!(runtime_c_source()
