@@ -198,7 +198,7 @@ fn cli_help_snapshots_are_stable() {
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
         "init", "check", "coverage", "bench", "diag", "explain", "fmt", "ir", "migrate", "build",
-        "lsp", "daemon", "repl", "test", "contract", "release", "run",
+        "lsp", "daemon", "repl", "test", "grammar", "contract", "release", "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -778,6 +778,57 @@ fn explain_and_contract_commands_work() {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
     }
+}
+
+#[test]
+fn grammar_command_help_and_outputs_are_contract_stable() {
+    let grammar_help = run_aic(&["grammar", "--help"]);
+    assert_eq!(grammar_help.status.code(), Some(0));
+    let grammar_help_text = String::from_utf8_lossy(&grammar_help.stdout);
+    for flag in ["--ebnf", "--json"] {
+        assert!(
+            grammar_help_text.contains(flag),
+            "missing `{flag}` in grammar help:\n{grammar_help_text}"
+        );
+    }
+
+    let no_format = run_aic(&["grammar"]);
+    assert_eq!(no_format.status.code(), Some(2));
+
+    let expected_grammar = include_str!("../docs/grammar.ebnf");
+    let ebnf = run_aic(&["grammar", "--ebnf"]);
+    assert_eq!(ebnf.status.code(), Some(0));
+    let ebnf_text = String::from_utf8_lossy(&ebnf.stdout);
+    assert_eq!(ebnf_text, expected_grammar);
+
+    let grammar_json = run_aic(&["grammar", "--json"]);
+    assert_eq!(grammar_json.status.code(), Some(0));
+    let grammar_value: Value = serde_json::from_slice(&grammar_json.stdout).expect("grammar json");
+    assert_eq!(grammar_value["version"], "mvp-grammar-v6");
+    assert_eq!(grammar_value["format"], "ebnf");
+    assert_eq!(grammar_value["source_path"], "docs/grammar.ebnf");
+    assert_eq!(grammar_value["source_contract_path"], "docs/syntax.md");
+    assert_eq!(grammar_value["grammar"], expected_grammar);
+
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+    let grammar_command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|command| command["name"] == "grammar")
+        .expect("grammar command contract");
+    assert!(grammar_command["stable_flags"]
+        .as_array()
+        .expect("stable flags")
+        .iter()
+        .any(|flag| flag == "--ebnf"));
+    assert!(grammar_command["stable_flags"]
+        .as_array()
+        .expect("stable flags")
+        .iter()
+        .any(|flag| flag == "--json"));
 }
 
 #[test]

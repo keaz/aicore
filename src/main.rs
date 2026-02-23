@@ -58,6 +58,11 @@ use aicore::test_harness::{run_harness, HarnessMode};
 use clap::{Parser, Subcommand, ValueEnum};
 
 const DEFAULT_MAX_ERRORS: usize = 20;
+const GRAMMAR_VERSION: &str = "mvp-grammar-v6";
+const GRAMMAR_FORMAT: &str = "ebnf";
+const GRAMMAR_SOURCE_PATH: &str = "docs/grammar.ebnf";
+const GRAMMAR_SOURCE_CONTRACT_PATH: &str = "docs/syntax.md";
+const GRAMMAR_EBNF: &str = include_str!("../docs/grammar.ebnf");
 
 #[derive(Parser)]
 #[command(name = "aic", version, about = "AICore compiler")]
@@ -212,6 +217,12 @@ enum Command {
         json: bool,
         #[arg(long = "accept-version", value_delimiter = ',')]
         accept_versions: Vec<String>,
+    },
+    Grammar {
+        #[arg(long, conflicts_with = "json", required_unless_present = "json")]
+        ebnf: bool,
+        #[arg(long, conflicts_with = "ebnf", required_unless_present = "ebnf")]
+        json: bool,
     },
     Release {
         #[command(subcommand)]
@@ -453,6 +464,16 @@ fn parse_coverage_percent(value: &str) -> Result<f64, String> {
         return Err("--min must be within [0, 100]".to_string());
     }
     Ok(parsed)
+}
+
+fn grammar_contract_json() -> serde_json::Value {
+    serde_json::json!({
+        "version": GRAMMAR_VERSION,
+        "format": GRAMMAR_FORMAT,
+        "grammar": GRAMMAR_EBNF,
+        "source_path": GRAMMAR_SOURCE_PATH,
+        "source_contract_path": GRAMMAR_SOURCE_CONTRACT_PATH
+    })
 }
 
 fn run_cli() -> anyhow::Result<i32> {
@@ -1110,6 +1131,18 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 EXIT_OK
             }
+        }
+        Command::Grammar { ebnf, json } => {
+            debug_assert!(ebnf ^ json);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&grammar_contract_json())?
+                );
+            } else {
+                print!("{GRAMMAR_EBNF}");
+            }
+            EXIT_OK
         }
         Command::Contract {
             json,

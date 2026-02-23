@@ -120,7 +120,7 @@ Backend note:
 
 ## Implementation Map
 
-- Parser and grammar: `src/lexer.rs`, `src/parser.rs`
+- Parser and grammar: `src/lexer.rs`, `src/parser.rs`, `docs/grammar.ebnf` (frozen source contract: `docs/syntax.md`)
 - AST/IR contracts: `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`
 - Canonical printing: `src/formatter.rs`
 - Type and pattern checks: `src/typecheck.rs`

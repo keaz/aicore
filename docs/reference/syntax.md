@@ -1,8 +1,9 @@
 # Syntax Reference
 
-See also: [Types](./types.md), [Expressions](./expressions.md), [Statements](./statements.md), [Modules](./modules.md)
+See also: [Types](./types.md), [Expressions](./expressions.md), [Statements](./statements.md), [Modules](./modules.md), [Frozen EBNF Artifact](../grammar.ebnf)
 
 This page documents the concrete grammar accepted by `src/lexer.rs` and `src/parser.rs`.
+The canonical machine-readable artifact is [`docs/grammar.ebnf`](../grammar.ebnf), sourced from the frozen contract in `docs/syntax.md`.
 
 ## Grammar
 

@@ -71,6 +71,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text"],
     },
     CommandContract {
+        name: "grammar",
+        description: "Print frozen language grammar artifacts",
+        stable_flags: &["--ebnf", "--json"],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "ir",
         description: "Emit current IR",
         stable_flags: &["--emit", "--offline"],
