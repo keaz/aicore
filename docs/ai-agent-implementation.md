@@ -29,6 +29,19 @@ Core language-specific deep dive:
 - Performance budget runner: `src/perf_gate.rs`
 - CLI command surface: `src/main.rs`
 
+## Epic #62 proof-of-completion checklist (open)
+
+Use this checklist to gate closure of epic `#62`. Keep epic status as In Progress until all items are complete with evidence.
+
+- [ ] Protocol contract docs are current: `docs/agent-tooling/protocol-v1.md`
+- [ ] Protocol schemas are current: `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`
+- [ ] Incremental daemon docs are current: `docs/agent-tooling/incremental-daemon.md`
+- [ ] LSP example reflects the implemented workflow: `examples/agent/lsp_workflow.json`
+- [ ] Agent recipe docs are current and aligned: `docs/agent-recipes/`
+- [ ] Test gate passes: `make test-e7`
+- [ ] Relevant test files pass: `tests/agent_protocol_tests.rs`, `tests/agent_recipe_tests.rs`, `tests/lsp_smoke_tests.rs`, `tests/e7_cli_tests.rs`
+- [ ] Epic closure evidence is posted: commit hash, `make test-e7` result, and touched docs/examples/tests
+
 ## E4 Summary (Effects + Contracts)
 
 ### Effects
@@ -84,13 +97,16 @@ In `src/codegen.rs`:
 
 Current std set under `std/`:
 
-- `io`, `fs`, `env`, `path`, `proc`, `net`, `time`, `rand`, `json`, `url`, `http`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`
+- `io`, `fs`, `env`, `config`, `path`, `proc`, `net`, `time`, `rand`, `json`, `url`, `http`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`
 
 Notes:
 
 - Effects are declared on side-effecting std APIs.
 - `std.time.now` is compatibility API and intentionally deprecated in policy metadata.
 - `std.fs` public APIs delegate to runtime intrinsic wrappers (`aic_fs_*_intrinsic`) and should not be replaced with constant placeholders.
+- `std.config` composes file + JSON + env capabilities for app config loading (`load_json`, `load_env_prefix`, `get_or_default`, `require`).
+- `std.set` mutator/query APIs are `add`, `has`, and `discard`; `union`/`intersection`/`difference` preserve deterministic ordering via `to_vec`.
+- Current backend support remains `String`-key specialized for set/map key paths; non-`String` set key usage currently emits deterministic backend diagnostic `E5011` (`...String key...`).
 - `std.fs` now exposes production-facing APIs with typed failures:
   - `read_text`, `write_text`, `append_text`, `copy`, `move`, `delete`
   - `metadata`, `walk_dir`, `temp_file`, `temp_dir`
@@ -102,6 +118,9 @@ Notes:
 - Process/env/path API contract and examples:
   - `docs/io-process-env-path.md`
   - `examples/io/process_pipeline.aic`
+- Config loading contract and example:
+  - `docs/config-loading.md`
+  - `examples/io/config_loading.aic`
 - Concurrency runtime contract and examples:
   - `docs/io-concurrency-runtime.md`
   - `examples/io/worker_pool.aic`

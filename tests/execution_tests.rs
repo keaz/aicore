@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -15,6 +15,19 @@ fn compile_and_run_with_setup_and_args_and_input<F>(
     source: &str,
     args: &[&str],
     stdin_input: &str,
+    setup: F,
+) -> (i32, String, String)
+where
+    F: FnOnce(&Path),
+{
+    compile_and_run_with_setup_and_args_and_input_and_env(source, args, stdin_input, &[], setup)
+}
+
+fn compile_and_run_with_setup_and_args_and_input_and_env<F>(
+    source: &str,
+    args: &[&str],
+    stdin_input: &str,
+    envs: &[(&str, &str)],
     setup: F,
 ) -> (i32, String, String)
 where
@@ -38,14 +51,17 @@ where
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
 
     setup(dir.path());
-    let mut child = Command::new(exe)
+    let mut command = Command::new(exe);
+    command
         .current_dir(dir.path())
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("run exe");
+        .stderr(Stdio::piped());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    let mut child = command.spawn().expect("run exe");
     {
         let mut stdin = child.stdin.take().expect("child stdin");
         stdin
@@ -80,6 +96,62 @@ where
 
 fn compile_and_run(source: &str) -> (i32, String, String) {
     compile_and_run_with_setup(source, |_| {})
+}
+
+fn compile_and_run_or_backend_diags(
+    source: &str,
+) -> Result<(i32, String, String), Vec<aicore::diagnostics::Diagnostic>> {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("main.aic");
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = match emit_llvm(&lowered, &src.to_string_lossy()) {
+        Ok(llvm) => llvm,
+        Err(diags) => return Err(diags),
+    };
+
+    let exe = dir.path().join("app");
+    compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
+
+    let output = Command::new(exe)
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run exe");
+
+    Ok((
+        output.status.code().unwrap_or(1),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    ))
+}
+
+fn assert_set_ops_succeeds_or_reports_string_key_limit(source: &str) {
+    match compile_and_run_or_backend_diags(source) {
+        Ok((code, stdout, stderr)) => {
+            assert_eq!(code, 0, "stderr={stderr}");
+            assert_eq!(stdout, "42\n");
+        }
+        Err(diags) => {
+            assert!(
+                diags.iter().any(|d| {
+                    d.code == "E5011"
+                        && (d.message.contains("String key")
+                            || d.message.contains("String keys only"))
+                }),
+                "diags={diags:#?}"
+            );
+        }
+    }
 }
 
 fn compile_and_run_with_args(source: &str, args: &[&str]) -> (i32, String, String) {
@@ -124,6 +196,34 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_panic_emits_backtrace_when_enabled() {
+    let src = r#"
+import std.io;
+
+fn crash() -> Int effects { io } {
+    panic("trace-check");
+    0
+}
+
+fn main() -> Int effects { io } {
+    crash()
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup_and_args_and_input_and_env(
+        src,
+        &[],
+        "",
+        &[("AIC_BACKTRACE", "1")],
+        |_| {},
+    );
+    assert_ne!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("AICore panic"), "stderr={stderr}");
+    assert!(stderr.contains("trace-check"), "stderr={stderr}");
+    assert!(stderr.contains("stack backtrace:"), "stderr={stderr}");
 }
 
 #[test]
@@ -350,6 +450,120 @@ fn pick[T: Order](a: T, b: T) -> T {
 
 fn main() -> Int effects { io } {
     print_int(pick(42, 7));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_trait_method_static_dispatch_returns_deterministic_value() {
+    let src = r#"
+import std.io;
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+fn eval[T: Score](x: T) -> Int {
+    x.score()
+}
+
+fn main() -> Int effects { io } {
+    print_int(eval(Meter { value: 41 }));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_borrow_checker_reinitialize_after_move() {
+    let src = r#"
+import std.io;
+
+struct BoxedInt { value: Int }
+
+fn main() -> Int effects { io } {
+    let mut b = BoxedInt { value: 1 };
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt { value: first + 1 };
+    print_int(b.value);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n");
+}
+
+#[test]
+fn exec_tuple_types_destructure_match_and_field_access() {
+    let src = r#"
+import std.io;
+
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int effects { io } {
+    let pair = swap(2, 40);
+    let (left, right) = pair;
+    let matched = match pair {
+        (40, value) => value,
+        _ => 0,
+    };
+    print_int(tuple_first((left + matched, right)));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_struct_methods_associated_and_instance_calls() {
+    let src = r#"
+import std.io;
+
+struct User { age: Int }
+
+impl User {
+    fn new(age: Int) -> User {
+        User { age: age }
+    }
+
+    fn age_plus(self) -> Int {
+        self.age + 12
+    }
+
+    fn is_adult(self) -> Bool {
+        self.age >= 18
+    }
+}
+
+fn main() -> Int effects { io } {
+    let user = User::new(30);
+    let score = if user.is_adult() { user.age_plus() } else { 0 };
+    print_int(score);
     0
 }
 "#;
@@ -2005,15 +2219,15 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
 }
 
 fn main() -> Int effects { io } {
-    let s0 = set.new_set();
-    let s1 = set.set_add(s0, "pear");
-    let s2 = set.set_add(s1, "apple");
-    let s3 = set.set_add(s2, "banana");
-    let s4 = set.set_add(s3, "banana");
+    let s0: Set[String] = set.new_set();
+    let s1 = set.add(s0, "pear");
+    let s2 = set.add(s1, "apple");
+    let s3 = set.add(s2, "banana");
+    let s4 = set.add(s3, "banana");
 
-    let t0 = set.new_set();
-    let t1 = set.set_add(t0, "banana");
-    let t2 = set.set_add(t1, "date");
+    let t0: Set[String] = set.new_set();
+    let t1 = set.add(t0, "banana");
+    let t2 = set.add(t1, "date");
 
     let unioned = set.union(s4, t2);
     let crossed = set.intersection(s4, t2);
@@ -2028,8 +2242,8 @@ fn main() -> Int effects { io } {
     let intersection_ok = if opt_int_or(string.index_of(intersection_join, "banana"), -1) == 0 { 1 } else { 0 };
     let diff_join = string.join(set.to_vec(only_left), ",");
     let diff_ok = if opt_int_or(string.index_of(diff_join, "apple,pear"), -1) == 0 { 1 } else { 0 };
-    let removed = set.set_discard(unioned, "date");
-    let remove_ok = if set.set_has(removed, "date") { 0 } else { 1 };
+    let removed = set.discard(unioned, "date");
+    let remove_ok = if set.has(removed, "date") { 0 } else { 1 };
 
     if base_size_ok + base_order_ok + union_ok + intersection_ok + diff_ok + remove_ok == 6 {
         print_int(42);
@@ -2042,6 +2256,119 @@ fn main() -> Int effects { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_set_int_ops_work_or_emit_string_key_diagnostic() {
+    let src = r#"
+import std.io;
+import std.set;
+
+fn main() -> Int effects { io } {
+    let s0: Set[Int] = set.new_set();
+    let s1 = set.add(s0, 3);
+    let s2 = set.add(s1, 1);
+    let s3 = set.add(s2, 2);
+    let s4 = set.add(s3, 2);
+
+    let t0: Set[Int] = set.new_set();
+    let t1 = set.add(t0, 2);
+    let t2 = set.add(t1, 4);
+
+    let unioned = set.union(s4, t2);
+    let crossed = set.intersection(s4, t2);
+    let only_left = set.difference(s4, t2);
+    let removed = set.discard(unioned, 4);
+
+    let score = if set.set_size(s4) == 3 { 1 } else { 0 }
+        + if set.has(crossed, 2) { 1 } else { 0 }
+        + if set.has(only_left, 1) { 1 } else { 0 }
+        + if set.has(only_left, 3) { 1 } else { 0 }
+        + if set.has(removed, 4) { 0 } else { 1 };
+
+    if score == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_set_ops_succeeds_or_reports_string_key_limit(src);
+}
+
+#[test]
+fn exec_set_bool_ops_work_or_emit_string_key_diagnostic() {
+    let src = r#"
+import std.io;
+import std.set;
+
+fn main() -> Int effects { io } {
+    let s0: Set[Bool] = set.new_set();
+    let s1 = set.add(s0, true);
+    let s2 = set.add(s1, false);
+    let s3 = set.add(s2, false);
+
+    let t0: Set[Bool] = set.new_set();
+    let t1 = set.add(t0, false);
+
+    let unioned = set.union(s3, t1);
+    let crossed = set.intersection(s3, t1);
+    let only_left = set.difference(s3, t1);
+    let removed = set.discard(unioned, true);
+
+    let score = if set.set_size(s3) == 2 { 1 } else { 0 }
+        + if set.has(crossed, false) { 1 } else { 0 }
+        + if set.has(only_left, true) { 1 } else { 0 }
+        + if set.has(only_left, false) { 0 } else { 1 }
+        + if set.has(removed, true) { 0 } else { 1 };
+
+    if score == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_set_ops_succeeds_or_reports_string_key_limit(src);
+}
+
+#[test]
+fn exec_structured_logging_json_mode_filters_by_level() {
+    let src = r#"
+import std.log;
+
+fn main() -> Int effects { io } {
+    set_json_output(true);
+    set_level(Info());
+    debug("hidden debug");
+    info("server started");
+    warn("high latency");
+    error("boom");
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("\"level\":\"info\""), "stderr={stderr}");
+    assert!(
+        stderr.contains("\"msg\":\"server started\""),
+        "stderr={stderr}"
+    );
+    assert!(stderr.contains("\"level\":\"warn\""), "stderr={stderr}");
+    assert!(
+        stderr.contains("\"msg\":\"high latency\""),
+        "stderr={stderr}"
+    );
+    assert!(stderr.contains("\"level\":\"error\""), "stderr={stderr}");
+    assert!(stderr.contains("\"msg\":\"boom\""), "stderr={stderr}");
+    assert!(stderr.contains("\"ts\":\""), "stderr={stderr}");
+    assert!(stderr.contains("\"trace_id\":\""), "stderr={stderr}");
+    assert!(!stderr.contains("hidden debug"), "stderr={stderr}");
 }
 
 #[test]
@@ -2556,6 +2883,98 @@ fn main() -> Int effects { io, concurrency } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_buffered_try_and_select_channel_paths_are_stable() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn channel_err_code(err: ChannelError) -> Int {
+    match err {
+        Closed => 1,
+        Full => 2,
+        Empty => 3,
+        Timeout => 4,
+    }
+}
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let ch1 = unwrap_channel(buffered_channel_int(1));
+    let ch2 = unwrap_channel(channel_int_buffered(1));
+
+    let sent = match send_int(ch1, 10, 1000) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let backpressure = match send_int(ch1, 11, 20) {
+        Ok(_) => 0,
+        Err(err) => match err {
+            Timeout => 1,
+            _ => 0,
+        },
+    };
+    let try_full = match try_send_int(ch1, 12) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 2 { 1 } else { 0 },
+    };
+
+    let first_recv = match try_recv_int(ch1) {
+        Ok(value) => if value == 10 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let empty_recv = match try_recv_int(ch1) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 3 { 1 } else { 0 },
+    };
+
+    let sent_second = match try_send_int(ch2, 32) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let selected = match select_recv_int(ch1, ch2, 100) {
+        Ok(selection) => if selection.channel_index == 1 && selection.value == 32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let close1 = match close_channel(ch1) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close2 = match close_channel(ch2) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let closed_recv = match try_recv_int(ch1) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 1 { 1 } else { 0 },
+    };
+
+    if sent + backpressure + try_full + first_recv + empty_recv + sent_second +
+        selected + close1 + close2 + closed_recv == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_proc_run_pipe_spawn_wait_and_kill() {
     let src = r#"
 import std.proc;
@@ -2750,6 +3169,7 @@ fn exec_net_tcp_loopback_echo() {
     let src = r#"
 import std.io;
 import std.net;
+import std.string;
 import std.string;
 
 fn main() -> Int effects { io, net } {
@@ -3084,6 +3504,134 @@ fn main() -> Int effects { io, net } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "46\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_async_wait_negative_paths_are_stable() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.string;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net, concurrency } {
+    let invalid_int_wait = match async_wait_int(AsyncIntOp { handle: 0 }, 10) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let invalid_string_wait = match async_wait_string(AsyncStringOp { handle: 0 }, 10) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let accept_op = match async_accept_submit(listener, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let accept_timeout = match async_wait_int(accept_op, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match async_wait_int(accept_op, 2000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let accept_rewait = match async_wait_int(accept_op, 2000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let recv_op = match async_tcp_recv_submit(server, 8, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let recv_timeout = match async_wait_string(recv_op, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let sent_ok = match tcp_send(client, "ok") {
+        Ok(written) => if written == 2 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let recv_ok = match async_wait_string(recv_op, 2000) {
+        Ok(value) => if string.contains(value, "ok") && len(value) == 2 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let recv_rewait = match async_wait_string(recv_op, 2000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_count =
+        (match tcp_close(client) {
+            Ok(v) => bool_to_int(v),
+            Err(_) => 0,
+        }) +
+        (match tcp_close(server) {
+            Ok(v) => bool_to_int(v),
+            Err(_) => 0,
+        }) +
+        (match tcp_close(listener) {
+            Ok(v) => bool_to_int(v),
+            Err(_) => 0,
+        });
+
+    let invalid_int_ok = if invalid_int_wait == 6 { 1 } else { 0 };
+    let invalid_string_ok = if invalid_string_wait == 6 { 1 } else { 0 };
+    let accept_timeout_ok = if accept_timeout == 4 { 1 } else { 0 };
+    let accept_rewait_ok = if accept_rewait == 1 { 1 } else { 0 };
+    let recv_timeout_ok = if recv_timeout == 4 { 1 } else { 0 };
+    let recv_rewait_ok = if recv_rewait == 1 { 1 } else { 0 };
+    let close_ok = if close_count == 3 { 1 } else { 0 };
+    let score = invalid_int_ok + invalid_string_ok + accept_timeout_ok +
+        accept_rewait_ok + recv_timeout_ok + sent_ok + recv_ok + recv_rewait_ok +
+        shutdown_ok + close_ok;
+
+    if score == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -4570,4 +5118,89 @@ int main(void) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout), "42\n");
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn exec_signal_wait_for_sigterm_is_deterministic() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("signal_wait.aic");
+    let source = r#"
+import std.io;
+import std.signal;
+
+fn score(sig: Signal) -> Int {
+    match sig {
+        SigInt => 10,
+        SigTerm => 42,
+        SigHup => 30,
+    }
+}
+
+fn main() -> Int effects { io, proc } {
+    register_shutdown_handlers();
+    println_str("ready");
+    flush_stdout();
+    let out = match wait_for_signal() {
+        Ok(sig) => score(sig),
+        Err(_) => 0,
+    };
+    print_int(out);
+    0
+}
+"#;
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+
+    let exe = dir.path().join("signal_wait");
+    compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
+
+    let mut child = Command::new(&exe)
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run exe");
+    let stdout_pipe = child.stdout.take().expect("child stdout");
+    let mut stdout_reader = BufReader::new(stdout_pipe);
+    let mut stderr_pipe = child.stderr.take().expect("child stderr");
+
+    let mut ready_line = String::new();
+    stdout_reader
+        .read_line(&mut ready_line)
+        .expect("read ready line");
+    assert_eq!(ready_line, "ready\n");
+
+    let signal_status = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("send SIGTERM");
+    assert!(
+        signal_status.success(),
+        "kill status was not successful: {signal_status:?}"
+    );
+
+    let status = child.wait().expect("wait child");
+    let mut stdout_rest = String::new();
+    stdout_reader
+        .read_to_string(&mut stdout_rest)
+        .expect("read remaining stdout");
+    let mut stderr = String::new();
+    stderr_pipe
+        .read_to_string(&mut stderr)
+        .expect("read stderr");
+
+    assert_eq!(status.code().unwrap_or(1), 0, "stderr={stderr}");
+    assert_eq!(format!("{ready_line}{stdout_rest}"), "ready\n42\n");
+    assert_eq!(stderr, "");
 }

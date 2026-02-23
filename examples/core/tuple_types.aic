@@ -1,0 +1,20 @@
+import std.io;
+
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int effects { io } {
+    let pair = swap(2, 40);
+    let (left, right) = pair;
+    let matched = match pair {
+        (40, value) => value,
+        _ => 0,
+    };
+    print_int(tuple_first((left + matched, right)));
+    0
+}

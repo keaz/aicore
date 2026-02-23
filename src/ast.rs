@@ -143,13 +143,22 @@ pub struct EnumDef {
 pub struct TraitDef {
     pub name: String,
     pub generics: Vec<GenericParam>,
+    #[serde(default)]
+    pub methods: Vec<Function>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImplDef {
     pub trait_name: String,
+    #[serde(default)]
     pub trait_args: Vec<TypeExpr>,
+    #[serde(default)]
+    pub target: Option<TypeExpr>,
+    #[serde(default)]
+    pub methods: Vec<Function>,
+    #[serde(default)]
+    pub is_inherent: bool,
     pub span: Span,
 }
 

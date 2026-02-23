@@ -1,0 +1,24 @@
+import std.io;
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter {
+    value: Int,
+}
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+fn eval[T: Score](x: T) -> Int {
+    x.score()
+}
+
+fn main() -> Int effects { io } {
+    print_int(eval(Meter { value: 41 }));
+    0
+}

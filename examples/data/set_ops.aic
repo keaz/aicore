@@ -11,15 +11,15 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
 }
 
 fn main() -> Int effects { io } {
-    let s0 = set.new_set();
-    let s1 = set.set_add(s0, "pear");
-    let s2 = set.set_add(s1, "apple");
-    let s3 = set.set_add(s2, "banana");
-    let s4 = set.set_add(s3, "banana");
+    let s0: Set[String] = set.new_set();
+    let s1 = set.add(s0, "pear");
+    let s2 = set.add(s1, "apple");
+    let s3 = set.add(s2, "banana");
+    let s4 = set.add(s3, "banana");
 
-    let t0 = set.new_set();
-    let t1 = set.set_add(t0, "banana");
-    let t2 = set.set_add(t1, "date");
+    let t0: Set[String] = set.new_set();
+    let t1 = set.add(t0, "banana");
+    let t2 = set.add(t1, "date");
 
     let unioned = set.union(s4, t2);
     let crossed = set.intersection(s4, t2);
@@ -34,8 +34,8 @@ fn main() -> Int effects { io } {
     let intersection_ok = if opt_int_or(string.index_of(intersection_join, "banana"), -1) == 0 { 1 } else { 0 };
     let diff_join = string.join(set.to_vec(only_left), ",");
     let diff_ok = if opt_int_or(string.index_of(diff_join, "apple,pear"), -1) == 0 { 1 } else { 0 };
-    let removed = set.set_discard(unioned, "date");
-    let remove_ok = if set.set_has(removed, "date") { 0 } else { 1 };
+    let removed = set.discard(unioned, "date");
+    let remove_ok = if set.has(removed, "date") { 0 } else { 1 };
 
     if base_size_ok + base_order_ok + union_ok + intersection_ok + diff_ok + remove_ok == 6 {
         print_int(42);

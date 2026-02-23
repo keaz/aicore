@@ -4,6 +4,130 @@ AICore is an **agent-native, IR-first programming language** with deterministic 
 
 The canonical source of truth is **IR** (`aic ir --emit json`), while text syntax is a deterministic view (`aic fmt`).
 
+## What Language We Are Building
+
+AICore is a language and toolchain designed for **human + AI agent collaboration** on real software, not toy prompts. The core model is:
+
+- IR-first compilation with stable IDs and canonical serialization
+- deterministic parser/formatter and deterministic diagnostic ordering
+- explicit semantics for side effects (`effects { ... }`), mutability, and error propagation
+- verifiability through type/effect checking, exhaustiveness checks, and contracts (`requires`, `ensures`, `invariant`)
+- machine-facing interfaces (JSON diagnostics/SARIF, protocol contracts, LSP, daemon)
+
+In short: AICore is built so generated code is predictable, reviewable, and automatable at scale.
+
+## Why This Implementation Exists
+
+Most existing languages are optimized for human ergonomics first, then toolability as an add-on. AI agents working in large repositories need the opposite balance:
+
+- stable, structured outputs instead of free-form compiler text
+- deterministic formatting and build behavior so patches and retries are reproducible
+- explicit side-effect boundaries so planning and refactoring are safe
+- strict compatibility contracts so automation does not break on minor tool changes
+
+AICore implements these constraints directly in the language semantics and compiler pipeline, so agent workflows are a first-class target rather than an afterthought.
+
+## How AICore Features Address Large-Project Agent Challenges
+
+| Challenge for AI agents in large codebases | AICore feature | Practical impact |
+|---|---|---|
+| High diff churn from non-canonical formatting and inconsistent style | Canonical IR + deterministic formatter (`aic fmt`) | Agents generate stable patches and avoid noisy reformat-only changes |
+| Ambiguous or unstable compiler errors | Structured diagnostics with stable codes/spans/fixes (`--json`, `--sarif`, `aic explain`) | Reliable automated triage, fix loops, and CI annotations |
+| Hidden side effects across deep call graphs | Explicit effect declarations + transitive effect analysis | Safer code generation/refactors; fewer accidental IO/FS/NET regressions |
+| Weak guarantees on generated code behavior | Static typing, exhaustiveness checks, borrow discipline, and contracts | Earlier failure detection and tighter correctness boundaries |
+| Tool/version drift across long-running agents and CI jobs | CLI/protocol contract versioning (`aic contract --json`) | Predictable negotiation and safer agent-tool integration |
+| Slow iteration on large workspaces | Incremental daemon + deterministic workspace build planning | Faster repeated check/build loops with reproducible outputs |
+| Dependency and API drift over time | Lockfile/checksum/offline workflow + std compatibility policy checks | More reproducible builds and controlled migration risk |
+
+## Code Examples For Agent Challenges
+
+### 1) Hidden side effects become explicit and machine-checkable
+
+```aic
+module examples.effects_reject;
+import std.io;
+
+fn io_fn() -> () effects { io } {
+    print_int(1)
+}
+
+fn pure_fn() -> () {
+    io_fn()
+}
+```
+
+```bash
+aic check examples/effects_reject.aic --json
+```
+
+The checker emits stable effect diagnostics (`E2001`, `E2005`) with exact spans and call-path context, so an agent can patch the correct function boundary (`effects { io }`) instead of guessing.
+
+### 2) Deterministic diagnostics and autofix plans
+
+```aic
+module agent.fixable;
+fn main() -> Int {
+    let x = 1
+    x
+}
+```
+
+```bash
+aic diag apply-fixes examples/agent/fixable_imports.aic --dry-run --json
+```
+
+```json
+{
+  "phase": "fix",
+  "ok": true,
+  "applied_edits": [
+    { "start": 54, "end": 54, "replacement": ";", "message": "insert ';' after let binding" }
+  ],
+  "diagnostics": [{ "code": "E1033", "message": "expected ';' after let binding" }]
+}
+```
+
+Agents get a deterministic edit plan (ordered, conflict-aware) instead of parsing free-form compiler text.
+
+### 3) Contracts and invariants constrain generated code behavior
+
+```aic
+module examples.non_empty_string;
+import std.string;
+
+struct NonEmptyString {
+    value: String,
+} invariant len(value) > 0
+
+fn make_non_empty(s: String) -> NonEmptyString requires len(s) > 0 {
+    NonEmptyString { value: s }
+}
+```
+
+Preconditions/invariants give agents executable correctness boundaries during generation and refactoring, reducing silent invalid-state bugs in large systems.
+
+### 4) No `null`: explicit absence handling in APIs
+
+```aic
+module examples.option_match;
+import std.io;
+
+fn maybe_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 { Some(x) } else { None() }
+}
+
+fn main() -> Int effects { io } {
+    let out = match maybe_even(42) {
+        None => 0,
+        Some(n) => n,
+    };
+    print_int(out);
+    0
+}
+```
+
+Agents must handle `Option` branches explicitly; exhaustiveness checks catch missing cases at compile time.
+
 ## Status
 
 | Area | MVP status |

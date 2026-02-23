@@ -1,69 +1,64 @@
 module std.set;
 
 import std.map;
-import std.vec;
 
-struct Set {
-    items: Map[String, Int],
+struct Set[T] {
+    items: Map[T, Int],
 }
 
-fn set_insert_impl(s: Set, value: String) -> Set {
-    Set {
-        items: aic_map_insert_intrinsic(s.items, value, 1),
-    }
-}
-
-fn set_contains_impl(s: Set, value: String) -> Bool {
-    aic_map_contains_key_intrinsic(s.items, value)
-}
-
-fn new_set() -> Set {
-    let items: Map[String, Int] = aic_map_new_intrinsic();
+fn new_set[T]() -> Set[T] {
+    let items: Map[T, Int] = aic_map_new_intrinsic();
     Set {
         items: items,
     }
 }
 
-fn set_add(s: Set, value: String) -> Set {
-    set_insert_impl(s, value)
+fn add[T](s: Set[T], value: T) -> Set[T] {
+    Set {
+        items: aic_map_insert_intrinsic(s.items, value, 1),
+    }
 }
 
-fn set_has(s: Set, value: String) -> Bool {
-    set_contains_impl(s, value)
+fn has[T](s: Set[T], value: T) -> Bool {
+    aic_map_contains_key_intrinsic(s.items, value)
 }
 
-fn set_discard(s: Set, value: String) -> Set {
+fn discard[T](s: Set[T], value: T) -> Set[T] {
     Set {
         items: aic_map_remove_intrinsic(s.items, value),
     }
 }
 
-fn set_size(s: Set) -> Int {
+fn set_size[T](s: Set[T]) -> Int {
     aic_map_size_intrinsic(s.items)
 }
 
 /// Return members in deterministic ascending order.
-fn to_vec(s: Set) -> Vec[String] {
+fn to_vec[T](s: Set[T]) -> Vec[T] {
     aic_map_keys_intrinsic(s.items)
 }
 
-fn union(left: Set, right: Set) -> Set {
-    let mut out = new_set();
-    let left_items = to_vec(left);
+fn union[T](left: Set[T], right: Set[T]) -> Set[T] {
+    let mut out: Set[T] = new_set();
+    let left_items = aic_map_keys_intrinsic(left.items);
     let mut i = 0;
     while i < left_items.len {
         out = match aic_vec_get_intrinsic(left_items, i) {
-            Some(value) => set_insert_impl(out, value),
+            Some(value) => Set {
+                items: aic_map_insert_intrinsic(out.items, value, 1),
+            },
             None => out,
         };
         i = i + 1;
     };
 
-    let right_items = to_vec(right);
+    let right_items = aic_map_keys_intrinsic(right.items);
     i = 0;
     while i < right_items.len {
         out = match aic_vec_get_intrinsic(right_items, i) {
-            Some(value) => set_insert_impl(out, value),
+            Some(value) => Set {
+                items: aic_map_insert_intrinsic(out.items, value, 1),
+            },
             None => out,
         };
         i = i + 1;
@@ -71,13 +66,19 @@ fn union(left: Set, right: Set) -> Set {
     out
 }
 
-fn intersection(left: Set, right: Set) -> Set {
-    let mut out = new_set();
-    let left_items = to_vec(left);
+fn intersection[T](left: Set[T], right: Set[T]) -> Set[T] {
+    let mut out: Set[T] = new_set();
+    let left_items = aic_map_keys_intrinsic(left.items);
     let mut i = 0;
     while i < left_items.len {
         out = match aic_vec_get_intrinsic(left_items, i) {
-            Some(value) => if set_contains_impl(right, value) { set_insert_impl(out, value) } else { out },
+            Some(value) => if aic_map_contains_key_intrinsic(right.items, value) {
+                Set {
+                    items: aic_map_insert_intrinsic(out.items, value, 1),
+                }
+            } else {
+                out
+            },
             None => out,
         };
         i = i + 1;
@@ -85,13 +86,19 @@ fn intersection(left: Set, right: Set) -> Set {
     out
 }
 
-fn difference(left: Set, right: Set) -> Set {
-    let mut out = new_set();
-    let left_items = to_vec(left);
+fn difference[T](left: Set[T], right: Set[T]) -> Set[T] {
+    let mut out: Set[T] = new_set();
+    let left_items = aic_map_keys_intrinsic(left.items);
     let mut i = 0;
     while i < left_items.len {
         out = match aic_vec_get_intrinsic(left_items, i) {
-            Some(value) => if set_contains_impl(right, value) { out } else { set_insert_impl(out, value) },
+            Some(value) => if aic_map_contains_key_intrinsic(right.items, value) {
+                out
+            } else {
+                Set {
+                    items: aic_map_insert_intrinsic(out.items, value, 1),
+                }
+            },
             None => out,
         };
         i = i + 1;

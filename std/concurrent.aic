@@ -12,12 +12,24 @@ enum ConcurrencyError {
     Io,
 }
 
+enum ChannelError {
+    Closed,
+    Full,
+    Empty,
+    Timeout,
+}
+
 struct Task {
     handle: Int,
 }
 
 struct IntChannel {
     handle: Int,
+}
+
+struct IntChannelSelection {
+    channel_index: Int,
+    value: Int,
 }
 
 struct IntMutex {
@@ -44,13 +56,33 @@ fn aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, Concurren
     out
 }
 
+fn aic_conc_channel_int_buffered_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    let out: Result[IntChannel, ConcurrencyError] = Ok(IntChannel { handle: 0 });
+    out
+}
+
 fn aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     let out: Result[Bool, ConcurrencyError] = Ok(true);
     out
 }
 
+fn aic_conc_try_send_int_intrinsic(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency } {
+    let out: Result[Bool, ChannelError] = Ok(true);
+    out
+}
+
 fn aic_conc_recv_int_intrinsic(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     let out: Result[Int, ConcurrencyError] = Ok(0);
+    out
+}
+
+fn aic_conc_try_recv_int_intrinsic(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency } {
+    let out: Result[Int, ChannelError] = Ok(0);
+    out
+}
+
+fn aic_conc_select_recv_int_intrinsic(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency } {
+    let out: Result[IntChannelSelection, ChannelError] = Ok(IntChannelSelection { channel_index: 0, value: 0 });
     out
 }
 
@@ -95,12 +127,32 @@ fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { 
     aic_conc_channel_int_intrinsic(capacity)
 }
 
+fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    aic_conc_channel_int_buffered_intrinsic(capacity)
+}
+
+fn channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    aic_conc_channel_int_buffered_intrinsic(capacity)
+}
+
 fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_send_int_intrinsic(ch, value, timeout_ms)
 }
 
+fn try_send_int(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency } {
+    aic_conc_try_send_int_intrinsic(ch, value)
+}
+
 fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_recv_int_intrinsic(ch, timeout_ms)
+}
+
+fn try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency } {
+    aic_conc_try_recv_int_intrinsic(ch)
+}
+
+fn select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency } {
+    aic_conc_select_recv_int_intrinsic(ch1, ch2, timeout_ms)
 }
 
 fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {

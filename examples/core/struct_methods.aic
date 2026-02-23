@@ -1,0 +1,24 @@
+import std.io;
+
+struct User { age: Int }
+
+impl User {
+    fn new(age: Int) -> User {
+        User { age: age }
+    }
+
+    fn age_plus(self) -> Int {
+        self.age + 12
+    }
+
+    fn is_adult(self) -> Bool {
+        self.age >= 18
+    }
+}
+
+fn main() -> Int effects { io } {
+    let user = User::new(30);
+    let score = if user.is_adult() { user.age_plus() } else { 0 };
+    print_int(score);
+    0
+}

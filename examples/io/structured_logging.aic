@@ -1,0 +1,11 @@
+import std.log;
+
+fn main() -> Int effects { io } {
+    set_json_output(true);
+    set_level(Info());
+    debug("debug-only startup detail");
+    info("server started");
+    warn("high latency detected");
+    error("request failed");
+    0
+}

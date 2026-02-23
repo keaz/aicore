@@ -3,8 +3,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp};
 use crate::diagnostics::{Diagnostic, DiagnosticSpan};
 use crate::ir;
-use crate::resolver::{EnumInfo, Resolution, StructInfo};
+use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo};
 use crate::std_policy::find_deprecated_api;
+
+const TUPLE_INTERNAL_NAME: &str = "Tuple";
 
 #[derive(Debug, Clone, Default)]
 pub struct TypecheckOutput {
@@ -106,6 +108,7 @@ struct EffectPath {
 struct BorrowState {
     active_by_target: BTreeMap<String, Vec<ActiveBorrow>>,
     persistent_by_owner: BTreeMap<ir::SymbolId, PersistentBorrow>,
+    moved_by_binding: BTreeMap<String, crate::span::Span>,
 }
 
 #[derive(Debug, Clone)]
@@ -379,7 +382,12 @@ impl<'a> Checker<'a> {
                 }
                 ir::Item::Struct(strukt) => self.check_struct_invariant(strukt),
                 ir::Item::Enum(enm) => self.check_enum_definition(enm),
-                ir::Item::Trait(_) | ir::Item::Impl(_) => {}
+                ir::Item::Trait(_) => {}
+                ir::Item::Impl(impl_def) => {
+                    for method in &impl_def.methods {
+                        self.check_function(method);
+                    }
+                }
             }
         }
         self.check_transitive_effects();
@@ -974,11 +982,23 @@ impl<'a> Checker<'a> {
 
     fn check_mutability_and_borrows(&mut self, func: &ir::Function) {
         let mut mutability = BTreeMap::new();
+        let mut binding_types = BTreeMap::new();
         for param in &func.params {
             mutability.insert(param.name.clone(), false);
+            let ty = self
+                .types
+                .get(&param.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            binding_types.insert(param.name.clone(), ty);
         }
         let mut borrow_state = BorrowState::default();
-        self.check_borrow_block(&func.body, &mut mutability, &mut borrow_state);
+        self.check_borrow_block(
+            &func.body,
+            &mut mutability,
+            &mut borrow_state,
+            &mut binding_types,
+        );
     }
 
     fn check_resource_protocols(&mut self, func: &ir::Function) {
@@ -1176,8 +1196,11 @@ impl<'a> Checker<'a> {
         block: &ir::Block,
         mutability: &mut BTreeMap<String, bool>,
         state: &mut BorrowState,
+        binding_types: &mut BTreeMap<String, String>,
     ) {
         let mut introduced_bindings: Vec<(String, Option<bool>)> = Vec::new();
+        let mut introduced_move_states: Vec<(String, Option<crate::span::Span>)> = Vec::new();
+        let mut introduced_type_states: Vec<(String, Option<String>)> = Vec::new();
         let mut introduced_persistent_borrows: Vec<ir::SymbolId> = Vec::new();
 
         for stmt in &block.stmts {
@@ -1186,6 +1209,7 @@ impl<'a> Checker<'a> {
                     symbol,
                     name,
                     mutable,
+                    ty,
                     expr,
                     ..
                 } => {
@@ -1203,14 +1227,25 @@ impl<'a> Checker<'a> {
                             introduced_persistent_borrows.push(*symbol);
                         }
                     } else {
-                        let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                        let temp_borrows =
+                            self.check_borrow_expr(expr, mutability, state, binding_types);
                         self.release_temp_borrows(&temp_borrows, state);
                     }
+                    self.track_move_in_let_binding(name, expr, state, mutability, binding_types);
                     let previous = mutability.insert(name.clone(), *mutable);
                     introduced_bindings.push((name.clone(), previous));
+                    let inferred_type = ty
+                        .and_then(|id| self.types.get(&id).cloned())
+                        .or_else(|| self.infer_binding_type(expr, binding_types))
+                        .unwrap_or_else(|| "<?>".to_string());
+                    let previous_type = binding_types.insert(name.clone(), inferred_type);
+                    introduced_type_states.push((name.clone(), previous_type));
+                    let previous_move = state.moved_by_binding.remove(name);
+                    introduced_move_states.push((name.clone(), previous_move));
                 }
                 ir::Stmt::Assign { target, expr, span } => {
-                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    let temp_borrows =
+                        self.check_borrow_expr(expr, mutability, state, binding_types);
                     self.release_temp_borrows(&temp_borrows, state);
 
                     let Some(is_mutable_binding) = mutability.get(target).copied() else {
@@ -1230,10 +1265,8 @@ impl<'a> Checker<'a> {
                             .with_help("use `let mut` for bindings that are reassigned"),
                         );
                     }
-                    if let Some(conflict) = state
-                        .active_by_target
-                        .get(target)
-                        .and_then(|borrows| borrows.first())
+                    if let Some((conflict_target, conflict)) =
+                        self.find_first_overlapping_borrow(target, state)
                     {
                         let mut diag = Diagnostic::error(
                             "E1265",
@@ -1249,7 +1282,10 @@ impl<'a> Checker<'a> {
                             file: self.file.to_string(),
                             start: conflict.span.start,
                             end: conflict.span.end,
-                            label: Some("active borrow starts here".to_string()),
+                            label: Some(format!(
+                                "active borrow of '{}' starts here",
+                                conflict_target
+                            )),
                         });
                         diag.help.push(
                             "release or narrow the borrow scope before mutating this binding"
@@ -1257,30 +1293,54 @@ impl<'a> Checker<'a> {
                         );
                         self.diagnostics.push(diag);
                     }
+                    state.moved_by_binding.remove(target);
+                    if let Some(inferred) = self.infer_binding_type(expr, binding_types) {
+                        binding_types.insert(target.clone(), inferred);
+                    }
                 }
                 ir::Stmt::Expr { expr, .. } => {
-                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    let temp_borrows =
+                        self.check_borrow_expr(expr, mutability, state, binding_types);
                     self.release_temp_borrows(&temp_borrows, state);
                 }
                 ir::Stmt::Return { expr, .. } => {
                     if let Some(expr) = expr {
-                        let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                        let temp_borrows =
+                            self.check_borrow_expr(expr, mutability, state, binding_types);
                         self.release_temp_borrows(&temp_borrows, state);
                     }
                 }
                 ir::Stmt::Assert { expr, .. } => {
-                    let temp_borrows = self.check_borrow_expr(expr, mutability, state);
+                    let temp_borrows =
+                        self.check_borrow_expr(expr, mutability, state, binding_types);
                     self.release_temp_borrows(&temp_borrows, state);
                 }
             }
         }
 
         if let Some(tail) = &block.tail {
-            let temp_borrows = self.check_borrow_expr(tail, mutability, state);
+            let temp_borrows = self.check_borrow_expr(tail, mutability, state, binding_types);
             self.release_temp_borrows(&temp_borrows, state);
         }
 
-        for owner in introduced_persistent_borrows.into_iter().rev() {
+        let drop_order = block.lexical_drop_order();
+        let introduced = introduced_persistent_borrows
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let mut release_order = drop_order
+            .iter()
+            .copied()
+            .filter(|symbol| introduced.contains(symbol))
+            .collect::<Vec<_>>();
+        if release_order.len() != introduced.len() {
+            for symbol in &introduced_persistent_borrows {
+                if !release_order.contains(symbol) {
+                    release_order.push(*symbol);
+                }
+            }
+        }
+        for owner in release_order.drain(..).rev() {
             self.release_persistent_borrow(owner, state);
         }
         for (name, previous) in introduced_bindings.into_iter().rev() {
@@ -1290,6 +1350,20 @@ impl<'a> Checker<'a> {
                 mutability.remove(&name);
             }
         }
+        for (name, previous_move) in introduced_move_states.into_iter().rev() {
+            if let Some(previous_move) = previous_move {
+                state.moved_by_binding.insert(name, previous_move);
+            } else {
+                state.moved_by_binding.remove(&name);
+            }
+        }
+        for (name, previous_type) in introduced_type_states.into_iter().rev() {
+            if let Some(previous_type) = previous_type {
+                binding_types.insert(name, previous_type);
+            } else {
+                binding_types.remove(&name);
+            }
+        }
     }
 
     fn check_borrow_expr(
@@ -1297,16 +1371,17 @@ impl<'a> Checker<'a> {
         expr: &ir::Expr,
         mutability: &mut BTreeMap<String, bool>,
         state: &mut BorrowState,
+        binding_types: &mut BTreeMap<String, String>,
     ) -> Vec<TempBorrow> {
         match &expr.kind {
             ir::ExprKind::Borrow {
                 mutable,
                 expr: inner,
             } => {
-                if let ir::ExprKind::Var(target) = &inner.kind {
-                    if self.acquire_borrow(target, *mutable, expr.span, None, mutability, state) {
+                if let Some(target) = self.borrow_target_path(inner) {
+                    if self.acquire_borrow(&target, *mutable, expr.span, None, mutability, state) {
                         return vec![TempBorrow {
-                            target: target.clone(),
+                            target,
                             mutable: *mutable,
                             span: expr.span,
                         }];
@@ -1316,25 +1391,31 @@ impl<'a> Checker<'a> {
                 self.diagnostics.push(
                     Diagnostic::error(
                         "E1268",
-                        "borrow target must be a local variable name",
+                        "borrow target must be a local variable or field path",
                         self.file,
                         expr.span,
                     )
-                    .with_help("use `&name` or `&mut name` on a local binding"),
+                    .with_help("use `&name`, `&mut name`, or `&name.field` on a local binding"),
                 );
-                self.check_borrow_expr(inner, mutability, state)
+                self.check_borrow_expr(inner, mutability, state, binding_types)
             }
             ir::ExprKind::Call { callee, args } => {
-                let mut borrows = self.check_borrow_expr(callee, mutability, state);
+                let mut borrows = self.check_borrow_expr(callee, mutability, state, binding_types);
                 for arg in args {
-                    borrows.extend(self.check_borrow_expr(arg, mutability, state));
+                    borrows.extend(self.check_borrow_expr(arg, mutability, state, binding_types));
                 }
                 borrows
             }
             ir::ExprKind::Closure { body, .. } => {
                 let mut closure_mutability = mutability.clone();
                 let mut closure_state = state.clone();
-                self.check_borrow_block(body, &mut closure_mutability, &mut closure_state);
+                let mut closure_types = binding_types.clone();
+                self.check_borrow_block(
+                    body,
+                    &mut closure_mutability,
+                    &mut closure_state,
+                    &mut closure_types,
+                );
                 Vec::new()
             }
             ir::ExprKind::If {
@@ -1342,36 +1423,60 @@ impl<'a> Checker<'a> {
                 then_block,
                 else_block,
             } => {
-                let cond_borrows = self.check_borrow_expr(cond, mutability, state);
+                let cond_borrows = self.check_borrow_expr(cond, mutability, state, binding_types);
                 self.release_temp_borrows(&cond_borrows, state);
 
                 let mut then_mutability = mutability.clone();
                 let mut then_state = state.clone();
-                self.check_borrow_block(then_block, &mut then_mutability, &mut then_state);
+                let mut then_types = binding_types.clone();
+                self.check_borrow_block(
+                    then_block,
+                    &mut then_mutability,
+                    &mut then_state,
+                    &mut then_types,
+                );
 
                 let mut else_mutability = mutability.clone();
                 let mut else_state = state.clone();
-                self.check_borrow_block(else_block, &mut else_mutability, &mut else_state);
+                let mut else_types = binding_types.clone();
+                self.check_borrow_block(
+                    else_block,
+                    &mut else_mutability,
+                    &mut else_state,
+                    &mut else_types,
+                );
                 Vec::new()
             }
             ir::ExprKind::While { cond, body } => {
-                let cond_borrows = self.check_borrow_expr(cond, mutability, state);
+                let cond_borrows = self.check_borrow_expr(cond, mutability, state, binding_types);
                 self.release_temp_borrows(&cond_borrows, state);
 
                 let mut loop_mutability = mutability.clone();
                 let mut loop_state = state.clone();
-                self.check_borrow_block(body, &mut loop_mutability, &mut loop_state);
+                let mut loop_types = binding_types.clone();
+                self.check_borrow_block(
+                    body,
+                    &mut loop_mutability,
+                    &mut loop_state,
+                    &mut loop_types,
+                );
                 Vec::new()
             }
             ir::ExprKind::Loop { body } => {
                 let mut loop_mutability = mutability.clone();
                 let mut loop_state = state.clone();
-                self.check_borrow_block(body, &mut loop_mutability, &mut loop_state);
+                let mut loop_types = binding_types.clone();
+                self.check_borrow_block(
+                    body,
+                    &mut loop_mutability,
+                    &mut loop_state,
+                    &mut loop_types,
+                );
                 Vec::new()
             }
             ir::ExprKind::Break { expr } => {
                 if let Some(expr) = expr {
-                    self.check_borrow_expr(expr, mutability, state)
+                    self.check_borrow_expr(expr, mutability, state, binding_types)
                 } else {
                     Vec::new()
                 }
@@ -1381,13 +1486,19 @@ impl<'a> Checker<'a> {
                 expr: scrutinee,
                 arms,
             } => {
-                let scrutinee_borrows = self.check_borrow_expr(scrutinee, mutability, state);
+                let scrutinee_borrows =
+                    self.check_borrow_expr(scrutinee, mutability, state, binding_types);
                 self.release_temp_borrows(&scrutinee_borrows, state);
                 for arm in arms {
                     let mut arm_mutability = mutability.clone();
                     let mut arm_state = state.clone();
-                    let arm_borrows =
-                        self.check_borrow_expr(&arm.body, &mut arm_mutability, &mut arm_state);
+                    let mut arm_types = binding_types.clone();
+                    let arm_borrows = self.check_borrow_expr(
+                        &arm.body,
+                        &mut arm_mutability,
+                        &mut arm_state,
+                        &mut arm_types,
+                    );
                     self.release_temp_borrows(&arm_borrows, &mut arm_state);
                 }
                 Vec::new()
@@ -1395,33 +1506,44 @@ impl<'a> Checker<'a> {
             ir::ExprKind::UnsafeBlock { block } => {
                 let mut block_mutability = mutability.clone();
                 let mut block_state = state.clone();
-                self.check_borrow_block(block, &mut block_mutability, &mut block_state);
+                let mut block_types = binding_types.clone();
+                self.check_borrow_block(
+                    block,
+                    &mut block_mutability,
+                    &mut block_state,
+                    &mut block_types,
+                );
                 Vec::new()
             }
             ir::ExprKind::Binary { lhs, rhs, .. } => {
-                let mut borrows = self.check_borrow_expr(lhs, mutability, state);
-                borrows.extend(self.check_borrow_expr(rhs, mutability, state));
+                let mut borrows = self.check_borrow_expr(lhs, mutability, state, binding_types);
+                borrows.extend(self.check_borrow_expr(rhs, mutability, state, binding_types));
                 borrows
             }
             ir::ExprKind::Unary { expr, .. }
             | ir::ExprKind::Await { expr }
-            | ir::ExprKind::Try { expr } => self.check_borrow_expr(expr, mutability, state),
+            | ir::ExprKind::Try { expr } => {
+                self.check_borrow_expr(expr, mutability, state, binding_types)
+            }
             ir::ExprKind::StructInit { fields, .. } => {
                 let mut borrows = Vec::new();
                 for (_, value, _) in fields {
-                    borrows.extend(self.check_borrow_expr(value, mutability, state));
+                    borrows.extend(self.check_borrow_expr(value, mutability, state, binding_types));
                 }
                 borrows
             }
             ir::ExprKind::FieldAccess { base, .. } => {
-                self.check_borrow_expr(base, mutability, state)
+                self.check_borrow_expr(base, mutability, state, binding_types)
             }
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::String(_)
-            | ir::ExprKind::Unit
-            | ir::ExprKind::Var(_) => Vec::new(),
+            | ir::ExprKind::Unit => Vec::new(),
+            ir::ExprKind::Var(name) => {
+                self.check_use_after_move(name, expr.span, state);
+                Vec::new()
+            }
         }
     }
 
@@ -1439,10 +1561,8 @@ impl<'a> Checker<'a> {
         else {
             return None;
         };
-        let ir::ExprKind::Var(target) = &inner.kind else {
-            return None;
-        };
-        Some((target.clone(), *mutable, expr.span))
+        let target = self.borrow_target_path(inner)?;
+        Some((target, *mutable, expr.span))
     }
 
     fn acquire_borrow(
@@ -1454,29 +1574,28 @@ impl<'a> Checker<'a> {
         mutability: &BTreeMap<String, bool>,
         state: &mut BorrowState,
     ) -> bool {
-        if mutable && !mutability.get(target).copied().unwrap_or(false) {
+        let root = binding_root(target);
+        if state.moved_by_binding.contains_key(root) {
+            self.check_use_after_move(root, span, state);
+            return false;
+        }
+        if mutable && !mutability.get(root).copied().unwrap_or(false) {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1267",
-                    format!(
-                        "cannot take mutable borrow of immutable binding '{}'",
-                        target
-                    ),
+                    format!("cannot take mutable borrow of immutable binding '{}'", root),
                     self.file,
                     span,
                 )
-                .with_help(format!("declare `{}` as `let mut {}`", target, target)),
+                .with_help(format!("declare `{}` as `let mut {}`", root, root)),
             );
             return false;
         }
 
-        let active = state
-            .active_by_target
-            .get(target)
-            .cloned()
-            .unwrap_or_default();
         if mutable {
-            if let Some(conflict) = active.first() {
+            if let Some((conflict_target, conflict)) =
+                self.find_first_overlapping_borrow(target, state)
+            {
                 let mut diag = Diagnostic::error(
                     "E1263",
                     format!(
@@ -1491,14 +1610,19 @@ impl<'a> Checker<'a> {
                     file: self.file.to_string(),
                     start: conflict.span.start,
                     end: conflict.span.end,
-                    label: Some("conflicting borrow starts here".to_string()),
+                    label: Some(format!(
+                        "conflicting borrow of '{}' starts here",
+                        conflict_target
+                    )),
                 });
                 diag.help
                     .push("release the previous borrow before taking a mutable borrow".to_string());
                 self.diagnostics.push(diag);
                 return false;
             }
-        } else if let Some(conflict) = active.iter().find(|borrow| borrow.mutable) {
+        } else if let Some((conflict_target, conflict)) =
+            self.find_first_overlapping_mutable_borrow(target, state)
+        {
             let mut diag = Diagnostic::error(
                 "E1264",
                 format!(
@@ -1513,7 +1637,10 @@ impl<'a> Checker<'a> {
                 file: self.file.to_string(),
                 start: conflict.span.start,
                 end: conflict.span.end,
-                label: Some("active mutable borrow starts here".to_string()),
+                label: Some(format!(
+                    "active mutable borrow of '{}' starts here",
+                    conflict_target
+                )),
             });
             diag.help
                 .push("end the mutable borrow before taking shared borrows".to_string());
@@ -1575,6 +1702,141 @@ impl<'a> Checker<'a> {
         if remove_target {
             state.active_by_target.remove(target);
         }
+    }
+
+    fn borrow_target_path(&self, expr: &ir::Expr) -> Option<String> {
+        match &expr.kind {
+            ir::ExprKind::Var(name) => Some(name.clone()),
+            ir::ExprKind::FieldAccess { base, field } => {
+                let base_path = self.borrow_target_path(base)?;
+                Some(format!("{base_path}.{field}"))
+            }
+            _ => None,
+        }
+    }
+
+    fn find_first_overlapping_borrow(
+        &self,
+        target: &str,
+        state: &BorrowState,
+    ) -> Option<(String, ActiveBorrow)> {
+        for (borrow_target, borrows) in &state.active_by_target {
+            if !targets_overlap(target, borrow_target) {
+                continue;
+            }
+            if let Some(borrow) = borrows.first() {
+                return Some((borrow_target.clone(), borrow.clone()));
+            }
+        }
+        None
+    }
+
+    fn find_first_overlapping_mutable_borrow(
+        &self,
+        target: &str,
+        state: &BorrowState,
+    ) -> Option<(String, ActiveBorrow)> {
+        for (borrow_target, borrows) in &state.active_by_target {
+            if !targets_overlap(target, borrow_target) {
+                continue;
+            }
+            if let Some(borrow) = borrows.iter().find(|borrow| borrow.mutable) {
+                return Some((borrow_target.clone(), borrow.clone()));
+            }
+        }
+        None
+    }
+
+    fn check_use_after_move(
+        &mut self,
+        target: &str,
+        span: crate::span::Span,
+        state: &BorrowState,
+    ) -> bool {
+        let root = binding_root(target);
+        let Some(moved_at) = state.moved_by_binding.get(root) else {
+            return true;
+        };
+
+        let mut diag = Diagnostic::error(
+            "E1270",
+            format!("use of moved value '{}'", root),
+            self.file,
+            span,
+        )
+        .with_help("reinitialize the binding before using it again");
+        diag.spans.push(DiagnosticSpan {
+            file: self.file.to_string(),
+            start: moved_at.start,
+            end: moved_at.end,
+            label: Some("value moved here".to_string()),
+        });
+        self.diagnostics.push(diag);
+        false
+    }
+
+    fn infer_binding_type(
+        &self,
+        expr: &ir::Expr,
+        binding_types: &BTreeMap<String, String>,
+    ) -> Option<String> {
+        match &expr.kind {
+            ir::ExprKind::Var(name) => binding_types.get(name).cloned(),
+            ir::ExprKind::StructInit { name, .. } => Some(name.clone()),
+            ir::ExprKind::Int(_) => Some("Int".to_string()),
+            ir::ExprKind::Float(_) => Some("Float".to_string()),
+            ir::ExprKind::Bool(_) => Some("Bool".to_string()),
+            ir::ExprKind::String(_) => Some("String".to_string()),
+            ir::ExprKind::Unit => Some("()".to_string()),
+            _ => None,
+        }
+    }
+
+    fn track_move_in_let_binding(
+        &mut self,
+        binding_name: &str,
+        expr: &ir::Expr,
+        state: &mut BorrowState,
+        mutability: &BTreeMap<String, bool>,
+        binding_types: &BTreeMap<String, String>,
+    ) {
+        let ir::ExprKind::Var(source) = &expr.kind else {
+            return;
+        };
+        if source == binding_name || !mutability.contains_key(source) {
+            return;
+        }
+        let Some(source_ty) = binding_types.get(source) else {
+            return;
+        };
+        let source_base = base_type_name(source_ty);
+        let movable = self.resolution.structs.contains_key(source_base)
+            || self.resolution.enums.contains_key(source_base);
+        if !movable {
+            return;
+        }
+
+        if let Some((borrow_target, borrow)) = self.find_first_overlapping_borrow(source, state) {
+            let mut diag = Diagnostic::error(
+                "E1271",
+                format!(
+                    "cannot move '{}' while it is borrowed as '{}'",
+                    source, borrow_target
+                ),
+                self.file,
+                expr.span,
+            )
+            .with_help("end the borrow before moving this value");
+            diag.spans.push(DiagnosticSpan {
+                file: self.file.to_string(),
+                start: borrow.span.start,
+                end: borrow.span.end,
+                label: Some("active borrow starts here".to_string()),
+            });
+            self.diagnostics.push(diag);
+            return;
+        }
+        state.moved_by_binding.insert(source.clone(), expr.span);
     }
 
     fn check_struct_invariant(&mut self, strukt: &ir::StructDef) {
@@ -1903,6 +2165,22 @@ impl<'a> Checker<'a> {
                 "<?>".to_string()
             }
             ir::ExprKind::Call { callee, args } => {
+                if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
+                    if !self.is_module_qualified_callee(callee, locals) {
+                        return self.check_method_call(
+                            base,
+                            field,
+                            args,
+                            expr,
+                            locals,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            expected_ty,
+                        );
+                    }
+                }
+
                 let Some(call_path) = self.extract_callee_path(callee) else {
                     let callee_ty =
                         self.check_expr(callee, locals, allowed_effects, ctx, contract_mode);
@@ -3162,6 +3440,84 @@ impl<'a> Checker<'a> {
                 ty
             }
             ir::ExprKind::StructInit { name, fields } => {
+                if name == TUPLE_INTERNAL_NAME {
+                    let expected_tuple_items = expected_ty.and_then(|expected| {
+                        let normalized = self.normalize_type(expected);
+                        if base_type_name(&normalized) == TUPLE_INTERNAL_NAME {
+                            extract_generic_args(&normalized)
+                        } else {
+                            None
+                        }
+                    });
+                    let mut indexed: BTreeMap<usize, (String, crate::span::Span)> = BTreeMap::new();
+                    for (field_name, value, span) in fields {
+                        let Ok(index) = field_name.parse::<usize>() else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1225",
+                                format!(
+                                    "tuple field '{}' is not a valid numeric index",
+                                    field_name
+                                ),
+                                self.file,
+                                *span,
+                            ));
+                            continue;
+                        };
+                        if indexed.contains_key(&index) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1254",
+                                format!("duplicate tuple element index '{}'", field_name),
+                                self.file,
+                                *span,
+                            ));
+                            continue;
+                        }
+                        let expected_item = expected_tuple_items
+                            .as_ref()
+                            .and_then(|items| items.get(index))
+                            .map(String::as_str);
+                        let value_ty = self.check_expr_with_expected(
+                            value,
+                            locals,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            expected_item,
+                        );
+                        indexed.insert(index, (value_ty, *span));
+                    }
+
+                    if indexed.is_empty() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1227",
+                                "tuple literal must include at least one element",
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help("write tuple literals as `(a, b, ...)`"),
+                        );
+                        return "Tuple[<?>]".to_string();
+                    }
+
+                    let max_index = indexed.keys().copied().max().unwrap_or(0);
+                    let mut item_types = Vec::new();
+                    for index in 0..=max_index {
+                        if let Some((ty, _)) = indexed.remove(&index) {
+                            item_types.push(ty);
+                        } else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1227",
+                                format!("tuple literal is missing element index '{}'", index),
+                                self.file,
+                                expr.span,
+                            ));
+                            item_types.push("<?>".to_string());
+                        }
+                    }
+                    return format!("{TUPLE_INTERNAL_NAME}[{}]", item_types.join(", "));
+                }
+
                 let Some(info) = self.resolution.structs.get(name).cloned() else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1224",
@@ -3284,8 +3640,38 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::FieldAccess { base, field } => {
                 let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
+                let base_ty_norm = self.normalize_type(&base_ty);
+                if base_type_name(&base_ty_norm) == TUPLE_INTERNAL_NAME {
+                    let Ok(index) = field.parse::<usize>() else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1228",
+                            format!(
+                                "tuple field access requires numeric index like `.0`, found '.{}'",
+                                field
+                            ),
+                            self.file,
+                            expr.span,
+                        ));
+                        return "<?>".to_string();
+                    };
+                    let elements = extract_generic_args(&base_ty_norm).unwrap_or_default();
+                    if let Some(ty) = elements.get(index) {
+                        return ty.clone();
+                    }
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1228",
+                        format!(
+                            "tuple index .{} is out of range for type '{}' with {} elements",
+                            index,
+                            base_ty,
+                            elements.len()
+                        ),
+                        self.file,
+                        expr.span,
+                    ));
+                    return "<?>".to_string();
+                }
                 if let Some(info) = self.find_struct(&base_ty) {
-                    let base_ty_norm = self.normalize_type(&base_ty);
                     if let Some(field_ty_id) = info.fields.get(field) {
                         let field_ty = self
                             .types
@@ -3426,6 +3812,272 @@ impl<'a> Checker<'a> {
             return Some(full);
         }
 
+        None
+    }
+
+    fn is_module_qualified_callee(
+        &self,
+        callee: &ir::Expr,
+        locals: &BTreeMap<String, String>,
+    ) -> bool {
+        let Some(path) = self.extract_callee_path(callee) else {
+            return false;
+        };
+        if path.len() < 2 {
+            return false;
+        }
+        let qualifier = &path[..path.len() - 1];
+        if qualifier.len() == 1 && locals.contains_key(&qualifier[0]) {
+            return false;
+        }
+        self.resolve_qualifier_module(qualifier).is_some()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_method_call(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
+        let normalized = self.normalize_type(&base_ty);
+        let receiver_ty = match base_type_name(&normalized) {
+            "Ref" | "RefMut" => extract_generic_args(&normalized)
+                .and_then(|args| args.first().cloned())
+                .unwrap_or(normalized),
+            _ => normalized,
+        };
+        let assoc_name = format!("{}::{}", base_type_name(&receiver_ty), field);
+
+        if self.functions.contains_key(&assoc_name) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(base.clone());
+            call_args.extend(args.iter().cloned());
+            let synthetic = ir::Expr {
+                node: call_expr.node,
+                kind: ir::ExprKind::Call {
+                    callee: Box::new(ir::Expr {
+                        node: call_expr.node,
+                        kind: ir::ExprKind::Var(assoc_name),
+                        span: base.span,
+                    }),
+                    args: call_args,
+                },
+                span: call_expr.span,
+            };
+            return self.check_expr_with_expected(
+                &synthetic,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                expected_ty,
+            );
+        }
+
+        if let Some((trait_name, method_sig, mut type_bindings)) =
+            self.find_trait_bound_method(&receiver_ty, field)
+        {
+            type_bindings
+                .entry("Self".to_string())
+                .or_insert_with(|| receiver_ty.clone());
+            let generic_params = method_sig.generics.iter().cloned().collect::<BTreeSet<_>>();
+            let params = method_sig
+                .param_types
+                .iter()
+                .map(|ty| {
+                    let raw = self
+                        .types
+                        .get(ty)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string());
+                    substitute_type_vars(&raw, &type_bindings, &generic_params)
+                })
+                .collect::<Vec<_>>();
+
+            let rendered = format!("{trait_name}::{}", field);
+            if params.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1213",
+                    format!(
+                        "method '{}' has invalid trait signature: receiver parameter missing",
+                        rendered
+                    ),
+                    self.file,
+                    call_expr.span,
+                ));
+                return "<?>".to_string();
+            }
+            if args.len() + 1 != params.len() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1213",
+                    format!(
+                        "method '{}' expects {} args, got {}",
+                        rendered,
+                        params.len() - 1,
+                        args.len()
+                    ),
+                    self.file,
+                    call_expr.span,
+                ));
+            }
+
+            if !self.types_compatible(&params[0], &receiver_ty) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1214",
+                    format!(
+                        "receiver for '{}' expected '{}', found '{}'",
+                        rendered, params[0], receiver_ty
+                    ),
+                    self.file,
+                    base.span,
+                ));
+            }
+
+            for (idx, arg) in args.iter().enumerate() {
+                let expected = params.get(idx + 1).map(String::as_str);
+                let found = self.check_expr_with_expected(
+                    arg,
+                    locals,
+                    allowed_effects,
+                    ctx,
+                    contract_mode,
+                    expected,
+                );
+                if let Some(expected) = expected {
+                    if !self.types_compatible(expected, &found) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1214",
+                            format!(
+                                "argument {} to '{}' expected '{}', found '{}'",
+                                idx + 1,
+                                rendered,
+                                expected,
+                                found
+                            ),
+                            self.file,
+                            arg.span,
+                        ));
+                    }
+                }
+            }
+
+            if !method_sig.effects.is_empty() {
+                if contract_mode {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2002",
+                            "contracts must be pure; effectful call found",
+                            self.file,
+                            call_expr.span,
+                        )
+                        .with_help(
+                            "remove IO/time/rand/net/fs calls from requires/ensures/invariant",
+                        ),
+                    );
+                }
+                for effect in &method_sig.effects {
+                    ctx.effects_used.insert(effect.clone());
+                }
+                if !method_sig.effects.is_subset(allowed_effects) {
+                    let missing = method_sig
+                        .effects
+                        .difference(allowed_effects)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2001",
+                            format!(
+                                "calling '{}' requires undeclared effects: {}",
+                                rendered,
+                                missing.join(", ")
+                            ),
+                            self.file,
+                            call_expr.span,
+                        )
+                        .with_help(format!(
+                            "add `effects {{ {} }}` on the enclosing function",
+                            missing.join(", ")
+                        )),
+                    );
+                }
+            }
+
+            if method_sig.is_unsafe && !(self.current_function_is_unsafe || self.unsafe_depth > 0) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2122",
+                        format!(
+                            "call to unsafe method '{}' requires an explicit unsafe boundary",
+                            rendered
+                        ),
+                        self.file,
+                        call_expr.span,
+                    )
+                    .with_help("wrap this call in `unsafe { ... }` or use an `unsafe fn` wrapper"),
+                );
+            }
+
+            let ret_raw = self
+                .types
+                .get(&method_sig.ret_type)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            let mut ret = substitute_type_vars(&ret_raw, &type_bindings, &generic_params);
+            if method_sig.is_async {
+                ret = format!("Async[{ret}]");
+            }
+            return ret;
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1228",
+                format!(
+                    "unknown method '{}.{}' for receiver type '{}'",
+                    base_type_name(&receiver_ty),
+                    field,
+                    receiver_ty
+                ),
+                self.file,
+                call_expr.span,
+            )
+            .with_help("define an inherent method or add a trait bound that declares this method"),
+        );
+        "<?>".to_string()
+    }
+
+    fn find_trait_bound_method(
+        &self,
+        receiver_ty: &str,
+        method_name: &str,
+    ) -> Option<(String, FunctionInfo, BTreeMap<String, String>)> {
+        let receiver_base = base_type_name(receiver_ty);
+        let current = self.current_function.as_ref()?;
+        let current_sig = self.functions.get(current)?;
+        let bounds = current_sig.generic_bounds.get(receiver_base)?;
+        for bound_trait in bounds {
+            let Some(trait_info) = self.resolution.traits.get(bound_trait) else {
+                continue;
+            };
+            let Some(method) = trait_info.methods.get(method_name) else {
+                continue;
+            };
+            let mut bindings = BTreeMap::new();
+            bindings.insert("Self".to_string(), receiver_ty.to_string());
+            if trait_info.generics.len() == 1 {
+                bindings.insert(trait_info.generics[0].clone(), receiver_ty.to_string());
+            }
+            return Some((bound_trait.clone(), method.clone(), bindings));
+        }
         None
     }
 
@@ -3746,6 +4398,46 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Variant { name, args } => {
+                if name == TUPLE_INTERNAL_NAME {
+                    if base_type_name(&normalized_scrutinee_ty) != TUPLE_INTERNAL_NAME {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1245",
+                            format!(
+                                "tuple pattern is not valid for scrutinee type '{}'",
+                                scrutinee_ty
+                            ),
+                            self.file,
+                            pattern.span,
+                        ));
+                        for arg in args {
+                            self.check_pattern(arg, "<?>", locals, bound_names);
+                        }
+                        return;
+                    }
+                    let tuple_items =
+                        extract_generic_args(&normalized_scrutinee_ty).unwrap_or_default();
+                    if args.len() != tuple_items.len() {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1242",
+                            format!(
+                                "tuple pattern expects {} element(s), found {}",
+                                tuple_items.len(),
+                                args.len()
+                            ),
+                            self.file,
+                            pattern.span,
+                        ));
+                    }
+                    for (idx, arg) in args.iter().enumerate() {
+                        let item_ty = tuple_items
+                            .get(idx)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string());
+                        self.check_pattern(arg, &item_ty, locals, bound_names);
+                    }
+                    return;
+                }
+
                 if normalized_scrutinee_ty.starts_with("Option[") {
                     match name.as_str() {
                         "None" => {
@@ -3942,6 +4634,11 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::PatternKind::Variant { name, .. } => {
+                if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
+                    && name == TUPLE_INTERNAL_NAME
+                {
+                    return;
+                }
                 if normalized_scrutinee_ty.starts_with("Option[") {
                     if name == "None" || name == "Some" {
                         seen.insert(name.clone());
@@ -4095,6 +4792,11 @@ impl<'a> Checker<'a> {
                 .iter()
                 .all(|p| self.arm_is_redundant(p, scrutinee_ty, seen, wildcard_seen)),
             ir::PatternKind::Variant { name, .. } => {
+                if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
+                    && name == TUPLE_INTERNAL_NAME
+                {
+                    return false;
+                }
                 if normalized_scrutinee_ty.starts_with("Option[") {
                     return (name == "None" || name == "Some") && seen.contains(name);
                 }
@@ -4666,11 +5368,42 @@ fn merge_types(a: &str, b: &str) -> String {
         }
     }
 
+    let args_a = extract_generic_args(a).unwrap_or_default();
+    let args_b = extract_generic_args(b).unwrap_or_default();
+    if !args_a.is_empty()
+        && !args_b.is_empty()
+        && base_type_name(a) == base_type_name(b)
+        && args_a.len() == args_b.len()
+    {
+        let merged = args_a
+            .iter()
+            .zip(args_b.iter())
+            .map(|(left, right)| merge_types(left, right))
+            .collect::<Vec<_>>();
+        return format!("{}[{}]", base_type_name(a), merged.join(", "));
+    }
+
     "<?>".to_string()
 }
 
 fn base_type_name(ty: &str) -> &str {
     ty.split('[').next().unwrap_or(ty)
+}
+
+fn binding_root(target: &str) -> &str {
+    target.split('.').next().unwrap_or(target)
+}
+
+fn targets_overlap(left: &str, right: &str) -> bool {
+    left == right
+        || left
+            .strip_prefix(right)
+            .map(|suffix| suffix.starts_with('.'))
+            .unwrap_or(false)
+        || right
+            .strip_prefix(left)
+            .map(|suffix| suffix.starts_with('.'))
+            .unwrap_or(false)
 }
 
 fn extract_generic_args(ty: &str) -> Option<Vec<String>> {

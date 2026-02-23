@@ -28,6 +28,14 @@ Running the binary directly (outside a debugger) should still show source-mapped
 AICore panic at 4:11: panic_line_map example
 ```
 
+Enable runtime stack traces when needed:
+
+```bash
+AIC_BACKTRACE=1 target/debug/panic_line_map_dbg
+```
+
+`AIC_BACKTRACE` follows `RUST_BACKTRACE`-style semantics: `0/false` disables, any other non-empty value enables.
+
 ## 2. LLDB workflow
 
 ```bash

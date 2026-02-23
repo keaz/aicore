@@ -1,0 +1,11 @@
+struct BoxedInt {
+    value: Int,
+}
+
+fn main() -> Int {
+    let mut b = BoxedInt {value: 1};
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt {value: first + 1};
+    b.value
+}

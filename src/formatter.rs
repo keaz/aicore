@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, UnaryOp};
 use crate::ir;
 
+const TUPLE_INTERNAL_NAME: &str = "Tuple";
+
 pub fn format_program(program: &ir::Program) -> String {
     let mut out = String::new();
     let type_map = type_map(program);
@@ -32,11 +34,74 @@ pub fn format_program(program: &ir::Program) -> String {
             ir::Item::Function(f) => format_function(&mut out, f, &type_map),
             ir::Item::Struct(s) => format_struct(&mut out, s, &type_map),
             ir::Item::Enum(e) => format_enum(&mut out, e, &type_map),
-            ir::Item::Trait(t) => format_trait(&mut out, t),
+            ir::Item::Trait(t) => format_trait(&mut out, t, &type_map),
             ir::Item::Impl(i) => format_impl(&mut out, i, &type_map),
         }
     }
 
+    out
+}
+
+fn display_type(type_map: &BTreeMap<ir::TypeId, String>, ty: &ir::TypeId) -> String {
+    type_map
+        .get(ty)
+        .map(|repr| format_type_repr(repr))
+        .unwrap_or_else(|| "<?>".to_string())
+}
+
+fn format_type_repr(repr: &str) -> String {
+    let repr = repr.trim();
+    let Some(args) = extract_generic_args(repr) else {
+        return repr.to_string();
+    };
+    let rendered = args
+        .iter()
+        .map(|arg| format_type_repr(arg))
+        .collect::<Vec<_>>();
+    let base = base_type_name(repr);
+    if base == TUPLE_INTERNAL_NAME {
+        if rendered.len() == 1 {
+            format!("({},)", rendered[0])
+        } else {
+            format!("({})", rendered.join(", "))
+        }
+    } else {
+        format!("{base}[{}]", rendered.join(", "))
+    }
+}
+
+fn base_type_name(ty: &str) -> &str {
+    ty.split_once('[').map(|(base, _)| base).unwrap_or(ty)
+}
+
+fn extract_generic_args(ty: &str) -> Option<Vec<String>> {
+    let start = ty.find('[')?;
+    if !ty.ends_with(']') || start + 1 >= ty.len() {
+        return None;
+    }
+    let inner = &ty[start + 1..ty.len() - 1];
+    Some(split_top_level(inner))
+}
+
+fn split_top_level(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0_i32;
+    let mut start = 0;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(input[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = input[start..].trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
     out
 }
 
@@ -60,26 +125,12 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
         out.push_str(
             &f.params
                 .iter()
-                .map(|p| {
-                    format!(
-                        "{}: {}",
-                        p.name,
-                        type_map
-                            .get(&p.ty)
-                            .cloned()
-                            .unwrap_or_else(|| "<?>".to_string())
-                    )
-                })
+                .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
                 .collect::<Vec<_>>()
                 .join(", "),
         );
         out.push_str(") -> ");
-        out.push_str(
-            type_map
-                .get(&f.ret_type)
-                .map(|s| s.as_str())
-                .unwrap_or("<?>"),
-        );
+        out.push_str(&display_type(type_map, &f.ret_type));
         out.push_str(";\n");
         return;
     }
@@ -97,26 +148,12 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
     out.push_str(
         &f.params
             .iter()
-            .map(|p| {
-                format!(
-                    "{}: {}",
-                    p.name,
-                    type_map
-                        .get(&p.ty)
-                        .cloned()
-                        .unwrap_or_else(|| "<?>".to_string())
-                )
-            })
+            .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
             .collect::<Vec<_>>()
             .join(", "),
     );
     out.push_str(") -> ");
-    out.push_str(
-        type_map
-            .get(&f.ret_type)
-            .map(|s| s.as_str())
-            .unwrap_or("<?>"),
-    );
+    out.push_str(&display_type(type_map, &f.ret_type));
 
     if !f.effects.is_empty() {
         let mut effects = f.effects.clone();
@@ -152,12 +189,7 @@ fn format_type_alias(
     out.push_str(name);
     format_generic_params(out, &f.generics);
     out.push_str(" = ");
-    out.push_str(
-        type_map
-            .get(&f.ret_type)
-            .map(|s| s.as_str())
-            .unwrap_or("<?>"),
-    );
+    out.push_str(&display_type(type_map, &f.ret_type));
     out.push_str(";\n");
 }
 
@@ -170,12 +202,7 @@ fn format_const(
     out.push_str("const ");
     out.push_str(name);
     out.push_str(": ");
-    out.push_str(
-        type_map
-            .get(&f.ret_type)
-            .map(|s| s.as_str())
-            .unwrap_or("<?>"),
-    );
+    out.push_str(&display_type(type_map, &f.ret_type));
     out.push_str(" = ");
     if let Some(expr) = &f.body.tail {
         format_expr(out, expr, 0, type_map);
@@ -194,7 +221,7 @@ fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::Ty
         out.push_str("    ");
         out.push_str(&field.name);
         out.push_str(": ");
-        out.push_str(type_map.get(&field.ty).map(|s| s.as_str()).unwrap_or("<?>"));
+        out.push_str(&display_type(type_map, &field.ty));
         out.push_str(",\n");
     }
     out.push('}');
@@ -215,7 +242,7 @@ fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId
         out.push_str(&variant.name);
         if let Some(ty) = variant.payload {
             out.push('(');
-            out.push_str(type_map.get(&ty).map(|s| s.as_str()).unwrap_or("<?>"));
+            out.push_str(&display_type(type_map, &ty));
             out.push(')');
         }
         out.push_str(",\n");
@@ -223,30 +250,111 @@ fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId
     out.push_str("}\n");
 }
 
-fn format_trait(out: &mut String, t: &ir::TraitDef) {
+fn format_trait(out: &mut String, t: &ir::TraitDef, type_map: &BTreeMap<ir::TypeId, String>) {
     out.push_str("trait ");
     out.push_str(&t.name);
     format_generic_params(out, &t.generics);
-    out.push_str(";\n");
+    if t.methods.is_empty() {
+        out.push_str(";\n");
+        return;
+    }
+    out.push_str(" {\n");
+    for method in &t.methods {
+        out.push_str("    ");
+        format_method_signature(out, method, type_map);
+        out.push_str(";\n");
+    }
+    out.push_str("}\n");
 }
 
 fn format_impl(out: &mut String, i: &ir::ImplDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    if i.is_inherent {
+        out.push_str("impl ");
+        if let Some(target) = i.target.as_ref() {
+            out.push_str(&display_type(type_map, target));
+        } else {
+            out.push_str(&i.trait_name);
+        }
+        out.push_str(" {\n");
+        for method in &i.methods {
+            out.push_str("    ");
+            format_method_signature(out, method, type_map);
+            out.push(' ');
+            format_block(out, &method.body, type_map, 4);
+            out.push('\n');
+        }
+        out.push_str("}\n");
+        return;
+    }
+
     out.push_str("impl ");
     out.push_str(&i.trait_name);
-    out.push('[');
+    if !i.trait_args.is_empty() {
+        out.push('[');
+        out.push_str(
+            &i.trait_args
+                .iter()
+                .map(|ty| display_type(type_map, ty))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        out.push(']');
+    }
+    if i.methods.is_empty() {
+        out.push_str(";\n");
+        return;
+    }
+    out.push_str(" {\n");
+    for method in &i.methods {
+        out.push_str("    ");
+        format_method_signature(out, method, type_map);
+        out.push(' ');
+        format_block(out, &method.body, type_map, 4);
+        out.push('\n');
+    }
+    out.push_str("}\n");
+}
+
+fn format_method_signature(
+    out: &mut String,
+    method: &ir::Function,
+    type_map: &BTreeMap<ir::TypeId, String>,
+) {
+    out.push_str("fn ");
+    let method_name = method
+        .name
+        .rsplit("::")
+        .next()
+        .unwrap_or(method.name.as_str());
+    out.push_str(method_name);
+    format_generic_params(out, &method.generics);
+    out.push('(');
     out.push_str(
-        &i.trait_args
+        &method
+            .params
             .iter()
-            .map(|ty| {
-                type_map
-                    .get(ty)
-                    .cloned()
-                    .unwrap_or_else(|| "<?>".to_string())
-            })
+            .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
             .collect::<Vec<_>>()
             .join(", "),
     );
-    out.push_str("];\n");
+    out.push_str(") -> ");
+    out.push_str(&display_type(type_map, &method.ret_type));
+    if !method.effects.is_empty() {
+        let mut effects = method.effects.clone();
+        effects.sort();
+        effects.dedup();
+        out.push_str(" effects { ");
+        out.push_str(&effects.join(", "));
+        out.push_str(" }");
+    }
+    if let Some(req) = &method.requires {
+        out.push_str(" requires ");
+        format_expr(out, req, 0, type_map);
+    }
+    if let Some(ens) = &method.ensures {
+        out.push_str(" ensures ");
+        format_expr(out, ens, 0, type_map);
+    }
 }
 
 fn format_generic_params(out: &mut String, generics: &[ir::GenericParam]) {
@@ -294,7 +402,7 @@ fn format_block(
                 out.push_str(name);
                 if let Some(ty) = ty {
                     out.push_str(": ");
-                    out.push_str(type_map.get(ty).map(|s| s.as_str()).unwrap_or("<?>"));
+                    out.push_str(&display_type(type_map, ty));
                 }
                 out.push_str(" = ");
                 format_expr(out, expr, 0, type_map);
@@ -395,12 +503,12 @@ fn format_expr(
                 out.push_str(&param.name);
                 if let Some(ty) = param.ty {
                     out.push_str(": ");
-                    out.push_str(type_map.get(&ty).map(|s| s.as_str()).unwrap_or("<?>"));
+                    out.push_str(&display_type(type_map, &ty));
                 }
             }
             out.push('|');
             out.push_str(" -> ");
-            out.push_str(type_map.get(ret_type).map(|s| s.as_str()).unwrap_or("<?>"));
+            out.push_str(&display_type(type_map, ret_type));
             out.push(' ');
             format_block(out, body, type_map, 0);
         }
@@ -514,17 +622,38 @@ fn format_expr(
             format_block(out, block, type_map, 0);
         }
         ir::ExprKind::StructInit { name, fields } => {
-            out.push_str(name);
-            out.push_str(" {");
-            for (idx, (field, expr, _)) in fields.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
+            if name == TUPLE_INTERNAL_NAME {
+                let mut indexed = fields
+                    .iter()
+                    .filter_map(|(field, expr, _)| {
+                        field.parse::<usize>().ok().map(|idx| (idx, expr))
+                    })
+                    .collect::<Vec<_>>();
+                indexed.sort_by_key(|(idx, _)| *idx);
+                out.push('(');
+                for (idx, (_field_idx, expr)) in indexed.iter().enumerate() {
+                    if idx > 0 {
+                        out.push_str(", ");
+                    }
+                    format_expr(out, expr, 0, type_map);
                 }
-                out.push_str(field);
-                out.push_str(": ");
-                format_expr(out, expr, 0, type_map);
+                if indexed.len() == 1 {
+                    out.push(',');
+                }
+                out.push(')');
+            } else {
+                out.push_str(name);
+                out.push_str(" {");
+                for (idx, (field, expr, _)) in fields.iter().enumerate() {
+                    if idx > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(field);
+                    out.push_str(": ");
+                    format_expr(out, expr, 0, type_map);
+                }
+                out.push('}');
             }
-            out.push('}');
         }
         ir::ExprKind::FieldAccess { base, field } => {
             format_expr(out, base, 10, type_map);
@@ -838,8 +967,7 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
             }
         }
         ir::PatternKind::Variant { name, args } => {
-            out.push_str(name);
-            if !args.is_empty() {
+            if name == TUPLE_INTERNAL_NAME {
                 out.push('(');
                 for (idx, arg) in args.iter().enumerate() {
                     if idx > 0 {
@@ -847,7 +975,22 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
                     }
                     format_pattern(out, arg);
                 }
+                if args.len() == 1 {
+                    out.push(',');
+                }
                 out.push(')');
+            } else {
+                out.push_str(name);
+                if !args.is_empty() {
+                    out.push('(');
+                    for (idx, arg) in args.iter().enumerate() {
+                        if idx > 0 {
+                            out.push_str(", ");
+                        }
+                        format_pattern(out, arg);
+                    }
+                    out.push(')');
+                }
             }
         }
     }

@@ -1,0 +1,48 @@
+module std.error_context;
+
+import std.string;
+import std.vec;
+
+struct ErrorContext[E] {
+    error: E,
+    context: String,
+    chain: String,
+}
+
+fn new_error_context[E](error: E, context: String) -> ErrorContext[E] {
+    ErrorContext {
+        error: error,
+        context: context,
+        chain: context,
+    }
+}
+
+fn with_context[E](ctx: ErrorContext[E], context: String) -> ErrorContext[E] {
+    let chain_parts: Vec[String] = vec.push(vec.vec_of(ctx.chain), context);
+    ErrorContext {
+        error: ctx.error,
+        context: context,
+        chain: string.join(chain_parts, " -> "),
+    }
+}
+
+fn with_context_error[E](error: E, context: String) -> ErrorContext[E] {
+    new_error_context(error, context)
+}
+
+fn with_cause[E](error: E, context: String, cause: String) -> ErrorContext[E] {
+    let base: ErrorContext[E] = new_error_context(error, context);
+    with_context(base, cause)
+}
+
+fn with_cause_context[E](ctx: ErrorContext[E], cause: String) -> ErrorContext[E] {
+    with_context(ctx, cause)
+}
+
+fn error_value[E](ctx: ErrorContext[E]) -> E {
+    ctx.error
+}
+
+fn error_chain[E](ctx: ErrorContext[E]) -> String {
+    ctx.chain
+}

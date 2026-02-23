@@ -4,6 +4,15 @@ This catalog covers all registered diagnostics from /Users/kasunranasinghe/Proje
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
+## Runtime IO error context chaining
+
+Runtime IO context chains are modeled by `std.error_context` and `std.io` helper APIs, not diagnostic codes.
+
+- `ErrorContext[E]` stores `error`, last `context`, and flattened `chain`.
+- `from_fs_error_with_context`, `from_net_error_with_context`, `from_proc_error_with_context`, and `from_env_error_with_context` preserve the source cause (for example `fs.NotFound`) and mapped IO cause (for example `io.EndOfInput`) in the flattened chain.
+- `error_chain(...)` returns the flattened chain string.
+- `io_error(...)` / `error_value(...)` recover the mapped typed error without changing existing `Result[..., IoError]` APIs.
+
 | Code | Description | Trigger example | Fix example |
 |---|---|---|---|
 | `E0001` | Invalid character in source token stream. | `fn main() -> Int { @ }` | `fn main() -> Int { 0 }` |

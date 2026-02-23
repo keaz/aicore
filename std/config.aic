@@ -1,0 +1,123 @@
+module std.config;
+
+import std.env;
+import std.fs;
+import std.json;
+import std.map;
+import std.result;
+import std.string;
+
+enum ConfigError {
+    FileNotFound,
+    PermissionDenied,
+    InvalidInput,
+    Io,
+    InvalidJson,
+    InvalidValue,
+    MissingKey,
+}
+
+fn cfg_file_not_found() -> ConfigError {
+    let out: ConfigError = FileNotFound();
+    out
+}
+
+fn cfg_permission_denied() -> ConfigError {
+    let out: ConfigError = PermissionDenied();
+    out
+}
+
+fn cfg_invalid_input() -> ConfigError {
+    let out: ConfigError = InvalidInput();
+    out
+}
+
+fn cfg_io() -> ConfigError {
+    let out: ConfigError = Io();
+    out
+}
+
+fn cfg_invalid_json() -> ConfigError {
+    let out: ConfigError = InvalidJson();
+    out
+}
+
+fn cfg_invalid_value() -> ConfigError {
+    let out: ConfigError = InvalidValue();
+    out
+}
+
+fn map_fs_error(err: FsError) -> ConfigError {
+    match err {
+        NotFound => cfg_file_not_found(),
+        PermissionDenied => cfg_permission_denied(),
+        AlreadyExists => cfg_io(),
+        InvalidInput => cfg_invalid_input(),
+        Io => cfg_io(),
+    }
+}
+
+fn map_json_error(err: JsonError) -> ConfigError {
+    match err {
+        InvalidJson => cfg_invalid_json(),
+        InvalidType => cfg_invalid_value(),
+        MissingField => cfg_invalid_value(),
+        InvalidNumber => cfg_invalid_value(),
+        InvalidString => cfg_invalid_value(),
+        InvalidInput => cfg_invalid_input(),
+        Internal => cfg_io(),
+    }
+}
+
+fn decode_json_map(parsed: JsonValue) -> Result[Map[String, String], ConfigError] {
+    let marker: Option[Map[String, String]] = None();
+    match decode_with(parsed, marker) {
+        Ok(config) => Ok(config),
+        Err(err) => Err(map_json_error(err)),
+    }
+}
+
+fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs } {
+    match read_text(path) {
+        Ok(text) => match parse(text) {
+            Ok(parsed) => decode_json_map(parsed),
+            Err(err) => Err(map_json_error(err)),
+        },
+        Err(err) => Err(map_fs_error(err)),
+    }
+}
+
+fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
+    let mut config: Map[String, String] = new_map();
+    let prefix_len = len(prefix);
+
+    for entry in all_vars() {
+        if starts_with(entry.key, prefix) {
+            let key_len = len(entry.key);
+            if key_len > prefix_len {
+                let key = substring(entry.key, prefix_len, key_len);
+                config = insert(config, key, entry.value);
+            } else {
+                ()
+            }
+        } else {
+            ()
+        };
+    };
+
+    config
+}
+
+fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String {
+    match get(config, key) {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn require(config: Map[String, String], key: String) -> Result[String, ConfigError] {
+    match get(config, key) {
+        Some(value) => Ok(value),
+        None => Err(MissingKey()),
+    }
+}

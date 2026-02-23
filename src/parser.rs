@@ -3,6 +3,9 @@ use crate::diagnostics::Diagnostic;
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;
 
+const TUPLE_INTERNAL_NAME: &str = "Tuple";
+const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
+
 pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
     let (tokens, mut diagnostics) = lex(source, file);
     let mut parser = Parser {
@@ -11,6 +14,7 @@ pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
         index: 0,
         diagnostics: Vec::new(),
         for_counter: 0,
+        tuple_binding_counter: 0,
         disallow_struct_literal: false,
     };
     let program = parser.parse_program();
@@ -24,7 +28,15 @@ struct Parser<'a> {
     index: usize,
     diagnostics: Vec<Diagnostic>,
     for_counter: usize,
+    tuple_binding_counter: usize,
     disallow_struct_literal: bool,
+}
+
+#[derive(Debug, Clone)]
+enum TupleLetPattern {
+    Binding { name: String, span: Span },
+    Wildcard,
+    Tuple { items: Vec<TupleLetPattern> },
 }
 
 impl<'a> Parser<'a> {
@@ -100,7 +112,8 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(false, true, start).map(Item::Function)
+            self.parse_function(false, true, start, false)
+                .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
             let start = self.current_span().start;
             self.bump();
@@ -113,10 +126,12 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(true, false, start).map(Item::Function)
+            self.parse_function(true, false, start, false)
+                .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
             let start = self.current_span().start;
-            self.parse_function(false, false, start).map(Item::Function)
+            self.parse_function(false, false, start, false)
+                .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
             self.parse_struct().map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
@@ -145,6 +160,7 @@ impl<'a> Parser<'a> {
         is_async: bool,
         is_unsafe: bool,
         start: usize,
+        allow_self_receiver: bool,
     ) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
@@ -154,7 +170,7 @@ impl<'a> Parser<'a> {
             "E1005",
             "expected '(' after function name",
         )?;
-        let params = self.parse_params()?;
+        let params = self.parse_params(allow_self_receiver)?;
         self.expect(
             |k| matches!(k, TokenKind::Arrow),
             "E1006",
@@ -162,32 +178,7 @@ impl<'a> Parser<'a> {
         )?;
         let ret_type = self.parse_type()?;
         self.parse_where_clause(&mut generics);
-        let effects = if self.at_kind(|k| matches!(k, TokenKind::KwEffects)) {
-            self.bump();
-            self.expect(
-                |k| matches!(k, TokenKind::LBrace),
-                "E1007",
-                "expected '{' after effects",
-            )?;
-            let mut effs = Vec::new();
-            while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
-                let (name, _) = self.expect_ident("E1008", "expected effect name")?;
-                effs.push(name);
-                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
-                    self.bump();
-                } else {
-                    break;
-                }
-            }
-            self.expect(
-                |k| matches!(k, TokenKind::RBrace),
-                "E1009",
-                "expected '}' to close effects list",
-            )?;
-            effs
-        } else {
-            Vec::new()
-        };
+        let effects = self.parse_effects_clause()?;
 
         let mut requires = None;
         let mut ensures = None;
@@ -276,7 +267,7 @@ impl<'a> Parser<'a> {
             "E1005",
             "expected '(' after function name",
         )?;
-        let params = self.parse_params()?;
+        let params = self.parse_params(false)?;
         self.expect(
             |k| matches!(k, TokenKind::Arrow),
             "E1006",
@@ -443,43 +434,162 @@ impl<'a> Parser<'a> {
         self.bump(); // trait
         let (name, _) = self.expect_ident("E1053", "expected trait name")?;
         let generics = self.parse_generics();
-        let end = self
-            .expect(
-                |k| matches!(k, TokenKind::Semi),
-                "E1054",
-                "expected ';' after trait declaration",
-            )?
-            .end;
+        if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let end = self
+                .expect(
+                    |k| matches!(k, TokenKind::Semi),
+                    "E1054",
+                    "expected ';' after trait declaration",
+                )?
+                .end;
+            return Some(TraitDef {
+                name,
+                generics,
+                methods: Vec::new(),
+                span: Span::new(start, end),
+            });
+        }
+
+        self.expect(
+            |k| matches!(k, TokenKind::LBrace),
+            "E1054",
+            "expected ';' or '{' after trait declaration",
+        )?;
+        let mut methods = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
+            let method_start = self.current_span().start;
+            let mut is_async = false;
+            let mut is_unsafe = false;
+            if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
+                self.bump();
+                is_async = true;
+            }
+            if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
+                self.bump();
+                is_unsafe = true;
+            }
+            if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1082",
+                        "expected trait method signature (`fn`, `async fn`, or `unsafe fn`) in trait block",
+                        self.file,
+                        self.current_span(),
+                    )
+                    .with_help("define signatures like `fn name(...) -> Ret;` inside trait blocks"),
+                );
+                self.recover_item();
+                continue;
+            }
+            if let Some(method) =
+                self.parse_trait_method_signature(is_async, is_unsafe, method_start)
+            {
+                methods.push(method);
+            } else {
+                self.recover_item();
+            }
+        }
+        let close = self.expect(
+            |k| matches!(k, TokenKind::RBrace),
+            "E1086",
+            "expected '}' after trait block",
+        )?;
         Some(TraitDef {
             name,
             generics,
-            span: Span::new(start, end),
+            methods,
+            span: Span::new(start, close.end),
         })
     }
 
     fn parse_impl(&mut self) -> Option<ImplDef> {
         let start = self.current_span().start;
         self.bump(); // impl
-        let (trait_name, _) = self.expect_ident("E1055", "expected trait name after impl")?;
-        self.expect(
-            |k| matches!(k, TokenKind::LBracket),
-            "E1056",
-            "expected '[' after trait name in impl",
-        )?;
-        let mut trait_args = Vec::new();
-        while !self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
-            trait_args.push(self.parse_type()?);
-            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
-                self.bump();
-            } else {
-                break;
+        let head_ty = self.parse_type()?;
+        if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+            self.bump();
+            let mut methods = Vec::new();
+            while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
+                let method_start = self.current_span().start;
+                let mut is_async = false;
+                let mut is_unsafe = false;
+                if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
+                    self.bump();
+                    is_async = true;
+                }
+                if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
+                    self.bump();
+                    is_unsafe = true;
+                }
+                if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1082",
+                            "expected method declaration (`fn`, `async fn`, or `unsafe fn`) in impl block",
+                            self.file,
+                            self.current_span(),
+                        )
+                        .with_help("define methods inside `impl Type { ... }` blocks"),
+                    );
+                    self.recover_item();
+                    continue;
+                }
+                if let Some(method) = self.parse_function(is_async, is_unsafe, method_start, true) {
+                    methods.push(method);
+                } else {
+                    self.recover_item();
+                }
             }
+            let close = self.expect(
+                |k| matches!(k, TokenKind::RBrace),
+                "E1086",
+                "expected '}' after impl block",
+            )?;
+            let (head_name, head_args) = match &head_ty.kind {
+                TypeKind::Named { name, args } => (name.clone(), args.clone()),
+                TypeKind::Unit => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1087",
+                        "impl target must be a named type",
+                        self.file,
+                        head_ty.span,
+                    ));
+                    ("<?>".to_string(), Vec::new())
+                }
+            };
+            if !head_args.is_empty() {
+                return Some(ImplDef {
+                    trait_name: head_name,
+                    trait_args: head_args,
+                    target: None,
+                    methods,
+                    is_inherent: false,
+                    span: Span::new(start, close.end),
+                });
+            }
+            return Some(ImplDef {
+                trait_name: head_name,
+                trait_args: Vec::new(),
+                target: Some(head_ty),
+                methods,
+                is_inherent: true,
+                span: Span::new(start, close.end),
+            });
         }
-        self.expect(
-            |k| matches!(k, TokenKind::RBracket),
-            "E1057",
-            "expected ']' after impl type arguments",
-        )?;
+
+        let (trait_name, trait_args) = match head_ty.kind {
+            TypeKind::Named { name, args } => (name, args),
+            TypeKind::Unit => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1055",
+                    "expected trait name after impl",
+                    self.file,
+                    head_ty.span,
+                ));
+                return None;
+            }
+        };
+
         let end = self
             .expect(
                 |k| matches!(k, TokenKind::Semi),
@@ -490,6 +600,9 @@ impl<'a> Parser<'a> {
         Some(ImplDef {
             trait_name,
             trait_args,
+            target: None,
+            methods: Vec::new(),
+            is_inherent: false,
             span: Span::new(start, end),
         })
     }
@@ -686,9 +799,152 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_params(&mut self) -> Option<Vec<Param>> {
+    fn parse_effects_clause(&mut self) -> Option<Vec<String>> {
+        if !self.at_kind(|k| matches!(k, TokenKind::KwEffects)) {
+            return Some(Vec::new());
+        }
+
+        self.bump();
+        self.expect(
+            |k| matches!(k, TokenKind::LBrace),
+            "E1007",
+            "expected '{' after effects",
+        )?;
+        let mut effects = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+            let (name, _) = self.expect_ident("E1008", "expected effect name")?;
+            effects.push(name);
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        self.expect(
+            |k| matches!(k, TokenKind::RBrace),
+            "E1009",
+            "expected '}' to close effects list",
+        )?;
+        Some(effects)
+    }
+
+    fn parse_trait_method_signature(
+        &mut self,
+        is_async: bool,
+        is_unsafe: bool,
+        start: usize,
+    ) -> Option<Function> {
+        self.bump(); // fn
+        let (name, _) = self.expect_ident("E1004", "expected method name")?;
+        let mut generics = self.parse_generics();
+        self.expect(
+            |k| matches!(k, TokenKind::LParen),
+            "E1005",
+            "expected '(' after method name",
+        )?;
+        let params = self.parse_params(true)?;
+        self.expect(
+            |k| matches!(k, TokenKind::Arrow),
+            "E1006",
+            "expected '->' with method return type",
+        )?;
+        let ret_type = self.parse_type()?;
+        self.parse_where_clause(&mut generics);
+        let effects = self.parse_effects_clause()?;
+        if self.at_kind(|k| matches!(k, TokenKind::KwRequires | TokenKind::KwEnsures)) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1089",
+                    "trait method signatures cannot declare requires/ensures contracts",
+                    self.file,
+                    self.current_span(),
+                )
+                .with_help("move contracts to concrete impl methods"),
+            );
+            while !self
+                .at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::RBrace | TokenKind::Eof))
+            {
+                self.bump();
+            }
+        }
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1089",
+            "expected ';' after trait method signature",
+        )?;
+        Some(Function {
+            name,
+            is_async,
+            is_unsafe,
+            is_extern: false,
+            extern_abi: None,
+            generics,
+            params,
+            ret_type,
+            effects,
+            requires: None,
+            ensures: None,
+            body: Block {
+                stmts: Vec::new(),
+                tail: None,
+                span: Span::new(semi.start, semi.end),
+            },
+            span: Span::new(start, semi.end),
+        })
+    }
+
+    fn parse_params(&mut self, allow_self_receiver: bool) -> Option<Vec<Param>> {
         let mut params = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+            if allow_self_receiver && params.is_empty() {
+                if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
+                    let recv_start = self.current_span().start;
+                    self.bump();
+                    if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
+                        self.bump();
+                    }
+                    let (recv_name, recv_span) =
+                        self.expect_ident("E1083", "expected `self` after receiver reference")?;
+                    if recv_name != "self" {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1083",
+                            "expected `self` after receiver reference",
+                            self.file,
+                            recv_span,
+                        ));
+                        return None;
+                    }
+                    let span = Span::new(recv_start, recv_span.end);
+                    params.push(Param {
+                        name: "self".to_string(),
+                        ty: self.self_type_expr(span),
+                        span,
+                    });
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    }
+                    continue;
+                }
+                if matches!(self.current().kind, TokenKind::Ident(ref name) if name == "self")
+                    && !self
+                        .peek(1)
+                        .map(|token| matches!(token.kind, TokenKind::Colon))
+                        .unwrap_or(false)
+                {
+                    let span = self.current_span();
+                    self.bump();
+                    params.push(Param {
+                        name: "self".to_string(),
+                        ty: self.self_type_expr(span),
+                        span,
+                    });
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    }
+                    continue;
+                }
+            }
+
             let start = self.current_span().start;
             let (name, _) = self.expect_ident("E1022", "expected parameter name")?;
             self.expect(
@@ -716,18 +972,63 @@ impl<'a> Parser<'a> {
         Some(params)
     }
 
+    fn self_type_expr(&self, span: Span) -> TypeExpr {
+        TypeExpr {
+            kind: TypeKind::Named {
+                name: "Self".to_string(),
+                args: Vec::new(),
+            },
+            span,
+        }
+    }
+
     fn parse_type(&mut self) -> Option<TypeExpr> {
         let start = self.current_span().start;
         if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
             self.bump();
+            if self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                self.bump();
+                let end = self.previous_span().end;
+                return Some(TypeExpr {
+                    kind: TypeKind::Unit,
+                    span: Span::new(start, end),
+                });
+            }
+            let first = self.parse_type()?;
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+                let mut items = vec![first];
+                while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                    let item = self.parse_type()?;
+                    items.push(item);
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+                self.expect(
+                    |k| matches!(k, TokenKind::RParen),
+                    "E1025",
+                    "expected ')' after tuple type",
+                )?;
+                let end = self.previous_span().end;
+                return Some(TypeExpr {
+                    kind: TypeKind::Named {
+                        name: TUPLE_INTERNAL_NAME.to_string(),
+                        args: items,
+                    },
+                    span: Span::new(start, end),
+                });
+            }
             self.expect(
                 |k| matches!(k, TokenKind::RParen),
                 "E1025",
-                "expected ')' for unit type",
+                "expected ')' after parenthesized type",
             )?;
             let end = self.previous_span().end;
             return Some(TypeExpr {
-                kind: TypeKind::Unit,
+                kind: first.kind,
                 span: Span::new(start, end),
             });
         }
@@ -821,7 +1122,7 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
             if self.at_kind(|k| matches!(k, TokenKind::KwLet)) {
                 match self.parse_let_stmt() {
-                    Some(stmt) => stmts.push(stmt),
+                    Some(parsed) => stmts.extend(parsed),
                     None => self.recover_statement(),
                 }
                 continue;
@@ -869,7 +1170,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_let_stmt(&mut self) -> Option<Stmt> {
+    fn parse_let_stmt(&mut self) -> Option<Vec<Stmt>> {
         let start = self.current_span().start;
         self.bump(); // let
         let mutable = if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
@@ -878,7 +1179,23 @@ impl<'a> Parser<'a> {
         } else {
             false
         };
-        let (name, _) = self.expect_ident("E1031", "expected binding name after let")?;
+
+        let tuple_pattern = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+            let parsed = self.parse_pattern()?;
+            Some(self.convert_let_pattern(&parsed)?)
+        } else {
+            None
+        };
+
+        let name = if tuple_pattern.is_none() {
+            Some(
+                self.expect_ident("E1031", "expected binding name after let")?
+                    .0,
+            )
+        } else {
+            None
+        };
+
         let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
             self.bump();
             Some(self.parse_type()?)
@@ -908,13 +1225,121 @@ impl<'a> Parser<'a> {
             );
             expr.span.end
         };
-        Some(Stmt::Let {
-            name,
+
+        let span = Span::new(start, end);
+        if let Some(pattern) = tuple_pattern {
+            if mutable {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1031",
+                        "tuple destructuring does not support `let mut`; mark individual bindings mutable later",
+                        self.file,
+                        span,
+                    )
+                    .with_help("remove `mut` here and use separate mutable bindings if needed"),
+                );
+            }
+            return Some(self.expand_tuple_let(pattern, ty, expr, span));
+        }
+
+        Some(vec![Stmt::Let {
+            name: name.expect("name present"),
             mutable,
             ty,
             expr,
-            span: Span::new(start, end),
-        })
+            span,
+        }])
+    }
+
+    fn convert_let_pattern(&mut self, pattern: &Pattern) -> Option<TupleLetPattern> {
+        match &pattern.kind {
+            PatternKind::Var(name) => Some(TupleLetPattern::Binding {
+                name: name.clone(),
+                span: pattern.span,
+            }),
+            PatternKind::Wildcard => Some(TupleLetPattern::Wildcard),
+            PatternKind::Variant { name, args } if name == TUPLE_INTERNAL_NAME => {
+                let mut items = Vec::new();
+                for arg in args {
+                    items.push(self.convert_let_pattern(arg)?);
+                }
+                Some(TupleLetPattern::Tuple { items })
+            }
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1031",
+                        "tuple let destructuring supports only names, `_`, and nested tuples",
+                        self.file,
+                        pattern.span,
+                    )
+                    .with_help("rewrite the pattern as `(a, b, ...)` with bindings/wildcards only"),
+                );
+                None
+            }
+        }
+    }
+
+    fn expand_tuple_let(
+        &mut self,
+        pattern: TupleLetPattern,
+        ty: Option<TypeExpr>,
+        expr: Expr,
+        span: Span,
+    ) -> Vec<Stmt> {
+        let temp_name = self.next_tuple_let_name();
+        let mut out = vec![Stmt::Let {
+            name: temp_name.clone(),
+            mutable: false,
+            ty,
+            expr: expr.clone(),
+            span,
+        }];
+        let source = Expr::var(temp_name, expr.span);
+        self.expand_tuple_let_pattern(pattern, source, span, &mut out);
+        out
+    }
+
+    fn expand_tuple_let_pattern(
+        &mut self,
+        pattern: TupleLetPattern,
+        source: Expr,
+        span: Span,
+        out: &mut Vec<Stmt>,
+    ) {
+        match pattern {
+            TupleLetPattern::Binding {
+                name,
+                span: binding_span,
+            } => {
+                out.push(Stmt::Let {
+                    name,
+                    mutable: false,
+                    ty: None,
+                    expr: source,
+                    span: Span::new(binding_span.start, span.end),
+                });
+            }
+            TupleLetPattern::Wildcard => {}
+            TupleLetPattern::Tuple { items } => {
+                for (idx, item) in items.into_iter().enumerate() {
+                    let field_expr = Expr {
+                        kind: ExprKind::FieldAccess {
+                            base: Box::new(source.clone()),
+                            field: idx.to_string(),
+                        },
+                        span: source.span,
+                    };
+                    self.expand_tuple_let_pattern(item, field_expr, span, out);
+                }
+            }
+        }
+    }
+
+    fn next_tuple_let_name(&mut self) -> String {
+        let id = self.tuple_binding_counter;
+        self.tuple_binding_counter += 1;
+        format!("{TUPLE_LET_TMP_PREFIX}{id}")
     }
 
     fn parse_assign_stmt(&mut self) -> Option<Stmt> {
@@ -1281,8 +1706,27 @@ impl<'a> Parser<'a> {
 
             if self.at_kind(|k| matches!(k, TokenKind::Dot)) {
                 self.bump();
-                let (field, field_span) =
-                    self.expect_ident("E1036", "expected field name after '.'")?;
+                let (field, field_span) = match self.current().kind.clone() {
+                    TokenKind::Ident(name) => {
+                        let span = self.current_span();
+                        self.bump();
+                        (name, span)
+                    }
+                    TokenKind::Int(value) if value >= 0 => {
+                        let span = self.current_span();
+                        self.bump();
+                        (value.to_string(), span)
+                    }
+                    _ => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1036",
+                            "expected field name or tuple index after '.'",
+                            self.file,
+                            self.current_span(),
+                        ));
+                        return None;
+                    }
+                };
                 let span = Span::new(expr.span.start, field_span.end);
                 expr = Expr {
                     kind: ExprKind::FieldAccess {
@@ -1375,14 +1819,44 @@ impl<'a> Parser<'a> {
                         span: Span::new(token.span.start, end),
                     });
                 }
-                let expr = self.parse_expr()?;
+                let first = self.parse_expr()?;
+                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                    let mut items = vec![first];
+                    while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                        let item = self.parse_expr()?;
+                        items.push(item);
+                        if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    let close = self.expect(
+                        |k| matches!(k, TokenKind::RParen),
+                        "E1037",
+                        "expected ')' after tuple expression",
+                    )?;
+                    let fields = items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, item)| (idx.to_string(), item.clone(), item.span))
+                        .collect::<Vec<_>>();
+                    return Some(Expr {
+                        kind: ExprKind::StructInit {
+                            name: TUPLE_INTERNAL_NAME.to_string(),
+                            fields,
+                        },
+                        span: Span::new(token.span.start, close.end),
+                    });
+                }
                 let close = self.expect(
                     |k| matches!(k, TokenKind::RParen),
                     "E1037",
                     "expected ')' after expression",
                 )?;
                 Some(Expr {
-                    kind: expr.kind,
+                    kind: first.kind,
                     span: Span::new(token.span.start, close.end),
                 })
             }
@@ -1403,7 +1877,18 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.bump();
+                let mut full_name = name;
+                let mut end = token.span.end;
+                while self.at_kind(|k| matches!(k, TokenKind::ColonColon)) {
+                    self.bump();
+                    let (segment, seg_span) =
+                        self.expect_ident("E1088", "expected path segment after '::'")?;
+                    full_name.push_str("::");
+                    full_name.push_str(&segment);
+                    end = seg_span.end;
+                }
                 if !self.disallow_struct_literal
+                    && !full_name.contains("::")
                     && self.at_kind(|k| matches!(k, TokenKind::LBrace))
                     && self.looks_like_struct_literal()
                 {
@@ -1431,13 +1916,16 @@ impl<'a> Parser<'a> {
                         "expected '}' after struct literal",
                     )?;
                     return Some(Expr {
-                        kind: ExprKind::StructInit { name, fields },
+                        kind: ExprKind::StructInit {
+                            name: full_name,
+                            fields,
+                        },
                         span: Span::new(token.span.start, close.end),
                     });
                 }
                 Some(Expr {
-                    kind: ExprKind::Var(name),
-                    span: token.span,
+                    kind: ExprKind::Var(full_name),
+                    span: Span::new(token.span.start, end),
                 })
             }
             _ => {
@@ -1972,14 +2460,46 @@ impl<'a> Parser<'a> {
             TokenKind::LParen => {
                 let start = token.span.start;
                 self.bump();
-                self.expect(
+                if self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                    self.bump();
+                    return Some(Pattern {
+                        kind: PatternKind::Unit,
+                        span: Span::new(start, self.previous_span().end),
+                    });
+                }
+                let first = self.parse_pattern()?;
+                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                    let mut args = vec![first];
+                    while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                        args.push(self.parse_pattern()?);
+                        if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    let close = self.expect(
+                        |k| matches!(k, TokenKind::RParen),
+                        "E1046",
+                        "expected ')' after tuple pattern",
+                    )?;
+                    return Some(Pattern {
+                        kind: PatternKind::Variant {
+                            name: TUPLE_INTERNAL_NAME.to_string(),
+                            args,
+                        },
+                        span: Span::new(start, close.end),
+                    });
+                }
+                let close = self.expect(
                     |k| matches!(k, TokenKind::RParen),
                     "E1046",
-                    "expected ')' for unit pattern",
+                    "expected ')' after parenthesized pattern",
                 )?;
                 Some(Pattern {
-                    kind: PatternKind::Unit,
-                    span: Span::new(start, self.previous_span().end),
+                    kind: first.kind,
+                    span: Span::new(start, close.end),
                 })
             }
             TokenKind::Ident(name) => {

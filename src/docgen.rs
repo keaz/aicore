@@ -111,7 +111,7 @@ pub fn generate_docs(front: &FrontendOutput, output_dir: &Path) -> anyhow::Resul
             ir::Item::Trait(trait_def) => DocItem {
                 kind: "trait".to_string(),
                 name: trait_def.name.clone(),
-                signature: render_trait_signature(trait_def),
+                signature: render_trait_signature(trait_def, &type_map),
                 effects: Vec::new(),
                 requires: None,
                 ensures: None,
@@ -275,19 +275,51 @@ fn render_enum_signature(enm: &ir::EnumDef, types: &BTreeMap<ir::TypeId, String>
     format!("enum {}{} {{ {} }}", enm.name, generics, variants)
 }
 
-fn render_trait_signature(trait_def: &ir::TraitDef) -> String {
+fn render_trait_signature(
+    trait_def: &ir::TraitDef,
+    types: &BTreeMap<ir::TypeId, String>,
+) -> String {
     let generics = render_generic_params(&trait_def.generics);
-    format!("trait {}{};", trait_def.name, generics)
+    if trait_def.methods.is_empty() {
+        return format!("trait {}{};", trait_def.name, generics);
+    }
+    let methods = trait_def
+        .methods
+        .iter()
+        .map(|method| format!("{};", render_function_signature(method, types)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("trait {}{} {{ {} }}", trait_def.name, generics, methods)
 }
 
 fn render_impl_signature(impl_def: &ir::ImplDef, types: &BTreeMap<ir::TypeId, String>) -> String {
+    let methods = impl_def
+        .methods
+        .iter()
+        .map(|method| format!("{};", render_function_signature(method, types)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if impl_def.is_inherent {
+        let target = impl_def
+            .target
+            .and_then(|ty| types.get(&ty).cloned())
+            .unwrap_or_else(|| impl_def.trait_name.clone());
+        if methods.is_empty() {
+            return format!("impl {} {{}}", target);
+        }
+        return format!("impl {} {{ {} }}", target, methods);
+    }
+
     let args = impl_def
         .trait_args
         .iter()
         .map(|ty| types.get(ty).cloned().unwrap_or_else(|| "<?>".to_string()))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("impl {}[{}];", impl_def.trait_name, args)
+    if methods.is_empty() {
+        return format!("impl {}[{}];", impl_def.trait_name, args);
+    }
+    format!("impl {}[{}] {{ {} }}", impl_def.trait_name, args, methods)
 }
 
 fn render_generic_params(generics: &[ir::GenericParam]) -> String {

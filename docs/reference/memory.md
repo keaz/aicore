@@ -33,6 +33,8 @@ borrow_expr     = "&" "mut"? unary_expr ;
   - loop bodies are checked under loop-local borrow state snapshots
 - Assignment remains type-checked in addition to mutability/borrow checks.
 - Current model focuses on alias/mutability safety for local bindings; explicit lifetime syntax is not part of the surface language.
+- Runtime-drop local values (`String`, struct, enum) are cleaned up in deterministic reverse lexical order at scope exits. Codegen emits `llvm.lifetime.end.p0i8` for this ordering across normal exits and early control-flow exits (`return`, `break`, `continue`).
+- Current `#157` scope is lifetime-end metadata only. User-defined destructor hooks (`Drop`-style behavior), partial-move destructor semantics, and panic/unwind drop paths are not implemented yet.
 
 ## Diagnostic mapping
 

@@ -16,16 +16,21 @@ The gate fails when either condition is true:
 
 - absolute budget threshold exceeded
 - regression threshold exceeded relative to target baseline and tolerance
+- `aic bench` exits non-zero when `report.violations` is non-empty
+- `aic bench --compare <baseline.json>` includes per-metric regression status in `trend`
 
 Artifacts:
 
 - `target/e8/perf-report.json`
 - `target/e8/perf-report-<target>.json`
 - `target/e8/perf-trend-<target>.json`
+- `bench.json` (or `--output <path>`) from `aic bench`
 
 ## Run Commands
 
 ```bash
+aic bench --budget benchmarks/service_baseline/budget.v1.json --output target/e8/bench.json
+aic bench --budget benchmarks/service_baseline/budget.v1.json --compare benchmarks/service_baseline/baselines.v1.json --output target/e8/bench-compare.json
 cargo test --locked --test e8_perf_tests
 make test-e8
 ```

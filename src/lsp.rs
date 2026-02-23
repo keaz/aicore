@@ -857,17 +857,47 @@ fn render_enum_signature(enm: &ast::EnumDef) -> String {
 
 fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
     let generics = render_generic_params(&trait_def.generics, "<", ">");
-    format!("trait {}{};", trait_def.name, generics)
+    if trait_def.methods.is_empty() {
+        return format!("trait {}{};", trait_def.name, generics);
+    }
+    let methods = trait_def
+        .methods
+        .iter()
+        .map(|method| format!("{};", render_function_signature(method)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("trait {}{} {{ {} }}", trait_def.name, generics, methods)
 }
 
 fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
+    let methods = impl_def
+        .methods
+        .iter()
+        .map(|method| format!("{};", render_function_signature(method)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if impl_def.is_inherent {
+        let target = impl_def
+            .target
+            .as_ref()
+            .map(render_type_expr)
+            .unwrap_or_else(|| impl_def.trait_name.clone());
+        if methods.is_empty() {
+            return format!("impl {} {{}}", target);
+        }
+        return format!("impl {} {{ {} }}", target, methods);
+    }
+
     let args = impl_def
         .trait_args
         .iter()
         .map(render_type_expr)
         .collect::<Vec<_>>()
         .join(", ");
-    format!("impl {}<{}>;", impl_def.trait_name, args)
+    if methods.is_empty() {
+        return format!("impl {}<{}>;", impl_def.trait_name, args);
+    }
+    format!("impl {}<{}> {{ {} }}", impl_def.trait_name, args, methods)
 }
 
 fn render_generic_params(generics: &[ast::GenericParam], open: &str, close: &str) -> String {

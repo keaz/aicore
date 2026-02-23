@@ -113,6 +113,69 @@ fn unit_parse_struct_literal_expression() {
 }
 
 #[test]
+fn unit_tuple_types_destructure_and_match_typecheck() {
+    let src = r#"
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int {
+    let pair = swap(2, 40);
+    let (left, right) = pair;
+    let matched = match pair {
+        (40, value) => value,
+        _ => 0,
+    };
+    tuple_first((left + matched, right))
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_struct_impl_methods_and_method_call_typecheck() {
+    let src = r#"
+struct User { age: Int }
+
+impl User {
+    fn new(age: Int) -> User {
+        User { age: age }
+    }
+
+    fn age_plus(self) -> Int {
+        self.age + 12
+    }
+
+    fn is_adult(self) -> Bool {
+        self.age >= 18
+    }
+}
+
+fn main() -> Int {
+    let user = User::new(30);
+    if user.is_adult() {
+        user.age_plus()
+    } else {
+        0
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_resolver_duplicate_field() {
     let src = "struct S { x: Int, x: Int }";
     let ir = lower(src);
@@ -197,6 +260,109 @@ fn demo() -> Bool {
     assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E1258"));
+}
+
+#[test]
+fn unit_trait_method_static_dispatch_generic_call_typechecks() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+fn eval[T: Score](x: T) -> Int {
+    x.score()
+}
+
+fn main() -> Int {
+    eval(Meter { value: 41 })
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_trait_method_impl_missing_required_method_reports_diagnostic() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags.iter().any(|d| {
+            d.message.contains("missing")
+                && d.message.contains("method")
+                && d.message.contains("score")
+        }),
+        "diags={all_diags:#?}"
+    );
+}
+
+#[test]
+fn unit_trait_method_impl_signature_mismatch_reports_diagnostic() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Bool {
+        true
+    }
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags.iter().any(|d| {
+            d.message.contains("score")
+                && (d.message.contains("signature")
+                    || d.message.contains("mismatch")
+                    || d.message.contains("return"))
+        }),
+        "diags={all_diags:#?}"
+    );
 }
 
 #[test]
@@ -837,6 +1003,122 @@ fn main() -> Int {
         "diags={:#?}",
         out.diagnostics
     );
+}
+
+#[test]
+fn unit_use_after_move_reports_e1270() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let moved = b;
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1270"));
+}
+
+#[test]
+fn unit_move_while_borrowed_reports_e1271() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let keep = &b;
+    let moved = b;
+    moved.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1271"));
+}
+
+#[test]
+fn unit_field_borrow_conflict_reports_e1263() {
+    let src = r#"
+struct Pair { left: Int, right: Int }
+
+fn main() -> Int {
+    let mut pair = Pair { left: 1, right: 2 };
+    let left_ref = &pair.left;
+    let whole_mut = &mut pair;
+    pair.right
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1263"));
+}
+
+#[test]
+fn unit_assignment_while_field_borrowed_reports_e1265() {
+    let src = r#"
+struct Pair { left: Int, right: Int }
+
+fn main() -> Int {
+    let mut pair = Pair { left: 1, right: 2 };
+    let left_ref = &pair.left;
+    pair = Pair { left: 3, right: 4 };
+    pair.right
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1265"));
+}
+
+#[test]
+fn unit_reinitialize_after_move_is_allowed() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let mut b = BoxedInt { value: 1 };
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt { value: first + 1 };
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| matches!(
+            d.code.as_str(),
+            "E1263" | "E1264" | "E1265" | "E1270" | "E1271"
+        )),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_call_boundary_conflicting_borrows_report_e1263() {
+    let src = r#"
+fn takes_mut(x: RefMut[Int]) -> Int {
+    0
+}
+
+fn main() -> Int {
+    let mut x = 1;
+    let keep = &x;
+    takes_mut(&mut x)
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1263"));
 }
 
 #[test]
@@ -2382,6 +2664,43 @@ fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_config_load_json_has_success_and_error_paths() {
+    let source = fs::read_to_string("std/config.aic").expect("read std/config.aic");
+
+    assert!(source.contains(
+        "fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs }"
+    ));
+    assert!(source.contains("match read_text(path)"));
+    assert!(source.contains("match parse(text)"));
+    assert!(source.contains("match decode_with(parsed, marker)"));
+    assert!(source.contains("Ok(config) => Ok(config)"));
+    assert!(source.contains("Err(err) => Err(map_fs_error(err))"));
+    assert!(source.contains("Err(err) => Err(map_json_error(err))"));
+}
+
+#[test]
+fn unit_std_config_env_prefix_and_missing_key_paths_present() {
+    let source = fs::read_to_string("std/config.aic").expect("read std/config.aic");
+
+    assert!(source
+        .contains("fn load_env_prefix(prefix: String) -> Map[String, String] effects { env }"));
+    assert!(source.contains("starts_with(entry.key, prefix)"));
+    assert!(source.contains("substring(entry.key, prefix_len, key_len)"));
+
+    assert!(source.contains(
+        "fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String"
+    ));
+    assert!(source.contains("Some(value) => value"));
+    assert!(source.contains("None => fallback"));
+
+    assert!(source.contains(
+        "fn require(config: Map[String, String], key: String) -> Result[String, ConfigError]"
+    ));
+    assert!(source.contains("Some(value) => Ok(value)"));
+    assert!(source.contains("None => Err(MissingKey())"));
+}
+
+#[test]
 fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
 
@@ -2566,6 +2885,7 @@ import std.path;
 import std.map;
 import std.set;
 import std.proc;
+import std.log;
 import std.string;
 import std.vec;
 import std.option;
@@ -2601,16 +2921,30 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _header_entries = map.entries(_header_map);
     let _header_size = map.size(_header_map);
     let _header_removed = map.remove(_header_map, "accept");
-    let _set0 = set.new_set();
-    let _set1 = set.set_add(_set0, "accept");
-    let _set2 = set.set_add(_set1, "x-id");
-    let _set3 = set.set_discard(_set2, "accept");
-    let _set_has = set.set_has(_set3, "x-id");
-    let _set_union = set.union(_set3, set.set_add(set.new_set(), "trace-id"));
+    let _set0: Set[String] = set.new_set();
+    let _set1 = set.add(_set0, "accept");
+    let _set2 = set.add(_set1, "x-id");
+    let _set3 = set.discard(_set2, "accept");
+    let _set_has = set.has(_set3, "x-id");
+    let _set4: Set[String] = set.new_set();
+    let _set4 = set.add(_set4, "trace-id");
+    let _set_union = set.union(_set3, _set4);
     let _set_inter = set.intersection(_set_union, _set3);
     let _set_diff = set.difference(_set_union, _set3);
     let _set_vec = set.to_vec(_set_union);
     let _set_size = set.set_size(_set_union);
+    let _int_set0: Set[Int] = set.new_set();
+    let _int_set1 = set.add(_int_set0, 7);
+    let _int_set2 = set.discard(_int_set1, 7);
+    let _int_set_has = set.has(_int_set2, 7);
+    let _bool_set0: Set[Bool] = set.new_set();
+    let _bool_set1 = set.add(_bool_set0, true);
+    let _bool_set2 = set.discard(_bool_set1, false);
+    let _bool_set_has = set.has(_bool_set2, true);
+    let _log_level = Info();
+    log.set_level(_log_level);
+    log.set_json_output(true);
+    log.info("unit-smoke");
     let _base = basename(_path_join);
     let _dir = dirname(_path_join);
     let _ext = extension(_path_join);
@@ -3834,6 +4168,97 @@ fn bad(x: Wrap[Int, Int]) -> Int {
     );
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E1250"));
+}
+
+#[test]
+fn unit_error_context_chain_helpers_typecheck() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int {
+    let fs_chain_ctx = with_context(from_fs_error_with_context(NotFound(), "open config"), "bootstrap");
+    let chain = error_chain(fs_chain_ctx);
+
+    let score =
+        io_code(io_error(from_fs_error_with_context(NotFound(), "open config"))) * 1000 +
+        io_code(io_error(from_net_error_with_context(Timeout(), "dial upstream"))) * 100 +
+        io_code(io_error(from_proc_error_with_context(InvalidInput(), "spawn child"))) * 10 +
+        io_code(io_error(from_env_error_with_context(NotFound(), "load HOME")));
+
+    if chain == "open config -> fs.NotFound -> io.EndOfInput -> bootstrap" {
+        score
+    } else {
+        0
+    }
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_io_error_mapping_without_context_remains_compatible() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+import std.fs;
+import std.net;
+import std.proc;
+import std.env;
+
+fn io_code(err: IoError) -> Int {
+    match err {
+        EndOfInput => 1,
+        InvalidInput => 2,
+        Io => 3,
+    }
+}
+
+fn main() -> Int {
+    io_code(from_fs_error(NotFound())) * 10000 +
+    io_code(from_fs_error(InvalidInput())) * 1000 +
+    io_code(from_net_error(Timeout())) * 100 +
+    io_code(from_proc_error(InvalidInput())) * 10 +
+    io_code(from_env_error(NotFound()))
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
 }
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {

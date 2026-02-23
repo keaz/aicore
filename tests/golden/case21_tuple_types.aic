@@ -1,0 +1,18 @@
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int {
+    let pair = swap(2, 40);
+    let left = pair.0;
+    let right = pair.1;
+    let matched = match pair {
+    (40, value) => value,
+    _ => 0,
+};
+    tuple_first((left + matched, right))
+}

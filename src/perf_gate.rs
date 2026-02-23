@@ -95,6 +95,44 @@ pub fn load_baseline(path: &Path) -> anyhow::Result<PerfBaseline> {
     Ok(serde_json::from_str::<PerfBaseline>(&raw)?)
 }
 
+pub fn baseline_from_report(report: &PerfReport) -> PerfBaseline {
+    PerfBaseline {
+        dataset: report.dataset.clone(),
+        parser_ms: report.metrics.parser_ms,
+        typecheck_ms: report.metrics.typecheck_ms,
+        codegen_ms: report.metrics.codegen_ms,
+    }
+}
+
+pub fn load_compare_baseline(path: &Path) -> anyhow::Result<PerfBaseline> {
+    let raw = fs::read_to_string(path)?;
+
+    if let Ok(baseline) = serde_json::from_str::<PerfBaseline>(&raw) {
+        return Ok(baseline);
+    }
+
+    if let Ok(report) = serde_json::from_str::<PerfReport>(&raw) {
+        return Ok(baseline_from_report(&report));
+    }
+
+    if let Ok(manifest) = serde_json::from_str::<PerfTargetBaselines>(&raw) {
+        let target = host_target_label();
+        return baseline_for_target(&manifest, target)
+            .ok_or_else(|| anyhow::anyhow!("missing baseline for target `{target}`"));
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(&raw)?;
+    if let Some(report_value) = value.get("report") {
+        let report = serde_json::from_value::<PerfReport>(report_value.clone())?;
+        return Ok(baseline_from_report(&report));
+    }
+
+    anyhow::bail!(
+        "unsupported compare baseline format in {} (expected PerfBaseline, PerfReport, target baseline manifest, or bench envelope with `report`)",
+        path.display()
+    );
+}
+
 pub fn load_target_baselines(path: &Path) -> anyhow::Result<PerfTargetBaselines> {
     let raw = fs::read_to_string(path)?;
     Ok(serde_json::from_str::<PerfTargetBaselines>(&raw)?)
@@ -423,8 +461,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        build_trend_report, check_budget_max, check_regression, dataset_fingerprint, PerfBaseline,
-        PerfBudget, PerfMetrics, PerfReport,
+        baseline_from_report, build_trend_report, check_budget_max, check_regression,
+        dataset_fingerprint, PerfBaseline, PerfBudget, PerfMetrics, PerfReport,
     };
 
     #[test]
@@ -497,5 +535,36 @@ mod tests {
         assert_eq!(a.typecheck.delta_pct, 20.0);
         assert_eq!(a.codegen.delta_pct, 16.667);
         assert!(!a.codegen.within_regression_limit);
+    }
+
+    #[test]
+    fn baseline_from_report_copies_dataset_and_observed_metrics() {
+        let report = PerfReport {
+            dataset: "examples/e8/large_project_bench".to_string(),
+            metrics: PerfMetrics {
+                parser_ms: 12.5,
+                typecheck_ms: 22.5,
+                codegen_ms: 32.5,
+                file_count: 2,
+                total_bytes: 900,
+                dataset_fingerprint: "fingerprint".to_string(),
+            },
+            budget: PerfBudget {
+                dataset: "examples/e8/large_project_bench".to_string(),
+                iterations: 1,
+                parser_ms_max: 100.0,
+                typecheck_ms_max: 100.0,
+                codegen_ms_max: 100.0,
+                regression_tolerance_pct: 10.0,
+            },
+            baseline: None,
+            violations: Vec::new(),
+        };
+
+        let baseline = baseline_from_report(&report);
+        assert_eq!(baseline.dataset, report.dataset);
+        assert_eq!(baseline.parser_ms, report.metrics.parser_ms);
+        assert_eq!(baseline.typecheck_ms, report.metrics.typecheck_ms);
+        assert_eq!(baseline.codegen_ms, report.metrics.codegen_ms);
     }
 }

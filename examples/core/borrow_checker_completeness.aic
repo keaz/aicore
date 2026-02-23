@@ -1,0 +1,12 @@
+import std.io;
+
+struct BoxedInt { value: Int }
+
+fn main() -> Int effects { io } {
+    let mut b = BoxedInt { value: 1 };
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt { value: first + 1 };
+    print_int(b.value);
+    0
+}

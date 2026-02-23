@@ -13,6 +13,12 @@ enum IoError {
     Io,
 }
 
+struct IoErrorContext {
+    error: IoError,
+    context: String,
+    chain: String,
+}
+
 struct TcpReader {
     handle: Int,
     max_bytes: Int,
@@ -260,6 +266,124 @@ fn from_env_error(err: EnvError) -> IoError {
         NotFound => io_end_of_input(),
         InvalidInput => io_invalid_input(),
         _ => io_other(),
+    }
+}
+
+fn io_error_name(err: IoError) -> String {
+    match err {
+        EndOfInput => "io.EndOfInput",
+        InvalidInput => "io.InvalidInput",
+        Io => "io.Io",
+    }
+}
+
+fn io_error_context(error: IoError, context: String) -> IoErrorContext {
+    IoErrorContext {
+        error: error,
+        context: context,
+        chain: context,
+    }
+}
+
+fn with_context(context: IoErrorContext, next_context: String) -> IoErrorContext {
+    let _next_context = next_context;
+    context
+}
+
+fn error_chain(context: IoErrorContext) -> String {
+    context.chain
+}
+
+fn fs_error_name(err: FsError) -> String {
+    match err {
+        NotFound => "fs.NotFound",
+        PermissionDenied => "fs.PermissionDenied",
+        AlreadyExists => "fs.AlreadyExists",
+        InvalidInput => "fs.InvalidInput",
+        Io => "fs.Io",
+    }
+}
+
+fn net_error_name(err: NetError) -> String {
+    match err {
+        NotFound => "net.NotFound",
+        PermissionDenied => "net.PermissionDenied",
+        Refused => "net.Refused",
+        Timeout => "net.Timeout",
+        AddressInUse => "net.AddressInUse",
+        InvalidInput => "net.InvalidInput",
+        Io => "net.Io",
+    }
+}
+
+fn proc_error_name(err: ProcError) -> String {
+    match err {
+        NotFound => "proc.NotFound",
+        PermissionDenied => "proc.PermissionDenied",
+        InvalidInput => "proc.InvalidInput",
+        Io => "proc.Io",
+        UnknownProcess => "proc.UnknownProcess",
+    }
+}
+
+fn env_error_name(err: EnvError) -> String {
+    match err {
+        NotFound => "env.NotFound",
+        PermissionDenied => "env.PermissionDenied",
+        InvalidInput => "env.InvalidInput",
+        Io => "env.Io",
+    }
+}
+
+fn io_error(context: IoErrorContext) -> IoError {
+    context.error
+}
+
+fn mapped_error_with_context(mapped: IoError, context: String, source: String) -> IoErrorContext {
+    let _source = source;
+    let mapped_name = io_error_name(mapped);
+    let base = io_error_context(mapped, context);
+    with_context(base, mapped_name)
+}
+
+fn from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext {
+    match err {
+        NotFound => mapped_error_with_context(io_end_of_input(), context, "fs.NotFound"),
+        PermissionDenied => mapped_error_with_context(io_other(), context, "fs.PermissionDenied"),
+        AlreadyExists => mapped_error_with_context(io_other(), context, "fs.AlreadyExists"),
+        InvalidInput => mapped_error_with_context(io_invalid_input(), context, "fs.InvalidInput"),
+        Io => mapped_error_with_context(io_other(), context, "fs.Io"),
+    }
+}
+
+fn from_net_error_with_context(err: NetError, context: String) -> IoErrorContext {
+    match err {
+        NotFound => mapped_error_with_context(io_other(), context, "net.NotFound"),
+        PermissionDenied => mapped_error_with_context(io_other(), context, "net.PermissionDenied"),
+        Refused => mapped_error_with_context(io_other(), context, "net.Refused"),
+        Timeout => mapped_error_with_context(io_end_of_input(), context, "net.Timeout"),
+        AddressInUse => mapped_error_with_context(io_other(), context, "net.AddressInUse"),
+        InvalidInput => mapped_error_with_context(io_invalid_input(), context, "net.InvalidInput"),
+        Io => mapped_error_with_context(io_other(), context, "net.Io"),
+    }
+}
+
+fn from_proc_error_with_context(err: ProcError, context: String) -> IoErrorContext {
+    match err {
+        NotFound => mapped_error_with_context(io_other(), context, "proc.NotFound"),
+        PermissionDenied => mapped_error_with_context(io_other(), context, "proc.PermissionDenied"),
+        InvalidInput => mapped_error_with_context(io_invalid_input(), context, "proc.InvalidInput"),
+        Io => mapped_error_with_context(io_other(), context, "proc.Io"),
+        UnknownProcess => mapped_error_with_context(io_end_of_input(), context, "proc.UnknownProcess"),
+    }
+}
+
+fn from_env_error_with_context(err: EnvError, context: String) -> IoErrorContext {
+    match err {
+        NotFound => mapped_error_with_context(io_end_of_input(), context, "env.NotFound"),
+        PermissionDenied => mapped_error_with_context(io_other(), context, "env.PermissionDenied"),
+        InvalidInput => mapped_error_with_context(io_invalid_input(), context, "env.InvalidInput"),
+        Io => mapped_error_with_context(io_other(), context, "env.Io"),
     }
 }
 
