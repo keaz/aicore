@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use serde_json::json;
 
+use crate::ast;
 use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
     CompileOptions, LinkOptions,
@@ -24,6 +25,7 @@ use crate::telemetry;
 use crate::typecheck::{self, TypecheckOutput};
 
 pub struct FrontendOutput {
+    pub ast: ast::Program,
     pub ir: ir::Program,
     pub resolution: Resolution,
     pub typecheck: TypecheckOutput,
@@ -90,6 +92,12 @@ pub fn run_frontend_with_options(
         ast
     } else {
         return Ok(FrontendOutput {
+            ast: ast::Program {
+                module: None,
+                imports: Vec::new(),
+                items: Vec::new(),
+                span: crate::span::Span::new(0, 0),
+            },
             ir: ir::Program {
                 schema_version: ir::CURRENT_IR_SCHEMA_VERSION,
                 module: None,
@@ -191,6 +199,7 @@ pub fn run_frontend_with_options(
     );
 
     Ok(FrontendOutput {
+        ast,
         ir,
         resolution,
         typecheck,

@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/check/build/fix workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -20,6 +20,7 @@ Negotiation rules:
 ## Published schemas
 
 - Parse response: `docs/agent-tooling/schemas/parse-response.schema.json`
+- AST response: `docs/agent-tooling/schemas/ast-response.schema.json`
 - Check response: `docs/agent-tooling/schemas/check-response.schema.json`
 - Build response: `docs/agent-tooling/schemas/build-response.schema.json`
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
@@ -27,6 +28,7 @@ Negotiation rules:
 Positive fixtures:
 
 - `examples/agent/protocol_parse.json`
+- `examples/agent/protocol_ast.md`
 - `examples/agent/protocol_check.json`
 - `examples/agent/protocol_build.json`
 - `examples/agent/protocol_fix.json`

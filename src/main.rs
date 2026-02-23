@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -21,7 +21,7 @@ use aicore::diagnostics::{Diagnostic, Severity};
 use aicore::docgen::generate_docs;
 use aicore::driver::{
     diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
-    FrontendOptions,
+    FrontendOptions, FrontendOutput,
 };
 use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
@@ -56,6 +56,7 @@ use aicore::std_policy::{
 use aicore::telemetry;
 use aicore::test_harness::{run_harness, HarnessMode};
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 
 const DEFAULT_MAX_ERRORS: usize = 20;
 const GRAMMAR_VERSION: &str = "mvp-grammar-v6";
@@ -63,6 +64,7 @@ const GRAMMAR_FORMAT: &str = "ebnf";
 const GRAMMAR_SOURCE_PATH: &str = "docs/grammar.ebnf";
 const GRAMMAR_SOURCE_CONTRACT_PATH: &str = "docs/syntax.md";
 const GRAMMAR_EBNF: &str = include_str!("../docs/grammar.ebnf");
+const AST_RESPONSE_VERSION: &str = "1.0";
 
 #[derive(Parser)]
 #[command(name = "aic", version, about = "AICore compiler")]
@@ -93,6 +95,14 @@ enum Command {
             value_parser = parse_max_errors
         )]
         max_errors: usize,
+    },
+    Ast {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long, required = true)]
+        json: bool,
+        #[arg(long)]
+        offline: bool,
     },
     Coverage {
         #[arg(default_value = "src/main.aic")]
@@ -476,6 +486,238 @@ fn grammar_contract_json() -> serde_json::Value {
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct AstJsonResponse {
+    version: &'static str,
+    module: Option<String>,
+    ast: aicore::ast::Program,
+    ir: aicore::ir::Program,
+    resolved_types: Vec<ResolvedTypeEntry>,
+    generic_instantiations: Vec<aicore::ir::GenericInstantiation>,
+    function_effects: BTreeMap<String, Vec<String>>,
+    contracts: AstContracts,
+    import_graph: AstImportGraph,
+    diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ResolvedTypeEntry {
+    id: u32,
+    repr: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AstContracts {
+    functions: Vec<AstFunctionContract>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AstFunctionContract {
+    item_index: usize,
+    method_index: Option<usize>,
+    module: Option<String>,
+    function: String,
+    function_span: aicore::span::Span,
+    requires: Option<AstContractClause>,
+    ensures: Option<AstContractClause>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AstContractClause {
+    span: aicore::span::Span,
+    expr: aicore::ast::Expr,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AstImportGraph {
+    entry_module: Option<String>,
+    imports: Vec<String>,
+    item_modules: Vec<Option<String>>,
+    nodes: Vec<String>,
+    edges: Vec<AstImportEdge>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AstImportEdge {
+    from: String,
+    to: String,
+}
+
+fn build_ast_response(front: FrontendOutput) -> AstJsonResponse {
+    let FrontendOutput {
+        ast,
+        ir,
+        resolution,
+        typecheck,
+        diagnostics,
+        item_modules,
+        ..
+    } = front;
+
+    let module = ir.module.as_ref().map(|path| path.join("."));
+
+    let mut resolved_types = ir
+        .types
+        .iter()
+        .map(|ty| ResolvedTypeEntry {
+            id: ty.id.0,
+            repr: ty.repr.clone(),
+        })
+        .collect::<Vec<_>>();
+    resolved_types.sort_by_key(|entry| entry.id);
+
+    let aicore::typecheck::TypecheckOutput {
+        function_effect_usage,
+        mut generic_instantiations,
+        ..
+    } = typecheck;
+
+    generic_instantiations.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.mangled.cmp(&right.mangled))
+    });
+
+    let function_effects = function_effect_usage
+        .into_iter()
+        .map(|(function, effects)| (function, effects.into_iter().collect::<Vec<_>>()))
+        .collect::<BTreeMap<_, _>>();
+
+    let contracts = collect_contracts(&ast, &item_modules);
+    let import_graph = collect_import_graph(&resolution, &item_modules);
+
+    AstJsonResponse {
+        version: AST_RESPONSE_VERSION,
+        module,
+        ast,
+        ir,
+        resolved_types,
+        generic_instantiations,
+        function_effects,
+        contracts,
+        import_graph,
+        diagnostics,
+    }
+}
+
+fn collect_contracts(
+    ast: &aicore::ast::Program,
+    item_modules: &[Option<Vec<String>>],
+) -> AstContracts {
+    let mut functions = Vec::new();
+    for (item_index, item) in ast.items.iter().enumerate() {
+        let module = item_modules
+            .get(item_index)
+            .and_then(|entry| entry.as_ref().map(|segments| segments.join(".")));
+        match item {
+            aicore::ast::Item::Function(function) => {
+                push_function_contract(
+                    &mut functions,
+                    item_index,
+                    None,
+                    &module,
+                    function.name.clone(),
+                    function,
+                );
+            }
+            aicore::ast::Item::Trait(trait_def) => {
+                for (method_index, method) in trait_def.methods.iter().enumerate() {
+                    push_function_contract(
+                        &mut functions,
+                        item_index,
+                        Some(method_index),
+                        &module,
+                        format!("{}::{}", trait_def.name, method.name),
+                        method,
+                    );
+                }
+            }
+            aicore::ast::Item::Impl(impl_def) => {
+                for (method_index, method) in impl_def.methods.iter().enumerate() {
+                    push_function_contract(
+                        &mut functions,
+                        item_index,
+                        Some(method_index),
+                        &module,
+                        format!("{}::{}", impl_def.trait_name, method.name),
+                        method,
+                    );
+                }
+            }
+            aicore::ast::Item::Struct(_) | aicore::ast::Item::Enum(_) => {}
+        }
+    }
+    AstContracts { functions }
+}
+
+fn push_function_contract(
+    functions: &mut Vec<AstFunctionContract>,
+    item_index: usize,
+    method_index: Option<usize>,
+    module: &Option<String>,
+    function_name: String,
+    function: &aicore::ast::Function,
+) {
+    if function.requires.is_none() && function.ensures.is_none() {
+        return;
+    }
+
+    functions.push(AstFunctionContract {
+        item_index,
+        method_index,
+        module: module.clone(),
+        function: function_name,
+        function_span: function.span,
+        requires: function.requires.as_ref().map(|expr| AstContractClause {
+            span: expr.span,
+            expr: expr.clone(),
+        }),
+        ensures: function.ensures.as_ref().map(|expr| AstContractClause {
+            span: expr.span,
+            expr: expr.clone(),
+        }),
+    });
+}
+
+fn collect_import_graph(
+    resolution: &aicore::resolver::Resolution,
+    item_modules: &[Option<Vec<String>>],
+) -> AstImportGraph {
+    let entry_module = resolution.entry_module.clone();
+    let imports = resolution.imports.iter().cloned().collect::<Vec<_>>();
+    let item_modules = item_modules
+        .iter()
+        .map(|module| module.as_ref().map(|segments| segments.join(".")))
+        .collect::<Vec<_>>();
+
+    let edge_from = entry_module.clone().unwrap_or_else(|| "<root>".to_string());
+    let edges = imports
+        .iter()
+        .map(|to| AstImportEdge {
+            from: edge_from.clone(),
+            to: to.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut nodes = BTreeSet::new();
+    nodes.insert(edge_from);
+    for import in &imports {
+        nodes.insert(import.clone());
+    }
+    for module in item_modules.iter().flatten() {
+        nodes.insert(module.clone());
+    }
+
+    AstImportGraph {
+        entry_module,
+        imports,
+        item_modules,
+        nodes: nodes.into_iter().collect(),
+        edges,
+    }
+}
+
 fn run_cli() -> anyhow::Result<i32> {
     let cli = Cli::parse();
 
@@ -507,6 +749,24 @@ fn run_cli() -> anyhow::Result<i32> {
                 print!("{}", diagnostics_pretty(&diagnostics));
             }
 
+            if has_any_errors {
+                EXIT_DIAGNOSTIC_ERROR
+            } else {
+                EXIT_OK
+            }
+        }
+        Command::Ast {
+            input,
+            json,
+            offline,
+        } => {
+            if !json {
+                anyhow::bail!("`aic ast` requires --json");
+            }
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            let has_any_errors = has_errors(&front.diagnostics);
+            let response = build_ast_response(front);
+            println!("{}", serde_json::to_string_pretty(&response)?);
             if has_any_errors {
                 EXIT_DIAGNOSTIC_ERROR
             } else {

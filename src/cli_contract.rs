@@ -41,6 +41,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json", "sarif"],
     },
     CommandContract {
+        name: "ast",
+        description: "Emit typed AST+IR metadata JSON for agent tooling",
+        stable_flags: &["--json", "--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "coverage",
         description: "Deterministic source/function coverage summary from check diagnostics",
         stable_flags: &["--check", "--min", "--report", "--offline"],
@@ -180,6 +186,12 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/parse-response.schema.json",
         example_path: "examples/agent/protocol_parse.json",
         description: "Parser-only protocol envelope and diagnostics.",
+    },
+    PhaseSchemaContract {
+        phase: "ast",
+        schema_path: "docs/agent-tooling/schemas/ast-response.schema.json",
+        example_path: "examples/agent/protocol_ast.md",
+        description: "Typed AST/IR response with type/effect/contract/import metadata.",
     },
     PhaseSchemaContract {
         phase: "check",
@@ -331,20 +343,18 @@ mod tests {
     #[test]
     fn contract_json_contains_expected_shape() {
         let value = contract_json(&[]);
+        let check_schema = PHASE_SCHEMA_CONTRACTS
+            .iter()
+            .find(|schema| schema.phase == "check")
+            .expect("check schema contract");
         assert_eq!(value["version"], "1.0");
         assert!(value["commands"].is_array());
         assert!(value["exit_codes"].is_object());
         assert_eq!(value["protocol"]["name"], "aic-compiler-json");
         assert_eq!(value["protocol"]["selected_version"], "1.0");
         assert!(value["schemas"].is_object());
-        assert_eq!(
-            value["schemas"]["check"]["path"],
-            PHASE_SCHEMA_CONTRACTS[1].schema_path
-        );
-        assert_eq!(
-            value["examples"]["check"],
-            PHASE_SCHEMA_CONTRACTS[1].example_path
-        );
+        assert_eq!(value["schemas"]["check"]["path"], check_schema.schema_path);
+        assert_eq!(value["examples"]["check"], check_schema.example_path);
     }
 
     #[test]

@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/ast-response-1.0.schema.json",
+  "title": "AIC Agent AST Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "module",
+    "ast",
+    "ir",
+    "resolved_types",
+    "generic_instantiations",
+    "function_effects",
+    "contracts",
+    "import_graph",
+    "diagnostics"
+  ],
+  "properties": {
+    "version": { "const": "1.0" },
+    "module": { "type": ["string", "null"] },
+    "ast": { "type": "object" },
+    "ir": { "type": "object" },
+    "resolved_types": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resolved_type" }
+    },
+    "generic_instantiations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "function_effects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "contracts": { "$ref": "#/$defs/contracts" },
+    "import_graph": { "$ref": "#/$defs/import_graph" },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "resolved_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repr"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "repr": { "type": "string" }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["functions"],
+      "properties": {
+        "functions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/function_contract" }
+        }
+      }
+    },
+    "function_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_index",
+        "method_index",
+        "module",
+        "function",
+        "function_span",
+        "requires",
+        "ensures"
+      ],
+      "properties": {
+        "item_index": { "type": "integer", "minimum": 0 },
+        "method_index": { "type": ["integer", "null"], "minimum": 0 },
+        "module": { "type": ["string", "null"] },
+        "function": { "type": "string" },
+        "function_span": { "$ref": "#/$defs/span" },
+        "requires": { "$ref": "#/$defs/contract_clause_or_null" },
+        "ensures": { "$ref": "#/$defs/contract_clause_or_null" }
+      }
+    },
+    "contract_clause_or_null": {
+      "anyOf": [{ "$ref": "#/$defs/contract_clause" }, { "type": "null" }]
+    },
+    "contract_clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span", "expr"],
+      "properties": {
+        "span": { "$ref": "#/$defs/span" },
+        "expr": { "type": "object" }
+      }
+    },
+    "import_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry_module", "imports", "item_modules", "nodes", "edges"],
+      "properties": {
+        "entry_module": { "type": ["string", "null"] },
+        "imports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "item_modules": {
+          "type": "array",
+          "items": { "type": ["string", "null"] }
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/import_edge" }
+        }
+      }
+    },
+    "import_edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning", "note"] },
+        "message": { "type": "string" },
+        "spans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "start", "end", "label"],
+            "properties": {
+              "file": { "type": "string" },
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 },
+              "label": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "help": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["message", "replacement", "start", "end"],
+            "properties": {
+              "message": { "type": "string" },
+              "replacement": { "type": ["string", "null"] },
+              "start": { "type": ["integer", "null"], "minimum": 0 },
+              "end": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

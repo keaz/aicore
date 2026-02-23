@@ -197,8 +197,8 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "coverage", "bench", "diag", "explain", "fmt", "ir", "migrate", "build",
-        "lsp", "daemon", "repl", "test", "grammar", "contract", "release", "run",
+        "init", "check", "ast", "coverage", "bench", "diag", "explain", "fmt", "ir", "migrate",
+        "build", "lsp", "daemon", "repl", "test", "grammar", "contract", "release", "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -220,6 +220,17 @@ fn cli_help_snapshots_are_stable() {
         check_help_text.contains("[default: 20]"),
         "missing default in check help:\n{check_help_text}"
     );
+
+    let ast_help = run_aic(&["ast", "--help"]);
+    assert!(ast_help.status.success());
+    let ast_help_text = String::from_utf8_lossy(&ast_help.stdout);
+    assert!(ast_help_text.contains("Usage: aic ast"));
+    for flag in ["--json", "--offline"] {
+        assert!(
+            ast_help_text.contains(flag),
+            "missing `{flag}` in ast help:\n{ast_help_text}"
+        );
+    }
 
     let bench_help = run_aic(&["bench", "--help"]);
     assert!(bench_help.status.success());
@@ -731,6 +742,11 @@ fn explain_and_contract_commands_work() {
         .as_array()
         .expect("commands")
         .iter()
+        .any(|c| c["name"] == "ast"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
         .any(|c| c["name"] == "lsp"));
     assert!(contract_json["commands"]
         .as_array()
@@ -774,10 +790,150 @@ fn explain_and_contract_commands_work() {
         .expect("run stable flags")
         .iter()
         .any(|flag| flag == "--profile-output"));
-    for phase in ["parse", "check", "build", "fix"] {
+    for phase in ["parse", "ast", "check", "build", "fix"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
     }
+}
+
+#[test]
+fn ast_command_emits_deterministic_typed_json_shape() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module ast.demo;\n",
+            "fn main() -> Int requires true ensures true {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let source = source_path.to_string_lossy().to_string();
+    let first = run_aic(&["ast", "--json", &source]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "ast stdout={}\nast stderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let second = run_aic(&["ast", "--json", &source]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "aic ast --json output must be deterministic"
+    );
+
+    let payload: Value = serde_json::from_slice(&first.stdout).expect("ast json");
+    assert_eq!(payload["version"], "1.0");
+    assert_eq!(payload["module"], "ast.demo");
+    assert!(payload["ast"].is_object());
+    assert!(payload["ir"].is_object());
+    assert!(payload["resolved_types"].is_array());
+    assert!(payload["generic_instantiations"].is_array());
+    assert!(payload["function_effects"].is_object());
+    assert!(payload["contracts"].is_object());
+    assert!(payload["import_graph"].is_object());
+    let diagnostics = payload["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| diag["severity"].as_str() != Some("error")),
+        "expected no error diagnostics, got: {diagnostics:#?}"
+    );
+
+    let resolved_types = payload["resolved_types"]
+        .as_array()
+        .expect("resolved_types array");
+    assert!(
+        resolved_types
+            .iter()
+            .all(|entry| entry["id"].is_u64() && entry["repr"].is_string()),
+        "resolved_types entries missing id/repr: {resolved_types:#?}"
+    );
+
+    let contract_functions = payload["contracts"]["functions"]
+        .as_array()
+        .expect("contracts.functions");
+    assert_eq!(contract_functions.len(), 1);
+    assert_eq!(contract_functions[0]["function"], "main");
+    assert!(contract_functions[0]["requires"]["span"]["start"].is_u64());
+    assert!(contract_functions[0]["ensures"]["span"]["end"].is_u64());
+
+    let import_graph = &payload["import_graph"];
+    assert_eq!(import_graph["entry_module"], "ast.demo");
+    assert!(import_graph["imports"]
+        .as_array()
+        .expect("import list")
+        .is_empty());
+    assert!(import_graph["edges"]
+        .as_array()
+        .expect("import edges")
+        .is_empty());
+}
+
+#[test]
+fn ast_schema_references_are_consistent_in_contract_and_docs() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    let ast_schema_path = contract_json["schemas"]["ast"]["path"]
+        .as_str()
+        .expect("ast schema path");
+    let ast_example_path = contract_json["examples"]["ast"]
+        .as_str()
+        .expect("ast example path");
+
+    assert_eq!(
+        ast_schema_path,
+        "docs/agent-tooling/schemas/ast-response.schema.json"
+    );
+    assert_eq!(ast_example_path, "examples/agent/protocol_ast.md");
+    assert!(
+        repo_root().join(ast_schema_path).exists(),
+        "missing schema file at {ast_schema_path}"
+    );
+    assert!(
+        repo_root().join(ast_example_path).exists(),
+        "missing example artifact at {ast_example_path}"
+    );
+
+    let ast_command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|command| command["name"] == "ast")
+        .expect("ast command contract");
+    assert!(ast_command["stable_flags"]
+        .as_array()
+        .expect("ast stable flags")
+        .iter()
+        .any(|flag| flag == "--json"));
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains(ast_schema_path),
+        "agent tooling README missing schema reference"
+    );
+
+    let protocol_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/protocol-v1.md"))
+        .expect("read protocol doc");
+    assert!(
+        protocol_doc.contains(ast_schema_path),
+        "protocol doc missing schema reference"
+    );
+    assert!(
+        protocol_doc.contains(ast_example_path),
+        "protocol doc missing example reference"
+    );
 }
 
 #[test]
