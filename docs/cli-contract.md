@@ -62,6 +62,18 @@ Stable `pkg` flags include:
 - `--registry-config` (JSON registry settings file)
 - `--token` (auth token for private registries)
 
+Stable `build` flags include:
+
+- `--artifact` (`exe|obj|lib`)
+- `--debug-info`
+- `--verify-hash <sha256>`
+- `--manifest <path>` (defaults to `build.json` for single-target builds)
+
+Workspace note:
+
+- `aic build <workspace-root>` keeps existing workspace artifact behavior.
+- `--verify-hash` and `--manifest` are rejected for workspace-mode builds; invoke `aic build` on a specific member entry path for hermetic manifest output.
+
 ## Diagnostics output modes
 
 `aic check` and `aic diag` expose stable output modes:

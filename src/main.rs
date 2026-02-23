@@ -193,6 +193,10 @@ enum Command {
         debug_info: bool,
         #[arg(long)]
         offline: bool,
+        #[arg(long)]
+        verify_hash: Option<String>,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
     },
     Doc {
         #[arg(default_value = "src/main.aic")]
@@ -1162,12 +1166,30 @@ fn run_cli() -> anyhow::Result<i32> {
             artifact,
             debug_info,
             offline,
+            verify_hash,
+            manifest,
         } => {
+            if let Some(expected) = verify_hash.as_deref() {
+                if !is_valid_sha256_hex(expected) {
+                    eprintln!("--verify-hash must be a 64-character SHA256 hex digest");
+                    return Ok(EXIT_USAGE_ERROR);
+                }
+            }
+
             if input.is_dir() {
                 match workspace_build_plan(&input) {
                     Ok(Some(plan)) => {
                         if output.is_some() {
                             eprintln!("--output is not supported for workspace builds");
+                            return Ok(EXIT_USAGE_ERROR);
+                        }
+                        if verify_hash.is_some() || manifest.is_some() {
+                            eprintln!(
+                                "--verify-hash and --manifest are not supported for workspace builds"
+                            );
+                            eprintln!(
+                                "help: build a workspace member entry path to emit hermetic artifacts"
+                            );
                             return Ok(EXIT_USAGE_ERROR);
                         }
 
@@ -1280,6 +1302,19 @@ fn run_cli() -> anyhow::Result<i32> {
                                 artifact.to_codegen(),
                                 CompileOptions { debug_info, link },
                             )?;
+                            let manifest_path = manifest
+                                .as_deref()
+                                .unwrap_or_else(|| std::path::Path::new("build.json"));
+                            if let Some(message) = process_built_artifact(
+                                &input,
+                                &out,
+                                artifact,
+                                verify_hash.as_deref(),
+                                manifest_path,
+                            )? {
+                                eprintln!("{message}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
                             println!("built {}", out.display());
                             EXIT_OK
                         }
@@ -1319,6 +1354,19 @@ fn run_cli() -> anyhow::Result<i32> {
                         artifact.to_codegen(),
                         CompileOptions { debug_info, link },
                     )?;
+                    let manifest_path = manifest
+                        .as_deref()
+                        .unwrap_or_else(|| std::path::Path::new("build.json"));
+                    if let Some(message) = process_built_artifact(
+                        &input,
+                        &out,
+                        artifact,
+                        verify_hash.as_deref(),
+                        manifest_path,
+                    )? {
+                        eprintln!("{message}");
+                        return Ok(EXIT_DIAGNOSTIC_ERROR);
+                    }
                     println!("built {}", out.display());
                     EXIT_OK
                 }
@@ -2670,6 +2718,100 @@ fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {
     }
 }
 
+fn is_valid_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn process_built_artifact(
+    input: &Path,
+    output: &Path,
+    artifact: BuildArtifact,
+    verify_hash: Option<&str>,
+    manifest_path: &Path,
+) -> anyhow::Result<Option<String>> {
+    let output_sha256 = build_output_sha256(output)?;
+    if let Some(expected) = verify_hash {
+        if !expected.eq_ignore_ascii_case(&output_sha256) {
+            return Ok(Some(format!(
+                "--verify-hash mismatch: expected {expected}, got {output_sha256}"
+            )));
+        }
+    }
+
+    let content_addressed_path = content_addressed_artifact_path(output, artifact, &output_sha256);
+    materialize_content_addressed_artifact(output, &content_addressed_path)?;
+    write_build_manifest(
+        manifest_path,
+        input,
+        output,
+        artifact,
+        &output_sha256,
+        &content_addressed_path,
+    )?;
+    Ok(None)
+}
+
+fn build_output_sha256(output: &Path) -> anyhow::Result<String> {
+    use sha2::Digest;
+    let payload = std::fs::read(output)?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(payload);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn content_addressed_artifact_path(
+    output: &Path,
+    artifact: BuildArtifact,
+    output_sha256: &str,
+) -> PathBuf {
+    let parent = output.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let file_name = output
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("artifact"));
+    parent
+        .join(".aic")
+        .join("artifacts")
+        .join(artifact.as_str())
+        .join(output_sha256)
+        .join(file_name)
+}
+
+fn materialize_content_addressed_artifact(
+    output: &Path,
+    content_addressed_path: &Path,
+) -> anyhow::Result<()> {
+    if let Some(parent) = content_addressed_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(output, content_addressed_path)?;
+    Ok(())
+}
+
+fn write_build_manifest(
+    manifest_path: &Path,
+    input: &Path,
+    output: &Path,
+    artifact: BuildArtifact,
+    output_sha256: &str,
+    content_addressed_path: &Path,
+) -> anyhow::Result<()> {
+    if let Some(parent) = manifest_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let manifest = serde_json::json!({
+        "input_path": input.to_string_lossy(),
+        "output_path": output.to_string_lossy(),
+        "output_sha256": output_sha256,
+        "content_addressed_artifact_path": content_addressed_path.to_string_lossy(),
+        "artifact_kind": artifact.as_str(),
+    });
+    let json = serde_json::to_string_pretty(&manifest)?;
+    std::fs::write(manifest_path, format!("{json}\n"))?;
+    Ok(())
+}
+
 fn default_build_output_name(input: &Path, artifact: BuildArtifact) -> PathBuf {
     let stem = input
         .file_stem()
@@ -2704,6 +2846,14 @@ fn fresh_work_dir(tag: &str) -> PathBuf {
 }
 
 impl BuildArtifact {
+    fn as_str(self) -> &'static str {
+        match self {
+            BuildArtifact::Exe => "exe",
+            BuildArtifact::Obj => "obj",
+            BuildArtifact::Lib => "lib",
+        }
+    }
+
     fn to_codegen(self) -> ArtifactKind {
         match self {
             BuildArtifact::Exe => ArtifactKind::Exe,
