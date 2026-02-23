@@ -33,4 +33,14 @@ For full release readiness:
 make test-e9
 make security-audit
 make repro-check
+make release-preflight
 ```
+
+## Enforcement Map for Issue #106 (Epic #64)
+
+| Command | Enforced by | What it validates |
+|---|---|---|
+| `make test-e9` | `.github/workflows/ci.yml` (`E9 release and security tests`) | Runs `tests/e9_release_ops_tests.rs` to validate deterministic release/migration outputs, release policy + LTS + security-audit command contracts, checksum/provenance tamper detection, and OPS runbook/workflow gate wiring. |
+| `make security-audit` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces the release security audit gate on PR/mainline CI and on the scheduled security workflow. |
+| `make repro-check` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces reproducibility manifest checks in CI and in the security workflow. |
+| `make release-preflight` | `.github/workflows/release.yml` (`release-preflight` job) | Mirrors release gating locally before tagging, aligned with release workflow checks (`make ci`, release policy/LTS gates, and security-audit gate). |

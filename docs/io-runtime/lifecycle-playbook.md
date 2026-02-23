@@ -25,6 +25,9 @@ This document provides agent-focused lifecycle rules, capability boundaries, and
 - Join or cancel+join every spawned task.
 - Close channels/mutexes during shutdown paths.
 - Treat handle tables as bounded runtime resources, not unbounded queues.
+- Use `send_int` for backpressure-aware writes (blocks until capacity or timeout).
+- Use `try_send_int` / `try_recv_int` when the caller must stay non-blocking.
+- `select_recv_int` currently selects across two `IntChannel` handles; use it instead of ad-hoc busy loops.
 
 ## Capability Boundaries For Agents
 
@@ -72,6 +75,7 @@ let _joined = join_task(task);
   - mutex handles: 128
 - `IntChannel` capacity is bounded and validated.
 - Runtime uses blocking host primitives; avoid creating unbounded numbers of threads or open descriptors.
+- Channel select uses short timed polling under the hood; prefer bounded `timeout_ms` and avoid unbounded service loops without cancellation.
 
 ## Safety Constraints
 

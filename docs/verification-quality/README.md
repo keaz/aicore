@@ -12,10 +12,19 @@ This documentation set is for agents that need to write verifier-friendly AIC co
 | QV-T4 differential checks | detect parse->IR->format drift | `fuzz-differential-runbook.md` |
 | QV-T5 performance gates | enforce latency/throughput budgets and regression thresholds | `perf-sla-playbook.md` |
 
+## CI + Nightly Mapping (Issue #105 / #63)
+
+| Scope | Workflow/job | Command | Artifacts |
+|---|---|---|---|
+| QV-T1..QV-T5 PR/push gate | `.github/workflows/ci.yml` / `tests-linux-full` (`E8 verification gates`) | `make test-e8` | `target/e8/perf-report.json` (uploaded as `e8-perf-report-linux`) |
+| QV-T5 cross-host perf trend | `.github/workflows/ci.yml` / `execution-matrix` (`Run host perf gate suite`) | `cargo test --locked --test e8_perf_tests` | `target/e8/perf-report.json`, `target/e8/perf-report-*.json`, `target/e8/perf-trend-*.json` (uploaded as `e8-perf-${os}`) |
+| QV-T3 nightly fuzz stress | `.github/workflows/nightly-fuzz.yml` / `fuzz-nightly` | `make test-e8-nightly-fuzz` | `target/e8/nightly-fuzz-report.json`, `target/e8/fuzz-crashers` (uploaded as `nightly-fuzz-report`) |
+
 ## Fast Command Set
 
 ```bash
 make test-e8
+make test-e8-nightly-fuzz
 cargo test --locked --test e8_conformance_tests
 cargo test --locked --test e8_fuzz_tests
 cargo test --locked --test e8_differential_tests

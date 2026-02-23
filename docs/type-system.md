@@ -50,6 +50,9 @@ Type-focused status:
 - `#137` borrow checker completeness
   - Current: alias/mutability checks for lexical local borrows (`E1263`-`E1269`).
   - Target: move/use-after-move checks, cross-call borrow reasoning, field-aware ownership checks.
+- `#157` deterministic drop ordering
+  - Current: runtime-drop locals (`String`, struct, enum) emit reverse-lexical `llvm.lifetime.end` cleanup at scope exits.
+  - Target: full destructor invocation semantics (including user-defined `Drop`-style hooks), partial-move behavior, and unwind/panic-aware cleanup guarantees.
 - `#138` generic constraints and `where`
   - Current: inline bounds (including `+`) only.
   - Target: equivalent constraint model across inline and `where` forms.

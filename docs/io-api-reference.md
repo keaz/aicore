@@ -8,13 +8,17 @@ Source of truth is the current repository state in `std/*.aic` and runtime lower
 Covered modules:
 
 - `std.io`
+- `std.error_context`
 - `std.fs`
 - `std.env`
 - `std.path`
 - `std.proc`
 - `std.net`
 - `std.time`
+- `std.signal`
 - `std.rand`
+- `std.set`
+- `std.log`
 
 ## Effect Taxonomy
 
@@ -43,6 +47,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
 | `ProcError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io`, `5=UnknownProcess` |
 | `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io` |
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
+| `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
 
 ## `std.io`
 
@@ -52,6 +57,8 @@ enum IoError {
     InvalidInput,
     Io,
 }
+
+type IoErrorContext = ErrorContext[IoError]
 
 fn print_int(x: Int) -> () effects { io }
 fn print_str(x: String) -> () effects { io }
@@ -69,12 +76,43 @@ fn println_bool(x: Bool) -> () effects { io }
 fn flush_stdout() -> () effects { io }
 fn flush_stderr() -> () effects { io }
 fn panic(message: String) -> () effects { io }
+
+fn from_fs_error(err: FsError) -> IoError
+fn from_net_error(err: NetError) -> IoError
+fn from_proc_error(err: ProcError) -> IoError
+fn from_env_error(err: EnvError) -> IoError
+
+fn from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext
+fn from_net_error_with_context(err: NetError, context: String) -> IoErrorContext
+fn from_proc_error_with_context(err: ProcError, context: String) -> IoErrorContext
+fn from_env_error_with_context(err: EnvError, context: String) -> IoErrorContext
+fn io_error(ctx: IoErrorContext) -> IoError
 ```
 
 Notes:
 
 - `prompt` writes the message, flushes stdout, then reads one line.
 - `read_char` expects a single UTF-8 scalar value from one input line.
+- Existing `Result[..., IoError]` APIs are unchanged; context chaining is opt-in via `from_*_error_with_context(...)`.
+- Context chain format is append-only and flattened as text (for example: `open config -> fs.NotFound -> io.EndOfInput -> bootstrap`).
+
+## `std.error_context`
+
+```aic
+struct ErrorContext[E] {
+    error: E,
+    context: String,
+    chain: String,
+}
+
+fn new_error_context[E](error: E, context: String) -> ErrorContext[E]
+fn with_context[E](ctx: ErrorContext[E], context: String) -> ErrorContext[E]
+fn with_context_error[E](error: E, context: String) -> ErrorContext[E]
+fn with_cause[E](error: E, context: String, cause: String) -> ErrorContext[E]
+fn with_cause_context[E](ctx: ErrorContext[E], cause: String) -> ErrorContext[E]
+fn error_value[E](ctx: ErrorContext[E]) -> E
+fn error_chain[E](ctx: ErrorContext[E]) -> String
+```
 
 ## `std.fs`
 
@@ -171,6 +209,55 @@ Notes:
 - Invalid variable names (empty or containing `=`) map to `EnvError::InvalidInput`.
 - `args` and `all_vars` return snapshots of process state at call time.
 
+## `std.set`
+
+```aic
+struct Set[T] {
+    items: Map[T, Int],
+}
+
+fn new_set[T]() -> Set[T]
+fn add[T](s: Set[T], value: T) -> Set[T]
+fn has[T](s: Set[T], value: T) -> Bool
+fn discard[T](s: Set[T], value: T) -> Set[T]
+fn set_size[T](s: Set[T]) -> Int
+fn to_vec[T](s: Set[T]) -> Vec[T]
+fn union[T](left: Set[T], right: Set[T]) -> Set[T]
+fn intersection[T](left: Set[T], right: Set[T]) -> Set[T]
+fn difference[T](left: Set[T], right: Set[T]) -> Set[T]
+```
+
+Notes:
+
+- `add`/`has`/`discard` are the supported mutator/query APIs.
+- `to_vec` is deterministic and returns members in ascending key order.
+- Current backend limitation is deterministic: non-`String` key specializations fail with backend diagnostic `E5011` (`...String key...`) until key support is widened.
+
+## `std.log`
+
+```aic
+enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+fn log(level: LogLevel, message: String) -> () effects { io }
+fn debug(message: String) -> () effects { io }
+fn info(message: String) -> () effects { io }
+fn warn(message: String) -> () effects { io }
+fn error(message: String) -> () effects { io }
+fn set_level(level: LogLevel) -> () effects { io }
+fn set_json_output(enabled: Bool) -> () effects { io }
+```
+
+Notes:
+
+- Default runtime level is `Info`; `Debug` is filtered until level is lowered.
+- `set_json_output(true)` switches stderr output to JSON lines with `level`, `msg`, `ts`, and `trace_id`.
+- `AIC_LOG_LEVEL` and `AIC_LOG_JSON` environment variables are read at runtime startup and can be overridden by API calls.
+
 ## `std.path`
 
 ```aic
@@ -230,7 +317,34 @@ Notes:
   - `spawn` returns `ProcError::Io`.
   - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
   - `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
-  - `run`, `pipe`, and `current_pid` remain available.
+- `run`, `pipe`, and `current_pid` remain available.
+
+## `std.signal`
+
+```aic
+enum Signal {
+    SigInt,
+    SigTerm,
+    SigHup,
+}
+
+enum SignalError {
+    UnsupportedPlatform,
+    InvalidSignal,
+    PermissionDenied,
+    Internal,
+}
+
+fn register(signal: Signal) -> Result[Bool, SignalError] effects { proc }
+fn register_shutdown_handlers() -> Result[Bool, SignalError] effects { proc }
+fn wait_for_signal() -> Result[Signal, SignalError] effects { proc }
+```
+
+Notes:
+
+- Runtime support is implemented for Linux/macOS only and handles `SIGINT`, `SIGTERM`, and `SIGHUP`.
+- Windows and other non-Linux/macOS targets return `SignalError::UnsupportedPlatform`.
+- `wait_for_signal` blocks until one of the registered signals arrives.
 
 ## `std.net`
 

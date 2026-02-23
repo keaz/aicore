@@ -99,9 +99,18 @@ The perf gate loads host-target baseline data (`linux`/`macos`/`windows`) and fa
 - absolute budget limits are exceeded
 - regression limits (`baseline * (1 + tolerance%)`) are exceeded
 
+CLI entrypoint:
+
+- `aic bench --budget benchmarks/service_baseline/budget.v1.json --output bench.json`
+- optional compare mode: `aic bench --compare <baseline.json> --output bench.json`
+- compare accepts a direct `PerfBaseline`, a previous `PerfReport`/`bench` output, or a target baseline manifest (`baselines.v1.json`)
+- exit code is `1` when `report.violations` is non-empty
+
 Run locally:
 
 ```bash
+aic bench --budget benchmarks/service_baseline/budget.v1.json --output target/e8/bench.json
+aic bench --budget benchmarks/service_baseline/budget.v1.json --compare benchmarks/service_baseline/baselines.v1.json --output target/e8/bench-compare.json
 cargo test --locked --test e8_perf_tests
 ```
 

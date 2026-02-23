@@ -14,8 +14,9 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 | `std.proc` | `proc`, `env` | spawn/wait/kill, run, pipe | `ProcError` + exit status |
 | `std.net` | `net` | TCP/UDP sockets, DNS lookup/reverse | `NetError` |
 | `std.time` | `time` | wall/monotonic clocks, sleep/deadline helpers | deterministic primitives |
+| `std.signal` | `proc` | register SIGINT/SIGTERM/SIGHUP handlers, block for shutdown signal | `SignalError` |
 | `std.rand` | `rand` | deterministic seeding, random int/range/bool | deterministic when seeded |
-| `std.concurrent` | `concurrency` | tasks, typed channel, int mutex | `ConcurrencyError` |
+| `std.concurrent` | `concurrency` | tasks, buffered int channel, try send/recv, two-channel select, int mutex | `ConcurrencyError`, `ChannelError` |
 
 ## Effect Boundaries
 
@@ -26,7 +27,9 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 ## Platform Caveats
 
 - Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/concurrency.
-- Windows: process/network/concurrency runtime paths currently return stable `Io`/unsupported-style errors via enum mapping; code should branch on typed errors instead of assuming success.
+- Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
+- Windows: process/network/concurrency runtime paths currently return stable unsupported-style errors via enum mapping; for channel try/select, branch on `ChannelError` values (for example `Closed`) instead of assuming success.
+- Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 
 ## Quick-Start Templates
 
@@ -69,6 +72,7 @@ fn main() -> Int effects { io, net } {
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`
 - Timer/backoff pattern: `examples/io/retry_with_jitter.aic`
+- Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
 - Negative effect-enforcement example: `examples/io/effect_misuse_fs.aic` (expected check failure)
 
@@ -84,6 +88,7 @@ cargo run --quiet --bin aic -- run examples/io/worker_pool.aic
 ```
 
 Expected final line for each: `42`.
+`examples/io/signal_shutdown.aic` intentionally waits for SIGINT/SIGTERM/SIGHUP and is excluded from the batch commands.
 
 ## Deep-Dive Docs
 

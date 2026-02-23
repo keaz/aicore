@@ -4,12 +4,22 @@
     {
       "module": "std.concurrent",
       "kind": "enum",
+      "signature": "ChannelError { Closed, Full, Empty, Timeout }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "enum",
       "signature": "ConcurrencyError { NotFound, Timeout, Cancelled, InvalidInput, Panic, Closed, Io }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_channel_int_buffered_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -54,6 +64,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_select_recv_int_intrinsic(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -64,12 +79,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_try_recv_int_intrinsic(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_try_send_int_intrinsic(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -104,6 +139,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -114,12 +154,27 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "try_send_int(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "struct",
       "signature": "IntChannel { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "IntChannelSelection { channel_index: Int, value: Int }"
     },
     {
       "module": "std.concurrent",
