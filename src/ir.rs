@@ -202,6 +202,8 @@ pub struct TraitDef {
     pub symbol: SymbolId,
     pub name: String,
     pub generics: Vec<GenericParam>,
+    #[serde(default)]
+    pub methods: Vec<Function>,
     pub span: Span,
 }
 
@@ -209,7 +211,14 @@ pub struct TraitDef {
 pub struct ImplDef {
     pub symbol: SymbolId,
     pub trait_name: String,
+    #[serde(default)]
     pub trait_args: Vec<TypeId>,
+    #[serde(default)]
+    pub target: Option<TypeId>,
+    #[serde(default)]
+    pub methods: Vec<Function>,
+    #[serde(default)]
+    pub is_inherent: bool,
     pub span: Span,
 }
 

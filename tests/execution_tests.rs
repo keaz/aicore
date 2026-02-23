@@ -359,6 +359,120 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_trait_method_static_dispatch_returns_deterministic_value() {
+    let src = r#"
+import std.io;
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+fn eval[T: Score](x: T) -> Int {
+    x.score()
+}
+
+fn main() -> Int effects { io } {
+    print_int(eval(Meter { value: 41 }));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_borrow_checker_reinitialize_after_move() {
+    let src = r#"
+import std.io;
+
+struct BoxedInt { value: Int }
+
+fn main() -> Int effects { io } {
+    let mut b = BoxedInt { value: 1 };
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt { value: first + 1 };
+    print_int(b.value);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n");
+}
+
+#[test]
+fn exec_tuple_types_destructure_match_and_field_access() {
+    let src = r#"
+import std.io;
+
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int effects { io } {
+    let pair = swap(2, 40);
+    let (left, right) = pair;
+    let matched = match pair {
+        (40, value) => value,
+        _ => 0,
+    };
+    print_int(tuple_first((left + matched, right)));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_struct_methods_associated_and_instance_calls() {
+    let src = r#"
+import std.io;
+
+struct User { age: Int }
+
+impl User {
+    fn new(age: Int) -> User {
+        User { age: age }
+    }
+
+    fn age_plus(self) -> Int {
+        self.age + 12
+    }
+
+    fn is_adult(self) -> Bool {
+        self.age >= 18
+    }
+}
+
+fn main() -> Int effects { io } {
+    let user = User::new(30);
+    let score = if user.is_adult() { user.age_plus() } else { 0 };
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_result_propagation_short_circuits_err() {
     let src = r#"
 import std.io;

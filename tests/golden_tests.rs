@@ -127,3 +127,23 @@ fn golden_case19_for_in_loop() {
 fn golden_case20_where_bounds() {
     run_golden_case("case20_where_bounds.aic");
 }
+
+#[test]
+fn golden_case21_tuple_types() {
+    run_golden_case("case21_tuple_types.aic");
+}
+
+#[test]
+fn golden_case22_struct_methods() {
+    run_golden_case("case22_struct_methods.aic");
+}
+
+#[test]
+fn golden_case23_trait_methods() {
+    run_golden_case("case23_trait_methods.aic");
+}
+
+#[test]
+fn golden_case24_borrow_checker_completeness() {
+    run_golden_case("case24_borrow_checker_completeness.aic");
+}

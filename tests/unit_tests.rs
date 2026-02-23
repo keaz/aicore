@@ -113,6 +113,69 @@ fn unit_parse_struct_literal_expression() {
 }
 
 #[test]
+fn unit_tuple_types_destructure_and_match_typecheck() {
+    let src = r#"
+fn swap(a: Int, b: Int) -> (Int, Int) {
+    (b, a)
+}
+
+fn tuple_first[T, U](pair: (T, U)) -> T {
+    pair.0
+}
+
+fn main() -> Int {
+    let pair = swap(2, 40);
+    let (left, right) = pair;
+    let matched = match pair {
+        (40, value) => value,
+        _ => 0,
+    };
+    tuple_first((left + matched, right))
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_struct_impl_methods_and_method_call_typecheck() {
+    let src = r#"
+struct User { age: Int }
+
+impl User {
+    fn new(age: Int) -> User {
+        User { age: age }
+    }
+
+    fn age_plus(self) -> Int {
+        self.age + 12
+    }
+
+    fn is_adult(self) -> Bool {
+        self.age >= 18
+    }
+}
+
+fn main() -> Int {
+    let user = User::new(30);
+    if user.is_adult() {
+        user.age_plus()
+    } else {
+        0
+    }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_resolver_duplicate_field() {
     let src = "struct S { x: Int, x: Int }";
     let ir = lower(src);
@@ -197,6 +260,109 @@ fn demo() -> Bool {
     assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E1258"));
+}
+
+#[test]
+fn unit_trait_method_static_dispatch_generic_call_typechecks() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+fn eval[T: Score](x: T) -> Int {
+    x.score()
+}
+
+fn main() -> Int {
+    eval(Meter { value: 41 })
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_trait_method_impl_missing_required_method_reports_diagnostic() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags.iter().any(|d| {
+            d.message.contains("missing")
+                && d.message.contains("method")
+                && d.message.contains("score")
+        }),
+        "diags={all_diags:#?}"
+    );
+}
+
+#[test]
+fn unit_trait_method_impl_signature_mismatch_reports_diagnostic() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Bool {
+        true
+    }
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags.iter().any(|d| {
+            d.message.contains("score")
+                && (d.message.contains("signature")
+                    || d.message.contains("mismatch")
+                    || d.message.contains("return"))
+        }),
+        "diags={all_diags:#?}"
+    );
 }
 
 #[test]
@@ -837,6 +1003,122 @@ fn main() -> Int {
         "diags={:#?}",
         out.diagnostics
     );
+}
+
+#[test]
+fn unit_use_after_move_reports_e1270() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let moved = b;
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1270"));
+}
+
+#[test]
+fn unit_move_while_borrowed_reports_e1271() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let keep = &b;
+    let moved = b;
+    moved.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1271"));
+}
+
+#[test]
+fn unit_field_borrow_conflict_reports_e1263() {
+    let src = r#"
+struct Pair { left: Int, right: Int }
+
+fn main() -> Int {
+    let mut pair = Pair { left: 1, right: 2 };
+    let left_ref = &pair.left;
+    let whole_mut = &mut pair;
+    pair.right
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1263"));
+}
+
+#[test]
+fn unit_assignment_while_field_borrowed_reports_e1265() {
+    let src = r#"
+struct Pair { left: Int, right: Int }
+
+fn main() -> Int {
+    let mut pair = Pair { left: 1, right: 2 };
+    let left_ref = &pair.left;
+    pair = Pair { left: 3, right: 4 };
+    pair.right
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1265"));
+}
+
+#[test]
+fn unit_reinitialize_after_move_is_allowed() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let mut b = BoxedInt { value: 1 };
+    let moved = b;
+    let first = moved.value;
+    b = BoxedInt { value: first + 1 };
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| matches!(
+            d.code.as_str(),
+            "E1263" | "E1264" | "E1265" | "E1270" | "E1271"
+        )),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_call_boundary_conflicting_borrows_report_e1263() {
+    let src = r#"
+fn takes_mut(x: RefMut[Int]) -> Int {
+    0
+}
+
+fn main() -> Int {
+    let mut x = 1;
+    let keep = &x;
+    takes_mut(&mut x)
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1263"));
 }
 
 #[test]

@@ -167,12 +167,55 @@ impl Builder {
                     bounds: g.bounds.clone(),
                 })
                 .collect(),
+            methods: def
+                .methods
+                .iter()
+                .map(|method| self.lower_trait_method(method, &def.name))
+                .collect(),
             span: def.span,
         }
     }
 
     fn lower_impl(&mut self, def: &ast::ImplDef) -> ir::ImplDef {
         let symbol = self.push_symbol(&def.trait_name, ir::SymbolKind::Impl, def.span);
+        if def.is_inherent {
+            let target = def.target.clone().unwrap_or(ast::TypeExpr {
+                kind: ast::TypeKind::Named {
+                    name: def.trait_name.clone(),
+                    args: Vec::new(),
+                },
+                span: def.span,
+            });
+            let target_name = match &target.kind {
+                ast::TypeKind::Named { name, .. } => name.clone(),
+                ast::TypeKind::Unit => def.trait_name.clone(),
+            };
+            let methods = def
+                .methods
+                .iter()
+                .map(|method| self.lower_impl_method(method, &target, &target_name))
+                .collect();
+            return ir::ImplDef {
+                symbol,
+                trait_name: def.trait_name.clone(),
+                trait_args: Vec::new(),
+                target: Some(self.lower_type(&target)),
+                methods,
+                is_inherent: true,
+                span: def.span,
+            };
+        }
+        let target = def.trait_args.first().cloned().unwrap_or(ast::TypeExpr {
+            kind: ast::TypeKind::Named {
+                name: def.trait_name.clone(),
+                args: Vec::new(),
+            },
+            span: def.span,
+        });
+        let target_name = match &target.kind {
+            ast::TypeKind::Named { name, .. } => name.clone(),
+            ast::TypeKind::Unit => "()".to_string(),
+        };
         ir::ImplDef {
             symbol,
             trait_name: def.trait_name.clone(),
@@ -181,7 +224,102 @@ impl Builder {
                 .iter()
                 .map(|arg| self.lower_type(arg))
                 .collect(),
+            target: def.trait_args.first().map(|arg| self.lower_type(arg)),
+            methods: def
+                .methods
+                .iter()
+                .map(|method| self.lower_impl_method(method, &target, &target_name))
+                .collect(),
+            is_inherent: false,
             span: def.span,
+        }
+    }
+
+    fn lower_trait_method(&mut self, method: &ast::Function, _trait_name: &str) -> ir::Function {
+        let symbol = self.push_symbol(&method.name, ir::SymbolKind::Function, method.span);
+        let params = method
+            .params
+            .iter()
+            .map(|param| {
+                let sym = self.push_symbol(&param.name, ir::SymbolKind::Parameter, param.span);
+                ir::Param {
+                    symbol: sym,
+                    name: param.name.clone(),
+                    ty: self.lower_type(&param.ty),
+                    span: param.span,
+                }
+            })
+            .collect();
+        ir::Function {
+            symbol,
+            name: method.name.clone(),
+            is_async: method.is_async,
+            is_unsafe: method.is_unsafe,
+            is_extern: false,
+            extern_abi: None,
+            generics: method
+                .generics
+                .iter()
+                .map(|g| ir::GenericParam {
+                    name: g.name.clone(),
+                    bounds: g.bounds.clone(),
+                })
+                .collect(),
+            params,
+            ret_type: self.lower_type(&method.ret_type),
+            effects: method.effects.clone(),
+            requires: None,
+            ensures: None,
+            body: self.lower_block(&method.body),
+            span: method.span,
+        }
+    }
+
+    fn lower_impl_method(
+        &mut self,
+        method: &ast::Function,
+        target: &ast::TypeExpr,
+        target_name: &str,
+    ) -> ir::Function {
+        let lowered_name = format!("{target_name}::{}", method.name);
+        let symbol = self.push_symbol(&lowered_name, ir::SymbolKind::Function, method.span);
+        let params = method
+            .params
+            .iter()
+            .map(|param| {
+                let sym = self.push_symbol(&param.name, ir::SymbolKind::Parameter, param.span);
+                let param_ty = substitute_self_type(&param.ty, target);
+                ir::Param {
+                    symbol: sym,
+                    name: param.name.clone(),
+                    ty: self.lower_type(&param_ty),
+                    span: param.span,
+                }
+            })
+            .collect();
+        let ret_type = substitute_self_type(&method.ret_type, target);
+        ir::Function {
+            symbol,
+            name: lowered_name,
+            is_async: method.is_async,
+            is_unsafe: method.is_unsafe,
+            is_extern: method.is_extern,
+            extern_abi: method.extern_abi.clone(),
+            generics: method
+                .generics
+                .iter()
+                .map(|g| ir::GenericParam {
+                    name: g.name.clone(),
+                    bounds: g.bounds.clone(),
+                })
+                .collect(),
+            params,
+            ret_type: self.lower_type(&ret_type),
+            effects: method.effects.clone(),
+            requires: method.requires.as_ref().map(|e| self.lower_expr(e)),
+            ensures: method.ensures.as_ref().map(|e| self.lower_expr(e)),
+            body: self.lower_block(&method.body),
+            span: method.span,
         }
     }
 
@@ -413,6 +551,27 @@ fn type_repr(ty: &ast::TypeExpr) -> String {
                 format!("{name}[{args}]")
             }
         }
+    }
+}
+
+fn substitute_self_type(ty: &ast::TypeExpr, target: &ast::TypeExpr) -> ast::TypeExpr {
+    match &ty.kind {
+        ast::TypeKind::Unit => ty.clone(),
+        ast::TypeKind::Named { name, args } if name == "Self" && args.is_empty() => {
+            let mut replaced = target.clone();
+            replaced.span = ty.span;
+            replaced
+        }
+        ast::TypeKind::Named { name, args } => ast::TypeExpr {
+            kind: ast::TypeKind::Named {
+                name: name.clone(),
+                args: args
+                    .iter()
+                    .map(|arg| substitute_self_type(arg, target))
+                    .collect(),
+            },
+            span: ty.span,
+        },
     }
 }
 

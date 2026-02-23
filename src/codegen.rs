@@ -12,6 +12,8 @@ use crate::diagnostics::Diagnostic;
 use crate::ir;
 use crate::telemetry;
 
+const TUPLE_INTERNAL_NAME: &str = "Tuple";
+
 #[derive(Debug, Clone)]
 struct FnSig {
     is_extern: bool,
@@ -1166,31 +1168,39 @@ impl<'a> Generator<'a> {
 
         for item in &self.program.items {
             if let ir::Item::Function(func) = item {
-                if decode_internal_type_alias(&func.name).is_some()
-                    || decode_internal_const(&func.name).is_some()
-                {
-                    continue;
-                }
-                if func.is_extern {
-                    continue;
-                }
-                if func.generics.is_empty() {
-                    self.gen_function(func);
-                    self.flush_deferred_fn_defs();
-                } else if let Some(instances) = self
-                    .generic_fn_instances_by_symbol
-                    .get(&func.symbol)
-                    .cloned()
-                {
-                    for instance in instances {
-                        self.gen_monomorphized_function(func, &instance);
-                        self.flush_deferred_fn_defs();
-                    }
+                self.generate_function_item(func);
+            } else if let ir::Item::Impl(impl_def) = item {
+                for method in &impl_def.methods {
+                    self.generate_function_item(method);
                 }
             }
         }
 
         self.gen_entry_wrapper();
+    }
+
+    fn generate_function_item(&mut self, func: &ir::Function) {
+        if decode_internal_type_alias(&func.name).is_some()
+            || decode_internal_const(&func.name).is_some()
+        {
+            return;
+        }
+        if func.is_extern {
+            return;
+        }
+        if func.generics.is_empty() {
+            self.gen_function(func);
+            self.flush_deferred_fn_defs();
+        } else if let Some(instances) = self
+            .generic_fn_instances_by_symbol
+            .get(&func.symbol)
+            .cloned()
+        {
+            for instance in instances {
+                self.gen_monomorphized_function(func, &instance);
+                self.flush_deferred_fn_defs();
+            }
+        }
     }
 
     fn collect_fn_sigs(&mut self) {
@@ -1199,47 +1209,19 @@ impl<'a> Generator<'a> {
         let mut name_counts: BTreeMap<String, usize> = BTreeMap::new();
         for item in &self.program.items {
             if let ir::Item::Function(func) = item {
-                if decode_internal_type_alias(&func.name).is_some()
-                    || decode_internal_const(&func.name).is_some()
-                {
-                    continue;
-                }
-                function_items_by_symbol.insert(func.symbol, func);
-                function_items_by_name
-                    .entry(func.name.clone())
-                    .or_default()
-                    .push(func);
-                let count = name_counts.entry(func.name.clone()).or_insert(0);
-                let llvm_name = if *count == 0 {
-                    mangle(&func.name)
-                } else {
-                    format!("{}__s{}", mangle(&func.name), func.symbol.0)
-                };
-                *count += 1;
-                self.fn_llvm_names.insert(func.symbol, llvm_name);
-                if !func.generics.is_empty() {
-                    continue;
-                }
-                let params = func
-                    .params
-                    .iter()
-                    .map(|p| self.type_from_id(p.ty, p.span))
-                    .collect::<Option<Vec<_>>>();
-                let ret = self.type_from_id(func.ret_type, func.span);
-                if let (Some(params), Some(ret)) = (params, ret) {
-                    self.fn_sigs.insert(
-                        func.name.clone(),
-                        FnSig {
-                            is_extern: func.is_extern,
-                            extern_symbol: if func.is_extern {
-                                Some(func.name.clone())
-                            } else {
-                                None
-                            },
-                            extern_abi: func.extern_abi.clone(),
-                            params,
-                            ret,
-                        },
+                self.collect_function_sig_item(
+                    func,
+                    &mut function_items_by_symbol,
+                    &mut function_items_by_name,
+                    &mut name_counts,
+                );
+            } else if let ir::Item::Impl(impl_def) = item {
+                for method in &impl_def.methods {
+                    self.collect_function_sig_item(
+                        method,
+                        &mut function_items_by_symbol,
+                        &mut function_items_by_name,
+                        &mut name_counts,
                     );
                 }
             }
@@ -1399,6 +1381,58 @@ impl<'a> Generator<'a> {
                 ret: LType::Unit,
             },
         );
+    }
+
+    fn collect_function_sig_item<'b>(
+        &mut self,
+        func: &'b ir::Function,
+        function_items_by_symbol: &mut BTreeMap<ir::SymbolId, &'b ir::Function>,
+        function_items_by_name: &mut BTreeMap<String, Vec<&'b ir::Function>>,
+        name_counts: &mut BTreeMap<String, usize>,
+    ) {
+        if decode_internal_type_alias(&func.name).is_some()
+            || decode_internal_const(&func.name).is_some()
+        {
+            return;
+        }
+        function_items_by_symbol.insert(func.symbol, func);
+        function_items_by_name
+            .entry(func.name.clone())
+            .or_default()
+            .push(func);
+        let count = name_counts.entry(func.name.clone()).or_insert(0);
+        let llvm_name = if *count == 0 {
+            mangle(&func.name)
+        } else {
+            format!("{}__s{}", mangle(&func.name), func.symbol.0)
+        };
+        *count += 1;
+        self.fn_llvm_names.insert(func.symbol, llvm_name);
+        if !func.generics.is_empty() {
+            return;
+        }
+        let params = func
+            .params
+            .iter()
+            .map(|p| self.type_from_id(p.ty, p.span))
+            .collect::<Option<Vec<_>>>();
+        let ret = self.type_from_id(func.ret_type, func.span);
+        if let (Some(params), Some(ret)) = (params, ret) {
+            self.fn_sigs.insert(
+                func.name.clone(),
+                FnSig {
+                    is_extern: func.is_extern,
+                    extern_symbol: if func.is_extern {
+                        Some(func.name.clone())
+                    } else {
+                        None
+                    },
+                    extern_abi: func.extern_abi.clone(),
+                    params,
+                    ret,
+                },
+            );
+        }
     }
 
     fn function_signature(&mut self, func: &ir::Function) -> Option<FnSig> {
@@ -1992,6 +2026,11 @@ impl<'a> Generator<'a> {
                         }
                     }
                 }
+                if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
+                    if !self.is_module_qualified_callee(callee, fctx) {
+                        return self.gen_method_call(base, field, args, expr.span, fctx);
+                    }
+                }
 
                 let Some(path) = extract_callee_path(callee) else {
                     let callee_value = self.gen_expr(callee, fctx)?;
@@ -2542,6 +2581,227 @@ impl<'a> Generator<'a> {
                 "{} {}",
                 llvm_type(expected),
                 value.repr.unwrap_or_else(|| default_value(expected))
+            ));
+        }
+
+        let mangled = mangle(name);
+        if sig.ret == LType::Unit {
+            fctx.lines.push(format!(
+                "  call void @{}({})",
+                mangled,
+                rendered_args.join(", ")
+            ));
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        } else {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call {} @{}({})",
+                reg,
+                llvm_type(&sig.ret),
+                mangled,
+                rendered_args.join(", ")
+            ));
+            Some(Value {
+                ty: sig.ret,
+                repr: Some(reg),
+            })
+        }
+    }
+
+    fn is_module_qualified_callee(&self, callee: &ir::Expr, fctx: &FnCtx) -> bool {
+        let Some(path) = extract_callee_path(callee) else {
+            return false;
+        };
+        if path.len() < 2 {
+            return false;
+        }
+        let qualifier = &path[..path.len() - 1];
+        if qualifier.len() == 1 && find_local(&fctx.vars, &qualifier[0]).is_some() {
+            return false;
+        }
+        let qualifier_joined = qualifier.join(".");
+        if self
+            .program
+            .imports
+            .iter()
+            .any(|import| import.join(".") == qualifier_joined)
+        {
+            return true;
+        }
+        if qualifier.len() == 1 {
+            let alias = &qualifier[0];
+            return self
+                .program
+                .imports
+                .iter()
+                .any(|import| import.last().map(|tail| tail == alias).unwrap_or(false));
+        }
+        false
+    }
+
+    fn gen_method_call(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let receiver = self.gen_expr(base, fctx)?;
+        let receiver_type_name = match &receiver.ty {
+            LType::Struct(layout) => {
+                let base = base_type_name(&layout.repr);
+                if base == "Ref" || base == "RefMut" {
+                    extract_generic_args(&layout.repr)
+                        .and_then(|args| args.first().cloned())
+                        .map(|inner| base_type_name(&inner).to_string())
+                        .unwrap_or_else(|| base.to_string())
+                } else {
+                    base.to_string()
+                }
+            }
+            LType::Enum(layout) => base_type_name(&layout.repr).to_string(),
+            LType::Int => "Int".to_string(),
+            LType::Float => "Float".to_string(),
+            LType::Bool => "Bool".to_string(),
+            LType::String => "String".to_string(),
+            LType::Unit => "()".to_string(),
+            other => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("type '{other:?}' does not support method call syntax"),
+                    self.file,
+                    base.span,
+                ));
+                return None;
+            }
+        };
+
+        let associated = format!("{receiver_type_name}::{field}");
+        let mut values = Vec::with_capacity(args.len() + 1);
+        values.push(receiver);
+        for arg in args {
+            values.push(self.gen_expr(arg, fctx)?);
+        }
+        self.gen_named_function_call_with_values(&associated, values, span, fctx)
+    }
+
+    fn gen_named_function_call_with_values(
+        &mut self,
+        name: &str,
+        values: Vec<Value>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if let Some(instances) = self.generic_fn_instances.get(name).cloned() {
+            let selected = instances.into_iter().find(|inst| {
+                inst.params.len() == values.len()
+                    && inst
+                        .params
+                        .iter()
+                        .zip(values.iter())
+                        .all(|(expected, value)| *expected == value.ty)
+            });
+
+            let Some(instance) = selected else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5014",
+                    format!("argument type mismatch for generic call to '{}'", name),
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+
+            let rendered_args = values
+                .iter()
+                .zip(instance.params.iter())
+                .map(|(value, expected)| {
+                    format!(
+                        "{} {}",
+                        llvm_type(expected),
+                        value
+                            .repr
+                            .clone()
+                            .unwrap_or_else(|| default_value(expected))
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            let llvm_name = mangle(&instance.mangled);
+            if instance.ret == LType::Unit {
+                fctx.lines.push(format!(
+                    "  call void @{}({})",
+                    llvm_name,
+                    rendered_args.join(", ")
+                ));
+                return Some(Value {
+                    ty: LType::Unit,
+                    repr: None,
+                });
+            }
+
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call {} @{}({})",
+                reg,
+                llvm_type(&instance.ret),
+                llvm_name,
+                rendered_args.join(", ")
+            ));
+            return Some(Value {
+                ty: instance.ret,
+                repr: Some(reg),
+            });
+        }
+
+        let Some(sig) = self.fn_sigs.get(name).cloned() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{}' in codegen", name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        if values.len() != sig.params.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5013",
+                format!(
+                    "call to '{}' arity mismatch: expected {}, got {}",
+                    name,
+                    sig.params.len(),
+                    values.len()
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut rendered_args = Vec::new();
+        for (idx, value) in values.iter().enumerate() {
+            let expected = &sig.params[idx];
+            if value.ty != *expected {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5014",
+                    format!("argument type mismatch for call to '{}'", name),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            rendered_args.push(format!(
+                "{} {}",
+                llvm_type(expected),
+                value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(expected))
             ));
         }
 
@@ -20172,6 +20432,9 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        if name == TUPLE_INTERNAL_NAME {
+            return self.gen_tuple_init(fields, expected_ty, span, fctx);
+        }
         let Some(template) = self.struct_templates.get(name).cloned() else {
             self.diagnostics.push(Diagnostic::error(
                 "E5004",
@@ -20288,6 +20551,143 @@ impl<'a> Generator<'a> {
                 self.diagnostics.push(Diagnostic::error(
                     "E5004",
                     format!("missing field '{}.{}' in struct literal", name, field.name),
+                    self.file,
+                    span,
+                ));
+                default_value(&field.ty)
+            };
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, {} {}, {}",
+                reg,
+                llvm_type(&ty),
+                acc,
+                llvm_type(&field.ty),
+                rendered,
+                idx
+            ));
+            acc = reg;
+        }
+
+        let repr = if layout.fields.is_empty() {
+            default_value(&ty)
+        } else {
+            acc
+        };
+        Some(Value {
+            ty,
+            repr: Some(repr),
+        })
+    }
+
+    fn gen_tuple_init(
+        &mut self,
+        fields: &[(String, ir::Expr, crate::span::Span)],
+        expected_ty: Option<&LType>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let expected_layout = match expected_ty {
+            Some(LType::Struct(layout)) if base_type_name(&layout.repr) == TUPLE_INTERNAL_NAME => {
+                Some(layout.clone())
+            }
+            _ => None,
+        };
+
+        let mut provided: BTreeMap<usize, (Value, crate::span::Span)> = BTreeMap::new();
+        for (field_name, field_expr, field_span) in fields {
+            let Ok(index) = field_name.parse::<usize>() else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5004",
+                    format!("tuple field '{}' is not a valid numeric index", field_name),
+                    self.file,
+                    *field_span,
+                ));
+                continue;
+            };
+            if provided.contains_key(&index) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5004",
+                    format!("duplicate tuple element index '{}'", index),
+                    self.file,
+                    *field_span,
+                ));
+                continue;
+            }
+            let expected_field_ty = expected_layout
+                .as_ref()
+                .and_then(|layout| layout.fields.get(index).map(|field| &field.ty));
+            let value = self.gen_expr_with_expected(field_expr, expected_field_ty, fctx)?;
+            provided.insert(index, (value, *field_span));
+        }
+
+        let (ty, layout) = if let Some(layout) = expected_layout {
+            (LType::Struct(layout.clone()), layout)
+        } else {
+            if provided.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5004",
+                    "tuple literal must contain at least one element",
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            let max_index = provided.keys().copied().max().unwrap_or(0);
+            let mut items = Vec::new();
+            for index in 0..=max_index {
+                let Some((value, _)) = provided.get(&index) else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5004",
+                        format!("tuple literal is missing element index '{}'", index),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                };
+                items.push(value.ty.clone());
+            }
+            let fields = items
+                .iter()
+                .enumerate()
+                .map(|(idx, item)| StructFieldType {
+                    name: idx.to_string(),
+                    ty: item.clone(),
+                })
+                .collect::<Vec<_>>();
+            let layout = StructLayoutType {
+                repr: render_applied_type(TUPLE_INTERNAL_NAME, &items),
+                fields,
+            };
+            (LType::Struct(layout.clone()), layout)
+        };
+
+        let mut acc = "undef".to_string();
+        for (idx, field) in layout.fields.iter().enumerate() {
+            let rendered = if let Some((value, field_span)) = provided.get(&idx) {
+                if value.ty != field.ty {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5004",
+                        format!(
+                            "tuple element .{} expects '{}', found '{}'",
+                            idx,
+                            render_type(&field.ty),
+                            render_type(&value.ty)
+                        ),
+                        self.file,
+                        *field_span,
+                    ));
+                    default_value(&field.ty)
+                } else {
+                    value
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&field.ty))
+                }
+            } else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5004",
+                    format!("missing tuple element .{} in tuple literal", idx),
                     self.file,
                     span,
                 ));
@@ -21214,10 +21614,13 @@ impl<'a> Generator<'a> {
         match scrutinee.ty.clone() {
             LType::Bool => self.gen_match_bool(scrutinee, arms, expected_ty, fctx),
             LType::Enum(layout) => self.gen_match_enum(scrutinee, &layout, arms, expected_ty, fctx),
+            LType::Struct(layout) if base_type_name(&layout.repr) == TUPLE_INTERNAL_NAME => {
+                self.gen_match_tuple(scrutinee, &layout, arms, expected_ty, fctx)
+            }
             _ => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5016",
-                    "match codegen currently supports Bool and Enum-like ADTs",
+                    "match codegen currently supports Bool, tuple, and Enum-like ADTs",
                     self.file,
                     scrutinee_expr.span,
                 ));
@@ -21626,6 +22029,400 @@ impl<'a> Generator<'a> {
                 ty: LType::Unit,
                 repr: None,
             })
+        }
+    }
+
+    fn gen_match_tuple(
+        &mut self,
+        scrutinee: Value,
+        layout: &StructLayoutType,
+        arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if base_type_name(&layout.repr) != TUPLE_INTERNAL_NAME {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "tuple match codegen received non-tuple layout",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5023",
+                    "match guards are not supported by LLVM backend yet",
+                    self.file,
+                    guard.span,
+                )
+                .with_help("remove the guard or evaluate guard logic outside the match"),
+            );
+            return None;
+        }
+        if arms.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "tuple match has no arms during codegen",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+
+        let cond_labels = (0..arms.len())
+            .map(|idx| self.new_label(&format!("match_tuple_cond_{idx}")))
+            .collect::<Vec<_>>();
+        let arm_labels = (0..arms.len())
+            .map(|idx| self.new_label(&format!("match_tuple_arm_{idx}")))
+            .collect::<Vec<_>>();
+        let default_label = self.new_label("match_tuple_default");
+        let cont_label = self.new_label("match_tuple_cont");
+
+        let mut result_ty: Option<LType> = None;
+        let mut result_slot: Option<String> = None;
+
+        let saved_scope = fctx.vars.clone();
+        let saved_terminated = fctx.terminated;
+
+        fctx.lines.push(format!("  br label %{}", cond_labels[0]));
+        for (idx, arm) in arms.iter().enumerate() {
+            fctx.lines.push(format!("{}:", cond_labels[idx]));
+            let cond = self.pattern_condition_for_tuple_match(&arm.pattern, &scrutinee, fctx)?;
+            let next_label = if idx + 1 < arms.len() {
+                cond_labels[idx + 1].clone()
+            } else {
+                default_label.clone()
+            };
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                cond, arm_labels[idx], next_label
+            ));
+
+            fctx.vars = saved_scope.clone();
+            fctx.terminated = false;
+            fctx.lines.push(format!("{}:", arm_labels[idx]));
+            self.bind_tuple_match_pattern(&arm.pattern, &scrutinee, fctx)?;
+
+            let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
+            let arm_terminated = fctx.terminated;
+            if !arm_terminated {
+                if let Some(value) = arm_value {
+                    if value.ty != LType::Unit {
+                        if result_slot.is_none() {
+                            let ptr = self.alloc_entry_slot(&value.ty, fctx);
+                            result_ty = Some(value.ty.clone());
+                            result_slot = Some(ptr);
+                        }
+                        if let (Some(slot), Some(expected_ty)) =
+                            (result_slot.as_ref(), result_ty.as_ref())
+                        {
+                            if value.ty != *expected_ty {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E5016",
+                                    "match arms resolved to incompatible types",
+                                    self.file,
+                                    arm.span,
+                                ));
+                            }
+                            let repr = coerce_repr(&value, expected_ty);
+                            fctx.lines.push(format!(
+                                "  store {} {}, {}* {}",
+                                llvm_type(expected_ty),
+                                repr,
+                                llvm_type(expected_ty),
+                                slot
+                            ));
+                        }
+                    }
+                }
+                fctx.lines.push(format!("  br label %{}", cont_label));
+            }
+        }
+
+        fctx.vars = saved_scope;
+        fctx.terminated = saved_terminated;
+
+        fctx.lines.push(format!("{}:", default_label));
+        if let (Some(slot), Some(result_ty)) = (result_slot.as_ref(), result_ty.as_ref()) {
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(result_ty),
+                default_value(result_ty),
+                llvm_type(result_ty),
+                slot
+            ));
+        }
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        if let (Some(slot), Some(result_ty)) = (result_slot, result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
+    fn pattern_condition_for_tuple_match(
+        &mut self,
+        pattern: &ir::Pattern,
+        value: &Value,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        match &pattern.kind {
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some("1".to_string()),
+            ir::PatternKind::Int(v) => {
+                if value.ty != LType::Int {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple match int pattern expects Int value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                let reg = self.new_temp();
+                let repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                fctx.lines
+                    .push(format!("  {} = icmp eq i64 {}, {}", reg, repr, v));
+                Some(reg)
+            }
+            ir::PatternKind::Bool(v) => {
+                if value.ty != LType::Bool {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple match bool pattern expects Bool value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                let reg = self.new_temp();
+                let repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                let expected = if *v { "1" } else { "0" };
+                fctx.lines
+                    .push(format!("  {} = icmp eq i1 {}, {}", reg, repr, expected));
+                Some(reg)
+            }
+            ir::PatternKind::Unit => {
+                if value.ty != LType::Unit {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple match unit pattern expects unit value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                Some("1".to_string())
+            }
+            ir::PatternKind::Or { patterns } => {
+                let mut acc: Option<String> = None;
+                for part in patterns {
+                    let cond = self.pattern_condition_for_tuple_match(part, value, fctx)?;
+                    acc = Some(if let Some(prev) = acc {
+                        let reg = self.new_temp();
+                        fctx.lines
+                            .push(format!("  {} = or i1 {}, {}", reg, prev, cond));
+                        reg
+                    } else {
+                        cond
+                    });
+                }
+                Some(acc.unwrap_or_else(|| "0".to_string()))
+            }
+            ir::PatternKind::Variant { name, args } if name == TUPLE_INTERNAL_NAME => {
+                let LType::Struct(tuple_layout) = &value.ty else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple pattern codegen expects tuple struct value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                };
+                if base_type_name(&tuple_layout.repr) != TUPLE_INTERNAL_NAME {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple pattern codegen expects tuple layout",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                if args.len() != tuple_layout.fields.len() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        format!(
+                            "tuple pattern arity mismatch: expected {}, found {}",
+                            tuple_layout.fields.len(),
+                            args.len()
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                let mut acc = "1".to_string();
+                for (idx, arg) in args.iter().enumerate() {
+                    let field_value = self.extract_tuple_field_value(
+                        value,
+                        idx,
+                        &tuple_layout.fields[idx].ty,
+                        fctx,
+                    );
+                    let cond = self.pattern_condition_for_tuple_match(arg, &field_value, fctx)?;
+                    let merged = self.new_temp();
+                    fctx.lines
+                        .push(format!("  {} = and i1 {}, {}", merged, acc, cond));
+                    acc = merged;
+                }
+                Some(acc)
+            }
+            ir::PatternKind::Variant { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "tuple match codegen does not support enum-style patterns in tuple branches",
+                    self.file,
+                    pattern.span,
+                ));
+                Some("0".to_string())
+            }
+        }
+    }
+
+    fn bind_tuple_match_pattern(
+        &mut self,
+        pattern: &ir::Pattern,
+        value: &Value,
+        fctx: &mut FnCtx,
+    ) -> Option<()> {
+        match &pattern.kind {
+            ir::PatternKind::Wildcard
+            | ir::PatternKind::Int(_)
+            | ir::PatternKind::Bool(_)
+            | ir::PatternKind::Unit => Some(()),
+            ir::PatternKind::Var(binding) => {
+                let ptr = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca {}", ptr, llvm_type(&value.ty)));
+                fctx.lines.push(format!(
+                    "  store {} {}, {}* {}",
+                    llvm_type(&value.ty),
+                    value
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&value.ty)),
+                    llvm_type(&value.ty),
+                    ptr
+                ));
+                fctx.vars.last_mut().expect("scope").insert(
+                    binding.clone(),
+                    Local {
+                        ty: value.ty.clone(),
+                        ptr,
+                    },
+                );
+                Some(())
+            }
+            ir::PatternKind::Or { patterns } => {
+                if let Some(first) = patterns.first() {
+                    self.bind_tuple_match_pattern(first, value, fctx)
+                } else {
+                    Some(())
+                }
+            }
+            ir::PatternKind::Variant { name, args } if name == TUPLE_INTERNAL_NAME => {
+                let LType::Struct(tuple_layout) = &value.ty else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple pattern binding expects tuple struct value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return None;
+                };
+                if base_type_name(&tuple_layout.repr) != TUPLE_INTERNAL_NAME {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple pattern binding expects tuple layout",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return None;
+                }
+                if args.len() != tuple_layout.fields.len() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        format!(
+                            "tuple pattern arity mismatch: expected {}, found {}",
+                            tuple_layout.fields.len(),
+                            args.len()
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                    return None;
+                }
+                for (idx, arg) in args.iter().enumerate() {
+                    let field_value = self.extract_tuple_field_value(
+                        value,
+                        idx,
+                        &tuple_layout.fields[idx].ty,
+                        fctx,
+                    );
+                    self.bind_tuple_match_pattern(arg, &field_value, fctx)?;
+                }
+                Some(())
+            }
+            ir::PatternKind::Variant { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "tuple match binding does not support non-tuple variant patterns",
+                    self.file,
+                    pattern.span,
+                ));
+                None
+            }
+        }
+    }
+
+    fn extract_tuple_field_value(
+        &mut self,
+        value: &Value,
+        index: usize,
+        field_ty: &LType,
+        fctx: &mut FnCtx,
+    ) -> Value {
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            reg,
+            llvm_type(&value.ty),
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&value.ty)),
+            index
+        ));
+        Value {
+            ty: field_ty.clone(),
+            repr: Some(reg),
         }
     }
 
@@ -22322,6 +23119,25 @@ impl<'a> Generator<'a> {
                 }),
                 params,
                 ret: Box::new(ret),
+            }));
+        }
+
+        if base == TUPLE_INTERNAL_NAME {
+            let args = arg_texts
+                .iter()
+                .map(|text| self.parse_type_repr(text, span))
+                .collect::<Option<Vec<_>>>()?;
+            let fields = args
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| StructFieldType {
+                    name: idx.to_string(),
+                    ty: ty.clone(),
+                })
+                .collect::<Vec<_>>();
+            return Some(LType::Struct(StructLayoutType {
+                repr: render_applied_type(base, &args),
+                fields,
             }));
         }
 
