@@ -1,0 +1,43 @@
+module examples.vscode.symbol_outline;
+
+import std.io;
+
+const BASE: Int = 40;
+
+struct Counter {
+    value: Int,
+}
+
+enum Status {
+    Ready(Int),
+    Busy,
+}
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+impl Counter {
+    fn bump(self) -> Int {
+        self.value + 2
+    }
+}
+
+impl Score[Counter] {
+    fn score(self: Counter) -> Int {
+        self.bump()
+    }
+}
+
+fn choose(status: Status, counter: Counter) -> Int {
+    match status {
+        Ready(_) => counter.score(),
+        Busy => BASE,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let value = choose(Ready(BASE), Counter { value: BASE });
+    print_int(value);
+    0
+}

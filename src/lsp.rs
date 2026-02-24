@@ -29,8 +29,39 @@ struct SymbolDecl {
 }
 
 const LSP_KEYWORDS: &[&str] = &[
-    "fn", "let", "mut", "if", "else", "match", "return", "struct", "enum", "trait", "impl",
-    "import", "module", "unsafe", "async", "await",
+    "module",
+    "import",
+    "async",
+    "extern",
+    "unsafe",
+    "fn",
+    "type",
+    "const",
+    "struct",
+    "enum",
+    "trait",
+    "impl",
+    "let",
+    "mut",
+    "return",
+    "if",
+    "else",
+    "match",
+    "for",
+    "in",
+    "while",
+    "loop",
+    "break",
+    "continue",
+    "true",
+    "false",
+    "requires",
+    "ensures",
+    "where",
+    "invariant",
+    "effects",
+    "null",
+    "await",
 ];
 
 const SEMANTIC_TOKEN_TYPES: &[&str] = &[
@@ -104,9 +135,12 @@ impl LspServer {
                                 },
                                 "hoverProvider": true,
                                 "definitionProvider": true,
+                                "documentSymbolProvider": true,
+                                "workspaceSymbolProvider": true,
                                 "documentFormattingProvider": true,
                                 "completionProvider": {
-                                    "resolveProvider": false
+                                    "resolveProvider": false,
+                                    "triggerCharacters": [".", ":"]
                                 },
                                 "renameProvider": true,
                                 "codeActionProvider": true,
@@ -209,6 +243,26 @@ impl LspServer {
             "textDocument/definition" => {
                 if let Some(id) = id {
                     let result = self.definition_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/documentSymbol" => {
+                if let Some(id) = id {
+                    let result = self.document_symbol_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "workspace/symbol" => {
+                if let Some(id) = id {
+                    let result = self.workspace_symbol_response(message)?;
                     outbound.push(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -326,6 +380,85 @@ impl LspServer {
             "uri": path_to_uri(&first.file),
             "range": span_to_lsp_range(&first.file, first.span)
         }))
+    }
+
+    fn document_symbol_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+        let Some(path) = uri_to_path(&uri) else {
+            return Ok(json!([]));
+        };
+
+        let source = self.document_text(&uri)?;
+        let mut symbols = document_symbols_for_file(&path, &source)?;
+        symbols.sort_by_key(|entry| {
+            entry
+                .get("range")
+                .and_then(|range| range.get("start"))
+                .and_then(|start| start.get("line"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+        });
+        Ok(json!(symbols))
+    }
+
+    fn workspace_symbol_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let query = message
+            .get("params")
+            .and_then(|p| p.get("query"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
+
+        let root = self
+            .root_uri
+            .as_deref()
+            .and_then(uri_to_path)
+            .or_else(|| {
+                self.documents
+                    .keys()
+                    .next()
+                    .and_then(|uri| uri_to_path(uri))
+                    .map(|path| find_project_root(&path))
+            })
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        let declarations = build_symbol_index(&root)?;
+        let mut symbols = Vec::<(&SymbolDecl, Value)>::new();
+        for decls in declarations.values() {
+            for decl in decls {
+                if !query.is_empty() {
+                    let name_match = decl.name.to_lowercase().contains(&query);
+                    let sig_match = decl.signature.to_lowercase().contains(&query);
+                    if !name_match && !sig_match {
+                        continue;
+                    }
+                }
+                symbols.push((decl, symbol_decl_to_workspace_symbol(decl)));
+            }
+        }
+
+        symbols.sort_by(|(a, _), (b, _)| {
+            a.name
+                .cmp(&b.name)
+                .then(a.file.cmp(&b.file))
+                .then(a.span.start.cmp(&b.span.start))
+        });
+
+        Ok(json!(symbols
+            .into_iter()
+            .take(200)
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>()))
     }
 
     fn formatting_response(&self, message: &Value) -> anyhow::Result<Value> {
@@ -733,7 +866,7 @@ fn lsp_diagnostic_for_file(
 }
 
 fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<SymbolDecl>>> {
-    let root = find_project_root(entry_path);
+    let root = symbol_index_root(entry_path);
     let mut files = Vec::new();
     collect_aic_files(&root, &mut files)?;
     files.sort();
@@ -792,6 +925,10 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
             };
             map.entry(decl.name.clone()).or_default().push(decl);
         }
+
+        for decl in extract_text_symbol_decls(&source, &file) {
+            map.entry(decl.name.clone()).or_default().push(decl);
+        }
     }
 
     for values in map.values_mut() {
@@ -799,6 +936,302 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
     }
 
     Ok(map)
+}
+
+fn symbol_index_root(entry_path: &Path) -> PathBuf {
+    if entry_path.is_dir() {
+        return entry_path.to_path_buf();
+    }
+    find_project_root(entry_path)
+}
+
+fn extract_text_symbol_decls(source: &str, file: &Path) -> Vec<SymbolDecl> {
+    let mut decls = Vec::new();
+    let mut offset = 0usize;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let leading = line.len().saturating_sub(trimmed.len());
+
+        if let Some(rest) = trimmed.strip_prefix("module ") {
+            let name = rest
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '.')
+                .collect::<String>();
+            if !name.is_empty() {
+                let start = offset + leading + "module ".len();
+                decls.push(SymbolDecl {
+                    name: name.clone(),
+                    kind: "module".to_string(),
+                    signature: format!("module {}", name),
+                    file: file.to_path_buf(),
+                    span: Span::new(start, start + name.len()),
+                });
+            }
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("const ") {
+            let name = rest
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .collect::<String>();
+            if !name.is_empty() {
+                let start = offset + leading + "const ".len();
+                decls.push(SymbolDecl {
+                    name: name.clone(),
+                    kind: "constant".to_string(),
+                    signature: format!("const {}", name),
+                    file: file.to_path_buf(),
+                    span: Span::new(start, start + name.len()),
+                });
+            }
+        }
+
+        offset += line.len() + 1;
+    }
+    decls
+}
+
+fn document_symbols_for_file(path: &Path, source: &str) -> anyhow::Result<Vec<Value>> {
+    let mut top_level = Vec::<(usize, String, Value)>::new();
+    let mut struct_indices = BTreeMap::<String, usize>::new();
+    let mut pending_impls = Vec::<(usize, Option<String>, Value)>::new();
+
+    for decl in extract_text_symbol_decls(source, path) {
+        let range = offset_range_to_lsp_range(source, decl.span.start, decl.span.end);
+        top_level.push((
+            decl.span.start,
+            decl.name.clone(),
+            json!({
+                "name": decl.name,
+                "detail": decl.signature,
+                "kind": symbol_kind(&decl.kind),
+                "range": range.clone(),
+                "selectionRange": range,
+                "children": []
+            }),
+        ));
+    }
+
+    let (program, diagnostics) = parser::parse(source, &path.to_string_lossy());
+    if diagnostics.iter().any(|d| d.is_error()) {
+        top_level.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        return Ok(top_level.into_iter().map(|(_, _, value)| value).collect());
+    }
+    let Some(program) = program else {
+        top_level.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        return Ok(top_level.into_iter().map(|(_, _, value)| value).collect());
+    };
+
+    for item in program.items {
+        match item {
+            ast::Item::Function(func) => {
+                let range = offset_range_to_lsp_range(source, func.span.start, func.span.end);
+                top_level.push((
+                    func.span.start,
+                    func.name.clone(),
+                    json!({
+                        "name": func.name,
+                        "detail": render_function_signature(&func),
+                        "kind": symbol_kind("function"),
+                        "range": range.clone(),
+                        "selectionRange": range,
+                        "children": []
+                    }),
+                ));
+            }
+            ast::Item::Struct(strukt) => {
+                let range = offset_range_to_lsp_range(source, strukt.span.start, strukt.span.end);
+                let children = strukt
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let field_range =
+                            offset_range_to_lsp_range(source, field.span.start, field.span.end);
+                        json!({
+                            "name": field.name,
+                            "detail": render_type_expr(&field.ty),
+                            "kind": 8,
+                            "range": field_range.clone(),
+                            "selectionRange": field_range,
+                            "children": []
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                struct_indices.insert(strukt.name.clone(), top_level.len());
+                top_level.push((
+                    strukt.span.start,
+                    strukt.name.clone(),
+                    json!({
+                        "name": strukt.name,
+                        "detail": render_struct_signature(&strukt),
+                        "kind": symbol_kind("struct"),
+                        "range": range.clone(),
+                        "selectionRange": range,
+                        "children": children
+                    }),
+                ));
+            }
+            ast::Item::Enum(enm) => {
+                let range = offset_range_to_lsp_range(source, enm.span.start, enm.span.end);
+                let children = enm
+                    .variants
+                    .iter()
+                    .map(|variant| {
+                        let variant_range = offset_range_to_lsp_range(
+                            source,
+                            variant.span.start,
+                            variant.span.end,
+                        );
+                        json!({
+                            "name": variant.name,
+                            "detail": variant.payload.as_ref().map(render_type_expr).unwrap_or_default(),
+                            "kind": 22,
+                            "range": variant_range.clone(),
+                            "selectionRange": variant_range,
+                            "children": []
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                top_level.push((
+                    enm.span.start,
+                    enm.name.clone(),
+                    json!({
+                        "name": enm.name,
+                        "detail": render_enum_signature(&enm),
+                        "kind": symbol_kind("enum"),
+                        "range": range.clone(),
+                        "selectionRange": range,
+                        "children": children
+                    }),
+                ));
+            }
+            ast::Item::Trait(trait_def) => {
+                let range =
+                    offset_range_to_lsp_range(source, trait_def.span.start, trait_def.span.end);
+                let children = trait_def
+                    .methods
+                    .iter()
+                    .map(|method| {
+                        let method_range =
+                            offset_range_to_lsp_range(source, method.span.start, method.span.end);
+                        json!({
+                            "name": method.name,
+                            "detail": render_function_signature(method),
+                            "kind": 6,
+                            "range": method_range.clone(),
+                            "selectionRange": method_range,
+                            "children": []
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                top_level.push((
+                    trait_def.span.start,
+                    trait_def.name.clone(),
+                    json!({
+                        "name": trait_def.name,
+                        "detail": render_trait_signature(&trait_def),
+                        "kind": symbol_kind("trait"),
+                        "range": range.clone(),
+                        "selectionRange": range,
+                        "children": children
+                    }),
+                ));
+            }
+            ast::Item::Impl(impl_def) => {
+                let range =
+                    offset_range_to_lsp_range(source, impl_def.span.start, impl_def.span.end);
+                let impl_name = if impl_def.is_inherent {
+                    let target_name = impl_def
+                        .target
+                        .as_ref()
+                        .map(render_type_expr)
+                        .unwrap_or_else(|| impl_def.trait_name.clone());
+                    format!("impl {}", target_name)
+                } else if let Some(target) = impl_def.target.as_ref().map(render_type_expr) {
+                    format!("impl {} for {}", impl_def.trait_name, target)
+                } else {
+                    format!("impl {}", impl_def.trait_name)
+                };
+                let children = impl_def
+                    .methods
+                    .iter()
+                    .map(|method| {
+                        let method_range =
+                            offset_range_to_lsp_range(source, method.span.start, method.span.end);
+                        json!({
+                            "name": method.name,
+                            "detail": render_function_signature(method),
+                            "kind": 6,
+                            "range": method_range.clone(),
+                            "selectionRange": method_range,
+                            "children": []
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let target_name = impl_def
+                    .target
+                    .as_ref()
+                    .and_then(type_expr_base_name)
+                    .or_else(|| {
+                        if impl_def.is_inherent {
+                            Some(impl_def.trait_name.clone())
+                        } else {
+                            None
+                        }
+                    });
+                let symbol = json!({
+                    "name": impl_name,
+                    "detail": render_impl_signature(&impl_def),
+                    "kind": symbol_kind("impl"),
+                    "range": range.clone(),
+                    "selectionRange": range,
+                    "children": children
+                });
+                pending_impls.push((impl_def.span.start, target_name, symbol));
+            }
+        }
+    }
+
+    for (start, target, symbol) in pending_impls {
+        let Some(target_name) = target else {
+            top_level.push((start, format!("impl:{start}"), symbol));
+            continue;
+        };
+        let Some(idx) = struct_indices.get(&target_name).copied() else {
+            top_level.push((start, format!("impl:{start}"), symbol));
+            continue;
+        };
+
+        if let Some(children) = top_level[idx]
+            .2
+            .get_mut("children")
+            .and_then(Value::as_array_mut)
+        {
+            children.push(symbol);
+        }
+    }
+
+    top_level.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    Ok(top_level.into_iter().map(|(_, _, value)| value).collect())
+}
+
+fn type_expr_base_name(ty: &ast::TypeExpr) -> Option<String> {
+    match &ty.kind {
+        ast::TypeKind::Named { name, .. } => Some(name.clone()),
+        _ => None,
+    }
+}
+
+fn symbol_decl_to_workspace_symbol(decl: &SymbolDecl) -> Value {
+    json!({
+        "name": decl.name,
+        "kind": symbol_kind(&decl.kind),
+        "location": {
+            "uri": path_to_uri(&decl.file),
+            "range": span_to_lsp_range(&decl.file, decl.span)
+        },
+        "containerName": decl.kind
+    })
 }
 
 fn render_function_signature(func: &ast::Function) -> String {
@@ -938,6 +1371,19 @@ fn render_type_expr(ty: &ast::TypeExpr) -> String {
             }
         }
         ast::TypeKind::Hole => "_".to_string(),
+    }
+}
+
+fn symbol_kind(kind: &str) -> i32 {
+    match kind {
+        "module" => 2,
+        "function" => 12,
+        "struct" => 23,
+        "enum" => 10,
+        "trait" => 11,
+        "impl" => 5,
+        "constant" => 14,
+        _ => 13,
     }
 }
 
@@ -1229,7 +1675,22 @@ fn write_message(writer: &mut dyn Write, message: &Value) -> anyhow::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{full_document_range, line_char_to_offset, word_at_position};
+    use super::{full_document_range, line_char_to_offset, word_at_position, LspServer};
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_workspace(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("aic-lsp-{prefix}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp workspace");
+        dir
+    }
 
     #[test]
     fn extracts_word_at_cursor() {
@@ -1250,5 +1711,143 @@ mod tests {
         let range = full_document_range(source);
         assert_eq!(range["start"]["line"], 0);
         assert_eq!(range["end"]["line"], 2);
+    }
+
+    #[test]
+    fn initialize_advertises_completion_triggers() {
+        let mut server = LspServer::default();
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": null
+                }
+            }))
+            .expect("initialize response");
+        let completion_provider = &responses[0]["result"]["capabilities"]["completionProvider"];
+        assert_eq!(completion_provider["resolveProvider"], false);
+        assert_eq!(completion_provider["triggerCharacters"], json!([".", ":"]));
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["documentSymbolProvider"],
+            true
+        );
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["workspaceSymbolProvider"],
+            true
+        );
+    }
+
+    #[test]
+    fn document_and_workspace_symbol_requests_return_expected_results() {
+        let workspace = temp_workspace("symbols");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let worker_path = src_dir.join("worker.aic");
+        let main_source = r#"module sample.main;
+import std.io;
+
+const MAGIC: Int = 40;
+
+struct Worker {
+    id: Int,
+}
+
+impl Worker {
+    fn score(self) -> Int {
+        self.id + 2
+    }
+}
+
+fn main() -> Int effects { io } {
+    print_int(Worker { id: MAGIC }.score());
+    0
+}
+"#;
+        let worker_source = r#"module sample.worker;
+
+fn worker_task() -> Int {
+    0
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+        fs::write(&worker_path, worker_source).expect("write worker source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+
+        let mut server = LspServer::default();
+        let init_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+        assert_eq!(init_response.len(), 1);
+
+        let doc_symbols_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/documentSymbol",
+                "params": {
+                    "textDocument": {
+                        "uri": main_uri
+                    }
+                }
+            }))
+            .expect("document symbol response");
+        let doc_symbols = doc_symbols_response[0]["result"]
+            .as_array()
+            .expect("document symbols array");
+        assert!(
+            doc_symbols
+                .iter()
+                .any(|symbol| symbol["name"] == "sample.main" && symbol["kind"] == 2),
+            "module symbol should be present in document symbols"
+        );
+        let worker_symbol = doc_symbols
+            .iter()
+            .find(|symbol| symbol["name"] == "Worker")
+            .expect("Worker symbol should be present");
+        let worker_children = worker_symbol["children"]
+            .as_array()
+            .expect("Worker symbol children array");
+        assert!(
+            worker_children.iter().any(|child| child["name"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("impl ")),
+            "Worker symbol should include nested impl block"
+        );
+
+        let workspace_symbols_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "workspace/symbol",
+                "params": {
+                    "query": "worker"
+                }
+            }))
+            .expect("workspace symbol response");
+        let workspace_symbols = workspace_symbols_response[0]["result"]
+            .as_array()
+            .expect("workspace symbols array");
+        assert!(
+            workspace_symbols
+                .iter()
+                .any(|symbol| symbol["name"] == "worker_task"),
+            "workspace symbol search should include worker_task"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
     }
 }

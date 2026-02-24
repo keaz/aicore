@@ -11,6 +11,7 @@ aic lsp
 - Syntax highlighting for `.aic` files
 - Autocomplete (language server completions + editor suggestions)
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
+- Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Diagnostics (matches `aic check` diagnostics)
 - Hover
 - Go-to-definition
