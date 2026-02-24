@@ -13,6 +13,7 @@ aic lsp
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
 - Status bar language server health indicator (starting/running/error/stopped + diagnostics count)
 - Inline error lens diagnostics with severity colors (error/warning/info)
+- Semantic highlighting for mutable/readonly variables, effectful calls, and deprecated APIs
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)

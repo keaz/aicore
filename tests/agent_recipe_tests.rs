@@ -46,6 +46,10 @@ fn vscode_extension_source_path() -> PathBuf {
     repo_root().join("tools/vscode-aic/src/extension.ts")
 }
 
+fn vscode_syntax_grammar_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/syntaxes/aic.tmLanguage.json")
+}
+
 fn extract_docs_test_commands(doc: &str) -> Vec<(bool, String)> {
     let mut commands = Vec::new();
     let mut in_block = false;
@@ -1125,5 +1129,123 @@ fn vscode_error_lens_example_is_listed_in_ci_check_fail_matrix() {
         example_rel,
         stdout,
         stderr
+    );
+}
+
+#[test]
+fn vscode_semantic_highlighting_manifest_registers_scopes_and_modifier() {
+    let manifest_path = vscode_extension_manifest_path();
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest: Value = serde_json::from_str(&manifest_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", manifest_path.display()));
+
+    let semantic_modifiers = manifest
+        .get("contributes")
+        .and_then(|c| c.get("semanticTokenModifiers"))
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing contributes.semanticTokenModifiers in {}",
+                manifest_path.display()
+            )
+        });
+    assert!(
+        semantic_modifiers
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some("effectful")),
+        "{} must register semantic token modifier `effectful`",
+        manifest_path.display()
+    );
+
+    let semantic_scopes = manifest
+        .get("contributes")
+        .and_then(|c| c.get("semanticTokenScopes"))
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing contributes.semanticTokenScopes in {}",
+                manifest_path.display()
+            )
+        });
+    let aic_scopes = semantic_scopes
+        .iter()
+        .find(|entry| entry.get("language").and_then(Value::as_str) == Some("aic"))
+        .unwrap_or_else(|| panic!("missing semanticTokenScopes entry for language `aic`"));
+
+    let scopes = aic_scopes
+        .get("scopes")
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| panic!("semanticTokenScopes entry for `aic` is missing scopes object"));
+    for selector in [
+        "variable.mutable",
+        "variable.readonly",
+        "function.effectful",
+        "function.deprecated",
+        "typeParameter",
+        "enumMember",
+        "property",
+    ] {
+        assert!(
+            scopes.contains_key(selector),
+            "semantic token scopes must include selector `{}`",
+            selector
+        );
+    }
+
+    let syntax_path = vscode_syntax_grammar_path();
+    let syntax_raw = fs::read_to_string(&syntax_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", syntax_path.display()));
+    let syntax_json: Value = serde_json::from_str(&syntax_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", syntax_path.display()));
+    assert_eq!(
+        syntax_json.get("scopeName").and_then(Value::as_str),
+        Some("source.aic"),
+        "{} must declare scopeName source.aic",
+        syntax_path.display()
+    );
+}
+
+#[test]
+fn vscode_semantic_highlighting_example_is_listed_in_ci_and_runs() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/semantic_highlighting_showcase.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "semantic highlighting example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("run")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic run {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic run {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+    let last = stdout.lines().last().unwrap_or_default().trim();
+    assert_eq!(
+        last, "42",
+        "expected `aic run {}` to print 42 as final line, got `{}`\nstdout:\n{}",
+        example_rel, last, stdout
     );
 }

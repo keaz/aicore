@@ -1,0 +1,21 @@
+module examples.vscode.semantic_highlighting_showcase;
+
+import std.io;
+import std.time;
+
+struct Counter {
+    value: Int,
+}
+
+fn compute[T](value: T) -> T effects { io } {
+    value
+}
+
+fn main() -> Int effects { io, time } {
+    let mut counter = 41;
+    counter = counter + 1;
+    let timestamp = now();
+    let snapshot = Counter { value: compute(counter) + timestamp - timestamp };
+    print_int(snapshot.value);
+    0
+}

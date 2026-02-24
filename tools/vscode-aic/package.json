@@ -38,6 +38,40 @@
         "path": "./syntaxes/aic.tmLanguage.json"
       }
     ],
+    "semanticTokenModifiers": [
+      {
+        "id": "effectful",
+        "description": "Marks effectful functions and calls in AICore"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "aic",
+        "scopes": {
+          "variable.mutable": [
+            "variable.other.mutable.aic"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.aic"
+          ],
+          "function.effectful": [
+            "entity.name.function.effectful.aic"
+          ],
+          "function.deprecated": [
+            "entity.name.function.deprecated.aic"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter.aic"
+          ],
+          "enumMember": [
+            "variable.other.enummember.aic"
+          ],
+          "property": [
+            "variable.other.property.aic"
+          ]
+        }
+      }
+    ],
     "snippets": [
       {
         "language": "aic",
@@ -117,6 +151,7 @@
           "strings": true
         },
         "editor.suggestOnTriggerCharacters": true,
+        "editor.semanticHighlighting.enabled": true,
         "editor.inlayHints.enabled": "on"
       }
     }

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "AICore",
+  "scopeName": "source.aic",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#declaration-function"
+    },
+    {
+      "include": "#declaration-module-import"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.aic",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.aic",
+      "begin": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.aic"
+        }
+      },
+      "end": "\"",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.aic"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.aic",
+          "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9A-Fa-f]{4})"
+        }
+      ]
+    },
+    "declaration-function": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.aic"
+            },
+            "2": {
+              "name": "entity.name.function.aic"
+            }
+          }
+        }
+      ]
+    },
+    "declaration-module-import": {
+      "patterns": [
+        {
+          "match": "\\b(module|import)\\s+([A-Za-z_][A-Za-z0-9_\\.:]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.import.aic"
+            },
+            "2": {
+              "name": "entity.name.namespace.aic"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.aic",
+          "match": "\\b(async|await|break|const|continue|effects|else|ensures|extern|for|if|impl|in|invariant|let|loop|match|module|mut|requires|return|unsafe|where|while)\\b"
+        },
+        {
+          "name": "storage.type.aic",
+          "match": "\\b(enum|fn|struct|trait|type)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.aic",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.aic",
+          "match": "\\bnull\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.aic",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.aic",
+          "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.aic",
+          "match": "\\.|\\.\\.|::|->|=>|==|!=|<=|>=|&&|\\|\\||[=+\\-*/%<>!?:&|]"
+        }
+      ]
+    }
+  }
+}

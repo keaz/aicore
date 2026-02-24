@@ -11,6 +11,7 @@ use crate::formatter::format_program;
 use crate::ir_builder;
 use crate::parser;
 use crate::span::Span;
+use crate::std_policy;
 
 struct LspServer {
     root_uri: Option<String>,
@@ -87,7 +88,44 @@ const SEMANTIC_TOKEN_TYPES: &[&str] = &[
     "interface",
     "keyword",
     "variable",
+    "parameter",
+    "property",
+    "enumMember",
+    "typeParameter",
+    "comment",
+    "decorator",
 ];
+
+const SEMANTIC_TOKEN_MODIFIERS: &[&str] = &[
+    "declaration",
+    "definition",
+    "mutable",
+    "readonly",
+    "deprecated",
+    "async",
+    "effectful",
+];
+
+const TOKEN_FUNCTION: usize = 1;
+const TOKEN_STRUCT: usize = 2;
+const TOKEN_ENUM: usize = 3;
+const TOKEN_INTERFACE: usize = 4;
+const TOKEN_KEYWORD: usize = 5;
+const TOKEN_VARIABLE: usize = 6;
+const TOKEN_PARAMETER: usize = 7;
+const TOKEN_PROPERTY: usize = 8;
+const TOKEN_ENUM_MEMBER: usize = 9;
+const TOKEN_TYPE_PARAMETER: usize = 10;
+const TOKEN_COMMENT: usize = 11;
+const TOKEN_DECORATOR: usize = 12;
+
+const MOD_DECLARATION: u32 = 1 << 0;
+const MOD_DEFINITION: u32 = 1 << 1;
+const MOD_MUTABLE: u32 = 1 << 2;
+const MOD_READONLY: u32 = 1 << 3;
+const MOD_DEPRECATED: u32 = 1 << 4;
+const MOD_ASYNC: u32 = 1 << 5;
+const MOD_EFFECTFUL: u32 = 1 << 6;
 
 #[derive(Debug, Clone, Copy)]
 struct SemanticToken {
@@ -95,6 +133,7 @@ struct SemanticToken {
     character: usize,
     length: usize,
     token_type: usize,
+    token_modifiers: u32,
 }
 
 pub fn run_stdio() -> anyhow::Result<()> {
@@ -162,7 +201,7 @@ impl LspServer {
                                 "semanticTokensProvider": {
                                     "legend": {
                                         "tokenTypes": SEMANTIC_TOKEN_TYPES,
-                                        "tokenModifiers": []
+                                        "tokenModifiers": SEMANTIC_TOKEN_MODIFIERS
                                     },
                                     "full": true
                                 },
@@ -781,69 +820,197 @@ impl LspServer {
         };
 
         let mut tokens = Vec::new();
+        let effectful_functions = collect_effectful_function_names(&program);
+
         for item in &program.items {
             match item {
                 ast::Item::Function(func) => {
-                    if let Some(offset) = find_name_offset_in_span(&source, &func.name, func.span) {
-                        tokens.push(SemanticToken {
-                            line: offset_to_line_char(&source, offset).0,
-                            character: offset_to_line_char(&source, offset).1,
-                            length: func.name.chars().count(),
-                            token_type: 1,
-                        });
+                    let mut modifiers = MOD_DECLARATION | MOD_DEFINITION;
+                    if func.is_async {
+                        modifiers |= MOD_ASYNC;
                     }
+                    if !func.effects.is_empty() {
+                        modifiers |= MOD_EFFECTFUL;
+                    }
+                    if is_deprecated_symbol(&func.name) {
+                        modifiers |= MOD_DEPRECATED;
+                    }
+                    push_named_semantic_token(
+                        &mut tokens,
+                        &source,
+                        &func.name,
+                        func.span,
+                        TOKEN_FUNCTION,
+                        modifiers,
+                    );
+                    push_generic_param_tokens(&mut tokens, &source, &func.generics);
+                    for param in &func.params {
+                        push_named_semantic_token(
+                            &mut tokens,
+                            &source,
+                            &param.name,
+                            param.span,
+                            TOKEN_PARAMETER,
+                            MOD_DECLARATION | MOD_DEFINITION,
+                        );
+                    }
+                    collect_block_semantic_tokens(
+                        &mut tokens,
+                        &source,
+                        &func.body,
+                        &effectful_functions,
+                    );
                 }
                 ast::Item::Struct(strukt) => {
-                    if let Some(offset) =
-                        find_name_offset_in_span(&source, &strukt.name, strukt.span)
-                    {
-                        tokens.push(SemanticToken {
-                            line: offset_to_line_char(&source, offset).0,
-                            character: offset_to_line_char(&source, offset).1,
-                            length: strukt.name.chars().count(),
-                            token_type: 2,
-                        });
+                    push_named_semantic_token(
+                        &mut tokens,
+                        &source,
+                        &strukt.name,
+                        strukt.span,
+                        TOKEN_STRUCT,
+                        MOD_DECLARATION | MOD_DEFINITION,
+                    );
+                    push_generic_param_tokens(&mut tokens, &source, &strukt.generics);
+                    for field in &strukt.fields {
+                        push_named_semantic_token(
+                            &mut tokens,
+                            &source,
+                            &field.name,
+                            field.span,
+                            TOKEN_PROPERTY,
+                            MOD_DECLARATION | MOD_DEFINITION,
+                        );
                     }
                 }
                 ast::Item::Enum(enm) => {
-                    if let Some(offset) = find_name_offset_in_span(&source, &enm.name, enm.span) {
-                        tokens.push(SemanticToken {
-                            line: offset_to_line_char(&source, offset).0,
-                            character: offset_to_line_char(&source, offset).1,
-                            length: enm.name.chars().count(),
-                            token_type: 3,
-                        });
+                    push_named_semantic_token(
+                        &mut tokens,
+                        &source,
+                        &enm.name,
+                        enm.span,
+                        TOKEN_ENUM,
+                        MOD_DECLARATION | MOD_DEFINITION,
+                    );
+                    push_generic_param_tokens(&mut tokens, &source, &enm.generics);
+                    for variant in &enm.variants {
+                        push_named_semantic_token(
+                            &mut tokens,
+                            &source,
+                            &variant.name,
+                            variant.span,
+                            TOKEN_ENUM_MEMBER,
+                            MOD_DECLARATION | MOD_DEFINITION,
+                        );
                     }
                 }
                 ast::Item::Trait(trait_def) => {
-                    if let Some(offset) =
-                        find_name_offset_in_span(&source, &trait_def.name, trait_def.span)
-                    {
-                        tokens.push(SemanticToken {
-                            line: offset_to_line_char(&source, offset).0,
-                            character: offset_to_line_char(&source, offset).1,
-                            length: trait_def.name.chars().count(),
-                            token_type: 4,
-                        });
+                    push_named_semantic_token(
+                        &mut tokens,
+                        &source,
+                        &trait_def.name,
+                        trait_def.span,
+                        TOKEN_INTERFACE,
+                        MOD_DECLARATION | MOD_DEFINITION,
+                    );
+                    push_generic_param_tokens(&mut tokens, &source, &trait_def.generics);
+                    for method in &trait_def.methods {
+                        let mut modifiers = MOD_DECLARATION | MOD_DEFINITION;
+                        if method.is_async {
+                            modifiers |= MOD_ASYNC;
+                        }
+                        if !method.effects.is_empty() {
+                            modifiers |= MOD_EFFECTFUL;
+                        }
+                        if is_deprecated_symbol(&method.name) {
+                            modifiers |= MOD_DEPRECATED;
+                        }
+                        push_named_semantic_token(
+                            &mut tokens,
+                            &source,
+                            &method.name,
+                            method.span,
+                            TOKEN_FUNCTION,
+                            modifiers,
+                        );
+                        push_generic_param_tokens(&mut tokens, &source, &method.generics);
+                        for param in &method.params {
+                            push_named_semantic_token(
+                                &mut tokens,
+                                &source,
+                                &param.name,
+                                param.span,
+                                TOKEN_PARAMETER,
+                                MOD_DECLARATION | MOD_DEFINITION,
+                            );
+                        }
+                        collect_block_semantic_tokens(
+                            &mut tokens,
+                            &source,
+                            &method.body,
+                            &effectful_functions,
+                        );
                     }
                 }
-                ast::Item::Impl(_) => {}
+                ast::Item::Impl(impl_def) => {
+                    for method in &impl_def.methods {
+                        let mut modifiers = MOD_DECLARATION | MOD_DEFINITION;
+                        if method.is_async {
+                            modifiers |= MOD_ASYNC;
+                        }
+                        if !method.effects.is_empty() {
+                            modifiers |= MOD_EFFECTFUL;
+                        }
+                        if is_deprecated_symbol(&method.name) {
+                            modifiers |= MOD_DEPRECATED;
+                        }
+                        push_named_semantic_token(
+                            &mut tokens,
+                            &source,
+                            &method.name,
+                            method.span,
+                            TOKEN_FUNCTION,
+                            modifiers,
+                        );
+                        push_generic_param_tokens(&mut tokens, &source, &method.generics);
+                        for param in &method.params {
+                            push_named_semantic_token(
+                                &mut tokens,
+                                &source,
+                                &param.name,
+                                param.span,
+                                TOKEN_PARAMETER,
+                                MOD_DECLARATION | MOD_DEFINITION,
+                            );
+                        }
+                        collect_block_semantic_tokens(
+                            &mut tokens,
+                            &source,
+                            &method.body,
+                            &effectful_functions,
+                        );
+                    }
+                }
             }
         }
 
+        collect_const_semantic_tokens(&mut tokens, &source);
+        collect_comment_and_decorator_tokens(&mut tokens, &source);
+
         for keyword in LSP_KEYWORDS {
             for (start, end) in find_word_occurrences(&source, keyword) {
-                let (line, character) = offset_to_line_char(&source, start);
-                tokens.push(SemanticToken {
-                    line,
-                    character,
-                    length: end.saturating_sub(start),
-                    token_type: 5,
-                });
+                push_offset_semantic_token(&mut tokens, &source, start, end, TOKEN_KEYWORD, 0);
             }
         }
 
         tokens.sort_by(|a, b| a.line.cmp(&b.line).then(a.character.cmp(&b.character)));
+        tokens.dedup_by(|lhs, rhs| {
+            lhs.line == rhs.line
+                && lhs.character == rhs.character
+                && lhs.length == rhs.length
+                && lhs.token_type == rhs.token_type
+                && lhs.token_modifiers == rhs.token_modifiers
+        });
+
         let mut data = Vec::<u32>::new();
         let mut prev_line = 0usize;
         let mut prev_char = 0usize;
@@ -858,7 +1025,7 @@ impl LspServer {
             data.push(delta_start as u32);
             data.push(token.length as u32);
             data.push(token.token_type as u32);
-            data.push(0);
+            data.push(token.token_modifiers);
             prev_line = token.line;
             prev_char = token.character;
         }
@@ -896,6 +1063,367 @@ impl LspServer {
         let path = uri_to_path(uri).ok_or_else(|| anyhow::anyhow!("unsupported URI: {uri}"))?;
         Ok(fs::read_to_string(path)?)
     }
+}
+
+fn collect_effectful_function_names(program: &ast::Program) -> Vec<String> {
+    let mut names = Vec::new();
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => {
+                if !func.effects.is_empty() {
+                    names.push(func.name.clone());
+                }
+            }
+            ast::Item::Trait(trait_def) => {
+                for method in &trait_def.methods {
+                    if !method.effects.is_empty() {
+                        names.push(method.name.clone());
+                    }
+                }
+            }
+            ast::Item::Impl(impl_def) => {
+                for method in &impl_def.methods {
+                    if !method.effects.is_empty() {
+                        names.push(method.name.clone());
+                    }
+                }
+            }
+            ast::Item::Struct(_) | ast::Item::Enum(_) => {}
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn is_effectful_call(name: &str, effectful_functions: &[String]) -> bool {
+    effectful_functions
+        .iter()
+        .any(|candidate| candidate == name)
+}
+
+fn is_deprecated_symbol(name: &str) -> bool {
+    std_policy::DEPRECATED_APIS
+        .iter()
+        .any(|entry| entry.symbol == name)
+}
+
+fn push_named_semantic_token(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    name: &str,
+    span: Span,
+    token_type: usize,
+    token_modifiers: u32,
+) {
+    if let Some(offset) = find_name_offset_in_span(source, name, span) {
+        let end = offset.saturating_add(name.len());
+        push_offset_semantic_token(tokens, source, offset, end, token_type, token_modifiers);
+    }
+}
+
+fn push_offset_semantic_token(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    start: usize,
+    end: usize,
+    token_type: usize,
+    token_modifiers: u32,
+) {
+    let (line, character) = offset_to_line_char(source, start);
+    let length = end.saturating_sub(start);
+    if length == 0 {
+        return;
+    }
+    tokens.push(SemanticToken {
+        line,
+        character,
+        length,
+        token_type,
+        token_modifiers,
+    });
+}
+
+fn push_generic_param_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    generic_params: &[ast::GenericParam],
+) {
+    for generic in generic_params {
+        push_named_semantic_token(
+            tokens,
+            source,
+            &generic.name,
+            generic.span,
+            TOKEN_TYPE_PARAMETER,
+            MOD_DECLARATION | MOD_DEFINITION,
+        );
+    }
+}
+
+fn collect_block_semantic_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    block: &ast::Block,
+    effectful_functions: &[String],
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            ast::Stmt::Let {
+                name,
+                mutable,
+                expr,
+                span,
+                ..
+            } => {
+                let mut modifiers = MOD_DECLARATION;
+                if *mutable {
+                    modifiers |= MOD_MUTABLE;
+                } else {
+                    modifiers |= MOD_READONLY;
+                }
+                push_named_semantic_token(tokens, source, name, *span, TOKEN_VARIABLE, modifiers);
+                collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            }
+            ast::Stmt::Assign { expr, .. } => {
+                collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            }
+            ast::Stmt::Expr { expr, .. } => {
+                collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            }
+            ast::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+                }
+            }
+            ast::Stmt::Assert { expr, .. } => {
+                collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            }
+        }
+    }
+
+    if let Some(tail) = &block.tail {
+        collect_expr_semantic_tokens(tokens, source, tail, effectful_functions);
+    }
+}
+
+fn collect_expr_semantic_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    expr: &ast::Expr,
+    effectful_functions: &[String],
+) {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args } => {
+            if let ast::ExprKind::Var(name) = &callee.kind {
+                let mut modifiers = 0u32;
+                if is_effectful_call(name, effectful_functions) {
+                    modifiers |= MOD_EFFECTFUL;
+                }
+                if is_deprecated_symbol(name) {
+                    modifiers |= MOD_DEPRECATED;
+                }
+                push_named_semantic_token(
+                    tokens,
+                    source,
+                    name,
+                    callee.span,
+                    TOKEN_FUNCTION,
+                    modifiers,
+                );
+            }
+            collect_expr_semantic_tokens(tokens, source, callee, effectful_functions);
+            for arg in args {
+                collect_expr_semantic_tokens(tokens, source, arg, effectful_functions);
+            }
+        }
+        ast::ExprKind::Closure {
+            params,
+            ret_type: _,
+            body,
+        } => {
+            for param in params {
+                push_named_semantic_token(
+                    tokens,
+                    source,
+                    &param.name,
+                    param.span,
+                    TOKEN_PARAMETER,
+                    MOD_DECLARATION | MOD_DEFINITION,
+                );
+            }
+            collect_block_semantic_tokens(tokens, source, body, effectful_functions);
+        }
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_semantic_tokens(tokens, source, cond, effectful_functions);
+            collect_block_semantic_tokens(tokens, source, then_block, effectful_functions);
+            collect_block_semantic_tokens(tokens, source, else_block, effectful_functions);
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_semantic_tokens(tokens, source, cond, effectful_functions);
+            collect_block_semantic_tokens(tokens, source, body, effectful_functions);
+        }
+        ast::ExprKind::Loop { body } => {
+            collect_block_semantic_tokens(tokens, source, body, effectful_functions);
+        }
+        ast::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            }
+        }
+        ast::ExprKind::Match { expr, arms } => {
+            collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+            for arm in arms {
+                collect_pattern_semantic_tokens(tokens, source, &arm.pattern);
+                if let Some(guard) = &arm.guard {
+                    collect_expr_semantic_tokens(tokens, source, guard, effectful_functions);
+                }
+                collect_expr_semantic_tokens(tokens, source, &arm.body, effectful_functions);
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_semantic_tokens(tokens, source, lhs, effectful_functions);
+            collect_expr_semantic_tokens(tokens, source, rhs, effectful_functions);
+        }
+        ast::ExprKind::Unary { expr, .. } => {
+            collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+        }
+        ast::ExprKind::Borrow { expr, .. } => {
+            collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+        }
+        ast::ExprKind::Await { expr } => {
+            collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+        }
+        ast::ExprKind::Try { expr } => {
+            collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
+        }
+        ast::ExprKind::UnsafeBlock { block } => {
+            collect_block_semantic_tokens(tokens, source, block, effectful_functions);
+        }
+        ast::ExprKind::StructInit { name, fields } => {
+            push_named_semantic_token(tokens, source, name, expr.span, TOKEN_STRUCT, 0);
+            for (field_name, field_expr, field_span) in fields {
+                push_named_semantic_token(
+                    tokens,
+                    source,
+                    field_name,
+                    *field_span,
+                    TOKEN_PROPERTY,
+                    0,
+                );
+                collect_expr_semantic_tokens(tokens, source, field_expr, effectful_functions);
+            }
+        }
+        ast::ExprKind::FieldAccess { base, field } => {
+            collect_expr_semantic_tokens(tokens, source, base, effectful_functions);
+            push_named_semantic_token(tokens, source, field, expr.span, TOKEN_PROPERTY, 0);
+        }
+        ast::ExprKind::Var(name) => {
+            push_named_semantic_token(tokens, source, name, expr.span, TOKEN_VARIABLE, 0);
+        }
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Continue
+        | ast::ExprKind::Unit => {}
+    }
+}
+
+fn collect_pattern_semantic_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    pattern: &ast::Pattern,
+) {
+    match &pattern.kind {
+        ast::PatternKind::Or { patterns } => {
+            for inner in patterns {
+                collect_pattern_semantic_tokens(tokens, source, inner);
+            }
+        }
+        ast::PatternKind::Variant { name, args } => {
+            push_named_semantic_token(tokens, source, name, pattern.span, TOKEN_ENUM_MEMBER, 0);
+            for arg in args {
+                collect_pattern_semantic_tokens(tokens, source, arg);
+            }
+        }
+        ast::PatternKind::Var(name) => {
+            push_named_semantic_token(
+                tokens,
+                source,
+                name,
+                pattern.span,
+                TOKEN_VARIABLE,
+                MOD_DECLARATION,
+            );
+        }
+        ast::PatternKind::Wildcard
+        | ast::PatternKind::Int(_)
+        | ast::PatternKind::Bool(_)
+        | ast::PatternKind::Unit => {}
+    }
+}
+
+fn collect_const_semantic_tokens(tokens: &mut Vec<SemanticToken>, source: &str) {
+    for (_start, end) in find_word_occurrences(source, "const") {
+        let Some((name_start, name_end)) = identifier_after(source, end) else {
+            continue;
+        };
+        push_offset_semantic_token(
+            tokens,
+            source,
+            name_start,
+            name_end,
+            TOKEN_VARIABLE,
+            MOD_DECLARATION | MOD_DEFINITION | MOD_READONLY,
+        );
+    }
+}
+
+fn collect_comment_and_decorator_tokens(tokens: &mut Vec<SemanticToken>, source: &str) {
+    let mut line_start = 0usize;
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+        if trimmed.starts_with("///") {
+            let start = line_start + indent;
+            let end = line_start + line.trim_end_matches(['\r', '\n']).len();
+            push_offset_semantic_token(tokens, source, start, end, TOKEN_COMMENT, 0);
+        } else if trimmed.starts_with("#[") {
+            let decorator_len = trimmed
+                .find(']')
+                .map(|idx| idx + 1)
+                .unwrap_or_else(|| trimmed.trim_end_matches(['\r', '\n']).len());
+            let start = line_start + indent;
+            let end = start.saturating_add(decorator_len);
+            push_offset_semantic_token(tokens, source, start, end, TOKEN_DECORATOR, 0);
+        }
+        line_start = line_start.saturating_add(line.len());
+    }
+}
+
+fn identifier_after(source: &str, from: usize) -> Option<(usize, usize)> {
+    let bytes = source.as_bytes();
+    let mut cursor = from.min(bytes.len());
+    while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+        cursor += 1;
+    }
+    if cursor >= bytes.len() {
+        return None;
+    }
+    if !(bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_') {
+        return None;
+    }
+    let start = cursor;
+    cursor += 1;
+    while cursor < bytes.len() && is_word_byte(bytes[cursor]) {
+        cursor += 1;
+    }
+    Some((start, cursor))
 }
 
 fn request_position(message: &Value) -> anyhow::Result<(String, usize, usize)> {
@@ -2146,7 +2674,11 @@ fn write_message(writer: &mut dyn Write, message: &Value) -> anyhow::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{full_document_range, line_char_to_offset, word_at_position, LspServer};
+    use super::{
+        full_document_range, line_char_to_offset, offset_to_line_char, word_at_position, LspServer,
+        MOD_DECLARATION, MOD_DEPRECATED, MOD_EFFECTFUL, MOD_MUTABLE, MOD_READONLY,
+        TOKEN_ENUM_MEMBER, TOKEN_FUNCTION, TOKEN_PROPERTY, TOKEN_TYPE_PARAMETER, TOKEN_VARIABLE,
+    };
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
@@ -2161,6 +2693,51 @@ mod tests {
             std::env::temp_dir().join(format!("aic-lsp-{prefix}-{}-{nanos}", std::process::id()));
         fs::create_dir_all(&dir).expect("create temp workspace");
         dir
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct DecodedToken {
+        line: usize,
+        character: usize,
+        token_type: usize,
+        modifiers: u32,
+    }
+
+    fn decode_semantic_tokens(data: &serde_json::Value) -> Vec<DecodedToken> {
+        let raw = data.as_array().expect("semantic token data array");
+        assert_eq!(raw.len() % 5, 0, "semantic token payload must be 5-tuples");
+
+        let mut tokens = Vec::new();
+        let mut line = 0usize;
+        let mut character = 0usize;
+        for chunk in raw.chunks(5) {
+            let delta_line = chunk[0].as_u64().expect("delta line") as usize;
+            let delta_start = chunk[1].as_u64().expect("delta start") as usize;
+            if delta_line == 0 {
+                character += delta_start;
+            } else {
+                line += delta_line;
+                character = delta_start;
+            }
+            tokens.push(DecodedToken {
+                line,
+                character,
+                token_type: chunk[3].as_u64().expect("token type") as usize,
+                modifiers: chunk[4].as_u64().expect("token modifiers") as u32,
+            });
+        }
+        tokens
+    }
+
+    fn find_decoded_token(
+        tokens: &[DecodedToken],
+        line: usize,
+        character: usize,
+        token_type: usize,
+    ) -> Option<DecodedToken> {
+        tokens.iter().copied().find(|token| {
+            token.line == line && token.character == character && token.token_type == token_type
+        })
     }
 
     #[test]
@@ -2211,6 +2788,19 @@ mod tests {
         assert_eq!(
             responses[0]["result"]["capabilities"]["inlayHintProvider"],
             true
+        );
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["semanticTokensProvider"]["legend"]
+                ["tokenModifiers"],
+            json!([
+                "declaration",
+                "definition",
+                "mutable",
+                "readonly",
+                "deprecated",
+                "async",
+                "effectful"
+            ])
         );
     }
 
@@ -2448,5 +3038,160 @@ fn main() -> Int effects { io } {
         );
 
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn semantic_tokens_emit_extended_types_and_modifiers() {
+        let source = r#"module sample.semantic;
+import std.io;
+import std.time;
+
+struct Counter {
+    value: Int,
+}
+
+enum Status {
+    Value(Int),
+    Empty,
+}
+
+fn compute[T](x: T) -> T effects { io } {
+    x
+}
+
+fn main() -> Int effects { io, time } {
+    let mut x = 1;
+    let y = x;
+    let timestamp = now();
+    let next = compute(y);
+    print_int(next + timestamp - timestamp);
+    0
+}
+"#;
+        let (_, parse_diags) = crate::parser::parse(source, "semantic_tokens_fixture");
+        assert!(
+            !parse_diags.iter().any(|diag| diag.is_error()),
+            "semantic token fixture must parse cleanly: {:?}",
+            parse_diags
+                .iter()
+                .map(|diag| format!("{} {}", diag.code, diag.message))
+                .collect::<Vec<_>>()
+        );
+        let uri = "file:///semantic_tokens_demo.aic".to_string();
+        let mut server = LspServer::default();
+        server.documents.insert(uri.clone(), source.to_string());
+
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "textDocument/semanticTokens/full",
+                "params": {
+                    "textDocument": {
+                        "uri": uri
+                    }
+                }
+            }))
+            .expect("semantic token response");
+        let data = &responses[0]["result"]["data"];
+        let tokens = decode_semantic_tokens(data);
+        assert!(
+            !tokens.is_empty(),
+            "semantic token response should not be empty"
+        );
+
+        let mut_x_offset = source
+            .find("let mut x")
+            .expect("let mut x")
+            .saturating_add("let mut ".len());
+        let (mut_x_line, mut_x_char) = offset_to_line_char(source, mut_x_offset);
+        let mut_x_token = find_decoded_token(&tokens, mut_x_line, mut_x_char, TOKEN_VARIABLE)
+            .expect("mutable variable token");
+        assert_ne!(
+            mut_x_token.modifiers & MOD_MUTABLE,
+            0,
+            "mutable variable token should carry mutable modifier"
+        );
+        assert_ne!(
+            mut_x_token.modifiers & MOD_DECLARATION,
+            0,
+            "mutable variable token should carry declaration modifier"
+        );
+
+        let y_offset = source
+            .find("let y =")
+            .expect("let y")
+            .saturating_add("let ".len());
+        let (y_line, y_char) = offset_to_line_char(source, y_offset);
+        let y_token = find_decoded_token(&tokens, y_line, y_char, TOKEN_VARIABLE)
+            .expect("immutable variable token");
+        assert_ne!(
+            y_token.modifiers & MOD_READONLY,
+            0,
+            "immutable let binding should carry readonly modifier"
+        );
+
+        let compute_call_offset = source.find("compute(y)").expect("compute call");
+        let (compute_line, compute_char) = offset_to_line_char(source, compute_call_offset);
+        let compute_call_token =
+            find_decoded_token(&tokens, compute_line, compute_char, TOKEN_FUNCTION)
+                .expect("effectful function call token");
+        assert_ne!(
+            compute_call_token.modifiers & MOD_EFFECTFUL,
+            0,
+            "effectful call should carry effectful modifier"
+        );
+
+        let deprecated_call_offset = source.find("now()").expect("deprecated call");
+        let (deprecated_line, deprecated_char) =
+            offset_to_line_char(source, deprecated_call_offset);
+        let deprecated_call_token =
+            find_decoded_token(&tokens, deprecated_line, deprecated_char, TOKEN_FUNCTION)
+                .expect("deprecated function call token");
+        assert_ne!(
+            deprecated_call_token.modifiers & MOD_DEPRECATED,
+            0,
+            "deprecated call should carry deprecated modifier"
+        );
+
+        let type_param_offset = source
+            .find("compute[T]")
+            .expect("type parameter")
+            .saturating_add("compute[".len());
+        let (type_line, type_char) = offset_to_line_char(source, type_param_offset);
+        let type_param_token =
+            find_decoded_token(&tokens, type_line, type_char, TOKEN_TYPE_PARAMETER)
+                .expect("type parameter token");
+        assert_ne!(
+            type_param_token.modifiers & MOD_DECLARATION,
+            0,
+            "type parameter token should carry declaration modifier"
+        );
+
+        let enum_member_offset = source.find("Value(Int),").expect("enum member declaration");
+        let (enum_member_line, enum_member_char) = offset_to_line_char(source, enum_member_offset);
+        let enum_member_token = find_decoded_token(
+            &tokens,
+            enum_member_line,
+            enum_member_char,
+            TOKEN_ENUM_MEMBER,
+        )
+        .expect("enum member declaration token");
+        assert_ne!(
+            enum_member_token.modifiers & MOD_DECLARATION,
+            0,
+            "enum member declaration should carry declaration modifier"
+        );
+
+        let property_offset = source.find("value: Int").expect("property declaration");
+        let (property_line, property_char) = offset_to_line_char(source, property_offset);
+        let property_token =
+            find_decoded_token(&tokens, property_line, property_char, TOKEN_PROPERTY)
+                .expect("property declaration token");
+        assert_ne!(
+            property_token.modifiers & MOD_DECLARATION,
+            0,
+            "struct field declaration should carry declaration modifier"
+        );
     }
 }
