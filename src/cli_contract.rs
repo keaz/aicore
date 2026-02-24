@@ -169,7 +169,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "test",
         description: "Run AIC fixture harness categories",
-        stable_flags: &["--mode", "--json"],
+        stable_flags: &["--mode", "--json", "--update-golden", "--check-golden"],
         output_modes: &["text", "json"],
     },
     CommandContract {

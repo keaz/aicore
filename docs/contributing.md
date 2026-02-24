@@ -121,7 +121,11 @@ Run categorized `.aic` fixtures (`run-pass`, `compile-fail`, `golden`):
 ```bash
 cargo run --quiet --bin aic -- test examples/e7/harness --mode all
 cargo run --quiet --bin aic -- test examples/e7/harness --mode compile-fail --json
+cargo run --quiet --bin aic -- test examples/e7/harness --mode golden --update-golden
+cargo run --quiet --bin aic -- test examples/e7/harness --mode golden --check-golden
 ```
+
+Golden workflow examples are documented in `docs/examples/test-golden-workflow.md`.
 
 ## Docs and Static Validation
 

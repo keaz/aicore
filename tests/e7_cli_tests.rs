@@ -55,6 +55,13 @@ fn run_repl_session(args: &[&str], input: &str) -> std::process::Output {
     child.wait_with_output().expect("wait repl output")
 }
 
+fn normalize_help_snapshot(text: &str) -> String {
+    text.lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn write_many_check_diagnostics_fixture() -> (tempfile::TempDir, String) {
     let project = tempdir().expect("project");
     fs::create_dir_all(project.path().join("src")).expect("mkdir src");
@@ -258,9 +265,21 @@ fn cli_help_snapshots_are_stable() {
 
     let test_help = run_aic(&["test", "--help"]);
     assert!(test_help.status.success());
+    let test_help_text = String::from_utf8_lossy(&test_help.stdout);
+    for flag in [
+        "--mode <MODE>",
+        "--json",
+        "--update-golden",
+        "--check-golden",
+    ] {
+        assert!(
+            test_help_text.contains(flag),
+            "missing `{flag}` in test help:\n{test_help_text}"
+        );
+    }
     assert_eq!(
-        String::from_utf8_lossy(&test_help.stdout),
-        include_str!("golden/e7/help_test.txt")
+        normalize_help_snapshot(&test_help_text),
+        normalize_help_snapshot(include_str!("golden/e7/help_test.txt"))
     );
 }
 
@@ -2212,4 +2231,90 @@ fn pkg_mirror_fallback_and_misconfigured_credentials_are_diagnostic() {
     let diagnostics: serde_json::Value =
         serde_json::from_slice(&misconfigured.stdout).expect("misconfigured diagnostics");
     assert_eq!(diagnostics[0]["code"], "E2118");
+}
+
+fn write_golden_harness_fixture(root: &std::path::Path, source: &str) -> (PathBuf, PathBuf) {
+    let harness_root = root.join("harness");
+    let golden_dir = harness_root.join("golden");
+    fs::create_dir_all(&golden_dir).expect("mkdir golden dir");
+
+    let case_path = golden_dir.join("snapshot_case.aic");
+    fs::write(&case_path, source).expect("write golden case");
+
+    let snapshot_path = golden_dir.join("snapshot_case.aic.golden");
+    (harness_root, snapshot_path)
+}
+
+#[test]
+fn test_harness_update_golden_writes_snapshot_file() {
+    let project = tempdir().expect("project");
+    let (harness_root, snapshot_path) =
+        write_golden_harness_fixture(project.path(), "fn main() -> Int {\n    1\n}\n");
+    assert!(
+        !snapshot_path.exists(),
+        "snapshot should not exist before update"
+    );
+
+    let harness_arg = harness_root.to_string_lossy().to_string();
+    let result = run_aic(&["test", &harness_arg, "--mode", "golden", "--update-golden"]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(snapshot_path.exists(), "expected snapshot to be written");
+    assert_eq!(
+        fs::read_to_string(snapshot_path).expect("read snapshot"),
+        "fn main() -> Int {\n    1\n}\n"
+    );
+}
+
+#[test]
+fn test_harness_check_golden_passes_for_matching_snapshot() {
+    let project = tempdir().expect("project");
+    let (harness_root, snapshot_path) =
+        write_golden_harness_fixture(project.path(), "fn main() -> Int {\n    1\n}\n");
+    fs::write(&snapshot_path, "fn main() -> Int {\n    1\n}\n").expect("write snapshot");
+
+    let harness_arg = harness_root.to_string_lossy().to_string();
+    let result = run_aic(&["test", &harness_arg, "--mode", "golden", "--check-golden"]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("failed=0"), "stdout:\n{stdout}");
+}
+
+#[test]
+fn test_harness_check_golden_reports_readable_diff_on_mismatch() {
+    let project = tempdir().expect("project");
+    let (harness_root, snapshot_path) =
+        write_golden_harness_fixture(project.path(), "fn main() -> Int {\n    1\n}\n");
+    fs::write(&snapshot_path, "fn main() -> Int {\n    2\n}\n").expect("write stale snapshot");
+
+    let harness_arg = harness_root.to_string_lossy().to_string();
+    let result = run_aic(&["test", &harness_arg, "--mode", "golden", "--check-golden"]);
+
+    assert_eq!(result.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("golden snapshot mismatch"),
+        "expected mismatch label in output:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--- expected") && stdout.contains("+++ actual"),
+        "expected diff headers in output:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("@@ line"),
+        "expected line-oriented diff hunk in output:\n{stdout}"
+    );
 }

@@ -54,7 +54,7 @@ use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
 use aicore::telemetry;
-use aicore::test_harness::{run_harness, HarnessMode};
+use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
@@ -225,6 +225,10 @@ enum Command {
         mode: TestModeArg,
         #[arg(long)]
         json: bool,
+        #[arg(long, conflicts_with = "check_golden")]
+        update_golden: bool,
+        #[arg(long, conflicts_with = "update_golden")]
+        check_golden: bool,
     },
     Contract {
         #[arg(long)]
@@ -1427,8 +1431,21 @@ fn run_cli() -> anyhow::Result<i32> {
             run_repl(json)?;
             EXIT_OK
         }
-        Command::Test { path, mode, json } => {
-            let report = run_harness(&path, mode.to_harness_mode())?;
+        Command::Test {
+            path,
+            mode,
+            json,
+            update_golden,
+            check_golden,
+        } => {
+            let golden_mode = if update_golden {
+                GoldenMode::Update
+            } else if check_golden {
+                GoldenMode::Check
+            } else {
+                GoldenMode::Legacy
+            };
+            let report = run_harness_with_golden_mode(&path, mode.to_harness_mode(), golden_mode)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {

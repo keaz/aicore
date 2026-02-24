@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,6 +22,13 @@ pub enum HarnessMode {
     Golden,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoldenMode {
+    Legacy,
+    Update,
+    Check,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessCase {
     pub category: String,
@@ -41,6 +49,14 @@ pub struct HarnessReport {
 }
 
 pub fn run_harness(root: &Path, mode: HarnessMode) -> anyhow::Result<HarnessReport> {
+    run_harness_with_golden_mode(root, mode, GoldenMode::Legacy)
+}
+
+pub fn run_harness_with_golden_mode(
+    root: &Path,
+    mode: HarnessMode,
+    golden_mode: GoldenMode,
+) -> anyhow::Result<HarnessReport> {
     let root = root.to_path_buf();
     let mut files = Vec::new();
     collect_aic_files(&root, &mut files)?;
@@ -68,7 +84,7 @@ pub fn run_harness(root: &Path, mode: HarnessMode) -> anyhow::Result<HarnessRepo
         let result = match category.as_str() {
             "run-pass" => run_pass_case(&file),
             "compile-fail" => compile_fail_case(&file),
-            "golden" => golden_case(&file),
+            "golden" => golden_case(&file, golden_mode),
             _ => continue,
         };
 
@@ -200,7 +216,7 @@ fn compile_fail_case(path: &Path) -> anyhow::Result<String> {
     Ok(format!("matched diagnostics={}", expected_codes.join(",")))
 }
 
-fn golden_case(path: &Path) -> anyhow::Result<String> {
+fn golden_case(path: &Path, mode: GoldenMode) -> anyhow::Result<String> {
     let source = fs::read_to_string(path)?;
     let (program, parse_diags) = parser::parse(&source, &path.to_string_lossy());
     if parse_diags.iter().any(|d| d.is_error()) {
@@ -213,11 +229,42 @@ fn golden_case(path: &Path) -> anyhow::Result<String> {
 
     let ir = ir_builder::build(&program);
     let formatted = format_program(&ir);
-    if normalize_source(&source) != normalize_source(&formatted) {
-        anyhow::bail!("golden formatting mismatch")
-    }
 
-    Ok("format-stable".to_string())
+    let actual = normalize_source(&formatted);
+    match mode {
+        GoldenMode::Legacy => {
+            if normalize_source(&source) != actual {
+                anyhow::bail!("golden formatting mismatch")
+            }
+            Ok("format-stable".to_string())
+        }
+        GoldenMode::Update => {
+            let snapshot_path = golden_snapshot_path(path);
+            fs::write(&snapshot_path, &actual)?;
+            Ok(format!("snapshot-updated={}", snapshot_path.display()))
+        }
+        GoldenMode::Check => {
+            let snapshot_path = golden_snapshot_path(path);
+            let expected = fs::read_to_string(&snapshot_path).map_err(|err| {
+                anyhow::anyhow!(
+                    "missing golden snapshot {} for {} (run `aic test {} --mode golden --update-golden`) ({err})",
+                    snapshot_path.display(),
+                    path.display(),
+                    path.parent().unwrap_or_else(|| Path::new(".")).display()
+                )
+            })?;
+            let expected = normalize_source(&expected);
+            if expected != actual {
+                anyhow::bail!(
+                    "golden snapshot mismatch for {}\n  snapshot: {}\n{}",
+                    path.display(),
+                    snapshot_path.display(),
+                    render_golden_diff(&expected, &actual)
+                );
+            }
+            Ok(format!("snapshot-match={}", snapshot_path.display()))
+        }
+    }
 }
 
 fn parse_expect_line(source: &str, marker: &str) -> Option<String> {
@@ -236,6 +283,34 @@ fn parse_expect_codes(source: &str) -> Vec<String> {
                 .map(|s| s.trim().to_string())
         })
         .collect()
+}
+
+fn golden_snapshot_path(path: &Path) -> PathBuf {
+    let mut snapshot_name = OsString::from(path.file_name().unwrap_or_default());
+    snapshot_name.push(".golden");
+    path.with_file_name(snapshot_name)
+}
+
+fn render_golden_diff(expected: &str, actual: &str) -> String {
+    let expected_lines: Vec<&str> = expected.lines().collect();
+    let actual_lines: Vec<&str> = actual.lines().collect();
+    let total = expected_lines.len().max(actual_lines.len());
+
+    let mut diff = String::from("--- expected\n+++ actual\n");
+    for line_index in 0..total {
+        let expected_line = expected_lines.get(line_index).copied().unwrap_or("<EOF>");
+        let actual_line = actual_lines.get(line_index).copied().unwrap_or("<EOF>");
+        if expected_line == actual_line {
+            continue;
+        }
+        diff.push_str(&format!(
+            "@@ line {} @@\n- {}\n+ {}\n",
+            line_index + 1,
+            expected_line,
+            actual_line
+        ));
+    }
+    diff
 }
 
 fn normalize_source(source: &str) -> String {

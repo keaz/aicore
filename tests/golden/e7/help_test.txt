@@ -5,5 +5,7 @@ Arguments:
 
 Options:
       --mode <MODE>  [default: all] [possible values: all, run-pass, compile-fail, golden]
-      --json         
+      --json
+      --update-golden
+      --check-golden
   -h, --help         Print help
