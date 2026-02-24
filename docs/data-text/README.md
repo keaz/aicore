@@ -96,6 +96,11 @@ Core APIs:
 
 - `parse_rfc3339`, `parse_iso8601`
 - `format_rfc3339`, `format_iso8601`
+- `add_days`, `add_hours`
+- `diff_seconds`, `diff_days`
+- `format_custom` (tokens: `%Y %m %d %H %M %S %L %z %%`)
+- `day_of_week` (`0 = Monday`, `6 = Sunday`)
+- `is_leap_year`
 
 Accepted parse formats:
 
@@ -120,6 +125,14 @@ Deterministic formatting output:
 
 - `format_rfc3339`: always `YYYY-MM-DDTHH:MM:SS.mmmZ` for zero offset; otherwise `YYYY-MM-DDTHH:MM:SS.mmm+HH:MM`.
 - `format_iso8601`: always `YYYY-MM-DDTHH:MM:SS.mmm+HH:MM` (explicit numeric offset).
+- `format_custom`: deterministic token expansion with no locale dependence.
+
+Arithmetic and difference rules:
+
+- `add_days` and `add_hours` preserve timezone offset and normalize calendar rollover.
+- `diff_seconds` returns signed UTC second deltas.
+- `diff_days` returns signed UTC day-index deltas.
+- `day_of_week` is derived from the local calendar date in `DateTime`.
 
 Stable error mapping (`TimeError`):
 
@@ -130,7 +143,7 @@ Stable error mapping (`TimeError`):
 Core APIs:
 
 - `empty`, `from_string`
-- `len`, `is_empty`, `concat`
+- `byte_len`, `is_empty`, `concat`
 - `to_string`, `to_string_lossy`, `is_valid_utf8`
 
 Rules:
@@ -139,7 +152,7 @@ Rules:
 - `to_string` validates UTF-8 and returns `Err(InvalidUtf8)` for invalid payloads.
 - `to_string_lossy` always produces deterministic output for identical byte payloads.
 - `concat` preserves left-to-right payload order.
-- `len` returns payload length in bytes.
+- `byte_len` returns payload length in bytes.
 
 ## Wire Format, Determinism, and Versioning Guidance
 
@@ -165,6 +178,7 @@ cargo run --quiet --bin aic -- run examples/data/serde_models.aic
 cargo run --quiet --bin aic -- run examples/data/serde_negative_cases.aic
 cargo run --quiet --bin aic -- run examples/data/http_types.aic
 cargo run --quiet --bin aic -- run examples/data/audit_timestamps.aic
+cargo run --quiet --bin aic -- run examples/data/time_utils.aic
 cargo run --quiet --bin aic -- run examples/data/bytes_api_roundtrip.aic
 cargo run --quiet --bin aic -- run examples/data/ingest_transform_emit.aic
 cargo run --quiet --bin aic -- run examples/data/data_stack_negative_cases.aic

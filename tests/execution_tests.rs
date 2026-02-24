@@ -2825,6 +2825,99 @@ fn main() -> Int effects { io, time } {
 }
 
 #[test]
+fn exec_time_arithmetic_and_custom_format_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.time;
+import std.string;
+
+fn format_text_score(text: String) -> Int {
+    let remove_date = replace(text, "2026-02-21", "");
+    let remove_clock = replace(text, "22:30:15.120", "");
+    let remove_offset = replace(text, "+05:30", "");
+    let has_date = len(remove_date) < len(text);
+    let has_clock = len(remove_clock) < len(text);
+    let has_offset = len(remove_offset) < len(text);
+    if len(text) == 30 && has_date && has_clock && has_offset {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } {
+    let base = DateTime {
+        year: 2026,
+        month: 2,
+        day: 21,
+        hour: 22,
+        minute: 30,
+        second: 15,
+        millisecond: 120,
+        offset_minutes: 330,
+    };
+
+    let plus_days = add_days(base, 30);
+    let plus_hours = add_hours(base, 5);
+    let diff_s = diff_seconds(plus_hours, base);
+    let diff_d = diff_days(plus_days, base);
+    let dow = day_of_week(base);
+    let leap_ok =
+        if is_leap_year(2000) && !is_leap_year(1900) && is_leap_year(2024) {
+            1
+        } else {
+            0
+        };
+
+    let format_ok = match format_custom(base, "%Y-%m-%d %H:%M:%S.%L %z") {
+        Ok(text) => format_text_score(text),
+        Err(_) => 0,
+    };
+    let invalid_pattern_ok = match format_custom(base, "%Q") {
+        Ok(_) => 0,
+        Err(err) => match err {
+            InvalidFormat => 1,
+            _ => 0,
+        },
+    };
+
+    let rollover_days_ok =
+        if plus_days.year == 2026 && plus_days.month == 3 && plus_days.day == 23 {
+            1
+        } else {
+            0
+        };
+    let rollover_hours_ok =
+        if plus_hours.year == 2026 && plus_hours.month == 2 && plus_hours.day == 22 && plus_hours.hour == 3 {
+            1
+        } else {
+            0
+        };
+
+    let score =
+        rollover_days_ok +
+        rollover_hours_ok +
+        (if diff_s == 18000 { 1 } else { 0 }) +
+        (if diff_d == 30 { 1 } else { 0 }) +
+        (if dow == 5 { 1 } else { 0 }) +
+        leap_ok +
+        format_ok +
+        invalid_pattern_ok;
+
+    if score == 8 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_time_invalid_inputs_return_stable_error_variants() {
     let src = r#"
 import std.io;
