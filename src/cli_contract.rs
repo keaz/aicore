@@ -59,6 +59,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "suggest-contracts",
+        description: "Infer likely requires/ensures clauses from function body guards and returns",
+        stable_flags: &["--json", "--offline"],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "coverage",
         description: "Deterministic source/function coverage summary from check diagnostics",
         stable_flags: &["--check", "--min", "--report", "--offline"],

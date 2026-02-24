@@ -122,6 +122,13 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
+    SuggestContracts {
+        input: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        offline: bool,
+    },
     Coverage {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
@@ -868,6 +875,25 @@ fn run_cli() -> anyhow::Result<i32> {
             let has_any_errors = has_errors(&front.diagnostics);
             let report = aicore::suggest_effects::analyze(&front);
             println!("{}", serde_json::to_string_pretty(&report)?);
+            if has_any_errors {
+                EXIT_DIAGNOSTIC_ERROR
+            } else {
+                EXIT_OK
+            }
+        }
+        Command::SuggestContracts {
+            input,
+            json,
+            offline,
+        } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            let has_any_errors = has_errors(&front.diagnostics);
+            let report = aicore::suggest_contracts::analyze(&front);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", aicore::suggest_contracts::format_text(&report));
+            }
             if has_any_errors {
                 EXIT_DIAGNOSTIC_ERROR
             } else {

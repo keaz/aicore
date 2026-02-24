@@ -38,6 +38,7 @@ Published parse/check/build/fix schemas:
 - `aic ir`
 - `aic impact`
 - `aic suggest-effects`
+- `aic suggest-contracts`
 - `aic metrics`
 - `aic ir-migrate`
 - `aic migrate`
@@ -116,6 +117,38 @@ Exit behavior:
 
 - returns `0` when no diagnostics errors exist for the input
 - returns `1` when diagnostics include errors (including missing effect declarations)
+
+## `aic suggest-contracts` output modes
+
+Usage:
+
+```bash
+aic suggest-contracts <input>
+aic suggest-contracts <input> --json
+```
+
+JSON payload:
+
+- `suggestions[]` (deterministic ordering by function name)
+- `function`
+- `suggested_requires[]`
+  - `expr`
+  - `confidence`
+  - `reason`
+- `suggested_ensures[]`
+  - `expr`
+  - `confidence`
+  - `reason`
+
+Contract inference scope:
+
+- precondition suggestions come from guard/comparison/assertion-style usage patterns
+- postcondition suggestions come from deterministic return expression patterns where feasible
+- confidence scores are bounded in `[0.0, 1.0]`
+
+Text mode:
+
+- default mode (without `--json`) is human-readable and grouped by function
 
 ## `aic metrics` JSON output
 

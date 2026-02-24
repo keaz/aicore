@@ -1,0 +1,16 @@
+module examples.e7.suggest_contracts_demo;
+
+import std.io;
+
+fn bounded_index(idx: Int, limit: Int) -> Int {
+  if idx >= 0 && idx < limit {
+    idx
+  } else {
+    0
+  }
+}
+
+fn passthrough[T](value: T) -> T effects { io } {
+  print_int(1);
+  value
+}
