@@ -93,6 +93,7 @@ Recent core-language additions:
 - `E5034`: backend cannot lower the referenced function as a first-class function value.
 - `E5035`: closure helper return type mismatch during backend lowering.
 - `E5036`: JSON encode/decode for function values is unsupported.
+- `E6003`: typed hole (`_`) warning with inferred type/context.
 
 ## IO + Runtime Quick Reference
 
@@ -112,6 +113,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E5026` | `continue` reached backend outside loop context. | Ensure `continue` is only emitted inside `loop`/`while`. |
 | `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
+| `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |
 
 ## Change policy
 

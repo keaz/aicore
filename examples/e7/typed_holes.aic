@@ -1,0 +1,16 @@
+module e7.typed_holes;
+
+struct Counter {
+    value: _,
+}
+
+fn plus_one(x: _) -> _ {
+    let y: _ = x + 1;
+    y
+}
+
+fn main() -> Int {
+    let counter = Counter { value: 41 };
+    let out: _ = plus_one(counter.value);
+    out
+}

@@ -129,8 +129,10 @@ Check mode:
 - text (default)
 - `--json` (conforms to `docs/diagnostics.schema.json`)
 - `--sarif` (SARIF 2.1.0 structure)
+- `aic check --show-holes` emits typed-hole inference JSON:
+  - `{"holes":[{"line":<line>,"inferred":"<type>","context":"..."}]}`
 
-`--json` and `--sarif` are mutually exclusive.
+`--json`, `--sarif`, and `--show-holes` are mutually exclusive for `aic check`.
 
 Autofix API:
 

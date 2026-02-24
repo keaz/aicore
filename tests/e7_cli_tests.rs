@@ -218,7 +218,13 @@ fn cli_help_snapshots_are_stable() {
     assert!(check_help.status.success());
     let check_help_text = String::from_utf8_lossy(&check_help.stdout);
     assert!(check_help_text.contains("Usage: aic check [OPTIONS] [INPUT]"));
-    for flag in ["--json", "--sarif", "--offline", "--max-errors <N>"] {
+    for flag in [
+        "--json",
+        "--sarif",
+        "--show-holes",
+        "--offline",
+        "--max-errors <N>",
+    ] {
         assert!(
             check_help_text.contains(flag),
             "missing `{flag}` in check help:\n{check_help_text}"
@@ -473,6 +479,36 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
     assert!(sarif["runs"][0]["tool"]["driver"]["rules"].is_array());
     assert!(sarif["runs"][0]["results"][0]["ruleId"].is_string());
     assert!(sarif["runs"][0]["results"][0]["locations"].is_array());
+}
+
+#[test]
+fn check_show_holes_outputs_structured_hole_report() {
+    let out = run_aic(&["check", "examples/e7/typed_holes.aic", "--show-holes"]);
+    assert_eq!(out.status.code(), Some(0));
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).expect("holes json");
+    let holes = payload["holes"].as_array().expect("holes array");
+    assert!(!holes.is_empty(), "payload={payload:#}");
+    assert!(holes.iter().all(|hole| hole["line"].is_number()));
+    assert!(holes.iter().all(|hole| hole["inferred"].is_string()));
+    assert!(holes.iter().all(|hole| hole["context"].is_string()));
+    assert!(holes.iter().any(|hole| {
+        hole["context"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("parameter")
+    }));
+    assert!(holes.iter().any(|hole| {
+        hole["context"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("return type")
+    }));
+    assert!(holes.iter().any(|hole| {
+        hole["context"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("let binding")
+    }));
 }
 
 #[test]

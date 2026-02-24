@@ -547,7 +547,7 @@ impl<'a> Parser<'a> {
             )?;
             let (head_name, head_args) = match &head_ty.kind {
                 TypeKind::Named { name, args } => (name.clone(), args.clone()),
-                TypeKind::Unit => {
+                TypeKind::Unit | TypeKind::Hole => {
                     self.diagnostics.push(Diagnostic::error(
                         "E1087",
                         "impl target must be a named type",
@@ -579,7 +579,7 @@ impl<'a> Parser<'a> {
 
         let (trait_name, trait_args) = match head_ty.kind {
             TypeKind::Named { name, args } => (name, args),
-            TypeKind::Unit => {
+            TypeKind::Unit | TypeKind::Hole => {
                 self.diagnostics.push(Diagnostic::error(
                     "E1055",
                     "expected trait name after impl",
@@ -984,6 +984,14 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> Option<TypeExpr> {
         let start = self.current_span().start;
+        if self.at_kind(|k| matches!(k, TokenKind::Underscore)) {
+            let hole_span = self.current_span();
+            self.bump();
+            return Some(TypeExpr {
+                kind: TypeKind::Hole,
+                span: hole_span,
+            });
+        }
         if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
             self.bump();
             if self.at_kind(|k| matches!(k, TokenKind::RParen)) {
@@ -2695,7 +2703,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{Expr, ExprKind, Item, PatternKind, Stmt};
+    use crate::ast::{Expr, ExprKind, Item, PatternKind, Stmt, TypeKind};
 
     #[test]
     fn parses_simple_function() {
@@ -3120,5 +3128,43 @@ fn main() -> Float {
         };
         assert!(matches!(lhs.kind, ExprKind::Float(v) if (v - 3.125).abs() < 1e-12));
         assert!(matches!(rhs.kind, ExprKind::Float(v) if (v - 2.5e-3).abs() < 1e-12));
+    }
+
+    #[test]
+    fn parses_typed_holes_in_all_supported_type_positions() {
+        let src = r#"
+struct Boxed {
+    value: _,
+}
+
+fn passthrough(x: _) -> _ {
+    let y: _ = x;
+    y
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        assert_eq!(program.items.len(), 2);
+
+        let strukt = match &program.items[0] {
+            Item::Struct(s) => s,
+            _ => panic!("expected struct"),
+        };
+        assert!(matches!(strukt.fields[0].ty.kind, TypeKind::Hole));
+
+        let function = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(matches!(function.params[0].ty.kind, TypeKind::Hole));
+        assert!(matches!(function.ret_type.kind, TypeKind::Hole));
+        let Stmt::Let { ty, .. } = &function.body.stmts[0] else {
+            panic!("expected let statement");
+        };
+        let Some(let_ty) = ty else {
+            panic!("expected let type annotation");
+        };
+        assert!(matches!(let_ty.kind, TypeKind::Hole));
     }
 }

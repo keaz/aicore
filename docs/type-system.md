@@ -23,6 +23,7 @@
   - `&x` => `Ref[T]`
   - `&mut x` => `RefMut[T]`
 - Assignment is type-checked (`name = expr`) and must match binding type.
+- Typed holes (`_`) are accepted in type annotations (parameter, return, let, struct-field positions), infer from usage context, and emit warning `E6003` (not a hard error).
 - Borrow/alias checks (MVP):
   - mutable borrow requires mutable binding (`E1267`)
   - conflicting mutable/immutable borrows are rejected (`E1263`, `E1264`)

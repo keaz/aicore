@@ -14,6 +14,21 @@ pub struct TypecheckOutput {
     pub function_effect_usage: BTreeMap<String, BTreeSet<String>>,
     pub generic_instantiations: Vec<ir::GenericInstantiation>,
     pub call_graph: BTreeMap<String, Vec<String>>,
+    pub holes: Vec<TypedHole>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedHole {
+    pub file: String,
+    pub span: crate::span::Span,
+    pub inferred: String,
+    pub context: String,
+}
+
+#[derive(Debug, Clone)]
+struct DeferredHole {
+    span: crate::span::Span,
+    context: String,
 }
 
 pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> TypecheckOutput {
@@ -63,6 +78,14 @@ struct Checker<'a> {
     enforce_import_visibility: bool,
     type_aliases: BTreeMap<String, AliasDef>,
     const_types: BTreeMap<String, String>,
+    typed_holes: Vec<TypedHole>,
+    fn_param_holes: BTreeMap<(String, usize), DeferredHole>,
+    fn_param_inferred: BTreeMap<(String, usize), String>,
+    fn_return_holes: BTreeMap<String, DeferredHole>,
+    fn_return_inferred: BTreeMap<String, String>,
+    struct_field_holes: BTreeMap<(String, String), DeferredHole>,
+    struct_field_inferred: BTreeMap<(String, String), String>,
+    current_param_positions: BTreeMap<String, usize>,
 }
 
 #[derive(Default)]
@@ -365,6 +388,14 @@ impl<'a> Checker<'a> {
             enforce_import_visibility: false,
             type_aliases,
             const_types,
+            typed_holes: Vec::new(),
+            fn_param_holes: BTreeMap::new(),
+            fn_param_inferred: BTreeMap::new(),
+            fn_return_holes: BTreeMap::new(),
+            fn_return_inferred: BTreeMap::new(),
+            struct_field_holes: BTreeMap::new(),
+            struct_field_inferred: BTreeMap::new(),
+            current_param_positions: BTreeMap::new(),
         }
     }
 
@@ -394,7 +425,8 @@ impl<'a> Checker<'a> {
         self.check_transitive_effects();
     }
 
-    fn finish(self) -> TypecheckOutput {
+    fn finish(mut self) -> TypecheckOutput {
+        self.flush_deferred_holes();
         let generic_instantiations = self
             .instantiation_seen
             .into_values()
@@ -426,6 +458,7 @@ impl<'a> Checker<'a> {
             function_effect_usage: self.effect_usage,
             generic_instantiations,
             call_graph,
+            holes: self.typed_holes,
         }
     }
 
@@ -564,16 +597,30 @@ impl<'a> Checker<'a> {
         self.current_function_is_unsafe = func.is_unsafe;
         self.unsafe_depth = 0;
         self.call_graph.entry(func.name.clone()).or_default();
+        self.current_param_positions.clear();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
         let mut locals = BTreeMap::new();
-        for param in &func.params {
+        for (idx, param) in func.params.iter().enumerate() {
             let param_ty = self
                 .types
                 .get(&param.ty)
                 .cloned()
                 .unwrap_or_else(|| "<?>".to_string());
             self.check_generic_arity(&param_ty, param.span);
+            if contains_unresolved_type(&param_ty) {
+                let key = (func.name.clone(), idx);
+                self.fn_param_holes
+                    .entry(key.clone())
+                    .or_insert(DeferredHole {
+                        span: param.span,
+                        context: format!("parameter '{}' in function '{}'", param.name, func.name),
+                    });
+                self.fn_param_inferred
+                    .entry(key)
+                    .or_insert_with(|| param_ty.clone());
+            }
+            self.current_param_positions.insert(param.name.clone(), idx);
             locals.insert(param.name.clone(), param_ty);
         }
 
@@ -582,12 +629,24 @@ impl<'a> Checker<'a> {
             .get(&func.ret_type)
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
+        if contains_unresolved_type(&ret_type) {
+            self.fn_return_holes
+                .entry(func.name.clone())
+                .or_insert(DeferredHole {
+                    span: func.span,
+                    context: format!("return type in function '{}'", func.name),
+                });
+            self.fn_return_inferred
+                .entry(func.name.clone())
+                .or_insert_with(|| ret_type.clone());
+        }
         self.current_function_ret_type = Some(ret_type.clone());
         self.check_generic_arity(&ret_type, func.span);
 
         if func.is_extern {
             self.check_extern_function_signature(func, &ret_type, &locals);
             self.effect_usage.insert(func.name.clone(), BTreeSet::new());
+            self.current_param_positions.clear();
             self.enforce_import_visibility = previous_enforce;
             self.current_function = previous_function;
             self.current_function_is_async = previous_async;
@@ -687,6 +746,9 @@ impl<'a> Checker<'a> {
             &mut body_ctx,
             false,
         );
+        if contains_unresolved_type(&ret_type) {
+            self.observe_fn_return_hole(&func.name, &body_ty);
+        }
         self.check_mutability_and_borrows(func);
         self.check_resource_protocols(func);
 
@@ -732,6 +794,26 @@ impl<'a> Checker<'a> {
         self.effect_usage
             .insert(func.name.clone(), body_ctx.effects_used);
 
+        let param_inferred = (0..func.params.len())
+            .map(|idx| {
+                self.fn_param_inferred
+                    .get(&(func.name.clone(), idx))
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        let return_inferred = self.fn_return_inferred.get(&func.name).cloned();
+        if let Some(sig) = self.functions.get_mut(&func.name) {
+            for (idx, inferred) in param_inferred.into_iter().enumerate() {
+                if let Some(inferred) = inferred {
+                    sig.params[idx] = merge_types(&sig.params[idx], &inferred);
+                }
+            }
+            if let Some(inferred_ret) = return_inferred {
+                sig.ret = merge_types(&sig.ret, &inferred_ret);
+            }
+        }
+
+        self.current_param_positions.clear();
         self.enforce_import_visibility = previous_enforce;
         self.current_function = previous_function;
         self.current_function_is_async = previous_async;
@@ -1861,6 +1943,18 @@ impl<'a> Checker<'a> {
                 .get(&field.ty)
                 .cloned()
                 .unwrap_or_else(|| "<?>".to_string());
+            if contains_unresolved_type(&ty) {
+                let key = (strukt.name.clone(), field.name.clone());
+                self.struct_field_holes
+                    .entry(key.clone())
+                    .or_insert(DeferredHole {
+                        span: field.span,
+                        context: format!("struct field '{}.{}'", strukt.name, field.name),
+                    });
+                self.struct_field_inferred
+                    .entry(key)
+                    .or_insert_with(|| ty.clone());
+            }
             self.check_generic_arity(&ty, field.span);
         }
 
@@ -1899,6 +1993,134 @@ impl<'a> Checker<'a> {
                 self.check_generic_arity(&ty, variant.span);
             }
         }
+    }
+
+    fn note_typed_hole(&mut self, span: crate::span::Span, inferred: &str, context: &str) {
+        let inferred = if inferred.is_empty() {
+            "<?>".to_string()
+        } else {
+            inferred.to_string()
+        };
+        self.typed_holes.push(TypedHole {
+            file: self.file.to_string(),
+            span,
+            inferred: inferred.clone(),
+            context: context.to_string(),
+        });
+        self.diagnostics.push(
+            Diagnostic::warning(
+                "E6003",
+                format!("typed hole in {context} inferred as '{inferred}'"),
+                self.file,
+                span,
+            )
+            .with_help("replace `_` with the inferred type when ready"),
+        );
+    }
+
+    fn observe_fn_param_hole(&mut self, function: &str, index: usize, observed: &str) {
+        let key = (function.to_string(), index);
+        let merged = self
+            .fn_param_inferred
+            .get(&key)
+            .map(|prev| merge_types(prev, observed))
+            .unwrap_or_else(|| observed.to_string());
+        self.fn_param_inferred.insert(key, merged);
+    }
+
+    fn observe_fn_return_hole(&mut self, function: &str, observed: &str) {
+        let key = function.to_string();
+        let merged = self
+            .fn_return_inferred
+            .get(&key)
+            .map(|prev| merge_types(prev, observed))
+            .unwrap_or_else(|| observed.to_string());
+        self.fn_return_inferred.insert(key, merged);
+    }
+
+    fn observe_struct_field_hole(&mut self, strukt: &str, field: &str, observed: &str) {
+        let key = (strukt.to_string(), field.to_string());
+        let merged = self
+            .struct_field_inferred
+            .get(&key)
+            .map(|prev| merge_types(prev, observed))
+            .unwrap_or_else(|| observed.to_string());
+        self.struct_field_inferred.insert(key, merged);
+    }
+
+    fn flush_deferred_holes(&mut self) {
+        let param_holes = self
+            .fn_param_holes
+            .iter()
+            .map(|(key, hole)| (key.clone(), hole.clone()))
+            .collect::<Vec<_>>();
+        for (key, hole) in param_holes {
+            let inferred = self
+                .fn_param_inferred
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.note_typed_hole(hole.span, &inferred, &hole.context);
+        }
+
+        let return_holes = self
+            .fn_return_holes
+            .iter()
+            .map(|(name, hole)| (name.clone(), hole.clone()))
+            .collect::<Vec<_>>();
+        for (name, hole) in return_holes {
+            let inferred = self
+                .fn_return_inferred
+                .get(&name)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.note_typed_hole(hole.span, &inferred, &hole.context);
+        }
+
+        let struct_field_holes = self
+            .struct_field_holes
+            .iter()
+            .map(|(key, hole)| (key.clone(), hole.clone()))
+            .collect::<Vec<_>>();
+        for (key, hole) in struct_field_holes {
+            let inferred = self
+                .struct_field_inferred
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.note_typed_hole(hole.span, &inferred, &hole.context);
+        }
+    }
+
+    fn refine_variable_with_expected(
+        &mut self,
+        expr: &ir::Expr,
+        expected_ty: &str,
+        locals: &mut BTreeMap<String, String>,
+    ) -> Option<String> {
+        let ir::ExprKind::Var(name) = &expr.kind else {
+            return None;
+        };
+        let local_ty = locals.get(name).cloned()?;
+        let expected_norm = self.normalize_type(expected_ty);
+        if !contains_unresolved_type(&local_ty)
+            || contains_unresolved_type(&expected_norm)
+            || contains_symbolic_generic_type(&expected_norm)
+            || !self.types_compatible(&expected_norm, &local_ty)
+        {
+            return None;
+        }
+        let refined = self.merge_compatible_types(&local_ty, &expected_norm);
+        if contains_unresolved_type(&refined) {
+            return None;
+        }
+        locals.insert(name.clone(), refined.clone());
+        if let Some(function_name) = self.current_function.clone() {
+            if let Some(index) = self.current_param_positions.get(name).copied() {
+                self.observe_fn_param_hole(&function_name, index, &refined);
+            }
+        }
+        Some(refined)
     }
 
     fn check_block(
@@ -1951,7 +2173,18 @@ impl<'a> Checker<'a> {
                                 .with_help("make the initializer type match the annotation"),
                             );
                         }
-                        scope.insert(name.clone(), ann_ty);
+                        let binding_ty = if contains_unresolved_type(&ann_ty) {
+                            let inferred_ty = self.merge_compatible_types(&ann_ty, &expr_ty);
+                            self.note_typed_hole(
+                                *span,
+                                &inferred_ty,
+                                &format!("let binding '{}'", name),
+                            );
+                            inferred_ty
+                        } else {
+                            ann_ty.clone()
+                        };
+                        scope.insert(name.clone(), binding_ty);
                     } else {
                         let expr_ty =
                             self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
@@ -2094,17 +2327,10 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Var(name) => {
                 if let Some(local_ty) = locals.get(name).cloned() {
                     if let Some(expected) = expected_ty {
-                        let expected_norm = self.normalize_type(expected);
-                        if contains_unresolved_type(&local_ty)
-                            && !contains_unresolved_type(&expected_norm)
-                            && !contains_symbolic_generic_type(&expected_norm)
-                            && self.types_compatible(&expected_norm, &local_ty)
+                        if let Some(refined) =
+                            self.refine_variable_with_expected(expr, expected, locals)
                         {
-                            let refined = self.merge_compatible_types(&local_ty, &expected_norm);
-                            if !contains_unresolved_type(&refined) {
-                                locals.insert(name.clone(), refined.clone());
-                                return refined;
-                            }
+                            return refined;
                         }
                     }
                     return local_ty;
@@ -2425,7 +2651,21 @@ impl<'a> Checker<'a> {
                     self.functions.get(&resolved_name).cloned()
                 };
 
-                if let Some(sig) = sig {
+                if let Some(mut sig) = sig {
+                    for (idx, param_ty) in sig.params.iter_mut().enumerate() {
+                        if contains_unresolved_type(param_ty) {
+                            let key = (resolved_name.clone(), idx);
+                            if let Some(inferred) = self.fn_param_inferred.get(&key) {
+                                *param_ty = merge_types(param_ty, inferred);
+                            }
+                        }
+                    }
+                    if contains_unresolved_type(&sig.ret) {
+                        if let Some(inferred_ret) = self.fn_return_inferred.get(&resolved_name) {
+                            sig.ret = merge_types(&sig.ret, inferred_ret);
+                        }
+                    }
+
                     if let Some(module_name) = resolved_module.as_deref() {
                         if let Some(entry) = find_deprecated_api(module_name, &resolved_name) {
                             self.diagnostics.push(
@@ -2687,6 +2927,9 @@ impl<'a> Checker<'a> {
                                 args[idx].span,
                             ));
                         }
+                        if contains_unresolved_type(expected) {
+                            self.observe_fn_param_hole(&resolved_name, idx, &observed_ty);
+                        }
                     }
 
                     if !sig.effects.is_empty() {
@@ -2737,6 +2980,37 @@ impl<'a> Checker<'a> {
                         substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
                     if sig.is_async {
                         ret_ty = format!("Async[{ret_ty}]");
+                    }
+                    if contains_unresolved_type(&ret_ty) {
+                        if let Some(expected) = expected_ty {
+                            let expected_norm = self.normalize_type(expected);
+                            if self.types_compatible(&ret_ty, &expected_norm) {
+                                let merged = self.merge_compatible_types(&ret_ty, &expected_norm);
+                                self.observe_fn_return_hole(&resolved_name, &merged);
+                                ret_ty = merged;
+                            }
+                        }
+                    }
+                    if contains_unresolved_type(&ret_ty) {
+                        self.observe_fn_return_hole(&resolved_name, &ret_ty);
+                    }
+                    let param_inferred = (0..sig.params.len())
+                        .map(|idx| {
+                            self.fn_param_inferred
+                                .get(&(resolved_name.clone(), idx))
+                                .cloned()
+                        })
+                        .collect::<Vec<_>>();
+                    let return_inferred = self.fn_return_inferred.get(&resolved_name).cloned();
+                    if let Some(sig_mut) = self.functions.get_mut(&resolved_name) {
+                        for (idx, inferred) in param_inferred.into_iter().enumerate() {
+                            if let Some(inferred) = inferred {
+                                sig_mut.params[idx] = merge_types(&sig_mut.params[idx], &inferred);
+                            }
+                        }
+                        if let Some(inferred_ret) = return_inferred {
+                            sig_mut.ret = merge_types(&sig_mut.ret, &inferred_ret);
+                        }
                     }
                     if !sig.generic_params.is_empty() && contains_unresolved_type(&ret_ty) {
                         if expected_ty.is_some() {
@@ -3271,8 +3545,22 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::ExprKind::Binary { op, lhs, rhs } => {
-                let left_ty = self.check_expr(lhs, locals, allowed_effects, ctx, contract_mode);
-                let right_ty = self.check_expr(rhs, locals, allowed_effects, ctx, contract_mode);
+                let mut left_ty = self.check_expr(lhs, locals, allowed_effects, ctx, contract_mode);
+                let mut right_ty =
+                    self.check_expr(rhs, locals, allowed_effects, ctx, contract_mode);
+                if contains_unresolved_type(&left_ty) && !contains_unresolved_type(&right_ty) {
+                    if let Some(refined) =
+                        self.refine_variable_with_expected(lhs, &right_ty, locals)
+                    {
+                        left_ty = refined;
+                    }
+                }
+                if contains_unresolved_type(&right_ty) && !contains_unresolved_type(&left_ty) {
+                    if let Some(refined) = self.refine_variable_with_expected(rhs, &left_ty, locals)
+                    {
+                        right_ty = refined;
+                    }
+                }
                 self.check_binary(*op, &left_ty, &right_ty, expr.span)
             }
             ir::ExprKind::Unary { op, expr: inner } => {
@@ -3577,6 +3865,9 @@ impl<'a> Checker<'a> {
                         .unwrap_or_else(|| "<?>".to_string());
                     let found_ty =
                         self.check_expr(value, locals, allowed_effects, ctx, contract_mode);
+                    if contains_unresolved_type(&expected_ty) {
+                        self.observe_struct_field_hole(name, field_name, &found_ty);
+                    }
                     let expected_norm = self.normalize_type(&expected_ty);
                     let found_norm = self.normalize_type(&found_ty);
 
@@ -3687,12 +3978,21 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 }
                 if let Some(info) = self.find_struct(&base_ty) {
+                    let struct_name = base_type_name(&base_ty_norm).to_string();
                     if let Some(field_ty_id) = info.fields.get(field) {
-                        let field_ty = self
+                        let mut field_ty = self
                             .types
                             .get(field_ty_id)
                             .cloned()
                             .unwrap_or_else(|| "<?>".to_string());
+                        if contains_unresolved_type(&field_ty) {
+                            if let Some(inferred) = self
+                                .struct_field_inferred
+                                .get(&(struct_name.clone(), field.clone()))
+                            {
+                                field_ty = merge_types(&field_ty, inferred);
+                            }
+                        }
                         if info.generics.is_empty() {
                             return field_ty;
                         }
@@ -5472,6 +5772,7 @@ fn split_top_level(input: &str) -> Vec<String> {
 mod tests {
     use std::collections::BTreeSet;
 
+    use crate::diagnostics::Severity;
     use crate::{ir_builder::build, parser::parse, resolver::resolve};
 
     use super::{check, extract_generic_args, merge_types, split_top_level};
@@ -5715,5 +6016,67 @@ fn f(flag: Bool) -> Int {
         assert!(d2.is_empty());
         let out = check(&ir, &res, "test.aic");
         assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn typed_holes_warn_and_infer_supported_positions() {
+        let src = r#"
+struct Counter {
+    value: _,
+}
+
+fn plus_one(x: _) -> _ {
+    let y: _ = x + 1;
+    y
+}
+
+fn main() -> Int {
+    let counter = Counter { value: 41 };
+    let out: _ = plus_one(counter.value);
+    out
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+
+        assert!(
+            !out.diagnostics
+                .iter()
+                .any(|diag| matches!(diag.severity, Severity::Error)),
+            "unexpected errors: {:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|diag| diag.code == "E6003" && matches!(diag.severity, Severity::Warning)),
+            "expected typed-hole warning E6003, got: {:#?}",
+            out.diagnostics
+        );
+        assert_eq!(out.holes.len(), 5, "holes={:#?}", out.holes);
+        assert!(out
+            .holes
+            .iter()
+            .any(|hole| hole.context == "struct field 'Counter.value'" && hole.inferred == "Int"));
+        assert!(out.holes.iter().any(|hole| {
+            hole.context == "parameter 'x' in function 'plus_one'" && hole.inferred == "Int"
+        }));
+        assert!(out
+            .holes
+            .iter()
+            .any(|hole| hole.context == "return type in function 'plus_one'"
+                && hole.inferred == "Int"));
+        assert!(out
+            .holes
+            .iter()
+            .any(|hole| hole.context == "let binding 'y'" && hole.inferred == "Int"));
+        assert!(out
+            .holes
+            .iter()
+            .any(|hole| hole.context == "let binding 'out'" && hole.inferred == "Int"));
     }
 }

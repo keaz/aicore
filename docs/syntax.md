@@ -56,11 +56,12 @@ field          = ident ":" type ;
 ## Type grammar
 
 ```ebnf
-type           = unit_type | named_type ;
+type           = unit_type | named_type | hole_type ;
 unit_type      = "(" ")" ;
 named_type     = type_name type_args? ;
 type_name      = ident ("::" ident)* ;
 type_args      = "[" type ("," type)* ","? "]" ;
+hole_type      = "_" ;
 ```
 
 ## Statement grammar

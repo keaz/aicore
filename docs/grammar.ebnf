@@ -48,11 +48,12 @@ param          = ident ":" type ;
 fields         = field ("," field)* ","? ;
 field          = ident ":" type ;
 
-type           = unit_type | named_type ;
+type           = unit_type | named_type | hole_type ;
 unit_type      = "(" ")" ;
 named_type     = type_name type_args? ;
 type_name      = ident ("::" ident)* ;
 type_args      = "[" type ("," type)* ","? "]" ;
+hole_type      = "_" ;
 
 block          = "{" stmt* tail_expr? "}" ;
 tail_expr      = expr ;

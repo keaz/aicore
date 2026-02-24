@@ -179,6 +179,7 @@ pub struct TypeExpr {
 pub enum TypeKind {
     Unit,
     Named { name: String, args: Vec<TypeExpr> },
+    Hole,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

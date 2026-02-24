@@ -257,6 +257,7 @@ fn render_type(ty: &ast::TypeExpr) -> String {
                 )
             }
         }
+        ast::TypeKind::Hole => "_".to_string(),
     }
 }
 

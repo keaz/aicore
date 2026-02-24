@@ -937,6 +937,7 @@ fn render_type_expr(ty: &ast::TypeExpr) -> String {
                 format!("{}<{}>", name, inner)
             }
         }
+        ast::TypeKind::Hole => "_".to_string(),
     }
 }
 

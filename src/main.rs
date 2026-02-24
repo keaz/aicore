@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -87,6 +88,8 @@ enum Command {
         json: bool,
         #[arg(long, conflicts_with = "json")]
         sarif: bool,
+        #[arg(long, conflicts_with_all = ["json", "sarif"])]
+        show_holes: bool,
         #[arg(long)]
         offline: bool,
         #[arg(
@@ -578,6 +581,18 @@ struct AstImportEdge {
     to: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct CheckHolesResponse {
+    holes: Vec<CheckHoleEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+struct CheckHoleEntry {
+    line: usize,
+    inferred: String,
+    context: String,
+}
+
 fn build_ast_response(front: FrontendOutput) -> AstJsonResponse {
     let FrontendOutput {
         ast,
@@ -766,22 +781,28 @@ fn run_cli() -> anyhow::Result<i32> {
             input,
             json,
             sarif,
+            show_holes,
             offline,
             max_errors,
         } => {
-            let diagnostics = collect_diagnostics(&input, offline)?;
+            let (diagnostics, holes) = collect_check_data(&input, offline)?;
             let has_any_errors = has_errors(&diagnostics);
-            let diagnostics = sort_and_cap_diagnostics(diagnostics, max_errors);
-
-            if sarif {
-                let sarif = diagnostics_to_sarif(&diagnostics, "aic", env!("CARGO_PKG_VERSION"));
-                println!("{}", serde_json::to_string_pretty(&sarif)?);
-            } else if json {
-                println!("{}", serde_json::to_string_pretty(&diagnostics)?);
-            } else if diagnostics.is_empty() {
-                println!("check: ok");
+            if show_holes {
+                let response = typed_holes_response(holes);
+                println!("{}", serde_json::to_string_pretty(&response)?);
             } else {
-                print!("{}", diagnostics_pretty(&diagnostics));
+                let diagnostics = sort_and_cap_diagnostics(diagnostics, max_errors);
+                if sarif {
+                    let sarif =
+                        diagnostics_to_sarif(&diagnostics, "aic", env!("CARGO_PKG_VERSION"));
+                    println!("{}", serde_json::to_string_pretty(&sarif)?);
+                } else if json {
+                    println!("{}", serde_json::to_string_pretty(&diagnostics)?);
+                } else if diagnostics.is_empty() {
+                    println!("check: ok");
+                } else {
+                    print!("{}", diagnostics_pretty(&diagnostics));
+                }
             }
 
             if has_any_errors {
@@ -2454,6 +2475,9 @@ fn repl_type_expr_name(ty: &aicore::ast::TypeExpr) -> Result<&'static str, Strin
                 other => Err(format!("unsupported type annotation `{other}` in repl")),
             }
         }
+        aicore::ast::TypeKind::Hole => {
+            Err("typed hole `_` annotations are not supported in repl".to_string())
+        }
     }
 }
 
@@ -2761,26 +2785,79 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
     Ok(EXIT_OK)
 }
 
-fn collect_diagnostics(input: &Path, offline: bool) -> anyhow::Result<Vec<Diagnostic>> {
+fn typed_holes_response(holes: Vec<aicore::typecheck::TypedHole>) -> CheckHolesResponse {
+    let files = holes
+        .iter()
+        .map(|hole| hole.file.clone())
+        .collect::<BTreeSet<_>>();
+    let multiple_files = files.len() > 1;
+
+    let mut source_cache = BTreeMap::<String, String>::new();
+    let mut entries = holes
+        .into_iter()
+        .map(|hole| {
+            let source = source_cache
+                .entry(hole.file.clone())
+                .or_insert_with(|| fs::read_to_string(&hole.file).unwrap_or_default());
+            let line = line_number_for_offset(source, hole.span.start);
+            let context = if multiple_files {
+                format!("{}: {}", hole.file, hole.context)
+            } else {
+                hole.context
+            };
+            CheckHoleEntry {
+                line,
+                inferred: hole.inferred,
+                context,
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries.dedup();
+    CheckHolesResponse { holes: entries }
+}
+
+fn line_number_for_offset(source: &str, offset: usize) -> usize {
+    if source.is_empty() {
+        return 1;
+    }
+    let bytes = source.as_bytes();
+    let upto = offset.min(bytes.len());
+    1 + bytes[..upto].iter().filter(|&&byte| byte == b'\n').count()
+}
+
+fn collect_check_data(
+    input: &Path,
+    offline: bool,
+) -> anyhow::Result<(Vec<Diagnostic>, Vec<aicore::typecheck::TypedHole>)> {
     if input.is_dir() {
         match workspace_build_plan(input) {
             Ok(Some(plan)) => {
                 let mut all = Vec::new();
+                let mut holes = Vec::new();
                 for member in &plan.members {
                     let entry = member.root.join(&member.main);
                     let front = run_frontend_with_options(&entry, FrontendOptions { offline })?;
                     all.extend(front.diagnostics);
+                    holes.extend(front.typecheck.holes);
                 }
-                Ok(all)
+                Ok((all, holes))
             }
             Ok(None) => {
-                Ok(run_frontend_with_options(input, FrontendOptions { offline })?.diagnostics)
+                let front = run_frontend_with_options(input, FrontendOptions { offline })?;
+                Ok((front.diagnostics, front.typecheck.holes))
             }
-            Err(diag) => Ok(vec![diag]),
+            Err(diag) => Ok((vec![diag], Vec::new())),
         }
     } else {
-        Ok(run_frontend_with_options(input, FrontendOptions { offline })?.diagnostics)
+        let front = run_frontend_with_options(input, FrontendOptions { offline })?;
+        Ok((front.diagnostics, front.typecheck.holes))
     }
+}
+
+fn collect_diagnostics(input: &Path, offline: bool) -> anyhow::Result<Vec<Diagnostic>> {
+    let (diagnostics, _) = collect_check_data(input, offline)?;
+    Ok(diagnostics)
 }
 
 fn resolve_native_link_options(project_root: &Path) -> anyhow::Result<LinkOptions> {
