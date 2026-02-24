@@ -2,7 +2,7 @@
   "name": "aic-language-tools",
   "displayName": "AICore Language Tools",
   "description": "VS Code integration for AICore via aic lsp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "keaz",
   "license": "MIT",
   "engines": {
@@ -13,6 +13,7 @@
   ],
   "activationEvents": [
     "onLanguage:aic",
+    "onCommand:aic.showLanguageServerOutput",
     "onCommand:aic.restartLanguageServer"
   ],
   "main": "./dist/extension.js",
@@ -30,7 +31,24 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "aic",
+        "scopeName": "source.aic",
+        "path": "./syntaxes/aic.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "aic",
+        "path": "./snippets/aic.json"
+      }
+    ],
     "commands": [
+      {
+        "command": "aic.showLanguageServerOutput",
+        "title": "AICore: Show Language Server Output"
+      },
       {
         "command": "aic.restartLanguageServer",
         "title": "AICore: Restart Language Server"
@@ -65,16 +83,28 @@
           "description": "Trace level for AICore language server"
         }
       }
+    },
+    "configurationDefaults": {
+      "[aic]": {
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      }
     }
   },
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -w -p ."
   },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
-    "typescript": "^5.4.0",
-    "vscode-languageclient": "^9.0.1"
+    "typescript": "^5.4.0"
   }
 }

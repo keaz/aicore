@@ -1,0 +1,116 @@
+{
+  "Function with effects": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:params}) -> ${3:ReturnType} effects { ${4:io} } {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Function declaration with effects block"
+  },
+  "Async function": {
+    "prefix": "afn",
+    "body": [
+      "async fn ${1:name}(${2:params}) -> ${3:ReturnType} effects { ${4:io} } {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Async function declaration"
+  },
+  "Struct definition": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "\t${2:field}: ${3:Type},",
+      "}"
+    ],
+    "description": "Struct definition"
+  },
+  "Enum definition": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:Variant},",
+      "}"
+    ],
+    "description": "Enum definition"
+  },
+  "Trait definition": {
+    "prefix": "trait",
+    "body": [
+      "trait ${1:Name}[${2:T}] {",
+      "\tfn ${3:method}(self: ${2:T}) -> ${4:ReturnType};",
+      "}"
+    ],
+    "description": "Trait declaration"
+  },
+  "Impl block": {
+    "prefix": "impl",
+    "body": [
+      "impl ${1:Trait}[${2:Type}] {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Impl block"
+  },
+  "Match expression": {
+    "prefix": "match",
+    "body": [
+      "match ${1:expr} {",
+      "\t${2:Pattern} => ${3:result},",
+      "\t_ => ${4:default},",
+      "}"
+    ],
+    "description": "Match expression skeleton"
+  },
+  "Option match": {
+    "prefix": "iflet",
+    "body": [
+      "match ${1:expr} {",
+      "\tSome(${2:value}) => $0,",
+      "\tNone => ${3:default},",
+      "}"
+    ],
+    "description": "If-let style Option match"
+  },
+  "Test function": {
+    "prefix": "test",
+    "body": [
+      "#[test]",
+      "fn test_${1:name}() {",
+      "\tassert_eq(${2:actual}, ${3:expected});",
+      "}"
+    ],
+    "description": "Unit test skeleton"
+  },
+  "Module template": {
+    "prefix": "mod",
+    "body": [
+      "module ${1:name};",
+      "",
+      "import std.${2:io};"
+    ],
+    "description": "Module declaration and import"
+  },
+  "Requires contract": {
+    "prefix": "req",
+    "body": [
+      "requires ${1:condition}"
+    ],
+    "description": "Function precondition contract"
+  },
+  "Ensures contract": {
+    "prefix": "ens",
+    "body": [
+      "ensures ${1:condition}"
+    ],
+    "description": "Function postcondition contract"
+  },
+  "Effects declaration": {
+    "prefix": "eff",
+    "body": [
+      "effects { ${1:io} }"
+    ],
+    "description": "Effects declaration"
+  }
+}

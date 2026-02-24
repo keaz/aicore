@@ -34,6 +34,14 @@ fn std_api_machine_readable_doc() -> PathBuf {
     repo_root().join("docs/std-api/machine-readable.md")
 }
 
+fn vscode_extension_manifest_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/package.json")
+}
+
+fn vscode_snippets_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/snippets/aic.json")
+}
+
 fn extract_docs_test_commands(doc: &str) -> Vec<(bool, String)> {
     let mut commands = Vec::new();
     let mut in_block = false;
@@ -226,6 +234,21 @@ fn modules_from_api_json(path: &Path) -> Vec<String> {
         .filter_map(|module| module.get("module").and_then(Value::as_str))
         .map(str::to_string)
         .collect()
+}
+
+fn snippet_body_text(snippet: &Value) -> String {
+    match snippet.get("body") {
+        Some(Value::String(line)) => line.to_string(),
+        Some(Value::Array(lines)) => lines
+            .iter()
+            .map(|line| {
+                line.as_str()
+                    .unwrap_or_else(|| panic!("snippet body line must be a string: {line:?}"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => panic!("snippet body must be string or array of strings, got {other:?}"),
+    }
 }
 
 fn assert_step_shape(step: &TutorialStep, chapter_file: &str) {
@@ -792,4 +815,129 @@ fn std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs(
             expected_module
         );
     }
+}
+
+#[test]
+fn vscode_snippets_manifest_registers_expected_aic_prefixes() {
+    let manifest_path = vscode_extension_manifest_path();
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest: Value = serde_json::from_str(&manifest_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", manifest_path.display()));
+
+    let snippet_entries = manifest
+        .get("contributes")
+        .and_then(|contributes| contributes.get("snippets"))
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing contributes.snippets array in {}",
+                manifest_path.display()
+            )
+        });
+    assert!(
+        snippet_entries.iter().any(|entry| {
+            entry.get("language").and_then(Value::as_str) == Some("aic")
+                && entry.get("path").and_then(Value::as_str) == Some("./snippets/aic.json")
+        }),
+        "{} must register ./snippets/aic.json for language \"aic\"",
+        manifest_path.display()
+    );
+
+    let snippets_path = vscode_snippets_path();
+    let snippets_raw = fs::read_to_string(&snippets_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", snippets_path.display()));
+    let snippets_json: Value = serde_json::from_str(&snippets_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", snippets_path.display()));
+    let snippets = snippets_json
+        .as_object()
+        .unwrap_or_else(|| panic!("{} must be a JSON object", snippets_path.display()));
+
+    let mut prefixes = BTreeSet::new();
+    for (name, snippet) in snippets {
+        let prefix = snippet
+            .get("prefix")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("snippet '{}' is missing string prefix", name));
+        let description = snippet
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("snippet '{}' is missing string description", name));
+        assert!(
+            !description.trim().is_empty(),
+            "snippet '{}' description must not be empty",
+            name
+        );
+        let body = snippet_body_text(snippet);
+        assert!(
+            !body.trim().is_empty(),
+            "snippet '{}' body must not be empty",
+            name
+        );
+        prefixes.insert(prefix.to_string());
+    }
+
+    for expected in [
+        "fn", "afn", "struct", "enum", "trait", "impl", "match", "iflet", "test", "mod", "req",
+        "ens", "eff",
+    ] {
+        assert!(
+            prefixes.contains(expected),
+            "missing snippet prefix '{}' in {}",
+            expected,
+            snippets_path.display()
+        );
+    }
+
+    let fn_snippet = snippets
+        .values()
+        .find(|snippet| snippet.get("prefix").and_then(Value::as_str) == Some("fn"))
+        .expect("fn snippet must exist");
+    let fn_body = snippet_body_text(fn_snippet);
+    assert!(
+        fn_body.contains("${1:name}"),
+        "fn snippet must expose tabstop for function name"
+    );
+    assert!(
+        fn_body.contains("effects {"),
+        "fn snippet must include effects declaration"
+    );
+}
+
+#[test]
+fn vscode_snippets_example_is_listed_in_ci_and_checks() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/snippets_showcase.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "snippets example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("check")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic check {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic check {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
 }

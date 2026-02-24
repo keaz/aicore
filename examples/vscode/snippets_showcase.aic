@@ -1,0 +1,42 @@
+module examples.vscode.snippets_showcase;
+
+import std.io;
+
+struct Counter {
+    value: Int,
+}
+
+enum Payload {
+    Value(Int),
+    Empty,
+}
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+impl Score[Counter] {
+    fn score(self: Counter) -> Int {
+        self.value
+    }
+}
+
+fn ensure_non_negative(value: Int) -> Int effects { io } requires value >= 0 ensures result >= 0 {
+    value
+}
+
+fn unpack(payload: Payload) -> Int {
+    match payload {
+        Value(v) => v,
+        Empty => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let counter = Counter { value: 42 };
+    let payload = Value(counter.score());
+    let parsed = unpack(payload);
+    let checked = ensure_non_negative(parsed);
+    print_int(checked);
+    0
+}
