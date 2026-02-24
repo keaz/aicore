@@ -42,6 +42,10 @@ fn vscode_snippets_path() -> PathBuf {
     repo_root().join("tools/vscode-aic/snippets/aic.json")
 }
 
+fn vscode_extension_source_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/src/extension.ts")
+}
+
 fn extract_docs_test_commands(doc: &str) -> Vec<(bool, String)> {
     let mut commands = Vec::new();
     let mut in_block = false;
@@ -912,6 +916,74 @@ fn vscode_snippets_example_is_listed_in_ci_and_checks() {
     assert!(
         example_path.is_file(),
         "snippets example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("check")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic check {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic check {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+}
+
+#[test]
+fn vscode_status_bar_wires_lifecycle_and_diagnostics_state() {
+    let source_path = vscode_extension_source_path();
+    let source = fs::read_to_string(&source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+
+    for marker in [
+        "type LanguageServerStatus = 'starting' | 'running' | 'error' | 'stopped';",
+        "setStatusBarState('starting'",
+        "setStatusBarState('running'",
+        "setStatusBarState('error'",
+        "setStatusBarState('stopped'",
+        "vscode.languages.onDidChangeDiagnostics",
+        "aic.showLanguageServerOutput",
+        "aic.restartLanguageServer",
+        "spawnSync(command, ['--version']",
+        "$(loading~spin) AICore",
+        "$(check) AICore",
+        "$(error) AICore",
+        "$(warning) AICore:",
+    ] {
+        assert!(
+            source.contains(marker),
+            "{} is missing expected status bar marker: {}",
+            source_path.display(),
+            marker
+        );
+    }
+}
+
+#[test]
+fn vscode_status_bar_example_is_listed_in_ci_and_checks() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/status_bar_demo.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "status bar example missing: {}",
         example_path.display()
     );
 

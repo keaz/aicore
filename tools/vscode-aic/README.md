@@ -11,6 +11,7 @@ aic lsp
 - Syntax highlighting for `.aic` files
 - Autocomplete (language server completions + editor suggestions)
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
+- Status bar language server health indicator (starting/running/error/stopped + diagnostics count)
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)
