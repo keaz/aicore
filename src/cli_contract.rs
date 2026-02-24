@@ -37,7 +37,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "check",
         description: "Type/effect/contracts checks without compilation",
-        stable_flags: &["--json", "--sarif", "--offline"],
+        stable_flags: &["--json", "--sarif", "--offline", "--warn-unused"],
         output_modes: &["text", "json", "sarif"],
     },
     CommandContract {
@@ -77,8 +77,10 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
             "--json",
             "--sarif",
             "--offline",
+            "--warn-unused",
             "subcommands:apply-fixes",
             "apply-fixes --dry-run",
+            "apply-fixes --warn-unused",
         ],
         output_modes: &["text", "json", "sarif", "fix-json"],
     },

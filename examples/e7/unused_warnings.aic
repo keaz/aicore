@@ -1,0 +1,15 @@
+module e7.unused_warnings;
+import std.io;
+
+fn helper() -> Int {
+    1
+}
+
+fn dead() -> Int {
+    2
+}
+
+fn main() -> Int {
+    let scratch = helper();
+    0
+}

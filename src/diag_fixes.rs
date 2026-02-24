@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::{Diagnostic, SuggestedFix};
 
-const SAFE_FIX_CODES: &[&str] = &["E1033", "E1034", "E1041", "E1062"];
+const SAFE_FIX_CODES: &[&str] = &["E1033", "E1034", "E1041", "E1062", "E6004", "E6006"];
 const FIX_PROTOCOL_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -298,6 +298,18 @@ mod tests {
         assert_eq!(plan.applied_edits.len(), 1);
         assert_eq!(plan.conflicts.len(), 1);
         assert!(plan.conflicts[0].message.contains("conflicts with"));
+    }
+
+    #[test]
+    fn unused_warning_fix_codes_are_treated_as_safe() {
+        let diagnostics = vec![
+            make_diag("E6004", "main.aic", 0, 12, Some("")),
+            make_diag("E6006", "main.aic", 22, 29, Some("_unused")),
+        ];
+
+        let plan = collect_safe_fix_plan(&diagnostics);
+        assert_eq!(plan.applied_edits.len(), 2);
+        assert!(plan.conflicts.is_empty());
     }
 
     #[test]

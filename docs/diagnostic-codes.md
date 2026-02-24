@@ -94,6 +94,9 @@ Recent core-language additions:
 - `E5035`: closure helper return type mismatch during backend lowering.
 - `E5036`: JSON encode/decode for function values is unsupported.
 - `E6003`: typed hole (`_`) warning with inferred type/context.
+- `E6004`: unused import warning with safe remove-import autofix.
+- `E6005`: unreachable/unused function warning.
+- `E6006`: unused variable warning with safe underscore-prefix autofix.
 
 ## IO + Runtime Quick Reference
 
@@ -114,6 +117,9 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
 | `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |
+| `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
+| `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
+| `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |
 
 ## Change policy
 

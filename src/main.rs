@@ -22,7 +22,7 @@ use aicore::diagnostics::{Diagnostic, Severity};
 use aicore::docgen::generate_docs;
 use aicore::driver::{
     diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
-    FrontendOptions, FrontendOutput,
+    sort_diagnostics, FrontendOptions, FrontendOutput,
 };
 use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
@@ -92,6 +92,8 @@ enum Command {
         show_holes: bool,
         #[arg(long)]
         offline: bool,
+        #[arg(long)]
+        warn_unused: bool,
         #[arg(
             long,
             value_name = "N",
@@ -159,6 +161,8 @@ enum Command {
         sarif: bool,
         #[arg(long)]
         offline: bool,
+        #[arg(long)]
+        warn_unused: bool,
     },
     Explain {
         code: String,
@@ -316,6 +320,8 @@ enum DiagSubcommand {
         json: bool,
         #[arg(long)]
         offline: bool,
+        #[arg(long)]
+        warn_unused: bool,
     },
 }
 
@@ -783,9 +789,10 @@ fn run_cli() -> anyhow::Result<i32> {
             sarif,
             show_holes,
             offline,
+            warn_unused,
             max_errors,
         } => {
-            let (diagnostics, holes) = collect_check_data(&input, offline)?;
+            let (diagnostics, holes) = collect_check_data(&input, offline, warn_unused)?;
             let has_any_errors = has_errors(&diagnostics);
             if show_holes {
                 let response = typed_holes_response(holes);
@@ -858,7 +865,7 @@ fn run_cli() -> anyhow::Result<i32> {
             report,
             offline,
         } => {
-            let diagnostics = collect_diagnostics(&input, offline)?;
+            let diagnostics = collect_diagnostics(&input, offline, false)?;
             let mut coverage_report = coverage::build_report(&input, &diagnostics)?;
             if check {
                 coverage::apply_threshold(&mut coverage_report, min);
@@ -954,14 +961,17 @@ fn run_cli() -> anyhow::Result<i32> {
             json,
             sarif,
             offline,
+            warn_unused: diag_warn_unused,
         } => match command {
             Some(DiagSubcommand::ApplyFixes {
                 input,
                 dry_run,
                 json,
                 offline,
+                warn_unused: apply_warn_unused,
             }) => {
-                let diagnostics = collect_diagnostics(&input, offline)?;
+                let diagnostics =
+                    collect_diagnostics(&input, offline, diag_warn_unused || apply_warn_unused)?;
 
                 let response = apply_safe_fixes(&diagnostics, dry_run)?;
                 if json {
@@ -993,7 +1003,7 @@ fn run_cli() -> anyhow::Result<i32> {
                 }
             }
             None => {
-                let diagnostics = collect_diagnostics(&input, offline)?;
+                let diagnostics = collect_diagnostics(&input, offline, diag_warn_unused)?;
 
                 if sarif {
                     let sarif =
@@ -2829,6 +2839,7 @@ fn line_number_for_offset(source: &str, offset: usize) -> usize {
 fn collect_check_data(
     input: &Path,
     offline: bool,
+    warn_unused: bool,
 ) -> anyhow::Result<(Vec<Diagnostic>, Vec<aicore::typecheck::TypedHole>)> {
     if input.is_dir() {
         match workspace_build_plan(input) {
@@ -2838,25 +2849,65 @@ fn collect_check_data(
                 for member in &plan.members {
                     let entry = member.root.join(&member.main);
                     let front = run_frontend_with_options(&entry, FrontendOptions { offline })?;
-                    all.extend(front.diagnostics);
-                    holes.extend(front.typecheck.holes);
+                    let (diagnostics, member_holes) =
+                        finalize_frontend_output(front, warn_unused, &entry);
+                    all.extend(diagnostics);
+                    holes.extend(member_holes);
                 }
                 Ok((all, holes))
             }
             Ok(None) => {
                 let front = run_frontend_with_options(input, FrontendOptions { offline })?;
-                Ok((front.diagnostics, front.typecheck.holes))
+                Ok(finalize_frontend_output(
+                    front,
+                    warn_unused,
+                    &unused_warning_source_path(input),
+                ))
             }
             Err(diag) => Ok((vec![diag], Vec::new())),
         }
     } else {
         let front = run_frontend_with_options(input, FrontendOptions { offline })?;
-        Ok((front.diagnostics, front.typecheck.holes))
+        Ok(finalize_frontend_output(front, warn_unused, input))
     }
 }
 
-fn collect_diagnostics(input: &Path, offline: bool) -> anyhow::Result<Vec<Diagnostic>> {
-    let (diagnostics, _) = collect_check_data(input, offline)?;
+fn finalize_frontend_output(
+    mut front: FrontendOutput,
+    warn_unused: bool,
+    source_path: &Path,
+) -> (Vec<Diagnostic>, Vec<aicore::typecheck::TypedHole>) {
+    if warn_unused {
+        if let Ok(source) = fs::read_to_string(source_path) {
+            let source_file = source_path.to_string_lossy().to_string();
+            let warnings = aicore::unused_analysis::analyze_unused_warnings(
+                &front.ast,
+                &front.resolution,
+                &front.item_modules,
+                &source_file,
+                &source,
+            );
+            front.diagnostics.extend(warnings);
+            sort_diagnostics(&mut front.diagnostics);
+        }
+    }
+    (front.diagnostics, front.typecheck.holes)
+}
+
+fn unused_warning_source_path(input: &Path) -> PathBuf {
+    if input.is_dir() {
+        input.join("src/main.aic")
+    } else {
+        input.to_path_buf()
+    }
+}
+
+fn collect_diagnostics(
+    input: &Path,
+    offline: bool,
+    warn_unused: bool,
+) -> anyhow::Result<Vec<Diagnostic>> {
+    let (diagnostics, _) = collect_check_data(input, offline, warn_unused)?;
     Ok(diagnostics)
 }
 

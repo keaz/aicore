@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from /Users/kasunranasinghe/Projects/Rust/aicore/src/diagnostic_codes.rs (245 codes).
+This catalog covers all registered diagnostics from /Users/kasunranasinghe/Projects/Rust/aicore/src/diagnostic_codes.rs (248 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -269,3 +269,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E5036` | JSON encode/decode for function values is unsupported. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E6001` | Deprecated std API usage warning. | `fn main() -> Int effects { time } { std.time.now() }` | `fn main() -> Int effects { time } { std.time.now_ms() }` |
 | `E6002` | Std-compat check found a baseline compatibility break. | `fn main() -> Int effects { time } { std.time.now() }` | `fn main() -> Int effects { time } { std.time.now_ms() }` |
+| `E6003` | Typed hole (`_`) accepted with inferred type/context. | `fn id(x: _) -> _ { x }` | `fn id(x: Int) -> Int { x }` |
+| `E6004` | Import is declared but not used. | `module app.main; import std.io; fn main() -> Int { 0 }` | `module app.main; fn main() -> Int { 0 }` |
+| `E6005` | Function is unreachable from entrypoint or otherwise unused. | `fn dead() -> Int { 1 } fn main() -> Int { 0 }` | `fn main() -> Int { 0 }` |
+| `E6006` | Local variable is never used. | `fn main() -> Int { let value = 1; 0 }` | `fn main() -> Int { let _value = 1; 0 }` |

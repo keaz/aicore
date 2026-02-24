@@ -129,6 +129,7 @@ Check mode:
 - text (default)
 - `--json` (conforms to `docs/diagnostics.schema.json`)
 - `--sarif` (SARIF 2.1.0 structure)
+- `--warn-unused` (opt-in warnings for unused imports, unreachable/unused functions, and unused variables)
 - `aic check --show-holes` emits typed-hole inference JSON:
   - `{"holes":[{"line":<line>,"inferred":"<type>","context":"..."}]}`
 
@@ -139,11 +140,14 @@ Autofix API:
 ```bash
 aic diag apply-fixes <file-or-workspace> --dry-run --json
 aic diag apply-fixes <file-or-workspace> --json
+aic diag apply-fixes <file-or-workspace> --warn-unused --dry-run --json
+aic diag apply-fixes <file-or-workspace> --warn-unused --json
 ```
 
 - Dry-run mode computes deterministic edit plans without writing files.
 - Apply mode writes only non-conflicting safe edits.
 - Conflicts are reported in `conflicts[]` and produce non-zero exit.
+- `--warn-unused` extends fix planning with unused-import and unused-variable safe edits.
 
 Incremental daemon API:
 

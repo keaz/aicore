@@ -223,6 +223,7 @@ fn cli_help_snapshots_are_stable() {
         "--sarif",
         "--show-holes",
         "--offline",
+        "--warn-unused",
         "--max-errors <N>",
     ] {
         assert!(
@@ -509,6 +510,100 @@ fn check_show_holes_outputs_structured_hole_report() {
             .unwrap_or_default()
             .contains("let binding")
     }));
+}
+
+#[test]
+fn check_warn_unused_emits_deterministic_agent_readable_warnings() {
+    let first = run_aic(&[
+        "check",
+        "examples/e7/unused_warnings.aic",
+        "--warn-unused",
+        "--json",
+    ]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E6004"),
+        "missing E6004: {diagnostics:#}"
+    );
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E6005"),
+        "missing E6005: {diagnostics:#}"
+    );
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E6006"),
+        "missing E6006: {diagnostics:#}"
+    );
+    assert!(
+        items
+            .iter()
+            .all(|diag| diag["severity"].as_str() == Some("warning")),
+        "expected only warning severities: {diagnostics:#}"
+    );
+
+    let import_diag = items
+        .iter()
+        .find(|diag| diag["code"] == "E6004")
+        .expect("missing E6004 diagnostic");
+    assert!(
+        import_diag["suggested_fixes"]
+            .as_array()
+            .expect("E6004 fixes array")
+            .iter()
+            .any(|fix| fix["replacement"].as_str() == Some("")),
+        "expected import removal fix: {import_diag:#}"
+    );
+
+    let variable_diag = items
+        .iter()
+        .find(|diag| diag["code"] == "E6006")
+        .expect("missing E6006 diagnostic");
+    assert!(
+        variable_diag["suggested_fixes"]
+            .as_array()
+            .expect("E6006 fixes array")
+            .iter()
+            .any(|fix| fix["replacement"].as_str() == Some("_scratch")),
+        "expected variable prefix fix: {variable_diag:#}"
+    );
+
+    let second = run_aic(&[
+        "check",
+        "examples/e7/unused_warnings.aic",
+        "--warn-unused",
+        "--json",
+    ]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "expected deterministic warning json output"
+    );
+}
+
+#[test]
+fn check_without_warn_unused_preserves_existing_behavior() {
+    let out = run_aic(&["check", "examples/e7/unused_warnings.aic", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert!(
+        !items.iter().any(|diag| {
+            matches!(
+                diag["code"].as_str(),
+                Some("E6004") | Some("E6005") | Some("E6006")
+            )
+        }),
+        "unused warnings should be opt-in only; diagnostics={diagnostics:#}"
+    );
 }
 
 #[test]
@@ -1279,6 +1374,79 @@ fn diag_apply_fixes_dry_run_and_apply_are_deterministic() {
         "check stdout={}\nstderr={}",
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+#[test]
+fn diag_apply_fixes_supports_warn_unused_edits() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module warnunused.demo;\n",
+            "import std.io;\n",
+            "fn helper() -> Int {\n",
+            "    1\n",
+            "}\n",
+            "fn main() -> Int {\n",
+            "    let scratch = helper();\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let source_path_str = source_path.to_string_lossy().to_string();
+    let dry_run = run_aic(&[
+        "diag",
+        "apply-fixes",
+        &source_path_str,
+        "--warn-unused",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(
+        dry_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&dry_run.stdout),
+        String::from_utf8_lossy(&dry_run.stderr)
+    );
+    let dry_run_json: serde_json::Value =
+        serde_json::from_slice(&dry_run.stdout).expect("dry-run json");
+    let edits = dry_run_json["applied_edits"]
+        .as_array()
+        .expect("applied edits array");
+    assert!(
+        edits.len() >= 2,
+        "expected at least import+variable edits, got: {dry_run_json:#}"
+    );
+
+    let apply = run_aic(&[
+        "diag",
+        "apply-fixes",
+        &source_path_str,
+        "--warn-unused",
+        "--json",
+    ]);
+    assert_eq!(
+        apply.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&apply.stdout),
+        String::from_utf8_lossy(&apply.stderr)
+    );
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten");
+    assert!(
+        !rewritten.contains("import std.io;"),
+        "expected unused import to be removed: {rewritten}"
+    );
+    assert!(
+        rewritten.contains("let _scratch = helper();"),
+        "expected unused variable to be prefixed: {rewritten}"
     );
 }
 
