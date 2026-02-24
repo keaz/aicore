@@ -10674,7 +10674,9 @@ impl<'a> Generator<'a> {
             "trim_end" | "aic_string_trim_end_intrinsic" => "trim_end",
             "to_upper" | "aic_string_to_upper_intrinsic" => "to_upper",
             "to_lower" | "aic_string_to_lower_intrinsic" => "to_lower",
-            "replace" | "aic_string_replace_intrinsic" => "replace",
+            "replace" | "aic_string_replace_intrinsic" | "aic_time_string_replace_intrinsic" => {
+                "replace"
+            }
             "repeat" | "aic_string_repeat_intrinsic" => "repeat",
             "parse_int" | "aic_string_parse_int_intrinsic" => "parse_int",
             "parse_float" | "aic_string_parse_float_intrinsic" => "parse_float",
