@@ -15,6 +15,7 @@ aic lsp
 - Inline error lens diagnostics with severity colors (error/warning/info)
 - Semantic highlighting for mutable/readonly variables, effectful calls, and deprecated APIs
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
+- Call hierarchy (`textDocument/prepareCallHierarchy`, incoming/outgoing calls)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)
 - Automated extension integration tests (activation, LSP lifecycle, diagnostics, completion, restart command, grammar contract)

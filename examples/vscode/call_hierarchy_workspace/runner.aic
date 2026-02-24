@@ -1,0 +1,5 @@
+module examples.vscode.call_hierarchy.runner;
+
+fn invoke() -> Int {
+    examples.vscode.call_hierarchy.math.normalize(41)
+}

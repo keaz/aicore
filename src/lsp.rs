@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -42,6 +42,31 @@ struct SymbolDecl {
     signature: String,
     file: PathBuf,
     span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CallHierarchyDecl {
+    name: String,
+    module: Option<String>,
+    file: PathBuf,
+    span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CallHierarchyCallSite {
+    caller_name: String,
+    caller_module: Option<String>,
+    callee_name: String,
+    callee_module: Option<String>,
+    file: PathBuf,
+    span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CallHierarchyContext {
+    call_graph: BTreeMap<String, Vec<String>>,
+    declarations_by_name: BTreeMap<String, Vec<CallHierarchyDecl>>,
+    call_sites_by_caller: BTreeMap<String, Vec<CallHierarchyCallSite>>,
 }
 
 const LSP_KEYWORDS: &[&str] = &[
@@ -205,7 +230,8 @@ impl LspServer {
                                     },
                                     "full": true
                                 },
-                                "inlayHintProvider": true
+                                "inlayHintProvider": true,
+                                "callHierarchyProvider": true
                             },
                             "serverInfo": {
                                 "name": "aic-lsp",
@@ -301,6 +327,36 @@ impl LspServer {
             "textDocument/definition" => {
                 if let Some(id) = id {
                     let result = self.definition_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/prepareCallHierarchy" => {
+                if let Some(id) = id {
+                    let result = self.prepare_call_hierarchy_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "callHierarchy/incomingCalls" => {
+                if let Some(id) = id {
+                    let result = self.call_hierarchy_incoming_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "callHierarchy/outgoingCalls" => {
+                if let Some(id) = id {
+                    let result = self.call_hierarchy_outgoing_response(message)?;
                     outbound.push(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -448,6 +504,190 @@ impl LspServer {
             "uri": path_to_uri(&first.file),
             "range": span_to_lsp_range(&first.file, first.span)
         }))
+    }
+
+    fn prepare_call_hierarchy_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let (uri, line, character) = request_position(message)?;
+        let source = self.document_text(&uri)?;
+        let Some(symbol) = word_at_position(&source, line, character) else {
+            return Ok(json!([]));
+        };
+        let Some(path) = uri_to_path(&uri) else {
+            return Ok(json!([]));
+        };
+
+        let context = build_call_hierarchy_context(&path)?;
+        let Some(decls) = context.declarations_by_name.get(&symbol) else {
+            return Ok(json!([]));
+        };
+
+        let offset = line_char_to_offset(&source, line, character).unwrap_or(0);
+        let canonical_path = fs::canonicalize(&path).unwrap_or(path.clone());
+        let mut in_place = Vec::new();
+        let mut fallback = Vec::new();
+
+        for decl in decls {
+            let canonical_decl = fs::canonicalize(&decl.file).unwrap_or(decl.file.clone());
+            if canonical_decl == canonical_path
+                && offset >= decl.span.start
+                && offset <= decl.span.end.max(decl.span.start + 1)
+            {
+                in_place.push(call_hierarchy_item_for_decl(decl));
+            } else {
+                fallback.push(call_hierarchy_item_for_decl(decl));
+            }
+        }
+
+        if !in_place.is_empty() {
+            return Ok(json!(in_place));
+        }
+        Ok(json!(fallback))
+    }
+
+    fn call_hierarchy_incoming_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let item = message
+            .get("params")
+            .and_then(|params| params.get("item"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let Some(uri) = item.get("uri").and_then(Value::as_str) else {
+            return Ok(json!([]));
+        };
+        let Some(path) = uri_to_path(uri) else {
+            return Ok(json!([]));
+        };
+        let Some(target_name) = call_hierarchy_item_name(&item) else {
+            return Ok(json!([]));
+        };
+        let target_module = call_hierarchy_item_module(&item);
+
+        let context = build_call_hierarchy_context(&path)?;
+        let inverse = build_inverse_call_graph(&context.call_graph);
+        let Some(caller_names) = inverse.get(&target_name) else {
+            return Ok(json!([]));
+        };
+
+        let mut incoming = Vec::new();
+        for caller_name in caller_names {
+            let Some(caller_decls) = context.declarations_by_name.get(caller_name) else {
+                continue;
+            };
+            let caller_sites = context
+                .call_sites_by_caller
+                .get(caller_name)
+                .cloned()
+                .unwrap_or_default();
+
+            for caller_decl in caller_decls {
+                let mut from_ranges = caller_sites
+                    .iter()
+                    .filter(|site| {
+                        site.caller_name == caller_decl.name
+                            && modules_match(
+                                caller_decl.module.as_deref(),
+                                site.caller_module.as_deref(),
+                            )
+                            && site_targets_function(site, &target_name, target_module.as_deref())
+                    })
+                    .map(|site| span_to_lsp_range(&site.file, site.span))
+                    .collect::<Vec<_>>();
+                if from_ranges.is_empty() {
+                    continue;
+                }
+
+                from_ranges.sort_by_key(call_hierarchy_range_sort_key);
+                from_ranges.dedup_by(|lhs, rhs| lhs == rhs);
+
+                incoming.push(json!({
+                    "from": call_hierarchy_item_for_decl(caller_decl),
+                    "fromRanges": from_ranges
+                }));
+            }
+        }
+
+        incoming.sort_by(|lhs, rhs| {
+            lhs.get("from")
+                .and_then(|from| from.get("name"))
+                .and_then(Value::as_str)
+                .cmp(
+                    &rhs.get("from")
+                        .and_then(|from| from.get("name"))
+                        .and_then(Value::as_str),
+                )
+        });
+        Ok(json!(incoming))
+    }
+
+    fn call_hierarchy_outgoing_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let item = message
+            .get("params")
+            .and_then(|params| params.get("item"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let Some(uri) = item.get("uri").and_then(Value::as_str) else {
+            return Ok(json!([]));
+        };
+        let Some(path) = uri_to_path(uri) else {
+            return Ok(json!([]));
+        };
+        let Some(caller_name) = call_hierarchy_item_name(&item) else {
+            return Ok(json!([]));
+        };
+        let caller_module = call_hierarchy_item_module(&item);
+
+        let context = build_call_hierarchy_context(&path)?;
+        let outgoing_names = context
+            .call_graph
+            .get(&caller_name)
+            .cloned()
+            .unwrap_or_default();
+        if outgoing_names.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let caller_sites = context
+            .call_sites_by_caller
+            .get(&caller_name)
+            .cloned()
+            .unwrap_or_default();
+        let mut outgoing = Vec::new();
+
+        for callee_name in outgoing_names {
+            let Some(callee_decls) = context.declarations_by_name.get(&callee_name) else {
+                continue;
+            };
+            for callee_decl in callee_decls {
+                let mut from_ranges = caller_sites
+                    .iter()
+                    .filter(|site| {
+                        modules_match(caller_module.as_deref(), site.caller_module.as_deref())
+                            && site_targets_decl(site, callee_decl)
+                    })
+                    .map(|site| span_to_lsp_range(&site.file, site.span))
+                    .collect::<Vec<_>>();
+                if from_ranges.is_empty() {
+                    continue;
+                }
+                from_ranges.sort_by_key(call_hierarchy_range_sort_key);
+                from_ranges.dedup_by(|lhs, rhs| lhs == rhs);
+                outgoing.push(json!({
+                    "to": call_hierarchy_item_for_decl(callee_decl),
+                    "fromRanges": from_ranges
+                }));
+            }
+        }
+
+        outgoing.sort_by(|lhs, rhs| {
+            lhs.get("to")
+                .and_then(|to| to.get("name"))
+                .and_then(Value::as_str)
+                .cmp(
+                    &rhs.get("to")
+                        .and_then(|to| to.get("name"))
+                        .and_then(Value::as_str),
+                )
+        });
+        Ok(json!(outgoing))
     }
 
     fn document_symbol_response(&self, message: &Value) -> anyhow::Result<Value> {
@@ -1558,6 +1798,539 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
     }
 
     Ok(map)
+}
+
+fn build_call_hierarchy_context(entry_path: &Path) -> anyhow::Result<CallHierarchyContext> {
+    let root = symbol_index_root(entry_path);
+    let mut files = Vec::new();
+    collect_aic_files(&root, &mut files)?;
+    files.sort();
+
+    let mut call_graph = BTreeMap::<String, Vec<String>>::new();
+    let mut declarations_by_name = BTreeMap::<String, Vec<CallHierarchyDecl>>::new();
+    let mut call_sites_by_caller = BTreeMap::<String, Vec<CallHierarchyCallSite>>::new();
+
+    for file in files {
+        let source = match fs::read_to_string(&file) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let (program, diagnostics) = parser::parse(&source, &file.to_string_lossy());
+        if diagnostics.iter().any(|d| d.is_error()) {
+            continue;
+        }
+        let Some(program) = program else {
+            continue;
+        };
+
+        let module_name = program.module.as_ref().map(|module| module.path.join("."));
+
+        for item in program.items {
+            match item {
+                ast::Item::Function(func) => {
+                    call_graph.entry(func.name.clone()).or_default();
+                    declarations_by_name
+                        .entry(func.name.clone())
+                        .or_default()
+                        .push(CallHierarchyDecl {
+                            name: func.name.clone(),
+                            module: module_name.clone(),
+                            file: file.clone(),
+                            span: func.span,
+                        });
+
+                    collect_block_call_sites(
+                        &func.body,
+                        &file,
+                        module_name.clone(),
+                        &func.name,
+                        &mut call_sites_by_caller,
+                    );
+                }
+                ast::Item::Trait(trait_def) => {
+                    for method in trait_def.methods {
+                        call_graph.entry(method.name.clone()).or_default();
+                        declarations_by_name
+                            .entry(method.name.clone())
+                            .or_default()
+                            .push(CallHierarchyDecl {
+                                name: method.name.clone(),
+                                module: module_name.clone(),
+                                file: file.clone(),
+                                span: method.span,
+                            });
+
+                        collect_block_call_sites(
+                            &method.body,
+                            &file,
+                            module_name.clone(),
+                            &method.name,
+                            &mut call_sites_by_caller,
+                        );
+                    }
+                }
+                ast::Item::Impl(impl_def) => {
+                    for method in impl_def.methods {
+                        call_graph.entry(method.name.clone()).or_default();
+                        declarations_by_name
+                            .entry(method.name.clone())
+                            .or_default()
+                            .push(CallHierarchyDecl {
+                                name: method.name.clone(),
+                                module: module_name.clone(),
+                                file: file.clone(),
+                                span: method.span,
+                            });
+
+                        collect_block_call_sites(
+                            &method.body,
+                            &file,
+                            module_name.clone(),
+                            &method.name,
+                            &mut call_sites_by_caller,
+                        );
+                    }
+                }
+                ast::Item::Struct(_) | ast::Item::Enum(_) => {}
+            }
+        }
+    }
+
+    for (caller, sites) in &call_sites_by_caller {
+        let mut callees = sites
+            .iter()
+            .map(|site| site.callee_name.clone())
+            .collect::<Vec<_>>();
+        callees.sort();
+        callees.dedup();
+        call_graph.insert(caller.clone(), callees);
+    }
+
+    for decls in declarations_by_name.values_mut() {
+        decls.sort_by(|lhs, rhs| {
+            lhs.name
+                .cmp(&rhs.name)
+                .then(lhs.file.cmp(&rhs.file))
+                .then(lhs.span.start.cmp(&rhs.span.start))
+        });
+    }
+    for sites in call_sites_by_caller.values_mut() {
+        sites.sort_by(|lhs, rhs| {
+            lhs.file
+                .cmp(&rhs.file)
+                .then(lhs.span.start.cmp(&rhs.span.start))
+        });
+    }
+
+    Ok(CallHierarchyContext {
+        call_graph,
+        declarations_by_name,
+        call_sites_by_caller,
+    })
+}
+
+fn collect_block_call_sites(
+    block: &ast::Block,
+    file: &Path,
+    caller_module: Option<String>,
+    caller_name: &str,
+    call_sites_by_caller: &mut BTreeMap<String, Vec<CallHierarchyCallSite>>,
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            ast::Stmt::Let { expr, .. } => collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            ),
+            ast::Stmt::Assign { expr, .. } => collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            ),
+            ast::Stmt::Expr { expr, .. } => collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            ),
+            ast::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_expr_call_sites(
+                        expr,
+                        file,
+                        caller_module.clone(),
+                        caller_name,
+                        call_sites_by_caller,
+                    );
+                }
+            }
+            ast::Stmt::Assert { expr, .. } => collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            ),
+        }
+    }
+
+    if let Some(tail) = &block.tail {
+        collect_expr_call_sites(tail, file, caller_module, caller_name, call_sites_by_caller);
+    }
+}
+
+fn collect_expr_call_sites(
+    expr: &ast::Expr,
+    file: &Path,
+    caller_module: Option<String>,
+    caller_name: &str,
+    call_sites_by_caller: &mut BTreeMap<String, Vec<CallHierarchyCallSite>>,
+) {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args } => {
+            if let Some((callee_module, callee_name)) = extract_callee_reference(callee) {
+                call_sites_by_caller
+                    .entry(caller_name.to_string())
+                    .or_default()
+                    .push(CallHierarchyCallSite {
+                        caller_name: caller_name.to_string(),
+                        caller_module: caller_module.clone(),
+                        callee_name,
+                        callee_module,
+                        file: file.to_path_buf(),
+                        span: callee.span,
+                    });
+            }
+            collect_expr_call_sites(
+                callee,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            for arg in args {
+                collect_expr_call_sites(
+                    arg,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                );
+            }
+        }
+        ast::ExprKind::Closure { body, .. } => {
+            collect_block_call_sites(
+                body,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_call_sites(
+                cond,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            collect_block_call_sites(
+                then_block,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            collect_block_call_sites(
+                else_block,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_call_sites(
+                cond,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            collect_block_call_sites(
+                body,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::Loop { body } => {
+            collect_block_call_sites(
+                body,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_expr_call_sites(
+                    expr,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                );
+            }
+        }
+        ast::ExprKind::Continue => {}
+        ast::ExprKind::Match { expr, arms } => {
+            collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_call_sites(
+                        guard,
+                        file,
+                        caller_module.clone(),
+                        caller_name,
+                        call_sites_by_caller,
+                    );
+                }
+                collect_expr_call_sites(
+                    &arm.body,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                );
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_call_sites(
+                lhs,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+            collect_expr_call_sites(
+                rhs,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::Unary { expr, .. }
+        | ast::ExprKind::Borrow { expr, .. }
+        | ast::ExprKind::Await { expr }
+        | ast::ExprKind::Try { expr } => {
+            collect_expr_call_sites(
+                expr,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::UnsafeBlock { block } => {
+            collect_block_call_sites(
+                block,
+                file,
+                caller_module.clone(),
+                caller_name,
+                call_sites_by_caller,
+            );
+        }
+        ast::ExprKind::StructInit { fields, .. } => {
+            for (_, field_expr, _) in fields {
+                collect_expr_call_sites(
+                    field_expr,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                );
+            }
+        }
+        ast::ExprKind::FieldAccess { base, .. } => {
+            collect_expr_call_sites(base, file, caller_module, caller_name, call_sites_by_caller);
+        }
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_) => {}
+    }
+}
+
+fn extract_callee_reference(expr: &ast::Expr) -> Option<(Option<String>, String)> {
+    let mut segments = Vec::new();
+    if !collect_expr_path_segments(expr, &mut segments) {
+        return None;
+    }
+    let name = segments.pop()?;
+    let module = if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join("."))
+    };
+    Some((module, name))
+}
+
+fn collect_expr_path_segments(expr: &ast::Expr, out: &mut Vec<String>) -> bool {
+    match &expr.kind {
+        ast::ExprKind::Var(name) => {
+            out.push(name.clone());
+            true
+        }
+        ast::ExprKind::FieldAccess { base, field } => {
+            if collect_expr_path_segments(base, out) {
+                out.push(field.clone());
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn call_hierarchy_item_for_decl(decl: &CallHierarchyDecl) -> Value {
+    json!({
+        "name": decl.name,
+        "kind": 12,
+        "detail": decl.module.clone().unwrap_or_default(),
+        "uri": path_to_uri(&decl.file),
+        "range": span_to_lsp_range(&decl.file, decl.span),
+        "selectionRange": span_to_lsp_range(&decl.file, decl.span),
+        "data": {
+            "name": decl.name,
+            "module": decl.module,
+            "uri": path_to_uri(&decl.file)
+        }
+    })
+}
+
+fn call_hierarchy_item_name(item: &Value) -> Option<String> {
+    item.get("data")
+        .and_then(|data| data.get("name"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            item.get("name")
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+        })
+}
+
+fn call_hierarchy_item_module(item: &Value) -> Option<String> {
+    item.get("data")
+        .and_then(|data| data.get("module"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            item.get("detail")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|detail| !detail.is_empty())
+                .map(ToString::to_string)
+        })
+}
+
+fn build_inverse_call_graph(
+    call_graph: &BTreeMap<String, Vec<String>>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut inverse = BTreeMap::<String, BTreeSet<String>>::new();
+    for (caller, callees) in call_graph {
+        inverse.entry(caller.clone()).or_default();
+        for callee in callees {
+            inverse
+                .entry(callee.clone())
+                .or_default()
+                .insert(caller.clone());
+        }
+    }
+    inverse
+}
+
+fn modules_match(expected: Option<&str>, actual: Option<&str>) -> bool {
+    match expected {
+        Some(expected) => actual == Some(expected),
+        None => true,
+    }
+}
+
+fn site_targets_function(
+    site: &CallHierarchyCallSite,
+    target_name: &str,
+    target_module: Option<&str>,
+) -> bool {
+    if site.callee_name != target_name {
+        return false;
+    }
+    match target_module {
+        Some(module) => match site.callee_module.as_deref() {
+            Some(callee_module) => callee_module == module,
+            None => true,
+        },
+        None => true,
+    }
+}
+
+fn site_targets_decl(site: &CallHierarchyCallSite, decl: &CallHierarchyDecl) -> bool {
+    if site.callee_name != decl.name {
+        return false;
+    }
+    match (site.callee_module.as_deref(), decl.module.as_deref()) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        (Some(_), None) => false,
+        _ => true,
+    }
+}
+
+fn call_hierarchy_range_sort_key(range: &Value) -> (u64, u64, u64, u64) {
+    let start_line = range
+        .get("start")
+        .and_then(|start| start.get("line"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let start_char = range
+        .get("start")
+        .and_then(|start| start.get("character"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let end_line = range
+        .get("end")
+        .and_then(|end| end.get("line"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let end_char = range
+        .get("end")
+        .and_then(|end| end.get("character"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    (start_line, start_char, end_line, end_char)
 }
 
 fn symbol_index_root(entry_path: &Path) -> PathBuf {
@@ -2790,6 +3563,10 @@ mod tests {
             true
         );
         assert_eq!(
+            responses[0]["result"]["capabilities"]["callHierarchyProvider"],
+            true
+        );
+        assert_eq!(
             responses[0]["result"]["capabilities"]["semanticTokensProvider"]["legend"]
                 ["tokenModifiers"],
             json!([
@@ -2911,6 +3688,173 @@ fn worker_task() -> Int {
                 .iter()
                 .any(|symbol| symbol["name"] == "worker_task"),
             "workspace symbol search should include worker_task"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn call_hierarchy_incoming_and_outgoing_calls_work_across_modules() {
+        let workspace = temp_workspace("call_hierarchy");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let runner_path = src_dir.join("runner.aic");
+        let math_path = src_dir.join("math.aic");
+
+        let main_source = r#"module sample.main;
+import std.io;
+
+fn main() -> Int effects { io } {
+    let value = sample.runner.invoke();
+    print_int(value);
+    0
+}
+"#;
+        let runner_source = r#"module sample.runner;
+
+fn invoke() -> Int {
+    sample.math.normalize(41)
+}
+"#;
+        let math_source = r#"module sample.math;
+
+fn normalize(x: Int) -> Int {
+    x + 1
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+        fs::write(&runner_path, runner_source).expect("write runner source");
+        fs::write(&math_path, math_source).expect("write math source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let runner_uri = format!("file://{}", runner_path.display());
+        let math_uri = format!("file://{}", math_path.display());
+
+        let mut server = LspServer::default();
+        let init_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+        assert_eq!(init_response.len(), 1);
+
+        let normalize_offset = math_source
+            .find("normalize")
+            .expect("normalize declaration");
+        let (normalize_line, normalize_char) = offset_to_line_char(math_source, normalize_offset);
+        let prepare_normalize_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/prepareCallHierarchy",
+                "params": {
+                    "textDocument": { "uri": math_uri },
+                    "position": {
+                        "line": normalize_line,
+                        "character": normalize_char
+                    }
+                }
+            }))
+            .expect("prepare normalize response");
+        let normalize_items = prepare_normalize_response[0]["result"]
+            .as_array()
+            .expect("call hierarchy prepare result array");
+        assert!(
+            normalize_items
+                .iter()
+                .any(|item| item["name"].as_str() == Some("normalize")),
+            "prepare call hierarchy should return normalize item"
+        );
+        let normalize_item = normalize_items
+            .iter()
+            .find(|item| item["name"].as_str() == Some("normalize"))
+            .expect("normalize call hierarchy item");
+
+        let incoming_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "callHierarchy/incomingCalls",
+                "params": {
+                    "item": normalize_item.clone()
+                }
+            }))
+            .expect("incoming call hierarchy response");
+        let incoming = incoming_response[0]["result"]
+            .as_array()
+            .expect("incoming call hierarchy array");
+        let runner_incoming = incoming
+            .iter()
+            .find(|entry| {
+                entry["from"]["name"].as_str() == Some("invoke")
+                    && entry["from"]["uri"].as_str() == Some(runner_uri.as_str())
+            })
+            .expect("invoke should appear as incoming caller for normalize");
+        assert!(
+            runner_incoming["fromRanges"]
+                .as_array()
+                .is_some_and(|ranges| !ranges.is_empty()),
+            "incoming entry for invoke should include call ranges"
+        );
+
+        let invoke_offset = runner_source.find("invoke").expect("invoke declaration");
+        let (invoke_line, invoke_char) = offset_to_line_char(runner_source, invoke_offset);
+        let prepare_invoke_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "textDocument/prepareCallHierarchy",
+                "params": {
+                    "textDocument": { "uri": runner_uri },
+                    "position": {
+                        "line": invoke_line,
+                        "character": invoke_char
+                    }
+                }
+            }))
+            .expect("prepare invoke response");
+        let invoke_item = prepare_invoke_response[0]["result"]
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item["name"].as_str() == Some("invoke"))
+            })
+            .expect("invoke call hierarchy item")
+            .clone();
+
+        let outgoing_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "callHierarchy/outgoingCalls",
+                "params": {
+                    "item": invoke_item
+                }
+            }))
+            .expect("outgoing call hierarchy response");
+        let outgoing = outgoing_response[0]["result"]
+            .as_array()
+            .expect("outgoing call hierarchy array");
+        let normalize_outgoing = outgoing
+            .iter()
+            .find(|entry| {
+                entry["to"]["name"].as_str() == Some("normalize")
+                    && entry["to"]["uri"].as_str() == Some(math_uri.as_str())
+            })
+            .expect("normalize should appear as outgoing callee for invoke");
+        assert!(
+            normalize_outgoing["fromRanges"]
+                .as_array()
+                .is_some_and(|ranges| !ranges.is_empty()),
+            "outgoing entry for normalize should include call ranges"
         );
 
         let _ = fs::remove_dir_all(workspace);

@@ -1,0 +1,5 @@
+module examples.vscode.call_hierarchy.math;
+
+fn normalize(value: Int) -> Int {
+    value + 1
+}

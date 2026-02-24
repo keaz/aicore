@@ -1,0 +1,9 @@
+module examples.vscode.call_hierarchy.main;
+
+import std.io;
+
+fn main() -> Int effects { io } {
+    let value = examples.vscode.call_hierarchy.runner.invoke();
+    print_int(value);
+    0
+}

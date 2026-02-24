@@ -1420,3 +1420,47 @@ fn vscode_extension_test_suite_example_is_listed_in_ci_and_runs() {
         example_rel, last, stdout
     );
 }
+
+#[test]
+fn vscode_call_hierarchy_workspace_example_is_listed_in_ci_and_runs() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/call_hierarchy_showcase.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "call hierarchy example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("run")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic run {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic run {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+    let last = stdout.lines().last().unwrap_or_default().trim();
+    assert_eq!(
+        last, "42",
+        "expected `aic run {}` to print 42 as final line, got `{}`\nstdout:\n{}",
+        example_rel, last, stdout
+    );
+}

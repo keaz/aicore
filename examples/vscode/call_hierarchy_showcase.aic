@@ -1,0 +1,17 @@
+module examples.vscode.call_hierarchy_showcase;
+
+import std.io;
+
+fn normalize(value: Int) -> Int {
+    value + 1
+}
+
+fn invoke() -> Int {
+    normalize(41)
+}
+
+fn main() -> Int effects { io } {
+    let value = invoke();
+    print_int(value);
+    0
+}
