@@ -6685,6 +6685,9 @@ impl<'a> Generator<'a> {
             "read_text" if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") => {
                 Some(self.gen_fs_string_result_call(name, "aic_rt_fs_read_text", args, span, fctx))
             }
+            "read_bytes" if self.sig_matches_shape(name, &["String"], "Result[Bytes, FsError]") => {
+                Some(self.gen_fs_bytes_result_call(name, "aic_rt_fs_read_bytes", args, span, fctx))
+            }
             "read_bytes"
                 if self.sig_matches_shape(name, &["String"], "Result[String, FsError]") =>
             {
@@ -6718,9 +6721,31 @@ impl<'a> Generator<'a> {
                 Some(self.gen_fs_write_like_call(name, "aic_rt_fs_append_text", args, span, fctx))
             }
             "write_bytes"
+                if self.sig_matches_shape(name, &["String", "Bytes"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_bytes_like_call(
+                    name,
+                    "aic_rt_fs_write_bytes",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "write_bytes"
                 if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
             {
                 Some(self.gen_fs_write_like_call(name, "aic_rt_fs_write_bytes", args, span, fctx))
+            }
+            "append_bytes"
+                if self.sig_matches_shape(name, &["String", "Bytes"], "Result[Bool, FsError]") =>
+            {
+                Some(self.gen_fs_write_bytes_like_call(
+                    name,
+                    "aic_rt_fs_append_bytes",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "append_bytes"
                 if self.sig_matches_shape(name, &["String", "String"], "Result[Bool, FsError]") =>
@@ -6968,6 +6993,71 @@ impl<'a> Generator<'a> {
         self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
+    fn gen_fs_bytes_result_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let path = self.gen_expr(&args[0], fctx)?;
+        if path.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&path, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let ok_payload = if ok_ty == LType::String {
+            data_value
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, data_value, name, span, fctx)?
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     fn gen_fs_write_like_call(
         &mut self,
         name: &str,
@@ -6998,6 +7088,61 @@ impl<'a> Generator<'a> {
         }
         let (lhs_ptr, lhs_len, lhs_cap) = self.string_parts(&lhs, args[0].span, fctx)?;
         let (rhs_ptr, rhs_len, rhs_cap) = self.string_parts(&rhs, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            err, runtime_fn, lhs_ptr, lhs_len, lhs_cap, rhs_ptr, rhs_len, rhs_cap
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_fs_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_fs_write_bytes_like_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs = self.gen_expr(&args[0], fctx)?;
+        let rhs = self.gen_expr(&args[1], fctx)?;
+        if lhs.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (String, Bytes)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (lhs_ptr, lhs_len, lhs_cap) = self.string_parts(&lhs, args[0].span, fctx)?;
+        let (rhs_ptr, rhs_len, rhs_cap) = if rhs.ty == LType::String {
+            self.string_parts(&rhs, args[1].span, fctx)?
+        } else {
+            self.bytes_parts(&rhs, name, args[1].span, fctx)?
+        };
         let err = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
@@ -10537,10 +10682,12 @@ impl<'a> Generator<'a> {
             "float_to_string" | "aic_string_float_to_string_intrinsic" => "float_to_string",
             "bool_to_string" | "aic_string_bool_to_string_intrinsic" => "bool_to_string",
             "is_valid_utf8" | "aic_string_is_valid_utf8_intrinsic" => "is_valid_utf8",
+            "aic_bytes_is_valid_utf8_intrinsic" => "is_valid_utf8",
             "is_ascii" | "aic_string_is_ascii_intrinsic" => "is_ascii",
             "bytes_to_string_lossy" | "aic_string_bytes_to_string_lossy_intrinsic" => {
                 "bytes_to_string_lossy"
             }
+            "aic_bytes_to_string_lossy_intrinsic" => "bytes_to_string_lossy",
             "join" | "aic_string_join_intrinsic" => "join",
             "format" | "aic_string_format_intrinsic" => "format",
             _ => return None,
@@ -13656,7 +13803,7 @@ impl<'a> Generator<'a> {
             "tcp_accept" | "aic_net_tcp_accept_intrinsic" => "tcp_accept",
             "tcp_connect" | "aic_net_tcp_connect_intrinsic" => "tcp_connect",
             "tcp_send" | "aic_net_tcp_send_intrinsic" => "tcp_send",
-            "tcp_recv" | "aic_net_tcp_recv_intrinsic" => "tcp_recv",
+            "aic_net_tcp_recv_intrinsic" => "tcp_recv",
             "tcp_close" | "aic_net_tcp_close_intrinsic" => "tcp_close",
             "udp_bind" | "aic_net_udp_bind_intrinsic" => "udp_bind",
             "udp_local_addr" | "aic_net_udp_local_addr_intrinsic" => "udp_local_addr",
@@ -13675,7 +13822,7 @@ impl<'a> Generator<'a> {
                 "async_tcp_recv_submit"
             }
             "async_wait_int" | "aic_net_async_wait_int_intrinsic" => "async_wait_int",
-            "async_wait_string" | "aic_net_async_wait_string_intrinsic" => "async_wait_string",
+            "aic_net_async_wait_string_intrinsic" => "async_wait_string",
             "async_shutdown" | "aic_net_async_shutdown_intrinsic" => "async_shutdown",
             _ => return None,
         };
@@ -13732,12 +13879,21 @@ impl<'a> Generator<'a> {
                 Some(self.gen_net_tcp_connect_call(name, args, span, fctx))
             }
             "tcp_send"
-                if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, NetError]") =>
+                if self.sig_matches_shape(name, &["Int", "Bytes"], "Result[Int, NetError]")
+                    || self.sig_matches_shape(
+                        name,
+                        &["Int", "String"],
+                        "Result[Int, NetError]",
+                    ) =>
             {
                 Some(self.gen_net_tcp_send_call(name, args, span, fctx))
             }
             "tcp_recv"
                 if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[Bytes, NetError]",
+                ) || self.sig_matches_shape(
                     name,
                     &["Int", "Int", "Int"],
                     "Result[String, NetError]",
@@ -13753,6 +13909,10 @@ impl<'a> Generator<'a> {
             }
             "udp_send_to"
                 if self.sig_matches_shape(
+                    name,
+                    &["Int", "String", "Bytes"],
+                    "Result[Int, NetError]",
+                ) || self.sig_matches_shape(
                     name,
                     &["Int", "String", "String"],
                     "Result[Int, NetError]",
@@ -13791,6 +13951,10 @@ impl<'a> Generator<'a> {
             "async_tcp_send_submit"
                 if self.sig_matches_shape(
                     name,
+                    &["Int", "Bytes"],
+                    "Result[AsyncIntOp, NetError]",
+                ) || self.sig_matches_shape(
+                    name,
                     &["Int", "String"],
                     "Result[AsyncIntOp, NetError]",
                 ) =>
@@ -13817,6 +13981,10 @@ impl<'a> Generator<'a> {
             }
             "async_wait_string"
                 if self.sig_matches_shape(
+                    name,
+                    &["AsyncStringOp", "Int"],
+                    "Result[Bytes, NetError]",
+                ) || self.sig_matches_shape(
                     name,
                     &["AsyncStringOp", "Int"],
                     "Result[String, NetError]",
@@ -14077,16 +14245,20 @@ impl<'a> Generator<'a> {
         }
         let handle = self.gen_expr(&args[0], fctx)?;
         let payload = self.gen_expr(&args[1], fctx)?;
-        if handle.ty != LType::Int || payload.ty != LType::String {
+        if handle.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "tcp_send expects (Int, String)",
+                "tcp_send expects (Int, Bytes)",
                 self.file,
                 span,
             ));
             return None;
         }
-        let (pptr, plen, pcap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let (pptr, plen, pcap) = if payload.ty == LType::String {
+            self.string_parts(&payload, args[1].span, fctx)?
+        } else {
+            self.bytes_parts(&payload, "tcp_send", args[1].span, fctx)?
+        };
         let sent_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i64", sent_slot));
         let err = self.new_temp();
@@ -14248,17 +14420,21 @@ impl<'a> Generator<'a> {
         let handle = self.gen_expr(&args[0], fctx)?;
         let addr = self.gen_expr(&args[1], fctx)?;
         let payload = self.gen_expr(&args[2], fctx)?;
-        if handle.ty != LType::Int || addr.ty != LType::String || payload.ty != LType::String {
+        if handle.ty != LType::Int || addr.ty != LType::String {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "udp_send_to expects (Int, String, String)",
+                "udp_send_to expects (Int, String, Bytes)",
                 self.file,
                 span,
             ));
             return None;
         }
         let (aptr, alen, acap) = self.string_parts(&addr, args[1].span, fctx)?;
-        let (pptr, plen, pcap) = self.string_parts(&payload, args[2].span, fctx)?;
+        let (pptr, plen, pcap) = if payload.ty == LType::String {
+            self.string_parts(&payload, args[2].span, fctx)?
+        } else {
+            self.bytes_parts(&payload, "udp_send_to", args[2].span, fctx)?
+        };
         let sent_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i64", sent_slot));
         let err = self.new_temp();
@@ -14363,7 +14539,7 @@ impl<'a> Generator<'a> {
         ));
 
         let from_value = self.build_string_value(&from_ptr, &from_len, &from_len, fctx);
-        let payload_value = self.build_string_value(&payload_ptr, &payload_len, &payload_len, fctx);
+        let payload_data = self.build_string_value(&payload_ptr, &payload_len, &payload_len, fctx);
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
@@ -14385,8 +14561,47 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
-        let ok_payload =
-            self.build_struct_value(&ok_layout, &[from_value, payload_value], span, fctx)?;
+        let mut fields = Vec::with_capacity(ok_layout.fields.len());
+        for field in &ok_layout.fields {
+            match field.name.as_str() {
+                "from" => {
+                    if field.ty != LType::String {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5011",
+                            "udp_recv_from expects UdpPacket.from to be String",
+                            self.file,
+                            span,
+                        ));
+                        return None;
+                    }
+                    fields.push(from_value.clone());
+                }
+                "payload" => {
+                    let payload_value = if field.ty == LType::String {
+                        payload_data.clone()
+                    } else {
+                        self.build_bytes_value_from_data(
+                            &field.ty,
+                            payload_data.clone(),
+                            "udp_recv_from",
+                            span,
+                            fctx,
+                        )?
+                    };
+                    fields.push(payload_value);
+                }
+                other => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5011",
+                        format!("udp_recv_from does not support UdpPacket field '{other}'"),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+            }
+        }
+        let ok_payload = self.build_struct_value(&ok_layout, &fields, span, fctx)?;
         self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
@@ -14561,16 +14776,20 @@ impl<'a> Generator<'a> {
         }
         let handle = self.gen_expr(&args[0], fctx)?;
         let payload = self.gen_expr(&args[1], fctx)?;
-        if handle.ty != LType::Int || payload.ty != LType::String {
+        if handle.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "async_tcp_send_submit expects (Int, String)",
+                "async_tcp_send_submit expects (Int, Bytes)",
                 self.file,
                 span,
             ));
             return None;
         }
-        let (ptr, len, cap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let (ptr, len, cap) = if payload.ty == LType::String {
+            self.string_parts(&payload, args[1].span, fctx)?
+        } else {
+            self.bytes_parts(&payload, "async_tcp_send_submit", args[1].span, fctx)?
+        };
         let out_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i64", out_slot));
         let err = self.new_temp();
@@ -14772,7 +14991,6 @@ impl<'a> Generator<'a> {
         let out_len = self.new_temp();
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
-        let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
@@ -14781,6 +14999,15 @@ impl<'a> Generator<'a> {
                 span,
             ));
             return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let ok_payload = if ok_ty == LType::String {
+            data_value
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, data_value, "async_wait_string", span, fctx)?
         };
         self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -24545,6 +24772,95 @@ impl<'a> Generator<'a> {
         Some((ptr, len, cap))
     }
 
+    fn bytes_data_value(
+        &mut self,
+        value: &Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = &value.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bytes"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !base_type_name(&layout.repr).ends_with("Bytes")
+            || layout.fields.len() != 1
+            || layout.fields[0].name != "data"
+            || layout.fields[0].ty != LType::String
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bytes"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let data_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            data_reg,
+            llvm_type(&value.ty),
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&value.ty))
+        ));
+        Some(Value {
+            ty: LType::String,
+            repr: Some(data_reg),
+        })
+    }
+
+    fn bytes_parts(
+        &mut self,
+        value: &Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        let data = self.bytes_data_value(value, context, span, fctx)?;
+        self.string_parts(&data, span, fctx)
+    }
+
+    fn build_bytes_value_from_data(
+        &mut self,
+        bytes_ty: &LType,
+        data_value: Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = bytes_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bytes payload"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !base_type_name(&layout.repr).ends_with("Bytes")
+            || layout.fields.len() != 1
+            || layout.fields[0].name != "data"
+            || layout.fields[0].ty != LType::String
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bytes payload"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.build_struct_value(layout, &[data_value], span, fctx)
+    }
+
     fn span_line_col(&self, span: crate::span::Span) -> (u64, u64) {
         if let Some(source_map) = &self.source_map {
             source_map.line_col(span.start)
@@ -28379,7 +28695,71 @@ long aic_rt_fs_read_bytes(
     char** out_ptr,
     long* out_len
 ) {
-    return aic_rt_fs_read_text(path_ptr, path_len, path_cap, out_ptr, out_len);
+    (void)path_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("read_bytes", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "rb");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    if (fseek(f, 0, SEEK_END) != 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    long size = ftell(f);
+    if (size < 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        int err = errno;
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+
+    char* buffer = (char*)malloc((size_t)size + 1);
+    if (buffer == NULL) {
+        fclose(f);
+        return 5;
+    }
+
+    size_t read_n = fread(buffer, 1, (size_t)size, f);
+    if (read_n != (size_t)size && ferror(f)) {
+        int err = errno;
+        free(buffer);
+        fclose(f);
+        return aic_rt_fs_map_errno(err);
+    }
+    fclose(f);
+
+    buffer[read_n] = '\0';
+    if (out_ptr != NULL) {
+        *out_ptr = buffer;
+    } else {
+        free(buffer);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)read_n;
+    }
+    return 0;
 }
 
 long aic_rt_fs_write_bytes(
@@ -28390,7 +28770,41 @@ long aic_rt_fs_write_bytes(
     long content_len,
     long content_cap
 ) {
-    return aic_rt_fs_write_text(path_ptr, path_len, path_cap, content_ptr, content_len, content_cap);
+    (void)path_cap;
+    (void)content_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("write_bytes", 2);
+    if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
+        return 4;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "wb");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    size_t target = (size_t)content_len;
+    if (target > 0) {
+        size_t written = fwrite(content_ptr, 1, target, f);
+        if (written != target) {
+            int err = errno;
+            fclose(f);
+            return aic_rt_fs_map_errno(err);
+        }
+    }
+
+    if (fclose(f) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
 }
 
 long aic_rt_fs_append_bytes(
@@ -28401,7 +28815,41 @@ long aic_rt_fs_append_bytes(
     long content_len,
     long content_cap
 ) {
-    return aic_rt_fs_append_text(path_ptr, path_len, path_cap, content_ptr, content_len, content_cap);
+    (void)path_cap;
+    (void)content_cap;
+    AIC_RT_SANDBOX_BLOCK_FS("append_bytes", 2);
+    if (content_len < 0 || (content_len > 0 && content_ptr == NULL)) {
+        return 4;
+    }
+    char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
+    if (path == NULL) {
+        return 4;
+    }
+    if (aic_rt_fs_invalid_input_path(path)) {
+        free(path);
+        return 4;
+    }
+
+    FILE* f = fopen(path, "ab");
+    free(path);
+    if (f == NULL) {
+        return aic_rt_fs_map_errno(errno);
+    }
+
+    size_t target = (size_t)content_len;
+    if (target > 0) {
+        size_t written = fwrite(content_ptr, 1, target, f);
+        if (written != target) {
+            int err = errno;
+            fclose(f);
+            return aic_rt_fs_map_errno(err);
+        }
+    }
+
+    if (fclose(f) != 0) {
+        return aic_rt_fs_map_errno(errno);
+    }
+    return 0;
 }
 
 static long aic_rt_fs_open_file_mode(

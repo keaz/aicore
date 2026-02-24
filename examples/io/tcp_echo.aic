@@ -3,6 +3,7 @@ module example.io.tcp_echo;
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn main() -> Int effects { io, net } {
     let listener = match tcp_listen("127.0.0.1:0") {
@@ -23,13 +24,13 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    let sent = match tcp_send(client, "echo") {
+    let sent = match tcp_send(client, bytes.from_string("echo")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let received = match tcp_recv(server, 32, 1000) {
         Ok(text) => text,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
 
     let closed = match tcp_close(client) {
@@ -43,7 +44,7 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    if sent == 4 && len(received) == 4 && closed == 3 {
+    if sent == 4 && bytes.byte_len(received) == 4 && closed == 3 {
         print_int(42);
     } else {
         print_int(0);

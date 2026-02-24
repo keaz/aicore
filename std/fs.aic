@@ -1,5 +1,6 @@
 module std.fs;
 
+import std.bytes;
 import std.option;
 import std.result;
 import std.vec;
@@ -87,17 +88,17 @@ fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects 
 }
 
 fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Ok("");
+    let out: Result[String, FsError] = Err(Io());
     out
 }
 
 fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
+    let out: Result[Bool, FsError] = Err(Io());
     out
 }
 
 fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
+    let out: Result[Bool, FsError] = Err(Io());
     out
 }
 
@@ -214,16 +215,20 @@ fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
     aic_fs_temp_dir_intrinsic(prefix)
 }
 
-fn read_bytes(path: String) -> Result[String, FsError] effects { fs } {
-    aic_fs_read_bytes_intrinsic(path)
+fn read_bytes(path: String) -> Result[Bytes, FsError] effects { fs } {
+    let raw = aic_fs_read_bytes_intrinsic(path);
+    match raw {
+        Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
 }
 
-fn write_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    aic_fs_write_bytes_intrinsic(path, content)
+fn write_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_write_bytes_intrinsic(path, content.data)
 }
 
-fn append_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    aic_fs_append_bytes_intrinsic(path, content)
+fn append_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs } {
+    aic_fs_append_bytes_intrinsic(path, content.data)
 }
 
 fn open_read(path: String) -> Result[FileHandle, FsError] effects { fs } {

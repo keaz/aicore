@@ -25,7 +25,7 @@ fn len(s: String) -> Int {
 
 /// Return true when the string is empty.
 fn is_empty(s: String) -> Bool {
-    len(s) == 0
+    aic_string_len_intrinsic(s) == 0
 }
 
 fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool {
@@ -166,7 +166,7 @@ fn is_valid_utf8(data: Bytes) -> Bool {
 }
 
 fn byte_length(s: String) -> Int {
-    len(s)
+    aic_string_len_intrinsic(s)
 }
 
 fn is_ascii(s: String) -> Bool {

@@ -3,6 +3,7 @@ module example.io.net_all_ops;
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn err_code(err: NetError) -> Int {
     match err {
@@ -34,12 +35,12 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    let tcp_sent = match tcp_send(client, "ping") {
+    let tcp_sent = match tcp_send(client, bytes.from_string("ping")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let tcp_recv_len = match tcp_recv(server, 32, 1000) {
-        Ok(text) => len(text),
+        Ok(text) => bytes.byte_len(text),
         Err(_) => 0,
     };
     let tcp_close_ok = match tcp_close(client) {
@@ -66,12 +67,12 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    let udp_sent = match udp_send_to(udp_sender, udp_addr, "pong") {
+    let udp_sent = match udp_send_to(udp_sender, udp_addr, bytes.from_string("pong")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let udp_payload_len = match udp_recv_from(udp_receiver, 32, 1000) {
-        Ok(packet) => len(packet.payload),
+        Ok(packet) => bytes.byte_len(packet.payload),
         Err(_) => 0,
     };
     let udp_close_ok = match udp_close(udp_sender) {

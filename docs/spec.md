@@ -34,6 +34,7 @@ fn main() -> Int {
 ### 2.2 Types
 
 - Builtins: `Int`, `Float`, `Bool`, `String`, `()`
+- Standard-library binary payload type: `Bytes` (declared in `std.bytes`)
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
 - Generic arity is checked statically (`Option[Int, Int]` is invalid).
@@ -219,6 +220,7 @@ Program {
 - Effect declarations are canonicalized to deterministic sorted signatures.
 - Interprocedural call-graph analysis enforces transitive effect safety with call-path diagnostics.
 - Contracts are checked as pure contexts.
+- Binary payload APIs use `Bytes` as the transport type (`std.fs.read_bytes/write_bytes/append_bytes`, `std.net.tcp_send/tcp_recv/udp_send_to`, and `std.net.UdpPacket.payload`).
 - `std.fs` uses stable `FsError` categories (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`) and returns `Result` for fallible operations.
 - `std.regex` provides `compile/is_match/find/captures/find_all/replace` APIs with stable `RegexError` categories.
 
@@ -250,10 +252,11 @@ Registry and ownership: `docs/diagnostic-codes.md`.
 - Emits LLVM IR text.
 - Compiles with `clang` plus runtime C shim.
 - Supported codegen subset:
-  - `Int`, `Float`, `Bool`, `String`, `()`
-  - `Option[T]` (core path)
-  - calls, `if`, `match`, arithmetic/comparison/logical ops
-  - runtime panic + print helpers
+- `Int`, `Float`, `Bool`, `String`, `()`
+- `std.bytes.Bytes` payload wrapper for binary filesystem/network APIs
+- `Option[T]` (core path)
+- calls, `if`, `match`, arithmetic/comparison/logical ops
+- runtime panic + print helpers
   - filesystem runtime ABI (`read/write/append/copy/move/delete/metadata/walk/temp`)
 - Match-or lowers for bool/enum matches.
 - Match guards currently emit backend diagnostic `E5023` (frontend check-only support).

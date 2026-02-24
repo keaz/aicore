@@ -4,7 +4,7 @@ This page defines how AICore standard-library API documentation is generated and
 
 ## Source of truth
 
-- `std/*.aic`: canonical API declarations.
+- `std/*.aic` (including `std/bytes.aic`): canonical API declarations.
 - `/Users/kasunranasinghe/Projects/Rust/aicore/src/std_policy.rs`: snapshot collector and compatibility comparator.
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json`: machine-readable baseline consumed by `aic std-compat`.
 
@@ -52,37 +52,39 @@ api.json
 
 ## Module coverage
 
-Current baseline snapshot (`schema_version: 1`) contains `679` symbols across these modules.
+Current baseline snapshot (`schema_version: 1`) covers these modules:
 
-| Module | Symbol count |
-|---|---:|
-| `std.concurrent` | 26 |
-| `std.env` | 31 |
-| `std.fs` | 57 |
-| `std.http` | 21 |
-| `std.http_server` | 21 |
-| `std.io` | 90 |
-| `std.json` | 40 |
-| `std.map` | 20 |
-| `std.net` | 30 |
-| `std.option` | 1 |
-| `std.path` | 10 |
-| `std.proc` | 23 |
-| `std.rand` | 7 |
-| `std.regex` | 19 |
-| `std.result` | 1 |
-| `std.retry` | 5 |
-| `std.router` | 9 |
-| `std.string` | 60 |
-| `std.time` | 21 |
-| `std.url` | 9 |
-| `std.vec` | 36 |
+| Module |
+|---|
+| `std.bytes` |
+| `std.concurrent` |
+| `std.env` |
+| `std.fs` |
+| `std.http` |
+| `std.http_server` |
+| `std.io` |
+| `std.json` |
+| `std.map` |
+| `std.net` |
+| `std.option` |
+| `std.path` |
+| `std.proc` |
+| `std.rand` |
+| `std.regex` |
+| `std.result` |
+| `std.retry` |
+| `std.router` |
+| `std.string` |
+| `std.time` |
+| `std.url` |
+| `std.vec` |
 
-Symbol kind distribution:
+For exact symbol totals and kind distribution, query the baseline directly:
 
-- `fn`: 617
-- `struct`: 37
-- `enum`: 25
+```bash
+jq -r '.symbols | length' /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+jq -r '.symbols | group_by(.kind)[] | "\(.[0].kind): \(length)"' /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+```
 
 ## Signature policy
 
@@ -149,6 +151,7 @@ fn main() -> Result[String, FsError] effects { fs } {
 
 ## Related docs
 
+- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/data-bytes.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api/machine-readable.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-compatibility.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`

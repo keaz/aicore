@@ -1,0 +1,31 @@
+import std.io;
+import std.bytes;
+import std.net;
+
+fn send_stage(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net } {
+    tcp_send(handle, payload)
+}
+
+fn recv_stage(handle: Int) -> Result[Bytes, NetError] effects { net } {
+    tcp_recv(handle, 256, 1000)
+}
+
+fn decode_ok(v: Result[String, BytesError], expected: String) -> Int {
+    match v {
+        Ok(text) => if text == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let outbound = concat(from_string("net"), from_string("-bytes"));
+    let decoded = decode_ok(to_string(outbound), "net-bytes");
+    let lossy_len_ok = if byte_len(from_string(to_string_lossy(outbound))) == 9 { 1 } else { 0 };
+
+    if decoded + lossy_len_ok == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

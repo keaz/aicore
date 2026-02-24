@@ -13,6 +13,7 @@ Use this guide when building log parsers, config loaders, API validators, and ti
 | `std.json` serde (`encode/decode_with/schema`) | Deterministic struct/enum wire format and schema text | `examples/data/serde_models.aic` | `examples/data/serde_negative_cases.aic` |
 | `std.url` + `std.http` | Stable parser/validator errors and normalization behavior | `examples/data/http_types.aic` | `examples/data/url_http_negative_cases.aic` |
 | `std.time` datetime | Cross-platform stable parse/format output contract | `examples/data/audit_timestamps.aic` | `examples/data/data_stack_negative_cases.aic` |
+| `std.bytes` | Stable byte-carrier behavior and UTF-8 conversion semantics | `examples/data/bytes_api_roundtrip.aic` | `examples/data/data_stack_negative_cases.aic` |
 | End-to-end ingest-transform-emit | Stable composition across modules | `examples/data/ingest_transform_emit.aic` | `examples/data/data_stack_negative_cases.aic` |
 
 ## Strict Contracts
@@ -124,6 +125,22 @@ Stable error mapping (`TimeError`):
 
 - `InvalidFormat`, `InvalidDate`, `InvalidTime`, `InvalidOffset`, `InvalidInput`, `Internal`.
 
+### `std.bytes`
+
+Core APIs:
+
+- `empty`, `from_string`
+- `len`, `is_empty`, `concat`
+- `to_string`, `to_string_lossy`, `is_valid_utf8`
+
+Rules:
+
+- `Bytes` is the binary payload carrier for `std.fs` (`read_bytes`/`write_bytes`/`append_bytes`) and `std.net` (`tcp_send`/`tcp_recv`/`udp_send_to`, `UdpPacket.payload`).
+- `to_string` validates UTF-8 and returns `Err(InvalidUtf8)` for invalid payloads.
+- `to_string_lossy` always produces deterministic output for identical byte payloads.
+- `concat` preserves left-to-right payload order.
+- `len` returns payload length in bytes.
+
 ## Wire Format, Determinism, and Versioning Guidance
 
 - Keep struct field names stable in serialized contracts.
@@ -148,6 +165,7 @@ cargo run --quiet --bin aic -- run examples/data/serde_models.aic
 cargo run --quiet --bin aic -- run examples/data/serde_negative_cases.aic
 cargo run --quiet --bin aic -- run examples/data/http_types.aic
 cargo run --quiet --bin aic -- run examples/data/audit_timestamps.aic
+cargo run --quiet --bin aic -- run examples/data/bytes_api_roundtrip.aic
 cargo run --quiet --bin aic -- run examples/data/ingest_transform_emit.aic
 cargo run --quiet --bin aic -- run examples/data/data_stack_negative_cases.aic
 cargo run --quiet --bin aic -- run examples/data/url_http_negative_cases.aic

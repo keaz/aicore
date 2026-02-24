@@ -1,0 +1,72 @@
+module std.bytes;
+
+import std.result;
+import std.string;
+import std.vec;
+
+enum BytesError {
+    InvalidUtf8,
+    InvalidInput,
+    Io,
+}
+
+struct Bytes {
+    data: String,
+}
+
+fn aic_bytes_len_intrinsic(data: String) -> Int {
+    aic_string_len_intrinsic(data)
+}
+
+fn aic_bytes_concat_intrinsic(left: String, right: String) -> String {
+    let pieces = append(vec_of(left), vec_of(right));
+    aic_string_format_intrinsic("{0}{1}", pieces)
+}
+
+fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool {
+    aic_string_is_valid_utf8_intrinsic(data)
+}
+
+fn aic_bytes_to_string_lossy_intrinsic(data: String) -> String {
+    aic_string_bytes_to_string_lossy_intrinsic(data)
+}
+
+fn empty() -> Bytes {
+    Bytes { data: "" }
+}
+
+fn from_string(s: String) -> Bytes {
+    Bytes { data: s }
+}
+
+fn byte_len(data: Bytes) -> Int {
+    aic_bytes_len_intrinsic(data.data)
+}
+
+fn is_empty(data: Bytes) -> Bool {
+    byte_len(data) == 0
+}
+
+fn concat(left: Bytes, right: Bytes) -> Bytes {
+    Bytes {
+        data: aic_bytes_concat_intrinsic(left.data, right.data),
+    }
+}
+
+fn to_string(data: Bytes) -> Result[String, BytesError] {
+    if aic_bytes_is_valid_utf8_intrinsic(data.data) {
+        let out: Result[String, BytesError] = Ok(data.data);
+        out
+    } else {
+        let out: Result[String, BytesError] = Err(InvalidUtf8());
+        out
+    }
+}
+
+fn to_string_lossy(data: Bytes) -> String {
+    aic_bytes_to_string_lossy_intrinsic(data.data)
+}
+
+fn is_valid_utf8(data: Bytes) -> Bool {
+    aic_bytes_is_valid_utf8_intrinsic(data.data)
+}

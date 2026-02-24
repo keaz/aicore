@@ -10,6 +10,7 @@ import std.string;
 import std.vec;
 import std.option;
 import std.result;
+import std.bytes;
 
 fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } {
     let _a = exists("data.txt");
@@ -27,12 +28,12 @@ fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } {
     let _local = tcp_local_addr(1);
     let _accept = tcp_accept(1, 1);
     let _connect = tcp_connect("127.0.0.1:80", 1);
-    let _send = tcp_send(1, "ping");
+    let _send = tcp_send(1, bytes.from_string("ping"));
     let _recv = tcp_recv(1, 16, 1);
     let _close = tcp_close(1);
     let _udp = udp_bind("127.0.0.1:0");
     let _udp_local = udp_local_addr(1);
-    let _udp_send = udp_send_to(1, "127.0.0.1:9", "pong");
+    let _udp_send = udp_send_to(1, "127.0.0.1:9", bytes.from_string("pong"));
     let _udp_recv = udp_recv_from(1, 16, 1);
     let _udp_close = udp_close(1);
     let _dns = dns_lookup("localhost");

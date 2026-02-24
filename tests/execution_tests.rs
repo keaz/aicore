@@ -1257,11 +1257,10 @@ fn encoding_err_code(err: EncodingError) -> Int {
 }
 
 fn load_invalid() -> Bytes effects { fs } {
-    let payload = match read_bytes("invalid.bin") {
-        Ok(value) => value,
-        Err(_) => "",
-    };
-    Bytes { data: payload }
+    match read_bytes("invalid.bin") {
+        Ok(value) => Bytes { data: value.data },
+        Err(_) => string_to_bytes(""),
+    }
 }
 
 fn decode_len(v: Result[String, EncodingError]) -> Int {
@@ -1274,27 +1273,27 @@ fn decode_len(v: Result[String, EncodingError]) -> Int {
 fn main() -> Int effects { io, fs } {
     let ascii_len_ok = if byte_length("hello") == 5 { 1 } else { 0 };
     let ascii_flag_ok = if is_ascii("hello") { 1 } else { 0 };
-    let ascii_valid_ok = if is_valid_utf8(string_to_bytes("hello")) { 1 } else { 0 };
+    let ascii_valid_ok = if string.is_valid_utf8(string_to_bytes("hello")) { 1 } else { 0 };
     let ascii_roundtrip_ok = if decode_len(bytes_to_string(string_to_bytes("hello"))) == 5 { 1 } else { 0 };
     let ascii_lossy_ok = if len(bytes_to_string_lossy(string_to_bytes("hello"))) == 5 { 1 } else { 0 };
 
     let multi = "hé";
     let multi_len_ok = if byte_length(multi) == 3 { 1 } else { 0 };
     let multi_ascii_ok = if is_ascii(multi) { 0 } else { 1 };
-    let multi_valid_ok = if is_valid_utf8(string_to_bytes(multi)) { 1 } else { 0 };
+    let multi_valid_ok = if string.is_valid_utf8(string_to_bytes(multi)) { 1 } else { 0 };
     let multi_roundtrip_ok = if decode_len(bytes_to_string(string_to_bytes(multi))) == 3 { 1 } else { 0 };
     let multi_lossy_ok = if len(bytes_to_string_lossy(string_to_bytes(multi))) == 3 { 1 } else { 0 };
 
     let empty_ok =
         if decode_len(bytes_to_string(string_to_bytes(""))) == 0 &&
             len(bytes_to_string_lossy(string_to_bytes(""))) == 0 &&
-            is_valid_utf8(string_to_bytes("")) {
+            string.is_valid_utf8(string_to_bytes("")) {
             1
         } else {
             0
         };
 
-    let invalid_valid_ok = if is_valid_utf8(load_invalid()) { 0 } else { 1 };
+    let invalid_valid_ok = if string.is_valid_utf8(load_invalid()) { 0 } else { 1 };
     let invalid_decode_ok = match bytes_to_string(load_invalid()) {
         Ok(_) => 0,
         Err(err) => if encoding_err_code(err) == 1 { 1 } else { 0 },
@@ -1931,6 +1930,7 @@ fn exec_fs_bytes_roundtrip() {
 import std.io;
 import std.fs;
 import std.string;
+import std.bytes;
 
 fn ok_bool(v: Result[Bool, FsError]) -> Int {
     match v {
@@ -1940,13 +1940,14 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
 }
 
 fn main() -> Int effects { io, fs } {
-    let wrote = ok_bool(write_bytes("bytes.bin", "abc"));
-    let appended = ok_bool(append_bytes("bytes.bin", "XYZ"));
+    let wrote = ok_bool(write_bytes("bytes.bin", bytes.from_string("abc")));
+    let appended = ok_bool(append_bytes("bytes.bin", bytes.from_string("XYZ")));
     let payload = match read_bytes("bytes.bin") {
         Ok(value) => value,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
-    let payload_ok = if len(payload) == 6 && starts_with(payload, "ab") && ends_with(payload, "XYZ") {
+    let payload_text = bytes.to_string_lossy(payload);
+    let payload_ok = if len(payload_text) == 6 && starts_with(payload_text, "ab") && ends_with(payload_text, "XYZ") {
         1
     } else {
         0
@@ -3549,7 +3550,7 @@ fn exec_net_tcp_loopback_echo() {
 import std.io;
 import std.net;
 import std.string;
-import std.string;
+import std.bytes;
 
 fn main() -> Int effects { io, net } {
     let listener = match tcp_listen("127.0.0.1:0") {
@@ -3568,13 +3569,13 @@ fn main() -> Int effects { io, net } {
         Ok(h) => h,
         Err(_) => 0,
     };
-    let sent = match tcp_send(client, "ping") {
+    let sent = match tcp_send(client, bytes.from_string("ping")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let received = match tcp_recv(server, 16, 1000) {
         Ok(text) => text,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
     let closed_client = match tcp_close(client) {
         Ok(_) => 1,
@@ -3589,7 +3590,7 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    if sent == 4 && len(received) == 4 && closed_client + closed_server + closed_listener == 3 {
+    if sent == 4 && bytes.byte_len(received) == 4 && closed_client + closed_server + closed_listener == 3 {
         print_int(42);
     } else {
         print_int(0);
@@ -3609,6 +3610,7 @@ fn exec_net_udp_and_dns_helpers() {
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn main() -> Int effects { io, net } {
     let receiver = match udp_bind("127.0.0.1:0") {
@@ -3623,13 +3625,13 @@ fn main() -> Int effects { io, net } {
         Ok(h) => h,
         Err(_) => 0,
     };
-    let sent = match udp_send_to(sender, receiver_addr, "pong") {
+    let sent = match udp_send_to(sender, receiver_addr, bytes.from_string("pong")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let packet = match udp_recv_from(receiver, 64, 1000) {
         Ok(value) => value,
-        Err(_) => UdpPacket { from: "", payload: "" },
+        Err(_) => UdpPacket { from: "", payload: bytes.empty() },
     };
     let closed_sender = match udp_close(sender) {
         Ok(_) => 1,
@@ -3652,7 +3654,7 @@ fn main() -> Int effects { io, net } {
         },
     };
 
-    if sent == 4 && len(packet.payload) == 4 && len(packet.from) > 0 &&
+    if sent == 4 && bytes.byte_len(packet.payload) == 4 && len(packet.from) > 0 &&
         len(lookup) > 0 && reverse_checked == 1 && closed_sender + closed_receiver == 2 {
         print_int(42);
     } else {
@@ -3673,6 +3675,7 @@ fn exec_net_async_event_loop_multi_connection() {
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn main() -> Int effects { io, net, concurrency } {
     let listener = match tcp_listen("127.0.0.1:0") {
@@ -3719,29 +3722,29 @@ fn main() -> Int effects { io, net, concurrency } {
         Err(_) => AsyncStringOp { handle: 0 },
     };
 
-    let sent1 = match tcp_send(c1, "one") {
+    let sent1 = match tcp_send(c1, bytes.from_string("one")) {
         Ok(n) => n,
         Err(_) => 0,
     };
-    let sent2 = match tcp_send(c2, "two") {
+    let sent2 = match tcp_send(c2, bytes.from_string("two")) {
         Ok(n) => n,
         Err(_) => 0,
     };
 
     let msg1 = match async_wait_string(recv1, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
     let msg2 = match async_wait_string(recv2, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
 
-    let ack_submit1 = match async_tcp_send_submit(s1, "ack") {
+    let ack_submit1 = match async_tcp_send_submit(s1, bytes.from_string("ack")) {
         Ok(op) => op,
         Err(_) => AsyncIntOp { handle: 0 },
     };
-    let ack_submit2 = match async_tcp_send_submit(s2, "ack") {
+    let ack_submit2 = match async_tcp_send_submit(s2, bytes.from_string("ack")) {
         Ok(op) => op,
         Err(_) => AsyncIntOp { handle: 0 },
     };
@@ -3755,11 +3758,11 @@ fn main() -> Int effects { io, net, concurrency } {
     };
     let client_read1 = match tcp_recv(c1, 16, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
     let client_read2 = match tcp_recv(c2, 16, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
 
     let shutdown_ok = match async_shutdown() {
@@ -3773,8 +3776,8 @@ fn main() -> Int effects { io, net, concurrency } {
         (match tcp_close(s2) { Ok(_) => 1, Err(_) => 0 }) +
         (match tcp_close(listener) { Ok(_) => 1, Err(_) => 0 });
 
-    let payload_ok = if len(msg1) + len(msg2) == 6 { 1 } else { 0 };
-    let ack_ok = if ack1 + ack2 == 6 && len(client_read1) == 3 && len(client_read2) == 3 {
+    let payload_ok = if bytes.byte_len(msg1) + bytes.byte_len(msg2) == 6 { 1 } else { 0 };
+    let ack_ok = if ack1 + ack2 == 6 && bytes.byte_len(client_read1) == 3 && bytes.byte_len(client_read2) == 3 {
         1
     } else {
         0
@@ -3892,6 +3895,7 @@ fn exec_net_async_wait_negative_paths_are_stable() {
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn err_code(err: NetError) -> Int {
     match err {
@@ -3958,12 +3962,12 @@ fn main() -> Int effects { io, net, concurrency } {
         Ok(_) => 0,
         Err(err) => err_code(err),
     };
-    let sent_ok = match tcp_send(client, "ok") {
+    let sent_ok = match tcp_send(client, bytes.from_string("ok")) {
         Ok(written) => if written == 2 { 1 } else { 0 },
         Err(_) => 0,
     };
     let recv_ok = match async_wait_string(recv_op, 2000) {
-        Ok(value) => if string.contains(value, "ok") && len(value) == 2 { 1 } else { 0 },
+        Ok(value) => if bytes.byte_len(value) == 2 { 1 } else { 0 },
         Err(_) => 0,
     };
     let recv_rewait = match async_wait_string(recv_op, 2000) {
@@ -4022,6 +4026,7 @@ import std.net;
 import std.http_server;
 import std.map;
 import std.string;
+import std.bytes;
 
 fn request_matches(req: Request) -> Int {
     let query_name = match aic_map_get_intrinsic(req.query, "name") {
@@ -4071,7 +4076,7 @@ fn main() -> Int effects { io, net } {
     };
 
     let raw_req = "GET /hello?name=Kasun&lang=ai HTTP/1.1\nHost: localhost\nX-Trace: abc\nContent-Length: 5\n\nhello";
-    let sent = match tcp_send(client, raw_req) {
+    let sent = match tcp_send(client, bytes.from_string(raw_req)) {
         Ok(n) => n,
         Err(_) => 0,
     };
@@ -4087,11 +4092,12 @@ fn main() -> Int effects { io, net } {
     };
     let wire = match tcp_recv(client, 1024, 1000) {
         Ok(text) => text,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
-    let wire_ok = if string.contains(wire, "HTTP/1.1 200 OK") &&
-        string.contains(wire, "content-length: 2") &&
-        ends_with(wire, "ok") {
+    let wire_text = bytes.to_string_lossy(wire);
+    let wire_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") &&
+        string.contains(wire_text, "content-length: 2") &&
+        ends_with(wire_text, "ok") {
         1
     } else {
         0
@@ -4131,6 +4137,7 @@ fn exec_http_server_invalid_method_returns_typed_error() {
 import std.io;
 import std.net;
 import std.http_server;
+import std.bytes;
 
 fn err_code(err: ServerError) -> Int {
     match err {
@@ -4164,7 +4171,7 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    tcp_send(client, "BREW /coffee HTTP/1.1\nHost: localhost\n\n");
+    tcp_send(client, bytes.from_string("BREW /coffee HTTP/1.1\nHost: localhost\n\n"));
     let code = match read_request(server, 4096, 1000) {
         Ok(_) => 0,
         Err(err) => err_code(err),
@@ -5582,4 +5589,161 @@ fn main() -> Int effects { io, proc } {
     assert_eq!(status.code().unwrap_or(1), 0, "stderr={stderr}");
     assert_eq!(format!("{ready_line}{stdout_rest}"), "ready\n42\n");
     assert_eq!(stderr, "");
+}
+
+#[test]
+fn exec_fs_bytes_binary_roundtrip_and_conversion_semantics() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.bytes;
+import std.string;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn bytes_err_code(v: Result[String, BytesError]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let input = match read_bytes("blob.bin") {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    };
+
+    let input_utf8_err_ok = if bytes_err_code(bytes.to_string(input)) == 1 { 1 } else { 0 };
+    let lossy_len_ok = if string.len(bytes.to_string_lossy(input)) >= 1 { 1 } else { 0 };
+
+    let wrote = ok_bool(write_bytes("roundtrip.bin", input));
+    let appended = ok_bool(append_bytes("roundtrip.bin", bytes.from_string("Z")));
+
+    let output = match read_bytes("roundtrip.bin") {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    };
+    let output_utf8_err_ok = if bytes_err_code(bytes.to_string(output)) == 1 { 1 } else { 0 };
+    let output_lossy_len_ok = if string.len(bytes.to_string_lossy(output)) >= 1 { 1 } else { 0 };
+    let concat_ok =
+        if bytes_err_code(bytes.to_string(bytes.concat(bytes.empty(), bytes.from_string("Z")))) == 0 {
+            1
+        } else {
+            0
+        };
+
+    if input_utf8_err_ok + lossy_len_ok + wrote + appended + output_utf8_err_ok + output_lossy_len_ok + concat_ok == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        fs::write(root.join("blob.bin"), [0x66_u8, 0x6f_u8, 0x80_u8, 0x00_u8])
+            .expect("write blob bytes");
+    });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_tcp_bytes_pipeline_roundtrip() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.bytes;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn decode_ok(v: Result[String, BytesError], expected: String) -> Int {
+    match v {
+        Ok(text) => if string.contains(text, expected) && string.len(text) == string.len(expected) {
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let outbound = bytes.concat(bytes.from_string("wire"), bytes.from_string("-bytes"));
+    let sent = match tcp_send(client, outbound) {
+        Ok(n) => if n == 10 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let received = match tcp_recv(server, 64, 1000) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let recv_decode = decode_ok(bytes.to_string(received), "wire-bytes");
+
+    let echoed = match tcp_send(server, bytes.from_string("ack")) {
+        Ok(n) => if n == 3 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let ack = match tcp_recv(client, 64, 1000) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let ack_decode = decode_ok(bytes.to_string(ack), "ack");
+
+    let closed =
+        match tcp_close(client) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        } +
+        match tcp_close(server) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        } +
+        match tcp_close(listener) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        };
+
+    if sent + recv_decode + echoed + ack_decode + closed == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
 }

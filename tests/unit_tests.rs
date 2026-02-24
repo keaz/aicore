@@ -1862,13 +1862,6 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &net_source,
         "std/net.aic",
-        "tcp_recv",
-        "aic_net_tcp_recv_intrinsic",
-        3,
-    );
-    assert_delegate_call(
-        &net_source,
-        "std/net.aic",
         "tcp_close",
         "aic_net_tcp_close_intrinsic",
         1,
@@ -1948,13 +1941,6 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "std/net.aic",
         "async_wait_int",
         "aic_net_async_wait_int_intrinsic",
-        2,
-    );
-    assert_delegate_call(
-        &net_source,
-        "std/net.aic",
-        "async_wait_string",
-        "aic_net_async_wait_string_intrinsic",
         2,
     );
     assert_delegate_call(
@@ -2915,6 +2901,7 @@ import std.set;
 import std.proc;
 import std.log;
 import std.string;
+import std.bytes;
 import std.vec;
 import std.option;
 import std.result;
@@ -2986,12 +2973,12 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _local = tcp_local_addr(1);
     let _accept = tcp_accept(1, 1);
     let _connect = tcp_connect("127.0.0.1:80", 1);
-    let _send = tcp_send(1, "ping");
+    let _send = tcp_send(1, bytes.from_string("ping"));
     let _recv = tcp_recv(1, 16, 1);
     let _close = tcp_close(1);
     let _udp = udp_bind("127.0.0.1:0");
     let _udp_local = udp_local_addr(1);
-    let _udp_send = udp_send_to(1, "127.0.0.1:9", "ping");
+    let _udp_send = udp_send_to(1, "127.0.0.1:9", bytes.from_string("ping"));
     let _udp_recv = udp_recv_from(1, 16, 1);
     let _udp_close = udp_close(1);
     let _dns = dns_lookup("localhost");
@@ -3029,7 +3016,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _lock = lock_int(IntMutex { handle: 1 }, 1);
     let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
     let _close_mutex = close_mutex(IntMutex { handle: 1 });
-    let _n = len("abc");
+    let _n = string.len("abc");
     let _contains = string.contains("abc", "b");
     let _starts = starts_with("abc", "a");
     let _ends = ends_with("abc", "c");
@@ -3052,7 +3039,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _bytes = string_to_bytes("hello");
     let _bytes_ok = bytes_to_string(_bytes);
     let _bytes_lossy = bytes_to_string_lossy(string_to_bytes("hello"));
-    let _bytes_valid = is_valid_utf8(string_to_bytes("hello"));
+    let _bytes_valid = string.is_valid_utf8(string_to_bytes("hello"));
     let _byte_len = byte_length("hello");
     let _ascii = is_ascii("hello");
     let _joined_parts = string.join(_parts, "|");
@@ -4326,4 +4313,154 @@ fn extract_diag_codes(text: &str) -> Vec<String> {
         i += 1;
     }
     out
+}
+
+#[test]
+fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
+    let bytes_source = fs::read_to_string("std/bytes.aic").expect("read std/bytes.aic");
+
+    assert_delegate_call(
+        &bytes_source,
+        "std/bytes.aic",
+        "byte_len",
+        "aic_bytes_len_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &bytes_source,
+        "std/bytes.aic",
+        "to_string_lossy",
+        "aic_bytes_to_string_lossy_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &bytes_source,
+        "std/bytes.aic",
+        "is_valid_utf8",
+        "aic_bytes_is_valid_utf8_intrinsic",
+        1,
+    );
+
+    assert!(
+        bytes_source.contains("aic_string_len_intrinsic(data)"),
+        "std/bytes.aic must implement byte_len via string intrinsic"
+    );
+    assert!(
+        bytes_source.contains("aic_string_format_intrinsic(\"{0}{1}\", pieces)"),
+        "std/bytes.aic must implement concat via string intrinsic"
+    );
+    assert!(
+        bytes_source.contains("aic_string_is_valid_utf8_intrinsic(data)"),
+        "std/bytes.aic must validate UTF-8 via intrinsic-backed string API"
+    );
+    assert!(
+        bytes_source.contains("aic_string_bytes_to_string_lossy_intrinsic(data)"),
+        "std/bytes.aic must decode lossy via intrinsic-backed string API"
+    );
+
+    assert!(
+        !bytes_source.contains("fn aic_bytes_len_intrinsic(data: String) -> Int {\n    0"),
+        "std/bytes.aic len intrinsic must not be a constant stub"
+    );
+    assert!(
+        !bytes_source.contains(
+            "fn aic_bytes_concat_intrinsic(left: String, right: String) -> String {\n    \"\""
+        ),
+        "std/bytes.aic concat intrinsic must not be a constant stub"
+    );
+    assert!(
+        !bytes_source
+            .contains("fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool {\n    false"),
+        "std/bytes.aic UTF-8 intrinsic must not be a constant stub"
+    );
+    assert!(
+        !bytes_source
+            .contains("fn aic_bytes_to_string_lossy_intrinsic(data: String) -> String {\n    \"\""),
+        "std/bytes.aic lossy intrinsic must not be a constant stub"
+    );
+}
+
+#[test]
+fn unit_std_fs_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
+    let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
+
+    assert!(
+        fs_source.contains("fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs }"),
+        "std/fs.aic read_bytes intrinsic must use runtime String payload"
+    );
+    assert!(
+        fs_source.contains("fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"),
+        "std/fs.aic write_bytes intrinsic must use runtime String payload"
+    );
+    assert!(
+        fs_source.contains("fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs }"),
+        "std/fs.aic append_bytes intrinsic must use runtime String payload"
+    );
+    assert!(
+        fs_source.contains("Ok(data) => Ok(Bytes { data: data })"),
+        "std/fs.aic read_bytes must wrap runtime String into Bytes"
+    );
+    assert!(
+        fs_source.contains("aic_fs_write_bytes_intrinsic(path, content.data)"),
+        "std/fs.aic write_bytes must pass Bytes.data into runtime intrinsic"
+    );
+    assert!(
+        fs_source.contains("aic_fs_append_bytes_intrinsic(path, content.data)"),
+        "std/fs.aic append_bytes must pass Bytes.data into runtime intrinsic"
+    );
+    assert!(
+        fs_source.contains("let out: Result[String, FsError] = Err(Io());"),
+        "std/fs.aic read_bytes intrinsic fallback must avoid fake success"
+    );
+}
+
+#[test]
+fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
+    let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+
+    assert!(
+        net_source.contains("fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
+        "std/net.aic tcp_send intrinsic must use runtime String payload"
+    );
+    assert!(
+        net_source.contains("fn aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"),
+        "std/net.aic tcp_recv intrinsic must use runtime String payload"
+    );
+    assert!(
+        net_source.contains("fn aic_net_udp_send_to_intrinsic(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"),
+        "std/net.aic udp_send_to intrinsic must use runtime String payload"
+    );
+    assert!(
+        net_source.contains("fn aic_net_async_send_submit_intrinsic(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"),
+        "std/net.aic async send intrinsic must use runtime String payload"
+    );
+    assert!(
+        net_source.contains("fn aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"),
+        "std/net.aic async wait intrinsic must use runtime String payload"
+    );
+
+    assert!(
+        net_source.contains("aic_net_tcp_send_intrinsic(handle, payload.data)"),
+        "std/net.aic tcp_send must pass Bytes.data"
+    );
+    assert!(
+        net_source.contains("aic_net_udp_send_to_intrinsic(handle, addr, payload.data)"),
+        "std/net.aic udp_send_to must pass Bytes.data"
+    );
+    assert!(
+        net_source.contains("aic_net_async_send_submit_intrinsic(handle, payload.data)"),
+        "std/net.aic async_tcp_send_submit must pass Bytes.data"
+    );
+    assert!(
+        net_source.contains("let raw = aic_net_tcp_recv_intrinsic(handle, max_bytes, timeout_ms);"),
+        "std/net.aic tcp_recv must bridge runtime String to Bytes"
+    );
+    assert!(
+        net_source.contains("let raw = aic_net_async_wait_string_intrinsic(op, timeout_ms);"),
+        "std/net.aic async_wait_string must bridge runtime String to Bytes"
+    );
+    assert!(
+        net_source.contains("let out: Result[Int, NetError] = Err(Io());"),
+        "std/net.aic byte send intrinsic fallback must avoid fake success"
+    );
 }

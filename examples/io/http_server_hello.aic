@@ -3,6 +3,7 @@ import std.net;
 import std.http_server;
 import std.map;
 import std.string;
+import std.bytes;
 
 fn string_eq(left: String, right: String) -> Int {
     if len(left) == len(right) && string.contains(left, right) {
@@ -45,7 +46,7 @@ fn main() -> Int effects { io, net } {
         Err(_) => 0,
     };
 
-    tcp_send(client, "GET /hello?name=AIC HTTP/1.1\nHost: localhost\n\n");
+    tcp_send(client, bytes.from_string("GET /hello?name=AIC HTTP/1.1\nHost: localhost\n\n"));
     let parsed_ok = match read_request(server, 4096, 1000) {
         Ok(req) => request_ok(req),
         Err(_) => 0,
@@ -54,9 +55,10 @@ fn main() -> Int effects { io, net } {
     write_response(server, text_response(200, "hello"));
     let wire = match tcp_recv(client, 512, 1000) {
         Ok(text) => text,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
-    let wire_ok = if string.contains(wire, "HTTP/1.1 200 OK") && ends_with(wire, "hello") {
+    let wire_text = bytes.to_string_lossy(wire);
+    let wire_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") && ends_with(wire_text, "hello") {
         1
     } else {
         0

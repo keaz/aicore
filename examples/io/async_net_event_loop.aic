@@ -1,6 +1,7 @@
 import std.io;
 import std.net;
 import std.string;
+import std.bytes;
 
 fn main() -> Int effects { io, net, concurrency } {
     let listener = match tcp_listen("127.0.0.1:0") {
@@ -28,22 +29,22 @@ fn main() -> Int effects { io, net, concurrency } {
         Ok(op) => op,
         Err(_) => AsyncStringOp { handle: 0 },
     };
-    let sent = match tcp_send(client, "ping") {
+    let sent = match tcp_send(client, bytes.from_string("ping")) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let received = match async_wait_string(recv_op, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
 
-    let send_back = match async_tcp_send(server, "pong", 2000) {
+    let send_back = match async_tcp_send(server, bytes.from_string("pong"), 2000) {
         Ok(n) => n,
         Err(_) => 0,
     };
     let echoed = match tcp_recv(client, 32, 2000) {
         Ok(v) => v,
-        Err(_) => "",
+        Err(_) => bytes.empty(),
     };
 
     let shutdown_ok = match async_shutdown() {
@@ -55,7 +56,7 @@ fn main() -> Int effects { io, net, concurrency } {
         (match tcp_close(server) { Ok(_) => 1, Err(_) => 0 }) +
         (match tcp_close(listener) { Ok(_) => 1, Err(_) => 0 });
 
-    if sent == 4 && len(received) == 4 && send_back == 4 && len(echoed) == 4 && shutdown_ok == 1 && close_count == 3 {
+    if sent == 4 && bytes.byte_len(received) == 4 && send_back == 4 && bytes.byte_len(echoed) == 4 && shutdown_ok == 1 && close_count == 3 {
         print_int(42);
     } else {
         print_int(0);

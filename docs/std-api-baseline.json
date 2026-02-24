@@ -2,6 +2,76 @@
   "schema_version": 1,
   "symbols": [
     {
+      "module": "std.bytes",
+      "kind": "enum",
+      "signature": "BytesError { InvalidUtf8, InvalidInput, Io }"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_bytes_concat_intrinsic(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_bytes_len_intrinsic(data: String) -> Int"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_bytes_to_string_lossy_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "byte_len(data: Bytes) -> Int"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "concat(left: Bytes, right: Bytes) -> Bytes"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "empty() -> Bytes"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "from_string(s: String) -> Bytes"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "is_empty(data: Bytes) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "is_valid_utf8(data: Bytes) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "to_string(data: Bytes) -> Result[String, BytesError]"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "to_string_lossy(data: Bytes) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "struct",
+      "signature": "Bytes { data: String }"
+    },
+    {
       "module": "std.concurrent",
       "kind": "enum",
       "signature": "ChannelError { Closed, Full, Empty, Timeout }"
@@ -594,7 +664,7 @@
     {
       "module": "std.fs",
       "kind": "fn",
-      "signature": "append_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+      "signature": "append_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -679,7 +749,7 @@
     {
       "module": "std.fs",
       "kind": "fn",
-      "signature": "read_bytes(path: String) -> Result[String, FsError] effects { fs }"
+      "signature": "read_bytes(path: String) -> Result[Bytes, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -719,7 +789,7 @@
     {
       "module": "std.fs",
       "kind": "fn",
-      "signature": "write_bytes(path: String, content: String) -> Result[Bool, FsError] effects { fs }"
+      "signature": "write_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs }"
     },
     {
       "module": "std.fs",
@@ -2084,7 +2154,7 @@
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"
+      "signature": "async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -2094,12 +2164,12 @@
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "async_tcp_send(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+      "signature": "async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "async_tcp_send_submit(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+      "signature": "async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -2109,7 +2179,7 @@
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"
+      "signature": "async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -2149,12 +2219,12 @@
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"
+      "signature": "tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"
     },
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"
+      "signature": "tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -2179,7 +2249,7 @@
     {
       "module": "std.net",
       "kind": "fn",
-      "signature": "udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"
+      "signature": "udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -2194,7 +2264,7 @@
     {
       "module": "std.net",
       "kind": "struct",
-      "signature": "UdpPacket { from: String, payload: String }"
+      "signature": "UdpPacket { from: String, payload: Bytes }"
     },
     {
       "module": "std.option",
@@ -2409,12 +2479,12 @@
     {
       "module": "std.regex",
       "kind": "fn",
-      "signature": "aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError]"
+      "signature": "aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
     },
     {
       "module": "std.regex",
       "kind": "fn",
-      "signature": "aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
+      "signature": "aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError]"
     },
     {
       "module": "std.regex",
@@ -2434,6 +2504,11 @@
     {
       "module": "std.regex",
       "kind": "fn",
+      "signature": "captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
       "signature": "compile(pattern: String) -> Result[Regex, RegexError]"
     },
     {
@@ -2444,17 +2519,22 @@
     {
       "module": "std.regex",
       "kind": "fn",
-      "signature": "captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
-    },
-    {
-      "module": "std.regex",
-      "kind": "fn",
       "signature": "find(regex: Regex, text: String) -> Result[String, RegexError]"
     },
     {
       "module": "std.regex",
       "kind": "fn",
       "signature": "find_all(regex: Regex, text: String) -> Result[Vec[RegexMatch], RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "find_all_collect(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch]) -> Result[Vec[RegexMatch], RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "find_all_step(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch], m: RegexMatch) -> Result[Vec[RegexMatch], RegexError]"
     },
     {
       "module": "std.regex",
