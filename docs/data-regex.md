@@ -25,6 +25,13 @@ struct Regex {
     pattern: String,
     flags: Int,
 }
+
+struct RegexMatch {
+    full: String,
+    groups: Vec[String],
+    start: Int,
+    end: Int,
+}
 ```
 
 Public APIs:
@@ -33,6 +40,8 @@ Public APIs:
 - `compile_with_flags(pattern: String, flags: Int) -> Result[Regex, RegexError]`
 - `is_match(regex: Regex, text: String) -> Result[Bool, RegexError]`
 - `find(regex: Regex, text: String) -> Result[String, RegexError]`
+- `captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]`
+- `find_all(regex: Regex, text: String) -> Result[Vec[RegexMatch], RegexError]`
 - `replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError]`
 
 ## Flags
@@ -64,11 +73,14 @@ Behavior notes:
 - `compile*` validates pattern + flags and returns a `Regex` value if successful.
 - `is_match` returns `Ok(true|false)`; no-match is not an error.
 - `find` returns the first matched substring or `Err(NoMatch)`.
+- `captures` returns first match details as `Ok(Some(RegexMatch { full, groups, start, end }))`; `groups` is ordered by capture index and excludes the full match; no-match is `Ok(None())`.
+- `find_all` returns all non-overlapping matches in source order; no-match is `Ok(Vec[])`.
 - `replace` replaces only the first match; if no match, original text is returned.
 
 ## Example
 
-See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/log_parse_regex.aic`.
+- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/log_parse_regex.aic`
+- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/regex_capture_groups.aic`
 
 ## Serde Derive Lite (`std.json`) - DT-T3
 

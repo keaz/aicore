@@ -4,6 +4,7 @@ import std.json;
 import std.regex;
 import std.string;
 import std.time;
+import std.vec;
 
 fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }

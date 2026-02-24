@@ -2414,6 +2414,11 @@
     {
       "module": "std.regex",
       "kind": "fn",
+      "signature": "aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
       "signature": "aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError]"
     },
     {
@@ -2439,7 +2444,17 @@
     {
       "module": "std.regex",
       "kind": "fn",
+      "signature": "captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
       "signature": "find(regex: Regex, text: String) -> Result[String, RegexError]"
+    },
+    {
+      "module": "std.regex",
+      "kind": "fn",
+      "signature": "find_all(regex: Regex, text: String) -> Result[Vec[RegexMatch], RegexError]"
     },
     {
       "module": "std.regex",
@@ -2475,6 +2490,11 @@
       "module": "std.regex",
       "kind": "struct",
       "signature": "Regex { pattern: String, flags: Int }"
+    },
+    {
+      "module": "std.regex",
+      "kind": "struct",
+      "signature": "RegexMatch { full: String, groups: Vec[String], start: Int, end: Int }"
     },
     {
       "module": "std.result",

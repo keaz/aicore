@@ -1525,7 +1525,10 @@ fn match_route(router: Router, method: String, path: String) -> Result[Option[Ro
         path.join("std/regex.aic"),
         r#"module std.regex;
 
+import std.option;
 import std.result;
+import std.string;
+import std.vec;
 
 enum RegexError {
     InvalidPattern,
@@ -1539,6 +1542,13 @@ enum RegexError {
 struct Regex {
     pattern: String,
     flags: Int,
+}
+
+struct RegexMatch {
+    full: String,
+    groups: Vec[String],
+    start: Int,
+    end: Int,
 }
 
 fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError] {
@@ -1561,6 +1571,11 @@ fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexE
 
 fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
     let out: Result[String, RegexError] = Ok(text);
+    out
+}
+
+fn aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError] {
+    let out: Result[Option[RegexMatch], RegexError] = Ok(None());
     out
 }
 
@@ -1598,6 +1613,46 @@ fn find(regex: Regex, text: String) -> Result[String, RegexError] {
 
 fn replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
     aic_regex_replace_intrinsic(regex, text, replacement)
+}
+
+fn captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError] {
+    aic_regex_captures_intrinsic(regex, text)
+}
+
+fn find_all_step(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch], m: RegexMatch) -> Result[Vec[RegexMatch], RegexError] {
+    let next_cursor = if m.end > m.start {
+        cursor + m.end
+    } else {
+        cursor + 1
+    };
+    let next_acc = vec.push(acc, RegexMatch {
+        full: m.full,
+        groups: m.groups,
+        start: m.start + cursor,
+        end: m.end + cursor,
+    });
+    find_all_collect(regex, text, next_cursor, next_acc)
+}
+
+fn find_all_collect(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch]) -> Result[Vec[RegexMatch], RegexError] {
+    let text_len = string.len(text);
+    if cursor > text_len {
+        Ok(acc)
+    } else {
+        let window = string.substring(text, cursor, text_len);
+        match captures(regex, window) {
+            Ok(found) => match found {
+                Some(m) => find_all_step(regex, text, cursor, acc, m),
+                None => Ok(acc),
+            },
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn find_all(regex: Regex, text: String) -> Result[Vec[RegexMatch], RegexError] {
+    let empty: Vec[RegexMatch] = vec.new_vec();
+    find_all_collect(regex, text, 0, empty)
 }
 "#,
     )?;

@@ -1530,6 +1530,7 @@ fn exec_regex_compile_match_find_replace() {
 import std.io;
 import std.regex;
 import std.string;
+import std.vec;
 
 fn bool_result(v: Result[Bool, RegexError]) -> Int {
     match v {
@@ -1580,6 +1581,8 @@ fn exec_regex_reports_structured_errors() {
     let src = r#"
 import std.io;
 import std.regex;
+import std.string;
+import std.vec;
 
 fn regex_error_code(err: RegexError) -> Int {
     match err {
@@ -1625,6 +1628,145 @@ fn main() -> Int effects { io } {
     let miss = no_match(regex.find(re, "all good"));
 
     if bad + unsupported + miss == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_regex_captures_and_find_all() {
+    let src = r#"
+import std.io;
+import std.regex;
+import std.string;
+import std.vec;
+
+fn parse_or(v: Result[Int, String], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn capture_from_match(m: RegexMatch) -> Int effects { env } {
+    let g1 = match vec.get(m.groups, 0) {
+        Some(value) => value,
+        None => "",
+    };
+    let g2 = match vec.get(m.groups, 1) {
+        Some(value) => value,
+        None => "",
+    };
+    if len(m.full) == 5
+        && parse_or(parse_int(g1), -1) == 12
+        && parse_or(parse_int(g2), -1) == 34
+        && m.start == 3
+        && m.end == 8
+    { 1 } else { 0 }
+}
+
+fn capture_ok(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env } {
+    match v {
+        Ok(found) => match found {
+            Some(m) => capture_from_match(m),
+            None => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn captures_none(v: Result[Option[RegexMatch], RegexError]) -> Int {
+    match v {
+        Ok(found) => match found {
+            None => 1,
+            Some(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn empty_groups() -> Vec[String] effects { env } {
+    let groups: Vec[String] = vec.new_vec();
+    groups
+}
+
+fn all_ok_items(items: Vec[RegexMatch]) -> Int effects { env } {
+    if items.len != 3 {
+        0
+    } else {
+        let first = match vec.get(items, 0) {
+            Some(value) => value,
+            None => RegexMatch { full: "", groups: empty_groups(), start: 0, end: 0 },
+        };
+        let second = match vec.get(items, 1) {
+            Some(value) => value,
+            None => RegexMatch { full: "", groups: empty_groups(), start: 0, end: 0 },
+        };
+        let third = match vec.get(items, 2) {
+            Some(value) => value,
+            None => RegexMatch { full: "", groups: empty_groups(), start: 0, end: 0 },
+        };
+        let second_g1 = match vec.get(second.groups, 0) {
+            Some(value) => value,
+            None => "",
+        };
+        let third_g2 = match vec.get(third.groups, 1) {
+            Some(value) => value,
+            None => "",
+        };
+
+        if len(first.full) == 3
+            && first.start == 1
+            && first.end == 4
+            && len(second.full) == 5
+            && second.start == 6
+            && second.end == 11
+            && len(third.full) == 7
+            && third.start == 13
+            && third.end == 20
+            && parse_or(parse_int(second_g1), -1) == 33
+            && parse_or(parse_int(third_g2), -1) == 666
+        {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+fn all_ok(v: Result[Vec[RegexMatch], RegexError]) -> Int effects { env } {
+    match v {
+        Ok(items) => all_ok_items(items),
+        Err(_) => 0,
+    }
+}
+
+fn all_none(v: Result[Vec[RegexMatch], RegexError]) -> Int {
+    match v {
+        Ok(items) => if items.len == 0 { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { env, io } {
+    let re = match compile("([0-9]+)-([0-9]+)") {
+        Ok(value) => value,
+        Err(_) => Regex { pattern: "", flags: 0 },
+    };
+
+    let first = capture_ok(captures(re, "id=12-34 status=ok"));
+    let none_capture = captures_none(captures(re, "no numbers"));
+    let all = all_ok(find_all(re, "a1-2 b33-44 c555-666"));
+    let none_all = all_none(find_all(re, "no numbers"));
+
+    if first + none_capture + all + none_all == 4 {
         print_int(42);
     } else {
         print_int(0);

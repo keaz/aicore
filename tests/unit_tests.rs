@@ -2546,6 +2546,13 @@ fn unit_std_regex_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &regex_source,
         "std/regex.aic",
+        "captures",
+        "aic_regex_captures_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &regex_source,
+        "std/regex.aic",
         "replace",
         "aic_regex_replace_intrinsic",
         3,

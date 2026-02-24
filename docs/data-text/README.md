@@ -8,7 +8,7 @@ Use this guide when building log parsers, config loaders, API validators, and ti
 
 | Module | Determinism contract | Positive example (CI) | Negative example (CI) |
 |---|---|---|---|
-| `std.regex` | Stable flag bitmask, stable first-match behavior | `examples/data/log_parse_regex.aic` | `examples/data/data_stack_negative_cases.aic` |
+| `std.regex` | Stable flag bitmask, stable first-match and capture-group behavior | `examples/data/regex_capture_groups.aic` | `examples/data/data_stack_negative_cases.aic` |
 | `std.json` | Stable parse/decode error mapping, deterministic stringify/object ordering | `examples/data/config_json.aic` | `examples/data/data_stack_negative_cases.aic` |
 | `std.json` serde (`encode/decode_with/schema`) | Deterministic struct/enum wire format and schema text | `examples/data/serde_models.aic` | `examples/data/serde_negative_cases.aic` |
 | `std.url` + `std.http` | Stable parser/validator errors and normalization behavior | `examples/data/http_types.aic` | `examples/data/url_http_negative_cases.aic` |
@@ -22,13 +22,15 @@ Use this guide when building log parsers, config loaders, API validators, and ti
 Core APIs:
 
 - `compile`, `compile_with_flags`
-- `is_match`, `find`, `replace`
+- `is_match`, `find`, `captures`, `find_all`, `replace`
 
 Rules:
 
 - `flags` is a deterministic bitmask (`no_flags`, `flag_case_insensitive`, `flag_multiline`, `flag_dot_matches_newline`).
 - `is_match` returns `Ok(Bool)` for both match and no-match conditions.
 - `find` returns `Err(NoMatch)` when no substring matches.
+- `captures` returns `Ok(None())` when no substring matches.
+- `find_all` returns matches in source order and returns an empty vector when no substring matches.
 - `replace` replaces the first match only; if no match exists, the original text is returned.
 - Unsupported flag combos and malformed patterns map to stable `RegexError` variants.
 
@@ -140,6 +142,7 @@ See `docs/data-text/cookbook.md` for ingest-transform-emit patterns, including t
 
 ```bash
 cargo run --quiet --bin aic -- run examples/data/log_parse_regex.aic
+cargo run --quiet --bin aic -- run examples/data/regex_capture_groups.aic
 cargo run --quiet --bin aic -- run examples/data/config_json.aic
 cargo run --quiet --bin aic -- run examples/data/serde_models.aic
 cargo run --quiet --bin aic -- run examples/data/serde_negative_cases.aic

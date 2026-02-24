@@ -1159,6 +1159,9 @@ impl<'a> Generator<'a> {
             "declare i64 @aic_rt_regex_find(i8*, i64, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
         text.push_str(
+            "declare i64 @aic_rt_regex_captures(i8*, i64, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i64*)\n",
+        );
+        text.push_str(
             "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n\n",
         );
         if !self.extern_decls.is_empty() {
@@ -20138,6 +20141,7 @@ impl<'a> Generator<'a> {
             "compile_with_flags" | "aic_regex_compile_intrinsic" => "compile_with_flags",
             "is_match" | "aic_regex_is_match_intrinsic" => "is_match",
             "find" | "aic_regex_find_intrinsic" => "find",
+            "captures" | "aic_regex_captures_intrinsic" => "captures",
             "replace" | "aic_regex_replace_intrinsic" => "replace",
             _ => return None,
         };
@@ -20169,6 +20173,15 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_regex_find_call(name, args, span, fctx))
+            }
+            "captures"
+                if self.sig_matches_shape(
+                    name,
+                    &["Regex", "String"],
+                    "Result[Option[RegexMatch], RegexError]",
+                ) =>
+            {
+                Some(self.gen_regex_captures_call(name, args, span, fctx))
             }
             "replace"
                 if self.sig_matches_shape(
@@ -20442,6 +20455,163 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
+        self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_regex_captures_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "captures expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let regex = self.gen_expr(&args[0], fctx)?;
+        let text = self.gen_expr(&args[1], fctx)?;
+        if text.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "captures expects Regex and String",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pattern_ptr, pattern_len, pattern_cap, flags_repr) =
+            self.regex_parts(&regex, args[0].span, fctx)?;
+        let (text_ptr, text_len, text_cap) = self.string_parts(&text, args[1].span, fctx)?;
+
+        let out_full_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_full_ptr_slot));
+        let out_full_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_full_len_slot));
+        let out_groups_ptr_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_groups_ptr_slot));
+        let out_groups_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_groups_count_slot));
+        let out_start_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_start_slot));
+        let out_end_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_end_slot));
+        let out_found_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_found_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_regex_captures(i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {}, i64* {}, i64* {}, i64* {})",
+            err,
+            pattern_ptr,
+            pattern_len,
+            pattern_cap,
+            flags_repr,
+            text_ptr,
+            text_len,
+            text_cap,
+            out_full_ptr_slot,
+            out_full_len_slot,
+            out_groups_ptr_slot,
+            out_groups_count_slot,
+            out_start_slot,
+            out_end_slot,
+            out_found_slot
+        ));
+
+        let out_full_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_full_ptr, out_full_ptr_slot
+        ));
+        let out_full_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_full_len, out_full_len_slot
+        ));
+        let out_groups_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_groups_ptr, out_groups_ptr_slot
+        ));
+        let out_groups_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_groups_count, out_groups_count_slot
+        ));
+        let out_start = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_start, out_start_slot
+        ));
+        let out_end = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_end, out_end_slot));
+        let out_found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_found, out_found_slot
+        ));
+        let found_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", found_bool, out_found));
+
+        let full_value = self.build_string_value(&out_full_ptr, &out_full_len, &out_full_len, fctx);
+        let groups_value =
+            self.build_vec_string_payload_from_ptr(&out_groups_ptr, &out_groups_count, span, fctx)?;
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let Some((_, match_ty, _, _)) = self.option_layout_parts(&ok_ty, span) else {
+            return None;
+        };
+        let match_value = self.build_http_struct_value(
+            &match_ty,
+            "RegexMatch",
+            &[
+                ("full", full_value),
+                ("groups", groups_value),
+                (
+                    "start",
+                    Value {
+                        ty: LType::Int,
+                        repr: Some(out_start),
+                    },
+                ),
+                (
+                    "end",
+                    Value {
+                        ty: LType::Int,
+                        repr: Some(out_end),
+                    },
+                ),
+            ],
+            span,
+            fctx,
+        )?;
+        let ok_payload =
+            self.wrap_option_with_condition(&ok_ty, match_value, &found_bool, span, fctx)?;
         self.wrap_regex_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
@@ -24870,6 +25040,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("regex", "compile_with_flags") => Some("aic_regex_compile_intrinsic"),
         ("regex", "is_match") => Some("aic_regex_is_match_intrinsic"),
         ("regex", "find") => Some("aic_regex_find_intrinsic"),
+        ("regex", "captures") => Some("aic_regex_captures_intrinsic"),
         ("regex", "replace") => Some("aic_regex_replace_intrinsic"),
         _ => None,
     }
@@ -37777,6 +37948,53 @@ long aic_rt_regex_find(
     return 4;
 }
 
+long aic_rt_regex_captures(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_full_ptr,
+    long* out_full_len,
+    char** out_groups_ptr,
+    long* out_group_count,
+    long* out_start,
+    long* out_end,
+    long* out_found
+) {
+    (void)pattern_ptr;
+    (void)pattern_len;
+    (void)pattern_cap;
+    (void)flags;
+    (void)text_ptr;
+    (void)text_len;
+    (void)text_cap;
+    if (out_full_ptr != NULL) {
+        *out_full_ptr = NULL;
+    }
+    if (out_full_len != NULL) {
+        *out_full_len = 0;
+    }
+    if (out_groups_ptr != NULL) {
+        *out_groups_ptr = NULL;
+    }
+    if (out_group_count != NULL) {
+        *out_group_count = 0;
+    }
+    if (out_start != NULL) {
+        *out_start = 0;
+    }
+    if (out_end != NULL) {
+        *out_end = 0;
+    }
+    if (out_found != NULL) {
+        *out_found = 0;
+    }
+    return 4;
+}
+
 long aic_rt_regex_replace(
     const char* pattern_ptr,
     long pattern_len,
@@ -37993,6 +38211,178 @@ long aic_rt_regex_find(
     }
     if (out_len != NULL) {
         *out_len = (long)(end - start);
+    }
+    return 0;
+}
+
+long aic_rt_regex_captures(
+    const char* pattern_ptr,
+    long pattern_len,
+    long pattern_cap,
+    long flags,
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_full_ptr,
+    long* out_full_len,
+    char** out_groups_ptr,
+    long* out_group_count,
+    long* out_start,
+    long* out_end,
+    long* out_found
+) {
+    (void)text_cap;
+    if (out_full_ptr != NULL) {
+        *out_full_ptr = NULL;
+    }
+    if (out_full_len != NULL) {
+        *out_full_len = 0;
+    }
+    if (out_groups_ptr != NULL) {
+        *out_groups_ptr = NULL;
+    }
+    if (out_group_count != NULL) {
+        *out_group_count = 0;
+    }
+    if (out_start != NULL) {
+        *out_start = 0;
+    }
+    if (out_end != NULL) {
+        *out_end = 0;
+    }
+    if (out_found != NULL) {
+        *out_found = 0;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 2;
+    }
+
+    regex_t compiled;
+    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    if (err != 0) {
+        return err;
+    }
+
+    char* text = aic_rt_fs_copy_slice(text_ptr, text_len);
+    if (text == NULL) {
+        regfree(&compiled);
+        return 6;
+    }
+
+    size_t raw_match_count = (size_t)compiled.re_nsub + 1;
+    if (raw_match_count == 0 || raw_match_count > (size_t)LONG_MAX) {
+        free(text);
+        regfree(&compiled);
+        return 5;
+    }
+    regmatch_t* matches = (regmatch_t*)calloc(raw_match_count, sizeof(regmatch_t));
+    if (matches == NULL) {
+        free(text);
+        regfree(&compiled);
+        return 6;
+    }
+
+    int rc = regexec(&compiled, text, raw_match_count, matches, 0);
+#ifdef REG_NOMATCH
+    if (rc == REG_NOMATCH) {
+        free(matches);
+        free(text);
+        regfree(&compiled);
+        return 0;
+    }
+#endif
+    if (rc != 0) {
+        free(matches);
+        free(text);
+        regfree(&compiled);
+        return aic_rt_regex_map_exec_error(rc);
+    }
+    if (matches[0].rm_so < 0 || matches[0].rm_eo < matches[0].rm_so) {
+        free(matches);
+        free(text);
+        regfree(&compiled);
+        return 6;
+    }
+
+    size_t full_start = (size_t)matches[0].rm_so;
+    size_t full_end = (size_t)matches[0].rm_eo;
+    char* full = aic_rt_copy_bytes(text + full_start, full_end - full_start);
+    if (full == NULL) {
+        free(matches);
+        free(text);
+        regfree(&compiled);
+        return 6;
+    }
+
+    size_t group_count = raw_match_count - 1;
+    if (group_count > (size_t)LONG_MAX) {
+        free(full);
+        free(matches);
+        free(text);
+        regfree(&compiled);
+        return 5;
+    }
+    AicString* groups = NULL;
+    if (group_count > 0) {
+        groups = (AicString*)calloc(group_count, sizeof(AicString));
+        if (groups == NULL) {
+            free(full);
+            free(matches);
+            free(text);
+            regfree(&compiled);
+            return 6;
+        }
+    }
+
+    for (size_t i = 0; i < group_count; ++i) {
+        regmatch_t group = matches[i + 1];
+        size_t part_start = 0;
+        size_t part_end = 0;
+        if (group.rm_so >= 0 && group.rm_eo >= group.rm_so) {
+            part_start = (size_t)group.rm_so;
+            part_end = (size_t)group.rm_eo;
+        }
+        char* part = aic_rt_copy_bytes(text + part_start, part_end - part_start);
+        if (part == NULL) {
+            aic_rt_string_free_parts(groups, i);
+            free(full);
+            free(matches);
+            free(text);
+            regfree(&compiled);
+            return 6;
+        }
+        groups[i].ptr = part;
+        groups[i].len = (long)(part_end - part_start);
+        groups[i].cap = (long)(part_end - part_start);
+    }
+
+    free(matches);
+    free(text);
+    regfree(&compiled);
+    if (out_full_ptr != NULL) {
+        *out_full_ptr = full;
+    } else {
+        free(full);
+    }
+    if (out_full_len != NULL) {
+        *out_full_len = (long)(full_end - full_start);
+    }
+    if (out_groups_ptr != NULL) {
+        *out_groups_ptr = (char*)groups;
+    } else {
+        aic_rt_string_free_parts(groups, group_count);
+    }
+    if (out_group_count != NULL) {
+        *out_group_count = (long)group_count;
+    }
+    if (out_start != NULL) {
+        *out_start = (long)full_start;
+    }
+    if (out_end != NULL) {
+        *out_end = (long)full_end;
+    }
+    if (out_found != NULL) {
+        *out_found = 1;
     }
     return 0;
 }
@@ -40836,6 +41226,9 @@ fn main() -> Int effects { io } {
             "declare i64 @aic_rt_regex_is_match(i8*, i64, i64, i64, i8*, i64, i64, i64*)"
         ));
         assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_regex_captures(i8*, i64, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i64*)"
+        ));
+        assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)"
         ));
         assert!(runtime_c_source().contains(
@@ -40937,6 +41330,7 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_json_object_set("));
         assert!(runtime_c_source().contains("long aic_rt_json_object_get("));
         assert!(runtime_c_source().contains("long aic_rt_regex_compile("));
+        assert!(runtime_c_source().contains("long aic_rt_regex_captures("));
         assert!(runtime_c_source().contains("long aic_rt_regex_find("));
         assert!(runtime_c_source().contains("long aic_rt_regex_replace("));
     }

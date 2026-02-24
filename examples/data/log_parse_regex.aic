@@ -3,6 +3,7 @@ module example.data.log_parse_regex;
 import std.io;
 import std.regex;
 import std.string;
+import std.vec;
 
 fn bool_result(v: Result[Bool, RegexError]) -> Int {
     match v {
