@@ -37,6 +37,7 @@ Published parse/check/build/fix schemas:
 - `aic fmt`
 - `aic ir`
 - `aic impact`
+- `aic metrics`
 - `aic ir-migrate`
 - `aic migrate`
 - `aic lock`
@@ -93,6 +94,33 @@ Output keys:
 - `blast_radius` (`small|medium|large`)
 
 `affected_tests` can be empty; when callers are present, this indicates an untested impact zone.
+
+## `aic metrics` JSON output
+
+Usage:
+
+```bash
+aic metrics <file>
+aic metrics <file> --check --max-cyclomatic 15
+```
+
+Per-function fields (deterministic ordering by function name):
+
+- `name`
+- `cyclomatic_complexity`
+- `cognitive_complexity`
+- `lines`
+- `params`
+- `effects`
+- `max_nesting_depth`
+- `rating`
+
+Check mode:
+
+- `--check` enables threshold gating.
+- Thresholds are loaded from nearest `aic.toml` `[metrics]` section.
+- `--max-cyclomatic` overrides configured `max_cyclomatic`.
+- Exit code is non-zero when any threshold violation is present.
 
 ## Diagnostics output modes
 

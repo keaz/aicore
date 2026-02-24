@@ -78,3 +78,23 @@ The example demonstrates:
 - `load_json` currently expects a JSON object whose values decode to `String`.
 - Nested JSON objects/arrays are not flattened automatically.
 - No built-in precedence policy beyond what callers implement (example uses file then env merge).
+
+## CLI manifest thresholds (`aic.toml`)
+
+The `aic metrics` command also loads deterministic threshold configuration from the nearest
+`aic.toml` file using a `[metrics]` section:
+
+```toml
+[metrics]
+max_cyclomatic = 15
+max_cognitive = 25
+max_lines = 120
+max_params = 6
+max_nesting_depth = 4
+```
+
+Behavior:
+
+- All threshold keys are optional.
+- `aic metrics --check` uses configured thresholds.
+- `--max-cyclomatic` overrides configured `max_cyclomatic` for that invocation.

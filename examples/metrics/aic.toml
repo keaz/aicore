@@ -1,0 +1,10 @@
+[package]
+name = "metrics_demo"
+main = "src/main.aic"
+
+[metrics]
+max_cyclomatic = 6
+max_cognitive = 12
+max_lines = 80
+max_params = 4
+max_nesting_depth = 3

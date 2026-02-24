@@ -59,6 +59,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "metrics",
+        description: "Deterministic per-function complexity metrics and threshold checks",
+        stable_flags: &["--check", "--max-cyclomatic"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "bench",
         description: "Run benchmark dataset with deterministic machine-readable output",
         stable_flags: &["--budget", "--output", "--compare"],

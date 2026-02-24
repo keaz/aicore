@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::diagnostics::Diagnostic;
+use crate::metrics::MetricsThresholds;
 use crate::span::Span;
 
 const LOCKFILE_NAME: &str = "aic.lock";
@@ -33,6 +34,7 @@ pub struct Manifest {
     pub main: String,
     pub dependencies: Vec<ManifestDependency>,
     pub native: NativeLinkConfig,
+    pub metrics: MetricsThresholds,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -766,6 +768,32 @@ pub fn read_manifest(project_root: &Path) -> anyhow::Result<Option<Manifest>> {
     Ok(Some(parse_manifest(&text, &path)?))
 }
 
+pub fn metrics_thresholds_for_input(input: &Path) -> anyhow::Result<MetricsThresholds> {
+    let mut current = if input.is_dir() {
+        input.to_path_buf()
+    } else {
+        input
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+
+    if current.as_os_str().is_empty() {
+        current = PathBuf::from(".");
+    }
+    current = canonical_or_self(current);
+
+    loop {
+        if let Some(manifest) = read_manifest(&current)? {
+            return Ok(manifest.metrics);
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    Ok(MetricsThresholds::default())
+}
+
 pub fn native_link_config(project_root: &Path) -> anyhow::Result<NativeLinkConfig> {
     let Some(manifest) = read_manifest(project_root)? else {
         return Ok(NativeLinkConfig::default());
@@ -989,6 +1017,7 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
     let mut main: Option<String> = None;
     let mut dependencies = Vec::new();
     let mut native = NativeLinkConfig::default();
+    let mut metrics = MetricsThresholds::default();
 
     for (line_no, raw_line) in text.lines().enumerate() {
         let line = raw_line.split('#').next().unwrap_or_default().trim();
@@ -1039,6 +1068,24 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
                 "objects" => native.objects = parse_string_list(value, path, line_no + 1)?,
                 _ => {}
             }
+            continue;
+        }
+
+        if section == "metrics" {
+            match key {
+                "max_cyclomatic" => {
+                    metrics.max_cyclomatic = Some(parse_u32(value, path, line_no + 1)?)
+                }
+                "max_cognitive" => {
+                    metrics.max_cognitive = Some(parse_u32(value, path, line_no + 1)?)
+                }
+                "max_lines" => metrics.max_lines = Some(parse_u32(value, path, line_no + 1)?),
+                "max_params" => metrics.max_params = Some(parse_u32(value, path, line_no + 1)?),
+                "max_nesting_depth" => {
+                    metrics.max_nesting_depth = Some(parse_u32(value, path, line_no + 1)?)
+                }
+                _ => {}
+            }
         }
     }
 
@@ -1064,6 +1111,7 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
         main: main.unwrap_or_else(|| "src/main.aic".to_string()),
         dependencies,
         native,
+        metrics,
     })
 }
 
@@ -1136,6 +1184,16 @@ fn parse_string(value: &str, path: &Path, line_no: usize) -> anyhow::Result<Stri
         return Ok(value[1..value.len() - 1].to_string());
     }
     anyhow::bail!("expected quoted string at {}:{}", path.display(), line_no)
+}
+
+fn parse_u32(value: &str, path: &Path, line_no: usize) -> anyhow::Result<u32> {
+    value.trim().parse::<u32>().map_err(|_| {
+        anyhow::anyhow!(
+            "expected unsigned integer at {}:{}",
+            path.display(),
+            line_no
+        )
+    })
 }
 
 fn parse_string_list(value: &str, path: &Path, line_no: usize) -> anyhow::Result<Vec<String>> {
@@ -1295,8 +1353,8 @@ mod tests {
 
     use super::{
         compute_package_checksum, generate_and_write_lockfile, generate_lockfile, lockfile_path,
-        native_link_config, read_manifest, read_workspace_manifest, resolve_dependency_context,
-        workspace_build_plan, PackageOptions,
+        metrics_thresholds_for_input, native_link_config, read_manifest, read_workspace_manifest,
+        resolve_dependency_context, workspace_build_plan, PackageOptions,
     };
 
     fn write_workspace_demo(root: &std::path::Path) {
@@ -1394,6 +1452,60 @@ objects = ["native/libextra.a"]
         assert_eq!(native.libs, vec!["m".to_string(), "z".to_string()]);
         assert_eq!(native.search_paths, vec!["native/lib".to_string()]);
         assert_eq!(native.objects, vec!["native/libextra.a".to_string()]);
+    }
+
+    #[test]
+    fn parses_metrics_threshold_configuration() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("aic.toml"),
+            r#"[package]
+name = "metrics_app"
+main = "src/main.aic"
+
+[metrics]
+max_cyclomatic = 9
+max_cognitive = 14
+max_lines = 30
+max_params = 3
+max_nesting_depth = 2
+"#,
+        )
+        .expect("write manifest");
+        let manifest = read_manifest(dir.path())
+            .expect("manifest")
+            .expect("manifest present");
+        assert_eq!(manifest.metrics.max_cyclomatic, Some(9));
+        assert_eq!(manifest.metrics.max_cognitive, Some(14));
+        assert_eq!(manifest.metrics.max_lines, Some(30));
+        assert_eq!(manifest.metrics.max_params, Some(3));
+        assert_eq!(manifest.metrics.max_nesting_depth, Some(2));
+    }
+
+    #[test]
+    fn resolves_metrics_thresholds_from_nearest_manifest() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
+        fs::write(
+            dir.path().join("aic.toml"),
+            r#"[package]
+name = "metrics_app"
+main = "src/main.aic"
+
+[metrics]
+max_cyclomatic = 11
+"#,
+        )
+        .expect("write manifest");
+        fs::write(
+            dir.path().join("src/main.aic"),
+            "fn main() -> Int { if true { 1 } else { 0 } }\n",
+        )
+        .expect("write source");
+
+        let thresholds = metrics_thresholds_for_input(&dir.path().join("src/main.aic"))
+            .expect("metrics thresholds");
+        assert_eq!(thresholds.max_cyclomatic, Some(11));
     }
 
     #[test]

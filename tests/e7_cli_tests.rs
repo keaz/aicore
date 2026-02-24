@@ -204,9 +204,9 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "ast", "impact", "coverage", "bench", "diag", "explain", "fmt", "ir",
-        "migrate", "build", "lsp", "daemon", "repl", "test", "grammar", "contract", "release",
-        "run",
+        "init", "check", "ast", "impact", "coverage", "metrics", "bench", "diag", "explain", "fmt",
+        "ir", "migrate", "build", "lsp", "daemon", "repl", "test", "grammar", "contract",
+        "release", "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -583,6 +583,154 @@ fn coverage_check_enforces_minimum_percentage() {
 }
 
 #[test]
+fn metrics_command_emits_deterministic_json_shape() {
+    let project = tempdir().expect("project");
+    let source = project.path().join("metrics_demo.aic");
+    fs::write(
+        &source,
+        concat!(
+            "module metrics.demo;\n",
+            "fn beta(a: Int, b: Int) -> Int effects { io } {\n",
+            "    if a > 0 && b > 0 {\n",
+            "        if a > b { a } else { b }\n",
+            "    } else {\n",
+            "        0\n",
+            "    }\n",
+            "}\n",
+            "fn alpha(v: Int) -> Int {\n",
+            "    if v > 0 { v } else { 0 }\n",
+            "}\n",
+        ),
+    )
+    .expect("write metrics source");
+    let source_str = source.to_string_lossy().to_string();
+
+    let first = run_aic(&["metrics", &source_str]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "metrics stdout={}\nmetrics stderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = run_aic(&["metrics", &source_str]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "metrics output should be deterministic"
+    );
+
+    let payload: serde_json::Value = serde_json::from_slice(&first.stdout).expect("metrics json");
+    assert_eq!(payload["phase"], "metrics");
+    assert_eq!(payload["schema_version"], "1.0");
+    let functions = payload["functions"].as_array().expect("functions array");
+    assert_eq!(functions.len(), 2);
+    assert_eq!(functions[0]["name"], "alpha");
+    assert_eq!(functions[1]["name"], "beta");
+    for function in functions {
+        assert!(function["cyclomatic_complexity"].is_u64());
+        assert!(function["cognitive_complexity"].is_u64());
+        assert!(function["lines"].is_u64());
+        assert!(function["params"].is_u64());
+        assert!(function["effects"].is_array());
+        assert!(function["max_nesting_depth"].is_u64());
+        assert!(function["rating"].is_string());
+    }
+}
+
+#[test]
+fn metrics_check_fails_when_cyclomatic_exceeds_cli_threshold() {
+    let project = tempdir().expect("project");
+    let source = project.path().join("metrics_gate.aic");
+    fs::write(
+        &source,
+        concat!(
+            "module metrics.gate;\n",
+            "fn complex(v: Int) -> Int {\n",
+            "    if v > 0 && v < 100 {\n",
+            "        if v > 10 { v } else { 10 }\n",
+            "    } else {\n",
+            "        0\n",
+            "    }\n",
+            "}\n",
+        ),
+    )
+    .expect("write metrics gate source");
+    let source_str = source.to_string_lossy().to_string();
+
+    let fail = run_aic(&["metrics", &source_str, "--check", "--max-cyclomatic", "2"]);
+    assert_eq!(fail.status.code(), Some(1));
+    let fail_json: serde_json::Value = serde_json::from_slice(&fail.stdout).expect("fail json");
+    assert_eq!(fail_json["phase"], "metrics");
+    assert_eq!(fail_json["check"]["passed"], false);
+    assert!(fail_json["check"]["violations"]
+        .as_array()
+        .expect("violations")
+        .iter()
+        .any(|entry| {
+            entry["function"] == "complex" && entry["metric"] == "cyclomatic_complexity"
+        }));
+
+    let pass = run_aic(&["metrics", &source_str, "--check", "--max-cyclomatic", "50"]);
+    assert_eq!(pass.status.code(), Some(0));
+    let pass_json: serde_json::Value = serde_json::from_slice(&pass.stdout).expect("pass json");
+    assert_eq!(pass_json["check"]["passed"], true);
+}
+
+#[test]
+fn metrics_check_uses_aic_toml_thresholds_and_cli_override() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    fs::write(
+        project.path().join("aic.toml"),
+        concat!(
+            "[package]\n",
+            "name = \"metrics_demo\"\n",
+            "main = \"src/main.aic\"\n\n",
+            "[metrics]\n",
+            "max_cyclomatic = 2\n",
+        ),
+    )
+    .expect("write manifest");
+    fs::write(
+        project.path().join("src/main.aic"),
+        concat!(
+            "module metrics.cfg;\n",
+            "fn main(v: Int) -> Int {\n",
+            "    if v > 0 && v < 100 {\n",
+            "        if v > 10 { v } else { 10 }\n",
+            "    } else {\n",
+            "        0\n",
+            "    }\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let fail = run_aic_in_dir(project.path(), &["metrics", "src/main.aic", "--check"]);
+    assert_eq!(fail.status.code(), Some(1));
+    let fail_json: serde_json::Value = serde_json::from_slice(&fail.stdout).expect("fail json");
+    assert_eq!(fail_json["check"]["thresholds"]["max_cyclomatic"], 2);
+    assert_eq!(fail_json["check"]["passed"], false);
+
+    let pass = run_aic_in_dir(
+        project.path(),
+        &[
+            "metrics",
+            "src/main.aic",
+            "--check",
+            "--max-cyclomatic",
+            "20",
+        ],
+    );
+    assert_eq!(pass.status.code(), Some(0));
+    let pass_json: serde_json::Value = serde_json::from_slice(&pass.stdout).expect("pass json");
+    assert_eq!(pass_json["check"]["thresholds"]["max_cyclomatic"], 20);
+    assert_eq!(pass_json["check"]["passed"], true);
+}
+
+#[test]
 fn bench_command_emits_json_and_writes_report_file() {
     let project = tempdir().expect("project");
     let (budget_path, dataset_rel) = write_bench_fixture(project.path());
@@ -773,6 +921,11 @@ fn explain_and_contract_commands_work() {
         .expect("commands")
         .iter()
         .any(|c| c["name"] == "coverage"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "metrics"));
     assert!(contract_json["commands"]
         .as_array()
         .expect("commands")

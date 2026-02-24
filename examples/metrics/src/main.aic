@@ -1,0 +1,25 @@
+module metrics.demo;
+
+fn classify(x: Int) -> Int {
+    if x > 0 {
+        if x > 10 { 2 } else { 1 }
+    } else {
+        0
+    }
+}
+
+fn risky(a: Int, b: Int) -> Int effects { io } {
+    if a > 0 && b > 0 {
+        if a > b {
+            a
+        } else {
+            b
+        }
+    } else {
+        0
+    }
+}
+
+fn main() -> Int {
+    classify(8)
+}

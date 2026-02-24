@@ -27,6 +27,7 @@ use aicore::formatter::format_program;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
 use aicore::lsp;
+use aicore::metrics::{self, MetricsThresholdOverrides};
 use aicore::migration::{run_migration, write_report as write_migration_report};
 use aicore::package_registry::{
     install_with_options as pkg_install_with_options,
@@ -34,8 +35,8 @@ use aicore::package_registry::{
     search_with_options as pkg_search_with_options, RegistryClientOptions,
 };
 use aicore::package_workflow::{
-    compute_package_checksum_for_path, generate_and_write_lockfile, native_link_config,
-    workspace_build_plan, NativeLinkConfig,
+    compute_package_checksum_for_path, generate_and_write_lockfile, metrics_thresholds_for_input,
+    native_link_config, workspace_build_plan, NativeLinkConfig,
 };
 use aicore::parser;
 use aicore::perf_gate::{
@@ -127,6 +128,14 @@ enum Command {
         report: Option<PathBuf>,
         #[arg(long)]
         offline: bool,
+    },
+    Metrics {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long)]
+        check: bool,
+        #[arg(long, value_name = "N", value_parser = parse_positive_u32)]
+        max_cyclomatic: Option<u32>,
     },
     Bench {
         #[arg(long, default_value = "benchmarks/service_baseline/budget.v1.json")]
@@ -491,6 +500,17 @@ fn parse_coverage_percent(value: &str) -> Result<f64, String> {
     Ok(parsed)
 }
 
+fn parse_positive_u32(value: &str) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| format!("invalid value `{value}`"))?;
+    if parsed == 0 {
+        Err("value must be greater than 0".to_string())
+    } else {
+        Ok(parsed)
+    }
+}
+
 fn grammar_contract_json() -> serde_json::Value {
     serde_json::json!({
         "version": GRAMMAR_VERSION,
@@ -827,6 +847,35 @@ fn run_cli() -> anyhow::Result<i32> {
             }
             println!("{}", serde_json::to_string_pretty(&coverage_report)?);
             if coverage_report
+                .check
+                .as_ref()
+                .map(|result| result.passed)
+                .unwrap_or(true)
+            {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
+            }
+        }
+        Command::Metrics {
+            input,
+            check,
+            max_cyclomatic,
+        } => {
+            let mut metrics_report = metrics::build_report(&input)?;
+            if check {
+                let configured_thresholds = metrics_thresholds_for_input(&input)?;
+                let thresholds = metrics::resolve_thresholds(
+                    configured_thresholds,
+                    MetricsThresholdOverrides {
+                        max_cyclomatic,
+                        ..MetricsThresholdOverrides::default()
+                    },
+                );
+                metrics::apply_thresholds(&mut metrics_report, thresholds);
+            }
+            println!("{}", serde_json::to_string_pretty(&metrics_report)?);
+            if metrics_report
                 .check
                 .as_ref()
                 .map(|result| result.passed)
