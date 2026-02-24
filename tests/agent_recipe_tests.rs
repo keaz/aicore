@@ -50,6 +50,22 @@ fn vscode_syntax_grammar_path() -> PathBuf {
     repo_root().join("tools/vscode-aic/syntaxes/aic.tmLanguage.json")
 }
 
+fn vscode_extension_ci_workflow_path() -> PathBuf {
+    repo_root().join(".github/workflows/ci.yml")
+}
+
+fn vscode_extension_test_runner_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/src/test/runTest.ts")
+}
+
+fn vscode_extension_test_suite_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/src/test/suite/extension.test.ts")
+}
+
+fn vscode_extension_mock_lsp_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/src/test/fixtures/mockAicLsp.ts")
+}
+
 fn extract_docs_test_commands(doc: &str) -> Vec<(bool, String)> {
     let mut commands = Vec::new();
     let mut in_block = false;
@@ -1214,6 +1230,161 @@ fn vscode_semantic_highlighting_example_is_listed_in_ci_and_runs() {
     assert!(
         example_path.is_file(),
         "semantic highlighting example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("run")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic run {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic run {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+    let last = stdout.lines().last().unwrap_or_default().trim();
+    assert_eq!(
+        last, "42",
+        "expected `aic run {}` to print 42 as final line, got `{}`\nstdout:\n{}",
+        example_rel, last, stdout
+    );
+}
+
+#[test]
+fn vscode_extension_test_suite_wires_manifest_ci_and_e2e_contracts() {
+    let manifest_path = vscode_extension_manifest_path();
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest: Value = serde_json::from_str(&manifest_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", manifest_path.display()));
+
+    let scripts = manifest
+        .get("scripts")
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| panic!("missing scripts object in {}", manifest_path.display()));
+    let test_script = scripts
+        .get("test")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("missing scripts.test in {}", manifest_path.display()));
+    assert!(
+        test_script.contains("runTest"),
+        "scripts.test in {} must execute runTest harness, got: {}",
+        manifest_path.display(),
+        test_script
+    );
+
+    let dev_dependencies = manifest
+        .get("devDependencies")
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing devDependencies object in {}",
+                manifest_path.display()
+            )
+        });
+    for dep in ["@vscode/test-electron", "mocha", "@types/mocha"] {
+        assert!(
+            dev_dependencies.contains_key(dep),
+            "{} must include dev dependency {}",
+            manifest_path.display(),
+            dep
+        );
+    }
+
+    let ci_path = vscode_extension_ci_workflow_path();
+    let ci_raw = fs::read_to_string(&ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", ci_path.display()));
+    for marker in [
+        "name: VS Code Extension Build",
+        "name: Test extension",
+        "working-directory: tools/vscode-aic",
+        "xvfb-run -a npm test",
+    ] {
+        assert!(
+            ci_raw.contains(marker),
+            "{} is missing CI marker: {}",
+            ci_path.display(),
+            marker
+        );
+    }
+
+    let runner_path = vscode_extension_test_runner_path();
+    let runner_source = fs::read_to_string(&runner_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", runner_path.display()));
+    for marker in [
+        "runTests({",
+        "extensionDevelopmentPath",
+        "extensionTestsPath",
+        "--disable-extensions",
+        "src/test/fixtures/workspace",
+    ] {
+        assert!(
+            runner_source.contains(marker),
+            "{} is missing test runner marker: {}",
+            runner_path.display(),
+            marker
+        );
+    }
+
+    let suite_path = vscode_extension_test_suite_path();
+    let suite_source = fs::read_to_string(&suite_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", suite_path.display()));
+    for marker in [
+        "AICore VSCode Extension Integration",
+        "vscode.executeCompletionItemProvider",
+        "aic.restartLanguageServer",
+        "diagnostics appear for invalid code",
+        "TextMate grammar keeps keyword rules",
+    ] {
+        assert!(
+            suite_source.contains(marker),
+            "{} is missing integration test marker: {}",
+            suite_path.display(),
+            marker
+        );
+    }
+
+    let mock_lsp_path = vscode_extension_mock_lsp_path();
+    let mock_lsp_source = fs::read_to_string(&mock_lsp_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", mock_lsp_path.display()));
+    for marker in [
+        "textDocument/publishDiagnostics",
+        "textDocument/completion",
+        "mock parse error",
+    ] {
+        assert!(
+            mock_lsp_source.contains(marker),
+            "{} is missing mock LSP marker: {}",
+            mock_lsp_path.display(),
+            marker
+        );
+    }
+}
+
+#[test]
+fn vscode_extension_test_suite_example_is_listed_in_ci_and_runs() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/extension_test_suite_demo.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "extension test suite example missing: {}",
         example_path.display()
     );
 

@@ -1,0 +1,7 @@
+module tests.vscode.extension_suite.invalid;
+
+// !!invalid!!
+fn main() -> Int {
+    let value =
+    value
+}

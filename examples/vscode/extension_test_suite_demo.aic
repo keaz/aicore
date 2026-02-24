@@ -1,0 +1,13 @@
+module examples.vscode.extension_test_suite_demo;
+
+import std.io;
+
+fn increment(seed: Int) -> Int {
+    seed + 1
+}
+
+fn main() -> Int effects { io } {
+    let value = increment(41);
+    print_int(value);
+    0
+}

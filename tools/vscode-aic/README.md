@@ -17,6 +17,7 @@ aic lsp
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)
+- Automated extension integration tests (activation, LSP lifecycle, diagnostics, completion, restart command, grammar contract)
 - Hover
 - Go-to-definition
 - Formatting
@@ -35,6 +36,7 @@ aic lsp
 cd tools/vscode-aic
 npm install
 npm run build
+npm test
 ```
 
 Press `F5` in VS Code to launch an Extension Development Host.
