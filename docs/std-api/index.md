@@ -58,6 +58,7 @@ Current baseline snapshot (`schema_version: 1`) covers these modules:
 |---|
 | `std.bytes` |
 | `std.concurrent` |
+| `std.deque` |
 | `std.env` |
 | `std.fs` |
 | `std.http` |

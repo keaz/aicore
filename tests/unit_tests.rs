@@ -2903,6 +2903,7 @@ import std.log;
 import std.string;
 import std.bytes;
 import std.vec;
+import std.deque;
 import std.option;
 import std.result;
 import std.concurrent;
@@ -3066,6 +3067,16 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _v_count = vec.count(_v_sorted, |x: Int| -> Bool { x == 9 });
     let _v_zip = vec.zip(_v_sorted, vec.vec_of("x"));
     let _v_enum = vec.enumerate(_v_sorted);
+    let _dq0: Deque[Int] = new_deque();
+    let _dq1 = push_back(_dq0, 10);
+    let _dq2 = push_front(_dq1, 5);
+    let (_dq_front, _dq3) = pop_front(_dq2);
+    let (_dq_back, _dq4) = pop_back(_dq3);
+    let _dq_len = deque_len(_dq4);
+    let _q0: Queue[Int] = new_queue();
+    let _q1 = enqueue(_q0, 7);
+    let (_q_head, _q2) = dequeue(_q1);
+    let _q_len = queue_len(_q2);
     print_int(1);
     0
 }

@@ -111,6 +111,8 @@ fn vec_cap[T](v: Vec[T]) -> Int {
 "#,
     )?;
 
+    fs::write(path.join("std/deque.aic"), include_str!("../std/deque.aic"))?;
+
     fs::write(path.join("std/fs.aic"), include_str!("../std/fs.aic"))?;
 
     fs::write(

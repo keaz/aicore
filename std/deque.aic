@@ -1,0 +1,118 @@
+module std.deque;
+
+import std.option;
+import std.vec;
+
+struct Deque[T] {
+    front: Vec[T],
+    back: Vec[T],
+}
+
+struct Queue[T] {
+    inner: Deque[T],
+}
+
+fn new_deque[T]() -> Deque[T] {
+    let front: Vec[T] = aic_vec_new_intrinsic();
+    let back: Vec[T] = aic_vec_new_intrinsic();
+    Deque {
+        front: front,
+        back: back,
+    }
+}
+
+fn deque_len[T](d: Deque[T]) -> Int {
+    d.front.len + d.back.len
+}
+
+fn push_front[T](d: Deque[T], value: T) -> Deque[T] {
+    Deque {
+        front: aic_vec_push_intrinsic(d.front, value),
+        back: d.back,
+    }
+}
+
+fn push_back[T](d: Deque[T], value: T) -> Deque[T] {
+    Deque {
+        front: d.front,
+        back: aic_vec_push_intrinsic(d.back, value),
+    }
+}
+
+fn pop_front[T](d: Deque[T]) -> (Option[T], Deque[T]) {
+    if d.front.len > 0 {
+        let idx = d.front.len - 1;
+        let value = aic_vec_get_intrinsic(d.front, idx);
+        let next_front = aic_vec_pop_intrinsic(d.front);
+        (
+            value,
+            Deque {
+                front: next_front,
+                back: d.back,
+            },
+        )
+    } else {
+        if d.back.len > 0 {
+            let empty_back: Vec[T] = aic_vec_new_intrinsic();
+            let rebalanced = Deque {
+                front: aic_vec_reverse_intrinsic(d.back),
+                back: empty_back,
+            };
+            pop_front(rebalanced)
+        } else {
+            (None(), d)
+        }
+    }
+}
+
+fn pop_back[T](d: Deque[T]) -> (Option[T], Deque[T]) {
+    if d.back.len > 0 {
+        let idx = d.back.len - 1;
+        let value = aic_vec_get_intrinsic(d.back, idx);
+        let next_back = aic_vec_pop_intrinsic(d.back);
+        (
+            value,
+            Deque {
+                front: d.front,
+                back: next_back,
+            },
+        )
+    } else {
+        if d.front.len > 0 {
+            let empty_front: Vec[T] = aic_vec_new_intrinsic();
+            let rebalanced = Deque {
+                front: empty_front,
+                back: aic_vec_reverse_intrinsic(d.front),
+            };
+            pop_back(rebalanced)
+        } else {
+            (None(), d)
+        }
+    }
+}
+
+fn new_queue[T]() -> Queue[T] {
+    Queue {
+        inner: new_deque(),
+    }
+}
+
+fn enqueue[T](q: Queue[T], value: T) -> Queue[T] {
+    Queue {
+        inner: push_back(q.inner, value),
+    }
+}
+
+fn dequeue[T](q: Queue[T]) -> (Option[T], Queue[T]) {
+    let (value, next_inner) = pop_front(q.inner);
+    (
+        value,
+        Queue {
+            inner: next_inner,
+        },
+    )
+}
+
+fn queue_len[T](q: Queue[T]) -> Int {
+    deque_len(q.inner)
+}

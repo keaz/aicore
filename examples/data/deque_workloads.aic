@@ -1,0 +1,92 @@
+module example.deque_workloads;
+
+import std.deque;
+import std.io;
+
+fn int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn bfs_queue_score() -> Int {
+    let mut q: Queue[Int] = new_queue();
+    q = enqueue(q, 1);
+    q = enqueue(q, 2);
+    q = enqueue(q, 3);
+
+    let (a_opt, q1) = dequeue(q);
+    let (b_opt, q2) = dequeue(q1);
+    let (c_opt, q3) = dequeue(q2);
+    let (d_opt, q4) = dequeue(q3);
+
+    let a = int_or(a_opt, -1);
+    let b = int_or(b_opt, -1);
+    let c = int_or(c_opt, -1);
+    let d = int_or(d_opt, -1);
+
+    if a == 1 && b == 2 && c == 3 && d == -1 && queue_len(q4) == 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn sliding_window_score() -> Int {
+    let mut d: Deque[Int] = new_deque();
+    d = push_back(d, 10);
+    d = push_back(d, 20);
+    d = push_back(d, 30);
+
+    let (_drop_old, d1) = pop_front(d);
+    let d2 = push_back(d1, 40);
+
+    let (a_opt, d3) = pop_front(d2);
+    let (b_opt, d4) = pop_front(d3);
+    let (c_opt, d5) = pop_front(d4);
+
+    let a = int_or(a_opt, -1);
+    let b = int_or(b_opt, -1);
+    let c = int_or(c_opt, -1);
+
+    if a == 20 && b == 30 && c == 40 && deque_len(d5) == 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn round_robin_score() -> Int {
+    let mut d: Deque[Int] = new_deque();
+    d = push_back(d, 1);
+    d = push_back(d, 2);
+    d = push_back(d, 3);
+
+    let (first_opt, d1) = pop_front(d);
+    let d2 = push_back(d1, int_or(first_opt, 0));
+
+    let (next_opt, d3) = pop_front(d2);
+    let (tail_opt, d4) = pop_back(d3);
+    let (last_opt, d5) = pop_front(d4);
+
+    let next = int_or(next_opt, -1);
+    let tail = int_or(tail_opt, -1);
+    let last = int_or(last_opt, -1);
+
+    if next == 2 && tail == 1 && last == 3 && deque_len(d5) == 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } {
+    let score = bfs_queue_score() + sliding_window_score() + round_robin_score();
+    if score == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

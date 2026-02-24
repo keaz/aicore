@@ -327,6 +327,66 @@
       "signature": "require(config: Map[String, String], key: String) -> Result[String, ConfigError]"
     },
     {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "deque_len[T](d: Deque[T]) -> Int"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "dequeue[T](q: Queue[T]) -> Tuple[Option[T], Queue[T]]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "enqueue[T](q: Queue[T], value: T) -> Queue[T]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "new_deque[T]() -> Deque[T]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "new_queue[T]() -> Queue[T]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "pop_back[T](d: Deque[T]) -> Tuple[Option[T], Deque[T]]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "pop_front[T](d: Deque[T]) -> Tuple[Option[T], Deque[T]]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "push_back[T](d: Deque[T], value: T) -> Deque[T]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "push_front[T](d: Deque[T], value: T) -> Deque[T]"
+    },
+    {
+      "module": "std.deque",
+      "kind": "fn",
+      "signature": "queue_len[T](q: Queue[T]) -> Int"
+    },
+    {
+      "module": "std.deque",
+      "kind": "struct",
+      "signature": "Deque[T] { front: Vec[T], back: Vec[T] }"
+    },
+    {
+      "module": "std.deque",
+      "kind": "struct",
+      "signature": "Queue[T] { inner: Deque[T] }"
+    },
+    {
       "module": "std.env",
       "kind": "enum",
       "signature": "EnvError { NotFound, PermissionDenied, InvalidInput, Io }"
@@ -3089,6 +3149,21 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "abs_int(value: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "add_days(value: DateTime, days: Int) -> DateTime"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "add_hours(value: DateTime, hours: Int) -> DateTime"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time }"
     },
     {
@@ -3124,7 +3199,67 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "aic_time_string_replace_intrinsic(s: String, from: String, to: String) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "concat2(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "concat3(first: String, second: String, third: String) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "date_from_epoch_days(epoch_days: Int) -> DateTime"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "day_of_week(value: DateTime) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "days_in_month(year: Int, month: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "days_in_year(year: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "deadline_after_ms(timeout_ms: Int) -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "diff_days(a: DateTime, b: DateTime) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "diff_seconds(a: DateTime, b: DateTime) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "floor_div(value: Int, divisor: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "floor_mod(value: Int, divisor: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "format_custom(value: DateTime, pattern: String) -> Result[String, TimeError]"
     },
     {
       "module": "std.time",
@@ -3134,7 +3269,22 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "format_offset(offset_minutes: Int) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "format_rfc3339(value: DateTime) -> Result[String, TimeError] effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "from_utc_millis(utc_ms: Int, offset_minutes: Int) -> DateTime"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "is_leap_year(year: Int) -> Bool"
     },
     {
       "module": "std.time",
@@ -3150,6 +3300,16 @@
       "module": "std.time",
       "kind": "fn",
       "signature": "now_ms() -> Int effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "pad_unsigned(value: Int, width: Int) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "pad_year(value: Int) -> String"
     },
     {
       "module": "std.time",
@@ -3179,7 +3339,27 @@
     {
       "module": "std.time",
       "kind": "fn",
+      "signature": "str_replace(s: String, from: String, to: String) -> String"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
       "signature": "timeout_expired(deadline_ms: Int) -> Bool effects { time }"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "to_epoch_days(year: Int, month: Int, day: Int) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "to_utc_millis(value: DateTime) -> Int"
+    },
+    {
+      "module": "std.time",
+      "kind": "fn",
+      "signature": "valid_datetime(value: DateTime) -> Bool"
     },
     {
       "module": "std.time",
