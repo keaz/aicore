@@ -1,0 +1,26 @@
+module e7.impact.demo;
+
+fn normalize(v: Int) -> Int ensures result >= 0 {
+  if v < 0 {
+    0
+  } else {
+    v
+  }
+}
+
+fn compute(v: Int) -> Int ensures result >= 0 {
+  normalize(v)
+}
+
+fn run() -> Int {
+  compute(4)
+}
+
+fn test_run() -> Int {
+  run()
+}
+
+fn main() -> Int {
+  run()
+}
+

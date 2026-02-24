@@ -13,6 +13,7 @@ pub struct TypecheckOutput {
     pub diagnostics: Vec<Diagnostic>,
     pub function_effect_usage: BTreeMap<String, BTreeSet<String>>,
     pub generic_instantiations: Vec<ir::GenericInstantiation>,
+    pub call_graph: BTreeMap<String, Vec<String>>,
 }
 
 pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> TypecheckOutput {
@@ -407,10 +408,24 @@ impl<'a> Checker<'a> {
                 mangled: pending.mangled,
             })
             .collect::<Vec<_>>();
+        let call_graph = self
+            .call_graph
+            .into_iter()
+            .map(|(caller, edges)| {
+                let mut callees = edges
+                    .into_iter()
+                    .map(|edge| edge.callee)
+                    .collect::<Vec<_>>();
+                callees.sort();
+                callees.dedup();
+                (caller, callees)
+            })
+            .collect::<BTreeMap<_, _>>();
         TypecheckOutput {
             diagnostics: self.diagnostics,
             function_effect_usage: self.effect_usage,
             generic_instantiations,
+            call_graph,
         }
     }
 

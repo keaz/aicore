@@ -47,6 +47,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "impact",
+        description: "Analyze direct/transitive caller blast radius for a function",
+        stable_flags: &["--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "coverage",
         description: "Deterministic source/function coverage summary from check diagnostics",
         stable_flags: &["--check", "--min", "--report", "--offline"],

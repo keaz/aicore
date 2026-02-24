@@ -6,7 +6,7 @@ This document describes the current AICore compiler/runtime architecture as impl
 
 ## Repository Layers
 
-- CLI orchestration: `src/main.rs`, `src/cli_contract.rs`, `src/coverage.rs`, `src/profile.rs`
+- CLI orchestration: `src/main.rs`, `src/cli_contract.rs`, `src/coverage.rs`, `src/impact.rs`, `src/profile.rs`
 - Frontend pipeline: `src/package_loader.rs`, `src/parser.rs`, `src/ir_builder.rs`, `src/effects.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/contracts.rs`
 - Backend/code generation: `src/codegen.rs`
 - Tooling surfaces: `src/lsp.rs`, `src/daemon.rs`, `src/docgen.rs`, `src/diag_fixes.rs`
@@ -61,6 +61,7 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 ## Command-to-Module Flow
 
 - `aic check` / `aic diag`: frontend diagnostics, optional JSON/SARIF output (`src/sarif.rs`)
+- `aic impact`: frontend + typecheck call graph + test/contract cross-reference (`src/impact.rs`)
 - `aic coverage`: deterministic coverage JSON from scanned source functions + diagnostics (`src/coverage.rs`)
 - `aic fmt`: parse + IR format (`src/formatter.rs`)
 - `aic ir`: frontend + IR emit

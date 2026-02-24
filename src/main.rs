@@ -104,6 +104,13 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
+    Impact {
+        function: String,
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
     Coverage {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
@@ -779,6 +786,28 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
                 EXIT_OK
+            }
+        }
+        Command::Impact {
+            function,
+            input,
+            offline,
+        } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            if has_errors(&front.diagnostics) {
+                print!("{}", diagnostics_pretty(&front.diagnostics));
+                EXIT_DIAGNOSTIC_ERROR
+            } else {
+                match aicore::impact::analyze(&front, &function) {
+                    Ok(report) => {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                        EXIT_OK
+                    }
+                    Err(err) => {
+                        eprintln!("impact: {err}");
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
+                }
             }
         }
         Command::Coverage {

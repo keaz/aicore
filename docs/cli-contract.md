@@ -36,6 +36,7 @@ Published parse/check/build/fix schemas:
 - `aic explain`
 - `aic fmt`
 - `aic ir`
+- `aic impact`
 - `aic ir-migrate`
 - `aic migrate`
 - `aic lock`
@@ -73,6 +74,25 @@ Workspace note:
 
 - `aic build <workspace-root>` keeps existing workspace artifact behavior.
 - `--verify-hash` and `--manifest` are rejected for workspace-mode builds; invoke `aic build` on a specific member entry path for hermetic manifest output.
+
+## `aic impact` JSON output
+
+Usage:
+
+```bash
+aic impact <function> [input]
+```
+
+Output keys:
+
+- `function`
+- `direct_callers`
+- `transitive_callers`
+- `affected_tests`
+- `affected_contracts`
+- `blast_radius` (`small|medium|large`)
+
+`affected_tests` can be empty; when callers are present, this indicates an untested impact zone.
 
 ## Diagnostics output modes
 

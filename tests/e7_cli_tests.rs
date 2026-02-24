@@ -204,8 +204,9 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "ast", "coverage", "bench", "diag", "explain", "fmt", "ir", "migrate",
-        "build", "lsp", "daemon", "repl", "test", "grammar", "contract", "release", "run",
+        "init", "check", "ast", "impact", "coverage", "bench", "diag", "explain", "fmt", "ir",
+        "migrate", "build", "lsp", "daemon", "repl", "test", "grammar", "contract", "release",
+        "run",
     ] {
         assert!(
             main_help_text.contains(command),

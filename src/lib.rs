@@ -15,6 +15,7 @@ pub mod effects;
 pub mod execution_matrix;
 pub mod formatter;
 pub mod fuzzing;
+pub mod impact;
 pub mod ir;
 pub mod ir_builder;
 pub mod lexer;
