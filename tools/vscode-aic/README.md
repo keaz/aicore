@@ -10,6 +10,7 @@ aic lsp
 
 - Syntax highlighting for `.aic` files
 - Autocomplete (language server completions + editor suggestions)
+- Auto-import suggestions for unimported module symbols (completion inserts `import ...;`)
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
 - Status bar language server health indicator (starting/running/error/stopped + diagnostics count)
 - Inline error lens diagnostics with severity colors (error/warning/info)

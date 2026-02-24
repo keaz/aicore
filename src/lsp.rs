@@ -40,6 +40,7 @@ struct SymbolDecl {
     name: String,
     kind: String,
     signature: String,
+    module: Option<String>,
     file: PathBuf,
     span: Span,
 }
@@ -984,16 +985,22 @@ impl LspServer {
         let Some(path) = uri_to_path(&uri) else {
             return Ok(json!([]));
         };
+        let source = self.document_text(&uri)?;
+        let import_context = completion_import_context(&source, &uri);
         let declarations = build_symbol_index(&path)?;
         let mut items = Vec::new();
         for (name, decls) in declarations {
             let first = &decls[0];
-            items.push(json!({
+            let mut item = json!({
                 "label": name,
                 "kind": completion_kind(&first.kind),
                 "detail": first.signature,
                 "sortText": format!("1-{}", first.name)
-            }));
+            });
+            if let Some(edit) = completion_import_edit_for_decls(&decls, &import_context) {
+                item["additionalTextEdits"] = json!([edit]);
+            }
+            items.push(item);
         }
         for keyword in LSP_KEYWORDS {
             items.push(json!({
@@ -1849,6 +1856,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
         let Some(program) = program else {
             continue;
         };
+        let module_name = program.module.as_ref().map(|module| module.path.join("."));
 
         for item in program.items {
             let decl = match item {
@@ -1856,6 +1864,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     name: func.name.clone(),
                     kind: "function".to_string(),
                     signature: render_function_signature(&func),
+                    module: module_name.clone(),
                     file: file.clone(),
                     span: func.span,
                 },
@@ -1863,6 +1872,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     name: strukt.name.clone(),
                     kind: "struct".to_string(),
                     signature: render_struct_signature(&strukt),
+                    module: module_name.clone(),
                     file: file.clone(),
                     span: strukt.span,
                 },
@@ -1870,6 +1880,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     name: enm.name.clone(),
                     kind: "enum".to_string(),
                     signature: render_enum_signature(&enm),
+                    module: module_name.clone(),
                     file: file.clone(),
                     span: enm.span,
                 },
@@ -1877,6 +1888,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     name: trait_def.name.clone(),
                     kind: "trait".to_string(),
                     signature: render_trait_signature(&trait_def),
+                    module: module_name.clone(),
                     file: file.clone(),
                     span: trait_def.span,
                 },
@@ -1884,6 +1896,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
                     name: impl_def.trait_name.clone(),
                     kind: "impl".to_string(),
                     signature: render_impl_signature(&impl_def),
+                    module: module_name.clone(),
                     file: file.clone(),
                     span: impl_def.span,
                 },
@@ -1891,7 +1904,7 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
             map.entry(decl.name.clone()).or_default().push(decl);
         }
 
-        for decl in extract_text_symbol_decls(&source, &file) {
+        for decl in extract_text_symbol_decls(&source, &file, module_name.clone()) {
             map.entry(decl.name.clone()).or_default().push(decl);
         }
     }
@@ -2911,7 +2924,11 @@ fn symbol_index_root(entry_path: &Path) -> PathBuf {
     find_project_root(entry_path)
 }
 
-fn extract_text_symbol_decls(source: &str, file: &Path) -> Vec<SymbolDecl> {
+fn extract_text_symbol_decls(
+    source: &str,
+    file: &Path,
+    module_name: Option<String>,
+) -> Vec<SymbolDecl> {
     let mut decls = Vec::new();
     let mut offset = 0usize;
     for line in source.lines() {
@@ -2929,6 +2946,7 @@ fn extract_text_symbol_decls(source: &str, file: &Path) -> Vec<SymbolDecl> {
                     name: name.clone(),
                     kind: "module".to_string(),
                     signature: format!("module {}", name),
+                    module: module_name.clone(),
                     file: file.to_path_buf(),
                     span: Span::new(start, start + name.len()),
                 });
@@ -2946,6 +2964,7 @@ fn extract_text_symbol_decls(source: &str, file: &Path) -> Vec<SymbolDecl> {
                     name: name.clone(),
                     kind: "constant".to_string(),
                     signature: format!("const {}", name),
+                    module: module_name.clone(),
                     file: file.to_path_buf(),
                     span: Span::new(start, start + name.len()),
                 });
@@ -2962,7 +2981,7 @@ fn document_symbols_for_file(path: &Path, source: &str) -> anyhow::Result<Vec<Va
     let mut struct_indices = BTreeMap::<String, usize>::new();
     let mut pending_impls = Vec::<(usize, Option<String>, Value)>::new();
 
-    for decl in extract_text_symbol_decls(source, path) {
+    for decl in extract_text_symbol_decls(source, path, None) {
         let range = offset_range_to_lsp_range(source, decl.span.start, decl.span.end);
         top_level.push((
             decl.span.start,
@@ -3730,6 +3749,122 @@ fn symbol_kind(kind: &str) -> i32 {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CompletionImportContext {
+    current_module: Option<String>,
+    imported_modules: BTreeSet<String>,
+    insertion_line: usize,
+}
+
+fn completion_import_context(source: &str, parse_label: &str) -> CompletionImportContext {
+    let (program, diagnostics) = parser::parse(source, parse_label);
+    if diagnostics.iter().any(|diag| diag.is_error()) {
+        return fallback_completion_import_context(source);
+    }
+
+    let Some(program) = program else {
+        return fallback_completion_import_context(source);
+    };
+
+    let current_module = program.module.as_ref().map(|module| module.path.join("."));
+    let imported_modules = program
+        .imports
+        .iter()
+        .map(|import| import.path.join("."))
+        .collect::<BTreeSet<_>>();
+    let insertion_line = if let Some(last_import) = program.imports.last() {
+        let (line, _) = offset_to_line_char(source, last_import.span.end);
+        line + 1
+    } else if let Some(module_decl) = program.module.as_ref() {
+        let (line, _) = offset_to_line_char(source, module_decl.span.end);
+        line + 1
+    } else {
+        0
+    };
+
+    CompletionImportContext {
+        current_module,
+        imported_modules,
+        insertion_line,
+    }
+}
+
+fn fallback_completion_import_context(source: &str) -> CompletionImportContext {
+    let mut current_module = None;
+    let mut imported_modules = BTreeSet::new();
+    let mut module_line = None;
+    let mut last_import_line = None;
+
+    for (line_index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if current_module.is_none() {
+            if let Some(module) = parse_module_or_import_line(trimmed, "module ") {
+                current_module = Some(module);
+                module_line = Some(line_index);
+            }
+        }
+        if let Some(import) = parse_module_or_import_line(trimmed, "import ") {
+            imported_modules.insert(import);
+            last_import_line = Some(line_index);
+        }
+    }
+
+    let insertion_line = if let Some(line) = last_import_line {
+        line + 1
+    } else {
+        module_line.map(|line| line + 1).unwrap_or(0)
+    };
+
+    CompletionImportContext {
+        current_module,
+        imported_modules,
+        insertion_line,
+    }
+}
+
+fn parse_module_or_import_line(line: &str, keyword: &str) -> Option<String> {
+    let rest = line.strip_prefix(keyword)?;
+    let path = rest
+        .chars()
+        .skip_while(|ch| ch.is_ascii_whitespace())
+        .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '.')
+        .collect::<String>();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+fn completion_import_edit_for_decls(
+    decls: &[SymbolDecl],
+    context: &CompletionImportContext,
+) -> Option<Value> {
+    let modules = decls
+        .iter()
+        .filter_map(|decl| decl.module.clone())
+        .collect::<BTreeSet<_>>();
+    if modules.len() != 1 {
+        return None;
+    }
+
+    let module = modules.iter().next()?.clone();
+    if context.current_module.as_deref() == Some(module.as_str()) {
+        return None;
+    }
+    if context.imported_modules.contains(&module) {
+        return None;
+    }
+
+    Some(json!({
+        "range": {
+            "start": { "line": context.insertion_line, "character": 0 },
+            "end": { "line": context.insertion_line, "character": 0 }
+        },
+        "newText": format!("import {};\n", module)
+    }))
+}
+
 fn completion_kind(kind: &str) -> i32 {
     match kind {
         "function" => 3,
@@ -4171,6 +4306,146 @@ mod tests {
                 "effectful"
             ])
         );
+    }
+
+    #[test]
+    fn completion_adds_auto_import_edit_for_unimported_symbol() {
+        let workspace = temp_workspace("completion_auto_import");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let net_path = src_dir.join("net.aic");
+
+        let main_source = r#"module sample.main;
+import std.io;
+
+fn main() -> Int effects { io } {
+    tcp_connect()
+}
+"#;
+        let net_source = r#"module sample.net;
+
+fn tcp_connect() -> Int {
+    42
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+        fs::write(&net_path, net_source).expect("write net source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+
+        let mut server = LspServer::default();
+        let _ = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": 4, "character": 4 }
+                }
+            }))
+            .expect("completion response");
+
+        let items = responses[0]["result"]
+            .as_array()
+            .expect("completion item array");
+        let tcp_connect = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("tcp_connect"))
+            .expect("tcp_connect completion item");
+        let edits = tcp_connect["additionalTextEdits"]
+            .as_array()
+            .expect("auto import additionalTextEdits");
+        assert_eq!(edits.len(), 1, "expected exactly one import insertion edit");
+        assert_eq!(edits[0]["newText"], json!("import sample.net;\n"));
+        assert_eq!(edits[0]["range"]["start"]["line"], json!(2));
+        assert_eq!(edits[0]["range"]["start"]["character"], json!(0));
+        assert_eq!(edits[0]["range"]["end"]["line"], json!(2));
+        assert_eq!(edits[0]["range"]["end"]["character"], json!(0));
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn completion_skips_auto_import_when_module_is_already_imported() {
+        let workspace = temp_workspace("completion_auto_import_existing");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let net_path = src_dir.join("net.aic");
+
+        let main_source = r#"module sample.main;
+import std.io;
+import sample.net;
+
+fn main() -> Int effects { io } {
+    tcp_connect()
+}
+"#;
+        let net_source = r#"module sample.net;
+
+fn tcp_connect() -> Int {
+    42
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+        fs::write(&net_path, net_source).expect("write net source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+
+        let mut server = LspServer::default();
+        let _ = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": 5, "character": 4 }
+                }
+            }))
+            .expect("completion response");
+
+        let items = responses[0]["result"]
+            .as_array()
+            .expect("completion item array");
+        let tcp_connect = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("tcp_connect"))
+            .expect("tcp_connect completion item");
+        assert!(
+            tcp_connect.get("additionalTextEdits").is_none(),
+            "completion should not add import edit when module is already imported"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
     }
 
     #[test]

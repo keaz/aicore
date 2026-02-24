@@ -1,0 +1,4 @@
+[package]
+name = "auto_import_workspace"
+version = "0.1.0"
+main = "src/main.aic"
