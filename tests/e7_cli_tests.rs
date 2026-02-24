@@ -204,9 +204,28 @@ fn cli_help_snapshots_are_stable() {
     let main_help_text = String::from_utf8_lossy(&main_help.stdout);
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
-        "init", "check", "ast", "impact", "coverage", "metrics", "bench", "diag", "explain", "fmt",
-        "ir", "migrate", "build", "lsp", "daemon", "repl", "test", "grammar", "contract",
-        "release", "run",
+        "init",
+        "check",
+        "ast",
+        "impact",
+        "suggest-effects",
+        "coverage",
+        "metrics",
+        "bench",
+        "diag",
+        "explain",
+        "fmt",
+        "ir",
+        "migrate",
+        "build",
+        "lsp",
+        "daemon",
+        "repl",
+        "test",
+        "grammar",
+        "contract",
+        "release",
+        "run",
     ] {
         assert!(
             main_help_text.contains(command),
@@ -480,6 +499,118 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
     assert!(sarif["runs"][0]["tool"]["driver"]["rules"].is_array());
     assert!(sarif["runs"][0]["results"][0]["ruleId"].is_string());
     assert!(sarif["runs"][0]["results"][0]["locations"].is_array());
+}
+
+#[test]
+fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module suggest.effect_inference;\n",
+            "import std.io;\n",
+            "fn leaf() -> () effects { io } {\n",
+            "    print_int(1)\n",
+            "}\n",
+            "fn middle() -> () {\n",
+            "    leaf()\n",
+            "}\n",
+            "fn top() -> Int {\n",
+            "    middle();\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+    let source_path_str = source_path.to_string_lossy().to_string();
+
+    let suggest = run_aic(&["suggest-effects", &source_path_str]);
+    assert_eq!(
+        suggest.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&suggest.stdout),
+        String::from_utf8_lossy(&suggest.stderr)
+    );
+    let suggest_json: Value = serde_json::from_slice(&suggest.stdout).expect("suggest json");
+    let suggestions = suggest_json["suggestions"]
+        .as_array()
+        .expect("suggestions array");
+
+    let middle = suggestions
+        .iter()
+        .find(|entry| entry["function"] == "middle")
+        .expect("middle suggestion");
+    assert_eq!(middle["current_effects"], json!([]));
+    assert_eq!(middle["required_effects"], json!(["io"]));
+    assert_eq!(middle["missing_effects"], json!(["io"]));
+    assert_eq!(middle["reason"]["io"], "middle -> leaf");
+
+    let top = suggestions
+        .iter()
+        .find(|entry| entry["function"] == "top")
+        .expect("top suggestion");
+    assert_eq!(top["current_effects"], json!([]));
+    assert_eq!(top["required_effects"], json!(["io"]));
+    assert_eq!(top["missing_effects"], json!(["io"]));
+    assert_eq!(top["reason"]["io"], "top -> middle -> leaf");
+
+    let apply = run_aic(&["diag", "apply-fixes", &source_path_str, "--json"]);
+    assert_eq!(
+        apply.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&apply.stdout),
+        String::from_utf8_lossy(&apply.stderr)
+    );
+    let apply_json: Value = serde_json::from_slice(&apply.stdout).expect("apply-fixes json");
+    assert!(apply_json["conflicts"]
+        .as_array()
+        .expect("conflicts array")
+        .is_empty());
+    let applied_edits = apply_json["applied_edits"]
+        .as_array()
+        .expect("applied edits array");
+    assert!(applied_edits.iter().any(|edit| {
+        edit["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("function 'middle'")
+    }));
+    assert!(applied_edits.iter().any(|edit| {
+        edit["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("function 'top'")
+    }));
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten");
+    assert!(
+        rewritten.contains("effects { io }"),
+        "expected rewritten source to include io effect declarations: {rewritten}"
+    );
+
+    let suggest_after = run_aic(&["suggest-effects", &source_path_str]);
+    assert_eq!(
+        suggest_after.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&suggest_after.stdout),
+        String::from_utf8_lossy(&suggest_after.stderr)
+    );
+    let suggest_after_json: Value =
+        serde_json::from_slice(&suggest_after.stdout).expect("suggest-after json");
+    let suggestions_after = suggest_after_json["suggestions"]
+        .as_array()
+        .expect("suggestions array");
+    assert!(
+        !suggestions_after
+            .iter()
+            .any(|entry| matches!(entry["function"].as_str(), Some("middle") | Some("top"))),
+        "expected middle/top suggestions to be resolved, got: {suggest_after_json:#}"
+    );
 }
 
 #[test]

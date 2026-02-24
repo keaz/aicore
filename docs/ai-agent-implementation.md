@@ -341,6 +341,9 @@ Diagnostics:
 - Autofix engine:
   - planner/applicator in `src/diag_fixes.rs`
   - command: `aic diag apply-fixes <path> [--dry-run] [--json] [--offline]`
+- Effect suggestion engine:
+  - analyzer in `src/suggest_effects.rs`
+  - command: `aic suggest-effects <path> [--offline]`
 - Exit code mapping:
   - `0`: success
   - `1`: diagnostic/runtime failure
@@ -379,6 +382,7 @@ Diagnostics:
   - LSP diagnostics are built from frontend diagnostics and filtered by file.
 - Autofix integration:
   - code actions are emitted from diagnostic `suggested_fixes` with deterministic quick-fix edits
+  - missing effect declaration diagnostics (`E2001`, `E2005`) carry deterministic effect-clause edits
 - IDE docs:
   - `docs/ide-integration.md`
 - Sample workspace:
@@ -664,6 +668,7 @@ Verifier-focused examples:
 - `examples/e7/cli_smoke.aic`
 - `examples/e7/diag_errors.aic`
 - `examples/e7/explain_trigger.aic`
+- `examples/e7/suggest_effects_demo.aic`
 - `examples/e7/lsp_project/`
 - `examples/e7/harness/`
 - `examples/e8/conformance_pack/`

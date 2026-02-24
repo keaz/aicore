@@ -117,6 +117,11 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
+    SuggestEffects {
+        input: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
     Coverage {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
@@ -856,6 +861,17 @@ fn run_cli() -> anyhow::Result<i32> {
                         EXIT_DIAGNOSTIC_ERROR
                     }
                 }
+            }
+        }
+        Command::SuggestEffects { input, offline } => {
+            let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
+            let has_any_errors = has_errors(&front.diagnostics);
+            let report = aicore::suggest_effects::analyze(&front);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            if has_any_errors {
+                EXIT_DIAGNOSTIC_ERROR
+            } else {
+                EXIT_OK
             }
         }
         Command::Coverage {

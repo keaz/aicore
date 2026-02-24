@@ -37,6 +37,7 @@ Published parse/check/build/fix schemas:
 - `aic fmt`
 - `aic ir`
 - `aic impact`
+- `aic suggest-effects`
 - `aic metrics`
 - `aic ir-migrate`
 - `aic migrate`
@@ -95,6 +96,27 @@ Output keys:
 
 `affected_tests` can be empty; when callers are present, this indicates an untested impact zone.
 
+## `aic suggest-effects` JSON output
+
+Usage:
+
+```bash
+aic suggest-effects <input>
+```
+
+Per-suggestion fields (deterministic ordering by function name):
+
+- `function`
+- `current_effects`
+- `required_effects`
+- `missing_effects`
+- `reason` (effect-to-call-chain mapping, for example `"io": "top -> middle -> leaf"`)
+
+Exit behavior:
+
+- returns `0` when no diagnostics errors exist for the input
+- returns `1` when diagnostics include errors (including missing effect declarations)
+
 ## `aic metrics` JSON output
 
 Usage:
@@ -148,6 +170,7 @@ aic diag apply-fixes <file-or-workspace> --warn-unused --json
 - Apply mode writes only non-conflicting safe edits.
 - Conflicts are reported in `conflicts[]` and produce non-zero exit.
 - `--warn-unused` extends fix planning with unused-import and unused-variable safe edits.
+- Missing declared effects diagnostics (`E2001`, `E2005`) include deterministic suggested fixes that add/update function `effects { ... }` declarations.
 
 Incremental daemon API:
 

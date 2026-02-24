@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::{Diagnostic, SuggestedFix};
 
-const SAFE_FIX_CODES: &[&str] = &["E1033", "E1034", "E1041", "E1062", "E6004", "E6006"];
+const SAFE_FIX_CODES: &[&str] = &[
+    "E1033", "E1034", "E1041", "E1062", "E2001", "E2005", "E6004", "E6006",
+];
 const FIX_PROTOCOL_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +80,16 @@ pub fn collect_safe_fix_plan(diagnostics: &[Diagnostic]) -> FixPlan {
     let mut conflicts = Vec::new();
 
     for candidate in candidates {
+        let duplicate = accepted.iter().any(|existing| {
+            existing.file == candidate.file
+                && existing.start == candidate.start
+                && existing.end == candidate.end
+                && existing.replacement == candidate.replacement
+        });
+        if duplicate {
+            continue;
+        }
+
         let conflict_with = accepted.iter().find(|existing| {
             existing.file == candidate.file
                 && ranges_conflict(existing.start, existing.end, candidate.start, candidate.end)
@@ -309,6 +321,18 @@ mod tests {
 
         let plan = collect_safe_fix_plan(&diagnostics);
         assert_eq!(plan.applied_edits.len(), 2);
+        assert!(plan.conflicts.is_empty());
+    }
+
+    #[test]
+    fn duplicate_effect_fixes_are_coalesced() {
+        let diagnostics = vec![
+            make_diag("E2001", "main.aic", 30, 30, Some(" effects { io }")),
+            make_diag("E2005", "main.aic", 30, 30, Some(" effects { io }")),
+        ];
+
+        let plan = collect_safe_fix_plan(&diagnostics);
+        assert_eq!(plan.applied_edits.len(), 1);
         assert!(plan.conflicts.is_empty());
     }
 

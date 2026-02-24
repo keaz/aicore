@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp};
-use crate::diagnostics::{Diagnostic, DiagnosticSpan};
+use crate::diagnostics::{Diagnostic, DiagnosticSpan, SuggestedFix};
 use crate::ir;
 use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo};
 use crate::std_policy::find_deprecated_api;
@@ -12,6 +12,7 @@ const TUPLE_INTERNAL_NAME: &str = "Tuple";
 pub struct TypecheckOutput {
     pub diagnostics: Vec<Diagnostic>,
     pub function_effect_usage: BTreeMap<String, BTreeSet<String>>,
+    pub function_effect_reasons: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     pub generic_instantiations: Vec<ir::GenericInstantiation>,
     pub call_graph: BTreeMap<String, Vec<String>>,
     pub holes: Vec<TypedHole>,
@@ -60,6 +61,7 @@ struct Checker<'a> {
     program: &'a ir::Program,
     resolution: &'a Resolution,
     file: &'a str,
+    source: Option<String>,
     diagnostics: Vec<Diagnostic>,
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
@@ -67,7 +69,9 @@ struct Checker<'a> {
     function_module_by_symbol: BTreeMap<ir::SymbolId, String>,
     generic_arity: BTreeMap<String, usize>,
     effect_usage: BTreeMap<String, BTreeSet<String>>,
+    effect_reasons: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     call_graph: BTreeMap<String, Vec<CallEdge>>,
+    function_spans: BTreeMap<String, (crate::span::Span, crate::span::Span)>,
     current_function: Option<String>,
     current_function_is_async: bool,
     current_function_is_unsafe: bool,
@@ -370,6 +374,7 @@ impl<'a> Checker<'a> {
             program,
             resolution,
             file,
+            source: std::fs::read_to_string(file).ok(),
             diagnostics: Vec::new(),
             types,
             functions,
@@ -377,7 +382,9 @@ impl<'a> Checker<'a> {
             function_module_by_symbol,
             generic_arity,
             effect_usage: BTreeMap::new(),
+            effect_reasons: BTreeMap::new(),
             call_graph: BTreeMap::new(),
+            function_spans: BTreeMap::new(),
             current_function: None,
             current_function_is_async: false,
             current_function_is_unsafe: false,
@@ -456,6 +463,7 @@ impl<'a> Checker<'a> {
         TypecheckOutput {
             diagnostics: self.diagnostics,
             function_effect_usage: self.effect_usage,
+            function_effect_reasons: self.effect_reasons,
             generic_instantiations,
             call_graph,
             holes: self.typed_holes,
@@ -597,6 +605,8 @@ impl<'a> Checker<'a> {
         self.current_function_is_unsafe = func.is_unsafe;
         self.unsafe_depth = 0;
         self.call_graph.entry(func.name.clone()).or_default();
+        self.function_spans
+            .insert(func.name.clone(), (func.span, func.body.span));
         self.current_param_positions.clear();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
@@ -773,22 +783,34 @@ impl<'a> Checker<'a> {
                 .difference(&declared_effects)
                 .cloned()
                 .collect::<Vec<_>>();
-            self.diagnostics.push(
-                Diagnostic::error(
-                    "E2001",
-                    format!(
-                        "function '{}' uses undeclared effects: {}",
-                        func.name,
-                        missing.join(", ")
-                    ),
-                    self.file,
-                    func.span,
-                )
-                .with_help(format!(
-                    "declare `effects {{ {} }}` on the function",
+            let mut required_effects = declared_effects.clone();
+            required_effects.extend(body_ctx.effects_used.iter().cloned());
+
+            let mut diagnostic = Diagnostic::error(
+                "E2001",
+                format!(
+                    "function '{}' uses undeclared effects: {}",
+                    func.name,
                     missing.join(", ")
-                )),
-            );
+                ),
+                self.file,
+                func.span,
+            )
+            .with_help(format!(
+                "declare `effects {{ {} }}` on the function",
+                missing.join(", ")
+            ));
+
+            if let Some(fix) = self.effect_declaration_fix(
+                &func.name,
+                func.span,
+                func.body.span,
+                &required_effects,
+            ) {
+                diagnostic = diagnostic.with_fix(fix);
+            }
+
+            self.diagnostics.push(diagnostic);
         }
 
         self.effect_usage
@@ -969,6 +991,16 @@ impl<'a> Checker<'a> {
                 .map(|sig| sig.effects.clone())
                 .unwrap_or_default();
             let closure = self.effect_usage.get(function).cloned().unwrap_or_default();
+            let mut reasons = BTreeMap::new();
+            for effect in &closure {
+                let nodes = self
+                    .find_effect_path(function, effect)
+                    .map(|path| path.nodes)
+                    .unwrap_or_else(|| vec![function.clone()]);
+                reasons.insert(effect.clone(), nodes);
+            }
+            self.effect_reasons.insert(function.clone(), reasons);
+
             let missing = closure.difference(&declared).cloned().collect::<Vec<_>>();
             for effect in missing {
                 let Some(path) = self.find_effect_path(function, &effect) else {
@@ -977,23 +1009,30 @@ impl<'a> Checker<'a> {
                 if path.nodes.len() < 3 {
                     continue;
                 }
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E2005",
-                        format!(
-                            "function '{}' requires transitive effect '{}' via call path {}",
-                            function,
-                            effect,
-                            path.nodes.join(" -> ")
-                        ),
-                        self.file,
-                        path.span,
-                    )
-                    .with_help(format!(
-                        "declare `effects {{ {} }}` on '{}' or refactor the call chain",
-                        effect, function
-                    )),
-                );
+                let mut diagnostic = Diagnostic::error(
+                    "E2005",
+                    format!(
+                        "function '{}' requires transitive effect '{}' via call path {}",
+                        function,
+                        effect,
+                        path.nodes.join(" -> ")
+                    ),
+                    self.file,
+                    path.span,
+                )
+                .with_help(format!(
+                    "declare `effects {{ {} }}` on '{}' or refactor the call chain",
+                    effect, function
+                ));
+                if let Some((function_span, body_span)) = self.function_spans.get(function).copied()
+                {
+                    if let Some(fix) =
+                        self.effect_declaration_fix(function, function_span, body_span, &closure)
+                    {
+                        diagnostic = diagnostic.with_fix(fix);
+                    }
+                }
+                self.diagnostics.push(diagnostic);
             }
         }
     }
@@ -1074,6 +1113,129 @@ impl<'a> Checker<'a> {
             }
         }
 
+        None
+    }
+
+    fn effect_declaration_fix(
+        &self,
+        function_name: &str,
+        function_span: crate::span::Span,
+        body_span: crate::span::Span,
+        required_effects: &BTreeSet<String>,
+    ) -> Option<SuggestedFix> {
+        let source = self.source.as_ref()?;
+        if required_effects.is_empty()
+            || function_span.start > function_span.end
+            || body_span.start < function_span.start
+            || body_span.start > source.len()
+            || function_span.start > source.len()
+            || function_span.end > source.len()
+        {
+            return None;
+        }
+        if !source.is_char_boundary(function_span.start)
+            || !source.is_char_boundary(function_span.end)
+            || !source.is_char_boundary(body_span.start)
+        {
+            return None;
+        }
+
+        let signature = &source[function_span.start..body_span.start];
+        let effects = required_effects.iter().cloned().collect::<Vec<_>>();
+        if effects.is_empty() {
+            return None;
+        }
+        let effects_text = effects.join(", ");
+
+        if let Some((clause_rel_start, clause_rel_end)) = Self::find_effect_clause(signature) {
+            let start = function_span.start + clause_rel_start;
+            let end = function_span.start + clause_rel_end;
+            return Some(SuggestedFix {
+                message: format!(
+                    "update effect declaration on '{}' to include required effects",
+                    function_name
+                ),
+                replacement: Some(format!("effects {{ {} }}", effects_text)),
+                start: Some(start),
+                end: Some(end),
+            });
+        }
+
+        let insertion_before = [
+            Self::find_keyword(signature, "requires"),
+            Self::find_keyword(signature, "ensures"),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        let (insert_rel, replacement) = if let Some(rel) = insertion_before {
+            (rel, format!("effects {{ {} }} ", effects_text))
+        } else {
+            (signature.len(), format!(" effects {{ {} }}", effects_text))
+        };
+        let insert = function_span.start + insert_rel;
+        Some(SuggestedFix {
+            message: format!(
+                "add missing effects declaration to function '{}'",
+                function_name
+            ),
+            replacement: Some(replacement),
+            start: Some(insert),
+            end: Some(insert),
+        })
+    }
+
+    fn find_effect_clause(signature: &str) -> Option<(usize, usize)> {
+        let bytes = signature.as_bytes();
+        let mut start = 0usize;
+
+        while start < bytes.len() {
+            let found = signature[start..].find("effects")?;
+            let idx = start + found;
+            let end_keyword = idx + "effects".len();
+            let before_ok = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+            let after_ok = end_keyword >= bytes.len() || !is_ident_byte(bytes[end_keyword]);
+            if !before_ok || !after_ok {
+                start = idx + 1;
+                continue;
+            }
+
+            let mut cursor = end_keyword;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            if cursor >= bytes.len() || bytes[cursor] != b'{' {
+                start = idx + 1;
+                continue;
+            }
+            let mut close = cursor + 1;
+            while close < bytes.len() && bytes[close] != b'}' {
+                close += 1;
+            }
+            if close >= bytes.len() {
+                return None;
+            }
+            return Some((idx, close + 1));
+        }
+        None
+    }
+
+    fn find_keyword(signature: &str, keyword: &str) -> Option<usize> {
+        let bytes = signature.as_bytes();
+        let keyword_len = keyword.len();
+        let mut start = 0usize;
+
+        while start < bytes.len() {
+            let found = signature[start..].find(keyword)?;
+            let idx = start + found;
+            let end = idx + keyword_len;
+            let before_ok = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+            let after_ok = end >= bytes.len() || !is_ident_byte(bytes[end]);
+            if before_ok && after_ok {
+                return Some(idx);
+            }
+            start = idx + 1;
+        }
         None
     }
 
@@ -5739,6 +5901,10 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
         return false;
     }
     matches!(base_type_name(ty), "Int" | "Bool" | "Float") && extract_generic_args(ty).is_none()
+}
+
+fn is_ident_byte(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphanumeric()
 }
 
 fn split_top_level(input: &str) -> Vec<String> {

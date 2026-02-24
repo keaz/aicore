@@ -53,6 +53,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json"],
     },
     CommandContract {
+        name: "suggest-effects",
+        description: "Suggest missing function effects from transitive inference data",
+        stable_flags: &["--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "coverage",
         description: "Deterministic source/function coverage summary from check diagnostics",
         stable_flags: &["--check", "--min", "--report", "--offline"],

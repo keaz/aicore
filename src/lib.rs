@@ -34,6 +34,7 @@ pub mod sandbox;
 pub mod sarif;
 pub mod span;
 pub mod std_policy;
+pub mod suggest_effects;
 pub mod telemetry;
 pub mod test_harness;
 pub mod typecheck;
