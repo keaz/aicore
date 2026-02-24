@@ -1242,6 +1242,107 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_string_encoding_conversions_cover_ascii_utf8_invalid_and_empty() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.string;
+
+fn encoding_err_code(err: EncodingError) -> Int {
+    match err {
+        InvalidSequence => 1,
+        UnsupportedEncoding => 2,
+        BufferTooSmall => 3,
+    }
+}
+
+fn load_invalid() -> Bytes effects { fs } {
+    let payload = match read_bytes("invalid.bin") {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    Bytes { data: payload }
+}
+
+fn decode_len(v: Result[String, EncodingError]) -> Int {
+    match v {
+        Ok(text) => len(text),
+        Err(_) => -1,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let ascii_len_ok = if byte_length("hello") == 5 { 1 } else { 0 };
+    let ascii_flag_ok = if is_ascii("hello") { 1 } else { 0 };
+    let ascii_valid_ok = if is_valid_utf8(string_to_bytes("hello")) { 1 } else { 0 };
+    let ascii_roundtrip_ok = if decode_len(bytes_to_string(string_to_bytes("hello"))) == 5 { 1 } else { 0 };
+    let ascii_lossy_ok = if len(bytes_to_string_lossy(string_to_bytes("hello"))) == 5 { 1 } else { 0 };
+
+    let multi = "hé";
+    let multi_len_ok = if byte_length(multi) == 3 { 1 } else { 0 };
+    let multi_ascii_ok = if is_ascii(multi) { 0 } else { 1 };
+    let multi_valid_ok = if is_valid_utf8(string_to_bytes(multi)) { 1 } else { 0 };
+    let multi_roundtrip_ok = if decode_len(bytes_to_string(string_to_bytes(multi))) == 3 { 1 } else { 0 };
+    let multi_lossy_ok = if len(bytes_to_string_lossy(string_to_bytes(multi))) == 3 { 1 } else { 0 };
+
+    let empty_ok =
+        if decode_len(bytes_to_string(string_to_bytes(""))) == 0 &&
+            len(bytes_to_string_lossy(string_to_bytes(""))) == 0 &&
+            is_valid_utf8(string_to_bytes("")) {
+            1
+        } else {
+            0
+        };
+
+    let invalid_valid_ok = if is_valid_utf8(load_invalid()) { 0 } else { 1 };
+    let invalid_decode_ok = match bytes_to_string(load_invalid()) {
+        Ok(_) => 0,
+        Err(err) => if encoding_err_code(err) == 1 { 1 } else { 0 },
+    };
+    let invalid_lossy = bytes_to_string_lossy(load_invalid());
+    let invalid_lossy_ok =
+        if len(invalid_lossy) == 6 && starts_with(invalid_lossy, "fo") && ends_with(invalid_lossy, "o") {
+            1
+        } else {
+            0
+        };
+
+    let score =
+        ascii_len_ok +
+        ascii_flag_ok +
+        ascii_valid_ok +
+        ascii_roundtrip_ok +
+        ascii_lossy_ok +
+        multi_len_ok +
+        multi_ascii_ok +
+        multi_valid_ok +
+        multi_roundtrip_ok +
+        multi_lossy_ok +
+        empty_ok +
+        invalid_valid_ok +
+        invalid_decode_ok +
+        invalid_lossy_ok;
+
+    if score == 14 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        fs::write(
+            root.join("invalid.bin"),
+            [0x66_u8, 0x6f_u8, 0x80_u8, 0x6f_u8],
+        )
+        .expect("write invalid bytes");
+    });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_math_ops_full_surface_and_edge_cases() {
     let src = r#"
 import std.io;

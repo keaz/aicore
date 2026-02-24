@@ -2683,8 +2683,18 @@
     },
     {
       "module": "std.string",
+      "kind": "enum",
+      "signature": "EncodingError { InvalidSequence, UnsupportedEncoding, BufferTooSmall }"
+    },
+    {
+      "module": "std.string",
       "kind": "fn",
       "signature": "aic_string_bool_to_string_intrinsic(b: Bool) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String"
     },
     {
       "module": "std.string",
@@ -2720,6 +2730,16 @@
       "module": "std.string",
       "kind": "fn",
       "signature": "aic_string_int_to_string_intrinsic(n: Int) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_is_ascii_intrinsic(s: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_is_valid_utf8_intrinsic(data: String) -> Bool"
     },
     {
       "module": "std.string",
@@ -2809,6 +2829,21 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "byte_length(s: String) -> Int"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "bytes_to_string(data: Bytes) -> Result[String, EncodingError]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "bytes_to_string_lossy(data: Bytes) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "char_at(s: String, index: Int) -> Option[String]"
     },
     {
@@ -2844,7 +2879,17 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "is_ascii(s: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "is_empty(s: String) -> Bool"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "is_valid_utf8(data: Bytes) -> Bool"
     },
     {
       "module": "std.string",
@@ -2899,6 +2944,11 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "string_to_bytes(s: String) -> Bytes"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "substring(s: String, start: Int, end: Int) -> String"
     },
     {
@@ -2925,6 +2975,11 @@
       "module": "std.string",
       "kind": "fn",
       "signature": "trim_start(s: String) -> String"
+    },
+    {
+      "module": "std.string",
+      "kind": "struct",
+      "signature": "Bytes { data: String }"
     },
     {
       "module": "std.time",

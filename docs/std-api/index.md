@@ -52,7 +52,7 @@ api.json
 
 ## Module coverage
 
-Current baseline snapshot (`schema_version: 1`) contains `521` symbols across these modules.
+Current baseline snapshot (`schema_version: 1`) contains `675` symbols across these modules.
 
 | Module | Symbol count |
 |---|---:|
@@ -73,16 +73,16 @@ Current baseline snapshot (`schema_version: 1`) contains `521` symbols across th
 | `std.result` | 1 |
 | `std.retry` | 5 |
 | `std.router` | 9 |
-| `std.string` | 48 |
+| `std.string` | 60 |
 | `std.time` | 21 |
 | `std.url` | 9 |
 | `std.vec` | 36 |
 
 Symbol kind distribution:
 
-- `fn`: 475
-- `struct`: 27
-- `enum`: 19
+- `fn`: 614
+- `struct`: 36
+- `enum`: 25
 
 ## Signature policy
 

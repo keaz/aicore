@@ -4,6 +4,16 @@ import std.option;
 import std.result;
 import std.vec;
 
+struct Bytes {
+    data: String,
+}
+
+enum EncodingError {
+    InvalidSequence,
+    UnsupportedEncoding,
+    BufferTooSmall,
+}
+
 fn aic_string_len_intrinsic(s: String) -> Int {
     0
 }
@@ -113,12 +123,54 @@ fn aic_string_bool_to_string_intrinsic(b: Bool) -> String {
     if b { "true" } else { "false" }
 }
 
+fn aic_string_is_valid_utf8_intrinsic(data: String) -> Bool {
+    false
+}
+
+fn aic_string_is_ascii_intrinsic(s: String) -> Bool {
+    false
+}
+
+fn aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String {
+    ""
+}
+
 fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
     ""
 }
 
 fn aic_string_format_intrinsic(template: String, args: Vec[String]) -> String {
     ""
+}
+
+fn string_to_bytes(s: String) -> Bytes {
+    Bytes { data: s }
+}
+
+fn bytes_to_string(data: Bytes) -> Result[String, EncodingError] {
+    if aic_string_is_valid_utf8_intrinsic(data.data) {
+        let out: Result[String, EncodingError] = Ok(data.data);
+        out
+    } else {
+        let out: Result[String, EncodingError] = Err(InvalidSequence());
+        out
+    }
+}
+
+fn bytes_to_string_lossy(data: Bytes) -> String {
+    aic_string_bytes_to_string_lossy_intrinsic(data.data)
+}
+
+fn is_valid_utf8(data: Bytes) -> Bool {
+    aic_string_is_valid_utf8_intrinsic(data.data)
+}
+
+fn byte_length(s: String) -> Int {
+    len(s)
+}
+
+fn is_ascii(s: String) -> Bool {
+    aic_string_is_ascii_intrinsic(s)
 }
 
 fn contains(haystack: String, needle: String) -> Bool {

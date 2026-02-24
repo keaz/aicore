@@ -2154,6 +2154,27 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &string_source,
         "std/string.aic",
+        "is_valid_utf8",
+        "aic_string_is_valid_utf8_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "is_ascii",
+        "aic_string_is_ascii_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
+        "bytes_to_string_lossy",
+        "aic_string_bytes_to_string_lossy_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &string_source,
+        "std/string.aic",
         "join",
         "aic_string_join_intrinsic",
         2,
@@ -3021,6 +3042,12 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _parse = parse_int("42");
     let _int_s = int_to_string(42);
     let _bool_s = bool_to_string(true);
+    let _bytes = string_to_bytes("hello");
+    let _bytes_ok = bytes_to_string(_bytes);
+    let _bytes_lossy = bytes_to_string_lossy(string_to_bytes("hello"));
+    let _bytes_valid = is_valid_utf8(string_to_bytes("hello"));
+    let _byte_len = byte_length("hello");
+    let _ascii = is_ascii("hello");
     let _joined_parts = string.join(_parts, "|");
     let _v0: Vec[Int] = vec.new_vec();
     let _v1 = vec.push(_v0, 1);

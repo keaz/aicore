@@ -906,6 +906,11 @@ impl<'a> Generator<'a> {
         text.push_str("declare void @aic_rt_string_int_to_string(i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_string_float_to_string(double, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_string_bool_to_string(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_string_is_valid_utf8(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_string_is_ascii(i8*, i64, i64)\n");
+        text.push_str(
+            "declare void @aic_rt_string_bytes_to_string_lossy(i8*, i64, i64, i8**, i64*)\n",
+        );
         text.push_str(
             "declare void @aic_rt_string_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
@@ -10528,6 +10533,11 @@ impl<'a> Generator<'a> {
             "int_to_string" | "aic_string_int_to_string_intrinsic" => "int_to_string",
             "float_to_string" | "aic_string_float_to_string_intrinsic" => "float_to_string",
             "bool_to_string" | "aic_string_bool_to_string_intrinsic" => "bool_to_string",
+            "is_valid_utf8" | "aic_string_is_valid_utf8_intrinsic" => "is_valid_utf8",
+            "is_ascii" | "aic_string_is_ascii_intrinsic" => "is_ascii",
+            "bytes_to_string_lossy" | "aic_string_bytes_to_string_lossy_intrinsic" => {
+                "bytes_to_string_lossy"
+            }
             "join" | "aic_string_join_intrinsic" => "join",
             "format" | "aic_string_format_intrinsic" => "format",
             _ => return None,
@@ -10662,6 +10672,33 @@ impl<'a> Generator<'a> {
             "bool_to_string" if self.sig_matches_shape(name, &["Bool"], "String") => {
                 Some(self.gen_string_bool_to_string_call(args, span, fctx))
             }
+            "is_valid_utf8" if self.sig_matches_shape(name, &["String"], "Bool") => {
+                Some(self.gen_string_bool_unary_call(
+                    "is_valid_utf8",
+                    "aic_rt_string_is_valid_utf8",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "is_ascii" if self.sig_matches_shape(name, &["String"], "Bool") => {
+                Some(self.gen_string_bool_unary_call(
+                    "is_ascii",
+                    "aic_rt_string_is_ascii",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "bytes_to_string_lossy" if self.sig_matches_shape(name, &["String"], "String") => {
+                Some(self.gen_string_string_unary_call(
+                    "bytes_to_string_lossy",
+                    "aic_rt_string_bytes_to_string_lossy",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
             "join" if self.sig_matches_shape(name, &["Vec[String]", "String"], "String") => {
                 Some(self.gen_string_join_call(args, span, fctx))
             }
@@ -10706,6 +10743,48 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
             raw, runtime_fn, lhs_ptr, lhs_len, lhs_cap, rhs_ptr, rhs_len, rhs_cap
+        ));
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", reg, raw));
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_string_bool_unary_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {})",
+            raw, runtime_fn, ptr, len, cap
         ));
         let reg = self.new_temp();
         fctx.lines
@@ -29326,6 +29405,104 @@ static int aic_rt_string_slice_valid(const char* ptr, long len) {
     return len >= 0 && (len == 0 || ptr != NULL);
 }
 
+static size_t aic_rt_string_utf8_valid_prefix(const unsigned char* bytes, size_t remaining) {
+    if (bytes == NULL || remaining == 0) {
+        return 0;
+    }
+    unsigned char b0 = bytes[0];
+    if (b0 <= 0x7F) {
+        return 1;
+    }
+    if (b0 >= 0xC2 && b0 <= 0xDF) {
+        if (remaining < 2) {
+            return 0;
+        }
+        return (bytes[1] >= 0x80 && bytes[1] <= 0xBF) ? 2 : 0;
+    }
+    if (b0 == 0xE0) {
+        if (remaining < 3) {
+            return 0;
+        }
+        if (bytes[1] < 0xA0 || bytes[1] > 0xBF || bytes[2] < 0x80 || bytes[2] > 0xBF) {
+            return 0;
+        }
+        return 3;
+    }
+    if (b0 >= 0xE1 && b0 <= 0xEC) {
+        if (remaining < 3) {
+            return 0;
+        }
+        if (bytes[1] < 0x80 || bytes[1] > 0xBF || bytes[2] < 0x80 || bytes[2] > 0xBF) {
+            return 0;
+        }
+        return 3;
+    }
+    if (b0 == 0xED) {
+        if (remaining < 3) {
+            return 0;
+        }
+        if (bytes[1] < 0x80 || bytes[1] > 0x9F || bytes[2] < 0x80 || bytes[2] > 0xBF) {
+            return 0;
+        }
+        return 3;
+    }
+    if (b0 >= 0xEE && b0 <= 0xEF) {
+        if (remaining < 3) {
+            return 0;
+        }
+        if (bytes[1] < 0x80 || bytes[1] > 0xBF || bytes[2] < 0x80 || bytes[2] > 0xBF) {
+            return 0;
+        }
+        return 3;
+    }
+    if (b0 == 0xF0) {
+        if (remaining < 4) {
+            return 0;
+        }
+        if (bytes[1] < 0x90 || bytes[1] > 0xBF ||
+            bytes[2] < 0x80 || bytes[2] > 0xBF ||
+            bytes[3] < 0x80 || bytes[3] > 0xBF) {
+            return 0;
+        }
+        return 4;
+    }
+    if (b0 >= 0xF1 && b0 <= 0xF3) {
+        if (remaining < 4) {
+            return 0;
+        }
+        if (bytes[1] < 0x80 || bytes[1] > 0xBF ||
+            bytes[2] < 0x80 || bytes[2] > 0xBF ||
+            bytes[3] < 0x80 || bytes[3] > 0xBF) {
+            return 0;
+        }
+        return 4;
+    }
+    if (b0 == 0xF4) {
+        if (remaining < 4) {
+            return 0;
+        }
+        if (bytes[1] < 0x80 || bytes[1] > 0x8F ||
+            bytes[2] < 0x80 || bytes[2] > 0xBF ||
+            bytes[3] < 0x80 || bytes[3] > 0xBF) {
+            return 0;
+        }
+        return 4;
+    }
+    return 0;
+}
+
+static int aic_rt_string_utf8_is_valid(const char* ptr, size_t len) {
+    size_t cursor = 0;
+    while (cursor < len) {
+        size_t width = aic_rt_string_utf8_valid_prefix((const unsigned char*)(ptr + cursor), len - cursor);
+        if (width == 0) {
+            return 0;
+        }
+        cursor += width;
+    }
+    return 1;
+}
+
 static long aic_rt_string_find_first_raw(
     const char* haystack,
     size_t haystack_len,
@@ -30856,6 +31033,88 @@ double aic_rt_math_sin(double x) {
 
 double aic_rt_math_cos(double x) {
     return cos(x);
+}
+
+long aic_rt_string_is_valid_utf8(const char* data_ptr, long data_len, long data_cap) {
+    (void)data_cap;
+    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+        return 0;
+    }
+    return aic_rt_string_utf8_is_valid(data_ptr, (size_t)data_len) ? 1 : 0;
+}
+
+long aic_rt_string_is_ascii(const char* data_ptr, long data_len, long data_cap) {
+    (void)data_cap;
+    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+        return 0;
+    }
+    size_t n = (size_t)data_len;
+    for (size_t i = 0; i < n; ++i) {
+        if (((unsigned char)data_ptr[i]) > 0x7F) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+void aic_rt_string_bytes_to_string_lossy(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)data_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t n = (size_t)data_len;
+    if (n == 0) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    if (aic_rt_string_utf8_is_valid(data_ptr, n)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes(data_ptr, n));
+        return;
+    }
+    if (n > (SIZE_MAX - 1) / 3) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t cap = n * 3;
+    char* out = (char*)malloc(cap + 1);
+    if (out == NULL) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t in_pos = 0;
+    size_t out_pos = 0;
+    while (in_pos < n) {
+        size_t width =
+            aic_rt_string_utf8_valid_prefix((const unsigned char*)(data_ptr + in_pos), n - in_pos);
+        if (width > 0) {
+            memcpy(out + out_pos, data_ptr + in_pos, width);
+            out_pos += width;
+            in_pos += width;
+            continue;
+        }
+        out[out_pos++] = (char)0xEF;
+        out[out_pos++] = (char)0xBF;
+        out[out_pos++] = (char)0xBD;
+        in_pos += 1;
+    }
+    out[out_pos] = '\0';
+    aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
 long aic_rt_string_contains(

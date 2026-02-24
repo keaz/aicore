@@ -1,0 +1,35 @@
+import std.io;
+import std.string;
+
+fn decode_len(v: Result[String, EncodingError]) -> Int {
+    match v {
+        Ok(text) => len(text),
+        Err(_) => -1,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let score =
+        (if is_ascii("wire") { 1 } else { 0 }) +
+        (if byte_length("wire") == 4 { 1 } else { 0 }) +
+        (if is_valid_utf8(string_to_bytes("wire")) { 1 } else { 0 }) +
+        (if decode_len(bytes_to_string(string_to_bytes("wire"))) == 4 { 1 } else { 0 }) +
+        (if len(bytes_to_string_lossy(string_to_bytes("wire"))) == 4 { 1 } else { 0 }) +
+        (if is_ascii("hé") { 0 } else { 1 }) +
+        (if byte_length("hé") == 3 { 1 } else { 0 }) +
+        (if decode_len(bytes_to_string(string_to_bytes("hé"))) == 3 { 1 } else { 0 }) +
+        (if len(bytes_to_string_lossy(string_to_bytes("hé"))) == 3 { 1 } else { 0 }) +
+        (if decode_len(bytes_to_string(string_to_bytes(""))) == 0 &&
+            len(bytes_to_string_lossy(string_to_bytes(""))) == 0 {
+            1
+        } else {
+            0
+        });
+
+    if score == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
