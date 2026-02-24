@@ -12,11 +12,26 @@ use crate::ir_builder;
 use crate::parser;
 use crate::span::Span;
 
-#[derive(Default)]
 struct LspServer {
     root_uri: Option<String>,
     shutdown_requested: bool,
     documents: BTreeMap<String, String>,
+    inlay_type_hints: bool,
+    inlay_effect_hints: bool,
+    inlay_contract_hints: bool,
+}
+
+impl Default for LspServer {
+    fn default() -> Self {
+        Self {
+            root_uri: None,
+            shutdown_requested: false,
+            documents: BTreeMap::new(),
+            inlay_type_hints: true,
+            inlay_effect_hints: true,
+            inlay_contract_hints: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -150,7 +165,8 @@ impl LspServer {
                                         "tokenModifiers": []
                                     },
                                     "full": true
-                                }
+                                },
+                                "inlayHintProvider": true
                             },
                             "serverInfo": {
                                 "name": "aic-lsp",
@@ -230,6 +246,9 @@ impl LspServer {
                     }
                 }
             }
+            "workspace/didChangeConfiguration" => {
+                self.update_inlay_hint_settings(message);
+            }
             "textDocument/hover" => {
                 if let Some(id) = id {
                     let result = self.hover_response(message)?;
@@ -253,6 +272,16 @@ impl LspServer {
             "textDocument/documentSymbol" => {
                 if let Some(id) = id {
                     let result = self.document_symbol_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/inlayHint" => {
+                if let Some(id) = id {
+                    let result = self.inlay_hint_response(message)?;
                     outbound.push(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -459,6 +488,71 @@ impl LspServer {
             .take(200)
             .map(|(_, value)| value)
             .collect::<Vec<_>>()))
+    }
+
+    fn update_inlay_hint_settings(&mut self, message: &Value) {
+        let settings = message
+            .get("params")
+            .and_then(|params| params.get("settings"))
+            .and_then(|settings| settings.get("aic"))
+            .and_then(|aic| aic.get("inlayHints"));
+        let Some(settings) = settings else {
+            return;
+        };
+
+        if let Some(value) = settings.get("typeAnnotations").and_then(Value::as_bool) {
+            self.inlay_type_hints = value;
+        }
+        if let Some(value) = settings.get("effectAnnotations").and_then(Value::as_bool) {
+            self.inlay_effect_hints = value;
+        }
+        if let Some(value) = settings.get("contractAnnotations").and_then(Value::as_bool) {
+            self.inlay_contract_hints = value;
+        }
+    }
+
+    fn inlay_hint_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+        let Some(path) = uri_to_path(&uri) else {
+            return Ok(json!([]));
+        };
+
+        let source = self.document_text(&uri)?;
+        let requested_range = message
+            .get("params")
+            .and_then(|p| p.get("range"))
+            .cloned()
+            .unwrap_or_else(|| full_document_range(&source));
+
+        let mut hints = collect_inlay_hints(
+            &path,
+            &source,
+            self.inlay_type_hints,
+            self.inlay_effect_hints,
+            self.inlay_contract_hints,
+        )?;
+        hints.retain(|hint| inlay_hint_in_range(hint, &requested_range));
+        hints.sort_by(|a, b| {
+            a["position"]["line"]
+                .as_u64()
+                .cmp(&b["position"]["line"].as_u64())
+                .then(
+                    a["position"]["character"]
+                        .as_u64()
+                        .cmp(&b["position"]["character"].as_u64()),
+                )
+                .then(a["label"].as_str().cmp(&b["label"].as_str()))
+        });
+        Ok(json!(hints))
     }
 
     fn formatting_response(&self, message: &Value) -> anyhow::Result<Value> {
@@ -1234,6 +1328,383 @@ fn symbol_decl_to_workspace_symbol(decl: &SymbolDecl) -> Value {
     })
 }
 
+fn collect_inlay_hints(
+    path: &Path,
+    source: &str,
+    show_type_hints: bool,
+    show_effect_hints: bool,
+    show_contract_hints: bool,
+) -> anyhow::Result<Vec<Value>> {
+    let mut signature_lookup = BTreeMap::<String, String>::new();
+    let declarations = build_symbol_index(path)?;
+    for (name, decls) in declarations {
+        if let Some(first) = decls.first() {
+            signature_lookup.insert(name, first.signature.clone());
+        }
+    }
+
+    let mut hints = Vec::new();
+    let (program, diagnostics) = parser::parse(source, &path.to_string_lossy());
+    if diagnostics.iter().any(|diag| diag.is_error()) {
+        return Ok(hints);
+    }
+    let Some(program) = program else {
+        return Ok(hints);
+    };
+
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => collect_block_inlay_hints(
+                &func.body,
+                source,
+                show_type_hints,
+                show_effect_hints,
+                &signature_lookup,
+                &mut hints,
+            ),
+            ast::Item::Trait(trait_def) => {
+                for method in &trait_def.methods {
+                    collect_block_inlay_hints(
+                        &method.body,
+                        source,
+                        show_type_hints,
+                        show_effect_hints,
+                        &signature_lookup,
+                        &mut hints,
+                    );
+                }
+            }
+            ast::Item::Impl(impl_def) => {
+                for method in &impl_def.methods {
+                    collect_block_inlay_hints(
+                        &method.body,
+                        source,
+                        show_type_hints,
+                        show_effect_hints,
+                        &signature_lookup,
+                        &mut hints,
+                    );
+                }
+            }
+            ast::Item::Struct(_) | ast::Item::Enum(_) => {}
+        }
+    }
+
+    if show_contract_hints {
+        let canonical_target = fs::canonicalize(path).unwrap_or(path.to_path_buf());
+        if let Ok(front) = run_frontend(path) {
+            for diag in &front.diagnostics {
+                let is_contract = diag.message.to_lowercase().contains("contract")
+                    || diag.code.to_uppercase().contains("CONTRACT");
+                if !is_contract {
+                    continue;
+                }
+                let Some(span) = diag.spans.first() else {
+                    continue;
+                };
+                let span_path = PathBuf::from(&span.file);
+                let canonical_span = fs::canonicalize(&span_path).unwrap_or(span_path);
+                if canonical_span != canonical_target {
+                    continue;
+                }
+                let (line, character) = offset_to_line_char(source, span.start);
+                hints.push(inlay_hint(
+                    line,
+                    character,
+                    format!("contract: {}", diag.message),
+                    2,
+                    false,
+                ));
+            }
+        }
+    }
+
+    Ok(hints)
+}
+
+fn collect_block_inlay_hints(
+    block: &ast::Block,
+    source: &str,
+    show_type_hints: bool,
+    show_effect_hints: bool,
+    signature_lookup: &BTreeMap<String, String>,
+    hints: &mut Vec<Value>,
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            ast::Stmt::Let {
+                name,
+                ty,
+                expr,
+                span,
+                ..
+            } => {
+                if show_type_hints && ty.is_none() {
+                    if let Some(inferred) = infer_expr_type(expr, signature_lookup) {
+                        if let Some(offset) = find_name_offset_in_span(source, name, *span) {
+                            let (line, character) =
+                                offset_to_line_char(source, offset + name.len());
+                            hints.push(inlay_hint(
+                                line,
+                                character,
+                                format!(": {inferred}"),
+                                1,
+                                true,
+                            ));
+                        }
+                    }
+                }
+                collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
+            }
+            ast::Stmt::Assign { expr, .. }
+            | ast::Stmt::Expr { expr, .. }
+            | ast::Stmt::Assert { expr, .. } => {
+                collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
+            }
+            ast::Stmt::Return {
+                expr: Some(expr), ..
+            } => {
+                collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
+            }
+            ast::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+
+    if let Some(tail) = &block.tail {
+        collect_expr_inlay_hints(tail, source, show_effect_hints, signature_lookup, hints);
+    }
+}
+
+fn collect_expr_inlay_hints(
+    expr: &ast::Expr,
+    source: &str,
+    show_effect_hints: bool,
+    signature_lookup: &BTreeMap<String, String>,
+    hints: &mut Vec<Value>,
+) {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args } => {
+            if show_effect_hints {
+                if let ast::ExprKind::Var(name) = &callee.kind {
+                    if let Some(signature) = signature_lookup.get(name) {
+                        if let Some(effects) = parse_signature_effects(signature) {
+                            let (line, character) = offset_to_line_char(source, expr.span.end);
+                            hints.push(inlay_hint(line, character, effects, 1, true));
+                        }
+                    }
+                }
+            }
+            collect_expr_inlay_hints(callee, source, show_effect_hints, signature_lookup, hints);
+            for arg in args {
+                collect_expr_inlay_hints(arg, source, show_effect_hints, signature_lookup, hints);
+            }
+        }
+        ast::ExprKind::Closure { body, .. } => {
+            collect_block_inlay_hints(
+                body,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+        }
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_inlay_hints(cond, source, show_effect_hints, signature_lookup, hints);
+            collect_block_inlay_hints(
+                then_block,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+            collect_block_inlay_hints(
+                else_block,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_inlay_hints(cond, source, show_effect_hints, signature_lookup, hints);
+            collect_block_inlay_hints(
+                body,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+        }
+        ast::ExprKind::Loop { body } => {
+            collect_block_inlay_hints(
+                body,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+        }
+        ast::ExprKind::Break { expr: Some(value) }
+        | ast::ExprKind::Await { expr: value }
+        | ast::ExprKind::Try { expr: value }
+        | ast::ExprKind::Unary { expr: value, .. }
+        | ast::ExprKind::Borrow { expr: value, .. } => {
+            collect_expr_inlay_hints(value, source, show_effect_hints, signature_lookup, hints);
+        }
+        ast::ExprKind::Match { expr: value, arms } => {
+            collect_expr_inlay_hints(value, source, show_effect_hints, signature_lookup, hints);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_inlay_hints(
+                        guard,
+                        source,
+                        show_effect_hints,
+                        signature_lookup,
+                        hints,
+                    );
+                }
+                collect_expr_inlay_hints(
+                    &arm.body,
+                    source,
+                    show_effect_hints,
+                    signature_lookup,
+                    hints,
+                );
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_inlay_hints(lhs, source, show_effect_hints, signature_lookup, hints);
+            collect_expr_inlay_hints(rhs, source, show_effect_hints, signature_lookup, hints);
+        }
+        ast::ExprKind::UnsafeBlock { block } => {
+            collect_block_inlay_hints(
+                block,
+                source,
+                false,
+                show_effect_hints,
+                signature_lookup,
+                hints,
+            );
+        }
+        ast::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_expr_inlay_hints(value, source, show_effect_hints, signature_lookup, hints);
+            }
+        }
+        ast::ExprKind::FieldAccess { base, .. } => {
+            collect_expr_inlay_hints(base, source, show_effect_hints, signature_lookup, hints);
+        }
+        ast::ExprKind::Break { expr: None }
+        | ast::ExprKind::Continue
+        | ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_) => {}
+    }
+}
+
+fn infer_expr_type(
+    expr: &ast::Expr,
+    signature_lookup: &BTreeMap<String, String>,
+) -> Option<String> {
+    match &expr.kind {
+        ast::ExprKind::Int(_) => Some("Int".to_string()),
+        ast::ExprKind::Float(_) => Some("Float".to_string()),
+        ast::ExprKind::Bool(_) => Some("Bool".to_string()),
+        ast::ExprKind::String(_) => Some("String".to_string()),
+        ast::ExprKind::Unit => Some("Unit".to_string()),
+        ast::ExprKind::StructInit { name, .. } => Some(name.clone()),
+        ast::ExprKind::Call { callee, .. } => {
+            if let ast::ExprKind::Var(name) = &callee.kind {
+                signature_lookup
+                    .get(name)
+                    .and_then(|signature| parse_signature_return_type(signature))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_signature_return_type(signature: &str) -> Option<String> {
+    let (_, tail) = signature.split_once("->")?;
+    let return_ty = tail
+        .split(" effects ")
+        .next()
+        .map(str::trim)
+        .unwrap_or_default();
+    if return_ty.is_empty() {
+        None
+    } else {
+        Some(return_ty.to_string())
+    }
+}
+
+fn parse_signature_effects(signature: &str) -> Option<String> {
+    let (_, tail) = signature.split_once(" effects {")?;
+    let body = tail.split('}').next().map(str::trim).unwrap_or_default();
+    if body.is_empty() {
+        None
+    } else {
+        Some(format!("effects {{ {body} }}"))
+    }
+}
+
+fn inlay_hint(
+    line: usize,
+    character: usize,
+    label: String,
+    kind: i32,
+    padding_left: bool,
+) -> Value {
+    json!({
+        "position": {
+            "line": line,
+            "character": character
+        },
+        "label": label,
+        "kind": kind,
+        "paddingLeft": padding_left,
+        "paddingRight": false
+    })
+}
+
+fn inlay_hint_in_range(hint: &Value, range: &Value) -> bool {
+    let line = hint
+        .get("position")
+        .and_then(|position| position.get("line"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let character = hint
+        .get("position")
+        .and_then(|position| position.get("character"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let point = json!({
+        "start": {
+            "line": line,
+            "character": character
+        },
+        "end": {
+            "line": line,
+            "character": character
+        }
+    });
+    ranges_intersect(range, &point)
+}
+
 fn render_function_signature(func: &ast::Function) -> String {
     let generics = render_generic_params(&func.generics, "<", ">");
 
@@ -1737,6 +2208,10 @@ mod tests {
             responses[0]["result"]["capabilities"]["workspaceSymbolProvider"],
             true
         );
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["inlayHintProvider"],
+            true
+        );
     }
 
     #[test]
@@ -1846,6 +2321,130 @@ fn worker_task() -> Int {
                 .iter()
                 .any(|symbol| symbol["name"] == "worker_task"),
             "workspace symbol search should include worker_task"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn inlay_hints_report_type_and_effects_and_respect_contract_toggle() {
+        let workspace = temp_workspace("inlay");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let main_source = r#"module sample.inlay;
+import std.io;
+
+fn checked(x: Int) -> Int effects { io } requires x >= 0 ensures result >= 0 {
+    x
+}
+
+fn main() -> Int effects { io } {
+    let value = 41;
+    let parsed = checked(value);
+    print_int(parsed + 1);
+    0
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+
+        let mut server = LspServer::default();
+        let init_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+        assert_eq!(init_response.len(), 1);
+
+        let hints_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/inlayHint",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 50, "character": 0 }
+                    }
+                }
+            }))
+            .expect("inlay hint response");
+        let hints = hints_response[0]["result"]
+            .as_array()
+            .expect("inlay hint array");
+        assert!(
+            hints
+                .iter()
+                .any(|hint| hint["label"].as_str() == Some(": Int")),
+            "type hint should include : Int for inferred let binding"
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|hint| hint["label"].as_str() == Some("effects { io }")),
+            "effect hint should include effects {{ io }} at call site"
+        );
+        assert!(
+            !hints.iter().any(|hint| {
+                hint["label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("contract:")
+            }),
+            "contract hints should be disabled by default"
+        );
+
+        let _ = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "workspace/didChangeConfiguration",
+                "params": {
+                    "settings": {
+                        "aic": {
+                            "inlayHints": {
+                                "contractAnnotations": true
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("configuration update");
+
+        let contract_hints_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "textDocument/inlayHint",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 50, "character": 0 }
+                    }
+                }
+            }))
+            .expect("inlay hint response with contracts");
+        let contract_hints = contract_hints_response[0]["result"]
+            .as_array()
+            .expect("inlay hint array");
+        assert!(
+            contract_hints.iter().any(|hint| {
+                hint["label"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("contract:")
+            }),
+            "contract hints should appear when contractAnnotations is enabled"
         );
 
         let _ = fs::remove_dir_all(workspace);

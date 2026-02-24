@@ -81,6 +81,21 @@
           ],
           "default": "off",
           "description": "Trace level for AICore language server"
+        },
+        "aic.inlayHints.typeAnnotations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inlay type hints for inferred let bindings"
+        },
+        "aic.inlayHints.effectAnnotations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inlay effect hints at effectful call sites"
+        },
+        "aic.inlayHints.contractAnnotations": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show inlay hints for static contract diagnostics"
         }
       }
     },
@@ -91,7 +106,8 @@
           "comments": false,
           "strings": true
         },
-        "editor.suggestOnTriggerCharacters": true
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.inlayHints.enabled": "on"
       }
     }
   },
