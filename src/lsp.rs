@@ -231,7 +231,9 @@ impl LspServer {
                                     "full": true
                                 },
                                 "inlayHintProvider": true,
-                                "callHierarchyProvider": true
+                                "callHierarchyProvider": true,
+                                "foldingRangeProvider": true,
+                                "selectionRangeProvider": true
                             },
                             "serverInfo": {
                                 "name": "aic-lsp",
@@ -377,6 +379,26 @@ impl LspServer {
             "textDocument/inlayHint" => {
                 if let Some(id) = id {
                     let result = self.inlay_hint_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/foldingRange" => {
+                if let Some(id) = id {
+                    let result = self.folding_range_response(message)?;
+                    outbound.push(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result
+                    }));
+                }
+            }
+            "textDocument/selectionRange" => {
+                if let Some(id) = id {
+                    let result = self.selection_range_response(message)?;
                     outbound.push(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -832,6 +854,87 @@ impl LspServer {
                 .then(a["label"].as_str().cmp(&b["label"].as_str()))
         });
         Ok(json!(hints))
+    }
+
+    fn folding_range_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let source = self.document_text(&uri)?;
+        let (program, diagnostics) = parser::parse(&source, &uri);
+        if diagnostics.iter().any(|d| d.is_error()) {
+            return Ok(json!([]));
+        }
+        let Some(program) = program else {
+            return Ok(json!([]));
+        };
+
+        let mut ranges = collect_ast_folding_ranges(&program, &source);
+        ranges.extend(collect_comment_folding_ranges(&source));
+        ranges.sort_by_key(folding_range_sort_key);
+        ranges.dedup_by(|lhs, rhs| lhs == rhs);
+        Ok(json!(ranges))
+    }
+
+    fn selection_range_response(&self, message: &Value) -> anyhow::Result<Value> {
+        let uri = message
+            .get("params")
+            .and_then(|p| p.get("textDocument"))
+            .and_then(|td| td.get("uri"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if uri.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let source = self.document_text(&uri)?;
+        let positions = message
+            .get("params")
+            .and_then(|p| p.get("positions"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if positions.is_empty() {
+            return Ok(json!([]));
+        }
+
+        let (program, diagnostics) = parser::parse(&source, &uri);
+        if diagnostics.iter().any(|d| d.is_error()) {
+            return Ok(json!(positions
+                .into_iter()
+                .map(|position| fallback_selection_range(&position))
+                .collect::<Vec<_>>()));
+        }
+        let Some(program) = program else {
+            return Ok(json!(positions
+                .into_iter()
+                .map(|position| fallback_selection_range(&position))
+                .collect::<Vec<_>>()));
+        };
+
+        let mut ranges = Vec::new();
+        for position in positions {
+            let line = position.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let character = position
+                .get("character")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            let offset = line_char_to_offset(&source, line, character).unwrap_or(source.len());
+            ranges.push(selection_chain_for_offset(
+                &program, &source, offset, line, character,
+            ));
+        }
+
+        Ok(json!(ranges))
     }
 
     fn formatting_response(&self, message: &Value) -> anyhow::Result<Value> {
@@ -2333,6 +2436,474 @@ fn call_hierarchy_range_sort_key(range: &Value) -> (u64, u64, u64, u64) {
     (start_line, start_char, end_line, end_char)
 }
 
+fn collect_ast_folding_ranges(program: &ast::Program, source: &str) -> Vec<Value> {
+    let mut ranges = Vec::new();
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => {
+                push_folding_range_for_span(&mut ranges, source, func.body.span, Some("region"));
+                collect_block_folding_ranges(&func.body, source, &mut ranges);
+            }
+            ast::Item::Struct(def) => {
+                push_folding_range_for_span(&mut ranges, source, def.span, Some("region"));
+            }
+            ast::Item::Enum(def) => {
+                push_folding_range_for_span(&mut ranges, source, def.span, Some("region"));
+            }
+            ast::Item::Trait(def) => {
+                push_folding_range_for_span(&mut ranges, source, def.span, Some("region"));
+                for method in &def.methods {
+                    push_folding_range_for_span(
+                        &mut ranges,
+                        source,
+                        method.body.span,
+                        Some("region"),
+                    );
+                    collect_block_folding_ranges(&method.body, source, &mut ranges);
+                }
+            }
+            ast::Item::Impl(def) => {
+                push_folding_range_for_span(&mut ranges, source, def.span, Some("region"));
+                for method in &def.methods {
+                    push_folding_range_for_span(
+                        &mut ranges,
+                        source,
+                        method.body.span,
+                        Some("region"),
+                    );
+                    collect_block_folding_ranges(&method.body, source, &mut ranges);
+                }
+            }
+        }
+    }
+    ranges
+}
+
+fn collect_block_folding_ranges(block: &ast::Block, source: &str, ranges: &mut Vec<Value>) {
+    push_folding_range_for_span(ranges, source, block.span, Some("region"));
+
+    for stmt in &block.stmts {
+        match stmt {
+            ast::Stmt::Let { expr, .. }
+            | ast::Stmt::Assign { expr, .. }
+            | ast::Stmt::Expr { expr, .. }
+            | ast::Stmt::Assert { expr, .. } => collect_expr_folding_ranges(expr, source, ranges),
+            ast::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_expr_folding_ranges(expr, source, ranges);
+                }
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_folding_ranges(tail, source, ranges);
+    }
+}
+
+fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<Value>) {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args } => {
+            collect_expr_folding_ranges(callee, source, ranges);
+            for arg in args {
+                collect_expr_folding_ranges(arg, source, ranges);
+            }
+        }
+        ast::ExprKind::Closure { body, .. } => collect_block_folding_ranges(body, source, ranges),
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_folding_ranges(cond, source, ranges);
+            collect_block_folding_ranges(then_block, source, ranges);
+            collect_block_folding_ranges(else_block, source, ranges);
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_folding_ranges(cond, source, ranges);
+            collect_block_folding_ranges(body, source, ranges);
+        }
+        ast::ExprKind::Loop { body } => collect_block_folding_ranges(body, source, ranges),
+        ast::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_expr_folding_ranges(expr, source, ranges);
+            }
+        }
+        ast::ExprKind::Continue => {}
+        ast::ExprKind::Match { expr, arms } => {
+            collect_expr_folding_ranges(expr, source, ranges);
+            for arm in arms {
+                push_folding_range_for_span(ranges, source, arm.span, Some("region"));
+                if let Some(guard) = &arm.guard {
+                    collect_expr_folding_ranges(guard, source, ranges);
+                }
+                collect_expr_folding_ranges(&arm.body, source, ranges);
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_folding_ranges(lhs, source, ranges);
+            collect_expr_folding_ranges(rhs, source, ranges);
+        }
+        ast::ExprKind::Unary { expr, .. }
+        | ast::ExprKind::Borrow { expr, .. }
+        | ast::ExprKind::Await { expr }
+        | ast::ExprKind::Try { expr } => collect_expr_folding_ranges(expr, source, ranges),
+        ast::ExprKind::UnsafeBlock { block } => collect_block_folding_ranges(block, source, ranges),
+        ast::ExprKind::StructInit { fields, .. } => {
+            for (_, field_expr, _) in fields {
+                collect_expr_folding_ranges(field_expr, source, ranges);
+            }
+        }
+        ast::ExprKind::FieldAccess { base, .. } => {
+            collect_expr_folding_ranges(base, source, ranges)
+        }
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_) => {}
+    }
+}
+
+fn push_folding_range_for_span(
+    ranges: &mut Vec<Value>,
+    source: &str,
+    span: Span,
+    kind: Option<&str>,
+) {
+    let end_offset = span.end.saturating_sub(1).max(span.start);
+    let (start_line, _) = offset_to_line_char(source, span.start);
+    let (end_line, _) = offset_to_line_char(source, end_offset);
+    if end_line <= start_line {
+        return;
+    }
+    let mut range = json!({
+        "startLine": start_line,
+        "endLine": end_line
+    });
+    if let Some(kind) = kind {
+        range["kind"] = json!(kind);
+    }
+    ranges.push(range);
+}
+
+fn collect_comment_folding_ranges(source: &str) -> Vec<Value> {
+    let mut ranges = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut run_end: usize = 0;
+
+    for (idx, line) in source.lines().enumerate() {
+        if line.trim_start().starts_with("//") {
+            if run_start.is_none() {
+                run_start = Some(idx);
+            }
+            run_end = idx;
+            continue;
+        }
+
+        if let Some(start) = run_start.take() {
+            if run_end > start {
+                ranges.push(json!({
+                    "startLine": start,
+                    "endLine": run_end,
+                    "kind": "comment"
+                }));
+            }
+        }
+    }
+
+    if let Some(start) = run_start {
+        if run_end > start {
+            ranges.push(json!({
+                "startLine": start,
+                "endLine": run_end,
+                "kind": "comment"
+            }));
+        }
+    }
+
+    ranges
+}
+
+fn folding_range_sort_key(range: &Value) -> (u64, u64, String) {
+    let start_line = range.get("startLine").and_then(Value::as_u64).unwrap_or(0);
+    let end_line = range.get("endLine").and_then(Value::as_u64).unwrap_or(0);
+    let kind = range
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    (start_line, end_line, kind)
+}
+
+fn fallback_selection_range(position: &Value) -> Value {
+    let line = position.get("line").and_then(Value::as_u64).unwrap_or(0);
+    let character = position
+        .get("character")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    json!({
+        "range": {
+            "start": { "line": line, "character": character },
+            "end": { "line": line, "character": character }
+        }
+    })
+}
+
+fn selection_chain_for_offset(
+    program: &ast::Program,
+    source: &str,
+    offset: usize,
+    line: usize,
+    character: usize,
+) -> Value {
+    let mut expr_spans = Vec::new();
+    let mut stmt_spans = Vec::new();
+    let mut block_spans = Vec::new();
+    let mut function_spans = Vec::new();
+
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => {
+                if span_contains_offset(func.span, offset) {
+                    function_spans.push(func.span);
+                }
+                collect_block_selection_spans(
+                    &func.body,
+                    offset,
+                    &mut stmt_spans,
+                    &mut block_spans,
+                    &mut expr_spans,
+                );
+            }
+            ast::Item::Trait(def) => {
+                for method in &def.methods {
+                    if span_contains_offset(method.span, offset) {
+                        function_spans.push(method.span);
+                    }
+                    collect_block_selection_spans(
+                        &method.body,
+                        offset,
+                        &mut stmt_spans,
+                        &mut block_spans,
+                        &mut expr_spans,
+                    );
+                }
+            }
+            ast::Item::Impl(def) => {
+                for method in &def.methods {
+                    if span_contains_offset(method.span, offset) {
+                        function_spans.push(method.span);
+                    }
+                    collect_block_selection_spans(
+                        &method.body,
+                        offset,
+                        &mut stmt_spans,
+                        &mut block_spans,
+                        &mut expr_spans,
+                    );
+                }
+            }
+            ast::Item::Struct(_) | ast::Item::Enum(_) => {}
+        }
+    }
+
+    let mut chain = Vec::<Span>::new();
+    for candidate in [
+        smallest_span(&expr_spans),
+        smallest_span(&stmt_spans),
+        smallest_span(&block_spans),
+        smallest_span(&function_spans),
+        if span_contains_offset(program.span, offset) {
+            Some(program.span)
+        } else {
+            None
+        },
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if chain.last().copied() != Some(candidate) {
+            chain.push(candidate);
+        }
+    }
+
+    if chain.is_empty() {
+        return json!({
+            "range": {
+                "start": { "line": line, "character": character },
+                "end": { "line": line, "character": character }
+            }
+        });
+    }
+
+    let mut parent: Option<Value> = None;
+    for span in chain.into_iter().rev() {
+        let range = offset_range_to_lsp_range(source, span.start, span.end.max(span.start + 1));
+        let node = if let Some(parent) = parent {
+            json!({
+                "range": range,
+                "parent": parent
+            })
+        } else {
+            json!({
+                "range": range
+            })
+        };
+        parent = Some(node);
+    }
+    parent
+        .unwrap_or_else(|| fallback_selection_range(&json!({"line": line, "character": character})))
+}
+
+fn collect_block_selection_spans(
+    block: &ast::Block,
+    offset: usize,
+    stmt_spans: &mut Vec<Span>,
+    block_spans: &mut Vec<Span>,
+    expr_spans: &mut Vec<Span>,
+) {
+    if span_contains_offset(block.span, offset) {
+        block_spans.push(block.span);
+    }
+
+    for stmt in &block.stmts {
+        let span = stmt.span();
+        if span_contains_offset(span, offset) {
+            stmt_spans.push(span);
+        }
+        match stmt {
+            ast::Stmt::Let { expr, .. }
+            | ast::Stmt::Assign { expr, .. }
+            | ast::Stmt::Expr { expr, .. }
+            | ast::Stmt::Assert { expr, .. } => {
+                collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans)
+            }
+            ast::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
+                }
+            }
+        }
+    }
+
+    if let Some(tail) = &block.tail {
+        collect_expr_selection_spans(tail, offset, stmt_spans, block_spans, expr_spans);
+    }
+}
+
+fn collect_expr_selection_spans(
+    expr: &ast::Expr,
+    offset: usize,
+    stmt_spans: &mut Vec<Span>,
+    block_spans: &mut Vec<Span>,
+    expr_spans: &mut Vec<Span>,
+) {
+    if span_contains_offset(expr.span, offset) {
+        expr_spans.push(expr.span);
+    }
+
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args } => {
+            collect_expr_selection_spans(callee, offset, stmt_spans, block_spans, expr_spans);
+            for arg in args {
+                collect_expr_selection_spans(arg, offset, stmt_spans, block_spans, expr_spans);
+            }
+        }
+        ast::ExprKind::Closure { body, .. } => {
+            collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_selection_spans(cond, offset, stmt_spans, block_spans, expr_spans);
+            collect_block_selection_spans(then_block, offset, stmt_spans, block_spans, expr_spans);
+            collect_block_selection_spans(else_block, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_selection_spans(cond, offset, stmt_spans, block_spans, expr_spans);
+            collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::Loop { body } => {
+            collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
+            }
+        }
+        ast::ExprKind::Continue => {}
+        ast::ExprKind::Match { expr, arms } => {
+            collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_selection_spans(
+                        guard,
+                        offset,
+                        stmt_spans,
+                        block_spans,
+                        expr_spans,
+                    );
+                }
+                collect_expr_selection_spans(
+                    &arm.body,
+                    offset,
+                    stmt_spans,
+                    block_spans,
+                    expr_spans,
+                );
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_selection_spans(lhs, offset, stmt_spans, block_spans, expr_spans);
+            collect_expr_selection_spans(rhs, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::Unary { expr, .. }
+        | ast::ExprKind::Borrow { expr, .. }
+        | ast::ExprKind::Await { expr }
+        | ast::ExprKind::Try { expr } => {
+            collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::UnsafeBlock { block } => {
+            collect_block_selection_spans(block, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::StructInit { fields, .. } => {
+            for (_, field_expr, _) in fields {
+                collect_expr_selection_spans(
+                    field_expr,
+                    offset,
+                    stmt_spans,
+                    block_spans,
+                    expr_spans,
+                );
+            }
+        }
+        ast::ExprKind::FieldAccess { base, .. } => {
+            collect_expr_selection_spans(base, offset, stmt_spans, block_spans, expr_spans);
+        }
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_) => {}
+    }
+}
+
+fn span_contains_offset(span: Span, offset: usize) -> bool {
+    offset >= span.start && offset <= span.end.max(span.start + 1)
+}
+
+fn smallest_span(spans: &[Span]) -> Option<Span> {
+    spans
+        .iter()
+        .copied()
+        .filter(|span| span.end >= span.start)
+        .min_by_key(|span| (span.end.saturating_sub(span.start), span.start))
+}
+
 fn symbol_index_root(entry_path: &Path) -> PathBuf {
     if entry_path.is_dir() {
         return entry_path.to_path_buf();
@@ -3452,7 +4023,7 @@ mod tests {
         MOD_DECLARATION, MOD_DEPRECATED, MOD_EFFECTFUL, MOD_MUTABLE, MOD_READONLY,
         TOKEN_ENUM_MEMBER, TOKEN_FUNCTION, TOKEN_PROPERTY, TOKEN_TYPE_PARAMETER, TOKEN_VARIABLE,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3513,6 +4084,19 @@ mod tests {
         })
     }
 
+    fn selection_chain_depth(selection: &Value) -> usize {
+        let mut depth = 0usize;
+        let mut cursor = selection;
+        loop {
+            depth += 1;
+            let Some(parent) = cursor.get("parent") else {
+                break;
+            };
+            cursor = parent;
+        }
+        depth
+    }
+
     #[test]
     fn extracts_word_at_cursor() {
         let source = "fn main() -> Int { helper() }\n";
@@ -3564,6 +4148,14 @@ mod tests {
         );
         assert_eq!(
             responses[0]["result"]["capabilities"]["callHierarchyProvider"],
+            true
+        );
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["foldingRangeProvider"],
+            true
+        );
+        assert_eq!(
+            responses[0]["result"]["capabilities"]["selectionRangeProvider"],
             true
         );
         assert_eq!(
@@ -3858,6 +4450,149 @@ fn normalize(x: Int) -> Int {
         );
 
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn folding_ranges_include_functions_match_arms_and_comment_blocks() {
+        let source = r#"module sample.folding;
+// first comment line
+// second comment line
+
+struct User {
+    id: Int,
+    score: Int,
+}
+
+fn classify(x: Int) -> Int {
+    match x {
+        0 => if x == 0 {
+            0
+        } else {
+            1
+        },
+        _ => if x > 10 {
+            x
+        } else {
+            x + 1
+        },
+    }
+}
+"#;
+        let uri = "file:///folding_demo.aic".to_string();
+        let mut server = LspServer::default();
+        server.documents.insert(uri.clone(), source.to_string());
+
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 120,
+                "method": "textDocument/foldingRange",
+                "params": {
+                    "textDocument": { "uri": uri }
+                }
+            }))
+            .expect("folding range response");
+        let ranges = responses[0]["result"]
+            .as_array()
+            .expect("folding range array");
+        assert!(!ranges.is_empty(), "folding ranges should not be empty");
+
+        let comment_offset = source.find("// first comment line").expect("comment");
+        let (comment_line, _) = offset_to_line_char(source, comment_offset);
+        assert!(
+            ranges.iter().any(|range| {
+                range.get("kind").and_then(Value::as_str) == Some("comment")
+                    && range.get("startLine").and_then(Value::as_u64) == Some(comment_line as u64)
+            }),
+            "folding ranges should include multi-line comment block"
+        );
+
+        let fn_offset = source.find("fn classify").expect("classify declaration");
+        let (fn_line, _) = offset_to_line_char(source, fn_offset);
+        assert!(
+            ranges.iter().any(|range| {
+                let start = range.get("startLine").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let end = range.get("endLine").and_then(Value::as_u64).unwrap_or(0) as usize;
+                start <= fn_line && end > fn_line
+            }),
+            "folding ranges should include classify function body"
+        );
+
+        let arm_offset = source.find("0 => if x == 0 {").expect("match arm");
+        let (arm_line, _) = offset_to_line_char(source, arm_offset);
+        assert!(
+            ranges.iter().any(|range| {
+                let start = range.get("startLine").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let end = range.get("endLine").and_then(Value::as_u64).unwrap_or(0) as usize;
+                start == arm_line && end > arm_line
+            }),
+            "folding ranges should include multi-line match arm block"
+        );
+    }
+
+    #[test]
+    fn selection_ranges_expand_from_expression_to_module_scope() {
+        let source = r#"module sample.selection;
+
+fn compute(x: Int) -> Int {
+    let value = x + 1;
+    value
+}
+"#;
+        let uri = "file:///selection_demo.aic".to_string();
+        let mut server = LspServer::default();
+        server.documents.insert(uri.clone(), source.to_string());
+
+        let expr_offset = source.find("x + 1").expect("selection expression");
+        let (line, character) = offset_to_line_char(source, expr_offset);
+        let responses = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 121,
+                "method": "textDocument/selectionRange",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "positions": [
+                        { "line": line, "character": character }
+                    ]
+                }
+            }))
+            .expect("selection range response");
+        let selections = responses[0]["result"]
+            .as_array()
+            .expect("selection range result array");
+        let selection = selections.first().expect("first selection range entry");
+        assert!(
+            selection_chain_depth(selection) >= 5,
+            "selection chain should expand expression -> statement -> block -> function -> module"
+        );
+
+        let mut cursor = selection;
+        loop {
+            let child_start_line = cursor["range"]["start"]["line"].as_u64().unwrap_or(0);
+            let child_start_char = cursor["range"]["start"]["character"].as_u64().unwrap_or(0);
+            let child_end_line = cursor["range"]["end"]["line"].as_u64().unwrap_or(0);
+            let child_end_char = cursor["range"]["end"]["character"].as_u64().unwrap_or(0);
+            let Some(parent) = cursor.get("parent") else {
+                break;
+            };
+            let parent_start_line = parent["range"]["start"]["line"].as_u64().unwrap_or(0);
+            let parent_start_char = parent["range"]["start"]["character"].as_u64().unwrap_or(0);
+            let parent_end_line = parent["range"]["end"]["line"].as_u64().unwrap_or(0);
+            let parent_end_char = parent["range"]["end"]["character"].as_u64().unwrap_or(0);
+            assert!(
+                parent_start_line < child_start_line
+                    || (parent_start_line == child_start_line
+                        && parent_start_char <= child_start_char),
+                "parent selection should start before or at child range"
+            );
+            assert!(
+                parent_end_line > child_end_line
+                    || (parent_end_line == child_end_line && parent_end_char >= child_end_char),
+                "parent selection should end after or at child range"
+            );
+            cursor = parent;
+        }
     }
 
     #[test]

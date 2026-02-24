@@ -16,6 +16,7 @@ aic lsp
 - Semantic highlighting for mutable/readonly variables, effectful calls, and deprecated APIs
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Call hierarchy (`textDocument/prepareCallHierarchy`, incoming/outgoing calls)
+- Folding ranges (`textDocument/foldingRange`) and semantic selection expansion (`textDocument/selectionRange`)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)
 - Automated extension integration tests (activation, LSP lifecycle, diagnostics, completion, restart command, grammar contract)

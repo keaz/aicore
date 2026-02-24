@@ -1,0 +1,36 @@
+module examples.vscode.folding_selection_showcase;
+
+import std.io;
+
+fn normalize(value: Int) -> Int {
+    if value > 0 {
+        let adjusted = value + 1;
+        adjusted
+    } else {
+        1
+    }
+}
+
+fn classify(x: Int) -> Int {
+    if x == 0 {
+        normalize(0)
+    } else {
+        if x > 10 {
+            normalize(x)
+        } else {
+            let fallback = 0;
+            normalize(fallback)
+        }
+    }
+}
+
+fn main() -> Int effects { io } {
+    let base = 41;
+    let result = classify(base);
+    if result > 0 {
+        print_int(result);
+    } else {
+        print_int(0);
+    };
+    0
+}
