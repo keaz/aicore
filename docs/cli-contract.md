@@ -47,6 +47,7 @@ Published parse/check/build/fix schemas:
 - `aic build`
 - `aic doc`
 - `aic std-compat`
+- `aic diff`
 - `aic lsp`
 - `aic daemon`
 - `aic test`
@@ -176,6 +177,39 @@ Check mode:
 - Thresholds are loaded from nearest `aic.toml` `[metrics]` section.
 - `--max-cyclomatic` overrides configured `max_cyclomatic`.
 - Exit code is non-zero when any threshold violation is present.
+
+## `aic diff --semantic` JSON output
+
+Usage:
+
+```bash
+aic diff --semantic <old-file> <new-file>
+aic diff --semantic <old-file> <new-file> --fail-on-breaking
+```
+
+Output shape:
+
+- `changes[]`
+  - `kind` (for example `function_added`, `function_removed`, `params_changed`, `effects_changed`, `requires_changed`)
+  - `module`
+  - `function`
+  - `breaking` (`true|false`)
+  - `old` (optional, prior semantic payload/value)
+  - `new` (optional, new semantic payload/value)
+  - `detail` (optional, extra classification/delta details)
+- `summary`
+  - `breaking`
+  - `non_breaking`
+
+Semantic comparisons include:
+
+- function signature components: generics, params, return type
+- effect-set changes
+- contract changes (`requires`, `ensures`)
+
+Check mode behavior:
+
+- `--fail-on-breaking` returns non-zero when `summary.breaking > 0`
 
 ## Diagnostics output modes
 

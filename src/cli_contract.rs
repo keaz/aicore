@@ -163,6 +163,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json"],
     },
     CommandContract {
+        name: "diff",
+        description: "Semantic diff for function signatures/effects/contracts",
+        stable_flags: &["--semantic", "--fail-on-breaking"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "run",
         description: "Build and execute entry program",
         stable_flags: &[

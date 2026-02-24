@@ -52,6 +52,7 @@ use aicore::release_ops::{
 };
 use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
+use aicore::semantic_diff;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
@@ -246,6 +247,14 @@ enum Command {
         check: bool,
         #[arg(long, default_value = "docs/std-api-baseline.json")]
         baseline: PathBuf,
+    },
+    Diff {
+        #[arg(long, required = true)]
+        semantic: bool,
+        #[arg(long)]
+        fail_on_breaking: bool,
+        old_file: PathBuf,
+        new_file: PathBuf,
     },
     Lsp,
     Daemon,
@@ -1570,6 +1579,25 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_OK
             }
         }
+        Command::Diff {
+            semantic: _,
+            fail_on_breaking,
+            old_file,
+            new_file,
+        } => match semantic_diff::diff_files(&old_file, &new_file) {
+            Ok(report) => {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                if fail_on_breaking && report.summary.breaking > 0 {
+                    EXIT_DIAGNOSTIC_ERROR
+                } else {
+                    EXIT_OK
+                }
+            }
+            Err(err) => {
+                eprintln!("diff: {err}");
+                EXIT_DIAGNOSTIC_ERROR
+            }
+        },
         Command::Lsp => {
             lsp::run_stdio()?;
             EXIT_OK

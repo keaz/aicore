@@ -32,6 +32,7 @@ pub mod release_ops;
 pub mod resolver;
 pub mod sandbox;
 pub mod sarif;
+pub mod semantic_diff;
 pub mod span;
 pub mod std_policy;
 pub mod suggest_contracts;

@@ -224,6 +224,7 @@ fn cli_help_snapshots_are_stable() {
         "test",
         "grammar",
         "contract",
+        "diff",
         "release",
         "run",
     ] {

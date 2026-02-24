@@ -1,0 +1,9 @@
+module examples.e7.semantic_diff_v1;
+
+fn normalize(x: Int) -> Int effects { io } requires x >= 0 ensures result >= 0 {
+    x
+}
+
+fn unchanged() -> Int {
+    7
+}

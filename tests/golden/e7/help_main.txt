@@ -16,6 +16,7 @@ Commands:
   build       
   doc         
   std-compat  
+  diff        
   lsp         
   daemon      
   test        
