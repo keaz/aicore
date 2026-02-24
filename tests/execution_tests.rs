@@ -2723,6 +2723,103 @@ fn main() -> Int effects { io, rand, time } {
     assert_eq!(stdout, "42\n");
 }
 
+#[test]
+fn exec_retry_succeeds_after_backoff() {
+    let src = r#"
+import std.io;
+import std.rand;
+import std.retry;
+import std.time;
+
+fn flaky_connect() -> Result[Int, String] effects { rand } {
+    let roll = random_range(0, 4);
+    if roll == 2 {
+        Ok(42)
+    } else {
+        Err("transient")
+    }
+}
+
+fn run_retry_int(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } {
+    retry(config, operation)
+}
+
+fn main() -> Int effects { io, time, rand } {
+    seed(424242);
+    let cfg = RetryConfig {
+        max_attempts: 5,
+        initial_backoff_ms: 2,
+        backoff_multiplier: 2,
+        max_backoff_ms: 20,
+        jitter_enabled: false,
+        jitter_ms: 0,
+    };
+    let out = run_retry_int(cfg, | | -> Result[Int, String] { flaky_connect() });
+
+    let value_ok = match out.result {
+        Ok(v) => if v == 42 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let attempts_ok = if out.attempts == 4 { 1 } else { 0 };
+    let elapsed_ok = if out.elapsed_ms >= 14 { 1 } else { 0 };
+
+    if value_ok + attempts_ok + elapsed_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_with_timeout_enforces_deadline_semantics() {
+    let src = r#"
+import std.io;
+import std.retry;
+import std.time;
+
+fn main() -> Int effects { io, time } {
+    let timeout_result = with_timeout(5, | | -> Int {
+        sleep_ms(20);
+        7
+    });
+    let success_result = with_timeout(50, | | -> Int {
+        sleep_ms(2);
+        9
+    });
+    let immediate_result = with_timeout(0, | | -> Int { 1 });
+
+    let timeout_ok = match timeout_result {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let success_ok = match success_result {
+        Ok(v) => if v == 9 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let immediate_ok = match immediate_result {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    if timeout_ok + success_ok + immediate_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_concurrency_worker_pool_is_deterministic() {

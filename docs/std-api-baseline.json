@@ -187,6 +187,76 @@
       "signature": "Task { handle: Int }"
     },
     {
+      "module": "std.config",
+      "kind": "enum",
+      "signature": "ConfigError { FileNotFound, PermissionDenied, InvalidInput, Io, InvalidJson, InvalidValue, MissingKey }"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_file_not_found() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_invalid_input() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_invalid_json() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_invalid_value() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_io() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "cfg_permission_denied() -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "decode_json_map(parsed: JsonValue) -> Result[Map[String, String], ConfigError]"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "get_or_default(config: Map[String, String], key: String, fallback: String) -> String"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "load_env_prefix(prefix: String) -> Map[String, String] effects { env }"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs }"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "map_fs_error(err: FsError) -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "map_json_error(err: JsonError) -> ConfigError"
+    },
+    {
+      "module": "std.config",
+      "kind": "fn",
+      "signature": "require(config: Map[String, String], key: String) -> Result[String, ConfigError]"
+    },
+    {
       "module": "std.env",
       "kind": "enum",
       "signature": "EnvError { NotFound, PermissionDenied, InvalidInput, Io }"
@@ -340,6 +410,46 @@
       "module": "std.env",
       "kind": "struct",
       "signature": "Vec[T] { ptr: Int, len: Int, cap: Int }"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "error_chain[E](ctx: ErrorContext[E]) -> String"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "error_value[E](ctx: ErrorContext[E]) -> E"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "new_error_context[E](error: E, context: String) -> ErrorContext[E]"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "with_cause[E](error: E, context: String, cause: String) -> ErrorContext[E]"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "with_cause_context[E](ctx: ErrorContext[E], cause: String) -> ErrorContext[E]"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "with_context[E](ctx: ErrorContext[E], context: String) -> ErrorContext[E]"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "fn",
+      "signature": "with_context_error[E](error: E, context: String) -> ErrorContext[E]"
+    },
+    {
+      "module": "std.error_context",
+      "kind": "struct",
+      "signature": "ErrorContext[E] { error: E, context: String, chain: String }"
     },
     {
       "module": "std.fs",
@@ -994,12 +1104,22 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "env_error_name(err: EnvError) -> String"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "eprint_int(x: Int) -> () effects { io }"
     },
     {
       "module": "std.io",
       "kind": "fn",
       "signature": "eprint_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "error_chain(context: IoErrorContext) -> String"
     },
     {
       "module": "std.io",
@@ -1049,7 +1169,17 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "from_env_error_with_context(err: EnvError, context: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "from_fs_error(err: FsError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext"
     },
     {
       "module": "std.io",
@@ -1059,7 +1189,22 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "from_net_error_with_context(err: NetError, context: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "from_proc_error(err: ProcError) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "from_proc_error_with_context(err: ProcError, context: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "fs_error_name(err: FsError) -> String"
     },
     {
       "module": "std.io",
@@ -1095,6 +1240,21 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "io_err_writer_result() -> Result[Writer, IoError]"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_error(context: IoErrorContext) -> IoError"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_error_context(error: IoError, context: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "io_error_name(err: IoError) -> String"
     },
     {
       "module": "std.io",
@@ -1149,6 +1309,16 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "mapped_error_with_context(mapped: IoError, context: String, source: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "net_error_name(err: NetError) -> String"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "panic(message: String) -> () effects { io }"
     },
     {
@@ -1185,6 +1355,11 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "println_str(x: String) -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "proc_error_name(err: ProcError) -> String"
     },
     {
       "module": "std.io",
@@ -1259,6 +1434,11 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "with_context(context: IoErrorContext, next_context: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "write_file_stream(file: FileHandle, content: String) -> Result[Int, IoError] effects { io }"
     },
     {
@@ -1280,6 +1460,11 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "write_tcp_stream(handle: Int, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "struct",
+      "signature": "IoErrorContext { error: IoError, context: String, chain: String }"
     },
     {
       "module": "std.io",
@@ -1487,6 +1672,66 @@
       "signature": "JsonValue { raw: String, kind: JsonKind }"
     },
     {
+      "module": "std.log",
+      "kind": "enum",
+      "signature": "LogLevel { Debug, Info, Warn, Error }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "aic_log_set_json_output_intrinsic(enabled: Bool) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "aic_log_set_level_intrinsic(level: Int) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "debug(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "error(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "info(message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "level_code(level: LogLevel) -> Int"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "log(level: LogLevel, message: String) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "set_json_output(enabled: Bool) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "set_level(level: LogLevel) -> () effects { io }"
+    },
+    {
+      "module": "std.log",
+      "kind": "fn",
+      "signature": "warn(message: String) -> () effects { io }"
+    },
+    {
       "module": "std.map",
       "kind": "fn",
       "signature": "aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool"
@@ -1587,9 +1832,169 @@
       "signature": "Map[K, V] { handle: Int }"
     },
     {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "__aic_const__E() -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "__aic_const__PI() -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "abs(x: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "abs_float(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_abs_float_intrinsic(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_abs_intrinsic(x: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_ceil_intrinsic(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_cos_intrinsic(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_floor_intrinsic(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_log_intrinsic(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_max_intrinsic(a: Int, b: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_min_intrinsic(a: Int, b: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_pow_intrinsic(base: Float, exp: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_round_intrinsic(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_sin_intrinsic(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "aic_math_sqrt_intrinsic(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "ceil(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "cos(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "floor(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "log(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "max(a: Int, b: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "min(a: Int, b: Int) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "pow(base: Float, exp: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "round(x: Float) -> Int"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "sin(x: Float) -> Float"
+    },
+    {
+      "module": "std.math",
+      "kind": "fn",
+      "signature": "sqrt(x: Float) -> Float"
+    },
+    {
       "module": "std.net",
       "kind": "enum",
       "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_accept_submit_intrinsic(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_recv_submit_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_send_submit_intrinsic(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_shutdown_intrinsic() -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -1664,6 +2069,51 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_send(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_send_submit(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "dns_lookup(host: String) -> Result[String, NetError] effects { net }"
     },
     {
@@ -1730,6 +2180,16 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "AsyncIntOp { handle: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "AsyncStringOp { handle: Int }"
     },
     {
       "module": "std.net",
@@ -2022,6 +2482,66 @@
       "signature": "Result[T, E] { Ok(T), Err(E) }"
     },
     {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "cap_delay(delay_ms: Int, max_backoff_ms: Int) -> Int"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "default_retry_config() -> RetryConfig"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "delay_with_optional_jitter(delay_ms: Int, config: RetryConfig) -> Int effects { rand }"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "next_backoff_ms(current_ms: Int, multiplier: Int, max_backoff_ms: Int) -> Int"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "normalize_attempts(value: Int) -> Int"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "normalize_config(config: RetryConfig) -> RetryConfig"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "normalize_multiplier(value: Int) -> Int"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "normalize_non_negative(value: Int) -> Int"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "retry[T](config: RetryConfig, operation: Fn[Result[T, String]]) -> RetryResult[T] effects { time, rand }"
+    },
+    {
+      "module": "std.retry",
+      "kind": "fn",
+      "signature": "with_timeout[T](timeout_ms: Int, operation: Fn[T]) -> Result[T, String] effects { time }"
+    },
+    {
+      "module": "std.retry",
+      "kind": "struct",
+      "signature": "RetryConfig { max_attempts: Int, initial_backoff_ms: Int, backoff_multiplier: Int, max_backoff_ms: Int, jitter_enabled: Bool, jitter_ms: Int }"
+    },
+    {
+      "module": "std.retry",
+      "kind": "struct",
+      "signature": "RetryResult[T] { result: Result[T, String], attempts: Int, elapsed_ms: Int }"
+    },
+    {
       "module": "std.router",
       "kind": "enum",
       "signature": "RouterError { InvalidPattern, InvalidMethod, Capacity, Internal }"
@@ -2065,6 +2585,101 @@
       "module": "std.router",
       "kind": "struct",
       "signature": "Router { handle: Int }"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "add[T](s: Set[T], value: T) -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "difference[T](left: Set[T], right: Set[T]) -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "discard[T](s: Set[T], value: T) -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "has[T](s: Set[T], value: T) -> Bool"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "intersection[T](left: Set[T], right: Set[T]) -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "new_set[T]() -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "set_size[T](s: Set[T]) -> Int"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "to_vec[T](s: Set[T]) -> Vec[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "fn",
+      "signature": "union[T](left: Set[T], right: Set[T]) -> Set[T]"
+    },
+    {
+      "module": "std.set",
+      "kind": "struct",
+      "signature": "Set[T] { items: Map[T, Int] }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "enum",
+      "signature": "Signal { SigInt, SigTerm, SigHup }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "enum",
+      "signature": "SignalError { UnsupportedPlatform, InvalidSignal, PermissionDenied, Internal }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] effects { proc }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "aic_signal_wait_intrinsic() -> Result[Int, SignalError] effects { proc }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "register(signal: Signal) -> Result[Bool, SignalError] effects { proc }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "register_shutdown_handlers() -> Result[Bool, SignalError] effects { proc }"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "signal_code(signal: Signal) -> Int"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "signal_from_code(signal_code: Int) -> Signal"
+    },
+    {
+      "module": "std.signal",
+      "kind": "fn",
+      "signature": "wait_for_signal() -> Result[Signal, SignalError] effects { proc }"
     },
     {
       "module": "std.string",
@@ -2115,6 +2730,11 @@
       "module": "std.string",
       "kind": "fn",
       "signature": "aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "aic_string_len_intrinsic(s: String) -> Int"
     },
     {
       "module": "std.string",
@@ -2539,6 +3159,16 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "all[T](v: Vec[T], predicate: Fn[T, Bool]) -> Bool"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "any[T](v: Vec[T], predicate: Fn[T, Bool]) -> Bool"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "append[T](left: Vec[T], right: Vec[T]) -> Vec[T]"
     },
     {
@@ -2554,7 +3184,32 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "count[T](v: Vec[T], predicate: Fn[T, Bool]) -> Int"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "enumerate[T](v: Vec[T]) -> Vec[IndexedValue[T]]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "filter_vec[T](v: Vec[T], predicate: Fn[T, Bool]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "find[T](v: Vec[T], predicate: Fn[T, Bool]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "first[T](v: Vec[T]) -> Option[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "fold_vec[T, S](v: Vec[T], init: S, reducer: Fn[S, T, S]) -> S"
     },
     {
       "module": "std.vec",
@@ -2584,6 +3239,11 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "map_vec[T, U](v: Vec[T], mapper: Fn[T, U]) -> Vec[U]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "new_vec[T]() -> Vec[T]"
     },
     {
@@ -2595,6 +3255,11 @@
       "module": "std.vec",
       "kind": "fn",
       "signature": "push[T](v: Vec[T], value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "range(start: Int, end: Int) -> Vec[Int]"
     },
     {
       "module": "std.vec",
@@ -2619,6 +3284,11 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "sort[T](v: Vec[T], less: Fn[T, T, Bool]) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "vec_cap[T](v: Vec[T]) -> Int"
     },
     {
@@ -2633,8 +3303,23 @@
     },
     {
       "module": "std.vec",
+      "kind": "fn",
+      "signature": "zip[T, U](left: Vec[T], right: Vec[U]) -> Vec[ZipPair[T, U]]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "struct",
+      "signature": "IndexedValue[T] { index: Int, value: T }"
+    },
+    {
+      "module": "std.vec",
       "kind": "struct",
       "signature": "Vec[T] { ptr: Int, len: Int, cap: Int }"
+    },
+    {
+      "module": "std.vec",
+      "kind": "struct",
+      "signature": "ZipPair[T, U] { left: T, right: U }"
     }
   ]
 }

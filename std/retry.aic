@@ -1,0 +1,194 @@
+module std.retry;
+
+import std.rand;
+import std.result;
+import std.time;
+
+struct RetryConfig {
+    max_attempts: Int,
+    initial_backoff_ms: Int,
+    backoff_multiplier: Int,
+    max_backoff_ms: Int,
+    jitter_enabled: Bool,
+    jitter_ms: Int,
+}
+
+struct RetryResult[T] {
+    result: Result[T, String],
+    attempts: Int,
+    elapsed_ms: Int,
+}
+
+fn default_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_attempts: 4,
+        initial_backoff_ms: 25,
+        backoff_multiplier: 2,
+        max_backoff_ms: 1000,
+        jitter_enabled: true,
+        jitter_ms: 10,
+    }
+}
+
+fn normalize_non_negative(value: Int) -> Int {
+    if value < 0 {
+        0
+    } else {
+        value
+    }
+}
+
+fn normalize_attempts(value: Int) -> Int {
+    if value <= 0 {
+        1
+    } else {
+        value
+    }
+}
+
+fn normalize_multiplier(value: Int) -> Int {
+    if value < 1 {
+        1
+    } else {
+        value
+    }
+}
+
+fn cap_delay(delay_ms: Int, max_backoff_ms: Int) -> Int {
+    let bounded_delay = normalize_non_negative(delay_ms);
+    let bounded_cap = normalize_non_negative(max_backoff_ms);
+    if bounded_delay > bounded_cap {
+        bounded_cap
+    } else {
+        bounded_delay
+    }
+}
+
+fn normalize_config(config: RetryConfig) -> RetryConfig {
+    let bounded_cap = normalize_non_negative(config.max_backoff_ms);
+    let bounded_initial = cap_delay(config.initial_backoff_ms, bounded_cap);
+    RetryConfig {
+        max_attempts: normalize_attempts(config.max_attempts),
+        initial_backoff_ms: bounded_initial,
+        backoff_multiplier: normalize_multiplier(config.backoff_multiplier),
+        max_backoff_ms: bounded_cap,
+        jitter_enabled: config.jitter_enabled,
+        jitter_ms: normalize_non_negative(config.jitter_ms),
+    }
+}
+
+fn next_backoff_ms(current_ms: Int, multiplier: Int, max_backoff_ms: Int) -> Int {
+    let current = cap_delay(current_ms, max_backoff_ms);
+    let bounded_cap = normalize_non_negative(max_backoff_ms);
+    let bounded_multiplier = normalize_multiplier(multiplier);
+    if current == 0 || bounded_cap == 0 {
+        0
+    } else if current >= bounded_cap {
+        bounded_cap
+    } else if bounded_multiplier == 1 {
+        current
+    } else {
+        let threshold = bounded_cap / bounded_multiplier;
+        if current > threshold {
+            bounded_cap
+        } else {
+            current * bounded_multiplier
+        }
+    }
+}
+
+fn delay_with_optional_jitter(delay_ms: Int, config: RetryConfig) -> Int effects { rand } {
+    let base = cap_delay(delay_ms, config.max_backoff_ms);
+    if !config.jitter_enabled || config.jitter_ms <= 0 {
+        base
+    } else {
+        let jitter = random_range(0, config.jitter_ms + 1);
+        cap_delay(base + jitter, config.max_backoff_ms)
+    }
+}
+
+fn retry[T](config: RetryConfig, operation: Fn() -> Result[T, String]) -> RetryResult[T] effects { time, rand } {
+    let normalized = normalize_config(config);
+    let started = monotonic_ms();
+    let mut attempts = 0;
+    let mut delay_ms = normalized.initial_backoff_ms;
+    let mut last_error = "retry failed";
+    let mut completed = false;
+    let mut out_result: Result[T, String] = Err("retry failed");
+    let mut out_elapsed = 0;
+
+    while attempts < normalized.max_attempts && !completed {
+        attempts = attempts + 1;
+        let attempt_result: Result[T, String] = match operation() {
+            Ok(value) => Ok(value),
+            Err(err) => Err(err),
+        };
+        let step = RetryResult {
+            result: attempt_result,
+            attempts: attempts,
+            elapsed_ms: monotonic_ms() - started,
+        };
+        let succeeded = match step.result {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+        if succeeded {
+            out_result = step.result;
+            out_elapsed = step.elapsed_ms;
+            completed = true;
+        } else {
+            last_error = match step.result {
+                Ok(_) => "retry failed",
+                Err(err) => err,
+            };
+            if attempts < normalized.max_attempts {
+                let wait_ms = delay_with_optional_jitter(delay_ms, normalized);
+                if wait_ms > 0 {
+                    sleep_ms(wait_ms);
+                } else {
+                    ()
+                };
+                delay_ms = next_backoff_ms(
+                    delay_ms,
+                    normalized.backoff_multiplier,
+                    normalized.max_backoff_ms,
+                );
+            } else {
+                ()
+            }
+        };
+    };
+
+    if completed {
+        RetryResult {
+            result: out_result,
+            attempts: attempts,
+            elapsed_ms: out_elapsed,
+        }
+    } else {
+        let failure: Result[T, String] = Err(last_error);
+        RetryResult {
+            result: failure,
+            attempts: attempts,
+            elapsed_ms: monotonic_ms() - started,
+        }
+    }
+}
+
+fn with_timeout[T](timeout_ms: Int, operation: Fn() -> T) -> Result[T, String] effects { time } {
+    if timeout_ms <= 0 {
+        Err("deadline exceeded")
+    } else {
+        let deadline = deadline_after_ms(timeout_ms);
+        if timeout_expired(deadline) {
+            Err("deadline exceeded")
+        } else {
+            let value = operation();
+            if timeout_expired(deadline) {
+                Err("deadline exceeded")
+            } else {
+                Ok(value)
+            }
+        }
+    }
+}

@@ -105,21 +105,22 @@ fn pipeline_demo() -> Result[ProcOutput, ProcError] effects { proc, env } {
 
 Reference: `examples/io/subprocess_pipeline.aic`.
 
-## 6. Time + Retry Skeleton
+## 6. Retry + Timeout Utilities
 
-Use monotonic deadlines for timeout logic; avoid wall-clock arithmetic for retry waits.
+Use `std.retry` for exponential backoff with optional jitter, and `with_timeout` for deadline checks around operations.
 
 ```aic
-import std.time;
+import std.retry;
 
-fn retry_wait(ms: Int) -> () effects { time } {
-    let deadline = deadline_after_ms(ms);
-    sleep_until(deadline);
-    ()
+fn default_policy() -> RetryConfig {
+    default_retry_config()
 }
 ```
 
-Reference: `examples/io/retry_with_jitter.aic`.
+References:
+
+- `examples/io/retry_with_jitter.aic`
+- `docs/examples/retry-workflow.md`
 
 ## 7. Platform Caveat Patterns
 

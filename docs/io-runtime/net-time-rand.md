@@ -1,6 +1,6 @@
-# Network, Time, And Random APIs
+# Network, Time, Random, And Retry APIs
 
-This document provides the detailed contract for `std.net`, `std.time`, and `std.rand`.
+This document provides the detailed contract for `std.net`, `std.time`, `std.rand`, and `std.retry`.
 
 ## `std.net` (`effects { net }`)
 
@@ -101,6 +101,46 @@ fn random_range(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand }
   - `AIC_TEST_SEED=<seed>` forces process-level RNG seed on first random call.
   - `AIC_TEST_MODE=1` forces deterministic default seed when `AIC_TEST_SEED` is unset.
   - `aic test` sets deterministic test-mode environment by default (`AIC_TEST_MODE=1`, default seed/time when unset).
+
+### Example
+
+- `examples/io/retry_with_jitter.aic`
+
+## `std.retry` (`effects { time, rand }` for `retry`, `effects { time }` for `with_timeout`)
+
+### Types
+
+```aic
+struct RetryConfig {
+    max_attempts: Int,
+    initial_backoff_ms: Int,
+    backoff_multiplier: Int,
+    max_backoff_ms: Int,
+    jitter_enabled: Bool,
+    jitter_ms: Int,
+}
+
+struct RetryResult[T] {
+    result: Result[T, String],
+    attempts: Int,
+    elapsed_ms: Int,
+}
+```
+
+### API
+
+```aic
+fn default_retry_config() -> RetryConfig
+fn retry[T](config: RetryConfig, operation: Fn() -> Result[T, String]) -> RetryResult[T] effects { time, rand }
+fn with_timeout[T](timeout_ms: Int, operation: Fn() -> T) -> Result[T, String] effects { time }
+```
+
+### Runtime Behavior
+
+- Backoff progression is exponential and capped by `max_backoff_ms`.
+- When `jitter_enabled` is true, retry delay includes `random_range(0, jitter_ms + 1)` and is still capped.
+- `RetryResult` exposes final `result`, number of `attempts`, and aggregate `elapsed_ms`.
+- `with_timeout` is deadline-based and checks timeout before and after operation execution.
 
 ### Example
 

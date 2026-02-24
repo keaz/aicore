@@ -17,6 +17,7 @@ Covered modules:
 - `std.time`
 - `std.signal`
 - `std.rand`
+- `std.retry`
 - `std.set`
 - `std.log`
 
@@ -441,6 +442,36 @@ Notes:
 
 - `seed(...)` makes sequences deterministic.
 - `random_range(a, b)` returns `a` when `b <= a`.
+
+## `std.retry`
+
+```aic
+struct RetryConfig {
+    max_attempts: Int,
+    initial_backoff_ms: Int,
+    backoff_multiplier: Int,
+    max_backoff_ms: Int,
+    jitter_enabled: Bool,
+    jitter_ms: Int,
+}
+
+struct RetryResult[T] {
+    result: Result[T, String],
+    attempts: Int,
+    elapsed_ms: Int,
+}
+
+fn default_retry_config() -> RetryConfig
+fn retry[T](config: RetryConfig, operation: Fn() -> Result[T, String]) -> RetryResult[T] effects { time, rand }
+fn with_timeout[T](timeout_ms: Int, operation: Fn() -> T) -> Result[T, String] effects { time }
+```
+
+Notes:
+
+- `retry` uses exponential backoff (`initial_backoff_ms`, `backoff_multiplier`) capped by `max_backoff_ms`.
+- Jitter is optional and controlled by `jitter_enabled` + `jitter_ms`.
+- `RetryResult` always reports `attempts` and total `elapsed_ms`.
+- `with_timeout` enforces deadline checks before and after operation execution; the wrapped operation is not force-cancelled mid-call.
 
 ## Deterministic Validation Commands
 

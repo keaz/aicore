@@ -16,6 +16,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 | `std.time` | `time` | wall/monotonic clocks, sleep/deadline helpers | deterministic primitives |
 | `std.signal` | `proc` | register SIGINT/SIGTERM/SIGHUP handlers, block for shutdown signal | `SignalError` |
 | `std.rand` | `rand` | deterministic seeding, random int/range/bool | deterministic when seeded |
+| `std.retry` | `time`, `rand` | retry/backoff policy and timeout wrappers | `RetryResult[T]` and timeout `Result[T, String]` |
 | `std.concurrent` | `concurrency` | tasks, buffered int channel, try send/recv, two-channel select, int mutex | `ConcurrencyError`, `ChannelError` |
 
 ## Effect Boundaries
@@ -26,7 +27,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 
 ## Platform Caveats
 
-- Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/concurrency.
+- Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/retry/concurrency.
 - Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
 - Windows: process/network/concurrency runtime paths currently return stable unsupported-style errors via enum mapping; for channel try/select, branch on `ChannelError` values (for example `Closed`) instead of assuming success.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
@@ -71,7 +72,7 @@ fn main() -> Int effects { io, net } {
 - CLI file pipeline: `examples/io/cli_file_pipeline.aic`
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`
-- Timer/backoff pattern: `examples/io/retry_with_jitter.aic`
+- Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
 - Negative effect-enforcement example: `examples/io/effect_misuse_fs.aic` (expected check failure)
@@ -92,7 +93,7 @@ Expected final line for each: `42`.
 
 ## Deep-Dive Docs
 
-- Network/time/rand API contract: `docs/io-runtime/net-time-rand.md`
+- Network/time/rand/retry API contract: `docs/io-runtime/net-time-rand.md`
 - Error model + remediation playbook: `docs/io-runtime/error-model.md`
 - Resource lifecycle + long-running service guidance: `docs/io-runtime/lifecycle-playbook.md`
 - FS API contract: `docs/io-filesystem.md`
