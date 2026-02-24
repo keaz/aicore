@@ -1,0 +1,50 @@
+name: VS Code Extension Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+jobs:
+  publish-vscode-extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tools/vscode-aic/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tools/vscode-aic
+        run: npm ci
+
+      - name: Build extension
+        working-directory: tools/vscode-aic
+        run: npm run build
+
+      - name: Test extension
+        working-directory: tools/vscode-aic
+        run: xvfb-run -a npm test
+
+      - name: Package VSIX
+        working-directory: tools/vscode-aic
+        run: npx -y @vscode/vsce package
+
+      - name: Publish to VS Code Marketplace
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        working-directory: tools/vscode-aic
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          VSIX="$(ls -t *.vsix | head -n 1)"
+          test -n "$VSIX"
+          npx -y @vscode/vsce publish --packagePath "$VSIX"

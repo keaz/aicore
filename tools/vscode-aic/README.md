@@ -1,4 +1,4 @@
-# AICore VS Code Extension (Prototype)
+# AICore VS Code Extension
 
 This extension starts the AICore language server using:
 
@@ -25,6 +25,28 @@ aic lsp
 - Go-to-definition
 - Formatting
 
+## Screenshots
+
+![Completion and auto-import](./assets/screenshots/completion-auto-import.png)
+![Diagnostics and status bar](./assets/screenshots/diagnostics-status-bar.png)
+![Semantic tokens and inlay hints](./assets/screenshots/semantic-inlay.png)
+
+## Installation
+
+### VS Code Marketplace
+
+1. Open Extensions (`Ctrl/Cmd + Shift + X`)
+2. Search for `AICore Language Tools`
+3. Click Install
+
+### Manual VSIX install
+
+```bash
+cd tools/vscode-aic
+npx -y @vscode/vsce package
+code --install-extension aic-language-tools-*.vsix
+```
+
 ## Settings
 
 - `aic.server.path` (default: `aic`)
@@ -32,6 +54,9 @@ aic lsp
 - `aic.trace.server` (`off` | `messages` | `verbose`)
 - `aic.errorLens.enabled` (default: `true`)
 - `aic.errorLens.showOnlyFirstPerLine` (default: `true`)
+- `aic.inlayHints.typeAnnotations` (default: `true`)
+- `aic.inlayHints.effectAnnotations` (default: `true`)
+- `aic.inlayHints.contractAnnotations` (default: `false`)
 
 ## Development
 
@@ -55,3 +80,8 @@ Package without `--no-dependencies`, otherwise runtime modules (including
 cd tools/vscode-aic
 npx -y @vscode/vsce package
 ```
+
+## Release
+
+Publishing is automated by GitHub Actions on release tags via
+`.github/workflows/vscode-extension-publish.yml` and requires `VSCE_PAT`.

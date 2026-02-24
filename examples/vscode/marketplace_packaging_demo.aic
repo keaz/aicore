@@ -1,0 +1,8 @@
+module examples.vscode.marketplace_packaging_demo;
+
+import std.io;
+
+fn main() -> Int effects { io } {
+    print_int(42);
+    0
+}

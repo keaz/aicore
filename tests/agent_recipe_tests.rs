@@ -66,6 +66,26 @@ fn vscode_extension_mock_lsp_path() -> PathBuf {
     repo_root().join("tools/vscode-aic/src/test/fixtures/mockAicLsp.ts")
 }
 
+fn vscode_extension_readme_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/README.md")
+}
+
+fn vscode_extension_changelog_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/CHANGELOG.md")
+}
+
+fn vscode_extension_ignore_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/.vscodeignore")
+}
+
+fn vscode_extension_icon_path() -> PathBuf {
+    repo_root().join("tools/vscode-aic/assets/icon.png")
+}
+
+fn vscode_extension_publish_workflow_path() -> PathBuf {
+    repo_root().join(".github/workflows/vscode-extension-publish.yml")
+}
+
 fn extract_docs_test_commands(doc: &str) -> Vec<(bool, String)> {
     let mut commands = Vec::new();
     let mut in_block = false;
@@ -158,6 +178,31 @@ fn run_docs_test_commands(doc_path: &Path, commands: &[(bool, String)]) {
             );
         }
     }
+}
+
+fn read_png_dimensions(path: &Path) -> (u32, u32) {
+    let bytes =
+        fs::read(path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    assert!(
+        bytes.len() >= 24,
+        "PNG file {} is too small to contain IHDR",
+        path.display()
+    );
+    assert_eq!(
+        &bytes[0..8],
+        b"\x89PNG\r\n\x1a\n",
+        "{} is not a PNG signature",
+        path.display()
+    );
+    assert_eq!(
+        &bytes[12..16],
+        b"IHDR",
+        "{} missing IHDR chunk",
+        path.display()
+    );
+    let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+    let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+    (width, height)
 }
 
 const REQUIRED_TUTORIAL_CHAPTERS: &[(u32, &str, &str)] = &[
@@ -1378,6 +1423,164 @@ fn vscode_extension_test_suite_wires_manifest_ci_and_e2e_contracts() {
 }
 
 #[test]
+fn vscode_marketplace_metadata_docs_and_publish_workflow_are_wired() {
+    let manifest_path = vscode_extension_manifest_path();
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest: Value = serde_json::from_str(&manifest_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", manifest_path.display()));
+
+    assert_eq!(
+        manifest.get("icon").and_then(Value::as_str),
+        Some("assets/icon.png"),
+        "{} must point to assets/icon.png",
+        manifest_path.display()
+    );
+    assert_eq!(
+        manifest
+            .get("repository")
+            .and_then(|value| value.get("url"))
+            .and_then(Value::as_str),
+        Some("https://github.com/keaz/aicore.git"),
+        "{} must declare repository URL",
+        manifest_path.display()
+    );
+    assert_eq!(
+        manifest
+            .get("bugs")
+            .and_then(|value| value.get("url"))
+            .and_then(Value::as_str),
+        Some("https://github.com/keaz/aicore/issues"),
+        "{} must declare bugs URL",
+        manifest_path.display()
+    );
+    assert_eq!(
+        manifest.get("homepage").and_then(Value::as_str),
+        Some("https://github.com/keaz/aicore/tree/main/tools/vscode-aic"),
+        "{} must declare homepage URL",
+        manifest_path.display()
+    );
+
+    let keywords = manifest
+        .get("keywords")
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("missing keywords array in {}", manifest_path.display()))
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for keyword in ["aicore", "ai", "programming-language", "lsp"] {
+        assert!(
+            keywords.contains(keyword),
+            "{} must include keyword `{}`",
+            manifest_path.display(),
+            keyword
+        );
+    }
+
+    assert_eq!(
+        manifest
+            .get("galleryBanner")
+            .and_then(|value| value.get("color"))
+            .and_then(Value::as_str),
+        Some("#0A2342"),
+        "{} must declare galleryBanner.color",
+        manifest_path.display()
+    );
+    assert_eq!(
+        manifest
+            .get("galleryBanner")
+            .and_then(|value| value.get("theme"))
+            .and_then(Value::as_str),
+        Some("dark"),
+        "{} must declare galleryBanner.theme",
+        manifest_path.display()
+    );
+
+    let ignore_path = vscode_extension_ignore_path();
+    let ignore_raw = fs::read_to_string(&ignore_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", ignore_path.display()));
+    for marker in ["src/", "node_modules/", "*.vsix"] {
+        assert!(
+            ignore_raw.contains(marker),
+            "{} must exclude {}",
+            ignore_path.display(),
+            marker
+        );
+    }
+
+    let changelog_path = vscode_extension_changelog_path();
+    let changelog = fs::read_to_string(&changelog_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", changelog_path.display()));
+    for marker in ["# Changelog", "## [0.1.2]", "## [0.1.1]", "## [0.1.0]"] {
+        assert!(
+            changelog.contains(marker),
+            "{} missing changelog marker: {}",
+            changelog_path.display(),
+            marker
+        );
+    }
+
+    let readme_path = vscode_extension_readme_path();
+    let readme = fs::read_to_string(&readme_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", readme_path.display()));
+    for marker in [
+        "## Screenshots",
+        "## Installation",
+        "## Settings",
+        "completion-auto-import.png",
+        "diagnostics-status-bar.png",
+        "semantic-inlay.png",
+    ] {
+        assert!(
+            readme.contains(marker),
+            "{} missing README marker: {}",
+            readme_path.display(),
+            marker
+        );
+    }
+
+    let icon_path = vscode_extension_icon_path();
+    assert!(icon_path.is_file(), "icon missing: {}", icon_path.display());
+    let (width, height) = read_png_dimensions(&icon_path);
+    assert_eq!(
+        (width, height),
+        (128, 128),
+        "icon must be exactly 128x128 pixels"
+    );
+
+    for screenshot in [
+        "tools/vscode-aic/assets/screenshots/completion-auto-import.png",
+        "tools/vscode-aic/assets/screenshots/diagnostics-status-bar.png",
+        "tools/vscode-aic/assets/screenshots/semantic-inlay.png",
+    ] {
+        let path = repo_root().join(screenshot);
+        assert!(path.is_file(), "screenshot missing: {}", path.display());
+    }
+
+    let workflow_path = vscode_extension_publish_workflow_path();
+    let workflow = fs::read_to_string(&workflow_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", workflow_path.display()));
+    for marker in [
+        "name: VS Code Extension Publish",
+        "tags:",
+        "- \"v*\"",
+        "types: [published]",
+        "working-directory: tools/vscode-aic",
+        "xvfb-run -a npm test",
+        "@vscode/vsce package",
+        "@vscode/vsce publish",
+        "VSCE_PAT",
+    ] {
+        assert!(
+            workflow.contains(marker),
+            "{} missing publish workflow marker: {}",
+            workflow_path.display(),
+            marker
+        );
+    }
+}
+
+#[test]
 fn vscode_extension_test_suite_example_is_listed_in_ci_and_runs() {
     let root = repo_root();
     let example_rel = "examples/vscode/extension_test_suite_demo.aic";
@@ -1429,6 +1632,50 @@ fn vscode_call_hierarchy_workspace_example_is_listed_in_ci_and_runs() {
     assert!(
         example_path.is_file(),
         "call hierarchy example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI example matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("run")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic run {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected `aic run {}` to pass\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+    let last = stdout.lines().last().unwrap_or_default().trim();
+    assert_eq!(
+        last, "42",
+        "expected `aic run {}` to print 42 as final line, got `{}`\nstdout:\n{}",
+        example_rel, last, stdout
+    );
+}
+
+#[test]
+fn vscode_marketplace_packaging_example_is_listed_in_ci_and_runs() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/marketplace_packaging_demo.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "marketplace packaging example missing: {}",
         example_path.display()
     );
 

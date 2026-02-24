@@ -5,12 +5,31 @@
   "version": "0.1.1",
   "publisher": "keaz",
   "license": "MIT",
+  "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keaz/aicore.git"
+  },
+  "bugs": {
+    "url": "https://github.com/keaz/aicore/issues"
+  },
+  "homepage": "https://github.com/keaz/aicore/tree/main/tools/vscode-aic",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "keywords": [
+    "aicore",
+    "ai",
+    "programming-language",
+    "lsp"
+  ],
+  "galleryBanner": {
+    "color": "#0A2342",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onLanguage:aic",
     "onCommand:aic.showLanguageServerOutput",
