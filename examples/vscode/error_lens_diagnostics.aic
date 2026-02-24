@@ -1,0 +1,6 @@
+module examples.vscode.error_lens_diagnostics;
+
+fn main() -> Int {
+    let unused = 7;
+    "hello"
+}

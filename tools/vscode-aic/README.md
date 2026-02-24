@@ -12,6 +12,7 @@ aic lsp
 - Autocomplete (language server completions + editor suggestions)
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
 - Status bar language server health indicator (starting/running/error/stopped + diagnostics count)
+- Inline error lens diagnostics with severity colors (error/warning/info)
 - Document outline (`textDocument/documentSymbol`) and workspace symbol search (`workspace/symbol`)
 - Inlay hints for inferred types and effectful call sites
 - Diagnostics (matches `aic check` diagnostics)
@@ -24,6 +25,8 @@ aic lsp
 - `aic.server.path` (default: `aic`)
 - `aic.server.args` (default: `["lsp"]`)
 - `aic.trace.server` (`off` | `messages` | `verbose`)
+- `aic.errorLens.enabled` (default: `true`)
+- `aic.errorLens.showOnlyFirstPerLine` (default: `true`)
 
 ## Development
 

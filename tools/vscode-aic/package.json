@@ -82,6 +82,16 @@
           "default": "off",
           "description": "Trace level for AICore language server"
         },
+        "aic.errorLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline diagnostic messages at end of line"
+        },
+        "aic.errorLens.showOnlyFirstPerLine": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show only the first diagnostic message per line in inline error lens"
+        },
         "aic.inlayHints.typeAnnotations": {
           "type": "boolean",
           "default": true,

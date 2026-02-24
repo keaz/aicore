@@ -18,6 +18,12 @@ let diagnosticsSummary: DiagnosticSummary = { errors: 0, warnings: 0 };
 let serverVersion = 'unknown';
 let statusDetail = '';
 let stoppingClient = false;
+let errorLensDecorations: ErrorLensDecorations | undefined;
+let errorLensConfig: ErrorLensConfig = {
+  enabled: true,
+  showOnlyFirstPerLine: true,
+  maxMessageLength: 140,
+};
 
 type LanguageServerStatus = 'starting' | 'running' | 'error' | 'stopped';
 
@@ -26,18 +32,47 @@ type DiagnosticSummary = {
   warnings: number;
 };
 
+type ErrorLensConfig = {
+  enabled: boolean;
+  showOnlyFirstPerLine: boolean;
+  maxMessageLength: number;
+};
+
+type ErrorLensDecorations = {
+  error: vscode.TextEditorDecorationType;
+  warning: vscode.TextEditorDecorationType;
+  info: vscode.TextEditorDecorationType;
+  hint: vscode.TextEditorDecorationType;
+};
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   getOutputChannel(context);
   getStatusBarItem(context);
+  getErrorLensDecorations(context);
   logLine(`Activating AICore extension v${String(context.extension.packageJSON.version ?? 'unknown')}`);
   setStatusBarState('starting', 'Activating extension');
+  refreshErrorLensConfig();
 
   context.subscriptions.push(
     vscode.languages.onDidChangeDiagnostics(() => {
       diagnosticsSummary = collectDiagnosticsSummary();
       renderStatusBar();
+      renderErrorLensForActiveEditor();
+    }),
+    vscode.window.onDidChangeActiveTextEditor(() => {
+      renderErrorLensForActiveEditor();
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration('aic.errorLens.enabled') ||
+        event.affectsConfiguration('aic.errorLens.showOnlyFirstPerLine')
+      ) {
+        refreshErrorLensConfig();
+        renderErrorLensForActiveEditor();
+      }
     })
   );
+  renderErrorLensForActiveEditor();
   await startClient(context);
 
   const showOutput = vscode.commands.registerCommand('aic.showLanguageServerOutput', () => {
@@ -360,6 +395,177 @@ function renderStatusBar(): void {
   }
   item.tooltip = tooltipLines.join('\n');
   item.show();
+}
+
+function refreshErrorLensConfig(): void {
+  const config = vscode.workspace.getConfiguration('aic');
+  errorLensConfig = {
+    enabled: config.get<boolean>('errorLens.enabled', true),
+    showOnlyFirstPerLine: config.get<boolean>('errorLens.showOnlyFirstPerLine', true),
+    maxMessageLength: 140,
+  };
+}
+
+function getErrorLensDecorations(context?: vscode.ExtensionContext): ErrorLensDecorations {
+  if (!errorLensDecorations) {
+    errorLensDecorations = {
+      error: vscode.window.createTextEditorDecorationType({
+        after: {
+          margin: '0 0 0 1.5rem',
+          color: new vscode.ThemeColor('problemsErrorIcon.foreground'),
+        },
+      }),
+      warning: vscode.window.createTextEditorDecorationType({
+        after: {
+          margin: '0 0 0 1.5rem',
+          color: new vscode.ThemeColor('problemsWarningIcon.foreground'),
+        },
+      }),
+      info: vscode.window.createTextEditorDecorationType({
+        after: {
+          margin: '0 0 0 1.5rem',
+          color: new vscode.ThemeColor('problemsInfoIcon.foreground'),
+        },
+      }),
+      hint: vscode.window.createTextEditorDecorationType({
+        after: {
+          margin: '0 0 0 1.5rem',
+          color: new vscode.ThemeColor('editorCodeLens.foreground'),
+        },
+      }),
+    };
+    if (context) {
+      context.subscriptions.push(
+        errorLensDecorations.error,
+        errorLensDecorations.warning,
+        errorLensDecorations.info,
+        errorLensDecorations.hint
+      );
+    }
+  }
+  return errorLensDecorations;
+}
+
+function renderErrorLensForActiveEditor(): void {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== 'aic') {
+    if (editor) {
+      clearErrorLensForEditor(editor);
+    }
+    return;
+  }
+  renderErrorLensForEditor(editor);
+}
+
+function renderErrorLensForEditor(editor: vscode.TextEditor): void {
+  const decorations = getErrorLensDecorations();
+  if (!errorLensConfig.enabled) {
+    clearErrorLensForEditor(editor);
+    return;
+  }
+
+  const diagnostics = vscode.languages
+    .getDiagnostics(editor.document.uri)
+    .slice()
+    .sort((lhs, rhs) => {
+      if (lhs.range.start.line !== rhs.range.start.line) {
+        return lhs.range.start.line - rhs.range.start.line;
+      }
+      return severityPriority(lhs.severity) - severityPriority(rhs.severity);
+    });
+
+  const errors: vscode.DecorationOptions[] = [];
+  const warnings: vscode.DecorationOptions[] = [];
+  const infos: vscode.DecorationOptions[] = [];
+  const hints: vscode.DecorationOptions[] = [];
+  const seenLines = new Set<number>();
+
+  for (const diagnostic of diagnostics) {
+    const line = Math.min(
+      Math.max(diagnostic.range.start.line, 0),
+      Math.max(editor.document.lineCount - 1, 0)
+    );
+    if (errorLensConfig.showOnlyFirstPerLine && seenLines.has(line)) {
+      continue;
+    }
+    seenLines.add(line);
+
+    const lineLength = editor.document.lineAt(line).text.length;
+    const range = new vscode.Range(
+      new vscode.Position(line, lineLength),
+      new vscode.Position(line, lineLength)
+    );
+    const message = truncateErrorLensMessage(diagnostic.message, errorLensConfig.maxMessageLength);
+    const contentText = ` ${diagnosticSeverityLabel(diagnostic.severity)} ${message}`;
+    const option: vscode.DecorationOptions = {
+      range,
+      renderOptions: {
+        after: {
+          contentText,
+        },
+      },
+    };
+
+    if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
+      errors.push(option);
+    } else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) {
+      warnings.push(option);
+    } else if (diagnostic.severity === vscode.DiagnosticSeverity.Information) {
+      infos.push(option);
+    } else {
+      hints.push(option);
+    }
+  }
+
+  editor.setDecorations(decorations.error, errors);
+  editor.setDecorations(decorations.warning, warnings);
+  editor.setDecorations(decorations.info, infos);
+  editor.setDecorations(decorations.hint, hints);
+}
+
+function clearErrorLensForEditor(editor: vscode.TextEditor): void {
+  const decorations = getErrorLensDecorations();
+  editor.setDecorations(decorations.error, []);
+  editor.setDecorations(decorations.warning, []);
+  editor.setDecorations(decorations.info, []);
+  editor.setDecorations(decorations.hint, []);
+}
+
+function severityPriority(severity: vscode.DiagnosticSeverity): number {
+  if (severity === vscode.DiagnosticSeverity.Error) {
+    return 0;
+  }
+  if (severity === vscode.DiagnosticSeverity.Warning) {
+    return 1;
+  }
+  if (severity === vscode.DiagnosticSeverity.Information) {
+    return 2;
+  }
+  return 3;
+}
+
+function diagnosticSeverityLabel(severity: vscode.DiagnosticSeverity): string {
+  if (severity === vscode.DiagnosticSeverity.Error) {
+    return 'Error:';
+  }
+  if (severity === vscode.DiagnosticSeverity.Warning) {
+    return 'Warning:';
+  }
+  if (severity === vscode.DiagnosticSeverity.Information) {
+    return 'Info:';
+  }
+  return 'Hint:';
+}
+
+function truncateErrorLensMessage(message: string, maxLength: number): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  if (maxLength <= 3) {
+    return normalized.slice(0, maxLength);
+  }
+  return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
 function readServerVersion(command: string): string {

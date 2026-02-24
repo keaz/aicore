@@ -114,6 +114,7 @@ check_fail=(
   "examples/effects_reject.aic"
   "examples/e4/transitive_effect_violation.aic"
   "examples/e7/diag_errors.aic"
+  "examples/vscode/error_lens_diagnostics.aic"
   "examples/io/effect_misuse_fs.aic"
   "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
   "examples/verify/file_protocol_invalid.aic"

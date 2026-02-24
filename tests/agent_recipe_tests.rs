@@ -1013,3 +1013,117 @@ fn vscode_status_bar_example_is_listed_in_ci_and_checks() {
         stderr
     );
 }
+
+#[test]
+fn vscode_error_lens_configuration_and_rendering_contract() {
+    let manifest_path = vscode_extension_manifest_path();
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest: Value = serde_json::from_str(&manifest_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {} as JSON: {err}", manifest_path.display()));
+    let properties = manifest
+        .get("contributes")
+        .and_then(|c| c.get("configuration"))
+        .and_then(|cfg| cfg.get("properties"))
+        .and_then(Value::as_object)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing contributes.configuration.properties in {}",
+                manifest_path.display()
+            )
+        });
+
+    let enabled = properties.get("aic.errorLens.enabled").unwrap_or_else(|| {
+        panic!(
+            "missing aic.errorLens.enabled in {}",
+            manifest_path.display()
+        )
+    });
+    assert_eq!(enabled.get("type").and_then(Value::as_str), Some("boolean"));
+    assert_eq!(enabled.get("default").and_then(Value::as_bool), Some(true));
+
+    let first_per_line = properties
+        .get("aic.errorLens.showOnlyFirstPerLine")
+        .unwrap_or_else(|| {
+            panic!(
+                "missing aic.errorLens.showOnlyFirstPerLine in {}",
+                manifest_path.display()
+            )
+        });
+    assert_eq!(
+        first_per_line.get("type").and_then(Value::as_str),
+        Some("boolean")
+    );
+    assert_eq!(
+        first_per_line.get("default").and_then(Value::as_bool),
+        Some(true)
+    );
+
+    let source_path = vscode_extension_source_path();
+    let source = fs::read_to_string(&source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    for marker in [
+        "renderErrorLensForEditor",
+        "renderErrorLensForActiveEditor",
+        "aic.errorLens.enabled",
+        "aic.errorLens.showOnlyFirstPerLine",
+        "showOnlyFirstPerLine",
+        "createTextEditorDecorationType",
+        "truncateErrorLensMessage",
+        "vscode.languages.onDidChangeDiagnostics",
+    ] {
+        assert!(
+            source.contains(marker),
+            "{} is missing expected error-lens marker: {}",
+            source_path.display(),
+            marker
+        );
+    }
+}
+
+#[test]
+fn vscode_error_lens_example_is_listed_in_ci_check_fail_matrix() {
+    let root = repo_root();
+    let example_rel = "examples/vscode/error_lens_diagnostics.aic";
+    let example_path = root.join(example_rel);
+    assert!(
+        example_path.is_file(),
+        "error lens diagnostics example missing: {}",
+        example_path.display()
+    );
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    assert!(
+        examples_ci.contains(example_rel),
+        "{} must include {} in the CI examples matrix",
+        examples_ci_path.display(),
+        example_rel
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("check")
+        .arg(example_rel)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to execute `aic check {example_rel}`: {err}"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "expected `aic check {}` to fail\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+
+    let combined = format!("{}\n{}", stdout, stderr).to_lowercase();
+    assert!(
+        combined.contains("error"),
+        "expected diagnostics output to include an error for {}\nstdout:\n{}\nstderr:\n{}",
+        example_rel,
+        stdout,
+        stderr
+    );
+}
