@@ -60,6 +60,13 @@ Stable `run` flags include:
 - `--offline`
 - `--sandbox` (`none|ci|strict`)
 - `--sandbox-config` (JSON policy file path)
+- `--check-leaks` (debug-mode leak tracking; exits non-zero on leaks)
+- `--asan` (compile/run with AddressSanitizer instrumentation)
+
+Environment toggles:
+
+- `AIC_RUN_ASAN=1` enables the same ASan path as `--asan`.
+- `AIC_ASAN=1` enables ASan for direct `aic build`/codegen compile paths.
 
 Stable `pkg` flags include:
 

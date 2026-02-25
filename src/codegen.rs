@@ -303,6 +303,12 @@ pub struct CompileOptions {
     pub link: LinkOptions,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RuntimeInstrumentationOptions {
+    pub check_leaks: bool,
+    pub asan: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolchainInfo {
     pub clang_version: String,
@@ -389,6 +395,24 @@ pub fn compile_with_clang_artifact_with_options(
     artifact: ArtifactKind,
     options: CompileOptions,
 ) -> anyhow::Result<PathBuf> {
+    compile_with_clang_artifact_with_options_and_runtime(
+        llvm_ir,
+        output_path,
+        work_dir,
+        artifact,
+        options,
+        runtime_instrumentation_from_env(),
+    )
+}
+
+pub fn compile_with_clang_artifact_with_options_and_runtime(
+    llvm_ir: &str,
+    output_path: &Path,
+    work_dir: &Path,
+    artifact: ArtifactKind,
+    options: CompileOptions,
+    runtime: RuntimeInstrumentationOptions,
+) -> anyhow::Result<PathBuf> {
     if options.static_link && artifact != ArtifactKind::Exe {
         anyhow::bail!("--static-link is only supported for executable artifacts");
     }
@@ -404,8 +428,14 @@ pub fn compile_with_clang_artifact_with_options(
     let runtime_path = work_dir.join("runtime.c");
     let module_obj_path = work_dir.join("module.o");
     let runtime_obj_path = work_dir.join("runtime.o");
+    let runtime_flags = runtime_compile_flags(runtime);
+    let llvm_to_compile = if runtime.check_leaks {
+        instrument_llvm_for_leak_tracking(llvm_ir)
+    } else {
+        llvm_ir.to_string()
+    };
 
-    fs::write(&ll_path, llvm_ir)?;
+    fs::write(&ll_path, llvm_to_compile)?;
     fs::write(&runtime_path, runtime_c_source())?;
 
     match artifact {
@@ -414,6 +444,9 @@ pub fn compile_with_clang_artifact_with_options(
             append_target_triple(&mut command, options.target_triple.as_deref());
             if options.debug_info {
                 command.arg("-g");
+            }
+            for flag in &runtime_flags {
+                command.arg(flag);
             }
             command.arg("-O0").arg(&ll_path).arg(&runtime_path);
             if options.static_link {
@@ -441,6 +474,9 @@ pub fn compile_with_clang_artifact_with_options(
             if options.debug_info {
                 command.arg("-g");
             }
+            for flag in &runtime_flags {
+                command.arg(flag);
+            }
             command
                 .arg("-O0")
                 .arg("-c")
@@ -454,6 +490,9 @@ pub fn compile_with_clang_artifact_with_options(
             append_target_triple(&mut clang_module, options.target_triple.as_deref());
             if options.debug_info {
                 clang_module.arg("-g");
+            }
+            for flag in &runtime_flags {
+                clang_module.arg(flag);
             }
             clang_module
                 .arg("-O0")
@@ -471,6 +510,9 @@ pub fn compile_with_clang_artifact_with_options(
             append_target_triple(&mut clang_runtime, options.target_triple.as_deref());
             if options.debug_info {
                 clang_runtime.arg("-g");
+            }
+            for flag in &runtime_flags {
+                clang_runtime.arg(flag);
             }
             clang_runtime
                 .arg("-O0")
@@ -509,6 +551,8 @@ pub fn compile_with_clang_artifact_with_options(
                 json!(output_path.to_string_lossy().to_string()),
             ),
             ("static_link".to_string(), json!(options.static_link)),
+            ("check_leaks".to_string(), json!(runtime.check_leaks)),
+            ("asan".to_string(), json!(runtime.asan)),
         ]);
         if let Some(triple) = &options.target_triple {
             attrs.insert("target_triple".to_string(), json!(triple));
@@ -517,6 +561,43 @@ pub fn compile_with_clang_artifact_with_options(
     });
 
     Ok(output_path.to_path_buf())
+}
+
+fn runtime_instrumentation_from_env() -> RuntimeInstrumentationOptions {
+    RuntimeInstrumentationOptions {
+        check_leaks: env_flag_enabled("AIC_CHECK_LEAKS"),
+        asan: env_flag_enabled("AIC_ASAN"),
+    }
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    let Ok(value) = std::env::var(name) else {
+        return false;
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    !matches!(
+        trimmed.to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "no"
+    )
+}
+
+fn runtime_compile_flags(runtime: RuntimeInstrumentationOptions) -> Vec<&'static str> {
+    let mut flags = Vec::new();
+    if runtime.check_leaks {
+        flags.push("-DAIC_RT_CHECK_LEAKS=1");
+    }
+    if runtime.asan {
+        flags.push("-fsanitize=address");
+        flags.push("-fno-omit-frame-pointer");
+    }
+    flags
+}
+
+fn instrument_llvm_for_leak_tracking(llvm_ir: &str) -> String {
+    llvm_ir.replace("@malloc(", "@aic_rt_heap_alloc(")
 }
 
 fn ensure_parent_dir(path: &Path) -> anyhow::Result<()> {
@@ -26661,6 +26742,296 @@ static int aic_rt_signal_mask_initialized = 0;
 static int aic_rt_signal_registered = 0;
 #endif
 
+static void* aic_rt_sys_malloc(size_t size) {
+    return malloc(size);
+}
+
+static void* aic_rt_sys_calloc(size_t count, size_t size) {
+    return calloc(count, size);
+}
+
+static void* aic_rt_sys_realloc(void* ptr, size_t size) {
+    return realloc(ptr, size);
+}
+
+static void aic_rt_sys_free(void* ptr) {
+    free(ptr);
+}
+
+#ifdef AIC_RT_CHECK_LEAKS
+typedef struct AicRtLeakEntry {
+    void* ptr;
+    size_t bytes;
+    const char* site;
+    int line;
+    unsigned long sequence;
+    struct AicRtLeakEntry* next;
+} AicRtLeakEntry;
+
+static AicRtLeakEntry* aic_rt_leak_head = NULL;
+static unsigned long aic_rt_leak_sequence = 0;
+static int aic_rt_leak_report_registered = 0;
+
+#ifdef _WIN32
+static CRITICAL_SECTION aic_rt_leak_lock;
+static int aic_rt_leak_lock_initialized = 0;
+
+static void aic_rt_leak_lock_acquire(void) {
+    if (!aic_rt_leak_lock_initialized) {
+        InitializeCriticalSection(&aic_rt_leak_lock);
+        aic_rt_leak_lock_initialized = 1;
+    }
+    EnterCriticalSection(&aic_rt_leak_lock);
+}
+
+static void aic_rt_leak_lock_release(void) {
+    LeaveCriticalSection(&aic_rt_leak_lock);
+}
+#else
+static pthread_mutex_t aic_rt_leak_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void aic_rt_leak_lock_acquire(void) {
+    (void)pthread_mutex_lock(&aic_rt_leak_lock);
+}
+
+static void aic_rt_leak_lock_release(void) {
+    (void)pthread_mutex_unlock(&aic_rt_leak_lock);
+}
+#endif
+
+static AicRtLeakEntry* aic_rt_leak_find(void* ptr, AicRtLeakEntry** out_prev) {
+    AicRtLeakEntry* prev = NULL;
+    AicRtLeakEntry* current = aic_rt_leak_head;
+    while (current != NULL) {
+        if (current->ptr == ptr) {
+            if (out_prev != NULL) {
+                *out_prev = prev;
+            }
+            return current;
+        }
+        prev = current;
+        current = current->next;
+    }
+    if (out_prev != NULL) {
+        *out_prev = NULL;
+    }
+    return NULL;
+}
+
+static void aic_rt_leak_json_write_string(const char* value) {
+    const unsigned char* cursor =
+        (const unsigned char*)(value == NULL ? "unknown" : value);
+    fputc('"', stderr);
+    while (*cursor != '\0') {
+        unsigned char ch = *cursor;
+        if (ch == '"') {
+            fputs("\\\"", stderr);
+        } else if (ch == '\\') {
+            fputs("\\\\", stderr);
+        } else if (ch == '\n') {
+            fputs("\\n", stderr);
+        } else if (ch == '\r') {
+            fputs("\\r", stderr);
+        } else if (ch == '\t') {
+            fputs("\\t", stderr);
+        } else if (ch < 0x20) {
+            fprintf(stderr, "\\u%04x", (unsigned int)ch);
+        } else {
+            fputc((int)ch, stderr);
+        }
+        cursor += 1;
+    }
+    fputc('"', stderr);
+}
+
+static void aic_rt_leak_report_if_needed(void);
+
+static void aic_rt_leak_register_atexit(void) {
+    if (aic_rt_leak_report_registered) {
+        return;
+    }
+    if (atexit(aic_rt_leak_report_if_needed) == 0) {
+        aic_rt_leak_report_registered = 1;
+    }
+}
+
+static void* aic_rt_track_alloc(size_t bytes, const char* site, int line) {
+    size_t alloc_size = bytes == 0 ? 1 : bytes;
+    void* ptr = aic_rt_sys_malloc(alloc_size);
+    if (ptr == NULL) {
+        return NULL;
+    }
+    AicRtLeakEntry* entry = (AicRtLeakEntry*)aic_rt_sys_malloc(sizeof(AicRtLeakEntry));
+    if (entry == NULL) {
+        aic_rt_sys_free(ptr);
+        return NULL;
+    }
+    entry->ptr = ptr;
+    entry->bytes = bytes;
+    entry->site = site;
+    entry->line = line;
+    entry->next = NULL;
+
+    aic_rt_leak_lock_acquire();
+    entry->sequence = ++aic_rt_leak_sequence;
+    entry->next = aic_rt_leak_head;
+    aic_rt_leak_head = entry;
+    aic_rt_leak_lock_release();
+    return ptr;
+}
+
+static void* aic_rt_track_calloc(size_t count, size_t bytes, const char* site, int line) {
+    if (count != 0 && bytes > SIZE_MAX / count) {
+        return NULL;
+    }
+    size_t total = count * bytes;
+    size_t alloc_count = total == 0 ? 1 : total;
+    void* ptr = aic_rt_sys_calloc(1, alloc_count);
+    if (ptr == NULL) {
+        return NULL;
+    }
+    AicRtLeakEntry* entry = (AicRtLeakEntry*)aic_rt_sys_malloc(sizeof(AicRtLeakEntry));
+    if (entry == NULL) {
+        aic_rt_sys_free(ptr);
+        return NULL;
+    }
+    entry->ptr = ptr;
+    entry->bytes = total;
+    entry->site = site;
+    entry->line = line;
+    entry->next = NULL;
+
+    aic_rt_leak_lock_acquire();
+    entry->sequence = ++aic_rt_leak_sequence;
+    entry->next = aic_rt_leak_head;
+    aic_rt_leak_head = entry;
+    aic_rt_leak_lock_release();
+    return ptr;
+}
+
+static void aic_rt_track_free(void* ptr) {
+    if (ptr == NULL) {
+        return;
+    }
+    AicRtLeakEntry* removed = NULL;
+    aic_rt_leak_lock_acquire();
+    AicRtLeakEntry* prev = NULL;
+    AicRtLeakEntry* entry = aic_rt_leak_find(ptr, &prev);
+    if (entry != NULL) {
+        if (prev != NULL) {
+            prev->next = entry->next;
+        } else {
+            aic_rt_leak_head = entry->next;
+        }
+        removed = entry;
+    }
+    aic_rt_leak_lock_release();
+
+    if (removed != NULL) {
+        aic_rt_sys_free(removed);
+    }
+    aic_rt_sys_free(ptr);
+}
+
+static void* aic_rt_track_realloc(void* ptr, size_t bytes, const char* site, int line) {
+    if (ptr == NULL) {
+        return aic_rt_track_alloc(bytes, site, line);
+    }
+    if (bytes == 0) {
+        aic_rt_track_free(ptr);
+        return NULL;
+    }
+
+    size_t alloc_size = bytes == 0 ? 1 : bytes;
+    aic_rt_leak_lock_acquire();
+    AicRtLeakEntry* prev = NULL;
+    AicRtLeakEntry* entry = aic_rt_leak_find(ptr, &prev);
+    void* grown = aic_rt_sys_realloc(ptr, alloc_size);
+    if (grown == NULL) {
+        aic_rt_leak_lock_release();
+        return NULL;
+    }
+
+    if (entry == NULL) {
+        entry = (AicRtLeakEntry*)aic_rt_sys_malloc(sizeof(AicRtLeakEntry));
+        if (entry == NULL) {
+            aic_rt_leak_lock_release();
+            aic_rt_sys_free(grown);
+            return NULL;
+        }
+        entry->sequence = ++aic_rt_leak_sequence;
+        entry->next = aic_rt_leak_head;
+        aic_rt_leak_head = entry;
+    }
+    entry->ptr = grown;
+    entry->bytes = bytes;
+    entry->site = site;
+    entry->line = line;
+    aic_rt_leak_lock_release();
+    return grown;
+}
+
+static void aic_rt_leak_report_if_needed(void) {
+    size_t leak_count = 0;
+    size_t leak_bytes = 0;
+    const char* first_site = "unknown";
+    int first_line = 0;
+    unsigned long first_sequence = ULONG_MAX;
+
+    aic_rt_leak_lock_acquire();
+    for (AicRtLeakEntry* entry = aic_rt_leak_head; entry != NULL; entry = entry->next) {
+        leak_count += 1;
+        leak_bytes += entry->bytes;
+        if (entry->sequence < first_sequence) {
+            first_sequence = entry->sequence;
+            first_site = entry->site == NULL ? "unknown" : entry->site;
+            first_line = entry->line;
+        }
+    }
+    aic_rt_leak_lock_release();
+
+    if (leak_count == 0) {
+        return;
+    }
+
+    fputs("{\"code\":\"memory_leak_detected\",\"count\":", stderr);
+    fprintf(stderr, "%zu", leak_count);
+    fputs(",\"bytes\":", stderr);
+    fprintf(stderr, "%zu", leak_bytes);
+    fputs(",\"first_allocation\":{\"site\":", stderr);
+    aic_rt_leak_json_write_string(first_site);
+    fputs(",\"line\":", stderr);
+    fprintf(stderr, "%d", first_line);
+    fputs("}}\n", stderr);
+    fflush(stderr);
+    _Exit(1);
+}
+#endif
+
+void* aic_rt_heap_alloc(long size) {
+    size_t alloc_size = size <= 0 ? 1u : (size_t)size;
+#ifdef AIC_RT_CHECK_LEAKS
+    return aic_rt_track_alloc(alloc_size, "generated-llvm", 0);
+#else
+    return aic_rt_sys_malloc(alloc_size);
+#endif
+}
+
+void aic_rt_heap_free(void* ptr) {
+#ifdef AIC_RT_CHECK_LEAKS
+    aic_rt_track_free(ptr);
+#else
+    aic_rt_sys_free(ptr);
+#endif
+}
+
+#ifdef AIC_RT_CHECK_LEAKS
+#define malloc(size) aic_rt_track_alloc((size), __FILE__, __LINE__)
+#define calloc(count, size) aic_rt_track_calloc((count), (size), __FILE__, __LINE__)
+#define realloc(ptr, size) aic_rt_track_realloc((ptr), (size), __FILE__, __LINE__)
+#define free(ptr) aic_rt_track_free((ptr))
+#endif
+
 static int aic_rt_sandbox_flag_enabled(const char* name, int default_value) {
     const char* value = getenv(name);
     if (value == NULL || value[0] == '\0') {
@@ -30256,6 +30627,9 @@ void aic_rt_env_set_args(int argc, char** argv) {
     }
     aic_rt_argc = argc;
     aic_rt_argv = argv;
+#ifdef AIC_RT_CHECK_LEAKS
+    aic_rt_leak_register_atexit();
+#endif
 }
 
 static char* aic_rt_env_copy_bytes(const char* src, size_t len) {
@@ -42733,8 +43107,9 @@ mod tests {
 
     use super::{
         emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
-        ensure_supported_toolchain_with_pin, normalize_macos_uuid, parse_llvm_major,
-        runtime_c_source, CodegenOptions, ToolchainInfo,
+        ensure_supported_toolchain_with_pin, instrument_llvm_for_leak_tracking,
+        normalize_macos_uuid, parse_llvm_major, runtime_c_source, runtime_compile_flags,
+        CodegenOptions, RuntimeInstrumentationOptions, ToolchainInfo,
     };
 
     #[test]
@@ -42787,6 +43162,25 @@ mod tests {
         let err = ensure_supported_toolchain_with_pin(&info, Some(17))
             .expect_err("mismatched toolchain pin should fail");
         assert!(err.to_string().contains("toolchain pin mismatch"));
+    }
+
+    #[test]
+    fn runtime_compile_flags_include_asan_and_leak_switches() {
+        let flags = runtime_compile_flags(RuntimeInstrumentationOptions {
+            check_leaks: true,
+            asan: true,
+        });
+        assert!(flags.contains(&"-DAIC_RT_CHECK_LEAKS=1"));
+        assert!(flags.contains(&"-fsanitize=address"));
+        assert!(flags.contains(&"-fno-omit-frame-pointer"));
+    }
+
+    #[test]
+    fn llvm_leak_instrumentation_rewrites_malloc_symbol() {
+        let llvm = "declare i8* @malloc(i64)\n%1 = call i8* @malloc(i64 32)\n";
+        let instrumented = instrument_llvm_for_leak_tracking(llvm);
+        assert!(instrumented.contains("@aic_rt_heap_alloc("));
+        assert!(!instrumented.contains("@malloc("));
     }
 
     #[test]
@@ -44163,6 +44557,9 @@ fn main() -> Int effects { io } {
             "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
         ));
         assert!(runtime_c_source().contains("AIC_BACKTRACE"));
+        assert!(runtime_c_source().contains("void* aic_rt_heap_alloc(long size)"));
+        assert!(runtime_c_source().contains("memory_leak_detected"));
+        assert!(runtime_c_source().contains("#ifdef AIC_RT_CHECK_LEAKS"));
         assert!(runtime_c_source().contains("stack backtrace:"));
         assert!(runtime_c_source().contains("void aic_rt_log_emit("));
         assert!(runtime_c_source().contains("void aic_rt_log_set_level(long level)"));

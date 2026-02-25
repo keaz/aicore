@@ -93,6 +93,37 @@ fn write_profile_demo_project(root: &std::path::Path) {
     .expect("write profile demo source");
 }
 
+fn write_leak_clean_project(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module leak.clean;\n",
+            "fn main() -> Int {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write leak clean source");
+}
+
+fn write_leak_positive_project(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module leak.positive;\n",
+            "fn main() -> Int {\n",
+            "    let offset = 1;\n",
+            "    let plus_offset = |x: Int| -> Int { x + offset };\n",
+            "    let out = plus_offset(41);\n",
+            "    if out == 42 { 0 } else { 1 }\n",
+            "}\n",
+        ),
+    )
+    .expect("write leak-positive source");
+}
+
 fn write_bench_fixture(root: &std::path::Path) -> (PathBuf, String) {
     let dataset_rel = "benchdata";
     let dataset_dir = root.join(dataset_rel);
@@ -284,7 +315,12 @@ fn cli_help_snapshots_are_stable() {
     let run_help = run_aic(&["run", "--help"]);
     assert!(run_help.status.success());
     let run_help_text = String::from_utf8_lossy(&run_help.stdout);
-    for flag in ["--profile", "--profile-output <PROFILE_OUTPUT>"] {
+    for flag in [
+        "--profile",
+        "--profile-output <PROFILE_OUTPUT>",
+        "--check-leaks",
+        "--asan",
+    ] {
         assert!(
             run_help_text.contains(flag),
             "missing `{flag}` in run help:\n{run_help_text}"
@@ -1933,6 +1969,58 @@ fn run_profile_output_flag_writes_custom_profile_path() {
             .expect("profile json");
     assert_eq!(profile["phase"], "profile");
     assert!(profile["top_functions"].is_array());
+}
+
+#[test]
+fn run_check_leaks_reports_clean_exit_without_leak_diagnostic() {
+    let project = tempdir().expect("project");
+    write_leak_clean_project(project.path());
+
+    let run = run_aic_in_dir(project.path(), &["run", "src/main.aic", "--check-leaks"]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        !stderr.contains("memory_leak_detected"),
+        "unexpected leak report for clean program: {stderr}"
+    );
+}
+
+#[test]
+fn run_check_leaks_reports_detected_leaks_and_fails() {
+    let project = tempdir().expect("project");
+    write_leak_positive_project(project.path());
+
+    let run = run_aic_in_dir(project.path(), &["run", "src/main.aic", "--check-leaks"]);
+    assert_eq!(
+        run.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    let leak_line = stderr
+        .lines()
+        .find(|line| line.contains("\"memory_leak_detected\""))
+        .unwrap_or_else(|| panic!("missing leak report in stderr: {stderr}"));
+    let payload: serde_json::Value = serde_json::from_str(leak_line).expect("leak json");
+    assert_eq!(payload["code"], "memory_leak_detected");
+    assert!(
+        payload["count"].as_u64().unwrap_or(0) > 0,
+        "expected positive leaked allocation count: {payload:#}"
+    );
+    assert!(
+        payload["bytes"].as_u64().unwrap_or(0) > 0,
+        "expected positive leaked bytes: {payload:#}"
+    );
+    assert!(payload["first_allocation"]["site"].is_string());
+    assert!(payload["first_allocation"]["line"].is_number());
 }
 
 #[test]

@@ -85,6 +85,28 @@ impl Drop[AuditDrop] {
 
 - Remaining `#157` gaps: full move-out tracking for complex expressions/control-flow joins, partial-move destructor semantics, and panic/unwind drop paths.
 
+## Debug Leak Detection
+
+- Leak tracking is opt-in via `aic run --check-leaks <input>`.
+- Normal mode (`aic run` without `--check-leaks`) keeps tracking disabled.
+- On leak-free runs, exit behavior is unchanged.
+- On detected leaks, runtime exits non-zero and emits a structured stderr record:
+
+```json
+{"code":"memory_leak_detected","count":1,"bytes":48,"first_allocation":{"site":"generated-llvm","line":0}}
+```
+
+- `count`: number of live allocations at process exit.
+- `bytes`: sum of leaked byte sizes.
+- `first_allocation`: first live allocation site by allocation order.
+- Site precision:
+  - Runtime C allocations report `site`/`line` from runtime source locations.
+  - LLVM-generated heap allocations (for example closure-capture heap env allocations) report `site` as `generated-llvm` with `line: 0` by design.
+
+- ASan path:
+  - `aic run --asan <input>` or `AIC_RUN_ASAN=1 aic run <input>`
+  - `AIC_ASAN=1` for direct build/codegen compile paths.
+
 ## Diagnostic mapping
 
 - `E1263`: conflicting mutable borrow

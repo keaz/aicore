@@ -267,6 +267,8 @@ cargo run -- release sbom --output target/release/sbom.json
 cargo run -- release policy --check
 cargo run -- release lts --check
 cargo run -- run examples/option_match.aic
+cargo run -- run examples/core/leak_check_closure_capture.aic --check-leaks
+cargo run -- run examples/core/leak_check_closure_capture.aic --check-leaks --asan
 ```
 
 Commands:

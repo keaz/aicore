@@ -12,8 +12,9 @@ use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
 };
 use aicore::codegen::{
-    compile_with_clang_artifact_with_options, emit_llvm, emit_llvm_with_options, ArtifactKind,
-    CodegenOptions, CompileOptions, LinkOptions,
+    compile_with_clang_artifact_with_options, compile_with_clang_artifact_with_options_and_runtime,
+    emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
+    RuntimeInstrumentationOptions,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::daemon;
@@ -308,6 +309,10 @@ enum Command {
         profile: bool,
         #[arg(long, default_value = "profile.json", requires = "profile")]
         profile_output: PathBuf,
+        #[arg(long)]
+        check_leaks: bool,
+        #[arg(long)]
+        asan: bool,
         #[arg(last = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -558,6 +563,20 @@ fn parse_positive_u32(value: &str) -> Result<u32, String> {
     } else {
         Ok(parsed)
     }
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    let Ok(value) = std::env::var(name) else {
+        return false;
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    !matches!(
+        trimmed.to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "no"
+    )
 }
 
 fn grammar_contract_json() -> serde_json::Value {
@@ -1959,6 +1978,8 @@ fn run_cli() -> anyhow::Result<i32> {
             sandbox_config,
             profile,
             profile_output,
+            check_leaks,
+            asan,
             args,
         } => {
             let profile_policy = sandbox.to_profile().policy();
@@ -1976,6 +1997,15 @@ fn run_cli() -> anyhow::Result<i32> {
                 return Ok(EXIT_USAGE_ERROR);
             }
 
+            if profile && check_leaks {
+                eprintln!("--check-leaks is not supported with --profile");
+                return Ok(EXIT_USAGE_ERROR);
+            }
+            if profile && asan {
+                eprintln!("--asan is not supported with --profile");
+                return Ok(EXIT_USAGE_ERROR);
+            }
+
             if profile {
                 let outcome = profile::run_profiled(profile::RunProfileOptions {
                     input: &input,
@@ -1986,9 +2016,13 @@ fn run_cli() -> anyhow::Result<i32> {
                 })?;
                 outcome.exit_code
             } else {
+                let runtime = RuntimeInstrumentationOptions {
+                    check_leaks,
+                    asan: asan || env_flag_enabled("AIC_RUN_ASAN"),
+                };
                 let run_work = fresh_work_dir("run-bin");
                 let out = run_work.join("aicore_run_bin");
-                let build_code = build_file(&input, &out, offline)?;
+                let build_code = build_file(&input, &out, offline, runtime)?;
                 if build_code != EXIT_OK {
                     build_code
                 } else {
@@ -2898,7 +2932,12 @@ fn print_harness_report(report: &aicore::test_harness::HarnessReport) {
     }
 }
 
-fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32> {
+fn build_file(
+    input: &Path,
+    output: &Path,
+    offline: bool,
+    runtime: RuntimeInstrumentationOptions,
+) -> anyhow::Result<i32> {
     let project_root = resolve_project_root(input);
     let link = resolve_native_link_options(&project_root)?;
     let front = run_frontend_with_options(input, FrontendOptions { offline })?;
@@ -2917,7 +2956,7 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
     };
 
     let work = fresh_work_dir("run");
-    compile_with_clang_artifact_with_options(
+    compile_with_clang_artifact_with_options_and_runtime(
         &llvm.llvm_ir,
         output,
         &work,
@@ -2928,6 +2967,7 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
             static_link: false,
             link,
         },
+        runtime,
     )?;
     Ok(EXIT_OK)
 }
