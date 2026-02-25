@@ -709,6 +709,27 @@ Verifier-focused examples:
   - `examples/io/tcp_echo_client.aic`
   - `examples/io/net_all_ops.aic`
 
+## Verification Gate Blocking (EPIC-QV #63)
+
+- Required gate command:
+  - `make test-e8`
+- Release-blocking chain:
+  - `.github/workflows/release.yml` `release-preflight` runs `make ci`.
+  - `make ci` runs `check`.
+  - `check` includes `test-e8`.
+- Continuous fuzz validation:
+  - `.github/workflows/nightly-fuzz.yml` runs `make test-e8-nightly-fuzz`.
+- Evidence artifacts:
+  - `target/e8/perf-report.json`
+  - `target/e8/perf-report-*.json`
+  - `target/e8/perf-trend-*.json`
+  - `target/e8/nightly-fuzz-report.json`
+- Verification examples:
+  - `examples/verify/qv_contract_proof_fail.aic`
+  - `examples/verify/qv_contract_proof_fixed.aic`
+  - `examples/verify/file_protocol.aic`
+  - `examples/verify/file_protocol_invalid.aic`
+
 ## Validation Inventory
 
 ### Tests

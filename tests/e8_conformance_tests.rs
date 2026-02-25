@@ -99,6 +99,43 @@ fn verification_quality_docs_cover_qv_gates() {
 }
 
 #[test]
+fn verification_quality_workflows_are_release_blocking() {
+    let root = repo_root();
+
+    let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci workflow");
+    for token in [
+        "E8 verification gates",
+        "make test-e8",
+        "Upload E8 perf report",
+        "e8-perf-report-linux",
+    ] {
+        assert!(ci.contains(token), "ci workflow missing token: {token}");
+    }
+
+    let release = fs::read_to_string(root.join(".github/workflows/release.yml"))
+        .expect("read release workflow");
+    for token in ["release-preflight", "make ci", "release-build"] {
+        assert!(
+            release.contains(token),
+            "release workflow missing token: {token}"
+        );
+    }
+
+    let nightly = fs::read_to_string(root.join(".github/workflows/nightly-fuzz.yml"))
+        .expect("read nightly fuzz workflow");
+    for token in [
+        "fuzz-nightly",
+        "make test-e8-nightly-fuzz",
+        "nightly-fuzz-report",
+    ] {
+        assert!(
+            nightly.contains(token),
+            "nightly fuzz workflow missing token: {token}"
+        );
+    }
+}
+
+#[test]
 fn verification_quality_examples_report_expected_statuses() {
     let contract_fail = run_aic(&[
         "check",

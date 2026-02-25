@@ -20,6 +20,13 @@ This documentation set is for agents that need to write verifier-friendly AIC co
 | QV-T5 cross-host perf trend | `.github/workflows/ci.yml` / `execution-matrix` (`Run host perf gate suite`) | `cargo test --locked --test e8_perf_tests` | `target/e8/perf-report.json`, `target/e8/perf-report-*.json`, `target/e8/perf-trend-*.json` (uploaded as `e8-perf-${os}`) |
 | QV-T3 nightly fuzz stress | `.github/workflows/nightly-fuzz.yml` / `fuzz-nightly` | `make test-e8-nightly-fuzz` | `target/e8/nightly-fuzz-report.json`, `target/e8/fuzz-crashers` (uploaded as `nightly-fuzz-report`) |
 
+## Release-Blocking Policy
+
+- `release.yml` runs a `release-preflight` job that executes `make ci`.
+- `make ci` runs `check`, and `check` includes `make test-e8`.
+- Result: any QV gate failure (contracts/effect protocols/fuzz/differential/perf) fails CI and blocks the release workflow.
+- Nightly fuzz stress runs independently in `nightly-fuzz.yml`, with artifacts retained for triage.
+
 ## Fast Command Set
 
 ```bash
