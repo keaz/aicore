@@ -81,6 +81,7 @@ fn main() -> Int effects { io, net } {
 - CLI file pipeline: `examples/io/cli_file_pipeline.aic`
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`
+- Async submit+await bridge (reactor polling): `examples/io/async_await_submit_bridge.aic`
 - Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
@@ -93,6 +94,7 @@ cargo run --quiet --bin aic -- run examples/io/fs_all_ops.aic
 cargo run --quiet --bin aic -- run examples/io/cli_file_pipeline.aic
 cargo run --quiet --bin aic -- run examples/io/process_pipeline.aic
 cargo run --quiet --bin aic -- run examples/io/tcp_echo.aic
+cargo run --quiet --bin aic -- run examples/io/async_await_submit_bridge.aic
 cargo run --quiet --bin aic -- run examples/io/retry_with_jitter.aic
 cargo run --quiet --bin aic -- run examples/io/worker_pool.aic
 ```

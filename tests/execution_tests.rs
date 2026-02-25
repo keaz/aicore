@@ -246,6 +246,132 @@ async fn main() -> Int effects { io } {
     assert_eq!(stdout, "42\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_async_await_submit_bridge_drives_reactor_without_task_spawn() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+async fn main() -> Int effects { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let accepted = await async_accept_submit(listener, 2000);
+    let timeout_code = match accepted {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let shutdown_ok = match async_shutdown() {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if timeout_code == 4 && shutdown_ok == 1 && closed == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_async_accept_1000_connections_single_thread() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.vec;
+
+fn main() -> Int effects { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let mut pending: Vec[AsyncIntOp] = vec.new_vec();
+    let mut submitted = 0;
+    let mut resolved = 0;
+    while submitted < 1000 {
+        let handle = match async_accept_submit(listener, 50) {
+            Ok(op) => op.handle,
+            Err(_) => 0,
+        };
+        if handle > 0 {
+            pending = vec.push(pending, AsyncIntOp { handle: handle });
+            submitted = submitted + 1;
+        } else {
+            if pending.len > 0 {
+                let op = match vec.get(pending, 0) {
+                    Some(value) => value,
+                    None => AsyncIntOp { handle: 0 },
+                };
+                pending = vec.remove_at(pending, 0);
+                async_wait_int(op, 1000);
+                resolved = resolved + 1;
+            } else {
+                resolved = resolved;
+            };
+        };
+    };
+
+    while pending.len > 0 {
+        let op = match vec.get(pending, 0) {
+            Some(value) => value,
+            None => AsyncIntOp { handle: 0 },
+        };
+        pending = vec.remove_at(pending, 0);
+        async_wait_int(op, 1000);
+        resolved = resolved + 1;
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let listener_closed = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if submitted == 1000 && resolved == 1000 && shutdown_ok == 1 && listener_closed == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[test]
 fn exec_first_class_fn_value_from_named_function() {
     let src = r#"

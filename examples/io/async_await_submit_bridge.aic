@@ -1,0 +1,42 @@
+import std.io;
+import std.net;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+async fn main() -> Int effects { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let accepted = await async_accept_submit(listener, 50);
+    let timeout_code = match accepted {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let shutdown_ok = match async_shutdown() {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if timeout_code == 4 && shutdown_ok == 1 && closed == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

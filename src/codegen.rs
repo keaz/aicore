@@ -1496,6 +1496,8 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_async_wait_int(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_wait_string(i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_shutdown()\n\n");
+        text.push_str("declare i64 @aic_rt_async_poll_int(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)\n\n");
         text.push_str(
             "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)\n",
         );
@@ -2591,40 +2593,297 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn classify_await_submit_result(
+        &mut self,
+        ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<(usize, usize, LType, LType, LType, bool)> {
+        let LType::Enum(layout) = ty else {
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Result" {
+            return None;
+        }
+        let ok_idx = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Ok")?;
+        let err_idx = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Err")?;
+        let ok_payload_ty = layout.variants.get(ok_idx)?.payload.clone()?;
+        let err_payload_ty = layout.variants.get(err_idx)?.payload.clone()?;
+        let LType::Enum(err_layout) = &err_payload_ty else {
+            return None;
+        };
+        if base_type_name(&err_layout.repr) != "NetError" {
+            return None;
+        }
+        let LType::Struct(op_layout) = &ok_payload_ty else {
+            return None;
+        };
+        let output_ty = match base_type_name(&op_layout.repr) {
+            "AsyncIntOp" => self.parse_type_repr("Result[Int, NetError]", span)?,
+            "AsyncStringOp" => self.parse_type_repr("Result[Bytes, NetError]", span)?,
+            _ => return None,
+        };
+        let is_string = base_type_name(&op_layout.repr) == "AsyncStringOp";
+        Some((
+            ok_idx,
+            err_idx,
+            ok_payload_ty,
+            err_payload_ty,
+            output_ty,
+            is_string,
+        ))
+    }
+
+    fn gen_await_submit_result(
+        &mut self,
+        submitted: Value,
+        ok_idx: usize,
+        err_idx: usize,
+        submit_ok_payload_ty: LType,
+        submit_err_payload_ty: LType,
+        output_ty: LType,
+        string_payload: bool,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let submitted_repr = submitted
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&submitted.ty));
+        let Some((output_layout, output_ok_ty, output_err_ty, _, output_err_idx)) =
+            self.result_layout_parts(&output_ty, span)
+        else {
+            return None;
+        };
+        if output_err_ty != submit_err_payload_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5002",
+                "await submit bridge requires matching NetError payload type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let out_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", out_slot, llvm_type(&output_ty)));
+
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&submitted.ty),
+            submitted_repr
+        ));
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i32 {}, {}", is_ok, tag, ok_idx));
+
+        let ok_label = self.new_label("await_submit_ok");
+        let err_label = self.new_label("await_submit_err");
+        let done_label = self.new_label("await_submit_done");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", err_label));
+        let err_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            err_payload,
+            llvm_type(&submitted.ty),
+            submitted_repr,
+            err_idx + 1
+        ));
+        let err_value = self.build_enum_variant(
+            &output_layout,
+            output_err_idx,
+            Some(Value {
+                ty: submit_err_payload_ty.clone(),
+                repr: Some(err_payload),
+            }),
+            span,
+            fctx,
+        )?;
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&output_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&output_ty)),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        let op_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            op_payload,
+            llvm_type(&submitted.ty),
+            submitted_repr,
+            ok_idx + 1
+        ));
+        let op_value = Value {
+            ty: submit_ok_payload_ty.clone(),
+            repr: Some(op_payload),
+        };
+        let op_handle = if string_payload {
+            self.extract_named_handle_from_value(
+                &op_value,
+                "AsyncStringOp",
+                "await submit bridge",
+                span,
+                fctx,
+            )?
+        } else {
+            self.extract_named_handle_from_value(
+                &op_value,
+                "AsyncIntOp",
+                "await submit bridge",
+                span,
+                fctx,
+            )?
+        };
+
+        let ok_payload = if string_payload {
+            let out_ptr_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+            let out_len_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+            let poll_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_async_poll_string(i64 {}, i8** {}, i64* {})",
+                poll_err, op_handle, out_ptr_slot, out_len_slot
+            ));
+            let out_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+            let out_len = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+            let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+            let payload = if output_ok_ty == LType::String {
+                data_value
+            } else {
+                self.build_bytes_value_from_data(
+                    &output_ok_ty,
+                    data_value,
+                    "await submit bridge",
+                    span,
+                    fctx,
+                )?
+            };
+            self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
+        } else {
+            let out_int_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", out_int_slot));
+            let poll_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_async_poll_int(i64 {}, i64* {})",
+                poll_err, op_handle, out_int_slot
+            ));
+            let out_int = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i64, i64* {}", out_int, out_int_slot));
+            self.wrap_net_result(
+                &output_ty,
+                Value {
+                    ty: LType::Int,
+                    repr: Some(out_int),
+                },
+                &poll_err,
+                span,
+                fctx,
+            )?
+        };
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&output_ty),
+            ok_payload
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&output_ty)),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", done_label));
+        let out_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            out_reg,
+            llvm_type(&output_ty),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        Some(Value {
+            ty: output_ty,
+            repr: Some(out_reg),
+        })
+    }
+
     fn gen_await(
         &mut self,
         inner: &ir::Expr,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let future = self.gen_expr(inner, fctx)?;
-        let LType::Async(output_ty) = future.ty.clone() else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5002",
-                "await expects Async[T] during codegen",
-                self.file,
-                span,
+        let awaited = self.gen_expr(inner, fctx)?;
+        if let LType::Async(output_ty) = awaited.ty.clone() {
+            if matches!(&*output_ty, LType::Unit) {
+                return Some(Value {
+                    ty: LType::Unit,
+                    repr: None,
+                });
+            }
+            let value = self.new_temp();
+            let repr = awaited.repr.unwrap_or_else(|| default_value(&awaited.ty));
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 1",
+                value,
+                llvm_type(&awaited.ty),
+                repr
             ));
-            return None;
-        };
-        if matches!(&*output_ty, LType::Unit) {
             return Some(Value {
-                ty: LType::Unit,
-                repr: None,
+                ty: (*output_ty).clone(),
+                repr: Some(value),
             });
         }
-        let value = self.new_temp();
-        let repr = future.repr.unwrap_or_else(|| default_value(&future.ty));
-        fctx.lines.push(format!(
-            "  {} = extractvalue {} {}, 1",
-            value,
-            llvm_type(&future.ty),
-            repr
+
+        if let Some((ok_idx, err_idx, submit_ok_ty, submit_err_ty, output_ty, string_payload)) =
+            self.classify_await_submit_result(&awaited.ty, span)
+        {
+            return self.gen_await_submit_result(
+                awaited,
+                ok_idx,
+                err_idx,
+                submit_ok_ty,
+                submit_err_ty,
+                output_ty,
+                string_payload,
+                span,
+                fctx,
+            );
+        }
+
+        self.diagnostics.push(Diagnostic::error(
+            "E5002",
+            "await expects Async[T] or Result[Async*Op, NetError] during codegen",
+            self.file,
+            span,
         ));
-        Some(Value {
-            ty: (*output_ty).clone(),
-            repr: Some(value),
-        })
+        None
     }
 
     fn type_needs_explicit_drop(&self, ty: &LType) -> bool {
@@ -38810,6 +39069,56 @@ long aic_rt_net_dns_reverse(
 }
 #endif
 
+#define AIC_RT_ASYNC_POLL_SLICE_MS 5
+
+long aic_rt_async_poll_int(long op_handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    int saw_timeout = 0;
+    for (;;) {
+        long err = aic_rt_net_async_wait_int(op_handle, AIC_RT_ASYNC_POLL_SLICE_MS, out_value);
+        if (err == 4) {
+            saw_timeout = 1;
+            aic_rt_time_sleep_ms(1);
+            continue;
+        }
+        if (err == 1 && saw_timeout) {
+            // Timed-out operation completion can consume the slot and surface as NotFound.
+            return 4;
+        }
+        return err;
+    }
+}
+
+long aic_rt_async_poll_string(long op_handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    int saw_timeout = 0;
+    for (;;) {
+        long err = aic_rt_net_async_wait_string(
+            op_handle,
+            AIC_RT_ASYNC_POLL_SLICE_MS,
+            out_ptr,
+            out_len
+        );
+        if (err == 4) {
+            saw_timeout = 1;
+            aic_rt_time_sleep_ms(1);
+            continue;
+        }
+        if (err == 1 && saw_timeout) {
+            // Timed-out operation completion can consume the slot and surface as NotFound.
+            return 4;
+        }
+        return err;
+    }
+}
+
 #define AIC_RT_JSON_KIND_NULL 0L
 #define AIC_RT_JSON_KIND_BOOL 1L
 #define AIC_RT_JSON_KIND_NUMBER 2L
@@ -44187,6 +44496,70 @@ async fn main() -> Int effects { io } {
     }
 
     #[test]
+    fn await_submit_bridge_lowers_to_reactor_poll_runtime_calls() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("await_submit_bridge_polling.aic");
+        fs::write(
+            &file,
+            r#"
+import std.net;
+
+async fn main() -> Int effects { net, concurrency } {
+    let accepted = await async_accept_submit(0, 25);
+    let _recv = await async_tcp_recv_submit(0, 8, 25);
+    let _server = match accepted {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    0
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        assert!(
+            output
+                .llvm_ir
+                .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"),
+            "await submit bridge should declare async int poll helper\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output
+                .llvm_ir
+                .contains("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)"),
+            "await submit bridge should declare async string poll helper\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+            "await submit bridge should poll int reactor operation\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output
+                .llvm_ir
+                .contains("call i64 @aic_rt_async_poll_string("),
+            "await submit bridge should poll string reactor operation\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            !output.llvm_ir.contains("call i64 @aic_rt_conc_spawn("),
+            "await submit bridge must not lower to thread-per-task spawn\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
     fn struct_init_tail_move_skips_map_close_on_moved_local() {
         let dir = tempdir().expect("tempdir");
         let file = dir.path().join("struct_tail_move_map.aic");
@@ -44499,6 +44872,12 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_net_async_shutdown()"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)"));
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_url_parse(i8*, i64, i64, i8**, i64*, i8**, i64*, i64*, i8**, i64*, i8**, i64*, i8**, i64*)"
         ));
@@ -44637,6 +45016,8 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_net_async_wait_int("));
         assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
         assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
+        assert!(runtime_c_source().contains("long aic_rt_async_poll_int(long op_handle"));
+        assert!(runtime_c_source().contains("long aic_rt_async_poll_string(long op_handle"));
         assert!(runtime_c_source().contains("long aic_rt_url_parse("));
         assert!(runtime_c_source().contains("long aic_rt_url_normalize("));
         assert!(runtime_c_source().contains("long aic_rt_url_net_addr("));

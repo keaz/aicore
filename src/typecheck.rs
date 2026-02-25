@@ -3783,6 +3783,10 @@ impl<'a> Checker<'a> {
                     );
                 }
 
+                if let Some(bridged_ty) = await_bridge_submit_type(&ty_norm) {
+                    return bridged_ty;
+                }
+
                 if base_type_name(&ty_norm) != "Async" {
                     self.diagnostics.push(
                         Diagnostic::error(
@@ -3791,7 +3795,9 @@ impl<'a> Checker<'a> {
                             self.file,
                             inner.span,
                         )
-                        .with_help("await values returned from async function calls"),
+                        .with_help(
+                            "await values returned from async functions or std.net async submit calls",
+                        ),
                     );
                     return "<?>".to_string();
                 }
@@ -5804,6 +5810,26 @@ fn bindings_from_applied_type(
         out.insert(param.clone(), arg);
     }
     Some(out)
+}
+
+fn await_bridge_submit_type(ty: &str) -> Option<String> {
+    if base_type_name(ty) != "Result" {
+        return None;
+    }
+    let args = extract_generic_args(ty)?;
+    if args.len() != 2 {
+        return None;
+    }
+    let ok = args[0].trim();
+    let err = args[1].trim();
+    if err != "NetError" {
+        return None;
+    }
+    match ok {
+        "AsyncIntOp" => Some("Result[Int, NetError]".to_string()),
+        "AsyncStringOp" => Some("Result[Bytes, NetError]".to_string()),
+        _ => None,
+    }
 }
 
 fn merge_types(a: &str, b: &str) -> String {

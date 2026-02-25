@@ -1,5 +1,6 @@
 {
-  "scenario": "rest_async_echo_100_connections",
+  "scenario": "rest_async_echo_1000_connections",
+  "connections": 1000,
   "thread_per_connection_ms": 420.0,
   "event_loop_ms": 180.0,
   "max_ratio": 0.8

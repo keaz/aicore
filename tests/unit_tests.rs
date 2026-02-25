@@ -556,6 +556,48 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_await_net_async_submit_bridge_typechecks() {
+    let src = r#"
+enum NetError {
+    NotFound,
+    Timeout,
+    Io,
+}
+
+struct AsyncIntOp {
+    handle: Int,
+}
+
+fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] {
+    if timeout_ms > 0 {
+        Ok(AsyncIntOp { handle: listener + timeout_ms })
+    } else {
+        Err(Timeout)
+    }
+}
+
+async fn main() -> Int {
+    let accepted = await async_accept_submit(0, 10);
+    let a = match accepted {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    a
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1256" || d.code == "E1257"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_fn_type_and_closure_typecheck() {
     let src = r#"
 fn apply(f: Fn(Int) -> Int, x: Int) -> Int {

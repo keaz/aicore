@@ -16,6 +16,7 @@ All APIs are `effects { concurrency }`.
 
 Related runtime note:
 - `std.net` async submit/wait operations (`async_*`) also require `effects { concurrency }` and are backed by the async reactor loop documented in `docs/async-event-loop.md`.
+- `await` submit-bridge lowering (`await Result[Async*Op, NetError]`) polls those reactor operations cooperatively via runtime async poll helpers.
 
 ## Types
 
@@ -134,6 +135,8 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_mutex_lock`
 - `aic_rt_conc_mutex_unlock`
 - `aic_rt_conc_mutex_close`
+- `aic_rt_async_poll_int`
+- `aic_rt_async_poll_string`
 
 ## Platform Limitations
 
@@ -146,3 +149,4 @@ Codegen lowers to these runtime symbols:
 ## Example
 
 - `examples/io/worker_pool.aic`
+- `examples/io/async_await_submit_bridge.aic`

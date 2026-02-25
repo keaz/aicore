@@ -80,6 +80,8 @@ fn perf_async_event_loop_gate_is_within_budget() {
     let raw = fs::read_to_string(root.join("benchmarks/service_baseline/async-net-gate.v1.json"))
         .expect("read async-net gate");
     let gate: Value = serde_json::from_str(&raw).expect("parse async-net gate");
+    let scenario = gate["scenario"].as_str().expect("scenario");
+    let connections = gate["connections"].as_u64().expect("connections");
 
     let thread_ms = gate["thread_per_connection_ms"]
         .as_f64()
@@ -90,6 +92,14 @@ fn perf_async_event_loop_gate_is_within_budget() {
     assert!(thread_ms > 0.0);
     assert!(event_loop_ms > 0.0);
     assert!(max_ratio > 0.0);
+    assert!(
+        scenario.contains("1000"),
+        "async gate scenario must track 1000+ load: {scenario}"
+    );
+    assert!(
+        connections >= 1000,
+        "async gate must encode 1000+ concurrent-connection benchmark, got {connections}"
+    );
 
     let ratio = event_loop_ms / thread_ms;
     assert!(

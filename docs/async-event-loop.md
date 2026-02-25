@@ -21,6 +21,12 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_shutdown() -> Result[Bool, NetError]`
 - Convenience wrappers: `async_accept`, `async_tcp_send`, `async_tcp_recv`
 
+Language-level bridge:
+
+- `await` now also accepts submit results directly:
+  - `await Result[AsyncIntOp, NetError] -> Result[Int, NetError]`
+  - `await Result[AsyncStringOp, NetError] -> Result[Bytes, NetError]`
+
 ## Wrapper Semantics
 
 - `async_accept`, `async_tcp_send`, and `async_tcp_recv` are thin wrappers over submit + wait:
@@ -30,6 +36,25 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
+
+## Await Submit Bridge Semantics
+
+- `await async_accept_submit(listener, timeout_ms)` lowers to runtime polling over the submit handle.
+- Polling uses reactor-backed helpers:
+  - `aic_rt_async_poll_int`
+  - `aic_rt_async_poll_string`
+- Poll helpers use short wait slices and cooperative yield (`sleep_ms(1)`) between retry windows.
+- Terminal timeout completion remains `Err(Timeout)` (not remapped to `NotFound`).
+
+Example:
+
+```aic
+let accepted = await async_accept_submit(listener, 2000);
+let socket = match accepted {
+    Ok(h) => h,
+    Err(err) => 0,
+};
+```
 
 ## Runtime Architecture
 
@@ -59,11 +84,15 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - Regression tests in `/Users/kasunranasinghe/Projects/Rust/aicore/tests/execution_tests.rs` cover:
   - multi-connection async flow (`exec_net_async_event_loop_multi_connection`)
   - queue saturation + shutdown (`exec_net_async_queue_backpressure_and_shutdown`)
+  - 1000 concurrent accepts on a single thread (`exec_net_async_accept_1000_connections_single_thread`)
+  - async submit+await bridge polling (`exec_async_await_submit_bridge_drives_reactor_without_task_spawn`)
   - negative async-wait paths (`exec_net_async_wait_negative_paths_are_stable`) for invalid handles, timeout retry semantics, and single-consumer re-wait behavior
 - CI example coverage in `/Users/kasunranasinghe/Projects/Rust/aicore/scripts/ci/examples.sh` includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_net_event_loop.aic` in both:
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)
+- CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
-  - scenario: `rest_async_echo_100_connections`
+  - scenario: `rest_async_echo_1000_connections`
+  - encoded load: `connections = 1000`
   - baseline timings: `thread_per_connection_ms = 420.0`, `event_loop_ms = 180.0`
   - gate: `max_ratio = 0.8` (`event_loop_ms / thread_per_connection_ms` must stay <= `0.8`)
