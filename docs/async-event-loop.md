@@ -6,6 +6,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 
 - Single-process, single event-loop worker thread.
 - Bounded operation queue with deterministic backpressure.
+- Reactor-based non-blocking socket progress for async TCP accept/send/recv.
 - Async submit/wait API surface for TCP accept/send/recv.
 
 ## API Surface
@@ -33,16 +34,25 @@ This document defines the runtime model used by async networking APIs in `std.ne
 ## Runtime Architecture
 
 - Queue capacity is fixed (`AIC_RT_NET_ASYNC_QUEUE_CAP`) and enforced on submit.
-- Submit paths enqueue opaque operation handles.
-- A dedicated worker thread drains the queue and executes socket operations.
+- Submit paths enqueue opaque operation handles and operation metadata.
+- A dedicated worker thread activates operations and advances them through a reactor.
+- Reactor backends:
+  - Linux: `epoll`
+  - macOS/BSD: `kqueue`
+  - Fallback: `poll`
+- Active sockets are temporarily switched to non-blocking mode while an async op is in flight and restored when the op completes.
 - Completion data is published through per-operation condition variables.
-- `async_shutdown` requests graceful drain and joins the worker thread.
+- `async_shutdown` enters drain mode:
+  - new submissions are rejected with deterministic `NetError`,
+  - queued + active operations are completed/drained,
+  - worker is joined before returning.
 
 ## Backpressure and Determinism
 
 - Queue-full submission returns `NetError::Timeout`.
-- All failures map through existing `NetError` code mapping.
 - Wait calls are single-consumer per operation handle.
+- Timeout while waiting does not destroy the in-flight operation; later wait can retry.
+- All failures map through existing `NetError` code mapping.
 
 ## CI and Perf Gate Mapping
 

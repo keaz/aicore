@@ -14,6 +14,9 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 
 All APIs are `effects { concurrency }`.
 
+Related runtime note:
+- `std.net` async submit/wait operations (`async_*`) also require `effects { concurrency }` and are backed by the async reactor loop documented in `docs/async-event-loop.md`.
+
 ## Types
 
 ```aic
