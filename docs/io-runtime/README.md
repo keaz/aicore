@@ -17,7 +17,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 | `std.signal` | `proc` | register SIGINT/SIGTERM/SIGHUP handlers, block for shutdown signal | `SignalError` |
 | `std.rand` | `rand` | deterministic seeding, random int/range/bool | deterministic when seeded |
 | `std.retry` | `time`, `rand` | retry/backoff policy and timeout wrappers | `RetryResult[T]` and timeout `Result[T, String]` |
-| `std.concurrent` | `concurrency` | tasks, buffered int channel, try send/recv, two-channel select, int mutex | `ConcurrencyError`, `ChannelError` |
+| `std.concurrent` | `concurrency` | tasks, structured group/select/timeout helpers, buffered int channel, try send/recv, two-channel select, int mutex | `ConcurrencyError`, `ChannelError` |
 
 ## Effect Boundaries
 
@@ -85,6 +85,7 @@ fn main() -> Int effects { io, net } {
 - Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
+- Structured task group/select/timeout: `examples/io/structured_concurrency.aic`
 - Negative effect-enforcement example: `examples/io/effect_misuse_fs.aic` (expected check failure)
 
 Run all IO examples:
@@ -97,6 +98,7 @@ cargo run --quiet --bin aic -- run examples/io/tcp_echo.aic
 cargo run --quiet --bin aic -- run examples/io/async_await_submit_bridge.aic
 cargo run --quiet --bin aic -- run examples/io/retry_with_jitter.aic
 cargo run --quiet --bin aic -- run examples/io/worker_pool.aic
+cargo run --quiet --bin aic -- run examples/io/structured_concurrency.aic
 ```
 
 Expected final line for each: `42`.

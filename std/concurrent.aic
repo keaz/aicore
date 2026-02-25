@@ -1,6 +1,7 @@
 module std.concurrent;
 
 import std.result;
+import std.vec;
 
 enum ConcurrencyError {
     NotFound,
@@ -36,6 +37,11 @@ struct IntMutex {
     handle: Int,
 }
 
+struct IntTaskSelection {
+    task_index: Int,
+    value: Int,
+}
+
 fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
     let out: Result[Task, ConcurrencyError] = Ok(Task { handle: 0 });
     out
@@ -46,8 +52,26 @@ fn aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects 
     out
 }
 
+fn aic_conc_join_timeout_intrinsic(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    let out: Result[Int, ConcurrencyError] = Ok(0);
+    out
+}
+
 fn aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     let out: Result[Bool, ConcurrencyError] = Ok(true);
+    out
+}
+
+fn aic_conc_spawn_group_intrinsic(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency } {
+    let _delay_ms = delay_ms;
+    let out: Result[Vec[Int], ConcurrencyError] = Ok(values);
+    out
+}
+
+fn aic_conc_select_first_intrinsic(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency } {
+    let _tasks = tasks;
+    let _timeout_ms = timeout_ms;
+    let out: Result[IntTaskSelection, ConcurrencyError] = Ok(IntTaskSelection { task_index: 0, value: 0 });
     out
 }
 
@@ -119,8 +143,20 @@ fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency 
     aic_conc_join_intrinsic(task)
 }
 
+fn timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+    aic_conc_join_timeout_intrinsic(task, timeout_ms)
+}
+
 fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_cancel_intrinsic(task)
+}
+
+fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency } {
+    aic_conc_spawn_group_intrinsic(values, delay_ms)
+}
+
+fn select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency } {
+    aic_conc_select_first_intrinsic(tasks, timeout_ms)
 }
 
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {

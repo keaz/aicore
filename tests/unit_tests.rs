@@ -2874,9 +2874,30 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &source,
         "std/concurrent.aic",
+        "timeout_task",
+        "aic_conc_join_timeout_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
         "cancel_task",
         "aic_conc_cancel_intrinsic",
         1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "spawn_group",
+        "aic_conc_spawn_group_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "select_first",
+        "aic_conc_select_first_intrinsic",
+        2,
     );
     assert_delegate_call(
         &source,
@@ -3147,7 +3168,10 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _rb = random_bool();
     let _spawn_task = spawn_task(21, 1);
     let _join_task = join_task(Task { handle: 1 });
+    let _timeout_task = timeout_task(Task { handle: 1 }, 1);
     let _cancel_task = cancel_task(Task { handle: 1 });
+    let _group = spawn_group(vec.vec_of(21), 1);
+    let _first = select_first(vec.vec_of(Task { handle: 1 }), 1);
     let _chan = channel_int(2);
     let _send = send_int(IntChannel { handle: 1 }, 1, 1);
     let _recv = recv_int(IntChannel { handle: 1 }, 1);

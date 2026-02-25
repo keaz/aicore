@@ -4027,6 +4027,186 @@ fn main() -> Int effects { io, concurrency } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_structured_group_timeout_and_select_first_are_stable() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+import std.vec;
+
+fn err_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+    match v {
+        Ok(task) => task,
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn group_values_ok(values: Vec[Int]) -> Int {
+    let a = match aic_vec_get_intrinsic(values, 0) {
+        Some(v) => if v == 2 { 1 } else { 0 },
+        None => 0,
+    };
+    let b = match aic_vec_get_intrinsic(values, 1) {
+        Some(v) => if v == 4 { 1 } else { 0 },
+        None => 0,
+    };
+    let c = match aic_vec_get_intrinsic(values, 2) {
+        Some(v) => if v == 6 { 1 } else { 0 },
+        None => 0,
+    };
+    if a + b + c == 3 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let grouped = spawn_group(vec.range(1, 4), 10);
+    let group_ok = match grouped {
+        Ok(values) => group_values_ok(values),
+        Err(_) => 0,
+    };
+
+    let slow = unwrap_task(spawn_task(21, 120));
+    let timeout_code = match timeout_task(slow, 5) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let t0 = unwrap_task(spawn_task(1, 80));
+    let t1 = unwrap_task(spawn_task(9, 5));
+    let t2 = unwrap_task(spawn_task(3, 90));
+    let mut race: Vec[Task] = vec.new_vec();
+    race = vec.push(race, t0);
+    race = vec.push(race, t1);
+    race = vec.push(race, t2);
+
+    let first_ok = match select_first(race, 200) {
+        Ok(selection) => if selection.task_index == 1 && selection.value == 18 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let drained_after_select =
+        (match join_task(t0) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } }) +
+        (match join_task(t1) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } }) +
+        (match join_task(t2) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } });
+
+    let empty_tasks: Vec[Task] = vec.new_vec();
+    let invalid_empty = match select_first(empty_tasks, 20) {
+        Ok(_) => 0,
+        Err(err) => if err_code(err) == 4 { 1 } else { 0 },
+    };
+
+    if group_ok == 1 && timeout_code == 2 && first_ok == 1 &&
+        drained_after_select == 3 && invalid_empty == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_spawn_ten_cancel_three_collect_seven() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn err_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let mut tasks: Vec[Task] = vec.new_vec();
+    let mut i = 0;
+    while i < 10 {
+        tasks = match spawn_task(i + 1, 40 + i) {
+            Ok(task) => vec.push(tasks, task),
+            Err(_) => tasks,
+        };
+        i = i + 1;
+    };
+
+    let mut cancel_ok = 0;
+    let mut c = 0;
+    while c < 3 {
+        cancel_ok = cancel_ok + match aic_vec_get_intrinsic(tasks, c) {
+            Some(task) => match cancel_task(task) {
+                Ok(done) => bool_to_int(done),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        c = c + 1;
+    };
+
+    let mut cancelled = 0;
+    let mut completed = 0;
+    let mut sum = 0;
+    let mut j = 0;
+    while j < 10 {
+        let join_value_or_err = match aic_vec_get_intrinsic(tasks, j) {
+            Some(task) => match join_task(task) {
+                Ok(v) => v,
+                Err(err) => 0 - err_code(err),
+            },
+            None => 0 - 7,
+        };
+        if join_value_or_err >= 0 {
+            completed = completed + 1;
+            sum = sum + join_value_or_err;
+        } else {
+            let join_code = 0 - join_value_or_err;
+            cancelled = if join_code == 3 {
+                cancelled + 1
+            } else {
+                cancelled
+            };
+        };
+        j = j + 1;
+    };
+
+    if cancel_ok == 3 && cancelled == 3 && completed == 7 && sum > 0 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_proc_run_pipe_spawn_wait_and_kill() {
     let src = r#"
 import std.proc;

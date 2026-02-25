@@ -1,0 +1,77 @@
+import std.io;
+import std.concurrent;
+import std.vec;
+
+fn err_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+    match v {
+        Ok(task) => task,
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn group_values_ok(values: Vec[Int]) -> Int {
+    let a = match aic_vec_get_intrinsic(values, 0) {
+        Some(v) => if v == 2 { 1 } else { 0 },
+        None => 0,
+    };
+    let b = match aic_vec_get_intrinsic(values, 1) {
+        Some(v) => if v == 4 { 1 } else { 0 },
+        None => 0,
+    };
+    let c = match aic_vec_get_intrinsic(values, 2) {
+        Some(v) => if v == 6 { 1 } else { 0 },
+        None => 0,
+    };
+    if a + b + c == 3 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency } {
+    let grouped = spawn_group(vec.range(1, 4), 10);
+    let group_ok = match grouped {
+        Ok(values) => group_values_ok(values),
+        Err(_) => 0,
+    };
+
+    let slow = unwrap_task(spawn_task(21, 120));
+    let timeout_ok = match timeout_task(slow, 5) {
+        Ok(_) => 0,
+        Err(err) => if err_code(err) == 2 { 1 } else { 0 },
+    };
+
+    let t0 = unwrap_task(spawn_task(1, 80));
+    let t1 = unwrap_task(spawn_task(9, 5));
+    let t2 = unwrap_task(spawn_task(3, 90));
+    let mut race: Vec[Task] = vec.new_vec();
+    race = vec.push(race, t0);
+    race = vec.push(race, t1);
+    race = vec.push(race, t2);
+
+    let select_ok = match select_first(race, 200) {
+        Ok(selection) => if selection.task_index == 1 && selection.value == 18 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let drained =
+        (match join_task(t0) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } }) +
+        (match join_task(t1) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } }) +
+        (match join_task(t2) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } });
+
+    if group_ok == 1 && timeout_ok == 1 && select_ok == 1 && drained == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

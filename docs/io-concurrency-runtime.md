@@ -9,6 +9,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 `std.concurrent` provides bounded, explicit-effect concurrency primitives:
 
 - Task lifecycle: `spawn_task`, `join_task`, `cancel_task`
+- Structured task orchestration: `spawn_group`, `timeout_task`, `select_first`
 - Typed channels: `IntChannel` with buffered creation, blocking/non-blocking send/recv, and select
 - Synchronization utility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 
@@ -39,6 +40,7 @@ enum ChannelError {
 }
 
 struct Task { handle: Int }
+struct IntTaskSelection { task_index: Int, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
 struct IntMutex { handle: Int }
@@ -49,7 +51,10 @@ struct IntMutex { handle: Int }
 ```aic
 fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }
 fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }
+fn timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
 fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }
+fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }
+fn select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }
 
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
@@ -72,6 +77,17 @@ fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { conc
 - Task scheduler:
   - Runtime uses host threads with bounded handle tables.
   - `spawn_task(value, delay_ms)` produces a task that completes with `value * 2` after `delay_ms`.
+- Structured fork-join:
+  - `spawn_group(values, delay_ms)` spawns one task per input value, executes them in parallel, and joins in input order.
+  - Success path returns ordered outputs where each element follows task semantics (`value * 2`).
+  - If any child fails (`Cancelled`, `Panic`, etc.), remaining children are cooperatively cancelled and joined before returning the error.
+- Deadline wrapper:
+  - `timeout_task(task, timeout_ms)` waits up to the deadline for completion.
+  - On deadline expiry it returns `Err(Timeout)`, and runtime performs `cancel + join` cleanup to avoid leaked/zombie worker threads.
+- First-completion race:
+  - `select_first(tasks, timeout_ms)` returns the first completed task as `{ task_index, value }`.
+  - Remaining tasks in the input vector are cooperatively cancelled and joined before the function returns.
+  - Empty task vectors or negative timeout values return `Err(InvalidInput)`.
 - Buffered channel creation:
   - `channel_int`, `buffered_channel_int`, and `channel_int_buffered` create bounded buffered channels.
   - Capacity must be positive and within runtime limits.
@@ -88,6 +104,7 @@ fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { conc
 - Cancellation:
   - `cancel_task` is cooperative and returns `Ok(true)` when cancellation was requested before completion.
   - `join_task` on a cancelled task returns `Err(Cancelled)`.
+  - Structured helpers (`spawn_group`, `select_first`, `timeout_task`) use runtime cancellation scopes/tokens for child-task propagation and enforce join-on-exit cleanup.
 - Panic propagation:
   - Negative task input (`value < 0`) is treated as runtime task panic.
   - `join_task` returns `Err(Panic)` for that task.
@@ -122,7 +139,10 @@ Codegen lowers to these runtime symbols:
 
 - `aic_rt_conc_spawn`
 - `aic_rt_conc_join`
+- `aic_rt_conc_join_timeout`
 - `aic_rt_conc_cancel`
+- `aic_rt_conc_spawn_group`
+- `aic_rt_conc_select_first`
 - `aic_rt_conc_channel_int`
 - `aic_rt_conc_channel_int_buffered`
 - `aic_rt_conc_send_int`
@@ -149,4 +169,5 @@ Codegen lowers to these runtime symbols:
 ## Example
 
 - `examples/io/worker_pool.aic`
+- `examples/io/structured_concurrency.aic`
 - `examples/io/async_await_submit_bridge.aic`
