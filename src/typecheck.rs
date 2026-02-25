@@ -554,7 +554,9 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::ExprKind::Unary { op, expr: inner } => match op {
-                crate::ast::UnaryOp::Neg | crate::ast::UnaryOp::Not => {
+                crate::ast::UnaryOp::Neg
+                | crate::ast::UnaryOp::Not
+                | crate::ast::UnaryOp::BitNot => {
                     self.validate_const_initializer(const_name, inner);
                 }
             },
@@ -3755,6 +3757,17 @@ impl<'a> Checker<'a> {
                         }
                         "Bool".to_string()
                     }
+                    crate::ast::UnaryOp::BitNot => {
+                        if ty_norm != "Int" {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1222",
+                                "unary '~' expects Int",
+                                self.file,
+                                inner.span,
+                            ));
+                        }
+                        "Int".to_string()
+                    }
                 }
             }
             ir::ExprKind::Borrow {
@@ -4668,6 +4681,41 @@ impl<'a> Checker<'a> {
                         self.file,
                         span,
                     ));
+                }
+                "Int".to_string()
+            }
+            BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::Ushr => {
+                if lhs_norm != "Int" || rhs_norm != "Int" {
+                    let symbol = match op {
+                        BinOp::BitAnd => "&",
+                        BinOp::BitOr => "|",
+                        BinOp::BitXor => "^",
+                        BinOp::Shl => "<<",
+                        BinOp::Shr => ">>",
+                        BinOp::Ushr => ">>>",
+                        _ => unreachable!(),
+                    };
+                    let mut diag = Diagnostic::error(
+                        "E1230",
+                        format!(
+                            "bitwise operator '{}' requires Int operands, found '{}' and '{}'",
+                            symbol, lhs, rhs
+                        ),
+                        self.file,
+                        span,
+                    );
+                    if matches!(op, BinOp::BitAnd | BinOp::BitOr)
+                        && lhs_norm == "Bool"
+                        && rhs_norm == "Bool"
+                    {
+                        diag = diag.with_help("for logical operations on Bool, use '&&' or '||'");
+                    }
+                    self.diagnostics.push(diag);
                 }
                 "Int".to_string()
             }
@@ -6270,5 +6318,55 @@ fn main() -> Int {
             .holes
             .iter()
             .any(|hole| hole.context == "let binding 'out'" && hole.inferred == "Int"));
+    }
+
+    #[test]
+    fn bitwise_and_shift_int_operands_typecheck() {
+        let src = r#"
+fn main() -> Int {
+    let a = 0xFF & 0x0F;
+    let b = a | 0xF0;
+    let c = b ^ 0xAA;
+    let d = c << 2;
+    let e = d >> 1;
+    let f = e >>> 1;
+    ~f
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn bitwise_bool_operands_report_helpful_diagnostic() {
+        let src = r#"
+fn main(x: Bool, y: Bool) -> Int {
+    let v = x & y;
+    if v { 1 } else { 0 }
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E1230" && d.message.contains("bitwise operator '&'"))
+            .expect("missing bitwise type diagnostic");
+        assert!(
+            diag.help
+                .iter()
+                .any(|hint| hint.contains("&&") || hint.contains("||")),
+            "help={:?}, diag={diag:#?}",
+            diag.help
+        );
     }
 }

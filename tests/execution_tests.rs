@@ -6599,3 +6599,33 @@ fn main() -> Int effects { io, net } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }
+
+#[test]
+fn exec_bitwise_and_shift_with_hex_literals_and_compound_assignments() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } {
+    let mut x = 0xFF;
+    x &= 0x0F;
+    x |= 0x20;
+    x ^= 0x0A;
+    x <<= 2;
+    x >>= 3;
+    x >>>= 1;
+
+    let neg = ~0x0F;
+    let logical = (-1) >>> 63;
+
+    if x == 9 && neg == -16 && logical == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}

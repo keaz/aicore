@@ -9,9 +9,13 @@ This page covers expression grammar and typing/effect rules implemented by `src/
 ```ebnf
 expr           = or_expr ;
 or_expr        = and_expr ("||" and_expr)* ;
-and_expr       = eq_expr ("&&" eq_expr)* ;
+and_expr       = bit_or_expr ("&&" bit_or_expr)* ;
+bit_or_expr    = bit_xor_expr ("|" bit_xor_expr)* ;
+bit_xor_expr   = bit_and_expr ("^" bit_and_expr)* ;
+bit_and_expr   = eq_expr ("&" eq_expr)* ;
 eq_expr        = cmp_expr (("==" | "!=") cmp_expr)* ;
-cmp_expr       = add_expr (("<" | "<=" | ">" | ">=") add_expr)* ;
+cmp_expr       = shift_expr (("<" | "<=" | ">" | ">=") shift_expr)* ;
+shift_expr     = add_expr (("<<" | ">>" | ">>>") add_expr)* ;
 add_expr       = mul_expr (("+" | "-") mul_expr)* ;
 mul_expr       = unary_expr (("*" | "/" | "%") unary_expr)* ;
 
@@ -20,6 +24,7 @@ unary_expr     = closure_expr
                | "await" unary_expr
                | "-" unary_expr
                | "!" unary_expr
+               | "~" unary_expr
                | postfix_expr ;
 
 closure_expr   = "|" closure_params? "|" "->" type block ;
@@ -58,6 +63,8 @@ struct_init    = ident "{" struct_field ("," struct_field)* ","? "}" ;
 struct_field   = ident ":" expr ;
 
 literal        = int | float | string | "true" | "false" ;
+int            = decimal_int | hex_int ;
+hex_int        = "0x" hexdigit+ ;
 ```
 
 ## Semantics and Rules
@@ -66,6 +73,10 @@ literal        = int | float | string | "true" | "false" ;
 - Arithmetic:
   - `+ - * /` require matching numeric operands (`Int` with `Int`, or `Float` with `Float`)
   - `%` requires `Int` operands
+- Bitwise:
+  - `& | ^ << >> >>>` require `Int` operands and produce `Int`
+  - `>>` is arithmetic right-shift, `>>>` is logical right-shift
+  - unary `~` requires `Int` and produces `Int`
 - Comparison operators (`< <= > >=`) require matching numeric operands and return `Bool`.
 - Equality operators (`== !=`) require compatible operand types and return `Bool`.
 - Logical operators (`&& ||`) require `Bool` operands.

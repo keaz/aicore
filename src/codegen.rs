@@ -3149,6 +3149,15 @@ impl<'a> Generator<'a> {
                             repr: Some(reg),
                         })
                     }
+                    (UnaryOp::BitNot, LType::Int) => {
+                        let reg = self.new_temp();
+                        let repr = value.repr.unwrap_or_else(|| "0".to_string());
+                        fctx.lines.push(format!("  {} = xor i64 {}, -1", reg, repr));
+                        Some(Value {
+                            ty: LType::Int,
+                            repr: Some(reg),
+                        })
+                    }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
                             "E5002",
@@ -3292,6 +3301,43 @@ impl<'a> Generator<'a> {
                         None
                     }
                 }
+            }
+            BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::Ushr => {
+                if lhs.ty != LType::Int || rhs.ty != LType::Int {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5006",
+                        "bitwise codegen only supports Int operands",
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+                let inst = match op {
+                    BinOp::BitAnd => "and",
+                    BinOp::BitOr => "or",
+                    BinOp::BitXor => "xor",
+                    BinOp::Shl => "shl",
+                    BinOp::Shr => "ashr",
+                    BinOp::Ushr => "lshr",
+                    _ => unreachable!(),
+                };
+                let reg = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = {} i64 {}, {}",
+                    reg,
+                    inst,
+                    lhs.repr.unwrap_or_else(|| "0".to_string()),
+                    rhs.repr.unwrap_or_else(|| "0".to_string())
+                ));
+                Some(Value {
+                    ty: LType::Int,
+                    repr: Some(reg),
+                })
             }
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let (cmp, ty) = match (&lhs.ty, &rhs.ty) {
@@ -25657,6 +25703,7 @@ impl<'a> Generator<'a> {
             (UnaryOp::Neg, ConstValue::Int(v)) => Some(ConstValue::Int(v.wrapping_neg())),
             (UnaryOp::Neg, ConstValue::Float(v)) => Some(ConstValue::Float(-v)),
             (UnaryOp::Not, ConstValue::Bool(v)) => Some(ConstValue::Bool(!v)),
+            (UnaryOp::BitNot, ConstValue::Int(v)) => Some(ConstValue::Int(!v)),
             (op, value) => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5002",
@@ -25727,6 +25774,49 @@ impl<'a> Generator<'a> {
                         BinOp::Div => Some(ConstValue::Float(*a / *b)),
                         _ => unreachable!(),
                     }
+                }
+                _ => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5006",
+                        format!(
+                            "const '{}' binary operator '{}' does not support '{}' and '{}'",
+                            const_name,
+                            binary_op_name(op),
+                            const_value_name(&lhs),
+                            const_value_name(&rhs)
+                        ),
+                        self.file,
+                        span,
+                    ));
+                    None
+                }
+            },
+            BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::Ushr => match (&lhs, &rhs) {
+                (ConstValue::Int(a), ConstValue::Int(b)) => {
+                    let out = match op {
+                        BinOp::BitAnd => a & b,
+                        BinOp::BitOr => a | b,
+                        BinOp::BitXor => a ^ b,
+                        BinOp::Shl => {
+                            let shift = (*b as u64 & 63) as u32;
+                            a.wrapping_shl(shift)
+                        }
+                        BinOp::Shr => {
+                            let shift = (*b as u64 & 63) as u32;
+                            a.wrapping_shr(shift)
+                        }
+                        BinOp::Ushr => {
+                            let shift = (*b as u64 & 63) as u32;
+                            ((*a as u64).wrapping_shr(shift)) as i64
+                        }
+                        _ => unreachable!(),
+                    };
+                    Some(ConstValue::Int(out))
                 }
                 _ => {
                     self.diagnostics.push(Diagnostic::error(
@@ -27107,6 +27197,7 @@ fn unary_op_name(op: UnaryOp) -> &'static str {
     match op {
         UnaryOp::Neg => "-",
         UnaryOp::Not => "!",
+        UnaryOp::BitNot => "~",
     }
 }
 
@@ -27117,6 +27208,12 @@ fn binary_op_name(op: BinOp) -> &'static str {
         BinOp::Mul => "*",
         BinOp::Div => "/",
         BinOp::Mod => "%",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::Ushr => ">>>",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",

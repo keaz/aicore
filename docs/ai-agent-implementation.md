@@ -657,6 +657,30 @@ Verifier-focused examples:
   - `CompatibilityPolicy` in `src/release_ops.rs`
   - `LtsPolicy` in `src/release_ops.rs`
 
+## Connectivity Primitive: Bitwise Operators (CONN-T1)
+
+- Language surface:
+  - Binary: `&`, `|`, `^`, `<<`, `>>`, `>>>`
+  - Unary: `~`
+  - Compound assignment: `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`
+  - Hex literals: `0x...` (`Int`)
+- Type rules:
+  - All bitwise/shift operators require `Int` operands and produce `Int`.
+  - `>>` is arithmetic right shift; `>>>` is logical right shift.
+  - Bool misuse diagnostics suggest `&&` / `||`.
+- Implementation files:
+  - `src/lexer.rs`
+  - `src/parser.rs`
+  - `src/typecheck.rs`
+  - `src/codegen.rs`
+- Verification:
+  - `src/lexer.rs` parser/lexer unit tests include hex + bitwise token coverage.
+  - `src/parser.rs` tests cover precedence and compound assignment desugaring.
+  - `src/typecheck.rs` tests cover accepted `Int` paths and rejected `Bool` misuse.
+  - `tests/execution_tests.rs` includes runtime validation of all operators.
+- Example:
+  - `examples/data/bitwise_protocol.aic`
+
 ## Validation Inventory
 
 ### Tests
@@ -697,6 +721,7 @@ Verifier-focused examples:
 - `examples/e8/matrix_program.aic`
 - `examples/e8/large_project_bench/`
 - `examples/e9/sandbox_smoke.aic`
+- `examples/data/bitwise_protocol.aic`
 
 Examples are integrated into `scripts/ci/examples.sh`.
 

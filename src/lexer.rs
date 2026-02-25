@@ -68,8 +68,19 @@ pub enum TokenKind {
     Star,
     Slash,
     Percent,
+    Caret,
+    Tilde,
     Eq,
     EqEq,
+    AmpEq,
+    PipeEq,
+    CaretEq,
+    LShift,
+    RShift,
+    URShift,
+    LShiftEq,
+    RShiftEq,
+    URShiftEq,
     Ne,
     Lt,
     Le,
@@ -160,6 +171,7 @@ impl<'a> Lexer<'a> {
                 '+' => self.single(TokenKind::Plus),
                 '*' => self.single(TokenKind::Star),
                 '%' => self.single(TokenKind::Percent),
+                '~' => self.single(TokenKind::Tilde),
                 ':' => {
                     let start = self.offset;
                     self.bump();
@@ -207,7 +219,15 @@ impl<'a> Lexer<'a> {
                 '<' => {
                     let start = self.offset;
                     self.bump();
-                    if self.peek() == Some('=') {
+                    if self.peek() == Some('<') {
+                        self.bump();
+                        if self.peek() == Some('=') {
+                            self.bump();
+                            self.push(TokenKind::LShiftEq, Span::new(start, self.offset));
+                        } else {
+                            self.push(TokenKind::LShift, Span::new(start, self.offset));
+                        }
+                    } else if self.peek() == Some('=') {
                         self.bump();
                         self.push(TokenKind::Le, Span::new(start, self.offset));
                     } else {
@@ -217,7 +237,23 @@ impl<'a> Lexer<'a> {
                 '>' => {
                     let start = self.offset;
                     self.bump();
-                    if self.peek() == Some('=') {
+                    if self.peek() == Some('>') {
+                        self.bump();
+                        if self.peek() == Some('>') {
+                            self.bump();
+                            if self.peek() == Some('=') {
+                                self.bump();
+                                self.push(TokenKind::URShiftEq, Span::new(start, self.offset));
+                            } else {
+                                self.push(TokenKind::URShift, Span::new(start, self.offset));
+                            }
+                        } else if self.peek() == Some('=') {
+                            self.bump();
+                            self.push(TokenKind::RShiftEq, Span::new(start, self.offset));
+                        } else {
+                            self.push(TokenKind::RShift, Span::new(start, self.offset));
+                        }
+                    } else if self.peek() == Some('=') {
                         self.bump();
                         self.push(TokenKind::Ge, Span::new(start, self.offset));
                     } else {
@@ -230,6 +266,9 @@ impl<'a> Lexer<'a> {
                     if self.peek() == Some('&') {
                         self.bump();
                         self.push(TokenKind::AndAnd, Span::new(start, self.offset));
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::AmpEq, Span::new(start, self.offset));
                     } else {
                         self.push(TokenKind::Ampersand, Span::new(start, self.offset));
                     }
@@ -240,8 +279,21 @@ impl<'a> Lexer<'a> {
                     if self.peek() == Some('|') {
                         self.bump();
                         self.push(TokenKind::OrOr, Span::new(start, self.offset));
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::PipeEq, Span::new(start, self.offset));
                     } else {
                         self.push(TokenKind::Pipe, Span::new(start, self.offset));
+                    }
+                }
+                '^' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::CaretEq, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Caret, Span::new(start, self.offset));
                     }
                 }
                 '/' => self.single(TokenKind::Slash),
@@ -318,6 +370,36 @@ impl<'a> Lexer<'a> {
 
     fn lex_number(&mut self) {
         let start = self.offset;
+        if self.peek() == Some('0') && matches!(self.peek_next(), Some('x' | 'X')) {
+            self.bump();
+            self.bump();
+            let digits_start = self.offset;
+            while let Some(c) = self.peek() {
+                if c.is_ascii_hexdigit() {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+            if digits_start == self.offset {
+                self.error(
+                    "E0004",
+                    "invalid hex integer literal",
+                    Span::new(start, self.offset),
+                );
+                return;
+            }
+            let text = &self.source[digits_start..self.offset];
+            match i64::from_str_radix(text, 16) {
+                Ok(value) => self.push(TokenKind::Int(value), Span::new(start, self.offset)),
+                Err(_) => self.error(
+                    "E0004",
+                    format!("invalid integer literal '0x{}'", text),
+                    Span::new(start, self.offset),
+                ),
+            }
+            return;
+        }
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 self.bump();
@@ -569,5 +651,30 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 2.5e-3).abs() < 1e-12)));
+    }
+
+    #[test]
+    fn lexes_bitwise_and_shift_tokens_with_hex_literals() {
+        let src = "let x = 0xFF & 0x0F | 0xF0 ^ 0x0A; let y = ~x; let z = x << 2; let w = z >> 1; let u = w >>> 3; x &= 1; x |= 2; x ^= 3; x <<= 1; x >>= 1; x >>>= 1;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(255))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Ampersand)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Pipe)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Caret)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Tilde)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::LShift)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::RShift)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::URShift)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::AmpEq)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::PipeEq)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::CaretEq)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::LShiftEq)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::RShiftEq)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::URShiftEq)));
     }
 }

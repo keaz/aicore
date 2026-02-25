@@ -2706,6 +2706,10 @@ fn eval_repl_expr(
                     ReplValue::Bool(v) => Ok(ReplValue::Bool(!v)),
                     other => Err(format!("unary `!` expects Bool, got {}", other.type_name())),
                 },
+                UnaryOp::BitNot => match value {
+                    ReplValue::Int(v) => Ok(ReplValue::Int(!v)),
+                    other => Err(format!("unary `~` expects Int, got {}", other.type_name())),
+                },
             }
         }
         ExprKind::Binary { op, lhs, rhs } => {
@@ -2783,6 +2787,63 @@ fn eval_repl_expr(
                     (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a % b)),
                     (a, b) => Err(format!(
                         "`%` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::BitAnd => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a & b)),
+                    (a, b) => Err(format!(
+                        "`&` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::BitOr => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a | b)),
+                    (a, b) => Err(format!(
+                        "`|` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::BitXor => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => Ok(ReplValue::Int(a ^ b)),
+                    (a, b) => Err(format!(
+                        "`^` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Shl => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => {
+                        let shift = (b as u64 & 63) as u32;
+                        Ok(ReplValue::Int(a.wrapping_shl(shift)))
+                    }
+                    (a, b) => Err(format!(
+                        "`<<` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Shr => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => {
+                        let shift = (b as u64 & 63) as u32;
+                        Ok(ReplValue::Int(a.wrapping_shr(shift)))
+                    }
+                    (a, b) => Err(format!(
+                        "`>>` expects Int operands, got ({},{})",
+                        a.type_name(),
+                        b.type_name()
+                    )),
+                },
+                BinOp::Ushr => match (left, right) {
+                    (ReplValue::Int(a), ReplValue::Int(b)) => {
+                        let shift = (b as u64 & 63) as u32;
+                        Ok(ReplValue::Int(((a as u64).wrapping_shr(shift)) as i64))
+                    }
+                    (a, b) => Err(format!(
+                        "`>>>` expects Int operands, got ({},{})",
                         a.type_name(),
                         b.type_name()
                     )),
@@ -2867,6 +2928,12 @@ fn repl_eval_order_comparison(
                     | BinOp::Mul
                     | BinOp::Div
                     | BinOp::Mod
+                    | BinOp::BitAnd
+                    | BinOp::BitOr
+                    | BinOp::BitXor
+                    | BinOp::Shl
+                    | BinOp::Shr
+                    | BinOp::Ushr
                     | BinOp::Eq
                     | BinOp::Ne
                     | BinOp::And
@@ -2893,6 +2960,12 @@ fn repl_apply_order<T: PartialOrd>(op: aicore::ast::BinOp, left: T, right: T) ->
         | BinOp::Mul
         | BinOp::Div
         | BinOp::Mod
+        | BinOp::BitAnd
+        | BinOp::BitOr
+        | BinOp::BitXor
+        | BinOp::Shl
+        | BinOp::Shr
+        | BinOp::Ushr
         | BinOp::Eq
         | BinOp::Ne
         | BinOp::And

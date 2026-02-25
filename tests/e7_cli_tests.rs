@@ -539,6 +539,54 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
 }
 
 #[test]
+fn sarif_bitwise_bool_type_error_includes_logical_operator_hint() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module diag.bitwise;\n",
+            "fn main() -> Int {\n",
+            "    let bad = true & false;\n",
+            "    if bad { 1 } else { 0 }\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let source = source_path.to_string_lossy().to_string();
+    let sarif_out = run_aic(&["diag", &source, "--sarif"]);
+    assert_eq!(
+        sarif_out.status.code(),
+        Some(1),
+        "diag stdout={}\ndiag stderr={}",
+        String::from_utf8_lossy(&sarif_out.stdout),
+        String::from_utf8_lossy(&sarif_out.stderr)
+    );
+    let sarif: Value = serde_json::from_slice(&sarif_out.stdout).expect("sarif json");
+    let results = sarif["runs"][0]["results"]
+        .as_array()
+        .expect("sarif results");
+    let messages: Vec<&str> = results
+        .iter()
+        .filter_map(|entry| entry["message"]["text"].as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|text| text.contains("bitwise operator '&' requires Int operands")),
+        "missing bitwise type error in SARIF messages: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|text| text.contains("use '&&' or '||'")),
+        "missing logical-op hint in SARIF messages: {messages:?}"
+    );
+}
+
+#[test]
 fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects() {
     let project = tempdir().expect("project");
     fs::create_dir_all(project.path().join("src")).expect("mkdir src");
@@ -1348,6 +1396,45 @@ fn ast_command_emits_deterministic_typed_json_shape() {
         .as_array()
         .expect("import edges")
         .is_empty());
+}
+
+#[test]
+fn ast_command_emits_bitwise_operator_nodes() {
+    let project = tempdir().expect("project");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module ast.bitwise;\n",
+            "fn main() -> Int {\n",
+            "    let mixed = ((0xF0 & 0x0F) | (0xAA ^ 0x0F)) << 1;\n",
+            "    let shifted = mixed >> 2;\n",
+            "    let logical = shifted >>> 1;\n",
+            "    let inverted = ~logical;\n",
+            "    inverted\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let source = source_path.to_string_lossy().to_string();
+    let ast_out = run_aic(&["ast", "--json", &source]);
+    assert_eq!(
+        ast_out.status.code(),
+        Some(0),
+        "ast stdout={}\nast stderr={}",
+        String::from_utf8_lossy(&ast_out.stdout),
+        String::from_utf8_lossy(&ast_out.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&ast_out.stdout).expect("ast json");
+    let ast_json = serde_json::to_string(&payload["ast"]).expect("ast payload string");
+    for op in ["BitAnd", "BitOr", "BitXor", "Shl", "Shr", "Ushr", "BitNot"] {
+        assert!(
+            ast_json.contains(op),
+            "expected operator {op} to appear in AST payload: {ast_json}"
+        );
+    }
 }
 
 #[test]

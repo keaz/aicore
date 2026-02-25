@@ -681,11 +681,15 @@ fn expr_to_string(expr: &Expr) -> Option<String> {
 fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
     const PREC_OR: u8 = 1;
     const PREC_AND: u8 = 2;
-    const PREC_COMPARE: u8 = 3;
-    const PREC_ADD: u8 = 4;
-    const PREC_MUL: u8 = 5;
-    const PREC_UNARY: u8 = 6;
-    const PREC_POSTFIX: u8 = 7;
+    const PREC_BIT_OR: u8 = 3;
+    const PREC_BIT_XOR: u8 = 4;
+    const PREC_BIT_AND: u8 = 5;
+    const PREC_COMPARE: u8 = 6;
+    const PREC_SHIFT: u8 = 7;
+    const PREC_ADD: u8 = 8;
+    const PREC_MUL: u8 = 9;
+    const PREC_UNARY: u8 = 10;
+    const PREC_POSTFIX: u8 = 11;
 
     match &expr.kind {
         ExprKind::Int(value) => Some(value.to_string()),
@@ -698,6 +702,7 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
             let symbol = match op {
                 UnaryOp::Neg => "-",
                 UnaryOp::Not => "!",
+                UnaryOp::BitNot => "~",
             };
             let rendered = format!("{symbol}{}", render_expr(expr, PREC_UNARY)?);
             parenthesize(rendered, PREC_UNARY, parent_prec)
@@ -706,12 +711,18 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
             let (symbol, prec) = match op {
                 BinOp::Or => ("||", PREC_OR),
                 BinOp::And => ("&&", PREC_AND),
+                BinOp::BitOr => ("|", PREC_BIT_OR),
+                BinOp::BitXor => ("^", PREC_BIT_XOR),
+                BinOp::BitAnd => ("&", PREC_BIT_AND),
                 BinOp::Eq => ("==", PREC_COMPARE),
                 BinOp::Ne => ("!=", PREC_COMPARE),
                 BinOp::Lt => ("<", PREC_COMPARE),
                 BinOp::Le => ("<=", PREC_COMPARE),
                 BinOp::Gt => (">", PREC_COMPARE),
                 BinOp::Ge => (">=", PREC_COMPARE),
+                BinOp::Shl => ("<<", PREC_SHIFT),
+                BinOp::Shr => (">>", PREC_SHIFT),
+                BinOp::Ushr => (">>>", PREC_SHIFT),
                 BinOp::Add => ("+", PREC_ADD),
                 BinOp::Sub => ("-", PREC_ADD),
                 BinOp::Mul => ("*", PREC_MUL),

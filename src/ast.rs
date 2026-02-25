@@ -314,6 +314,12 @@ pub enum BinOp {
     Mul,
     Div,
     Mod,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Ushr,
     Eq,
     Ne,
     Lt,
@@ -328,6 +334,7 @@ pub enum BinOp {
 pub enum UnaryOp {
     Neg,
     Not,
+    BitNot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

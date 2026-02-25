@@ -599,6 +599,12 @@ fn render_binop(op: BinOp) -> &'static str {
         BinOp::Mul => "*",
         BinOp::Div => "/",
         BinOp::Mod => "%",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::Ushr => ">>>",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",
@@ -614,6 +620,7 @@ fn render_unary_op(op: ast::UnaryOp) -> &'static str {
     match op {
         ast::UnaryOp::Neg => "-",
         ast::UnaryOp::Not => "!",
+        ast::UnaryOp::BitNot => "~",
     }
 }
 

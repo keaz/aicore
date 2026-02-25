@@ -578,6 +578,7 @@ fn format_expr(
             let token = match op {
                 UnaryOp::Neg => "-",
                 UnaryOp::Not => "!",
+                UnaryOp::BitNot => "~",
             };
             out.push_str(token);
             format_expr(out, expr, 9, type_map);
@@ -1008,17 +1009,23 @@ fn binop_info(op: BinOp) -> (u8, &'static str) {
     match op {
         BinOp::Or => (1, "||"),
         BinOp::And => (2, "&&"),
-        BinOp::Eq => (3, "=="),
-        BinOp::Ne => (3, "!="),
-        BinOp::Lt => (4, "<"),
-        BinOp::Le => (4, "<="),
-        BinOp::Gt => (4, ">"),
-        BinOp::Ge => (4, ">="),
-        BinOp::Add => (5, "+"),
-        BinOp::Sub => (5, "-"),
-        BinOp::Mul => (6, "*"),
-        BinOp::Div => (6, "/"),
-        BinOp::Mod => (6, "%"),
+        BinOp::BitOr => (3, "|"),
+        BinOp::BitXor => (4, "^"),
+        BinOp::BitAnd => (5, "&"),
+        BinOp::Eq => (6, "=="),
+        BinOp::Ne => (6, "!="),
+        BinOp::Lt => (7, "<"),
+        BinOp::Le => (7, "<="),
+        BinOp::Gt => (7, ">"),
+        BinOp::Ge => (7, ">="),
+        BinOp::Shl => (8, "<<"),
+        BinOp::Shr => (8, ">>"),
+        BinOp::Ushr => (8, ">>>"),
+        BinOp::Add => (9, "+"),
+        BinOp::Sub => (9, "-"),
+        BinOp::Mul => (10, "*"),
+        BinOp::Div => (10, "/"),
+        BinOp::Mod => (10, "%"),
     }
 }
 

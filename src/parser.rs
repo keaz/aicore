@@ -1352,13 +1352,41 @@ impl<'a> Parser<'a> {
 
     fn parse_assign_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
-        let (target, _) = self.expect_ident("E1060", "expected assignment target")?;
-        self.expect(
-            |k| matches!(k, TokenKind::Eq),
-            "E1061",
-            "expected '=' in assignment",
-        )?;
-        let expr = self.parse_expr()?;
+        let (target, target_span) = self.expect_ident("E1060", "expected assignment target")?;
+        let compound_op = match &self.current().kind {
+            TokenKind::Eq => None,
+            TokenKind::AmpEq => Some(BinOp::BitAnd),
+            TokenKind::PipeEq => Some(BinOp::BitOr),
+            TokenKind::CaretEq => Some(BinOp::BitXor),
+            TokenKind::LShiftEq => Some(BinOp::Shl),
+            TokenKind::RShiftEq => Some(BinOp::Shr),
+            TokenKind::URShiftEq => Some(BinOp::Ushr),
+            _ => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1061",
+                    "expected assignment operator ('=', '&=', '|=', '^=', '<<=', '>>=', '>>>=')",
+                    self.file,
+                    self.current_span(),
+                ));
+                return None;
+            }
+        };
+        self.bump();
+        let rhs_expr = self.parse_expr()?;
+        let expr = if let Some(op) = compound_op {
+            let lhs_expr = Expr::var(target.clone(), target_span);
+            let span = lhs_expr.span.join(rhs_expr.span);
+            Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    lhs: Box::new(lhs_expr),
+                    rhs: Box::new(rhs_expr),
+                },
+                span,
+            }
+        } else {
+            rhs_expr
+        };
         let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
             let span = self.current_span();
             self.bump();
@@ -1439,14 +1467,68 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_and(&mut self) -> Option<Expr> {
-        let mut expr = self.parse_equality()?;
+        let mut expr = self.parse_bit_or()?;
         while self.at_kind(|k| matches!(k, TokenKind::AndAnd)) {
+            self.bump();
+            let rhs = self.parse_bit_or()?;
+            let span = expr.span.join(rhs.span);
+            expr = Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::And,
+                    lhs: Box::new(expr),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_bit_or(&mut self) -> Option<Expr> {
+        let mut expr = self.parse_bit_xor()?;
+        while self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+            self.bump();
+            let rhs = self.parse_bit_xor()?;
+            let span = expr.span.join(rhs.span);
+            expr = Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::BitOr,
+                    lhs: Box::new(expr),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_bit_xor(&mut self) -> Option<Expr> {
+        let mut expr = self.parse_bit_and()?;
+        while self.at_kind(|k| matches!(k, TokenKind::Caret)) {
+            self.bump();
+            let rhs = self.parse_bit_and()?;
+            let span = expr.span.join(rhs.span);
+            expr = Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::BitXor,
+                    lhs: Box::new(expr),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_bit_and(&mut self) -> Option<Expr> {
+        let mut expr = self.parse_equality()?;
+        while self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
             self.bump();
             let rhs = self.parse_equality()?;
             let span = expr.span.join(rhs.span);
             expr = Expr {
                 kind: ExprKind::Binary {
-                    op: BinOp::And,
+                    op: BinOp::BitAnd,
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
@@ -1483,7 +1565,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_comparison(&mut self) -> Option<Expr> {
-        let mut expr = self.parse_term()?;
+        let mut expr = self.parse_shift()?;
         loop {
             let op = if self.at_kind(|k| matches!(k, TokenKind::Lt)) {
                 Some(BinOp::Lt)
@@ -1493,6 +1575,34 @@ impl<'a> Parser<'a> {
                 Some(BinOp::Gt)
             } else if self.at_kind(|k| matches!(k, TokenKind::Ge)) {
                 Some(BinOp::Ge)
+            } else {
+                None
+            };
+            let Some(op) = op else { break };
+            self.bump();
+            let rhs = self.parse_shift()?;
+            let span = expr.span.join(rhs.span);
+            expr = Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    lhs: Box::new(expr),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_shift(&mut self) -> Option<Expr> {
+        let mut expr = self.parse_term()?;
+        loop {
+            let op = if self.at_kind(|k| matches!(k, TokenKind::LShift)) {
+                Some(BinOp::Shl)
+            } else if self.at_kind(|k| matches!(k, TokenKind::RShift)) {
+                Some(BinOp::Shr)
+            } else if self.at_kind(|k| matches!(k, TokenKind::URShift)) {
+                Some(BinOp::Ushr)
             } else {
                 None
             };
@@ -1619,6 +1729,18 @@ impl<'a> Parser<'a> {
                 span: Span::new(start, expr.span.end),
                 kind: ExprKind::Unary {
                     op: UnaryOp::Not,
+                    expr: Box::new(expr),
+                },
+            });
+        }
+        if self.at_kind(|k| matches!(k, TokenKind::Tilde)) {
+            let start = self.current_span().start;
+            self.bump();
+            let expr = self.parse_unary()?;
+            return Some(Expr {
+                span: Span::new(start, expr.span.end),
+                kind: ExprKind::Unary {
+                    op: UnaryOp::BitNot,
                     expr: Box::new(expr),
                 },
             });
@@ -2620,7 +2742,18 @@ impl<'a> Parser<'a> {
         matches!(self.current().kind, TokenKind::Ident(_))
             && self
                 .peek(1)
-                .map(|token| matches!(token.kind, TokenKind::Eq))
+                .map(|token| {
+                    matches!(
+                        token.kind,
+                        TokenKind::Eq
+                            | TokenKind::AmpEq
+                            | TokenKind::PipeEq
+                            | TokenKind::CaretEq
+                            | TokenKind::LShiftEq
+                            | TokenKind::RShiftEq
+                            | TokenKind::URShiftEq
+                    )
+                })
                 .unwrap_or(false)
     }
 
@@ -2703,7 +2836,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::ast::{Expr, ExprKind, Item, PatternKind, Stmt, TypeKind};
+    use crate::ast::{BinOp, Expr, ExprKind, Item, PatternKind, Stmt, TypeKind};
 
     #[test]
     fn parses_simple_function() {
@@ -3166,5 +3299,90 @@ fn passthrough(x: _) -> _ {
             panic!("expected let type annotation");
         };
         assert!(matches!(let_ty.kind, TypeKind::Hole));
+    }
+
+    #[test]
+    fn parses_bitwise_and_shift_precedence() {
+        let src = r#"
+fn main() -> Int {
+    1 | 2 ^ 3 & 4 << 1
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        let ExprKind::Binary {
+            op: BinOp::BitOr,
+            lhs: _,
+            rhs,
+        } = &tail.kind
+        else {
+            panic!("expected top-level bitwise or");
+        };
+        let ExprKind::Binary {
+            op: BinOp::BitXor,
+            lhs: _,
+            rhs,
+        } = &rhs.kind
+        else {
+            panic!("expected xor nested under bitwise or");
+        };
+        let ExprKind::Binary {
+            op: BinOp::BitAnd,
+            lhs: _,
+            rhs,
+        } = &rhs.kind
+        else {
+            panic!("expected and nested under xor");
+        };
+        assert!(matches!(rhs.kind, ExprKind::Binary { op: BinOp::Shl, .. }));
+    }
+
+    #[test]
+    fn parses_compound_bitwise_assignments() {
+        let src = r#"
+fn main() -> Int {
+    let mut x = 0xFF;
+    x &= 0x0F;
+    x |= 0xF0;
+    x ^= 0xAA;
+    x <<= 1;
+    x >>= 1;
+    x >>>= 1;
+    x
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        for (index, expected) in [
+            BinOp::BitAnd,
+            BinOp::BitOr,
+            BinOp::BitXor,
+            BinOp::Shl,
+            BinOp::Shr,
+            BinOp::Ushr,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let stmt = &function.body.stmts[index + 1];
+            let Stmt::Assign { expr, .. } = stmt else {
+                panic!("expected assignment statement");
+            };
+            let ExprKind::Binary { op, .. } = &expr.kind else {
+                panic!("compound assignment should parse as binary expression");
+            };
+            assert_eq!(op, expected);
+        }
     }
 }

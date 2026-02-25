@@ -1,0 +1,34 @@
+module example.data.bitwise_protocol;
+
+import std.io;
+
+fn unpack_i32_be(b3: Int, b2: Int, b1: Int, b0: Int) -> Int {
+    (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+}
+
+fn has_flag(flags: Int, bit: Int) -> Bool {
+    (flags & (1 << bit)) != 0
+}
+
+fn main() -> Int effects { io } {
+    let payload_len = 38;
+    let total_len = payload_len + 4;
+    let b3 = (total_len >> 24) & 0xFF;
+    let b2 = (total_len >> 16) & 0xFF;
+    let b1 = (total_len >> 8) & 0xFF;
+    let b0 = total_len & 0xFF;
+    let unpacked = unpack_i32_be(b3, b2, b1, b0);
+
+    let mut flags = 0;
+    flags |= 1 << 0;
+    flags |= 1 << 3;
+    flags ^= 1 << 3;
+    flags &= 0xFF;
+
+    if unpacked == 42 && has_flag(flags, 0) && !has_flag(flags, 3) {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

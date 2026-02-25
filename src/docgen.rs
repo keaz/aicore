@@ -388,6 +388,7 @@ fn render_expr(expr: &ir::Expr) -> String {
             let op = match op {
                 crate::ast::UnaryOp::Neg => "-",
                 crate::ast::UnaryOp::Not => "!",
+                crate::ast::UnaryOp::BitNot => "~",
             };
             format!("{}{}", op, render_expr(expr))
         }
@@ -436,6 +437,12 @@ fn render_binop(op: BinOp) -> &'static str {
         BinOp::Mul => "*",
         BinOp::Div => "/",
         BinOp::Mod => "%",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::Ushr => ">>>",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",
