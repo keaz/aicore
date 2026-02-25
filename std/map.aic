@@ -18,6 +18,11 @@ fn aic_map_new_intrinsic[K, V]() -> Map[K, V] {
     }
 }
 
+fn aic_map_close_intrinsic[K, V](m: Map[K, V]) -> () {
+    let _m = m;
+    ()
+}
+
 fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
     let _key = key;
     let _value = value;
@@ -79,6 +84,10 @@ fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
 
 fn new_map[K, V]() -> Map[K, V] {
     aic_map_new_intrinsic()
+}
+
+fn close_map[K, V](m: Map[K, V]) -> () {
+    aic_map_close_intrinsic(m)
 }
 
 fn insert[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {

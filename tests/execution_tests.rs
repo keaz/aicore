@@ -2689,6 +2689,25 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_map_close_api_is_stable() {
+    let src = r#"
+import std.io;
+import std.map;
+
+fn main() -> Int effects { io } {
+    let m0: Map[Int, Int] = map.new_map();
+    let m1 = map.insert(m0, 7, 11);
+    map.close_map(m1);
+    print_int(42);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_set_ops_are_deterministic() {
     let src = r#"
 import std.io;

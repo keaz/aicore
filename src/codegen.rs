@@ -8999,6 +8999,7 @@ impl<'a> Generator<'a> {
     ) -> Option<Option<Value>> {
         let canonical = match name {
             "new_map" | "aic_map_new_intrinsic" => "new_map",
+            "close_map" | "aic_map_close_intrinsic" => "close_map",
             "insert" | "aic_map_insert_intrinsic" => "insert",
             "get" | "aic_map_get_intrinsic" => "get",
             "contains_key" | "aic_map_contains_key_intrinsic" => "contains_key",
@@ -9012,6 +9013,7 @@ impl<'a> Generator<'a> {
 
         match canonical {
             "new_map" => Some(self.gen_map_new_call(name, args, span, expected_ty, fctx)),
+            "close_map" => Some(self.gen_map_close_call(name, args, span, expected_ty, fctx)),
             "insert" => Some(self.gen_map_insert_call(name, args, span, expected_ty, fctx)),
             "get" => Some(self.gen_map_get_call(name, args, span, expected_ty, fctx)),
             "contains_key" => {
@@ -9267,6 +9269,77 @@ impl<'a> Generator<'a> {
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
         self.build_map_value_from_handle(&result_ty, &handle, span, fctx)
+    }
+
+    fn gen_map_close_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        _expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "close_map expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let map_value = self.gen_expr(&args[0], fctx)?;
+        let LType::Struct(layout) = &map_value.ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "close_map expects Map[K, V]",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Map" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "close_map expects Map[K, V], found '{}'",
+                    render_type(&map_value.ty)
+                ),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let Some(handle_idx) = self.struct_int_field_index(layout, "handle") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "close_map expects map layout with Int handle field",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        };
+        let map_repr = map_value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&map_value.ty));
+        let map_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            map_handle,
+            llvm_type(&map_value.ty),
+            map_repr,
+            handle_idx
+        ));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_map_close(i64 {})",
+            _err, map_handle
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
     }
 
     fn gen_map_insert_call(
@@ -25657,6 +25730,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("env", "os_name") => Some("aic_env_os_name_intrinsic"),
         ("env", "arch") => Some("aic_env_arch_intrinsic"),
         ("map", "new_map") => Some("aic_map_new_intrinsic"),
+        ("map", "close_map") => Some("aic_map_close_intrinsic"),
         ("map", "insert") => Some("aic_map_insert_intrinsic"),
         ("map", "get") => Some("aic_map_get_intrinsic"),
         ("map", "contains_key") => Some("aic_map_contains_key_intrinsic"),
