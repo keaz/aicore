@@ -22903,6 +22903,7 @@ impl<'a> Generator<'a> {
             span,
             fctx,
         )?;
+        self.emit_scope_drops_to_depth(0, fctx);
         fctx.lines
             .push(format!("  ret {} {}", llvm_type(&fctx.ret_ty), ret_enum));
 
@@ -26102,13 +26103,21 @@ fn runtime_c_source() -> &'static str {
 #include <netinet/in.h>
 #include <pthread.h>
 #include <regex.h>
+#include <sched.h>
 #include <unistd.h>
 #include <signal.h>
+#include <poll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#ifdef __linux__
+#include <sys/epoll.h>
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include <sys/event.h>
+#endif
 #endif
 
 typedef struct {
@@ -41985,6 +41994,189 @@ fn main() -> Int {
         assert!(
             checked,
             "expected a function block with file-close call followed by ret void\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn file_handle_drop_runs_before_question_mark_error_return() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("file_drop_try_return.aic");
+        fs::write(
+            &file,
+            r#"
+import std.fs;
+
+fn helper() -> Result[Int, FsError] effects { fs } {
+    let file = FileHandle { handle: 3 };
+    read_text("")?;
+    if file.handle == 3 {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
+}
+
+fn main() -> Int effects { fs } {
+    match helper() {
+        Ok(v) => v,
+        Err(_) => 0,
+    }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+        let mut checked = false;
+        for block in output.llvm_ir.split("\ndefine ") {
+            let is_helper = block
+                .lines()
+                .next()
+                .map(|line| line.contains("@aic_helper("))
+                .unwrap_or(false);
+            if !is_helper || !block.contains("@aic_rt_fs_file_close(") {
+                continue;
+            }
+            let close_idx = block
+                .find("@aic_rt_fs_file_close(")
+                .expect("file close call index");
+            let ret_idx = block[close_idx..]
+                .find("ret ")
+                .map(|idx| close_idx + idx)
+                .expect("ret after file close");
+            assert!(
+                close_idx < ret_idx,
+                "expected close before `?` return; close_idx={close_idx}; ret_idx={ret_idx}\nllvm={}",
+                output.llvm_ir
+            );
+            checked = true;
+            break;
+        }
+        assert!(
+            checked,
+            "expected helper block with file-close call followed by return\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn supported_handle_drop_is_lifo_and_skips_moved_sources() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("handle_drop_lifo_and_moves.aic");
+        fs::write(
+            &file,
+            r#"
+import std.fs;
+import std.concurrent;
+
+fn make_file() -> FileHandle {
+    let file = FileHandle { handle: 1 };
+    file
+}
+
+fn make_channel() -> IntChannel {
+    let channel = IntChannel { handle: 2 };
+    channel
+}
+
+fn make_mutex() -> IntMutex {
+    let mutex = IntMutex { handle: 3 };
+    mutex
+}
+
+fn main() -> Int {
+    let file = make_file();
+    let channel = make_channel();
+    let mutex = make_mutex();
+    if file.handle + channel.handle + mutex.handle == 6 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        let make_file_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("{ i64 } @aic_make_file("))
+            .expect("make_file block");
+        assert!(
+            !make_file_block.contains("@aic_rt_fs_file_close("),
+            "moved source in make_file should not be closed in callee\nllvm={}",
+            output.llvm_ir
+        );
+        let make_channel_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("{ i64 } @aic_make_channel("))
+            .expect("make_channel block");
+        assert!(
+            !make_channel_block.contains("@aic_rt_conc_close_channel("),
+            "moved source in make_channel should not be closed in callee\nllvm={}",
+            output.llvm_ir
+        );
+        let make_mutex_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("{ i64 } @aic_make_mutex("))
+            .expect("make_mutex block");
+        assert!(
+            !make_mutex_block.contains("@aic_rt_conc_mutex_close("),
+            "moved source in make_mutex should not be closed in callee\nllvm={}",
+            output.llvm_ir
+        );
+
+        let main_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("i64 @aic_main("))
+            .expect("aic_main block");
+        let mutex_close = main_block
+            .find("@aic_rt_conc_mutex_close(")
+            .expect("mutex close in main");
+        let channel_close = main_block
+            .find("@aic_rt_conc_close_channel(")
+            .expect("channel close in main");
+        let file_close = main_block
+            .find("@aic_rt_fs_file_close(")
+            .expect("file close in main");
+        assert!(
+            mutex_close < channel_close && channel_close < file_close,
+            "expected LIFO drop order in main (mutex -> channel -> file)\nllvm={}",
+            output.llvm_ir
+        );
+        assert_eq!(
+            main_block.matches("@aic_rt_conc_mutex_close(").count(),
+            1,
+            "expected one mutex close in main\nllvm={}",
+            output.llvm_ir
+        );
+        assert_eq!(
+            main_block.matches("@aic_rt_conc_close_channel(").count(),
+            1,
+            "expected one channel close in main\nllvm={}",
+            output.llvm_ir
+        );
+        assert_eq!(
+            main_block.matches("@aic_rt_fs_file_close(").count(),
+            1,
+            "expected one file close in main\nllvm={}",
             output.llvm_ir
         );
     }

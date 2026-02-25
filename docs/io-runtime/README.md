@@ -25,6 +25,13 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Pure functions cannot call IO runtime modules.
 - Transitive effects are enforced: if `A -> B -> C`, callers of `A` must declare effects needed by `C`.
 
+## Resource Lifecycle (RAII Subset)
+
+- Handle-backed locals (`FileHandle`, `IntChannel`, `IntMutex`) are automatically cleaned up on scope exit in deterministic reverse lexical order.
+- Cleanup also runs on early-exit control flow (`return`, `break`, `continue`, and `?` error propagation).
+- Direct local move-outs (`let b = a`, direct `return a`, direct tail `a`) preserve transferred ownership by suppressing cleanup on the moved-from local.
+- Current scope is intentionally limited to compiler-managed built-in handle types; user-defined destructor hooks are not yet part of the surface language.
+
 ## Platform Caveats
 
 - Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/retry/concurrency.
@@ -69,6 +76,7 @@ fn main() -> Int effects { io, net } {
 ## Runnable Examples (CI-covered)
 
 - Filesystem operations: `examples/io/fs_all_ops.aic`
+- RAII scope-exit and early-return cleanup: `examples/io/raii_file_cleanup.aic`
 - CLI file pipeline: `examples/io/cli_file_pipeline.aic`
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`

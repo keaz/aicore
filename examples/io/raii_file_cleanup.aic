@@ -1,0 +1,92 @@
+import std.io;
+import std.fs;
+import std.string;
+
+fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
+    match v {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    }
+}
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn append_with_let_move(path: String, line: String) -> Int effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    let moved = file;
+    if moved.handle == 0 {
+        0
+    } else {
+        match file_write_str(moved, line) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn open_via_return(path: String) -> FileHandle effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    return file;
+    FileHandle { handle: 0 }
+}
+
+fn open_via_tail(path: String) -> FileHandle effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    file
+}
+
+fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } {
+    let file = open_append(path)?;
+    file_write_str(file, "gamma\n")?;
+    read_text("")?;
+    Ok(1)
+}
+
+fn append_with_handle(file: FileHandle, line: String) -> Int effects { fs } {
+    if file.handle == 0 {
+        0
+    } else {
+        match file_write_str(file, line) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let path = "raii_file_cleanup.txt";
+    let wrote_let = append_with_let_move(path, "alpha\n");
+    let wrote_return = append_with_handle(open_via_return(path), "beta\n");
+    let wrote_tail = append_with_handle(open_via_tail(path), "delta\n");
+    let try_err = match append_then_fail(path) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    let content_ok = match read_text(path) {
+        Ok(text) =>
+            if starts_with(text, "alpha")
+                && string.contains(text, "beta")
+                && string.contains(text, "gamma")
+                && string.contains(text, "delta") {
+                1
+            } else {
+                0
+            },
+        Err(_) => 0,
+    };
+
+    let removed = ok_bool(delete(path));
+
+    if wrote_let + wrote_return + wrote_tail + try_err + content_ok + removed == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

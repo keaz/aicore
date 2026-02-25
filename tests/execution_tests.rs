@@ -2037,6 +2037,247 @@ fn main() -> Int effects { io, fs } {
 }
 
 #[test]
+fn exec_raii_file_handle_cleanup_on_scope_exit_and_early_return() {
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
+    match v {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    }
+}
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn scope_cycle(path: String) -> Int effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    if file.handle == 0 {
+        0
+    } else {
+        match file_write_str(file, "x") {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn early_cycle(path: String) -> Int effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    if file.handle == 0 {
+        0
+    } else {
+        1
+    }
+}
+
+fn run_scope(path: String, iterations: Int) -> Int effects { fs } {
+    let mut i = 0;
+    let mut ok = 0;
+    while i < iterations {
+        ok = ok + scope_cycle(path);
+        i = i + 1;
+    };
+    ok
+}
+
+fn run_early(path: String, iterations: Int) -> Int effects { fs } {
+    let mut i = 0;
+    let mut ok = 0;
+    while i < iterations {
+        ok = ok + early_cycle(path);
+        i = i + 1;
+    };
+    ok
+}
+
+fn main() -> Int effects { io, fs } {
+    let scope_path = "raii_scope_handles.txt";
+    let early_path = "raii_early_handles.txt";
+
+    let scope_ok = run_scope(scope_path, 1100);
+    let early_ok = run_early(early_path, 1100);
+
+    let removed_scope = ok_bool(delete(scope_path));
+    let removed_early = ok_bool(delete(early_path));
+
+    if scope_ok == 1100 && early_ok == 1100 && removed_scope + removed_early == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_raii_file_handle_cleanup_on_question_mark_error_return() {
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } {
+    let file = open_append(path)?;
+    file_write_str(file, "x")?;
+    read_text("")?;
+    Ok(1)
+}
+
+fn error_cycle(path: String) -> Int effects { fs } {
+    match append_then_fail(path) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let path = "raii_try_handles.txt";
+    let iterations = 1100;
+    let mut i = 0;
+    let mut err_count = 0;
+    while i < iterations {
+        err_count = err_count + error_cycle(path);
+        i = i + 1;
+    };
+
+    let size = match metadata(path) {
+        Ok(m) => m.size,
+        Err(_) => 0,
+    };
+    let removed = ok_bool(delete(path));
+
+    if err_count == iterations && size == iterations && removed == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_raii_file_handle_move_out_preserves_transferred_ownership() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.string;
+
+fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
+    match v {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    }
+}
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn open_via_return(path: String) -> FileHandle effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    return file;
+    FileHandle { handle: 0 }
+}
+
+fn open_via_tail(path: String) -> FileHandle effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    file
+}
+
+fn append_via_let_move(path: String, line: String) -> Int effects { fs } {
+    let file = unwrap_handle(open_append(path));
+    let moved = file;
+    if moved.handle == 0 {
+        0
+    } else {
+        match file_write_str(moved, line) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn append_via_return_move(path: String, line: String) -> Int effects { fs } {
+    let file = open_via_return(path);
+    if file.handle == 0 {
+        0
+    } else {
+        match file_write_str(file, line) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn append_via_tail_move(path: String, line: String) -> Int effects { fs } {
+    let file = open_via_tail(path);
+    if file.handle == 0 {
+        0
+    } else {
+        match file_write_str(file, line) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    }
+}
+
+fn main() -> Int effects { io, fs } {
+    let path = "raii_move_transfer.txt";
+    let wrote_let = append_via_let_move(path, "alpha\n");
+    let wrote_return = append_via_return_move(path, "beta\n");
+    let wrote_tail = append_via_tail_move(path, "gamma\n");
+
+    let content_ok = match read_text(path) {
+        Ok(text) =>
+            if starts_with(text, "alpha")
+                && string.contains(text, "beta")
+                && string.contains(text, "gamma") {
+                1
+            } else {
+                0
+            },
+        Err(_) => 0,
+    };
+    let removed = ok_bool(delete(path));
+
+    if wrote_let + wrote_return + wrote_tail + content_ok + removed == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_fs_mkdir_all_nested_directories() {
     let src = r#"
 import std.io;
