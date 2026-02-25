@@ -53,3 +53,15 @@ Trust diagnostics:
 
 - `E2119`: policy denied install
 - `E2124`: signature verification/trusted-key failure
+
+## WebAssembly host interop (`--target wasm32`)
+
+`aic build --target wasm32` compiles to `wasm32-unknown-unknown` and keeps runtime calls host-bound instead of linking native runtime C shims.
+
+Practical implications:
+
+- pure programs can compile without runtime host dependencies
+- IO/runtime paths (for example `print_str`) are imported as host symbols such as `aic_rt_print_str`
+- the wasm module exports `main` and `aic_main` for host invocation
+
+Reference example: `examples/interop/wasm_hello_world.aic`.

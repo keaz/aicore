@@ -31,6 +31,7 @@ check_pass=(
   "examples/e5/object_link_main.aic"
   "examples/e5/panic_line_map.aic"
   "examples/e6/std_smoke.aic"
+  "examples/interop/wasm_hello_world.aic"
   "examples/io/fs_backup.aic"
   "examples/io/fs_all_ops.aic"
   "examples/io/raii_file_cleanup.aic"
@@ -292,6 +293,163 @@ expect_file_exists() {
   fi
 }
 
+wasm_target_unavailable() {
+  local err_file="$1"
+  local stderr_lower
+  stderr_lower="$(tr '[:upper:]' '[:lower:]' <"$err_file")"
+  if [[ "$stderr_lower" != *"wasm32-unknown-unknown"* ]]; then
+    return 1
+  fi
+  if [[ "$stderr_lower" == *"no available targets"* ]] || [[ "$stderr_lower" == *"unknown target"* ]] || [[ "$stderr_lower" == *"unable to create target"* ]] || [[ "$stderr_lower" == *"is not a valid target"* ]] || [[ "$stderr_lower" == *"unsupported option"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+expect_wasm_magic() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+b = p.read_bytes()
+if len(b) < 4 or b[:4] != b"\x00asm":
+    raise SystemExit(f"missing wasm magic bytes: {p}")
+PY
+}
+
+expect_wasm_contains() {
+  local path="$1"
+  local symbol="$2"
+  python3 - "$path" "$symbol" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+needle = sys.argv[2].encode("utf-8")
+if needle not in p.read_bytes():
+    raise SystemExit(f"expected symbol '{sys.argv[2]}' in {p}")
+PY
+}
+
+validate_wasm_manifest() {
+  local manifest="$1"
+  local expected_output="$2"
+  python3 - "$manifest" "$expected_output" <<'PY'
+import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+if data.get("target") != "wasm32":
+    raise SystemExit(f"manifest target mismatch: {data.get('target')!r}")
+if data.get("artifact_kind") != "exe":
+    raise SystemExit(f"manifest artifact kind mismatch: {data.get('artifact_kind')!r}")
+actual = pathlib.Path(data.get("output_path", "")).resolve()
+expected = pathlib.Path(sys.argv[2]).resolve()
+if actual != expected:
+    raise SystemExit(f"manifest output path mismatch: {actual!s} != {expected!s}")
+PY
+}
+
+run_wasm_with_node() {
+  local wasm="$1"
+  local harness="$ARTIFACT_DIR/wasm-node-runner.js"
+  cat >"$harness" <<'JS'
+const fs = require("fs");
+
+async function main() {
+  const bytes = fs.readFileSync(process.argv[2]);
+  let printed = 0;
+  const env = new Proxy(
+    {
+      aic_rt_print_str: () => { printed += 1; },
+      aic_rt_print_int: () => { printed += 1; },
+      aic_rt_env_set_args: () => {},
+    },
+    {
+      get(target, prop) {
+        if (!(prop in target)) {
+          target[prop] = () => 0;
+        }
+        return target[prop];
+      },
+    },
+  );
+  const { instance } = await WebAssembly.instantiate(bytes, { env });
+  const fn = instance.exports.aic_main || instance.exports.main;
+  if (typeof fn !== "function") {
+    throw new Error("missing exported entry function (aic_main/main)");
+  }
+  const result = fn();
+  if (result !== 0 && result !== 0n) {
+    throw new Error(`unexpected wasm return value: ${result}`);
+  }
+  if (printed === 0) {
+    throw new Error("expected print import to be invoked");
+  }
+}
+
+main().catch((err) => {
+  console.error(err && err.stack ? err.stack : String(err));
+  process.exit(1);
+});
+JS
+  node "$harness" "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err
+}
+
+run_pure_wasm_with_wasmtime() {
+  local source="$ARTIFACT_DIR/wasm_pure_probe.aic"
+  local wasm="$ARTIFACT_DIR/wasm_pure_probe.wasm"
+  cat >"$source" <<'AIC'
+fn main() -> Int {
+    0
+}
+AIC
+  if ! "${AIC[@]}" build "$source" --target wasm32 -o "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    return 1
+  fi
+  wasmtime --invoke aic_main "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err
+}
+
+validate_wasm_example() {
+  local file="examples/interop/wasm_hello_world.aic"
+  local wasm="$ARTIFACT_DIR/wasm_hello_world.wasm"
+  local manifest="$ARTIFACT_DIR/wasm_hello_world.build.json"
+  if ! "${AIC[@]}" build "$file" --target wasm32 -o "$wasm" --manifest "$manifest" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    if wasm_target_unavailable /tmp/aic-example.err; then
+      echo "note: skipping wasm example validation (toolchain lacks wasm32 target support)" >&2
+      return 0
+    fi
+    echo "wasm example build failed: $file" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+
+  expect_file_exists "$wasm"
+  expect_file_exists "$manifest"
+  expect_wasm_magic "$wasm"
+  expect_wasm_contains "$wasm" "aic_rt_print_str"
+  validate_wasm_manifest "$manifest" "$wasm"
+
+  if command -v node >/dev/null 2>&1; then
+    if run_wasm_with_node "$wasm"; then
+      return 0
+    fi
+    echo "node wasm runtime validation failed for $file" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+
+  if command -v wasmtime >/dev/null 2>&1; then
+    if run_pure_wasm_with_wasmtime; then
+      return 0
+    fi
+    echo "wasmtime wasm runtime validation failed" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+
+  echo "note: wasm runtime engine unavailable; validated artifact bytes and imports only" >&2
+}
+
 case "$MODE" in
   check)
     for f in "${check_pass[@]}"; do
@@ -300,6 +458,7 @@ case "$MODE" in
     for f in "${check_fail[@]}"; do
       expect_check_fail "$f"
     done
+    validate_wasm_example
     ;;
   run)
     expect_run_value "examples/option_match.aic" "42"
@@ -412,6 +571,7 @@ case "$MODE" in
     python3 -m json.tool "$ARTIFACT_DIR/security_audit.json" >/dev/null
     expect_build_artifact "examples/e5/object_link_main.aic" "obj" "$ARTIFACT_DIR/object_link_main.o"
     expect_build_artifact "examples/e5/object_link_main.aic" "lib" "$ARTIFACT_DIR/libobject_link_main.a"
+    validate_wasm_example
     for entry in "${run_fail[@]}"; do
       file="${entry%%:*}"
       marker="${entry#*:}"

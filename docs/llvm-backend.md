@@ -97,6 +97,7 @@ Artifact behavior:
 - `exe`: compiles module IR + runtime C and links executable.
 - `obj`: emits module object only (no runtime object linked in).
 - `lib`: archives module object + runtime object into static library.
+- `exe` + `--target wasm32`: emits standalone `.wasm` with host-import runtime bindings (no runtime C object linked).
 
 ## Cross-Compilation Targets (`--target`)
 
@@ -107,6 +108,7 @@ Artifact behavior:
 - `x86_64-macos` -> `x86_64-apple-darwin`
 - `aarch64-macos` -> `arm64-apple-darwin`
 - `x86_64-windows` -> `x86_64-pc-windows-msvc`
+- `wasm32` -> `wasm32-unknown-unknown`
 
 Examples:
 
@@ -117,6 +119,9 @@ cargo run --quiet --bin aic -- build examples/core/cross_compile_targets.aic --t
 # Build object/library artifacts for a non-host target
 cargo run --quiet --bin aic -- build examples/e5/object_link_main.aic --artifact obj --target x86_64-linux
 cargo run --quiet --bin aic -- build examples/e5/object_link_main.aic --artifact lib --target x86_64-linux
+
+# Build WebAssembly module
+cargo run --quiet --bin aic -- build examples/interop/wasm_hello_world.aic --target wasm32
 ```
 
 When `--target` is omitted, `aic` uses the host build target.
@@ -124,7 +129,29 @@ When `--target` is omitted, `aic` uses the host build target.
 CI verification for this surface runs:
 
 - host executable smoke build with explicit `--target`
-- cross-target object smoke builds for all five target labels on each runner OS
+- cross-target object smoke builds for native target labels on each runner OS
+- wasm example build + artifact validation (`.wasm` magic bytes, manifest target label, runtime import symbols)
+
+## WebAssembly Runtime Strategy (`--target wasm32`)
+
+`aic build --target wasm32` uses a wasm-specific executable pipeline:
+
+- clang target triple: `wasm32-unknown-unknown`
+- linker flags: no entrypoint CRT startup (`--no-entry`)
+- no libc/runtime C shim requirement (`-nostdlib`)
+- exports: `main` and `aic_main`
+- unresolved runtime symbols are intentionally kept and imported from host (`--allow-undefined`)
+
+Current wasm constraints:
+
+- supported artifact kind: `exe` only (`obj`/`lib` rejected for wasm target)
+- workspace builds are rejected for wasm target
+- `--static-link` is not supported on wasm target
+
+Behavioral notes:
+
+- pure programs (`fn main() -> Int { ... }`) compile to `.wasm` without `aic_rt_*` imports
+- IO/runtime-backed programs import runtime symbols (for example `aic_rt_print_str`) from the embedding host
 
 ## Static Link Mode (`--static-link`)
 
@@ -180,3 +207,4 @@ Default (without `--debug-info`) remains unchanged and omits debug metadata.
 - `examples/e5/string_len.aic`
 - `examples/e5/object_link_main.aic`
 - `examples/e5/panic_line_map.aic`
+- `examples/interop/wasm_hello_world.aic`

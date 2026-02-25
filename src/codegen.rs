@@ -416,6 +416,16 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
     if options.static_link && artifact != ArtifactKind::Exe {
         anyhow::bail!("--static-link is only supported for executable artifacts");
     }
+    let wasm_target = target_is_wasm(options.target_triple.as_deref());
+    if wasm_target && artifact != ArtifactKind::Exe {
+        anyhow::bail!("wasm32 target currently supports executable artifacts only");
+    }
+    if wasm_target && options.static_link {
+        anyhow::bail!("--static-link is not supported for wasm32 target");
+    }
+    if wasm_target && runtime.asan {
+        anyhow::bail!("AddressSanitizer is not supported for wasm32 target");
+    }
     let started = Instant::now();
     let clang_bin = resolve_clang_binary()?;
     let toolchain = probe_toolchain(&clang_bin)?;
@@ -429,14 +439,19 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
     let module_obj_path = work_dir.join("module.o");
     let runtime_obj_path = work_dir.join("runtime.o");
     let runtime_flags = runtime_compile_flags(runtime);
-    let llvm_to_compile = if runtime.check_leaks {
+    let mut llvm_to_compile = if runtime.check_leaks {
         instrument_llvm_for_leak_tracking(llvm_ir)
     } else {
         llvm_ir.to_string()
     };
+    if wasm_target {
+        llvm_to_compile = rewrite_wasm_entry_wrapper(&llvm_to_compile);
+    }
 
     fs::write(&ll_path, llvm_to_compile)?;
-    fs::write(&runtime_path, runtime_c_source())?;
+    if !wasm_target {
+        fs::write(&runtime_path, runtime_c_source())?;
+    }
 
     match artifact {
         ArtifactKind::Exe => {
@@ -445,26 +460,38 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             if options.debug_info {
                 command.arg("-g");
             }
-            for flag in &runtime_flags {
-                command.arg(flag);
-            }
-            command.arg("-O0").arg(&ll_path).arg(&runtime_path);
-            if options.static_link {
-                if !target_supports_static_link(options.target_triple.as_deref()) {
-                    anyhow::bail!(
-                        "--static-link currently supports linux targets only (requested: {})",
-                        options.target_triple.as_deref().unwrap_or("host target")
-                    );
+            if wasm_target {
+                command
+                    .arg("-O0")
+                    .arg("-nostdlib")
+                    .arg(&ll_path)
+                    .arg("-Wl,--no-entry")
+                    .arg("-Wl,--allow-undefined")
+                    .arg("-Wl,--export=main")
+                    .arg("-Wl,--export=aic_main");
+                append_link_options(&mut command, &options.link);
+            } else {
+                for flag in &runtime_flags {
+                    command.arg(flag);
                 }
-                command.arg("-static");
-            }
-            append_link_options(&mut command, &options.link);
-            if cfg!(not(target_os = "windows")) {
-                command.arg("-pthread").arg("-lm");
+                command.arg("-O0").arg(&ll_path).arg(&runtime_path);
+                if options.static_link {
+                    if !target_supports_static_link(options.target_triple.as_deref()) {
+                        anyhow::bail!(
+                            "--static-link currently supports linux targets only (requested: {})",
+                            options.target_triple.as_deref().unwrap_or("host target")
+                        );
+                    }
+                    command.arg("-static");
+                }
+                append_link_options(&mut command, &options.link);
+                if cfg!(not(target_os = "windows")) {
+                    command.arg("-pthread").arg("-lm");
+                }
             }
             command.arg("-o").arg(output_path);
             run_checked_command(command, &clang_bin, "building executable artifact")?;
-            if target_is_macos(options.target_triple.as_deref()) {
+            if !wasm_target && target_is_macos(options.target_triple.as_deref()) {
                 normalize_macos_uuid_and_codesign(output_path)?;
             }
         }
@@ -598,6 +625,13 @@ fn runtime_compile_flags(runtime: RuntimeInstrumentationOptions) -> Vec<&'static
 
 fn instrument_llvm_for_leak_tracking(llvm_ir: &str) -> String {
     llvm_ir.replace("@malloc(", "@aic_rt_heap_alloc(")
+}
+
+fn rewrite_wasm_entry_wrapper(llvm_ir: &str) -> String {
+    llvm_ir.replace(
+        "  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)\n",
+        "",
+    )
 }
 
 fn ensure_parent_dir(path: &Path) -> anyhow::Result<()> {
@@ -782,6 +816,10 @@ fn append_target_triple(command: &mut Command, target_triple: Option<&str>) {
     if let Some(target) = target_triple {
         command.arg(format!("--target={target}"));
     }
+}
+
+fn target_is_wasm(target_triple: Option<&str>) -> bool {
+    matches!(target_triple, Some(target) if target.starts_with("wasm32"))
 }
 
 fn target_supports_static_link(target_triple: Option<&str>) -> bool {
@@ -44135,8 +44173,9 @@ mod tests {
     use super::{
         emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
         ensure_supported_toolchain_with_pin, instrument_llvm_for_leak_tracking,
-        normalize_macos_uuid, parse_llvm_major, runtime_c_source, runtime_compile_flags,
-        CodegenOptions, RuntimeInstrumentationOptions, ToolchainInfo,
+        normalize_macos_uuid, parse_llvm_major, rewrite_wasm_entry_wrapper, runtime_c_source,
+        runtime_compile_flags, target_is_wasm, CodegenOptions, RuntimeInstrumentationOptions,
+        ToolchainInfo,
     };
 
     #[test]
@@ -44208,6 +44247,28 @@ mod tests {
         let instrumented = instrument_llvm_for_leak_tracking(llvm);
         assert!(instrumented.contains("@aic_rt_heap_alloc("));
         assert!(!instrumented.contains("@malloc("));
+    }
+
+    #[test]
+    fn wasm_entry_wrapper_removes_env_args_bridge() {
+        let llvm = concat!(
+            "define i32 @main(i32 %argc, i8** %argv) {\n",
+            "entry:\n",
+            "  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)\n",
+            "  ret i32 0\n",
+            "}\n",
+        );
+        let rewritten = rewrite_wasm_entry_wrapper(llvm);
+        assert!(!rewritten.contains("@aic_rt_env_set_args"));
+        assert!(rewritten.contains("ret i32 0"));
+    }
+
+    #[test]
+    fn detects_wasm_target_triple() {
+        assert!(target_is_wasm(Some("wasm32-unknown-unknown")));
+        assert!(target_is_wasm(Some("wasm32-wasi")));
+        assert!(!target_is_wasm(Some("x86_64-unknown-linux-gnu")));
+        assert!(!target_is_wasm(None));
     }
 
     #[test]

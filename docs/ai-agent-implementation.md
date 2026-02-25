@@ -91,6 +91,25 @@ In `src/codegen.rs`:
 
 - `aic build --artifact exe|obj|lib`
 
+### WebAssembly target (`[INTEROP-T2]`)
+
+- CLI target: `aic build --target wasm32 <input.aic>`
+- clang triple: `wasm32-unknown-unknown`
+- output naming: default executable artifact uses `.wasm` extension
+- current wasm constraints:
+  - wasm target supports `--artifact exe` only
+  - workspace builds with `--target wasm32` are rejected
+  - `--static-link` is rejected for wasm target
+- backend/linker behavior:
+  - no runtime C shim or libc requirement (`-nostdlib`)
+  - runtime/IO calls are left unresolved intentionally and bound as host imports (`--allow-undefined`)
+  - exported functions include `main` and `aic_main`
+  - wasm entry wrapper removes argv/env initialization bridge so pure programs do not force `aic_rt_env_set_args` imports
+- validation references:
+  - `tests/e7_build_hermetic_tests.rs`
+  - `examples/interop/wasm_hello_world.aic`
+  - `scripts/ci/examples.sh` (node/wasmtime validation when available, byte/import fallback otherwise)
+
 ## E6 Summary (Std + Package Ecosystem)
 
 ### Standard library modules (E6-T1)

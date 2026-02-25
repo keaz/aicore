@@ -343,6 +343,8 @@ enum BuildTarget {
     Aarch64Macos,
     #[value(name = "x86_64-windows")]
     X8664Windows,
+    #[value(name = "wasm32")]
+    Wasm32,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1373,11 +1375,17 @@ fn run_cli() -> anyhow::Result<i32> {
             verify_hash,
             manifest,
         } => {
-            let target_label = target
-                .or_else(host_build_target)
+            let resolved_target = target.or_else(host_build_target);
+            let target_label = resolved_target
                 .map(|entry| entry.canonical_label().to_string())
                 .unwrap_or_else(|| host_target_label().to_string());
             let target_triple = target.map(|entry| entry.clang_triple().to_string());
+            let wasm_target = target.map(BuildTarget::is_wasm).unwrap_or(false);
+
+            if wasm_target && artifact != BuildArtifact::Exe {
+                eprintln!("--target wasm32 currently supports --artifact exe only");
+                return Ok(EXIT_USAGE_ERROR);
+            }
 
             if static_link && artifact != BuildArtifact::Exe {
                 eprintln!("--static-link is supported only with --artifact exe");
@@ -1402,6 +1410,10 @@ fn run_cli() -> anyhow::Result<i32> {
             }
 
             if input.is_dir() {
+                if wasm_target {
+                    eprintln!("--target wasm32 is not supported for workspace builds");
+                    return Ok(EXIT_USAGE_ERROR);
+                }
                 match workspace_build_plan(&input) {
                     Ok(Some(plan)) => {
                         if output.is_some() {
@@ -1468,6 +1480,7 @@ fn run_cli() -> anyhow::Result<i32> {
                                 &member.name,
                                 &entry,
                                 workspace_artifact,
+                                target,
                             );
                             let fingerprint_path = out
                                 .parent()
@@ -1526,8 +1539,9 @@ fn run_cli() -> anyhow::Result<i32> {
                                 }
                             };
 
-                            let out = output
-                                .unwrap_or_else(|| default_build_output_name(&input, artifact));
+                            let out = output.unwrap_or_else(|| {
+                                default_build_output_name(&input, artifact, target)
+                            });
                             let work = fresh_work_dir("build");
                             compile_with_clang_artifact_with_options(
                                 &llvm.llvm_ir,
@@ -1586,7 +1600,8 @@ fn run_cli() -> anyhow::Result<i32> {
                         }
                     };
 
-                    let out = output.unwrap_or_else(|| default_build_output_name(&input, artifact));
+                    let out = output
+                        .unwrap_or_else(|| default_build_output_name(&input, artifact, target));
                     let work = fresh_work_dir("build");
                     compile_with_clang_artifact_with_options(
                         &llvm.llvm_ir,
@@ -3220,13 +3235,23 @@ fn write_build_manifest(
     Ok(())
 }
 
-fn default_build_output_name(input: &Path, artifact: BuildArtifact) -> PathBuf {
+fn default_build_output_name(
+    input: &Path,
+    artifact: BuildArtifact,
+    target: Option<BuildTarget>,
+) -> PathBuf {
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("a.out");
     match artifact {
-        BuildArtifact::Exe => PathBuf::from(stem),
+        BuildArtifact::Exe => {
+            if target.map(BuildTarget::is_wasm).unwrap_or(false) {
+                PathBuf::from(format!("{stem}.wasm"))
+            } else {
+                PathBuf::from(stem)
+            }
+        }
         BuildArtifact::Obj => PathBuf::from(format!("{stem}.o")),
         BuildArtifact::Lib => PathBuf::from(format!("lib{stem}.a")),
     }
@@ -3237,11 +3262,12 @@ fn workspace_output_path(
     package_name: &str,
     entry: &Path,
     artifact: BuildArtifact,
+    target: Option<BuildTarget>,
 ) -> PathBuf {
     workspace_root
         .join("target/workspace")
         .join(package_name)
-        .join(default_build_output_name(entry, artifact))
+        .join(default_build_output_name(entry, artifact, target))
 }
 
 fn fresh_work_dir(tag: &str) -> PathBuf {
@@ -3281,6 +3307,7 @@ impl BuildTarget {
             BuildTarget::X8664Macos => "x86_64-macos",
             BuildTarget::Aarch64Macos => "aarch64-macos",
             BuildTarget::X8664Windows => "x86_64-windows",
+            BuildTarget::Wasm32 => "wasm32",
         }
     }
 
@@ -3291,11 +3318,16 @@ impl BuildTarget {
             BuildTarget::X8664Macos => "x86_64-apple-darwin",
             BuildTarget::Aarch64Macos => "arm64-apple-darwin",
             BuildTarget::X8664Windows => "x86_64-pc-windows-msvc",
+            BuildTarget::Wasm32 => "wasm32-unknown-unknown",
         }
     }
 
     fn supports_static_link(self) -> bool {
         matches!(self, BuildTarget::X8664Linux | BuildTarget::Aarch64Linux)
+    }
+
+    fn is_wasm(self) -> bool {
+        matches!(self, BuildTarget::Wasm32)
     }
 }
 

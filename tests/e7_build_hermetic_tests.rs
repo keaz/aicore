@@ -28,12 +28,122 @@ fn write_fixture_source(root: &Path) -> PathBuf {
     source
 }
 
+fn write_wasm_io_fixture_source(root: &Path) -> PathBuf {
+    let source = root.join("wasm_io_demo.aic");
+    fs::write(
+        &source,
+        concat!(
+            "import std.io;\n",
+            "fn main() -> Int effects { io } {\n",
+            "    print_int(42);\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write wasm io fixture source");
+    source
+}
+
+fn wasm_target_unavailable(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("wasm32-unknown-unknown")
+        && (lower.contains("no available targets")
+            || lower.contains("unknown target")
+            || lower.contains("unable to create target")
+            || lower.contains("is not a valid target")
+            || lower.contains("unsupported option"))
+}
+
+fn assert_wasm_build_succeeded_or_skip(run: &std::process::Output) -> bool {
+    if run.status.success() {
+        return true;
+    }
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    if wasm_target_unavailable(&stderr) {
+        eprintln!("skipping wasm build test; toolchain does not support wasm32 target: {stderr}");
+        return false;
+    }
+    panic!(
+        "wasm build failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        stderr
+    );
+}
+
 fn sha256_hex(path: &Path) -> String {
     use sha2::Digest;
     let payload = fs::read(path).expect("read artifact");
     let mut hasher = sha2::Sha256::new();
     hasher.update(payload);
     format!("{:x}", hasher.finalize())
+}
+
+#[test]
+fn build_wasm_target_emits_wasm_magic_and_manifest_target() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_fixture_source(dir.path());
+    let input_arg = input.to_string_lossy().to_string();
+    let args = vec!["build", input_arg.as_str(), "--target", "wasm32"];
+    let run = run_aic_in_dir(dir.path(), &args);
+    if !assert_wasm_build_succeeded_or_skip(&run) {
+        return;
+    }
+
+    let output = dir.path().join("hermetic_demo.wasm");
+    assert!(
+        output.exists(),
+        "expected wasm output at {}",
+        output.display()
+    );
+    let bytes = fs::read(&output).expect("read wasm output");
+    assert!(bytes.len() >= 4, "wasm output too small");
+    assert_eq!(
+        &bytes[..4],
+        b"\0asm",
+        "missing wasm magic bytes at start of artifact"
+    );
+
+    let wasm_text = String::from_utf8_lossy(&bytes);
+    assert!(
+        !wasm_text.contains("aic_rt_"),
+        "pure wasm program should not require runtime host imports"
+    );
+
+    let manifest_path = dir.path().join("build.json");
+    let manifest_raw = fs::read_to_string(&manifest_path).expect("read manifest");
+    let manifest: Value = serde_json::from_str(&manifest_raw).expect("parse manifest");
+    assert_eq!(manifest["target"].as_str(), Some("wasm32"));
+    assert_eq!(manifest["artifact_kind"].as_str(), Some("exe"));
+    assert_eq!(manifest["output_path"].as_str(), Some("hermetic_demo.wasm"));
+}
+
+#[test]
+fn build_wasm_io_program_binds_runtime_calls_as_imports() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_wasm_io_fixture_source(dir.path());
+    let output = dir.path().join("wasm-io.wasm");
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "--target",
+        "wasm32",
+        "-o",
+        output_arg.as_str(),
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    if !assert_wasm_build_succeeded_or_skip(&run) {
+        return;
+    }
+
+    let bytes = fs::read(&output).expect("read wasm io output");
+    assert!(bytes.starts_with(b"\0asm"), "missing wasm magic bytes");
+    let wasm_text = String::from_utf8_lossy(&bytes);
+    assert!(
+        wasm_text.contains("aic_rt_print_int"),
+        "expected io runtime call to be host import-bound in wasm artifact"
+    );
 }
 
 fn expected_default_target_label() -> &'static str {
@@ -183,6 +293,33 @@ fn build_rejects_static_link_for_non_linux_target() {
     assert!(
         stderr.contains("--static-link currently supports linux targets only"),
         "missing static-link target diagnostic: {stderr}"
+    );
+}
+
+#[test]
+fn build_rejects_wasm_target_for_non_executable_artifact() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_fixture_source(dir.path());
+    let output = dir.path().join("demo-obj.o");
+
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "-o",
+        output_arg.as_str(),
+        "--target",
+        "wasm32",
+        "--artifact",
+        "obj",
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    assert_eq!(run.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("--target wasm32 currently supports --artifact exe only"),
+        "missing wasm artifact diagnostic: {stderr}"
     );
 }
 
