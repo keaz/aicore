@@ -34,6 +34,7 @@ enum LType {
     Fn(FnLayoutType),
     Struct(StructLayoutType),
     Enum(EnumLayoutType),
+    Async(Box<LType>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1646,9 +1647,12 @@ impl<'a> Generator<'a> {
                 let concrete = substitute_type_vars(&raw, &bindings);
                 self.parse_type_repr(&concrete, func.span)
             };
-            let (Some(params), Some(ret)) = (params, ret) else {
+            let (Some(params), Some(mut ret)) = (params, ret) else {
                 continue;
             };
+            if func.is_async {
+                ret = LType::Async(Box::new(ret));
+            }
 
             let instance = GenericFnInstance {
                 mangled: inst.mangled.clone(),
@@ -1762,7 +1766,10 @@ impl<'a> Generator<'a> {
             .map(|p| self.type_from_id(p.ty, p.span))
             .collect::<Option<Vec<_>>>();
         let ret = self.type_from_id(func.ret_type, func.span);
-        if let (Some(params), Some(ret)) = (params, ret) {
+        if let (Some(params), Some(mut ret)) = (params, ret) {
+            if func.is_async {
+                ret = LType::Async(Box::new(ret));
+            }
             self.fn_sigs.insert(
                 func.name.clone(),
                 FnSig {
@@ -1786,7 +1793,10 @@ impl<'a> Generator<'a> {
             .iter()
             .map(|p| self.type_from_id(p.ty, p.span))
             .collect::<Option<Vec<_>>>()?;
-        let ret = self.type_from_id(func.ret_type, func.span)?;
+        let mut ret = self.type_from_id(func.ret_type, func.span)?;
+        if func.is_async {
+            ret = LType::Async(Box::new(ret));
+        }
         Some(FnSig {
             is_extern: func.is_extern,
             extern_symbol: if func.is_extern {
@@ -1942,6 +1952,15 @@ impl<'a> Generator<'a> {
     ) {
         let previous_bindings = self.active_type_bindings.clone();
         self.active_type_bindings = bindings;
+        let async_inner_ret = if func.is_async {
+            if let LType::Async(inner) = &sig.ret {
+                Some((**inner).clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let llvm_ret = llvm_type(&sig.ret);
         let mut param_defs = Vec::new();
@@ -1978,7 +1997,8 @@ impl<'a> Generator<'a> {
             drop_scopes: vec![DropScope::default()],
             terminated: false,
             current_label: "entry".to_string(),
-            ret_ty: sig.ret.clone(),
+            ret_ty: async_inner_ret.clone().unwrap_or_else(|| sig.ret.clone()),
+            async_inner_ret: async_inner_ret.clone(),
             debug_scope,
             loop_stack: Vec::new(),
         };
@@ -2008,38 +2028,60 @@ impl<'a> Generator<'a> {
             );
         }
 
-        let tail = self.gen_block_with_expected_tail(&func.body, Some(&sig.ret), &mut fctx);
+        let expected_tail = async_inner_ret.as_ref().unwrap_or(&sig.ret);
+        let tail = self.gen_block_with_expected_tail(&func.body, Some(expected_tail), &mut fctx);
 
         if !fctx.terminated {
-            match sig.ret {
-                LType::Unit => fctx.lines.push("  ret void".to_string()),
-                _ => {
-                    if let Some(value) = tail {
-                        if value.ty == sig.ret {
-                            fctx.lines.push(format!(
-                                "  ret {} {}",
-                                llvm_type(&value.ty),
-                                value.repr.unwrap_or_else(|| default_value(&value.ty))
-                            ));
+            if let Some(inner_ty) = async_inner_ret.as_ref() {
+                let async_value = if let Some(value) = tail {
+                    self.build_ready_async_value(value, inner_ty, &mut fctx)
+                } else {
+                    Value {
+                        ty: LType::Async(Box::new(inner_ty.clone())),
+                        repr: Some(default_value(&LType::Async(Box::new(inner_ty.clone())))),
+                    }
+                };
+                fctx.lines.push(format!(
+                    "  ret {} {}",
+                    llvm_type(&async_value.ty),
+                    async_value
+                        .repr
+                        .unwrap_or_else(|| default_value(&async_value.ty))
+                ));
+            } else {
+                match sig.ret {
+                    LType::Unit => fctx.lines.push("  ret void".to_string()),
+                    _ => {
+                        if let Some(value) = tail {
+                            if value.ty == sig.ret {
+                                fctx.lines.push(format!(
+                                    "  ret {} {}",
+                                    llvm_type(&value.ty),
+                                    value.repr.unwrap_or_else(|| default_value(&value.ty))
+                                ));
+                            } else {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E5007",
+                                    format!(
+                                        "function '{}' return type mismatch in codegen",
+                                        func.name
+                                    ),
+                                    self.file,
+                                    func.span,
+                                ));
+                                fctx.lines.push(format!(
+                                    "  ret {} {}",
+                                    llvm_type(&sig.ret),
+                                    default_value(&sig.ret)
+                                ));
+                            }
                         } else {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E5007",
-                                format!("function '{}' return type mismatch in codegen", func.name),
-                                self.file,
-                                func.span,
-                            ));
                             fctx.lines.push(format!(
                                 "  ret {} {}",
                                 llvm_type(&sig.ret),
                                 default_value(&sig.ret)
                             ));
                         }
-                    } else {
-                        fctx.lines.push(format!(
-                            "  ret {} {}",
-                            llvm_type(&sig.ret),
-                            default_value(&sig.ret)
-                        ));
                     }
                 }
             }
@@ -2078,6 +2120,53 @@ impl<'a> Generator<'a> {
             LType::Unit => {
                 self.out.push("  call void @aic_main()".to_string());
                 self.out.push("  ret i32 0".to_string());
+            }
+            LType::Async(ref inner) => {
+                let async_reg = self.new_temp();
+                self.out.push(format!(
+                    "  {} = call {} @aic_main()",
+                    async_reg,
+                    llvm_type(&main_sig.ret)
+                ));
+                match inner.as_ref() {
+                    LType::Int => {
+                        let value = self.new_temp();
+                        let c = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = extractvalue {} {}, 1",
+                            value,
+                            llvm_type(&main_sig.ret),
+                            async_reg
+                        ));
+                        self.out
+                            .push(format!("  {} = trunc i64 {} to i32", c, value));
+                        self.out.push(format!("  ret i32 {}", c));
+                    }
+                    LType::Bool => {
+                        let value = self.new_temp();
+                        let c = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = extractvalue {} {}, 1",
+                            value,
+                            llvm_type(&main_sig.ret),
+                            async_reg
+                        ));
+                        self.out.push(format!("  {} = zext i1 {} to i32", c, value));
+                        self.out.push(format!("  ret i32 {}", c));
+                    }
+                    LType::Unit => {
+                        self.out.push("  ret i32 0".to_string());
+                    }
+                    _ => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5020",
+                            "async main must return Async[Int], Async[Bool], or Async[()]",
+                            self.file,
+                            crate::span::Span::new(0, 0),
+                        ));
+                        self.out.push("  ret i32 1".to_string());
+                    }
+                }
             }
             _ => {
                 self.diagnostics.push(Diagnostic::error(
@@ -2226,15 +2315,37 @@ impl<'a> Generator<'a> {
                         if let Some(value) =
                             self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
                         {
-                            let repr = value.repr.unwrap_or_else(|| default_value(&value.ty));
                             self.emit_scope_drops_to_depth(0, fctx);
-                            fctx.lines
-                                .push(format!("  ret {} {}", llvm_type(&value.ty), repr));
+                            if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                                let async_value =
+                                    self.build_ready_async_value(value, &async_inner, fctx);
+                                let repr = async_value
+                                    .repr
+                                    .unwrap_or_else(|| default_value(&async_value.ty));
+                                fctx.lines.push(format!(
+                                    "  ret {} {}",
+                                    llvm_type(&async_value.ty),
+                                    repr
+                                ));
+                            } else {
+                                let repr = value.repr.unwrap_or_else(|| default_value(&value.ty));
+                                fctx.lines
+                                    .push(format!("  ret {} {}", llvm_type(&value.ty), repr));
+                            }
                             fctx.terminated = true;
                         }
                     } else {
                         self.emit_scope_drops_to_depth(0, fctx);
-                        fctx.lines.push("  ret void".to_string());
+                        if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                            let async_ty = LType::Async(Box::new(async_inner));
+                            fctx.lines.push(format!(
+                                "  ret {} {}",
+                                llvm_type(&async_ty),
+                                default_value(&async_ty)
+                            ));
+                        } else {
+                            fctx.lines.push("  ret void".to_string());
+                        }
                         fctx.terminated = true;
                     }
                 }
@@ -2363,6 +2474,76 @@ impl<'a> Generator<'a> {
             }
             _ => {}
         }
+    }
+
+    fn build_ready_async_value(
+        &mut self,
+        value: Value,
+        inner_ty: &LType,
+        fctx: &mut FnCtx,
+    ) -> Value {
+        let async_ty = LType::Async(Box::new(inner_ty.clone()));
+        let ready_state = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i1 1, 0",
+            ready_state,
+            llvm_type(&async_ty)
+        ));
+        let repr = if matches!(inner_ty, LType::Unit) {
+            ready_state
+        } else {
+            let with_value = self.new_temp();
+            let payload = coerce_repr(&value, inner_ty);
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} {}, {} {}, 1",
+                with_value,
+                llvm_type(&async_ty),
+                ready_state,
+                llvm_type(inner_ty),
+                payload
+            ));
+            with_value
+        };
+        Value {
+            ty: async_ty,
+            repr: Some(repr),
+        }
+    }
+
+    fn gen_await(
+        &mut self,
+        inner: &ir::Expr,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let future = self.gen_expr(inner, fctx)?;
+        let LType::Async(output_ty) = future.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5002",
+                "await expects Async[T] during codegen",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if matches!(&*output_ty, LType::Unit) {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+        let value = self.new_temp();
+        let repr = future.repr.unwrap_or_else(|| default_value(&future.ty));
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 1",
+            value,
+            llvm_type(&future.ty),
+            repr
+        ));
+        Some(Value {
+            ty: (*output_ty).clone(),
+            repr: Some(value),
+        })
     }
 
     fn type_needs_explicit_drop(&self, ty: &LType) -> bool {
@@ -2599,7 +2780,7 @@ impl<'a> Generator<'a> {
                 }
             }
             ir::ExprKind::Borrow { expr: inner, .. } => self.gen_expr(inner, fctx),
-            ir::ExprKind::Await { expr: inner } => self.gen_expr(inner, fctx),
+            ir::ExprKind::Await { expr: inner } => self.gen_await(inner, expr.span, fctx),
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
             ir::ExprKind::UnsafeBlock { block } => self.gen_block(block, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {
@@ -3873,6 +4054,7 @@ impl<'a> Generator<'a> {
             terminated: false,
             current_label: "entry".to_string(),
             ret_ty: ret_ty.clone(),
+            async_inner_ret: None,
             debug_scope: None,
             loop_stack: Vec::new(),
         };
@@ -19659,6 +19841,15 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
+            LType::Async(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON encoding of Async values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
+            }
             LType::Struct(layout) => self.json_encode_struct(value, layout, span, fctx),
             LType::Enum(layout) => self.json_encode_enum(value, layout, span, fctx),
         }
@@ -19939,6 +20130,15 @@ impl<'a> Generator<'a> {
                 self.diagnostics.push(Diagnostic::error(
                     "E5036",
                     "JSON decoding into function values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
+            }
+            LType::Async(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON decoding into Async values is not supported",
                     self.file,
                     span,
                 ));
@@ -20274,6 +20474,10 @@ impl<'a> Generator<'a> {
                 "{{\"kind\":\"function\",\"name\":\"{}\"}}",
                 json_escape_string(&layout.repr)
             )),
+            LType::Async(inner) => {
+                let inner_schema = self.json_schema_for_type(inner, stack, span)?;
+                Some(format!("{{\"kind\":\"async\",\"output\":{inner_schema}}}"))
+            }
             LType::Struct(layout) => {
                 if stack.iter().any(|name| name == &layout.repr) {
                     return Some(format!(
@@ -25139,6 +25343,23 @@ impl<'a> Generator<'a> {
             }));
         }
 
+        if base == "Async" {
+            if arg_texts.len() != 1 {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5019",
+                    format!(
+                        "generic arity mismatch for Async: expected 1, found {}",
+                        arg_texts.len()
+                    ),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            let inner = self.parse_type_repr(&arg_texts[0], span)?;
+            return Some(LType::Async(Box::new(inner)));
+        }
+
         if base == TUPLE_INTERNAL_NAME {
             let args = arg_texts
                 .iter()
@@ -25508,6 +25729,7 @@ struct FnCtx {
     terminated: bool,
     current_label: String,
     ret_ty: LType,
+    async_inner_ret: Option<LType>,
     debug_scope: Option<usize>,
     loop_stack: Vec<LoopFrame>,
 }
@@ -25984,6 +26206,13 @@ fn llvm_type(ty: &LType) -> String {
         LType::Unit => "void".to_string(),
         LType::String => "{ i8*, i64, i64 }".to_string(),
         LType::Fn(_) => "{ i8*, i8* }".to_string(),
+        LType::Async(inner) => {
+            if matches!(&**inner, LType::Unit) {
+                "{ i1 }".to_string()
+            } else {
+                format!("{{ i1, {} }}", llvm_type(inner))
+            }
+        }
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()
@@ -26018,6 +26247,13 @@ fn default_value(ty: &LType) -> String {
         LType::Unit => String::new(),
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
         LType::Fn(_) => "{ i8* null, i8* null }".to_string(),
+        LType::Async(inner) => {
+            if matches!(&**inner, LType::Unit) {
+                "{ i1 0 }".to_string()
+            } else {
+                format!("{{ i1 0, {} {} }}", llvm_type(inner), default_value(inner))
+            }
+        }
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()
@@ -26084,6 +26320,7 @@ fn render_type(ty: &LType) -> String {
         LType::Fn(layout) => layout.repr.clone(),
         LType::Struct(layout) => layout.repr.clone(),
         LType::Enum(layout) => layout.repr.clone(),
+        LType::Async(inner) => format!("Async[{}]", render_type(inner)),
     }
 }
 
@@ -43495,6 +43732,62 @@ fn main() -> Int {
         assert!(
             drop_idx < ret_idx,
             "expected drop before `?` return in helper\ndrop_idx={drop_idx}\nret_idx={ret_idx}\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn async_fn_and_await_lower_to_async_value_wrap_and_extract() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("async_lowering_state_shape.aic");
+        fs::write(
+            &file,
+            r#"
+import std.io;
+
+async fn ping(x: Int) -> Int {
+    x + 1
+}
+
+async fn main() -> Int effects { io } {
+    let value = await ping(41);
+    value
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        assert!(
+            output
+                .llvm_ir
+                .contains("define { i1, i64 } @aic_ping(i64 %arg0)"),
+            "async function should lower to Async[Int] return type\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output
+                .llvm_ir
+                .contains("insertvalue { i1, i64 } undef, i1 1, 0"),
+            "async return should wrap ready state\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output.llvm_ir.contains("extractvalue { i1, i64 }"),
+            "await should lower to Async value extraction\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            output.llvm_ir.contains("call { i1, i64 } @aic_main()"),
+            "entry wrapper should call async main and unwrap result\nllvm={}",
             output.llvm_ir
         );
     }
