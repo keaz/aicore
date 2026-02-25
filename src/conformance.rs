@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -209,14 +210,17 @@ fn resolve_case_path(root: &Path, path: &str) -> PathBuf {
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {
+    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "{}-{}-{}",
+        "{}-{}-{}-{}",
         prefix,
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
-            .unwrap_or(0)
+            .unwrap_or(0),
+        seq
     ))
 }
 

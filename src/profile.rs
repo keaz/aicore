@@ -52,7 +52,8 @@ pub struct RunProfileOutcome {
 pub fn run_profiled(options: RunProfileOptions<'_>) -> anyhow::Result<RunProfileOutcome> {
     let project_root = crate::resolve_project_root(options.input);
     let link = crate::resolve_native_link_options(&project_root)?;
-    let executable = std::env::temp_dir().join("aicore_run_bin");
+    let work = crate::fresh_work_dir("run-profile");
+    let executable = work.join("aicore_run_bin");
 
     let front = run_frontend_with_options(
         options.input,
@@ -102,7 +103,6 @@ pub fn run_profiled(options: RunProfileOptions<'_>) -> anyhow::Result<RunProfile
     ));
 
     let clang_started = Instant::now();
-    let work = crate::fresh_work_dir("run-profile");
     compile_with_clang_artifact_with_options(
         &llvm.llvm_ir,
         &executable,
@@ -110,6 +110,8 @@ pub fn run_profiled(options: RunProfileOptions<'_>) -> anyhow::Result<RunProfile
         ArtifactKind::Exe,
         CompileOptions {
             debug_info: false,
+            target_triple: None,
+            static_link: false,
             link,
         },
     )?;

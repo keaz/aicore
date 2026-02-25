@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -320,7 +321,12 @@ impl DaemonState {
             &output,
             &work,
             artifact.to_codegen(),
-            CompileOptions { debug_info, link },
+            CompileOptions {
+                debug_info,
+                target_triple: None,
+                static_link: false,
+                link,
+            },
         )?;
 
         let output_sha256 = sha256_file(&output)?;
@@ -496,12 +502,14 @@ fn default_build_output_name(input: &Path, artifact: BuildKind) -> PathBuf {
 }
 
 fn fresh_work_dir(tag: &str) -> PathBuf {
+    static WORK_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}"))
+    let seq = WORK_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
 }
 
 fn resolve_project_root(path: &Path) -> PathBuf {

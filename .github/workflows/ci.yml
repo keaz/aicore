@@ -166,6 +166,68 @@ jobs:
       - name: Build
         run: cargo build --locked
 
+      - name: Build with explicit host target (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          arch="$(uname -m)"
+          os="$(uname -s)"
+          case "${os}/${arch}" in
+            Linux/x86_64) target="x86_64-linux" ;;
+            Linux/aarch64|Linux/arm64) target="aarch64-linux" ;;
+            Darwin/x86_64) target="x86_64-macos" ;;
+            Darwin/arm64) target="aarch64-macos" ;;
+            *)
+              echo "unsupported host for explicit --target smoke: ${os}/${arch}" >&2
+              exit 1
+              ;;
+          esac
+          cargo run --quiet --bin aic -- \
+            build examples/core/cross_compile_targets.aic \
+            --target "$target" \
+            -o target/cross-target-smoke
+
+      - name: Build with explicit host target (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run --quiet --bin aic -- build examples/core/cross_compile_targets.aic --target x86_64-windows -o target/cross-target-smoke.exe
+
+      - name: Cross-target object matrix smoke (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            x86_64-linux
+            aarch64-linux
+            x86_64-macos
+            aarch64-macos
+            x86_64-windows
+          )
+          for target in "${targets[@]}"; do
+            cargo run --quiet --bin aic -- \
+              build examples/core/cross_compile_targets.aic \
+              --artifact obj \
+              --target "$target" \
+              -o "target/cross-target-${target}.o"
+          done
+
+      - name: Cross-target object matrix smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $targets = @(
+            "x86_64-linux",
+            "aarch64-linux",
+            "x86_64-macos",
+            "aarch64-macos",
+            "x86_64-windows"
+          )
+          foreach ($target in $targets) {
+            cargo run --quiet --bin aic -- build examples/core/cross_compile_targets.aic --artifact obj --target $target -o "target/cross-target-$target.o"
+          }
+
       - name: Library tests
         run: cargo test --locked --lib
 

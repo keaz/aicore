@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use serde_json::json;
@@ -338,19 +339,24 @@ pub fn build_with_artifact_options(
     )
     .map_err(|_| anyhow::anyhow!("llvm codegen failed"))?;
 
-    let work_dir = std::env::temp_dir().join("aicore_build");
+    let work_dir = fresh_work_dir("build");
     let output = compile_with_clang_artifact_with_options(
         &llvm.llvm_ir,
         output,
         &work_dir,
         artifact.to_codegen(),
-        CompileOptions { debug_info, link },
+        CompileOptions {
+            debug_info,
+            target_triple: None,
+            static_link: false,
+            link,
+        },
     )?;
     Ok(output)
 }
 
 pub fn run(path: &Path) -> anyhow::Result<i32> {
-    let exe = std::env::temp_dir().join("aicore_run_bin");
+    let exe = fresh_work_dir("run-bin").join("aicore_run_bin");
     let output = build_with_artifact(path, &exe, BuildArtifact::Exe)?;
     let status = Command::new(output).status()?;
     Ok(status.code().unwrap_or(1))
@@ -440,6 +446,17 @@ fn native_to_link_options(project_root: &Path, native: &NativeLinkConfig) -> Lin
 
 fn elapsed_ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1000.0
+}
+
+fn fresh_work_dir(tag: &str) -> PathBuf {
+    static WORK_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let seq = WORK_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
 }
 
 fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {

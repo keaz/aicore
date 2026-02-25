@@ -36,6 +36,19 @@ fn sha256_hex(path: &Path) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn expected_default_target_label() -> &'static str {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => "x86_64-linux",
+        ("aarch64", "linux") => "aarch64-linux",
+        ("x86_64", "macos") => "x86_64-macos",
+        ("aarch64", "macos") => "aarch64-macos",
+        ("x86_64", "windows") => "x86_64-windows",
+        (_, "macos") => "macos",
+        (_, "windows") => "windows",
+        _ => "linux",
+    }
+}
+
 #[test]
 fn build_creates_default_manifest_and_content_addressed_artifact() {
     let dir = tempdir().expect("temp dir");
@@ -68,6 +81,11 @@ fn build_creates_default_manifest_and_content_addressed_artifact() {
         Some(output_digest.as_str())
     );
     assert_eq!(manifest["artifact_kind"].as_str(), Some("exe"));
+    assert_eq!(
+        manifest["target"].as_str(),
+        Some(expected_default_target_label())
+    );
+    assert_eq!(manifest["static_link"].as_bool(), Some(false));
 
     let cas_path_raw = manifest["content_addressed_artifact_path"]
         .as_str()
@@ -82,6 +100,89 @@ fn build_creates_default_manifest_and_content_addressed_artifact() {
         fs::read(&output).expect("read output"),
         fs::read(&cas_path).expect("read content-addressed artifact"),
         "content-addressed artifact bytes should match output bytes"
+    );
+}
+
+#[test]
+fn build_accepts_explicit_host_target() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_fixture_source(dir.path());
+    let output = dir.path().join("demo-target-bin");
+
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let target_arg = expected_default_target_label();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "-o",
+        output_arg.as_str(),
+        "--target",
+        target_arg,
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    assert!(
+        run.status.success(),
+        "build with explicit host target failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let manifest_path = dir.path().join("build.json");
+    let manifest_raw = fs::read_to_string(&manifest_path).expect("read manifest");
+    let manifest: Value = serde_json::from_str(&manifest_raw).expect("parse manifest");
+    assert_eq!(manifest["target"].as_str(), Some(target_arg));
+}
+
+#[test]
+fn build_rejects_static_link_for_non_executable_artifact() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_fixture_source(dir.path());
+    let output = dir.path().join("demo-obj.o");
+
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "-o",
+        output_arg.as_str(),
+        "--artifact",
+        "obj",
+        "--static-link",
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    assert_eq!(run.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("--static-link is supported only with --artifact exe"),
+        "missing static-link usage diagnostic: {stderr}"
+    );
+}
+
+#[test]
+fn build_rejects_static_link_for_non_linux_target() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_fixture_source(dir.path());
+    let output = dir.path().join("demo-static");
+
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "-o",
+        output_arg.as_str(),
+        "--target",
+        "x86_64-windows",
+        "--static-link",
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    assert_eq!(run.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("--static-link currently supports linux targets only"),
+        "missing static-link target diagnostic: {stderr}"
     );
 }
 

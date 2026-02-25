@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, UnaryOp};
 use crate::diagnostics::Diagnostic;
@@ -136,6 +137,7 @@ struct JsonObjectGetValue {
 
 #[derive(Debug, Clone)]
 struct Local {
+    symbol: Option<ir::SymbolId>,
     ty: LType,
     ptr: String,
 }
@@ -295,6 +297,8 @@ pub struct LinkOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CompileOptions {
     pub debug_info: bool,
+    pub target_triple: Option<String>,
+    pub static_link: bool,
     pub link: LinkOptions,
 }
 
@@ -384,8 +388,12 @@ pub fn compile_with_clang_artifact_with_options(
     artifact: ArtifactKind,
     options: CompileOptions,
 ) -> anyhow::Result<PathBuf> {
+    if options.static_link && artifact != ArtifactKind::Exe {
+        anyhow::bail!("--static-link is only supported for executable artifacts");
+    }
     let started = Instant::now();
-    let toolchain = probe_toolchain()?;
+    let clang_bin = resolve_clang_binary()?;
+    let toolchain = probe_toolchain(&clang_bin)?;
     ensure_supported_toolchain(&toolchain)?;
 
     fs::create_dir_all(work_dir)?;
@@ -401,20 +409,34 @@ pub fn compile_with_clang_artifact_with_options(
 
     match artifact {
         ArtifactKind::Exe => {
-            let mut command = Command::new("clang");
+            let mut command = Command::new(&clang_bin);
+            append_target_triple(&mut command, options.target_triple.as_deref());
             if options.debug_info {
                 command.arg("-g");
             }
             command.arg("-O0").arg(&ll_path).arg(&runtime_path);
+            if options.static_link {
+                if !target_supports_static_link(options.target_triple.as_deref()) {
+                    anyhow::bail!(
+                        "--static-link currently supports linux targets only (requested: {})",
+                        options.target_triple.as_deref().unwrap_or("host target")
+                    );
+                }
+                command.arg("-static");
+            }
             append_link_options(&mut command, &options.link);
             if cfg!(not(target_os = "windows")) {
                 command.arg("-pthread").arg("-lm");
             }
             command.arg("-o").arg(output_path);
-            run_checked_command(command, "clang", "building executable artifact")?;
+            run_checked_command(command, &clang_bin, "building executable artifact")?;
+            if target_is_macos(options.target_triple.as_deref()) {
+                normalize_macos_uuid_and_codesign(output_path)?;
+            }
         }
         ArtifactKind::Obj => {
-            let mut command = Command::new("clang");
+            let mut command = Command::new(&clang_bin);
+            append_target_triple(&mut command, options.target_triple.as_deref());
             if options.debug_info {
                 command.arg("-g");
             }
@@ -424,10 +446,11 @@ pub fn compile_with_clang_artifact_with_options(
                 .arg(&ll_path)
                 .arg("-o")
                 .arg(output_path);
-            run_checked_command(command, "clang", "building object artifact")?;
+            run_checked_command(command, &clang_bin, "building object artifact")?;
         }
         ArtifactKind::Lib => {
-            let mut clang_module = Command::new("clang");
+            let mut clang_module = Command::new(&clang_bin);
+            append_target_triple(&mut clang_module, options.target_triple.as_deref());
             if options.debug_info {
                 clang_module.arg("-g");
             }
@@ -439,11 +462,12 @@ pub fn compile_with_clang_artifact_with_options(
                 .arg(&module_obj_path);
             run_checked_command(
                 clang_module,
-                "clang",
+                &clang_bin,
                 "building module object for static library",
             )?;
 
-            let mut clang_runtime = Command::new("clang");
+            let mut clang_runtime = Command::new(&clang_bin);
+            append_target_triple(&mut clang_runtime, options.target_triple.as_deref());
             if options.debug_info {
                 clang_runtime.arg("-g");
             }
@@ -455,7 +479,7 @@ pub fn compile_with_clang_artifact_with_options(
                 .arg(&runtime_obj_path);
             run_checked_command(
                 clang_runtime,
-                "clang",
+                &clang_bin,
                 "building runtime object for static library",
             )?;
 
@@ -469,12 +493,8 @@ pub fn compile_with_clang_artifact_with_options(
         }
     }
 
-    telemetry::emit_phase(
-        "codegen",
-        "clang_compile",
-        "ok",
-        started.elapsed(),
-        BTreeMap::from([
+    telemetry::emit_phase("codegen", "clang_compile", "ok", started.elapsed(), {
+        let mut attrs = BTreeMap::from([
             (
                 "artifact".to_string(),
                 json!(match artifact {
@@ -487,8 +507,13 @@ pub fn compile_with_clang_artifact_with_options(
                 "output".to_string(),
                 json!(output_path.to_string_lossy().to_string()),
             ),
-        ]),
-    );
+            ("static_link".to_string(), json!(options.static_link)),
+        ]);
+        if let Some(triple) = &options.target_triple {
+            attrs.insert("target_triple".to_string(), json!(triple));
+        }
+        attrs
+    });
 
     Ok(output_path.to_path_buf())
 }
@@ -502,15 +527,15 @@ fn ensure_parent_dir(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn probe_toolchain() -> anyhow::Result<ToolchainInfo> {
-    let mut command = Command::new("clang");
+fn probe_toolchain(clang_bin: &str) -> anyhow::Result<ToolchainInfo> {
+    let mut command = Command::new(clang_bin);
     command.arg("--version");
     let output = command
         .output()
-        .with_context(|| "failed to execute clang --version; ensure `clang` is in PATH")?;
+        .with_context(|| format!("failed to execute {clang_bin} --version"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("clang --version failed: {}", stderr.trim());
+        anyhow::bail!("{clang_bin} --version failed: {}", stderr.trim());
     }
     let raw = String::from_utf8_lossy(&output.stdout).to_string();
     let Some(major) = parse_llvm_major(&raw) else {
@@ -523,6 +548,50 @@ fn probe_toolchain() -> anyhow::Result<ToolchainInfo> {
         clang_version: raw,
         llvm_major: major,
     })
+}
+
+fn resolve_clang_binary() -> anyhow::Result<String> {
+    if let Ok(explicit) = std::env::var("AIC_CLANG") {
+        if !explicit.trim().is_empty() && probe_toolchain(&explicit).is_ok() {
+            return Ok(explicit);
+        }
+    }
+
+    if probe_toolchain("clang").is_ok() {
+        return Ok("clang".to_string());
+    }
+
+    if cfg!(target_os = "macos") {
+        if probe_toolchain("/usr/bin/clang").is_ok() {
+            return Ok("/usr/bin/clang".to_string());
+        }
+        if let Some(path) = resolve_xcrun_clang_path() {
+            if probe_toolchain(&path).is_ok() {
+                return Ok(path);
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "failed to locate a working clang toolchain. Set AIC_CLANG to a valid clang binary"
+    );
+}
+
+fn resolve_xcrun_clang_path() -> Option<String> {
+    let output = Command::new("xcrun")
+        .arg("--find")
+        .arg("clang")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 fn ensure_supported_toolchain(info: &ToolchainInfo) -> anyhow::Result<()> {
@@ -625,6 +694,210 @@ fn append_link_options(command: &mut Command, link: &LinkOptions) {
     for lib in &link.libs {
         command.arg(format!("-l{lib}"));
     }
+}
+
+fn append_target_triple(command: &mut Command, target_triple: Option<&str>) {
+    if let Some(target) = target_triple {
+        command.arg(format!("--target={target}"));
+    }
+}
+
+fn target_supports_static_link(target_triple: Option<&str>) -> bool {
+    match target_triple {
+        Some(target) => target.contains("linux"),
+        None => cfg!(target_os = "linux"),
+    }
+}
+
+fn target_is_macos(target_triple: Option<&str>) -> bool {
+    match target_triple {
+        Some(target) => target.contains("apple-darwin"),
+        None => cfg!(target_os = "macos"),
+    }
+}
+
+fn normalize_macos_uuid_and_codesign(path: &Path) -> anyhow::Result<()> {
+    remove_macos_signature(path)?;
+    normalize_macos_uuid(path)?;
+    codesign_macos_binary(path)?;
+    Ok(())
+}
+
+fn normalize_macos_uuid(path: &Path) -> anyhow::Result<()> {
+    const LC_UUID: u32 = 0x1b;
+    const MH_MAGIC_64: u32 = 0xfeed_facf;
+    const MACH_HEADER_64_SIZE: usize = 32;
+    const NCMDS_OFFSET: usize = 16;
+    const LOAD_COMMAND_SIZE: usize = 8;
+    const UUID_BYTES: usize = 16;
+
+    let mut bytes = fs::read(path)
+        .with_context(|| format!("failed to read macOS artifact {}", path.display()))?;
+    if bytes.len() < MACH_HEADER_64_SIZE {
+        anyhow::bail!(
+            "macOS artifact is too small to contain mach header: {}",
+            path.display()
+        );
+    }
+    let magic = read_u32_le(&bytes, 0).context("reading mach header magic")?;
+    if magic != MH_MAGIC_64 {
+        anyhow::bail!(
+            "unsupported mach-o header magic {magic:#x} for {}",
+            path.display()
+        );
+    }
+    let ncmds = read_u32_le(&bytes, NCMDS_OFFSET).context("reading mach header ncmds")? as usize;
+    let mut command_offset = MACH_HEADER_64_SIZE;
+    let mut uuid_range: Option<std::ops::Range<usize>> = None;
+
+    for _ in 0..ncmds {
+        let cmd = read_u32_le(&bytes, command_offset).with_context(|| {
+            format!(
+                "reading load command id at offset {command_offset} in {}",
+                path.display()
+            )
+        })?;
+        let cmdsize = read_u32_le(&bytes, command_offset + 4).with_context(|| {
+            format!(
+                "reading load command size at offset {} in {}",
+                command_offset + 4,
+                path.display()
+            )
+        })? as usize;
+        if cmdsize < LOAD_COMMAND_SIZE {
+            anyhow::bail!(
+                "invalid load command size {cmdsize} at offset {command_offset} in {}",
+                path.display()
+            );
+        }
+        let command_end = command_offset
+            .checked_add(cmdsize)
+            .context("load command size overflow")?;
+        if command_end > bytes.len() {
+            anyhow::bail!(
+                "load command exceeds file bounds at offset {command_offset} in {}",
+                path.display()
+            );
+        }
+
+        if cmd == LC_UUID {
+            if cmdsize < LOAD_COMMAND_SIZE + UUID_BYTES {
+                anyhow::bail!(
+                    "LC_UUID command is truncated at offset {command_offset} in {}",
+                    path.display()
+                );
+            }
+            let uuid_start = command_offset + LOAD_COMMAND_SIZE;
+            let uuid_end = uuid_start + UUID_BYTES;
+            uuid_range = Some(uuid_start..uuid_end);
+            break;
+        }
+
+        command_offset = command_end;
+    }
+
+    let uuid_range = uuid_range.context(format!(
+        "missing LC_UUID load command in macOS artifact {}",
+        path.display()
+    ))?;
+
+    let mut normalized = bytes.clone();
+    normalized[uuid_range.clone()].fill(0);
+    let digest = Sha256::digest(&normalized);
+    let mut deterministic_uuid = [0u8; UUID_BYTES];
+    deterministic_uuid.copy_from_slice(&digest[..UUID_BYTES]);
+    deterministic_uuid[6] = (deterministic_uuid[6] & 0x0f) | 0x40;
+    deterministic_uuid[8] = (deterministic_uuid[8] & 0x3f) | 0x80;
+    bytes[uuid_range].copy_from_slice(&deterministic_uuid);
+    fs::write(path, bytes).with_context(|| {
+        format!(
+            "failed to write normalized macOS artifact {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn remove_macos_signature(path: &Path) -> anyhow::Result<()> {
+    let codesign_bin = resolve_codesign_binary();
+    let rendered = format!(
+        "{} --remove-signature {}",
+        codesign_bin.to_string_lossy(),
+        path.display()
+    );
+    let output = Command::new(&codesign_bin)
+        .arg("--remove-signature")
+        .arg(path)
+        .output()
+        .with_context(|| format!("failed to execute {rendered}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.contains("code object is not signed at all") {
+        return Ok(());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        format!("stderr: {stderr}")
+    } else if !stdout.is_empty() {
+        format!("stdout: {stdout}")
+    } else {
+        "no tool output".to_string()
+    };
+    anyhow::bail!("failed to remove signature ({rendered}); {detail}");
+}
+
+fn codesign_macos_binary(path: &Path) -> anyhow::Result<()> {
+    let codesign_bin = resolve_codesign_binary();
+    let rendered = format!(
+        "{} --force --sign - {}",
+        codesign_bin.to_string_lossy(),
+        path.display()
+    );
+    let output = Command::new(&codesign_bin)
+        .arg("--force")
+        .arg("--sign")
+        .arg("-")
+        .arg(path)
+        .output()
+        .with_context(|| format!("failed to execute {rendered}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        format!("stderr: {stderr}")
+    } else if !stdout.is_empty() {
+        format!("stdout: {stdout}")
+    } else {
+        "no tool output".to_string()
+    };
+    anyhow::bail!("codesign failed ({rendered}); {detail}");
+}
+
+fn resolve_codesign_binary() -> PathBuf {
+    if let Ok(path) = std::env::var("AIC_CODESIGN") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    let default = PathBuf::from("/usr/bin/codesign");
+    if default.exists() {
+        return default;
+    }
+    PathBuf::from("codesign")
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
+    let end = offset
+        .checked_add(std::mem::size_of::<u32>())
+        .context("offset overflow")?;
+    let slice = bytes.get(offset..end).context("u32 read out of bounds")?;
+    let mut word = [0u8; 4];
+    word.copy_from_slice(slice);
+    Ok(u32::from_le_bytes(word))
 }
 
 fn collect_type_templates(
@@ -1689,10 +1962,14 @@ impl<'a> Generator<'a> {
                 llvm_type(&ty),
                 ptr
             ));
-            fctx.vars
-                .last_mut()
-                .expect("scope")
-                .insert(param.name.clone(), Local { ty, ptr });
+            fctx.vars.last_mut().expect("scope").insert(
+                param.name.clone(),
+                Local {
+                    symbol: None,
+                    ty,
+                    ptr,
+                },
+            );
         }
 
         let tail = self.gen_block_with_expected_tail(&func.body, Some(&sig.ret), &mut fctx);
@@ -1820,6 +2097,18 @@ impl<'a> Generator<'a> {
                     let Some(expected) = expected else {
                         continue;
                     };
+                    let mut skip_resource_cleanup = false;
+                    if resource_drop_action_for_type(&expected).is_some() {
+                        if let ir::ExprKind::Var(source) = &expr.kind {
+                            if let Some(source_local) = find_local(&fctx.vars, source) {
+                                if source_local.symbol.is_some() {
+                                    self.mark_local_resource_moved(source, fctx);
+                                } else {
+                                    skip_resource_cleanup = true;
+                                }
+                            }
+                        }
+                    }
                     let ptr = self.new_temp();
                     fctx.lines
                         .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
@@ -1834,12 +2123,20 @@ impl<'a> Generator<'a> {
                     fctx.vars.last_mut().expect("scope").insert(
                         name.clone(),
                         Local {
+                            symbol: Some(*symbol),
                             ty: expected.clone(),
                             ptr: ptr.clone(),
                         },
                     );
                     if let Some(scope) = fctx.drop_scopes.last_mut() {
-                        scope.locals.insert(*symbol, DropSlot { ty: expected, ptr });
+                        scope.locals.insert(
+                            *symbol,
+                            DropSlot {
+                                ty: expected,
+                                ptr,
+                                skip_resource_cleanup,
+                            },
+                        );
                     }
                 }
                 ir::Stmt::Assign { target, expr, span } => {
@@ -1885,6 +2182,9 @@ impl<'a> Generator<'a> {
                 }
                 ir::Stmt::Return { expr, .. } => {
                     if let Some(expr) = expr {
+                        if let ir::ExprKind::Var(name) = &expr.kind {
+                            self.mark_local_resource_moved(name, fctx);
+                        }
                         let ret_hint = fctx.ret_ty.clone();
                         if let Some(value) =
                             self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
@@ -1934,6 +2234,9 @@ impl<'a> Generator<'a> {
 
         let tail = if !fctx.terminated {
             if let Some(expr) = &block.tail {
+                if let ir::ExprKind::Var(name) = &expr.kind {
+                    self.mark_local_resource_moved(name, fctx);
+                }
                 self.gen_expr_with_expected(expr, expected_tail, fctx)
             } else {
                 Some(Value {
@@ -1969,21 +2272,84 @@ impl<'a> Generator<'a> {
             let Some(local) = scope.locals.get(symbol) else {
                 continue;
             };
-            if !type_has_runtime_drop(&local.ty) {
-                continue;
+            if let Some(action) = resource_drop_action_for_type(&local.ty) {
+                if !local.skip_resource_cleanup {
+                    self.emit_resource_drop_action(action, local, fctx);
+                }
             }
-            let cast = self.new_temp();
-            fctx.lines.push(format!(
-                "  {} = bitcast {}* {} to i8*",
-                cast,
-                llvm_type(&local.ty),
-                local.ptr
-            ));
-            fctx.lines.push(format!(
-                "  call void @llvm.lifetime.end.p0i8(i64 -1, i8* {})",
-                cast
-            ));
+            if type_has_runtime_drop(&local.ty) {
+                let cast = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = bitcast {}* {} to i8*",
+                    cast,
+                    llvm_type(&local.ty),
+                    local.ptr
+                ));
+                fctx.lines.push(format!(
+                    "  call void @llvm.lifetime.end.p0i8(i64 -1, i8* {})",
+                    cast
+                ));
+            }
         }
+    }
+
+    fn mark_local_resource_moved(&mut self, name: &str, fctx: &mut FnCtx) {
+        let Some(local) = find_local(&fctx.vars, name) else {
+            return;
+        };
+        if resource_drop_action_for_type(&local.ty).is_none() {
+            return;
+        }
+        let Some(symbol) = local.symbol else {
+            return;
+        };
+        for scope in fctx.drop_scopes.iter_mut().rev() {
+            let Some(slot) = scope.locals.get_mut(&symbol) else {
+                continue;
+            };
+            slot.skip_resource_cleanup = true;
+            break;
+        }
+    }
+
+    fn emit_resource_drop_action(
+        &mut self,
+        action: ResourceDropAction,
+        local: &DropSlot,
+        fctx: &mut FnCtx,
+    ) {
+        let LType::Struct(layout) = &local.ty else {
+            return;
+        };
+        if layout.fields.len() != 1
+            || layout.fields[0].name != "handle"
+            || layout.fields[0].ty != LType::Int
+        {
+            return;
+        }
+
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&local.ty),
+            llvm_type(&local.ty),
+            local.ptr
+        ));
+        let handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            handle,
+            llvm_type(&local.ty),
+            loaded
+        ));
+        let drop_call = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {})",
+            drop_call,
+            resource_drop_runtime_fn(action),
+            handle
+        ));
     }
 
     fn gen_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> Option<Value> {
@@ -3411,6 +3777,7 @@ impl<'a> Generator<'a> {
                 fctx.vars.last_mut().expect("scope").insert(
                     name.clone(),
                     Local {
+                        symbol: None,
                         ty: local.ty.clone(),
                         ptr: slot,
                     },
@@ -3432,10 +3799,14 @@ impl<'a> Generator<'a> {
                 llvm_type(&ty),
                 ptr
             ));
-            fctx.vars
-                .last_mut()
-                .expect("scope")
-                .insert(param.name.clone(), Local { ty, ptr });
+            fctx.vars.last_mut().expect("scope").insert(
+                param.name.clone(),
+                Local {
+                    symbol: None,
+                    ty,
+                    ptr,
+                },
+            );
         }
 
         let tail = self.gen_block_with_expected_tail(body, Some(ret_ty), &mut fctx);
@@ -23327,6 +23698,7 @@ impl<'a> Generator<'a> {
                     fctx.vars.last_mut().expect("scope").insert(
                         binding.clone(),
                         Local {
+                            symbol: None,
                             ty: scrutinee.ty.clone(),
                             ptr,
                         },
@@ -23364,6 +23736,7 @@ impl<'a> Generator<'a> {
                                 fctx.vars.last_mut().expect("scope").insert(
                                     name.clone(),
                                     Local {
+                                        symbol: None,
                                         ty: payload_ty.clone(),
                                         ptr,
                                     },
@@ -23765,6 +24138,7 @@ impl<'a> Generator<'a> {
                 fctx.vars.last_mut().expect("scope").insert(
                     binding.clone(),
                     Local {
+                        symbol: None,
                         ty: value.ty.clone(),
                         ptr,
                     },
@@ -23896,6 +24270,7 @@ impl<'a> Generator<'a> {
             fctx.vars.last_mut().expect("scope").insert(
                 binding.clone(),
                 Local {
+                    symbol: None,
                     ty: LType::Bool,
                     ptr,
                 },
@@ -24945,6 +25320,14 @@ struct DropScope {
 struct DropSlot {
     ty: LType,
     ptr: String,
+    skip_resource_cleanup: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResourceDropAction {
+    FsFileClose,
+    ConcurrencyCloseChannel,
+    ConcurrencyCloseMutex,
 }
 
 fn find_local(scopes: &[BTreeMap<String, Local>], name: &str) -> Option<Local> {
@@ -25449,6 +25832,32 @@ fn default_value(ty: &LType) -> String {
 
 fn type_has_runtime_drop(ty: &LType) -> bool {
     matches!(ty, LType::String | LType::Struct(_) | LType::Enum(_))
+}
+
+fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
+    let LType::Struct(layout) = ty else {
+        return None;
+    };
+    if layout.fields.len() != 1
+        || layout.fields[0].name != "handle"
+        || layout.fields[0].ty != LType::Int
+    {
+        return None;
+    }
+    match base_type_name(&layout.repr) {
+        "FileHandle" => Some(ResourceDropAction::FsFileClose),
+        "IntChannel" => Some(ResourceDropAction::ConcurrencyCloseChannel),
+        "IntMutex" => Some(ResourceDropAction::ConcurrencyCloseMutex),
+        _ => None,
+    }
+}
+
+fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
+    match action {
+        ResourceDropAction::FsFileClose => "aic_rt_fs_file_close",
+        ResourceDropAction::ConcurrencyCloseChannel => "aic_rt_conc_close_channel",
+        ResourceDropAction::ConcurrencyCloseMutex => "aic_rt_conc_mutex_close",
+    }
 }
 
 fn render_type(ty: &LType) -> String {
@@ -41096,6 +41505,7 @@ void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
 mod tests {
     use std::fs;
 
+    use sha2::{Digest, Sha256};
     use tempfile::tempdir;
 
     use crate::{
@@ -41107,8 +41517,8 @@ mod tests {
 
     use super::{
         emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
-        ensure_supported_toolchain_with_pin, parse_llvm_major, runtime_c_source, CodegenOptions,
-        ToolchainInfo,
+        ensure_supported_toolchain_with_pin, normalize_macos_uuid, parse_llvm_major,
+        runtime_c_source, CodegenOptions, ToolchainInfo,
     };
 
     #[test]
@@ -41284,6 +41694,41 @@ fn main() -> Int {
     }
 
     #[test]
+    fn normalize_macos_uuid_is_deterministic_and_idempotent() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("fake-macho.bin");
+        let mut bytes = vec![0u8; 32 + 24];
+
+        bytes[0..4].copy_from_slice(&0xfeed_facf_u32.to_le_bytes());
+        bytes[16..20].copy_from_slice(&1u32.to_le_bytes());
+        bytes[32..36].copy_from_slice(&0x1b_u32.to_le_bytes());
+        bytes[36..40].copy_from_slice(&24u32.to_le_bytes());
+        bytes[40..56].copy_from_slice(&[
+            0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33, 0x44, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+            0x12, 0x34,
+        ]);
+
+        fs::write(&path, &bytes).expect("write fake macho");
+
+        normalize_macos_uuid(&path).expect("normalize first run");
+        let first = fs::read(&path).expect("read first");
+        normalize_macos_uuid(&path).expect("normalize second run");
+        let second = fs::read(&path).expect("read second");
+
+        assert_eq!(first, second, "uuid normalization must be idempotent");
+        assert_ne!(&first[40..56], &bytes[40..56], "uuid should change");
+
+        let mut normalized = first.clone();
+        normalized[40..56].fill(0);
+        let digest = Sha256::digest(&normalized);
+        let mut expected_uuid = [0u8; 16];
+        expected_uuid.copy_from_slice(&digest[..16]);
+        expected_uuid[6] = (expected_uuid[6] & 0x0f) | 0x40;
+        expected_uuid[8] = (expected_uuid[8] & 0x3f) | 0x80;
+        assert_eq!(&first[40..56], expected_uuid.as_slice());
+    }
+
+    #[test]
     fn lexical_drop_emits_reverse_lexical_lifetime_end() {
         let dir = tempdir().expect("tempdir");
         let file = dir.path().join("lexical_drop_order.aic");
@@ -41363,6 +41808,183 @@ fn main() -> Int {
             filtered,
             expected,
             "expected reverse lexical lifetime.end order for locals; lexical={lexical_locals:?}; drop_order={drop_order:?}\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn file_handle_drop_emits_reverse_lexical_close_order() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("file_drop_order.aic");
+        fs::write(
+            &file,
+            r#"
+import std.fs;
+
+fn main() -> Int {
+    let first = FileHandle { handle: 1 };
+    let second = FileHandle { handle: 2 };
+    if first.handle == 1 && second.handle == 2 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+        let lines: Vec<&str> = output.llvm_ir.lines().collect();
+        let main_start = lines
+            .iter()
+            .position(|line| line.starts_with("define i64 @aic_main() {"))
+            .expect("aic_main function");
+        let main_end = lines[main_start + 1..]
+            .iter()
+            .position(|line| line.trim() == "}")
+            .map(|idx| main_start + 1 + idx)
+            .expect("aic_main closing brace");
+        let main_lines = &lines[main_start..=main_end];
+
+        let lexical_locals: Vec<String> = main_lines
+            .iter()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if !trimmed.contains(" = alloca { i64 }") {
+                    return None;
+                }
+                Some(
+                    trimmed
+                        .split('=')
+                        .next()
+                        .expect("alloca lhs")
+                        .trim()
+                        .trim_start_matches('%')
+                        .to_string(),
+                )
+            })
+            .collect();
+        assert!(
+            lexical_locals.len() >= 2,
+            "expected at least two FileHandle locals; llvm={}",
+            output.llvm_ir
+        );
+
+        let mut load_to_alloca: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        let mut extract_to_load: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        let mut close_order: Vec<String> = Vec::new();
+        for line in main_lines {
+            let trimmed = line.trim();
+            if let Some((lhs, tail)) = trimmed.split_once(" = load { i64 }, { i64 }* %") {
+                let src = tail
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches(',')
+                    .to_string();
+                load_to_alloca.insert(lhs.trim_start_matches('%').to_string(), src);
+                continue;
+            }
+            if let Some((lhs, tail)) = trimmed.split_once(" = extractvalue { i64 } %") {
+                let src = tail
+                    .split(',')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .trim_start_matches('%')
+                    .to_string();
+                extract_to_load.insert(lhs.trim_start_matches('%').to_string(), src);
+                continue;
+            }
+            if let Some((_, tail)) = trimmed.split_once("@aic_rt_fs_file_close(i64 %") {
+                let handle_reg = tail
+                    .split(')')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .trim_start_matches('%');
+                if let Some(load_reg) = extract_to_load.get(handle_reg) {
+                    if let Some(alloca) = load_to_alloca.get(load_reg) {
+                        close_order.push(alloca.clone());
+                    }
+                }
+            }
+        }
+
+        let filtered: Vec<String> = close_order
+            .iter()
+            .filter(|name| lexical_locals.iter().any(|local| local == *name))
+            .cloned()
+            .collect();
+        let expected: Vec<String> = lexical_locals.iter().rev().cloned().collect();
+        assert_eq!(
+            filtered,
+            expected,
+            "expected reverse lexical close order; lexical={lexical_locals:?}; close_order={close_order:?}\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn file_handle_drop_runs_before_early_return() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("file_drop_early_return.aic");
+        fs::write(
+            &file,
+            r#"
+import std.fs;
+
+fn helper() -> () {
+    let file = FileHandle { handle: 3 };
+    if file.handle == 3 {
+        return;
+    } else {
+        ()
+    };
+}
+
+fn main() -> Int {
+    helper();
+    0
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+        let mut checked = false;
+        for block in output.llvm_ir.split("\ndefine ") {
+            if !block.contains("@aic_rt_fs_file_close(") || !block.contains("ret void") {
+                continue;
+            }
+            let close_idx = block
+                .find("@aic_rt_fs_file_close(")
+                .expect("file close call index");
+            let ret_idx = block.find("ret void").expect("ret void index");
+            assert!(
+                close_idx < ret_idx,
+                "expected close before return; close_idx={close_idx}; ret_idx={ret_idx}\nllvm={}",
+                output.llvm_ir
+            );
+            checked = true;
+            break;
+        }
+        assert!(
+            checked,
+            "expected a function block with file-close call followed by ret void\nllvm={}",
             output.llvm_ir
         );
     }

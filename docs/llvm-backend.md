@@ -98,6 +98,47 @@ Artifact behavior:
 - `obj`: emits module object only (no runtime object linked in).
 - `lib`: archives module object + runtime object into static library.
 
+## Cross-Compilation Targets (`--target`)
+
+`aic build` now accepts explicit target labels:
+
+- `x86_64-linux` -> `x86_64-unknown-linux-gnu`
+- `aarch64-linux` -> `aarch64-unknown-linux-gnu`
+- `x86_64-macos` -> `x86_64-apple-darwin`
+- `aarch64-macos` -> `arm64-apple-darwin`
+- `x86_64-windows` -> `x86_64-pc-windows-msvc`
+
+Examples:
+
+```bash
+# Explicit host target build
+cargo run --quiet --bin aic -- build examples/core/cross_compile_targets.aic --target aarch64-macos
+
+# Build object/library artifacts for a non-host target
+cargo run --quiet --bin aic -- build examples/e5/object_link_main.aic --artifact obj --target x86_64-linux
+cargo run --quiet --bin aic -- build examples/e5/object_link_main.aic --artifact lib --target x86_64-linux
+```
+
+When `--target` is omitted, `aic` uses the host build target.
+
+CI verification for this surface runs:
+
+- host executable smoke build with explicit `--target`
+- cross-target object smoke builds for all five target labels on each runner OS
+
+## Static Link Mode (`--static-link`)
+
+`aic build --static-link` enables static linking for executable artifacts.
+
+- Supported today: linux targets (`x86_64-linux`, `aarch64-linux`)
+- Not supported: non-executable artifacts (`obj`, `lib`)
+
+Example:
+
+```bash
+cargo run --quiet --bin aic -- build examples/core/cross_compile_targets.aic --target x86_64-linux --static-link
+```
+
 ## Panic ABI and Source Mapping (E5-T6)
 
 Panic runtime signature:

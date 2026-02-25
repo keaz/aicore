@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 mod coverage;
@@ -225,6 +226,10 @@ enum Command {
         output: Option<PathBuf>,
         #[arg(long, value_enum, default_value = "exe")]
         artifact: BuildArtifact,
+        #[arg(long, value_enum)]
+        target: Option<BuildTarget>,
+        #[arg(long)]
+        static_link: bool,
         #[arg(long)]
         debug_info: bool,
         #[arg(long)]
@@ -314,11 +319,25 @@ enum EmitKind {
     Text,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum BuildArtifact {
     Exe,
     Obj,
     Lib,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum BuildTarget {
+    #[value(name = "x86_64-linux")]
+    X8664Linux,
+    #[value(name = "aarch64-linux")]
+    Aarch64Linux,
+    #[value(name = "x86_64-macos")]
+    X8664Macos,
+    #[value(name = "aarch64-macos")]
+    Aarch64Macos,
+    #[value(name = "x86_64-windows")]
+    X8664Windows,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1328,11 +1347,34 @@ fn run_cli() -> anyhow::Result<i32> {
             input,
             output,
             artifact,
+            target,
+            static_link,
             debug_info,
             offline,
             verify_hash,
             manifest,
         } => {
+            let target_label = target
+                .or_else(host_build_target)
+                .map(|entry| entry.canonical_label().to_string())
+                .unwrap_or_else(|| host_target_label().to_string());
+            let target_triple = target.map(|entry| entry.clang_triple().to_string());
+
+            if static_link && artifact != BuildArtifact::Exe {
+                eprintln!("--static-link is supported only with --artifact exe");
+                return Ok(EXIT_USAGE_ERROR);
+            }
+            if static_link
+                && !target
+                    .map(|entry| entry.supports_static_link())
+                    .unwrap_or(cfg!(target_os = "linux"))
+            {
+                eprintln!(
+                    "--static-link currently supports linux targets only; requested target={target_label}"
+                );
+                return Ok(EXIT_USAGE_ERROR);
+            }
+
             if let Some(expected) = verify_hash.as_deref() {
                 if !is_valid_sha256_hex(expected) {
                     eprintln!("--verify-hash must be a 64-character SHA256 hex digest");
@@ -1354,6 +1396,10 @@ fn run_cli() -> anyhow::Result<i32> {
                             eprintln!(
                                 "help: build a workspace member entry path to emit hermetic artifacts"
                             );
+                            return Ok(EXIT_USAGE_ERROR);
+                        }
+                        if static_link {
+                            eprintln!("--static-link is not supported for workspace builds");
                             return Ok(EXIT_USAGE_ERROR);
                         }
 
@@ -1427,7 +1473,12 @@ fn run_cli() -> anyhow::Result<i32> {
                                 &out,
                                 &work,
                                 workspace_artifact.to_codegen(),
-                                CompileOptions { debug_info, link },
+                                CompileOptions {
+                                    debug_info,
+                                    target_triple: target_triple.clone(),
+                                    static_link: false,
+                                    link,
+                                },
                             )?;
                             std::fs::write(&fingerprint_path, &fingerprint)?;
                             member_fingerprints.insert(member.name.clone(), fingerprint);
@@ -1464,7 +1515,12 @@ fn run_cli() -> anyhow::Result<i32> {
                                 &out,
                                 &work,
                                 artifact.to_codegen(),
-                                CompileOptions { debug_info, link },
+                                CompileOptions {
+                                    debug_info,
+                                    target_triple: target_triple.clone(),
+                                    static_link,
+                                    link,
+                                },
                             )?;
                             let manifest_path = manifest
                                 .as_deref()
@@ -1475,6 +1531,8 @@ fn run_cli() -> anyhow::Result<i32> {
                                 artifact,
                                 verify_hash.as_deref(),
                                 manifest_path,
+                                &target_label,
+                                static_link,
                             )? {
                                 eprintln!("{message}");
                                 return Ok(EXIT_DIAGNOSTIC_ERROR);
@@ -1516,7 +1574,12 @@ fn run_cli() -> anyhow::Result<i32> {
                         &out,
                         &work,
                         artifact.to_codegen(),
-                        CompileOptions { debug_info, link },
+                        CompileOptions {
+                            debug_info,
+                            target_triple,
+                            static_link,
+                            link,
+                        },
                     )?;
                     let manifest_path = manifest
                         .as_deref()
@@ -1527,6 +1590,8 @@ fn run_cli() -> anyhow::Result<i32> {
                         artifact,
                         verify_hash.as_deref(),
                         manifest_path,
+                        &target_label,
+                        static_link,
                     )? {
                         eprintln!("{message}");
                         return Ok(EXIT_DIAGNOSTIC_ERROR);
@@ -2859,6 +2924,8 @@ fn build_file(input: &Path, output: &Path, offline: bool) -> anyhow::Result<i32>
         ArtifactKind::Exe,
         CompileOptions {
             debug_info: false,
+            target_triple: None,
+            static_link: false,
             link,
         },
     )?;
@@ -3021,6 +3088,8 @@ fn process_built_artifact(
     artifact: BuildArtifact,
     verify_hash: Option<&str>,
     manifest_path: &Path,
+    target: &str,
+    static_link: bool,
 ) -> anyhow::Result<Option<String>> {
     let output_sha256 = build_output_sha256(output)?;
     if let Some(expected) = verify_hash {
@@ -3040,6 +3109,8 @@ fn process_built_artifact(
         artifact,
         &output_sha256,
         &content_addressed_path,
+        target,
+        static_link,
     )?;
     Ok(None)
 }
@@ -3087,6 +3158,8 @@ fn write_build_manifest(
     artifact: BuildArtifact,
     output_sha256: &str,
     content_addressed_path: &Path,
+    target: &str,
+    static_link: bool,
 ) -> anyhow::Result<()> {
     if let Some(parent) = manifest_path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -3099,6 +3172,8 @@ fn write_build_manifest(
         "output_sha256": output_sha256,
         "content_addressed_artifact_path": content_addressed_path.to_string_lossy(),
         "artifact_kind": artifact.as_str(),
+        "target": target,
+        "static_link": static_link,
     });
     let json = serde_json::to_string_pretty(&manifest)?;
     std::fs::write(manifest_path, format!("{json}\n"))?;
@@ -3130,12 +3205,14 @@ fn workspace_output_path(
 }
 
 fn fresh_work_dir(tag: &str) -> PathBuf {
+    static WORK_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}"))
+    let seq = WORK_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
 }
 
 impl BuildArtifact {
@@ -3153,6 +3230,43 @@ impl BuildArtifact {
             BuildArtifact::Obj => ArtifactKind::Obj,
             BuildArtifact::Lib => ArtifactKind::Lib,
         }
+    }
+}
+
+impl BuildTarget {
+    fn canonical_label(self) -> &'static str {
+        match self {
+            BuildTarget::X8664Linux => "x86_64-linux",
+            BuildTarget::Aarch64Linux => "aarch64-linux",
+            BuildTarget::X8664Macos => "x86_64-macos",
+            BuildTarget::Aarch64Macos => "aarch64-macos",
+            BuildTarget::X8664Windows => "x86_64-windows",
+        }
+    }
+
+    fn clang_triple(self) -> &'static str {
+        match self {
+            BuildTarget::X8664Linux => "x86_64-unknown-linux-gnu",
+            BuildTarget::Aarch64Linux => "aarch64-unknown-linux-gnu",
+            BuildTarget::X8664Macos => "x86_64-apple-darwin",
+            BuildTarget::Aarch64Macos => "arm64-apple-darwin",
+            BuildTarget::X8664Windows => "x86_64-pc-windows-msvc",
+        }
+    }
+
+    fn supports_static_link(self) -> bool {
+        matches!(self, BuildTarget::X8664Linux | BuildTarget::Aarch64Linux)
+    }
+}
+
+fn host_build_target() -> Option<BuildTarget> {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => Some(BuildTarget::X8664Linux),
+        ("aarch64", "linux") => Some(BuildTarget::Aarch64Linux),
+        ("x86_64", "macos") => Some(BuildTarget::X8664Macos),
+        ("aarch64", "macos") => Some(BuildTarget::Aarch64Macos),
+        ("x86_64", "windows") => Some(BuildTarget::X8664Windows),
+        _ => None,
     }
 }
 

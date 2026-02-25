@@ -4,7 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-AIC=(cargo run --quiet --bin aic --)
+if [[ -x "$ROOT_DIR/target/debug/aic" ]]; then
+  AIC=("$ROOT_DIR/target/debug/aic")
+else
+  AIC=(cargo run --quiet --bin aic --)
+fi
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aic-security.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 

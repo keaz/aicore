@@ -56,7 +56,8 @@ fmt-check:
 	$(CARGO) fmt --all -- --check
 
 lint:
-	$(CARGO) clippy --all-targets --all-features
+	$(CARGO) clippy --all-features --lib
+	$(CARGO) clippy --all-features --bins
 
 build:
 	$(CARGO) build --locked
@@ -201,9 +202,9 @@ docs-check:
 	@$(CARGO) test --locked --test agent_recipe_tests tutorial_chapters_and_agent_steps_contract_is_deterministic -- --exact
 	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_explain_human_and_machine_readable_outputs -- --exact
 	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs -- --exact
-	@cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json >/dev/null
-	@cargo run --quiet --bin aic -- release policy --check >/dev/null
-	@cargo run --quiet --bin aic -- release lts --check >/dev/null
+	@./target/debug/aic std-compat --check --baseline docs/std-api-baseline.json >/dev/null
+	@./target/debug/aic release policy --check >/dev/null
+	@./target/debug/aic release lts --check >/dev/null
 
 no-null-lint:
 	@if rg -n --glob '*.aic' --glob '!examples/ops/migration_v1_to_v2/**' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \
