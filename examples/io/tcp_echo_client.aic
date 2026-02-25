@@ -1,0 +1,60 @@
+module example.io.tcp_echo_client;
+
+import std.io;
+import std.net;
+import std.bytes;
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let sent = match tcp_send(client, bytes.from_string("hello")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let request = match tcp_recv(server, 64, 1000) {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    };
+    let echoed = match tcp_send(server, request) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let response = match tcp_recv(client, 64, 1000) {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    };
+
+    let closed = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent == 5 && echoed == 5 && bytes.byte_len(response) == 5 && closed == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

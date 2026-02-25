@@ -4742,6 +4742,57 @@ fn main() -> Int effects { io, net } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_refused_and_address_in_use_errors_are_stable() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let bind_conflict = match tcp_listen(addr) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    tcp_close(listener);
+
+    let refused = match tcp_connect(addr, 200) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    print_int(bind_conflict * 10 + refused);
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "53\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_async_wait_negative_paths_are_stable() {
     let src = r#"
 import std.io;

@@ -681,6 +681,34 @@ Verifier-focused examples:
 - Example:
   - `examples/data/bitwise_protocol.aic`
 
+## Connectivity Runtime: Real TCP/UDP/DNS Intrinsics (CONN-T2)
+
+- Runtime ABI surface (POSIX Linux/macOS):
+  - `aic_rt_net_tcp_listen`
+  - `aic_rt_net_tcp_local_addr`
+  - `aic_rt_net_tcp_accept`
+  - `aic_rt_net_tcp_connect`
+  - `aic_rt_net_tcp_send`
+  - `aic_rt_net_tcp_recv`
+  - `aic_rt_net_tcp_close`
+  - `aic_rt_net_udp_bind`
+  - `aic_rt_net_udp_local_addr`
+  - `aic_rt_net_udp_send_to`
+  - `aic_rt_net_udp_recv_from`
+  - `aic_rt_net_udp_close`
+  - `aic_rt_net_dns_lookup`
+  - `aic_rt_net_dns_reverse`
+- Error model:
+  - `errno`/`getaddrinfo` mapping to `NetError` is deterministic and shared by sync/async paths.
+  - Timeouts are explicit (`Timeout`), bind conflicts map to `AddressInUse`, and refused connects map to `Refused`.
+- Verification:
+  - `tests/execution_tests.rs` includes TCP loopback, UDP/DNS helpers, timeout/invalid-input diagnostics, and refused/address-in-use stability coverage.
+  - async bridge tests validate `async_accept_submit`, `async_tcp_send_submit`, `async_tcp_recv_submit`, `async_wait_*`, and `async_shutdown`.
+- Examples:
+  - `examples/io/tcp_echo.aic`
+  - `examples/io/tcp_echo_client.aic`
+  - `examples/io/net_all_ops.aic`
+
 ## Validation Inventory
 
 ### Tests
@@ -722,6 +750,7 @@ Verifier-focused examples:
 - `examples/e8/large_project_bench/`
 - `examples/e9/sandbox_smoke.aic`
 - `examples/data/bitwise_protocol.aic`
+- `examples/io/tcp_echo_client.aic`
 
 Examples are integrated into `scripts/ci/examples.sh`.
 
