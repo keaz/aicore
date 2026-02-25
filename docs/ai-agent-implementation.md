@@ -730,6 +730,23 @@ Verifier-focused examples:
   - `examples/verify/file_protocol.aic`
   - `examples/verify/file_protocol_invalid.aic`
 
+## Operations Gate Blocking (EPIC-OPS #64)
+
+- Release preflight workflow:
+  - `.github/workflows/release.yml` runs `release-preflight` before build/publish.
+  - `release-preflight` runs `make ci` + policy/LTS/security checks.
+- Security workflow:
+  - `.github/workflows/security.yml` runs `make security-audit`, policy/LTS checks, and `make repro-check`.
+- Primary OPS commands:
+  - `make test-e9`
+  - `make security-audit`
+  - `make repro-check`
+  - `make release-preflight`
+- OPS examples:
+  - `examples/ops/migration_v1_to_v2/`
+  - `examples/ops/observability_demo/`
+  - `examples/ops/sandbox_profiles/`
+
 ## Validation Inventory
 
 ### Tests

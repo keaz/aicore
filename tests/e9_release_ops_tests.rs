@@ -307,6 +307,38 @@ fn lts_policy_docs_and_workflow_gates_are_wired() {
 }
 
 #[test]
+fn ops_workflows_enforce_release_preflight_and_security_gates() {
+    let release = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
+        .expect("read release workflow");
+    for token in [
+        "release-preflight",
+        "make ci",
+        "release policy --check",
+        "release lts --check",
+        "release security-audit --json",
+    ] {
+        assert!(
+            release.contains(token),
+            "release workflow missing preflight token: {token}"
+        );
+    }
+
+    let security = fs::read_to_string(repo_root().join(".github/workflows/security.yml"))
+        .expect("read security workflow");
+    for token in [
+        "make security-audit",
+        "release policy --check",
+        "release lts --check",
+        "make repro-check",
+    ] {
+        assert!(
+            security.contains(token),
+            "security workflow missing gate token: {token}"
+        );
+    }
+}
+
+#[test]
 fn ops_agent_runbooks_cover_t1_to_t5_with_tabletop_commands() {
     let root = repo_root();
     let ops_readme =

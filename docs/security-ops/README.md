@@ -44,3 +44,18 @@ make release-preflight
 | `make security-audit` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces the release security audit gate on PR/mainline CI and on the scheduled security workflow. |
 | `make repro-check` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces reproducibility manifest checks in CI and in the security workflow. |
 | `make release-preflight` | `.github/workflows/release.yml` (`release-preflight` job) | Mirrors release gating locally before tagging, aligned with release workflow checks (`make ci`, release policy/LTS gates, and security-audit gate). |
+
+## Release-Blocking Policy
+
+- `release.yml` always runs `release-preflight` before `release-build`.
+- `release-preflight` runs:
+  - `make ci`
+  - `aic release policy --check`
+  - `aic release lts --check`
+  - `aic release security-audit --json`
+- Security workflow independently enforces:
+  - `make security-audit`
+  - `aic release policy --check`
+  - `aic release lts --check`
+  - `make repro-check`
+- Result: releases are blocked if any OPS gate fails.
