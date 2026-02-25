@@ -34,11 +34,14 @@ borrow_expr     = "&" "mut"? unary_expr ;
 - Assignment remains type-checked in addition to mutability/borrow checks.
 - Current model focuses on alias/mutability safety for local bindings; explicit lifetime syntax is not part of the surface language.
 - Runtime-drop local values (`String`, struct, enum) are cleaned up in deterministic reverse lexical order at scope exits. Codegen emits `llvm.lifetime.end.p0i8` for this ordering across normal exits and early control-flow exits (`return`, `break`, `continue`, and `?` error propagation returns).
-- `#157` current shipped subset adds real RAII cleanup for handle-backed resource locals:
+- `#157` current shipped subset adds real RAII cleanup for compiler-managed resource locals:
   - `FileHandle` => `aic_rt_fs_file_close`
+  - `Map[K, V]` => `aic_rt_map_close`
+  - `Set[T]` => closes inner `Map[T, Int]` via `aic_rt_map_close`
+  - `TcpReader` => `aic_rt_net_tcp_close`
   - `IntChannel` => `aic_rt_conc_close_channel`
   - `IntMutex` => `aic_rt_conc_mutex_close`
-- Direct local move-outs (`let b = a`, direct `return a`, and tail `a` for supported handle-backed resource locals) skip source-local cleanup so ownership transfer does not auto-close the moved value.
+- Direct local move-outs (`let b = a`, direct `return a`, and tail `a` for supported resource locals) skip source-local cleanup so ownership transfer does not auto-close the moved value.
 - AI-friendly quick pattern for current #157 behavior:
 
 ```aic

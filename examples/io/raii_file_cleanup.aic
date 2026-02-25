@@ -1,5 +1,7 @@
 import std.io;
 import std.fs;
+import std.map;
+import std.set;
 import std.string;
 
 fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
@@ -58,11 +60,23 @@ fn append_with_handle(file: FileHandle, line: String) -> Int effects { fs } {
     }
 }
 
+fn map_set_reader_raii_marker() -> Int {
+    let map: Map[Int, Int] = Map { handle: 11 };
+    let set: Set[Int] = Set { items: Map { handle: 22 } };
+    let reader = TcpReader { handle: 33, max_bytes: 64, timeout_ms: 10 };
+    if map.handle + set.items.handle + reader.handle == 66 {
+        1
+    } else {
+        0
+    }
+}
+
 fn main() -> Int effects { io, fs } {
     let path = "raii_file_cleanup.txt";
     let wrote_let = append_with_let_move(path, "alpha\n");
     let wrote_return = append_with_handle(open_via_return(path), "beta\n");
     let wrote_tail = append_with_handle(open_via_tail(path), "delta\n");
+    let resource_marker = map_set_reader_raii_marker();
     let try_err = match append_then_fail(path) {
         Ok(_) => 0,
         Err(_) => 1,
@@ -83,7 +97,7 @@ fn main() -> Int effects { io, fs } {
 
     let removed = ok_bool(delete(path));
 
-    if wrote_let + wrote_return + wrote_tail + try_err + content_ok + removed == 6 {
+    if wrote_let + wrote_return + wrote_tail + try_err + content_ok + removed + resource_marker == 7 {
         print_int(42);
     } else {
         print_int(0);

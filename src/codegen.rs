@@ -1299,6 +1299,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_env_cwd(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_set_cwd(i8*, i64, i64)\n\n");
         text.push_str("declare i64 @aic_rt_map_new(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_map_close(i64)\n");
         text.push_str("declare i64 @aic_rt_map_insert_string(i64, i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_map_insert_string_int_key(i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_map_insert_string_bool_key(i64, i64, i8*, i64, i64)\n");
@@ -2321,13 +2322,6 @@ impl<'a> Generator<'a> {
         let LType::Struct(layout) = &local.ty else {
             return;
         };
-        if layout.fields.len() != 1
-            || layout.fields[0].name != "handle"
-            || layout.fields[0].ty != LType::Int
-        {
-            return;
-        }
-
         let loaded = self.new_temp();
         fctx.lines.push(format!(
             "  {} = load {}, {}* {}",
@@ -2336,13 +2330,55 @@ impl<'a> Generator<'a> {
             llvm_type(&local.ty),
             local.ptr
         ));
-        let handle = self.new_temp();
-        fctx.lines.push(format!(
-            "  {} = extractvalue {} {}, 0",
-            handle,
-            llvm_type(&local.ty),
-            loaded
-        ));
+
+        let handle = match action {
+            ResourceDropAction::SetCloseInnerMap => {
+                let Some(items_idx) = self.struct_field_index(layout, "items") else {
+                    return;
+                };
+                let Some(items_ty) = layout.fields.get(items_idx).map(|field| field.ty.clone()) else {
+                    return;
+                };
+                let LType::Struct(map_layout) = items_ty else {
+                    return;
+                };
+                let Some(map_handle_idx) = self.struct_int_field_index(&map_layout, "handle") else {
+                    return;
+                };
+                let items = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = extractvalue {} {}, {}",
+                    items,
+                    llvm_type(&local.ty),
+                    loaded,
+                    items_idx
+                ));
+                let map_handle = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = extractvalue {} {}, {}",
+                    map_handle,
+                    llvm_type(&LType::Struct(map_layout.clone())),
+                    items,
+                    map_handle_idx
+                ));
+                map_handle
+            }
+            _ => {
+                let Some(handle_idx) = self.struct_int_field_index(layout, "handle") else {
+                    return;
+                };
+                let handle = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = extractvalue {} {}, {}",
+                    handle,
+                    llvm_type(&local.ty),
+                    loaded,
+                    handle_idx
+                ));
+                handle
+            }
+        };
+
         let drop_call = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i64 {})",
@@ -2350,6 +2386,20 @@ impl<'a> Generator<'a> {
             resource_drop_runtime_fn(action),
             handle
         ));
+    }
+
+    fn struct_int_field_index(&self, layout: &StructLayoutType, field_name: &str) -> Option<usize> {
+        layout
+            .fields
+            .iter()
+            .position(|field| field.name == field_name && field.ty == LType::Int)
+    }
+
+    fn struct_field_index(&self, layout: &StructLayoutType, field_name: &str) -> Option<usize> {
+        layout
+            .fields
+            .iter()
+            .position(|field| field.name == field_name)
     }
 
     fn gen_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> Option<Value> {
@@ -25327,6 +25377,9 @@ struct DropSlot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResourceDropAction {
     FsFileClose,
+    MapClose,
+    SetCloseInnerMap,
+    NetTcpClose,
     ConcurrencyCloseChannel,
     ConcurrencyCloseMutex,
 }
@@ -25839,14 +25892,11 @@ fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
     let LType::Struct(layout) = ty else {
         return None;
     };
-    if layout.fields.len() != 1
-        || layout.fields[0].name != "handle"
-        || layout.fields[0].ty != LType::Int
-    {
-        return None;
-    }
     match base_type_name(&layout.repr) {
         "FileHandle" => Some(ResourceDropAction::FsFileClose),
+        "Map" => Some(ResourceDropAction::MapClose),
+        "Set" => Some(ResourceDropAction::SetCloseInnerMap),
+        "TcpReader" => Some(ResourceDropAction::NetTcpClose),
         "IntChannel" => Some(ResourceDropAction::ConcurrencyCloseChannel),
         "IntMutex" => Some(ResourceDropAction::ConcurrencyCloseMutex),
         _ => None,
@@ -25856,6 +25906,8 @@ fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
 fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
     match action {
         ResourceDropAction::FsFileClose => "aic_rt_fs_file_close",
+        ResourceDropAction::MapClose | ResourceDropAction::SetCloseInnerMap => "aic_rt_map_close",
+        ResourceDropAction::NetTcpClose => "aic_rt_net_tcp_close",
         ResourceDropAction::ConcurrencyCloseChannel => "aic_rt_conc_close_channel",
         ResourceDropAction::ConcurrencyCloseMutex => "aic_rt_conc_mutex_close",
     }
@@ -30744,6 +30796,24 @@ static AicMapSlot* aic_rt_map_get_slot(long handle) {
         return NULL;
     }
     return slot;
+}
+
+long aic_rt_map_close(long handle) {
+    AicMapSlot* slot = aic_rt_map_get_slot(handle);
+    if (slot == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < slot->len; ++i) {
+        aic_rt_map_free_entry(&slot->entries[i]);
+    }
+    free(slot->entries);
+    slot->entries = NULL;
+    slot->len = 0;
+    slot->cap = 0;
+    slot->in_use = 0;
+    slot->key_kind = 0;
+    slot->value_kind = 0;
+    return 0;
 }
 
 static long aic_rt_map_find_string_index(const AicMapSlot* slot, const char* key_ptr, long key_len) {
@@ -42917,6 +42987,138 @@ fn main() -> Int {
     }
 
     #[test]
+    fn map_set_tcp_reader_drop_is_emitted_and_lifo() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("map_set_tcp_reader_drop_lifo.aic");
+        fs::write(
+            &file,
+            r#"
+import std.map;
+import std.set;
+import std.io;
+
+fn main() -> Int {
+    let map: Map[Int, Int] = Map { handle: 11 };
+    let set: Set[Int] = Set { items: Map { handle: 22 } };
+    let reader = TcpReader { handle: 33, max_bytes: 64, timeout_ms: 10 };
+    if map.handle + set.items.handle + reader.handle == 66 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+        let main_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("i64 @aic_main("))
+            .expect("aic_main block");
+
+        let tcp_close = main_block
+            .find("@aic_rt_net_tcp_close(")
+            .expect("tcp close call in main");
+        let map_close_positions = main_block
+            .match_indices("@aic_rt_map_close(")
+            .map(|(idx, _)| idx)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            map_close_positions.len(),
+            2,
+            "expected two map-close calls in main (Set inner map + Map local)\nllvm={}",
+            output.llvm_ir
+        );
+        assert!(
+            tcp_close < map_close_positions[0] && map_close_positions[0] < map_close_positions[1],
+            "expected LIFO drop order reader -> set.items -> map\nllvm={}",
+            output.llvm_ir
+        );
+        assert_eq!(
+            main_block.matches("@aic_rt_net_tcp_close(").count(),
+            1,
+            "expected one tcp close in main\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn moved_map_and_set_sources_skip_close_in_callee() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("map_set_move_skip_drop.aic");
+        fs::write(
+            &file,
+            r#"
+import std.map;
+import std.set;
+
+fn make_map() -> Map[Int, Int] {
+    let map: Map[Int, Int] = Map { handle: 1 };
+    map
+}
+
+fn make_set() -> Set[Int] {
+    let set: Set[Int] = Set { items: Map { handle: 2 } };
+    set
+}
+
+fn main() -> Int {
+    let map = make_map();
+    let set = make_set();
+    if map.handle + set.items.handle == 3 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        let make_map_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("{ i64 } @aic_make_map("))
+            .expect("make_map block");
+        assert!(
+            !make_map_block.contains("@aic_rt_map_close("),
+            "moved map source should not be closed in callee\nllvm={}",
+            output.llvm_ir
+        );
+        let make_set_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.contains("@aic_make_set("))
+            .expect("make_set block");
+        assert!(
+            !make_set_block.contains("@aic_rt_map_close("),
+            "moved set source should not be closed in callee\nllvm={}",
+            output.llvm_ir
+        );
+        let main_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("i64 @aic_main("))
+            .expect("aic_main block");
+        assert_eq!(
+            main_block.matches("@aic_rt_map_close(").count(),
+            2,
+            "expected two map-close calls in main\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
     fn emits_debug_metadata_and_panic_line_mapping() {
         let dir = tempdir().expect("tempdir");
         let file = dir.path().join("panic_line_map.aic");
@@ -43057,6 +43259,7 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_map_new(i64, i64, i64*)"));
+        assert!(output.llvm_ir.contains("declare i64 @aic_rt_map_close(i64)"));
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_map_insert_string(i64, i8*, i64, i64, i8*, i64, i64)"));
@@ -43259,6 +43462,7 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
         assert!(runtime_c_source()
             .contains("long aic_rt_map_new(long key_kind, long value_kind, long* out_handle)"));
+        assert!(runtime_c_source().contains("long aic_rt_map_close(long handle)"));
         assert!(runtime_c_source().contains("long aic_rt_map_insert_string("));
         assert!(runtime_c_source().contains("long aic_rt_map_insert_int("));
         assert!(runtime_c_source().contains("long aic_rt_map_get_string("));

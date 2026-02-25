@@ -27,10 +27,10 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 
 ## Resource Lifecycle (RAII Subset)
 
-- Handle-backed locals (`FileHandle`, `IntChannel`, `IntMutex`) are automatically cleaned up on scope exit in deterministic reverse lexical order.
+- Compiler-managed resource locals (`FileHandle`, `Map[K, V]`, `Set[T]`, `TcpReader`, `IntChannel`, `IntMutex`) are automatically cleaned up on scope exit in deterministic reverse lexical order.
 - Cleanup also runs on early-exit control flow (`return`, `break`, `continue`, and `?` error propagation).
 - Direct local move-outs (`let b = a`, direct `return a`, direct tail `a`) preserve transferred ownership by suppressing cleanup on the moved-from local.
-- Current scope is intentionally limited to compiler-managed built-in handle types; user-defined destructor hooks are not yet part of the surface language.
+- Current scope is intentionally limited to compiler-managed built-in resource types; user-defined destructor hooks are not yet part of the surface language.
 
 ## Platform Caveats
 
