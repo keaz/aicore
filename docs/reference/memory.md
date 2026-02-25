@@ -41,6 +41,11 @@ borrow_expr     = "&" "mut"? unary_expr ;
   - `TcpReader` => `aic_rt_net_tcp_close`
   - `IntChannel` => `aic_rt_conc_close_channel`
   - `IntMutex` => `aic_rt_conc_mutex_close`
+- Language-level `Drop` trait methods are dispatched at scope exits before builtin resource cleanup fallback:
+  - declare `trait Drop[T] { fn drop(self: T) -> (); }`
+  - implement `impl Drop[MyType] { fn drop(self: MyType) -> () { ... } }`
+  - locals with a concrete `Drop` impl run the trait method in deterministic reverse lexical order
+  - moved-out locals suppress destructor calls on the moved-from slot
 - Direct local move-outs (`let b = a`, direct `return a`, and tail `a` for supported resource locals) skip source-local cleanup so ownership transfer does not auto-close the moved value.
 - AI-friendly quick pattern for current #157 behavior:
 
@@ -59,7 +64,26 @@ fn append_once(path: String, text: String) -> Result[Int, FsError] effects { fs 
     Ok(1)
 }
 ```
-- Remaining `#157` gaps: user-defined destructor hooks (`Drop`-style behavior), full move-out tracking for complex expressions/control-flow joins, partial-move destructor semantics, and panic/unwind drop paths.
+- `Drop` example with runtime-visible cleanup ordering:
+
+```aic
+import std.fs;
+
+trait Drop[T] {
+    fn drop(self: T) -> () effects { fs };
+}
+
+struct AuditDrop { path: String, marker: String }
+
+impl Drop[AuditDrop] {
+    fn drop(self: AuditDrop) -> () effects { fs } {
+        let _ = append_text(self.path, self.marker);
+        ()
+    }
+}
+```
+
+- Remaining `#157` gaps: full move-out tracking for complex expressions/control-flow joins, partial-move destructor semantics, and panic/unwind drop paths.
 
 ## Diagnostic mapping
 

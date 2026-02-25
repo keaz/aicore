@@ -1041,6 +1041,38 @@ fn collect_internal_aliases_and_consts(
     (aliases, consts)
 }
 
+fn collect_drop_impl_methods(
+    program: &ir::Program,
+    type_map: &BTreeMap<ir::TypeId, String>,
+) -> BTreeMap<String, String> {
+    let mut drop_impls = BTreeMap::new();
+    for item in &program.items {
+        let ir::Item::Impl(impl_def) = item else {
+            continue;
+        };
+        if impl_def.is_inherent || impl_def.trait_name != "Drop" {
+            continue;
+        }
+        let Some(target_ty) = impl_def.trait_args.first() else {
+            continue;
+        };
+        let Some(target_repr) = type_map.get(target_ty).cloned() else {
+            continue;
+        };
+        let Some(drop_method) = impl_def
+            .methods
+            .iter()
+            .find(|method| method_base_name(&method.name) == "drop")
+        else {
+            continue;
+        };
+        drop_impls
+            .entry(target_repr)
+            .or_insert_with(|| drop_method.name.clone());
+    }
+    drop_impls
+}
+
 struct Generator<'a> {
     program: &'a ir::Program,
     file: &'a str,
@@ -1063,6 +1095,7 @@ struct Generator<'a> {
     struct_templates: BTreeMap<String, StructTemplate>,
     enum_templates: BTreeMap<String, EnumTemplate>,
     variant_ctors: BTreeMap<String, Vec<VariantCtor>>,
+    drop_impl_methods: BTreeMap<String, String>,
     generic_fn_instances: BTreeMap<String, Vec<GenericFnInstance>>,
     generic_fn_instances_by_symbol: BTreeMap<ir::SymbolId, Vec<GenericFnInstance>>,
     active_type_bindings: Option<BTreeMap<String, String>>,
@@ -1080,6 +1113,7 @@ impl<'a> Generator<'a> {
         let (type_aliases, const_defs) = collect_internal_aliases_and_consts(program, &type_map);
         let (struct_templates, enum_templates, variant_ctors) =
             collect_type_templates(program, &type_map);
+        let drop_impl_methods = collect_drop_impl_methods(program, &type_map);
         let source_map = fs::read_to_string(file)
             .ok()
             .map(|source| SourceMap::from_source(&source));
@@ -1110,6 +1144,7 @@ impl<'a> Generator<'a> {
             struct_templates,
             enum_templates,
             variant_ctors,
+            drop_impl_methods,
             generic_fn_instances: BTreeMap::new(),
             generic_fn_instances_by_symbol: BTreeMap::new(),
             active_type_bindings: None,
@@ -2099,7 +2134,7 @@ impl<'a> Generator<'a> {
                         continue;
                     };
                     let mut skip_resource_cleanup = false;
-                    if resource_drop_action_for_type(&expected).is_some() {
+                    if self.type_needs_explicit_drop(&expected) {
                         if let ir::ExprKind::Var(source) = &expr.kind {
                             if let Some(source_local) = find_local(&fctx.vars, source) {
                                 if source_local.symbol.is_some() {
@@ -2109,6 +2144,7 @@ impl<'a> Generator<'a> {
                                 }
                             }
                         }
+                        self.mark_moved_resource_locals_in_expr(expr, fctx);
                     }
                     let ptr = self.new_temp();
                     fctx.lines
@@ -2183,10 +2219,10 @@ impl<'a> Generator<'a> {
                 }
                 ir::Stmt::Return { expr, .. } => {
                     if let Some(expr) = expr {
-                        if let ir::ExprKind::Var(name) = &expr.kind {
-                            self.mark_local_resource_moved(name, fctx);
-                        }
                         let ret_hint = fctx.ret_ty.clone();
+                        if self.type_needs_explicit_drop(&ret_hint) {
+                            self.mark_moved_resource_locals_in_expr(expr, fctx);
+                        }
                         if let Some(value) =
                             self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
                         {
@@ -2235,8 +2271,10 @@ impl<'a> Generator<'a> {
 
         let tail = if !fctx.terminated {
             if let Some(expr) = &block.tail {
-                if let ir::ExprKind::Var(name) = &expr.kind {
-                    self.mark_local_resource_moved(name, fctx);
+                if let Some(expected_tail) = expected_tail {
+                    if self.type_needs_explicit_drop(expected_tail) {
+                        self.mark_moved_resource_locals_in_expr(expr, fctx);
+                    }
                 }
                 self.gen_expr_with_expected(expr, expected_tail, fctx)
             } else {
@@ -2273,8 +2311,10 @@ impl<'a> Generator<'a> {
             let Some(local) = scope.locals.get(symbol) else {
                 continue;
             };
-            if let Some(action) = resource_drop_action_for_type(&local.ty) {
-                if !local.skip_resource_cleanup {
+            if !local.skip_resource_cleanup {
+                if let Some(drop_method) = self.drop_impl_method_for_type(&local.ty) {
+                    self.emit_trait_drop_action(&drop_method, local, fctx);
+                } else if let Some(action) = resource_drop_action_for_type(&local.ty) {
                     self.emit_resource_drop_action(action, local, fctx);
                 }
             }
@@ -2298,7 +2338,7 @@ impl<'a> Generator<'a> {
         let Some(local) = find_local(&fctx.vars, name) else {
             return;
         };
-        if resource_drop_action_for_type(&local.ty).is_none() {
+        if !self.type_needs_explicit_drop(&local.ty) {
             return;
         }
         let Some(symbol) = local.symbol else {
@@ -2311,6 +2351,51 @@ impl<'a> Generator<'a> {
             slot.skip_resource_cleanup = true;
             break;
         }
+    }
+
+    fn mark_moved_resource_locals_in_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) {
+        match &expr.kind {
+            ir::ExprKind::Var(name) => self.mark_local_resource_moved(name, fctx),
+            ir::ExprKind::StructInit { fields, .. } => {
+                for (_, value, _) in fields {
+                    self.mark_moved_resource_locals_in_expr(value, fctx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn type_needs_explicit_drop(&self, ty: &LType) -> bool {
+        self.drop_impl_method_for_type(ty).is_some() || resource_drop_action_for_type(ty).is_some()
+    }
+
+    fn drop_impl_method_for_type(&self, ty: &LType) -> Option<String> {
+        let ty_repr = render_type(ty);
+        self.drop_impl_methods.get(&ty_repr).cloned()
+    }
+
+    fn emit_trait_drop_action(&mut self, drop_method: &str, local: &DropSlot, fctx: &mut FnCtx) {
+        let Some(sig) = self.fn_sigs.get(drop_method).cloned() else {
+            return;
+        };
+        if sig.params.len() != 1 || sig.params[0] != local.ty || sig.ret != LType::Unit {
+            return;
+        }
+
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&local.ty),
+            llvm_type(&local.ty),
+            local.ptr
+        ));
+        fctx.lines.push(format!(
+            "  call void @{}({} {})",
+            mangle(drop_method),
+            llvm_type(&local.ty),
+            loaded
+        ));
     }
 
     fn emit_resource_drop_action(
@@ -2336,13 +2421,15 @@ impl<'a> Generator<'a> {
                 let Some(items_idx) = self.struct_field_index(layout, "items") else {
                     return;
                 };
-                let Some(items_ty) = layout.fields.get(items_idx).map(|field| field.ty.clone()) else {
+                let Some(items_ty) = layout.fields.get(items_idx).map(|field| field.ty.clone())
+                else {
                     return;
                 };
                 let LType::Struct(map_layout) = items_ty else {
                     return;
                 };
-                let Some(map_handle_idx) = self.struct_int_field_index(&map_layout, "handle") else {
+                let Some(map_handle_idx) = self.struct_int_field_index(&map_layout, "handle")
+                else {
                     return;
                 };
                 let items = self.new_temp();
@@ -26013,6 +26100,10 @@ fn render_applied_type_from_parts(base: &str, args: &[String]) -> String {
     }
 }
 
+fn method_base_name(name: &str) -> &str {
+    name.rsplit("::").next().unwrap_or(name)
+}
+
 fn infer_generic_bindings(
     expected: &str,
     found: &str,
@@ -43193,6 +43284,272 @@ fn main() -> Int {
     }
 
     #[test]
+    fn trait_drop_dispatch_is_lifo_and_skips_moved_sources() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("trait_drop_lifo_and_moves.aic");
+        fs::write(
+            &file,
+            r#"
+trait Drop[T] {
+    fn drop(self) -> ();
+}
+
+struct Probe {
+    id: Int,
+}
+
+impl Drop[Probe] {
+    fn drop(self) -> () {
+        let _id = self.id;
+        ()
+    }
+}
+
+fn make_probe(id: Int) -> Probe {
+    let probe = Probe { id: id };
+    probe
+}
+
+fn main() -> Int {
+    let first = Probe { id: 1 };
+    let second = Probe { id: 2 };
+    let third = make_probe(3);
+    if first.id + second.id + third.id == 6 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+        let lines: Vec<&str> = output.llvm_ir.lines().collect();
+
+        let make_probe_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| block.starts_with("{ i64 } @aic_make_probe("))
+            .expect("make_probe block");
+        assert!(
+            !make_probe_block.contains("@aic_Probe__drop("),
+            "moved source in make_probe should not call drop\nllvm={}",
+            output.llvm_ir
+        );
+
+        let main_start = lines
+            .iter()
+            .position(|line| line.starts_with("define i64 @aic_main() {"))
+            .expect("aic_main function");
+        let main_end = lines[main_start + 1..]
+            .iter()
+            .position(|line| line.trim() == "}")
+            .map(|idx| main_start + 1 + idx)
+            .expect("aic_main closing brace");
+        let main_lines = &lines[main_start..=main_end];
+
+        let lexical_locals: Vec<String> = main_lines
+            .iter()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if !trimmed.contains(" = alloca { i64 }") {
+                    return None;
+                }
+                Some(
+                    trimmed
+                        .split('=')
+                        .next()
+                        .expect("alloca lhs")
+                        .trim()
+                        .trim_start_matches('%')
+                        .to_string(),
+                )
+            })
+            .collect();
+        assert!(
+            lexical_locals.len() >= 3,
+            "expected at least three Probe locals in main\nllvm={}",
+            output.llvm_ir
+        );
+
+        let mut load_to_alloca: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        let mut drop_order: Vec<String> = Vec::new();
+        for line in main_lines {
+            let trimmed = line.trim();
+            if let Some((lhs, tail)) = trimmed.split_once(" = load { i64 }, { i64 }* %") {
+                let src = tail
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches(',')
+                    .to_string();
+                load_to_alloca.insert(lhs.trim_start_matches('%').to_string(), src);
+                continue;
+            }
+            if let Some((_, tail)) = trimmed.split_once("@aic_Probe__drop({ i64 } %") {
+                let load_reg = tail
+                    .split(')')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .trim_start_matches('%');
+                if let Some(alloca) = load_to_alloca.get(load_reg) {
+                    drop_order.push(alloca.clone());
+                }
+            }
+        }
+
+        let filtered: Vec<String> = drop_order
+            .iter()
+            .filter(|name| lexical_locals.iter().any(|local| local == *name))
+            .cloned()
+            .collect();
+        let expected: Vec<String> = lexical_locals.iter().rev().cloned().collect();
+        assert_eq!(
+            filtered,
+            expected,
+            "expected reverse lexical drop order for Probe locals\nlexical={lexical_locals:?}\ndrop_order={drop_order:?}\nllvm={}",
+            output.llvm_ir
+        );
+        assert_eq!(
+            main_lines
+                .iter()
+                .filter(|line| line.contains("@aic_Probe__drop("))
+                .count(),
+            3,
+            "expected exactly three drop calls in main\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn trait_drop_runs_before_question_mark_error_return() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("trait_drop_try_return.aic");
+        fs::write(
+            &file,
+            r#"
+trait Drop[T] {
+    fn drop(self) -> ();
+}
+
+struct Probe {
+    id: Int,
+}
+
+impl Drop[Probe] {
+    fn drop(self) -> () {
+        let _id = self.id;
+        ()
+    }
+}
+
+fn helper() -> Result[Int, Int] {
+    let probe = Probe { id: 9 };
+    Err(1)?;
+    Ok(probe.id)
+}
+
+fn main() -> Int {
+    match helper() {
+        Ok(v) => v,
+        Err(v) => v,
+    }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        let helper_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| {
+                block
+                    .lines()
+                    .next()
+                    .map(|line| line.contains("@aic_helper("))
+                    .unwrap_or(false)
+            })
+            .expect("helper block");
+        let drop_idx = helper_block
+            .find("@aic_Probe__drop(")
+            .expect("drop call in helper");
+        let ret_idx = helper_block[drop_idx..]
+            .find("ret ")
+            .map(|idx| drop_idx + idx)
+            .expect("return after drop");
+        assert!(
+            drop_idx < ret_idx,
+            "expected drop before `?` return in helper\ndrop_idx={drop_idx}\nret_idx={ret_idx}\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn struct_init_tail_move_skips_map_close_on_moved_local() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("struct_tail_move_map.aic");
+        fs::write(
+            &file,
+            r#"
+import std.map;
+import std.set;
+
+fn build() -> Set[Int] {
+    let m: Map[Int, Int] = Map { handle: 7 };
+    Set { items: m }
+}
+
+fn main() -> Int {
+    let value = build();
+    if value.items.handle == 7 { 0 } else { 1 }
+}
+"#,
+        )
+        .expect("write source");
+
+        let front = run_frontend(&file).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics={:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+        let build_block = output
+            .llvm_ir
+            .split("\ndefine ")
+            .find(|block| {
+                block
+                    .lines()
+                    .next()
+                    .map(|line| line.contains("@aic_build("))
+                    .unwrap_or(false)
+            })
+            .expect("build block");
+        assert!(
+            !build_block.contains("@aic_rt_map_close("),
+            "build must not close moved map handle before returning Set\nllvm={}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
     fn emits_debug_metadata_and_panic_line_mapping() {
         let dir = tempdir().expect("tempdir");
         let file = dir.path().join("panic_line_map.aic");
@@ -43333,7 +43690,9 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_map_new(i64, i64, i64*)"));
-        assert!(output.llvm_ir.contains("declare i64 @aic_rt_map_close(i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_map_close(i64)"));
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_map_insert_string(i64, i8*, i64, i64, i8*, i64, i64)"));

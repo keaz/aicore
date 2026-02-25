@@ -30,7 +30,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Compiler-managed resource locals (`FileHandle`, `Map[K, V]`, `Set[T]`, `TcpReader`, `IntChannel`, `IntMutex`) are automatically cleaned up on scope exit in deterministic reverse lexical order.
 - Cleanup also runs on early-exit control flow (`return`, `break`, `continue`, and `?` error propagation).
 - Direct local move-outs (`let b = a`, direct `return a`, direct tail `a`) preserve transferred ownership by suppressing cleanup on the moved-from local.
-- Current scope is intentionally limited to compiler-managed built-in resource types; user-defined destructor hooks are not yet part of the surface language.
+- Concrete `Drop` trait implementations (`trait Drop[T] { fn drop(self: T) -> (); }`) are dispatched at scope exits before builtin cleanup fallback, with the same reverse-lexical ordering and move-out suppression rules.
 
 ## Platform Caveats
 
@@ -77,6 +77,7 @@ fn main() -> Int effects { io, net } {
 
 - Filesystem operations: `examples/io/fs_all_ops.aic`
 - RAII scope-exit and early-return cleanup: `examples/io/raii_file_cleanup.aic`
+- `Drop` trait destructor dispatch on scope-exit and `?`: `examples/io/drop_trait_cleanup.aic`
 - CLI file pipeline: `examples/io/cli_file_pipeline.aic`
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`

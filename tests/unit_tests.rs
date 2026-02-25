@@ -366,6 +366,103 @@ impl Score[Meter] {
 }
 
 #[test]
+fn unit_drop_trait_surface_with_self_receiver_typechecks() {
+    let src = r#"
+trait Drop[T] {
+    fn drop(self) -> ();
+}
+
+struct Probe { id: Int }
+
+impl Drop[Probe] {
+    fn drop(self) -> () {
+        let _id = self.id;
+        ()
+    }
+}
+
+fn main() -> Int {
+    let probe = Probe { id: 41 };
+    probe.id
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_drop_trait_impl_missing_drop_reports_diagnostic() {
+    let src = r#"
+trait Drop[T] {
+    fn drop(self) -> ();
+}
+
+struct Probe { id: Int }
+
+impl Drop[Probe] {
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags
+            .iter()
+            .any(|d| d.message.contains("Drop") && d.message.contains("drop")),
+        "diags={all_diags:#?}"
+    );
+}
+
+#[test]
+fn unit_drop_trait_impl_signature_mismatch_reports_diagnostic() {
+    let src = r#"
+trait Drop[T] {
+    fn drop(self) -> ();
+}
+
+struct Probe { id: Int }
+
+impl Drop[Probe] {
+    fn drop(self, extra: Int) -> () {
+        let _extra = extra;
+        ()
+    }
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    let mut all_diags = resolve_diags;
+    all_diags.extend(out.diagnostics);
+    assert!(
+        all_diags
+            .iter()
+            .any(|d| d.message.contains("Drop.drop") || d.message.contains("Drop")),
+        "diags={all_diags:#?}"
+    );
+}
+
+#[test]
 fn unit_where_clause_multiple_bounds_are_enforced() {
     let src = r#"
 trait A[T];

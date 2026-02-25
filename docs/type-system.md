@@ -53,8 +53,8 @@ Type-focused status:
   - Target: move/use-after-move checks, cross-call borrow reasoning, field-aware ownership checks.
 - `#157` deterministic drop ordering
   - Current: runtime-drop locals (`String`, struct, enum) emit reverse-lexical `llvm.lifetime.end` cleanup at scope exits, and compiler-managed resource locals (`FileHandle`, `Map[K, V]`, `Set[T]`, `TcpReader`, `IntChannel`, `IntMutex`) additionally perform real runtime close/cleanup calls on scope exit and early-return paths (`return`, `break`, `continue`, `?`).
-  - Current: direct local move-outs for supported resource locals (`let b = a`, direct `return a`, direct tail `a`) suppress cleanup on the moved-from local to preserve transferred ownership.
-  - Target: full destructor invocation semantics (including user-defined `Drop`-style hooks), full move-out tracking across complex expressions, partial-move behavior, and unwind/panic-aware cleanup guarantees.
+  - Current: concrete `Drop` trait implementations (`trait Drop[T] { fn drop(self: T) -> (); }`) are discovered during codegen and dispatched at scope exits in reverse lexical order; moved-out locals suppress destructor dispatch on the moved-from slot.
+  - Target: full move-out tracking across complex expressions/control-flow joins, partial-move behavior, and unwind/panic-aware cleanup guarantees.
 - `#138` generic constraints and `where`
   - Current: inline bounds (including `+`) only.
   - Target: equivalent constraint model across inline and `where` forms.

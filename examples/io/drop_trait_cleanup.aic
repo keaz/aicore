@@ -1,0 +1,81 @@
+import std.io;
+import std.fs;
+import std.string;
+
+trait Drop[T] {
+    fn drop(self: T) -> () effects { fs };
+}
+
+struct AuditDrop {
+    path: String,
+    marker: String,
+    id: Int,
+}
+
+impl Drop[AuditDrop] {
+    fn drop(self: AuditDrop) -> () effects { fs } {
+        let _ignored = append_text(self.path, self.marker);
+        ()
+    }
+}
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn drop_scope(path: String) -> Int effects { fs } {
+    let first = AuditDrop { path: path, marker: "A", id: 1 };
+    let second = AuditDrop { path: path, marker: "B", id: 2 };
+    if first.id + second.id == 3 { 1 } else { 0 }
+}
+
+fn drop_fail(path: String) -> Result[Int, FsError] effects { fs } {
+    let probe = AuditDrop { path: path, marker: "C", id: 3 };
+    read_text("")?;
+    Ok(probe.id)
+}
+
+fn move_probe(path: String) -> AuditDrop {
+    let probe = AuditDrop { path: path, marker: "D", id: 4 };
+    probe
+}
+
+fn drop_move(path: String) -> Int {
+    let moved = move_probe(path);
+    if moved.id == 4 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, fs } {
+    let path = "drop_trait_cleanup.txt";
+    let reset = ok_bool(write_text(path, ""));
+    let scope_ok = drop_scope(path);
+    let try_ok = match drop_fail(path) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let move_ok = drop_move(path);
+
+    let text = match read_text(path) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let shape_ok =
+        if starts_with(text, "BA")
+            && ends_with(text, "CD")
+            && len(text) == 4 {
+            1
+        } else {
+            0
+        };
+    let removed = ok_bool(delete(path));
+
+    if reset + scope_ok + try_ok + move_ok + shape_ok + removed == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
