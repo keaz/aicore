@@ -400,6 +400,7 @@ fn cli_help_snapshots_are_stable() {
     for flag in [
         "--mode <MODE>",
         "--filter <FILTER>",
+        "--seed <N>",
         "--json",
         "--update-golden",
         "--check-golden",
@@ -3202,4 +3203,93 @@ fn test_harness_check_golden_reports_readable_diff_on_mismatch() {
         stdout.contains("@@ line"),
         "expected line-oriented diff hunk in output:\n{stdout}"
     );
+}
+
+#[test]
+fn test_command_runs_property_tests_with_seed_and_reports_counterexample() {
+    let dir = tempdir().expect("tempdir");
+    let test_file = dir.path().join("properties.aic");
+    fs::write(
+        &test_file,
+        r#"
+#[property(iterations = 4)]
+fn prop_generators_cover_all(
+    i: Int,
+    f: Float,
+    b: Bool,
+    s: String
+) -> () {
+    assert_eq(i, i);
+    assert(b || !b);
+}
+
+#[property(iterations = 6)]
+fn prop_fails(x: Int) -> () {
+    assert_eq(x + 1, x);
+}
+"#,
+    )
+    .expect("write property tests");
+
+    let root = dir.path().to_string_lossy().to_string();
+
+    let all = run_aic(&["test", &root, "--seed", "123", "--json"]);
+    assert_eq!(
+        all.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&all.stdout),
+        String::from_utf8_lossy(&all.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("json report");
+    assert_eq!(report["total"], 2, "report={report:#}");
+    assert_eq!(report["failed"], 1, "report={report:#}");
+    assert_eq!(
+        report["by_category"]["property-test"], 2,
+        "report={report:#}"
+    );
+
+    let cases = report["cases"].as_array().expect("cases array");
+    let failed_case = cases
+        .iter()
+        .find(|entry| {
+            entry["file"]
+                .as_str()
+                .map(|name| name.ends_with("::prop_fails"))
+                .unwrap_or(false)
+        })
+        .expect("prop_fails case");
+    assert_eq!(failed_case["passed"], false, "case={failed_case:#}");
+    let details = failed_case["details"].as_str().expect("details string");
+    assert!(details.contains("seed="), "details={details}");
+    assert!(details.contains("counterexample="), "details={details}");
+    assert!(details.contains("shrunk="), "details={details}");
+
+    let report_file = dir.path().join("test_results.json");
+    assert!(
+        report_file.exists(),
+        "missing report file: {}",
+        report_file.display()
+    );
+
+    let filtered = run_aic(&[
+        "test",
+        &root,
+        "--filter",
+        "generators_cover_all",
+        "--seed",
+        "123",
+        "--json",
+    ]);
+    assert_eq!(
+        filtered.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&filtered.stdout),
+        String::from_utf8_lossy(&filtered.stderr)
+    );
+    let filtered_report: serde_json::Value =
+        serde_json::from_slice(&filtered.stdout).expect("filtered json report");
+    assert_eq!(filtered_report["total"], 1, "report={filtered_report:#}");
+    assert_eq!(filtered_report["failed"], 0, "report={filtered_report:#}");
 }

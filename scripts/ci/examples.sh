@@ -588,6 +588,14 @@ case "$MODE" in
     python3 -m json.tool "$ARTIFACT_DIR/test_framework_filtered_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/test_framework_filtered_report.json"
     grep -q '"total": 1' "$ARTIFACT_DIR/test_framework_filtered_report.json"
+    "${AIC[@]}" test "examples/e7/property_framework" --seed 123 --json >"$ARTIFACT_DIR/property_framework_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/property_framework_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/property_framework_report.json"
+    grep -q '"total": 2' "$ARTIFACT_DIR/property_framework_report.json"
+    "${AIC[@]}" test "examples/e7/property_framework" --filter "reverse" --seed 123 --json >"$ARTIFACT_DIR/property_framework_filtered_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/property_framework_filtered_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/property_framework_filtered_report.json"
+    grep -q '"total": 1' "$ARTIFACT_DIR/property_framework_filtered_report.json"
     DOC_DIR="$ARTIFACT_DIR/doc_sample"
     "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
     expect_file_exists "$DOC_DIR/index.md"

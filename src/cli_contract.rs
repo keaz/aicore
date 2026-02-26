@@ -200,10 +200,11 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     },
     CommandContract {
         name: "test",
-        description: "Run AIC fixture harness categories",
+        description: "Run AIC fixture/attribute/property test categories",
         stable_flags: &[
             "--mode",
             "--filter",
+            "--seed",
             "--json",
             "--update-golden",
             "--check-golden",

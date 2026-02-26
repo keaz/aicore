@@ -1,0 +1,17 @@
+module examples.e7.property_framework;
+
+#[property(iterations = 32)]
+fn prop_reverse_reverse(x: Int) -> () {
+    assert_eq(x, x);
+}
+
+#[property(iterations = 16)]
+fn prop_generators_cover_all(
+    i: Int,
+    f: Float,
+    b: Bool,
+    s: String
+) -> () {
+    assert_eq(i, i);
+    assert(b || !b);
+}

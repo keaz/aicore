@@ -47,6 +47,7 @@ use aicore::perf_gate::{
     build_trend_report, host_target_label, load_budget, load_compare_baseline, run_perf_gate,
 };
 use aicore::project::init_project;
+use aicore::property_test_runner::run_property_tests;
 use aicore::release_ops::{
     check_compatibility_policy, check_lts_policy, compatibility_policy,
     effective_source_date_epoch, generate_provenance, generate_repro_manifest, generate_sbom,
@@ -285,6 +286,8 @@ enum Command {
         mode: TestModeArg,
         #[arg(long)]
         filter: Option<String>,
+        #[arg(long, value_name = "N")]
+        seed: Option<u64>,
         #[arg(long)]
         json: bool,
         #[arg(long, conflicts_with = "check_golden")]
@@ -1755,6 +1758,7 @@ fn run_cli() -> anyhow::Result<i32> {
             path,
             mode,
             filter,
+            seed,
             json,
             update_golden,
             check_golden,
@@ -1769,9 +1773,20 @@ fn run_cli() -> anyhow::Result<i32> {
             let mut report =
                 run_harness_with_golden_mode(&path, mode.to_harness_mode(), golden_mode)?;
             if matches!(mode, TestModeArg::All) {
-                let attr_report = run_attribute_tests(&path, filter.as_deref())?;
+                let test_seed = resolve_test_seed(seed);
+                let attr_report = run_attribute_tests(&path, filter.as_deref(), test_seed)?;
+                let prop_report = run_property_tests(&path, filter.as_deref(), test_seed)?;
+
+                let mut wrote_combined_report = false;
                 if attr_report.total > 0 {
                     merge_harness_reports(&mut report, attr_report);
+                    wrote_combined_report = true;
+                }
+                if prop_report.total > 0 {
+                    merge_harness_reports(&mut report, prop_report);
+                    wrote_combined_report = true;
+                }
+                if wrote_combined_report {
                     let report_path = test_results_path(&path);
                     std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)?;
                 }
@@ -3067,6 +3082,17 @@ fn merge_harness_reports(
         *base.by_category.entry(category).or_default() += count;
     }
     base.cases.append(&mut extra.cases);
+}
+
+fn resolve_test_seed(cli_seed: Option<u64>) -> u64 {
+    if let Some(seed) = cli_seed {
+        return seed;
+    }
+
+    std::env::var("AIC_TEST_SEED")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn test_results_path(path: &Path) -> PathBuf {

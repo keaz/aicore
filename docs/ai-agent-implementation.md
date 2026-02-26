@@ -459,8 +459,9 @@ Diagnostics:
 - Harness modules:
   - `src/test_harness.rs`
   - `src/attr_test_runner.rs`
+  - `src/property_test_runner.rs`
 - Command:
-  - `aic test [path] --mode all|run-pass|compile-fail|golden [--filter <pattern>] [--json]`
+  - `aic test [path] --mode all|run-pass|compile-fail|golden [--filter <pattern>] [--seed <n>] [--json]`
 - Fixture categories discovered by directory segment:
   - `run-pass`
   - `compile-fail`
@@ -469,12 +470,18 @@ Diagnostics:
   - `#[test]` marks runnable tests
   - `#[should_panic]` marks expected-failure tests
   - helper assertions available in test files: `assert(...)`, `assert_eq(...)`, `assert_ne(...)`
+- Property-based test discovery (mode `all`):
+  - `#[property]` runs with default deterministic iterations
+  - `#[property(iterations = N)]` overrides iteration count per property
+  - supported generated input types: `Int`, `Float`, `Bool`, `String`, `Vec[T]`, `Option[T]`
+  - failing runs report seed + counterexample and perform shrinking for smaller repro inputs
 - CI/automation output:
   - JSON mode emits machine-readable report to stdout
-  - attribute-test runs also persist `test_results.json` at the test root
+  - attribute/property runs persist `test_results.json` at the selected test root
 - Sample fixtures:
   - `examples/e7/harness/`
   - `examples/e7/test_framework/`
+  - `examples/e7/property_framework/`
 
 ### Deterministic incremental daemon (AG-T4)
 

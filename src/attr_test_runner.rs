@@ -22,7 +22,11 @@ struct AttributeTestCase {
     should_panic: bool,
 }
 
-pub fn run_attribute_tests(root: &Path, filter: Option<&str>) -> anyhow::Result<HarnessReport> {
+pub fn run_attribute_tests(
+    root: &Path,
+    filter: Option<&str>,
+    seed: u64,
+) -> anyhow::Result<HarnessReport> {
     let mut files = Vec::new();
     collect_aic_files(root, &mut files)?;
     files.sort();
@@ -87,7 +91,7 @@ pub fn run_attribute_tests(root: &Path, filter: Option<&str>) -> anyhow::Result<
                 break;
             };
 
-            let (passed, details) = match run_attribute_case(&case) {
+            let (passed, details) = match run_attribute_case(&case, seed) {
                 Ok(details) => (true, details),
                 Err(err) => (false, err.to_string()),
             };
@@ -200,7 +204,7 @@ fn parse_fn_name(trimmed_line: &str) -> Option<String> {
     }
 }
 
-fn run_attribute_case(case: &AttributeTestCase) -> anyhow::Result<String> {
+fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<String> {
     let source = fs::read_to_string(&case.file)?;
     let transformed = transform_source_for_test(&source, &case.name)?;
 
@@ -232,9 +236,7 @@ fn run_attribute_case(case: &AttributeTestCase) -> anyhow::Result<String> {
 
     let mut command = Command::new(&exe);
     command.env("AIC_TEST_MODE", "1");
-    if std::env::var_os("AIC_TEST_SEED").is_none() {
-        command.env("AIC_TEST_SEED", "0");
-    }
+    command.env("AIC_TEST_SEED", seed.to_string());
     if std::env::var_os("AIC_TEST_TIME_MS").is_none() {
         command.env("AIC_TEST_TIME_MS", "1767225600000");
     }
@@ -513,11 +515,11 @@ fn test_division_by_zero() -> () {
         )
         .expect("write tests");
 
-        let all = run_attribute_tests(dir.path(), None).expect("run all");
+        let all = run_attribute_tests(dir.path(), None, 0).expect("run all");
         assert_eq!(all.total, 2, "report={all:#?}");
         assert_eq!(all.failed, 0, "report={all:#?}");
 
-        let filtered = run_attribute_tests(dir.path(), Some("addition")).expect("run filtered");
+        let filtered = run_attribute_tests(dir.path(), Some("addition"), 0).expect("run filtered");
         assert_eq!(filtered.total, 1, "report={filtered:#?}");
         assert_eq!(filtered.failed, 0, "report={filtered:#?}");
     }

@@ -29,6 +29,7 @@ pub mod package_workflow;
 pub mod parser;
 pub mod perf_gate;
 pub mod project;
+pub mod property_test_runner;
 pub mod release_ops;
 pub mod resolver;
 pub mod sandbox;
