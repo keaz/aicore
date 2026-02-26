@@ -328,6 +328,19 @@ mod tests {
     }
 
     #[test]
+    fn finds_deprecated_concurrency_migration_entries() {
+        let channel = find_deprecated_api("std.concurrent", "channel_int")
+            .expect("channel_int deprecation entry");
+        assert_eq!(channel.replacement, "std.concurrent.channel[Int]");
+        let send =
+            find_deprecated_api("std.concurrent", "send_int").expect("send_int deprecation entry");
+        assert_eq!(send.replacement, "std.concurrent.send[Int]");
+        let recv =
+            find_deprecated_api("std.concurrent", "recv_int").expect("recv_int deprecation entry");
+        assert_eq!(recv.replacement, "std.concurrent.recv[Int]");
+    }
+
+    #[test]
     fn compare_snapshots_reports_breaking_and_additions() {
         let baseline = StdApiSnapshot {
             schema_version: 1,

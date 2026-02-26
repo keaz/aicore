@@ -22,6 +22,17 @@ aic migrate <path> --report target/ops/migration-report.json
 - `MIG002` (high risk): replace legacy `null` with `None()`.
 - `MIG003` (medium risk): migrate legacy IR JSON to current `schema_version`.
 
+## Concurrency Migration (AGX3)
+
+For legacy `std.concurrent` int-only APIs (`channel_int`, `send_int`, `recv_int`, etc.),
+use deterministic deprecation diagnostics as the migration driver:
+
+```bash
+aic check <path> --json
+```
+
+Every deprecated call emits `E6001` with a machine-readable replacement hint, which can be scripted by agents to stage incremental rewrites to generic `Sender[T]` / `Receiver[T]` APIs.
+
 ## Compatibility strategy
 
 - apply source and IR migrations before release branch cut

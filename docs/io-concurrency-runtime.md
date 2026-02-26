@@ -85,6 +85,33 @@ fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] eff
 fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency }
 ```
 
+## Migration Strategy (Legacy -> Generic)
+
+Preferred APIs are `Sender[T]` / `Receiver[T]` + generic `send/recv` operations.
+Legacy `IntChannel` APIs remain available for compatibility during migration and emit deterministic `E6001` warnings with replacement hints.
+
+Legacy-to-preferred mapping:
+
+- `channel_int(cap)` -> `buffered_channel[Int](cap)`
+- `buffered_channel_int(cap)` -> `buffered_channel[Int](cap)`
+- `channel_int_buffered(cap)` -> `buffered_channel[Int](cap)`
+- `send_int(ch, value, timeout)` -> `send(Sender { handle: ch.handle }, value)` (or migrate producer to typed sender)
+- `recv_int(ch, timeout)` -> `recv_timeout(Receiver { handle: ch.handle }, timeout)` (or migrate consumer to typed receiver)
+- `try_send_int(ch, value)` -> `try_send(Sender { handle: ch.handle }, value)`
+- `try_recv_int(ch)` -> `try_recv(Receiver { handle: ch.handle })`
+
+Planned legacy-to-generic transitions (sequenced with MT-T2/MT-T4):
+
+- `IntMutex` / `lock_int` / `unlock_int` -> `Mutex[T]` / guard-based lock APIs
+- `Task` + `spawn_task(value, delay_ms)` -> `Task[T]` + closure-based `spawn(fn() -> T)`
+- During transition, legacy forms remain supported and should be migrated incrementally with deterministic diagnostics.
+
+Sunset policy:
+
+- Legacy `IntChannel` APIs are compatibility wrappers in the 0.2.x line.
+- New code should use generic APIs by default.
+- Agent migrations should treat `E6001` warnings as actionable and rewrite callsites incrementally.
+
 ## Runtime Semantics
 
 - Task scheduler:
@@ -190,6 +217,7 @@ Codegen lowers to these runtime symbols:
 ## Example
 
 - `examples/io/worker_pool.aic`
+- `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`
 - `examples/io/async_await_submit_bridge.aic`

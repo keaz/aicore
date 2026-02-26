@@ -1,0 +1,43 @@
+import std.concurrent;
+import std.io;
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let legacy = unwrap_channel(channel_int(1));
+    let legacy_send = match send_int(legacy, 11, 1000) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let legacy_recv = match recv_int(legacy, 1000) {
+        Ok(value) => if value == 11 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let _legacy_close = close_channel(legacy);
+
+    let pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let tx = pair.0;
+    let rx = pair.1;
+    let generic_send = match send(tx, 31) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let generic_recv = match recv(rx) {
+        Ok(value) => if value == 31 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let _close_tx = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+
+    if legacy_send + legacy_recv + generic_send + generic_recv == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -85,6 +85,7 @@ fn main() -> Int effects { io, net } {
 - Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
+- Legacy-to-generic channel migration compatibility: `examples/io/channel_migration_compat.aic`
 - Generic channel payloads (`String`/`Vec[Int]`/struct): `examples/io/generic_channel_types.aic`
 - Structured task group/select/timeout: `examples/io/structured_concurrency.aic`
 - Negative effect-enforcement example: `examples/io/effect_misuse_fs.aic` (expected check failure)
@@ -99,6 +100,7 @@ cargo run --quiet --bin aic -- run examples/io/tcp_echo.aic
 cargo run --quiet --bin aic -- run examples/io/async_await_submit_bridge.aic
 cargo run --quiet --bin aic -- run examples/io/retry_with_jitter.aic
 cargo run --quiet --bin aic -- run examples/io/worker_pool.aic
+cargo run --quiet --bin aic -- run examples/io/channel_migration_compat.aic
 cargo run --quiet --bin aic -- run examples/io/generic_channel_types.aic
 cargo run --quiet --bin aic -- run examples/io/structured_concurrency.aic
 ```

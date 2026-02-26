@@ -3813,6 +3813,65 @@ fn main() -> Int effects { time } capabilities { time } {
 }
 
 #[test]
+fn unit_deprecated_std_concurrency_apis_emit_migration_hints() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.concurrent;
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let ch = unwrap_channel(channel_int(1));
+    let _sent = send_int(ch, 7, 1000);
+    let _recv = recv_int(ch, 1000);
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "unexpected errors: {:#?}",
+        out.diagnostics
+    );
+
+    let warnings = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "E6001" && matches!(d.severity, Severity::Warning))
+        .collect::<Vec<_>>();
+    assert!(
+        warnings.len() >= 3,
+        "expected deprecation warnings for channel_int/send_int/recv_int, got {warnings:#?}"
+    );
+    assert!(warnings.iter().any(|d| {
+        d.help
+            .iter()
+            .any(|h| h.contains("std.concurrent.buffered_channel[Int]"))
+    }));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.send[Int]"))));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.recv[Int]"))));
+}
+
+#[test]
 fn unit_missing_module_reports_e2100() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
