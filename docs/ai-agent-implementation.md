@@ -795,6 +795,16 @@ Verifier-focused examples:
 - JSON serde support encodes `Char` as integer codepoints and rejects invalid scalar values on decode.
 - Reference example: `examples/data/char_ops.aic` (wired into `scripts/ci/examples.sh` check/run sets).
 
+
+## Template Literals (ERGO-T2 #168)
+
+- Lexer accepts prefixed template strings: `f"..."` and `$"..."`.
+- Parser supports interpolation segments with nested expressions: `{expr}`.
+- Escaped braces are supported: `\{` and `\}`.
+- Templates are lowered to `aic_string_format_intrinsic(template, args)` with compiler-synthesized `Vec[String]` argument assembly.
+- Typechecking enforces interpolated values are `String`; callers must use explicit conversions such as `int_to_string(...)` for non-string values.
+- Reference example: `examples/data/template_literals.aic` (wired into `scripts/ci/examples.sh` check/run sets).
+
 ## Validation Inventory
 
 ### Tests
@@ -837,6 +847,7 @@ Verifier-focused examples:
 - `examples/e9/sandbox_smoke.aic`
 - `examples/data/bitwise_protocol.aic`
 - `examples/data/char_ops.aic`
+- `examples/data/template_literals.aic`
 - `examples/io/tcp_echo_client.aic`
 
 Examples are integrated into `scripts/ci/examples.sh`.

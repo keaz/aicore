@@ -15,6 +15,7 @@ pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
         diagnostics: Vec::new(),
         for_counter: 0,
         tuple_binding_counter: 0,
+        template_counter: 0,
         disallow_struct_literal: false,
     };
     let program = parser.parse_program();
@@ -29,6 +30,7 @@ struct Parser<'a> {
     diagnostics: Vec<Diagnostic>,
     for_counter: usize,
     tuple_binding_counter: usize,
+    template_counter: usize,
     disallow_struct_literal: bool,
 }
 
@@ -1919,6 +1921,10 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
+            TokenKind::Template(raw) => {
+                self.bump();
+                self.parse_template_literal(&raw, token.span)
+            }
             TokenKind::Char(value) => {
                 self.bump();
                 Some(Expr {
@@ -2199,6 +2205,423 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_template_literal(&mut self, raw: &str, token_span: Span) -> Option<Expr> {
+        let content_offset = token_span.start.saturating_add(2);
+        let mut template = String::new();
+        let mut literal = String::new();
+        let mut args = Vec::new();
+        let mut cursor = 0usize;
+
+        while cursor < raw.len() {
+            let Some(ch) = raw[cursor..].chars().next() else {
+                break;
+            };
+            match ch {
+                '\\' => {
+                    if let Some((escaped, consumed)) =
+                        self.parse_template_escape(raw, cursor, token_span)
+                    {
+                        literal.push(escaped);
+                        cursor += consumed;
+                    } else {
+                        return None;
+                    }
+                }
+                '{' => {
+                    template.push_str(&literal);
+                    literal.clear();
+
+                    let expr_start = cursor + ch.len_utf8();
+                    let mut depth = 0usize;
+                    let mut idx = expr_start;
+                    let mut in_string = false;
+                    let mut in_char = false;
+                    let mut escaped = false;
+                    let mut closing = None;
+
+                    while idx < raw.len() {
+                        let next = raw[idx..]
+                            .chars()
+                            .next()
+                            .expect("template interpolation cursor");
+                        let step = next.len_utf8();
+
+                        if in_string {
+                            if escaped {
+                                escaped = false;
+                            } else if next == '\\' {
+                                escaped = true;
+                            } else if next == '"' {
+                                in_string = false;
+                            }
+                            idx += step;
+                            continue;
+                        }
+
+                        if in_char {
+                            if escaped {
+                                escaped = false;
+                            } else if next == '\\' {
+                                escaped = true;
+                            } else if next == '\'' {
+                                in_char = false;
+                            }
+                            idx += step;
+                            continue;
+                        }
+
+                        match next {
+                            '"' => in_string = true,
+                            '\'' => in_char = true,
+                            '{' => depth += 1,
+                            '}' => {
+                                if depth == 0 {
+                                    closing = Some(idx);
+                                    break;
+                                }
+                                depth -= 1;
+                            }
+                            _ => {}
+                        }
+                        idx += step;
+                    }
+
+                    let Some(expr_end) = closing else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1001",
+                            "unterminated interpolation expression",
+                            self.file,
+                            Span::new(content_offset + cursor, token_span.end),
+                        ));
+                        return None;
+                    };
+
+                    let expr_src = raw[expr_start..expr_end].trim();
+                    if expr_src.is_empty() {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1001",
+                            "empty interpolation expression",
+                            self.file,
+                            Span::new(content_offset + expr_start, content_offset + expr_end),
+                        ));
+                        return None;
+                    }
+
+                    let interp_span =
+                        Span::new(content_offset + expr_start, content_offset + expr_end);
+                    let expr = self.parse_template_expr_fragment(expr_src, interp_span)?;
+                    template.push_str(&format!("{{{}}}", args.len()));
+                    args.push(expr);
+
+                    cursor = expr_end + 1;
+                }
+                '}' => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1001",
+                        "unescaped '}' in template string; use '\\}' for a literal brace",
+                        self.file,
+                        Span::new(content_offset + cursor, content_offset + cursor + 1),
+                    ));
+                    return None;
+                }
+                _ => {
+                    literal.push(ch);
+                    cursor += ch.len_utf8();
+                }
+            }
+        }
+
+        template.push_str(&literal);
+        if args.is_empty() {
+            return Some(Expr {
+                kind: ExprKind::String(template),
+                span: token_span,
+            });
+        }
+
+        let string_ty = TypeExpr {
+            kind: TypeKind::Named {
+                name: "String".to_string(),
+                args: Vec::new(),
+            },
+            span: token_span,
+        };
+        let vec_string_ty = TypeExpr {
+            kind: TypeKind::Named {
+                name: "Vec".to_string(),
+                args: vec![string_ty.clone()],
+            },
+            span: token_span,
+        };
+
+        let template_id = self.template_counter;
+        self.template_counter += 1;
+        let mut stmts = Vec::new();
+
+        let make_var_expr = |name: &str| Expr {
+            kind: ExprKind::Var(name.to_string()),
+            span: token_span,
+        };
+        let make_call_expr = |callee: &str, args: Vec<Expr>| Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr {
+                    kind: ExprKind::Var(callee.to_string()),
+                    span: token_span,
+                }),
+                args,
+            },
+            span: token_span,
+        };
+
+        let first_name = format!("__aic_template_args_{template_id}_0");
+        stmts.push(Stmt::Let {
+            name: first_name.clone(),
+            mutable: false,
+            ty: Some(vec_string_ty),
+            expr: make_call_expr("aic_vec_new_intrinsic", Vec::new()),
+            span: token_span,
+        });
+
+        let mut current_name = first_name;
+        for (idx, arg) in args.into_iter().enumerate() {
+            let next_name = format!("__aic_template_args_{template_id}_{}", idx + 1);
+            stmts.push(Stmt::Let {
+                name: next_name.clone(),
+                mutable: false,
+                ty: None,
+                expr: make_call_expr(
+                    "aic_vec_push_intrinsic",
+                    vec![make_var_expr(&current_name), arg],
+                ),
+                span: token_span,
+            });
+            current_name = next_name;
+        }
+
+        let format_call = make_call_expr(
+            "aic_string_format_intrinsic",
+            vec![
+                Expr {
+                    kind: ExprKind::String(template),
+                    span: token_span,
+                },
+                make_var_expr(&current_name),
+            ],
+        );
+
+        let closure = Expr {
+            kind: ExprKind::Closure {
+                params: Vec::new(),
+                ret_type: string_ty,
+                body: Block {
+                    stmts,
+                    tail: Some(Box::new(format_call)),
+                    span: token_span,
+                },
+            },
+            span: token_span,
+        };
+
+        Some(Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(closure),
+                args: Vec::new(),
+            },
+            span: token_span,
+        })
+    }
+
+    fn parse_template_expr_fragment(&mut self, expr_src: &str, interp_span: Span) -> Option<Expr> {
+        let (tokens, lex_diags) = lex(expr_src, self.file);
+        for diag in lex_diags {
+            self.diagnostics
+                .push(Self::shift_diagnostic(diag, interp_span.start));
+        }
+
+        let mut parser = Parser {
+            file: self.file,
+            tokens,
+            index: 0,
+            diagnostics: Vec::new(),
+            for_counter: self.for_counter,
+            tuple_binding_counter: self.tuple_binding_counter,
+            template_counter: self.template_counter,
+            disallow_struct_literal: false,
+        };
+
+        let expr = parser.parse_expr();
+        if expr.is_some() && !parser.at_kind(|k| matches!(k, TokenKind::Eof)) {
+            parser.diagnostics.push(Diagnostic::error(
+                "E1001",
+                "expected end of interpolation expression",
+                self.file,
+                parser.current_span(),
+            ));
+        }
+
+        for diag in parser.diagnostics {
+            self.diagnostics
+                .push(Self::shift_diagnostic(diag, interp_span.start));
+        }
+
+        self.for_counter = parser.for_counter;
+        self.tuple_binding_counter = parser.tuple_binding_counter;
+        self.template_counter = parser.template_counter;
+
+        let mut expr = expr?;
+        expr.span = interp_span;
+        Some(expr)
+    }
+
+    fn shift_diagnostic(mut diag: Diagnostic, offset: usize) -> Diagnostic {
+        for span in &mut diag.spans {
+            span.start = span.start.saturating_add(offset);
+            span.end = span.end.saturating_add(offset);
+        }
+        for fix in &mut diag.suggested_fixes {
+            if let Some(start) = fix.start.as_mut() {
+                *start = start.saturating_add(offset);
+            }
+            if let Some(end) = fix.end.as_mut() {
+                *end = end.saturating_add(offset);
+            }
+        }
+        diag
+    }
+
+    fn parse_template_escape(
+        &mut self,
+        raw: &str,
+        index: usize,
+        token_span: Span,
+    ) -> Option<(char, usize)> {
+        let content_offset = token_span.start.saturating_add(2);
+        let mut chars = raw[index..].chars();
+        let slash = chars.next()?;
+        if slash != '\\' {
+            return None;
+        }
+        let Some(next) = chars.next() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E0006",
+                "unterminated template string literal",
+                self.file,
+                Span::new(content_offset + index, token_span.end),
+            ));
+            return None;
+        };
+
+        let simple = match next {
+            'n' => Some('\n'),
+            'r' => Some('\r'),
+            't' => Some('\t'),
+            '0' => Some('\0'),
+            '"' => Some('"'),
+            '\'' => Some('\''),
+            '\\' => Some('\\'),
+            '{' => Some('{'),
+            '}' => Some('}'),
+            _ => None,
+        };
+        if let Some(value) = simple {
+            return Some((value, 1 + next.len_utf8()));
+        }
+
+        if next != 'u' {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                format!("unsupported escape sequence '\\\\{}'", next),
+                self.file,
+                Span::new(
+                    content_offset + index,
+                    content_offset + index + 1 + next.len_utf8(),
+                ),
+            ));
+            return None;
+        }
+
+        let mut cursor = index + 1 + next.len_utf8();
+        if cursor >= raw.len() || raw.as_bytes()[cursor] != b'{' {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode escape, expected `\\u{...}`",
+                self.file,
+                Span::new(
+                    content_offset + index,
+                    content_offset + cursor.min(raw.len()),
+                ),
+            ));
+            return None;
+        }
+        cursor += 1;
+        let digits_start = cursor;
+        while cursor < raw.len() {
+            let c = raw[cursor..]
+                .chars()
+                .next()
+                .expect("template unicode escape cursor");
+            if c.is_ascii_hexdigit() {
+                cursor += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let digits_end = cursor;
+        if cursor >= raw.len() || raw.as_bytes()[cursor] != b'}' {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode escape, expected closing `}`",
+                self.file,
+                Span::new(
+                    content_offset + index,
+                    content_offset + cursor.min(raw.len()),
+                ),
+            ));
+            return None;
+        }
+
+        if digits_start == digits_end {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode escape, missing codepoint digits",
+                self.file,
+                Span::new(content_offset + index, content_offset + cursor + 1),
+            ));
+            return None;
+        }
+
+        let digits = &raw[digits_start..digits_end];
+        if digits.len() > 6 {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode escape, codepoint has too many hex digits",
+                self.file,
+                Span::new(content_offset + index, content_offset + cursor + 1),
+            ));
+            return None;
+        }
+
+        let Some(codepoint) = u32::from_str_radix(digits, 16).ok() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode escape codepoint",
+                self.file,
+                Span::new(content_offset + index, content_offset + cursor + 1),
+            ));
+            return None;
+        };
+        let Some(ch) = char::from_u32(codepoint) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E0005",
+                "invalid Unicode codepoint in escape sequence",
+                self.file,
+                Span::new(content_offset + index, content_offset + cursor + 1),
+            ));
+            return None;
+        };
+
+        Some((ch, cursor + 1 - index))
+    }
     fn parse_expr_without_struct_literals(&mut self) -> Option<Expr> {
         let prev = self.disallow_struct_literal;
         self.disallow_struct_literal = true;
@@ -3298,6 +3721,193 @@ fn main() -> Char {
         assert!(matches!(tail.kind, ExprKind::Char('😀')));
     }
 
+    #[test]
+    fn parses_template_literals_and_nested_interpolations() {
+        let src = r#"
+fn main() -> String {
+    let name = "Ada";
+    f"Hello, {name} {int_to_string(20 + 22)}"
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        let ExprKind::Call {
+            callee: closure_callee,
+            args: invoke_args,
+        } = &tail.kind
+        else {
+            panic!("expected immediate closure invocation");
+        };
+        assert!(invoke_args.is_empty());
+
+        let ExprKind::Closure {
+            params,
+            ret_type,
+            body,
+        } = &closure_callee.kind
+        else {
+            panic!("expected template desugar closure");
+        };
+        assert!(params.is_empty());
+        assert!(matches!(
+            &ret_type.kind,
+            TypeKind::Named { name, args } if name == "String" && args.is_empty()
+        ));
+        assert_eq!(body.stmts.len(), 3);
+
+        let Stmt::Let {
+            ty: Some(first_ty),
+            expr: first_expr,
+            ..
+        } = &body.stmts[0]
+        else {
+            panic!("expected typed vec initialization");
+        };
+        assert!(matches!(
+            &first_ty.kind,
+            TypeKind::Named { name, args }
+                if name == "Vec"
+                    && args.len() == 1
+                    && matches!(&args[0].kind, TypeKind::Named { name, args } if name == "String" && args.is_empty())
+        ));
+        let ExprKind::Call {
+            callee: first_callee,
+            args: first_args,
+        } = &first_expr.kind
+        else {
+            panic!("expected vec new call");
+        };
+        assert!(matches!(
+            first_callee.kind,
+            ExprKind::Var(ref name) if name == "aic_vec_new_intrinsic"
+        ));
+        assert!(first_args.is_empty());
+
+        let Stmt::Let {
+            expr: second_expr, ..
+        } = &body.stmts[1]
+        else {
+            panic!("expected first vec push statement");
+        };
+        let ExprKind::Call {
+            callee: second_callee,
+            args: second_args,
+        } = &second_expr.kind
+        else {
+            panic!("expected vec push call");
+        };
+        assert!(matches!(
+            second_callee.kind,
+            ExprKind::Var(ref name) if name == "aic_vec_push_intrinsic"
+        ));
+        assert_eq!(second_args.len(), 2);
+        assert!(matches!(
+            second_args[1].kind,
+            ExprKind::Var(ref name) if name == "name"
+        ));
+
+        let Stmt::Let {
+            expr: third_expr, ..
+        } = &body.stmts[2]
+        else {
+            panic!("expected second vec push statement");
+        };
+        let ExprKind::Call {
+            callee: third_callee,
+            args: third_args,
+        } = &third_expr.kind
+        else {
+            panic!("expected vec push call");
+        };
+        assert!(matches!(
+            third_callee.kind,
+            ExprKind::Var(ref name) if name == "aic_vec_push_intrinsic"
+        ));
+        assert_eq!(third_args.len(), 2);
+
+        let ExprKind::Call {
+            callee: nested_callee,
+            args: nested_args,
+        } = &third_args[1].kind
+        else {
+            panic!("expected nested interpolation call");
+        };
+        assert!(matches!(
+            nested_callee.kind,
+            ExprKind::Var(ref name) if name == "int_to_string"
+        ));
+        assert_eq!(nested_args.len(), 1);
+        assert!(matches!(
+            nested_args[0].kind,
+            ExprKind::Binary { op: BinOp::Add, .. }
+        ));
+
+        let format_expr = body.tail.as_ref().expect("format call tail");
+        let ExprKind::Call {
+            callee: format_callee,
+            args: format_args,
+        } = &format_expr.kind
+        else {
+            panic!("expected format call in closure tail");
+        };
+        assert!(matches!(
+            format_callee.kind,
+            ExprKind::Var(ref name) if name == "aic_string_format_intrinsic"
+        ));
+        assert_eq!(format_args.len(), 2);
+        assert!(matches!(
+            &format_args[0].kind,
+            ExprKind::String(template) if template == "Hello, {0} {1}"
+        ));
+        assert!(matches!(
+            &format_args[1].kind,
+            ExprKind::Var(name) if name.starts_with("__aic_template_args_")
+        ));
+    }
+
+    #[test]
+    fn parses_template_literal_escaped_braces_without_interpolation() {
+        let src = r#"
+fn main() -> String {
+    f"left \{mid\} right"
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        assert!(matches!(
+            &tail.kind,
+            ExprKind::String(value) if value == "left {mid} right"
+        ));
+    }
+
+    #[test]
+    fn reports_unescaped_closing_brace_in_template_literal() {
+        let src = r#"
+fn main() -> String {
+    f"oops }"
+}
+"#;
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "E1001" && d.message.contains("unescaped '}'")),
+            "diags={diagnostics:#?}"
+        );
+    }
     #[test]
     fn parses_typed_holes_in_all_supported_type_positions() {
         let src = r#"

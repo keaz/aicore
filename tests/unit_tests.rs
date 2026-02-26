@@ -827,6 +827,36 @@ fn sum(n: Int) -> Int {
 }
 
 #[test]
+fn unit_template_literal_requires_string_interpolation_values() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.string;
+
+fn main(age: Int) -> String {
+    f"age={age}"
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&path).expect("frontend");
+    assert!(
+        has_errors(&front.diagnostics),
+        "diags={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("expected 'String'") && d.message.contains("found 'Int'")),
+        "diags={:#?}",
+        front.diagnostics
+    );
+}
+#[test]
 fn unit_for_vec_loop_binding_type_is_checked() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("main.aic");

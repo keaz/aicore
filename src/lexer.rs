@@ -13,6 +13,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     String(String),
+    Template(String),
     Char(char),
 
     KwModule,
@@ -135,6 +136,8 @@ impl<'a> Lexer<'a> {
                         self.bump();
                     }
                 }
+                'f' if self.peek_next() == Some('"') => self.lex_template_string(),
+                '$' if self.peek_next() == Some('"') => self.lex_template_string(),
                 'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(),
                 '_' => {
                     let start = self.offset;
@@ -512,6 +515,46 @@ impl<'a> Lexer<'a> {
         self.push(TokenKind::String(out), Span::new(start, self.offset));
     }
 
+    fn lex_template_string(&mut self) {
+        let start = self.offset;
+        self.bump(); // template prefix
+        self.bump(); // opening quote
+
+        let content_start = self.offset;
+        let mut terminated = false;
+        while let Some(c) = self.peek() {
+            match c {
+                '"' => {
+                    terminated = true;
+                    break;
+                }
+                '\\' => {
+                    self.bump();
+                    if self.peek().is_none() {
+                        break;
+                    }
+                    self.bump();
+                }
+                '\n' => break,
+                _ => self.bump(),
+            }
+        }
+
+        if !terminated {
+            self.error(
+                "E0006",
+                "unterminated template string literal",
+                Span::new(start, self.offset),
+            );
+            return;
+        }
+
+        let content_end = self.offset;
+        self.bump(); // closing quote
+        let raw = self.source[content_start..content_end].to_string();
+        self.push(TokenKind::Template(raw), Span::new(start, self.offset));
+    }
+
     fn lex_char(&mut self) {
         let start = self.offset;
         self.bump(); // opening quote
@@ -766,6 +809,18 @@ mod tests {
             .any(|t| matches!(&t.kind, TokenKind::String(s) if s == "hello")));
     }
 
+    #[test]
+    fn lexes_template_literals_with_prefixes() {
+        let src = r#"let a = f"Hello, {name}! \{ok\}"; let b = $"x{y}";"#;
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(
+            |t| matches!(&t.kind, TokenKind::Template(raw) if raw == "Hello, {name}! \\{ok\\}")
+        ));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Template(raw) if raw == "x{y}")));
+    }
     #[test]
     fn lexes_char_literals_and_escapes() {
         let src = r#"let a = 'x'; let b = '\n'; let c = '\u{1F600}'; let d = '\'';"#;

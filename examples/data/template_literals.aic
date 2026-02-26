@@ -1,0 +1,36 @@
+import std.io;
+import std.string;
+
+fn main() -> Int effects { io } {
+    let name = "Ada";
+
+    let basic = f"Hello, {name}";
+    let basic_ok =
+        if len(basic) == 10 && starts_with(basic, "Hello,") && ends_with(basic, "Ada") {
+            1
+        } else {
+            0
+        };
+
+    let nested = $"sum={int_to_string(20 + 22)}";
+    let nested_ok = if len(nested) == 6 && starts_with(nested, "sum=") && ends_with(nested, "42") {
+        1
+    } else {
+        0
+    };
+
+    let escaped = f"left \{literal\} right";
+    let escaped_ok =
+        if len(escaped) == 20 && starts_with(escaped, "left {") && ends_with(escaped, "} right") {
+            1
+        } else {
+            0
+        };
+
+    if basic_ok + nested_ok + escaped_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

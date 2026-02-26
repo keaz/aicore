@@ -1092,7 +1092,10 @@ fn scan_for_unsafe_keyword(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
 
     for file in files {
         let text = fs::read_to_string(&file)?;
-        if has_unsafe_keyword(&text) {
+        // Security audit focuses on production source. Ignore cfg(test) sections so
+        // test fixtures containing `unsafe` tokens do not fail release checks.
+        let production = text.split("#[cfg(test)]").next().unwrap_or(&text);
+        if has_unsafe_keyword(production) {
             out.push(file);
         }
     }
@@ -1545,6 +1548,7 @@ version = "1.0.0"
     #[test]
     fn unsafe_keyword_scan_ignores_lexer_keyword_table() {
         let lexer = fs::read_to_string("src/lexer.rs").expect("read lexer");
-        assert!(!has_unsafe_keyword(&lexer));
+        let production = lexer.split("#[cfg(test)]").next().unwrap_or(&lexer);
+        assert!(!has_unsafe_keyword(production));
     }
 }

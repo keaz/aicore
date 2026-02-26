@@ -1426,6 +1426,56 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_template_literals_match_concat_and_support_escapes() {
+    let src = r#"
+import std.io;
+import std.string;
+
+fn main() -> Int effects { io } {
+    let name = "Ada";
+
+    let basic = f"Hello, {name}";
+    let basic_ok =
+        if len(basic) == 10 && starts_with(basic, "Hello,") && ends_with(basic, "Ada") {
+            1
+        } else {
+            0
+        };
+
+    let nested = f"sum={int_to_string(20 + 22)}";
+    let nested_ok = if len(nested) == 6 && starts_with(nested, "sum=") && ends_with(nested, "42") {
+        1
+    } else {
+        0
+    };
+
+    let escaped = f"left \{literal\} right";
+    let escaped_ok =
+        if len(escaped) == 20 && starts_with(escaped, "left {") && ends_with(escaped, "} right") {
+            1
+        } else {
+            0
+        };
+
+    let mixed = $"<{name}:{int_to_string(7)}>";
+    let mixed_ok = if len(mixed) == 7 && starts_with(mixed, "<Ada:") && ends_with(mixed, "7>") {
+        1
+    } else {
+        0
+    };
+    if basic_ok + nested_ok + escaped_ok + mixed_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+#[test]
 fn exec_string_ops_full_surface_and_edge_cases() {
     let src = r#"
 import std.io;

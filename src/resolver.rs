@@ -624,6 +624,11 @@ pub fn resolve_with_item_modules(
             visible_functions.extend(names.iter().cloned());
         }
     }
+    // Compiler-generated desugar paths may reference these intrinsics directly.
+    // Keep them visible without requiring user-authored imports.
+    visible_functions.insert("aic_vec_new_intrinsic".to_string());
+    visible_functions.insert("aic_vec_push_intrinsic".to_string());
+    visible_functions.insert("aic_string_format_intrinsic".to_string());
 
     for alias in &ambiguous_import_aliases {
         diagnostics.push(

@@ -11,6 +11,7 @@ Version: `mvp-grammar-v7`
 - `int`: decimal integer literal (`0`, `1`, `42`, ...)
 - `float`: decimal/scientific literal (`3.14`, `0.5`, `1e10`, `2.5e-3`)
 - `string`: double-quoted UTF-8 string with escape support
+- `template_string`: prefixed string literal (`f"..."` or `$"..."`) with `{expr}` interpolation; use `\{` and `\}` for literal braces
 - `char`: single-quoted Unicode scalar literal with escape support (examples: `'a'`, `'😀'`; escapes like backslash-n and unicode codepoint escapes)
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
@@ -102,6 +103,7 @@ try_suffix     = "?" ;
 primary_expr   = int
                | float
                | string
+               | template_string
                | char
                | bool
                | unit_lit
@@ -113,6 +115,10 @@ primary_expr   = int
 
 grouped_expr   = "(" expr ")" ;
 unit_lit       = "(" ")" ;
+template_string = ("f" | "$") "\"" template_item* "\"" ;
+template_item   = template_interp | template_escaped_brace | string_char ;
+template_interp = "{" expr "}" ;
+template_escaped_brace = "\\{" | "\\}" ;
 
 if_expr        = "if" expr block "else" (block | if_expr) ;
 match_expr     = "match" expr "{" match_arms? "}" ;
@@ -149,6 +155,12 @@ Pattern disambiguation:
 - `|` inside patterns is pattern-or; logical-or in expressions remains `||`
 - match guards (`if <expr>`) are checked as `Bool` expressions
 
+
+Template literals:
+- Supported prefixes are `f"..."` and `$"..."`.
+- Interpolation segments use `{expr}` and are lowered to `aic_string_format_intrinsic(template, args)`.
+- Literal braces must be escaped as `\{` and `\}`.
+- Interpolated values must type-check as `String`; use explicit conversion helpers like `int_to_string(...)` when needed.
 Struct default values:
 - Struct declarations may define defaults with `field: Type = expr`.
 - Struct literals may omit fields that have defaults.
