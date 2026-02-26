@@ -1,0 +1,20 @@
+import std.io;
+
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } {
+    let named = connect(timeout_ms: 30, retry: true, host: 10, port: 2);
+    let mixed = connect(10, port: 2, timeout_ms: 30, retry: true);
+    if named == 42 && mixed == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

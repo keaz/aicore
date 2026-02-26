@@ -33,7 +33,8 @@ closure_param  = ident (":" type)? ;
 
 postfix_expr   = primary_expr (call_suffix | field_suffix | try_suffix)* ;
 call_suffix    = "(" arg_list? ")" ;
-arg_list       = expr ("," expr)* ","? ;
+arg_list       = call_arg ("," call_arg)* ","? ;
+call_arg       = ident ":" expr | expr ;
 field_suffix   = "." ident ;
 try_suffix     = "?" ;
 
@@ -88,6 +89,10 @@ hex_int        = "0x" hexdigit+ ;
   - direct function names
   - qualified module calls (`module.symbol(...)`)
   - first-class `Fn(...) -> ...` values
+  - arguments may be positional (`f(1, 2)`) or named (`f(x: 1, y: 2)`)
+  - when mixed, positional arguments must come first; otherwise `E1092` is reported
+  - named arguments can be supplied in any order and are matched by parameter name
+  - unknown named arguments report `E1213` and include nearest-name suggestions
 - Call resolution rejects ambiguous unqualified names when multiple modules export the same symbol.
 - Calls to `unsafe fn` or `extern` declarations require an explicit unsafe boundary (`unsafe fn` context or `unsafe { ... }`).
 - `await` is valid only inside `async fn` and requires `Async[T]`.

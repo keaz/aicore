@@ -314,6 +314,8 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        arg_names: Vec<Option<String>>,
     },
     Closure {
         params: Vec<ClosureParam>,

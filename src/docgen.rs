@@ -351,9 +351,24 @@ fn render_expr(expr: &ir::Expr) -> String {
         ir::ExprKind::String(s) => format!("\"{}\"", s),
         ir::ExprKind::Unit => "()".to_string(),
         ir::ExprKind::Var(name) => name.clone(),
-        ir::ExprKind::Call { callee, args } => {
-            let args = args.iter().map(render_expr).collect::<Vec<_>>().join(", ");
-            format!("{}({})", render_expr(callee), args)
+        ir::ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => {
+            let rendered_args = args
+                .iter()
+                .enumerate()
+                .map(|(idx, arg)| {
+                    if let Some(name) = arg_names.get(idx).and_then(|name| name.as_deref()) {
+                        format!("{}: {}", name, render_expr(arg))
+                    } else {
+                        render_expr(arg)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({})", render_expr(callee), rendered_args)
         }
         ir::ExprKind::Closure { params, .. } => {
             let rendered = params

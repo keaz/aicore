@@ -3240,7 +3240,7 @@ impl<'a> Generator<'a> {
                 let rv = self.gen_expr(rhs, fctx)?;
                 self.gen_binary(*op, lv, rv, fctx, expr.span)
             }
-            ir::ExprKind::Call { callee, args } => {
+            ir::ExprKind::Call { callee, args, .. } => {
                 if let ir::ExprKind::Var(name) = &callee.kind {
                     if let Some(local) = find_local(&fctx.vars, name) {
                         if matches!(local.ty, LType::Fn(_)) {
@@ -27305,7 +27305,7 @@ fn collect_closure_captures_expr(
                 captures.insert(name.clone());
             }
         }
-        ir::ExprKind::Call { callee, args } => {
+        ir::ExprKind::Call { callee, args, .. } => {
             if let Some(path) = extract_callee_path(callee) {
                 if path.len() == 1 {
                     let name = &path[0];

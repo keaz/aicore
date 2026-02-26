@@ -34,6 +34,7 @@ pub struct FunctionInfo {
     pub extern_abi: Option<String>,
     pub generics: Vec<String>,
     pub generic_bounds: BTreeMap<String, Vec<String>>,
+    pub param_names: Vec<String>,
     pub param_types: Vec<ir::TypeId>,
     pub ret_type: ir::TypeId,
     pub effects: BTreeSet<String>,
@@ -87,6 +88,7 @@ fn function_info_for(f: &ir::Function) -> FunctionInfo {
             .iter()
             .map(|g| (g.name.clone(), g.bounds.clone()))
             .collect(),
+        param_names: f.params.iter().map(|p| p.name.clone()).collect(),
         param_types: f.params.iter().map(|p| p.ty).collect(),
         ret_type: f.ret_type,
         effects: f.effects.iter().cloned().collect(),

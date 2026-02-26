@@ -1913,9 +1913,50 @@ impl<'a> Parser<'a> {
             if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
                 self.bump();
                 let mut args = Vec::new();
+                let mut arg_names: Vec<Option<String>> = Vec::new();
+                let mut saw_named = false;
                 while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
-                    let arg = self.parse_expr()?;
-                    args.push(arg);
+                    let mut parsed_named = false;
+                    if let TokenKind::Ident(name) = self.current().kind.clone() {
+                        if self
+                            .peek(1)
+                            .map(|tok| matches!(tok.kind, TokenKind::Colon))
+                            .unwrap_or(false)
+                        {
+                            self.bump();
+                            self.bump();
+                            let value = self.parse_expr()?;
+                            if arg_names.is_empty() && !args.is_empty() {
+                                arg_names.resize(args.len(), None);
+                            }
+                            args.push(value);
+                            arg_names.push(Some(name));
+                            saw_named = true;
+                            parsed_named = true;
+                        }
+                    }
+
+                    if !parsed_named {
+                        let arg = self.parse_expr()?;
+                        if saw_named {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1092",
+                                    "positional arguments cannot follow named arguments",
+                                    self.file,
+                                    arg.span,
+                                )
+                                .with_help(
+                                    "place positional arguments first, then named arguments",
+                                ),
+                            );
+                        }
+                        args.push(arg);
+                        if !arg_names.is_empty() {
+                            arg_names.push(None);
+                        }
+                    }
+
                     if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                         self.bump();
                     } else {
@@ -1927,11 +1968,15 @@ impl<'a> Parser<'a> {
                     "E1035",
                     "expected ')' after function arguments",
                 )?;
+                if arg_names.iter().all(|name| name.is_none()) {
+                    arg_names.clear();
+                }
                 let span = Span::new(expr.span.start, close.end);
                 expr = Expr {
                     kind: ExprKind::Call {
                         callee: Box::new(expr),
                         args,
+                        arg_names,
                     },
                     span,
                 };
@@ -2461,6 +2506,7 @@ impl<'a> Parser<'a> {
                     span: token_span,
                 }),
                 args,
+                arg_names: Vec::new(),
             },
             span: token_span,
         };
@@ -2518,6 +2564,7 @@ impl<'a> Parser<'a> {
             kind: ExprKind::Call {
                 callee: Box::new(closure),
                 args: Vec::new(),
+                arg_names: Vec::new(),
             },
             span: token_span,
         })
@@ -2865,6 +2912,7 @@ impl<'a> Parser<'a> {
                                     self.make_var_expr(iter_name.clone(), span),
                                     self.make_var_expr(index_name.clone(), span),
                                 ],
+                                arg_names: Vec::new(),
                             },
                             span,
                         }),
@@ -3833,6 +3881,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: closure_callee,
             args: invoke_args,
+            ..
         } = &tail.kind
         else {
             panic!("expected immediate closure invocation");
@@ -3872,6 +3921,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: first_callee,
             args: first_args,
+            ..
         } = &first_expr.kind
         else {
             panic!("expected vec new call");
@@ -3891,6 +3941,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: second_callee,
             args: second_args,
+            ..
         } = &second_expr.kind
         else {
             panic!("expected vec push call");
@@ -3914,6 +3965,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: third_callee,
             args: third_args,
+            ..
         } = &third_expr.kind
         else {
             panic!("expected vec push call");
@@ -3927,6 +3979,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: nested_callee,
             args: nested_args,
+            ..
         } = &third_args[1].kind
         else {
             panic!("expected nested interpolation call");
@@ -3945,6 +3998,7 @@ fn main() -> String {
         let ExprKind::Call {
             callee: format_callee,
             args: format_args,
+            ..
         } = &format_expr.kind
         else {
             panic!("expected format call in closure tail");
@@ -4155,5 +4209,59 @@ struct Config {
             Some(ExprKind::Bool(true))
         ));
         assert!(strukt.fields[2].default_value.is_none());
+    }
+    #[test]
+    fn parses_named_call_arguments_metadata() {
+        let src = r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry { host + port + timeout_ms } else { 0 }
+}
+
+fn main() -> Int {
+    connect(timeout_ms: 30, retry: true, host: 10, port: 2)
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail");
+        let ExprKind::Call {
+            arg_names, args, ..
+        } = &tail.kind
+        else {
+            panic!("expected call expression");
+        };
+        assert_eq!(args.len(), 4);
+        assert_eq!(
+            arg_names,
+            &vec![
+                Some("timeout_ms".to_string()),
+                Some("retry".to_string()),
+                Some("host".to_string()),
+                Some("port".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_positional_argument_after_named_in_call() {
+        let src = r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry { host + port + timeout_ms } else { 0 }
+}
+
+fn main() -> Int {
+    connect(host: 10, 2, timeout_ms: 30, retry: true)
+}
+"#;
+        let (_, diagnostics) = parse(src, "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1092"),
+            "diags={diagnostics:#?}"
+        );
     }
 }

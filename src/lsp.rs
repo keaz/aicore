@@ -1564,7 +1564,7 @@ fn collect_expr_semantic_tokens(
     effectful_functions: &[String],
 ) {
     match &expr.kind {
-        ast::ExprKind::Call { callee, args } => {
+        ast::ExprKind::Call { callee, args, .. } => {
             if let ast::ExprKind::Var(name) = &callee.kind {
                 let mut modifiers = 0u32;
                 if is_effectful_call(name, effectful_functions) {
@@ -2110,7 +2110,7 @@ fn collect_expr_call_sites(
     call_sites_by_caller: &mut BTreeMap<String, Vec<CallHierarchyCallSite>>,
 ) {
     match &expr.kind {
-        ast::ExprKind::Call { callee, args } => {
+        ast::ExprKind::Call { callee, args, .. } => {
             if let Some((callee_module, callee_name)) = extract_callee_reference(callee) {
                 call_sites_by_caller
                     .entry(caller_name.to_string())
@@ -2517,7 +2517,7 @@ fn collect_block_folding_ranges(block: &ast::Block, source: &str, ranges: &mut V
 
 fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<Value>) {
     match &expr.kind {
-        ast::ExprKind::Call { callee, args } => {
+        ast::ExprKind::Call { callee, args, .. } => {
             collect_expr_folding_ranges(callee, source, ranges);
             for arg in args {
                 collect_expr_folding_ranges(arg, source, ranges);
@@ -2820,7 +2820,7 @@ fn collect_expr_selection_spans(
     }
 
     match &expr.kind {
-        ast::ExprKind::Call { callee, args } => {
+        ast::ExprKind::Call { callee, args, .. } => {
             collect_expr_selection_spans(callee, offset, stmt_spans, block_spans, expr_spans);
             for arg in args {
                 collect_expr_selection_spans(arg, offset, stmt_spans, block_spans, expr_spans);
@@ -3378,7 +3378,7 @@ fn collect_expr_inlay_hints(
     hints: &mut Vec<Value>,
 ) {
     match &expr.kind {
-        ast::ExprKind::Call { callee, args } => {
+        ast::ExprKind::Call { callee, args, .. } => {
             if show_effect_hints {
                 if let ast::ExprKind::Var(name) = &callee.kind {
                     if let Some(signature) = signature_lookup.get(name) {

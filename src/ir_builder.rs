@@ -488,9 +488,14 @@ impl Builder {
             ast::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
             ast::ExprKind::Unit => ir::ExprKind::Unit,
             ast::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
-            ast::ExprKind::Call { callee, args } => ir::ExprKind::Call {
+            ast::ExprKind::Call {
+                callee,
+                args,
+                arg_names,
+            } => ir::ExprKind::Call {
                 callee: Box::new(self.lower_expr(callee)),
                 args: args.iter().map(|a| self.lower_expr(a)).collect(),
+                arg_names: arg_names.clone(),
             },
             ast::ExprKind::Closure {
                 params,

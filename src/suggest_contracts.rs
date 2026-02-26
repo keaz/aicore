@@ -282,7 +282,7 @@ fn collect_requires_from_expr(
                 collect_requires_from_expr(&arm.body, param_names, requires);
             }
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             if let ExprKind::Var(name) = &callee.kind {
                 if name == "assert" {
                     if let Some(first) = args.first() {
@@ -473,7 +473,7 @@ fn collect_explicit_returns_from_expr<'a>(
         | ExprKind::Borrow { expr, .. }
         | ExprKind::Await { expr }
         | ExprKind::Try { expr } => collect_explicit_returns_from_expr(expr, observations),
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             collect_explicit_returns_from_expr(callee, observations);
             for arg in args {
                 collect_explicit_returns_from_expr(arg, observations);
@@ -575,7 +575,7 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
                 out.insert(name.clone());
             }
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             collect_value_vars(callee, VarContext::Callee, out);
             for arg in args {
                 collect_value_vars(arg, VarContext::Value, out);
@@ -738,7 +738,7 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
             let right = render_expr(rhs, prec + 1)?;
             parenthesize(format!("{left} {symbol} {right}"), prec, parent_prec)
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             let callee = render_expr(callee, PREC_POSTFIX)?;
             let mut rendered_args = Vec::with_capacity(args.len());
             for arg in args {

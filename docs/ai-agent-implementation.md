@@ -29,6 +29,26 @@ Core language-specific deep dive:
 - Performance budget runner: `src/perf_gate.rs`
 - CLI command surface: `src/main.rs`
 
+## Named Function Arguments (`[ERGO-T6]`)
+
+- Parser contract: call sites support `name: value` in argument lists and carry labels via `arg_names: Vec<Option<String>>` on AST/IR call nodes.
+- Typechecker contract (`src/typecheck.rs`):
+  - validates named arguments against declared parameter names
+  - enforces positional-then-named ordering (`E1092` on violations)
+  - reports unknown/duplicate/missing named parameters with `E1213` and nearest-name suggestions
+- Lowering contract: `src/driver.rs` applies `call_arg_orders` after typecheck so downstream passes/codegen receive parameter-order arguments.
+- Current limitation: named arguments are rejected for method syntax and first-class `Fn(...)` values because parameter names are not preserved in those call paths.
+
+```aic
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry { host + port + timeout_ms } else { 0 }
+}
+
+fn main() -> Int {
+    connect(timeout_ms: 30, retry: true, host: 10, port: 2)
+}
+```
+
 ## Epic #62 proof-of-completion checklist (open)
 
 Use this checklist to gate closure of epic `#62`. Keep epic status as In Progress until all items are complete with evidence.

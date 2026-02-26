@@ -149,6 +149,7 @@ pub fn run_frontend_with_options(
     let typecheck = typecheck::check(&ir, &resolution, &file);
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
+    apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
     diagnostics.extend(typecheck.diagnostics.iter().cloned());
 
     let verify_started = Instant::now();
@@ -213,6 +214,165 @@ pub fn run_frontend_with_options(
 
 pub fn has_errors(diags: &[Diagnostic]) -> bool {
     diags.iter().any(|d| matches!(d.severity, Severity::Error))
+}
+
+fn apply_call_arg_orders(program: &mut ir::Program, orders: &BTreeMap<ir::NodeId, Vec<usize>>) {
+    for item in &mut program.items {
+        match item {
+            ir::Item::Function(func) => {
+                if let Some(req) = func.requires.as_mut() {
+                    reorder_call_args_in_expr(req, orders);
+                }
+                if let Some(ens) = func.ensures.as_mut() {
+                    reorder_call_args_in_expr(ens, orders);
+                }
+                reorder_call_args_in_block(&mut func.body, orders);
+            }
+            ir::Item::Struct(strukt) => {
+                for field in &mut strukt.fields {
+                    if let Some(default) = field.default_value.as_mut() {
+                        reorder_call_args_in_expr(default, orders);
+                    }
+                }
+                if let Some(invariant) = strukt.invariant.as_mut() {
+                    reorder_call_args_in_expr(invariant, orders);
+                }
+            }
+            ir::Item::Enum(_) => {}
+            ir::Item::Trait(trait_def) => {
+                for method in &mut trait_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        reorder_call_args_in_expr(req, orders);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        reorder_call_args_in_expr(ens, orders);
+                    }
+                    reorder_call_args_in_block(&mut method.body, orders);
+                }
+            }
+            ir::Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        reorder_call_args_in_expr(req, orders);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        reorder_call_args_in_expr(ens, orders);
+                    }
+                    reorder_call_args_in_block(&mut method.body, orders);
+                }
+            }
+        }
+    }
+}
+
+fn reorder_call_args_in_block(block: &mut ir::Block, orders: &BTreeMap<ir::NodeId, Vec<usize>>) {
+    for stmt in &mut block.stmts {
+        match stmt {
+            ir::Stmt::Let { expr, .. }
+            | ir::Stmt::Assign { expr, .. }
+            | ir::Stmt::Expr { expr, .. }
+            | ir::Stmt::Assert { expr, .. } => reorder_call_args_in_expr(expr, orders),
+            ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => reorder_call_args_in_expr(expr, orders),
+            ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &mut block.tail {
+        reorder_call_args_in_expr(tail, orders);
+    }
+}
+
+fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, Vec<usize>>) {
+    match &mut expr.kind {
+        ir::ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => {
+            reorder_call_args_in_expr(callee, orders);
+            for arg in args.iter_mut() {
+                reorder_call_args_in_expr(arg, orders);
+            }
+
+            if let Some(order) = orders.get(&expr.node) {
+                if order.len() == args.len() {
+                    let valid = order.iter().all(|idx| *idx < args.len()) && {
+                        let mut seen = std::collections::BTreeSet::new();
+                        order.iter().all(|idx| seen.insert(*idx))
+                    };
+                    if valid {
+                        let new_args = order
+                            .iter()
+                            .map(|idx| args[*idx].clone())
+                            .collect::<Vec<_>>();
+                        *args = new_args;
+                        if !arg_names.is_empty() {
+                            let mut reordered_names = order
+                                .iter()
+                                .map(|idx| arg_names.get(*idx).cloned().unwrap_or(None))
+                                .collect::<Vec<_>>();
+                            if reordered_names.iter().all(|name| name.is_none()) {
+                                reordered_names.clear();
+                            }
+                            *arg_names = reordered_names;
+                        }
+                    }
+                }
+            }
+        }
+        ir::ExprKind::Closure { body, .. } => reorder_call_args_in_block(body, orders),
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            reorder_call_args_in_expr(cond, orders);
+            reorder_call_args_in_block(then_block, orders);
+            reorder_call_args_in_block(else_block, orders);
+        }
+        ir::ExprKind::While { cond, body } => {
+            reorder_call_args_in_expr(cond, orders);
+            reorder_call_args_in_block(body, orders);
+        }
+        ir::ExprKind::Loop { body } => reorder_call_args_in_block(body, orders),
+        ir::ExprKind::Break { expr: Some(inner) } => reorder_call_args_in_expr(inner, orders),
+        ir::ExprKind::Break { expr: None } | ir::ExprKind::Continue => {}
+        ir::ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => {
+            reorder_call_args_in_expr(scrutinee, orders);
+            for arm in arms {
+                if let Some(guard) = arm.guard.as_mut() {
+                    reorder_call_args_in_expr(guard, orders);
+                }
+                reorder_call_args_in_expr(&mut arm.body, orders);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            reorder_call_args_in_expr(lhs, orders);
+            reorder_call_args_in_expr(rhs, orders);
+        }
+        ir::ExprKind::Unary { expr: inner, .. }
+        | ir::ExprKind::Borrow { expr: inner, .. }
+        | ir::ExprKind::Await { expr: inner }
+        | ir::ExprKind::Try { expr: inner } => reorder_call_args_in_expr(inner, orders),
+        ir::ExprKind::UnsafeBlock { block } => reorder_call_args_in_block(block, orders),
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                reorder_call_args_in_expr(value, orders);
+            }
+        }
+        ir::ExprKind::FieldAccess { base, .. } => reorder_call_args_in_expr(base, orders),
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_) => {}
+    }
 }
 
 pub fn sort_and_cap_diagnostics(

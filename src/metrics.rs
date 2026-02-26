@@ -362,7 +362,7 @@ impl ComplexityAnalyzer {
             | ExprKind::Unit
             | ExprKind::Var(_)
             | ExprKind::Continue => {}
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 self.visit_expr(callee, depth);
                 for arg in args {
                     self.visit_expr(arg, depth);

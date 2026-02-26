@@ -16,6 +16,7 @@ pub struct TypecheckOutput {
     pub generic_instantiations: Vec<ir::GenericInstantiation>,
     pub call_graph: BTreeMap<String, Vec<String>>,
     pub holes: Vec<TypedHole>,
+    pub call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,7 @@ struct FnSig {
     is_extern: bool,
     extern_abi: Option<String>,
     params: Vec<String>,
+    param_names: Vec<String>,
     ret: String,
     effects: BTreeSet<String>,
     generic_params: Vec<String>,
@@ -91,6 +93,7 @@ struct Checker<'a> {
     struct_field_holes: BTreeMap<(String, String), DeferredHole>,
     struct_field_inferred: BTreeMap<(String, String), String>,
     current_param_positions: BTreeMap<String, usize>,
+    call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
 }
 
 #[derive(Default)]
@@ -253,6 +256,7 @@ impl<'a> Checker<'a> {
                     is_extern: info.is_extern,
                     extern_abi: info.extern_abi.clone(),
                     params,
+                    param_names: info.param_names.clone(),
                     ret: types
                         .get(&info.ret_type)
                         .cloned()
@@ -278,6 +282,7 @@ impl<'a> Checker<'a> {
                     is_extern: info.is_extern,
                     extern_abi: info.extern_abi.clone(),
                     params,
+                    param_names: info.param_names.clone(),
                     ret: types
                         .get(&info.ret_type)
                         .cloned()
@@ -308,6 +313,7 @@ impl<'a> Checker<'a> {
                 is_extern: false,
                 extern_abi: None,
                 params: vec!["Int".to_string()],
+                param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
@@ -322,6 +328,7 @@ impl<'a> Checker<'a> {
                 is_extern: false,
                 extern_abi: None,
                 params: vec!["String".to_string()],
+                param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
@@ -336,6 +343,7 @@ impl<'a> Checker<'a> {
                 is_extern: false,
                 extern_abi: None,
                 params: vec!["Float".to_string()],
+                param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
@@ -350,6 +358,7 @@ impl<'a> Checker<'a> {
                 is_extern: false,
                 extern_abi: None,
                 params: vec!["String".to_string()],
+                param_names: vec!["value".to_string()],
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
                 generic_params: Vec::new(),
@@ -364,6 +373,7 @@ impl<'a> Checker<'a> {
                 is_extern: false,
                 extern_abi: None,
                 params: vec!["String".to_string()],
+                param_names: vec!["message".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
@@ -405,6 +415,7 @@ impl<'a> Checker<'a> {
             struct_field_holes: BTreeMap::new(),
             struct_field_inferred: BTreeMap::new(),
             current_param_positions: BTreeMap::new(),
+            call_arg_orders: BTreeMap::new(),
         }
     }
 
@@ -469,6 +480,7 @@ impl<'a> Checker<'a> {
             generic_instantiations,
             call_graph,
             holes: self.typed_holes,
+            call_arg_orders: self.call_arg_orders,
         }
     }
 
@@ -911,6 +923,176 @@ impl<'a> Checker<'a> {
 
     fn is_compiler_internal_intrinsic_use(&self, name: &str, span: crate::span::Span) -> bool {
         name.starts_with("aic_") && !self.is_user_written_intrinsic_use(name, span)
+    }
+
+    fn has_named_call_args(arg_names: &[Option<String>]) -> bool {
+        !arg_names.is_empty() && arg_names.iter().any(|name| name.is_some())
+    }
+
+    fn call_arg_name<'b>(arg_names: &'b [Option<String>], idx: usize) -> Option<&'b str> {
+        if idx < arg_names.len() {
+            return arg_names.get(idx).and_then(|name| name.as_deref());
+        }
+        None
+    }
+
+    fn levenshtein_distance(a: &str, b: &str) -> usize {
+        let a_chars = a.chars().collect::<Vec<_>>();
+        let b_chars = b.chars().collect::<Vec<_>>();
+        let mut prev = (0..=b_chars.len()).collect::<Vec<_>>();
+        let mut curr = vec![0usize; b_chars.len() + 1];
+
+        for (i, ca) in a_chars.iter().enumerate() {
+            curr[0] = i + 1;
+            for (j, cb) in b_chars.iter().enumerate() {
+                let cost = if ca == cb { 0 } else { 1 };
+                curr[j + 1] = (curr[j] + 1).min(prev[j + 1] + 1).min(prev[j] + cost);
+            }
+            std::mem::swap(&mut prev, &mut curr);
+        }
+        prev[b_chars.len()]
+    }
+
+    fn closest_parameter_name<'b>(
+        &self,
+        candidate: &str,
+        param_names: &'b [String],
+    ) -> Option<&'b str> {
+        param_names
+            .iter()
+            .map(|name| (name.as_str(), Self::levenshtein_distance(candidate, name)))
+            .min_by_key(|(_, distance)| *distance)
+            .and_then(|(name, distance)| if distance <= 3 { Some(name) } else { None })
+    }
+
+    fn build_call_arg_plan(
+        &mut self,
+        rendered_path: &str,
+        param_names: &[String],
+        args: &[ir::Expr],
+        arg_names: &[Option<String>],
+        span: crate::span::Span,
+    ) -> (Vec<Option<usize>>, Vec<Option<usize>>) {
+        let mut param_to_arg = vec![None; param_names.len()];
+        let mut arg_to_param = vec![None; args.len()];
+
+        if !Self::has_named_call_args(arg_names) {
+            for idx in 0..args.len().min(param_names.len()) {
+                param_to_arg[idx] = Some(idx);
+                arg_to_param[idx] = Some(idx);
+            }
+            return (param_to_arg, arg_to_param);
+        }
+
+        let mut saw_named = false;
+        for arg_idx in 0..args.len() {
+            let named = Self::call_arg_name(arg_names, arg_idx);
+            match named {
+                Some(name) => {
+                    saw_named = true;
+                    let Some(param_idx) = param_names.iter().position(|param| param == name) else {
+                        let mut diag = Diagnostic::error(
+                            "E1213",
+                            format!(
+                                "unknown named argument '{}' in call to '{}'",
+                                name, rendered_path
+                            ),
+                            self.file,
+                            args[arg_idx].span,
+                        )
+                        .with_help(format!("valid parameter names: {}", param_names.join(", ")));
+                        if let Some(suggested) = self.closest_parameter_name(name, param_names) {
+                            diag = diag.with_help(format!("did you mean '{}' ?", suggested));
+                        }
+                        self.diagnostics.push(diag);
+                        continue;
+                    };
+
+                    if let Some(previous_arg) = param_to_arg[param_idx] {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1213",
+                                format!(
+                                    "parameter '{}' is provided more than once in call to '{}'",
+                                    name, rendered_path
+                                ),
+                                self.file,
+                                args[arg_idx].span,
+                            )
+                            .with_help(format!(
+                                "remove duplicate assignment for parameter '{}' (first provided at argument {})",
+                                name,
+                                previous_arg + 1
+                            )),
+                        );
+                        continue;
+                    }
+
+                    param_to_arg[param_idx] = Some(arg_idx);
+                    arg_to_param[arg_idx] = Some(param_idx);
+                }
+                None => {
+                    if saw_named {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1092",
+                                "positional arguments cannot follow named arguments",
+                                self.file,
+                                args[arg_idx].span,
+                            )
+                            .with_help("place positional arguments first, then named arguments"),
+                        );
+                        continue;
+                    }
+                    if arg_idx < param_names.len() {
+                        param_to_arg[arg_idx] = Some(arg_idx);
+                        arg_to_param[arg_idx] = Some(arg_idx);
+                    }
+                }
+            }
+        }
+
+        for (param_idx, mapped) in param_to_arg.iter().enumerate() {
+            if mapped.is_none() && args.len() <= param_names.len() {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1213",
+                        format!(
+                            "missing argument for parameter '{}' in call to '{}'",
+                            param_names[param_idx], rendered_path
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help(format!("provide a value for '{}'", param_names[param_idx])),
+                );
+            }
+        }
+
+        (param_to_arg, arg_to_param)
+    }
+
+    fn maybe_record_named_call_order(
+        &mut self,
+        node: ir::NodeId,
+        args_len: usize,
+        arg_names: &[Option<String>],
+        param_to_arg: &[Option<usize>],
+    ) {
+        if !Self::has_named_call_args(arg_names) {
+            return;
+        }
+        if args_len != param_to_arg.len() {
+            return;
+        }
+        let mut order = Vec::with_capacity(param_to_arg.len());
+        for mapped in param_to_arg {
+            let Some(arg_idx) = mapped else {
+                return;
+            };
+            order.push(*arg_idx);
+        }
+        self.call_arg_orders.insert(node, order);
     }
 
     fn check_extern_function_signature(
@@ -1360,7 +1542,7 @@ impl<'a> Checker<'a> {
         allow_closed_use: bool,
     ) {
         match &expr.kind {
-            ir::ExprKind::Call { callee, args } => {
+            ir::ExprKind::Call { callee, args, .. } => {
                 self.check_resource_protocol_expr_mode(callee, state, false);
                 for arg in args {
                     self.check_resource_protocol_expr_mode(arg, state, false);
@@ -1718,7 +1900,7 @@ impl<'a> Checker<'a> {
                 );
                 self.check_borrow_expr(inner, mutability, state, binding_types)
             }
-            ir::ExprKind::Call { callee, args } => {
+            ir::ExprKind::Call { callee, args, .. } => {
                 let mut borrows = self.check_borrow_expr(callee, mutability, state, binding_types);
                 for arg in args {
                     borrows.extend(self.check_borrow_expr(arg, mutability, state, binding_types));
@@ -2710,13 +2892,18 @@ impl<'a> Checker<'a> {
                 ));
                 "<?>".to_string()
             }
-            ir::ExprKind::Call { callee, args } => {
+            ir::ExprKind::Call {
+                callee,
+                args,
+                arg_names,
+            } => {
                 if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
                     if !self.is_module_qualified_callee(callee, locals) {
                         return self.check_method_call(
                             base,
                             field,
                             args,
+                            arg_names,
                             expr,
                             locals,
                             allowed_effects,
@@ -2734,6 +2921,7 @@ impl<'a> Checker<'a> {
                         &callee_ty,
                         "<expr>",
                         args,
+                        arg_names,
                         expr.span,
                         locals,
                         allowed_effects,
@@ -2780,6 +2968,7 @@ impl<'a> Checker<'a> {
                                 &local_ty,
                                 &rendered_path,
                                 args,
+                                arg_names,
                                 expr.span,
                                 locals,
                                 allowed_effects,
@@ -3152,9 +3341,26 @@ impl<'a> Checker<'a> {
                         );
                     }
 
+                    let (param_to_arg, arg_to_param) = self.build_call_arg_plan(
+                        &rendered_path,
+                        &sig.param_names,
+                        args,
+                        arg_names,
+                        expr.span,
+                    );
+                    self.maybe_record_named_call_order(
+                        expr.node,
+                        args.len(),
+                        arg_names,
+                        &param_to_arg,
+                    );
+
                     let mut arg_types = Vec::new();
-                    for (idx, arg) in args.iter().enumerate() {
-                        let arg_ty = if let Some(expected_hint) = sig.params.get(idx) {
+                    for (arg_idx, arg) in args.iter().enumerate() {
+                        let expected_hint = arg_to_param.get(arg_idx).and_then(|mapped| {
+                            mapped.and_then(|param_idx| sig.params.get(param_idx))
+                        });
+                        let arg_ty = if let Some(expected_hint) = expected_hint {
                             self.check_expr_with_expected(
                                 arg,
                                 locals,
@@ -3186,12 +3392,19 @@ impl<'a> Checker<'a> {
                     let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
                     let mut generic_bindings = BTreeMap::new();
 
-                    for (idx, arg_ty) in arg_types.iter().enumerate() {
-                        let Some(expected_raw) = sig.params.get(idx) else {
+                    for (param_idx, maybe_arg_idx) in param_to_arg.iter().enumerate() {
+                        let Some(arg_idx) = maybe_arg_idx else {
                             continue;
                         };
+                        let Some(expected_raw) = sig.params.get(param_idx) else {
+                            continue;
+                        };
+                        let arg_ty = arg_types
+                            .get(*arg_idx)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string());
                         let expected_norm = self.normalize_type(expected_raw);
-                        let arg_norm = self.normalize_type(arg_ty);
+                        let arg_norm = self.normalize_type(&arg_ty);
                         let inferred = infer_generic_bindings(
                             &expected_norm,
                             &arg_norm,
@@ -3203,13 +3416,13 @@ impl<'a> Checker<'a> {
                                 "E1214",
                                 format!(
                                     "argument {} to '{}' expected '{}', found '{}'",
-                                    idx + 1,
+                                    param_idx + 1,
                                     rendered_path,
                                     expected_raw,
                                     arg_ty
                                 ),
                                 self.file,
-                                args[idx].span,
+                                args[*arg_idx].span,
                             ));
                         }
                     }
@@ -3304,12 +3517,18 @@ impl<'a> Checker<'a> {
                         .map(|param| substitute_type_vars(param, &generic_bindings, &generic_set))
                         .collect::<Vec<_>>();
 
-                    for (idx, arg_ty) in arg_types.iter().enumerate() {
-                        let Some(expected) = instantiated_params.get(idx) else {
+                    for (param_idx, maybe_arg_idx) in param_to_arg.iter().enumerate() {
+                        let Some(arg_idx) = maybe_arg_idx else {
                             continue;
                         };
-                        let mut observed_ty = arg_ty.clone();
-                        if let ir::ExprKind::Var(name) = &args[idx].kind {
+                        let Some(expected) = instantiated_params.get(param_idx) else {
+                            continue;
+                        };
+                        let mut observed_ty = arg_types
+                            .get(*arg_idx)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string());
+                        if let ir::ExprKind::Var(name) = &args[*arg_idx].kind {
                             if let Some(local_ty) = locals.get(name).cloned() {
                                 let expected_norm = self.normalize_type(expected);
                                 if contains_unresolved_type(&local_ty)
@@ -3333,17 +3552,17 @@ impl<'a> Checker<'a> {
                                 "E1214",
                                 format!(
                                     "argument {} to '{}' expected '{}', found '{}'",
-                                    idx + 1,
+                                    param_idx + 1,
                                     rendered_path,
                                     expected,
                                     observed_ty
                                 ),
                                 self.file,
-                                args[idx].span,
+                                args[*arg_idx].span,
                             ));
                         }
                         if contains_unresolved_type(expected) {
-                            self.observe_fn_param_hole(&resolved_name, idx, &observed_ty);
+                            self.observe_fn_param_hole(&resolved_name, param_idx, &observed_ty);
                         }
                     }
 
@@ -4539,6 +4758,7 @@ impl<'a> Checker<'a> {
         callee_ty: &str,
         rendered_callee: &str,
         args: &[ir::Expr],
+        arg_names: &[Option<String>],
         span: crate::span::Span,
         locals: &mut BTreeMap<String, String>,
         allowed_effects: &BTreeSet<String>,
@@ -4555,6 +4775,21 @@ impl<'a> Checker<'a> {
             ));
             return "<?>".to_string();
         };
+
+        if Self::has_named_call_args(arg_names) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1213",
+                    format!(
+                        "named arguments are not supported for callable {} because parameter names are unavailable",
+                        rendered_callee
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("call function values with positional arguments"),
+            );
+        }
 
         if args.len() != param_tys.len() {
             self.diagnostics.push(Diagnostic::error(
@@ -4649,6 +4884,7 @@ impl<'a> Checker<'a> {
         base: &ir::Expr,
         field: &str,
         args: &[ir::Expr],
+        arg_names: &[Option<String>],
         call_expr: &ir::Expr,
         locals: &mut BTreeMap<String, String>,
         allowed_effects: &BTreeSet<String>,
@@ -4666,6 +4902,22 @@ impl<'a> Checker<'a> {
         };
         let assoc_name = format!("{}::{}", base_type_name(&receiver_ty), field);
 
+        if Self::has_named_call_args(arg_names) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1213",
+                    format!(
+                        "named arguments are not currently supported for method call {}.{}",
+                        base_type_name(&receiver_ty),
+                        field
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("use positional arguments for method calls"),
+            );
+        }
+
         if self.functions.contains_key(&assoc_name) {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(base.clone());
@@ -4679,6 +4931,7 @@ impl<'a> Checker<'a> {
                         span: base.span,
                     }),
                     args: call_args,
+                    arg_names: Vec::new(),
                 },
                 span: call_expr.span,
             };

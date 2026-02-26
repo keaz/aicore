@@ -259,7 +259,7 @@ impl<'a> Analyzer<'a> {
                     self.record_module_reference(module_ref);
                 }
             }
-            ast::ExprKind::Call { callee, args } => {
+            ast::ExprKind::Call { callee, args, .. } => {
                 if let Some(call_path) = call_path(callee) {
                     if call_path.len() >= 2 {
                         let qualifier = call_path[..call_path.len() - 1].join(".");
@@ -733,7 +733,7 @@ impl<'a> VariableAnalyzer<'a> {
     fn visit_expr(&mut self, expr: &ast::Expr) {
         match &expr.kind {
             ast::ExprKind::Var(name) => self.mark_used(name),
-            ast::ExprKind::Call { callee, args } => {
+            ast::ExprKind::Call { callee, args, .. } => {
                 self.visit_expr(callee);
                 for arg in args {
                     self.visit_expr(arg);

@@ -62,7 +62,7 @@ fn assert_delegate_call(
         .unwrap_or_else(|| panic!("`{function_name}` should have a tail expression"));
 
     match &tail.kind {
-        aicore::ast::ExprKind::Call { callee, args } => {
+        aicore::ast::ExprKind::Call { callee, args, .. } => {
             match &callee.kind {
                 aicore::ast::ExprKind::Var(name) => {
                     assert_eq!(
@@ -1465,6 +1465,26 @@ fn unit_formatter_is_stable() {
     let a = format_program(&ir);
     let b = format_program(&ir);
     assert_eq!(a, b);
+}
+
+#[test]
+fn unit_formatter_preserves_named_call_arguments() {
+    let src = r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry { host + port + timeout_ms } else { 0 }
+}
+
+fn main() -> Int {
+    connect(timeout_ms: 30, retry: true, host: 10, port: 2)
+}
+"#;
+    let ir = lower(src);
+    let formatted = format_program(&ir);
+    assert!(
+        formatted.contains("connect(timeout_ms: 30, retry: true, host: 10, port: 2)"),
+        "formatted={formatted}"
+    );
+    let _ = lower(&formatted);
 }
 
 #[test]
@@ -4029,6 +4049,131 @@ fn main() -> Int {
     let out = run_frontend(&path).expect("frontend");
     assert!(
         out.diagnostics.iter().any(|d| d.code == "E1091"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_named_arguments_allow_reordered_calls() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int {
+    connect(timeout_ms: 30, retry: true, host: 10, port: 2)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_named_arguments_allow_positional_then_named() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int {
+    connect(10, port: 2, timeout_ms: 30, retry: true)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_named_arguments_unknown_name_reports_suggestion() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int {
+    connect(host: 10, porrt: 2, timeout_ms: 30, retry: true)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1213" && d.message.contains("unknown named argument 'porrt'")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| { d.help.iter().any(|h| h.contains("did you mean 'port'")) }),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_named_arguments_reject_positional_after_named() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int {
+    connect(host: 10, 2, timeout_ms: 30, retry: true)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1092"),
         "diags={:#?}",
         out.diagnostics
     );

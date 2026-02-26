@@ -480,12 +480,20 @@ fn format_expr(
         }
         ir::ExprKind::Unit => out.push_str("()"),
         ir::ExprKind::Var(v) => out.push_str(v),
-        ir::ExprKind::Call { callee, args } => {
+        ir::ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => {
             format_expr(out, callee, 10, type_map);
             out.push('(');
             for (idx, arg) in args.iter().enumerate() {
                 if idx > 0 {
                     out.push_str(", ");
+                }
+                if let Some(name) = arg_names.get(idx).and_then(|name| name.as_deref()) {
+                    out.push_str(name);
+                    out.push_str(": ");
                 }
                 format_expr(out, arg, 0, type_map);
             }
@@ -742,7 +750,7 @@ fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendered
         return None;
     }
 
-    let ir::ExprKind::Call { callee, args } = &scrutinee.kind else {
+    let ir::ExprKind::Call { callee, args, .. } = &scrutinee.kind else {
         return None;
     };
     let ir::ExprKind::Var(callee_name) = &callee.kind else {

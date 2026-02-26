@@ -7131,3 +7131,33 @@ fn main() -> Int effects { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }
+
+#[test]
+fn exec_named_arguments_reorder_and_mixed_positional_are_stable() {
+    let src = r#"
+import std.io;
+
+fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
+    if retry {
+        host + port + timeout_ms
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } {
+    let named = connect(timeout_ms: 30, retry: true, host: 10, port: 2);
+    let mixed = connect(10, retry: true, timeout_ms: 30, port: 2);
+
+    if named == 42 && mixed == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}

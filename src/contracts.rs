@@ -879,7 +879,7 @@ fn rewrite_struct_inits_in_expr(
     alloc: &mut IdAlloc,
 ) {
     match &mut expr.kind {
-        ir::ExprKind::Call { callee, args } => {
+        ir::ExprKind::Call { callee, args, .. } => {
             rewrite_struct_inits_in_expr(callee, helper_names, field_orders, alloc);
             for arg in args {
                 rewrite_struct_inits_in_expr(arg, helper_names, field_orders, alloc);
@@ -960,6 +960,7 @@ fn rewrite_struct_inits_in_expr(
                     span: expr.span,
                 }),
                 args,
+                arg_names: Vec::new(),
             };
         }
         ir::ExprKind::FieldAccess { base, .. } => {
@@ -1062,7 +1063,7 @@ fn lower_ensures_in_expr(
     alloc: &mut IdAlloc,
 ) {
     match &mut expr.kind {
-        ir::ExprKind::Call { callee, args } => {
+        ir::ExprKind::Call { callee, args, .. } => {
             lower_ensures_in_expr(callee, ensures, ret_type, function_name, alloc);
             for arg in args {
                 lower_ensures_in_expr(arg, ensures, ret_type, function_name, alloc);
@@ -1316,7 +1317,7 @@ fn max_node_block(block: &ir::Block) -> u32 {
 fn max_node_expr(expr: &ir::Expr) -> u32 {
     let mut max = expr.node.0;
     match &expr.kind {
-        ir::ExprKind::Call { callee, args } => {
+        ir::ExprKind::Call { callee, args, .. } => {
             max = max.max(max_node_expr(callee));
             for arg in args {
                 max = max.max(max_node_expr(arg));
@@ -1400,9 +1401,14 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
         ir::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
-        ir::ExprKind::Call { callee, args } => ir::ExprKind::Call {
+        ir::ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => ir::ExprKind::Call {
             callee: Box::new(clone_expr(callee, alloc)),
             args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
+            arg_names: arg_names.clone(),
         },
         ir::ExprKind::Closure {
             params,
@@ -1570,12 +1576,17 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
         ir::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
-        ir::ExprKind::Call { callee, args } => ir::ExprKind::Call {
+        ir::ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => ir::ExprKind::Call {
             callee: Box::new(substitute_result_var(callee, result_name, alloc)),
             args: args
                 .iter()
                 .map(|a| substitute_result_var(a, result_name, alloc))
                 .collect(),
+            arg_names: arg_names.clone(),
         },
         ir::ExprKind::Closure {
             params,
@@ -1909,7 +1920,7 @@ fn make(x: Int) -> NonEmpty {
                         .map(|arm| count_asserts_in_expr(&arm.body))
                         .sum::<usize>()
             }
-            ir::ExprKind::Call { callee, args } => {
+            ir::ExprKind::Call { callee, args, .. } => {
                 count_asserts_in_expr(callee)
                     + args.iter().map(count_asserts_in_expr).sum::<usize>()
             }
