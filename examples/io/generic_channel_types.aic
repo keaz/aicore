@@ -1,0 +1,99 @@
+import std.concurrent;
+import std.io;
+import std.string;
+import std.vec;
+
+struct Job {
+    id: Int,
+    label: String,
+}
+
+fn vec_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env } {
+    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    if vec.vec_len(values) == 3 && a == 4 && b == 5 && c == 6 { 1 } else { 0 }
+}
+
+fn channel_string_ok() -> Int effects { concurrency } capabilities { concurrency } {
+    let pair: (Sender[String], Receiver[String]) = buffered_channel(2);
+    let tx = pair.0;
+    let rx = pair.1;
+    let sent = match send(tx, "alpha") {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recv_ok = match recv(rx) {
+        Ok(value) => if len(value) == 5 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let close_tx = match close_sender(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    if sent + recv_ok + close_tx + close_rx == 4 { 1 } else { 0 }
+}
+
+fn channel_vec_ok() -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let mut payload: Vec[Int] = vec.new_vec();
+    payload = vec.push(payload, 4);
+    payload = vec.push(payload, 5);
+    payload = vec.push(payload, 6);
+
+    let pair: (Sender[Vec[Int]], Receiver[Vec[Int]]) = buffered_channel(2);
+    let tx = pair.0;
+    let rx = pair.1;
+    let sent = match send(tx, payload) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recv_ok = match recv(rx) {
+        Ok(values) => vec_values_ok(values),
+        Err(_) => 0,
+    };
+    let close_tx = match close_sender(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    if sent + recv_ok + close_tx + close_rx == 4 { 1 } else { 0 }
+}
+
+fn channel_struct_ok() -> Int effects { concurrency } capabilities { concurrency } {
+    let pair: (Sender[Job], Receiver[Job]) = buffered_channel(2);
+    let tx = pair.0;
+    let rx = pair.1;
+    let sent = match send(tx, Job { id: 9, label: "worker" }) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recv_ok = match recv(rx) {
+        Ok(job) => if job.id == 9 && len(job.label) == 6 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let close_tx = match close_sender(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    if sent + recv_ok + close_tx + close_rx == 4 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    if channel_string_ok() + channel_vec_ok() + channel_struct_ok() == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

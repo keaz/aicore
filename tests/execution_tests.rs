@@ -4127,6 +4127,87 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_generic_channels_support_string_struct_and_vec() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.string;
+import std.vec;
+
+struct Message {
+    id: Int,
+    label: String,
+}
+
+fn vec_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env  } {
+    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    if vec.vec_len(values) == 3 && a == 7 && b == 8 && c == 9 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let pair_s: (Sender[String], Receiver[String]) = channel();
+    let tx_s = pair_s.0;
+    let rx_s = pair_s.1;
+    let string_ok = match send(tx_s, "hello") {
+        Ok(_) => match recv(rx_s) {
+            Ok(value) => if len(value) == 5 { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let mut payload: Vec[Int] = vec.new_vec();
+    payload = vec.push(payload, 7);
+    payload = vec.push(payload, 8);
+    payload = vec.push(payload, 9);
+    let pair_v: (Sender[Vec[Int]], Receiver[Vec[Int]]) = buffered_channel(2);
+    let tx_v = pair_v.0;
+    let rx_v = pair_v.1;
+    let vec_send_ok = match send(tx_v, payload) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let vec_recv_ok = match recv(rx_v) {
+        Ok(values) => vec_values_ok(values),
+        Err(_) => 0,
+    };
+
+    let pair_m: (Sender[Message], Receiver[Message]) = buffered_channel(1);
+    let tx_m = pair_m.0;
+    let rx_m = pair_m.1;
+    let msg_send_ok = match send(tx_m, Message { id: 21, label: "done" }) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let msg_recv_ok = match recv(rx_m) {
+        Ok(msg) => if msg.id == 21 && len(msg.label) == 4 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let _close_tx_s = close_sender(tx_s);
+    let _close_rx_s = close_receiver(rx_s);
+    let _close_tx_v = close_sender(tx_v);
+    let _close_rx_v = close_receiver(rx_v);
+    let _close_tx_m = close_sender(tx_m);
+    let _close_rx_m = close_receiver(rx_m);
+
+    if string_ok + vec_send_ok + vec_recv_ok + msg_send_ok + msg_recv_ok == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_cancellation_timeout_and_panic_are_stable() {
     let src = r#"
 import std.io;

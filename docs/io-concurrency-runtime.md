@@ -10,7 +10,8 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 
 - Task lifecycle: `spawn_task`, `join_task`, `cancel_task`
 - Structured task orchestration: `spawn_group`, `timeout_task`, `select_first`
-- Typed channels: `IntChannel` with buffered creation, blocking/non-blocking send/recv, and select
+- Generic channels: `Sender[T]` / `Receiver[T]` with buffered creation, blocking/non-blocking send/recv
+- Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
 - Synchronization utility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 
 All APIs are `effects { concurrency }`.
@@ -40,6 +41,8 @@ enum ChannelError {
 }
 
 struct Task { handle: Int }
+struct Sender[T] { handle: Int }
+struct Receiver[T] { handle: Int }
 struct IntTaskSelection { task_index: Int, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
@@ -55,6 +58,16 @@ fn timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] ef
 fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }
 fn select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }
+
+fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency }
+fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency }
+fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
+fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
+fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
+fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
+fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }
+fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
+fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
@@ -91,6 +104,11 @@ fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { conc
 - Buffered channel creation:
   - `channel_int`, `buffered_channel_int`, and `channel_int_buffered` create bounded buffered channels.
   - Capacity must be positive and within runtime limits.
+- Generic channel payload transport:
+  - `send[T]` serializes payloads to deterministic JSON text and stores them in concurrency payload slots.
+  - Channel runtime transports payload IDs (`Int`) across thread boundaries.
+  - `recv[T]`/`try_recv[T]`/`recv_timeout[T]` load payload text and decode back to `T`.
+  - On send failure paths, staged payloads are dropped to avoid payload-slot leaks.
 - Backpressure when full:
   - `send_int` blocks while channel is full, up to `timeout_ms`.
   - If no space is available before deadline, `send_int` returns `Err(Timeout)`.
@@ -155,6 +173,9 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_mutex_lock`
 - `aic_rt_conc_mutex_unlock`
 - `aic_rt_conc_mutex_close`
+- `aic_rt_conc_payload_store`
+- `aic_rt_conc_payload_take`
+- `aic_rt_conc_payload_drop`
 - `aic_rt_async_poll_int`
 - `aic_rt_async_poll_string`
 
@@ -169,5 +190,6 @@ Codegen lowers to these runtime symbols:
 ## Example
 
 - `examples/io/worker_pool.aic`
+- `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`
 - `examples/io/async_await_submit_bridge.aic`

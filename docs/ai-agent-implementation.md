@@ -170,6 +170,7 @@ Notes:
 - Concurrency runtime contract and examples:
   - `docs/io-concurrency-runtime.md`
   - `examples/io/worker_pool.aic`
+  - `examples/io/generic_channel_types.aic`
   - `examples/io/structured_concurrency.aic`
   - structured APIs: `spawn_group(Vec[Int], Int)`, `timeout_task(Task, Int)`, `select_first(Vec[Task], Int)`
 - Complete IO agent playbooks:

@@ -174,6 +174,30 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_payload_store_intrinsic",
+        runtime_symbol: "aic_rt_conc_payload_store",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_payload_take_intrinsic",
+        runtime_symbol: "aic_rt_conc_payload_take",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_payload_drop_intrinsic",
+        runtime_symbol: "aic_rt_conc_payload_drop",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_proc_spawn_intrinsic",
         runtime_symbol: "aic_rt_proc_spawn",
         signatures: &[IntrinsicSignatureShape {
@@ -1916,7 +1940,10 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_conc_mutex_int(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_mutex_unlock(i64, i64)\n");
-        text.push_str("declare i64 @aic_rt_conc_mutex_close(i64)\n\n");
+        text.push_str("declare i64 @aic_rt_conc_mutex_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_payload_store(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_payload_take(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_payload_drop(i64, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
@@ -4211,31 +4238,11 @@ impl<'a> Generator<'a> {
             return result;
         }
 
-        if let Some(instances) = self.generic_fn_instances.get(name).cloned() {
-            let mut values = Vec::new();
-            for expr in args {
-                values.push(self.gen_expr(expr, fctx)?);
-            }
-
-            let selected = instances.into_iter().find(|inst| {
-                inst.params.len() == values.len()
-                    && inst
-                        .params
-                        .iter()
-                        .zip(values.iter())
-                        .all(|(expected, value)| *expected == value.ty)
-            });
-
-            let Some(instance) = selected else {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5014",
-                    format!("argument type mismatch for generic call to '{}'", name),
-                    self.file,
-                    span,
-                ));
-                return None;
-            };
-
+        let mut values = Vec::new();
+        for expr in args {
+            values.push(self.gen_expr(expr, fctx)?);
+        }
+        if let Some(instance) = self.resolve_generic_instance(name, &values, expected_ty, span) {
             let rendered_args = values
                 .iter()
                 .zip(instance.params.iter())
@@ -4309,14 +4316,14 @@ impl<'a> Generator<'a> {
             return None;
         }
 
-        if args.len() != sig.params.len() {
+        if values.len() != sig.params.len() {
             self.diagnostics.push(Diagnostic::error(
                 "E5013",
                 format!(
                     "call to '{}' arity mismatch: expected {}, got {}",
                     name,
                     sig.params.len(),
-                    args.len()
+                    values.len()
                 ),
                 self.file,
                 span,
@@ -4325,22 +4332,24 @@ impl<'a> Generator<'a> {
         }
 
         let mut rendered_args = Vec::new();
-        for (idx, expr) in args.iter().enumerate() {
-            let value = self.gen_expr(expr, fctx)?;
+        for (idx, value) in values.iter().enumerate() {
             let expected = &sig.params[idx];
             if value.ty != *expected {
                 self.diagnostics.push(Diagnostic::error(
                     "E5014",
                     format!("argument type mismatch for call to '{}'", name),
                     self.file,
-                    expr.span,
+                    args[idx].span,
                 ));
                 return None;
             }
             rendered_args.push(format!(
                 "{} {}",
                 llvm_type(expected),
-                value.repr.unwrap_or_else(|| default_value(expected))
+                value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(expected))
             ));
         }
 
@@ -4456,26 +4465,7 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        if let Some(instances) = self.generic_fn_instances.get(name).cloned() {
-            let selected = instances.into_iter().find(|inst| {
-                inst.params.len() == values.len()
-                    && inst
-                        .params
-                        .iter()
-                        .zip(values.iter())
-                        .all(|(expected, value)| *expected == value.ty)
-            });
-
-            let Some(instance) = selected else {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5014",
-                    format!("argument type mismatch for generic call to '{}'", name),
-                    self.file,
-                    span,
-                ));
-                return None;
-            };
-
+        if let Some(instance) = self.resolve_generic_instance(name, &values, None, span) {
             let rendered_args = values
                 .iter()
                 .zip(instance.params.iter())
@@ -4589,6 +4579,240 @@ impl<'a> Generator<'a> {
                 ty: sig.ret,
                 repr: Some(reg),
             })
+        }
+    }
+
+    fn resolve_generic_instance(
+        &mut self,
+        name: &str,
+        values: &[Value],
+        expected_ret: Option<&LType>,
+        span: crate::span::Span,
+    ) -> Option<GenericFnInstance> {
+        if let Some(instances) = self.generic_fn_instances.get(name) {
+            let mut matches = instances
+                .iter()
+                .filter(|inst| {
+                    inst.params.len() == values.len()
+                        && inst
+                            .params
+                            .iter()
+                            .zip(values.iter())
+                            .all(|(expected, value)| *expected == value.ty)
+                })
+                .collect::<Vec<_>>();
+            if let Some(expected) = expected_ret {
+                matches.retain(|inst| inst.ret == *expected);
+            }
+            match matches.len() {
+                0 => {}
+                1 => return Some((*matches[0]).clone()),
+                _ => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5014",
+                        format!("ambiguous generic call to '{}'", name),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+            }
+        }
+        self.instantiate_generic_instance_on_demand(name, values, expected_ret, span)
+    }
+
+    fn instantiate_generic_instance_on_demand(
+        &mut self,
+        name: &str,
+        values: &[Value],
+        expected_ret: Option<&LType>,
+        span: crate::span::Span,
+    ) -> Option<GenericFnInstance> {
+        let mut matches: Vec<(ir::Function, GenericFnInstance)> = Vec::new();
+        for item in &self.program.items {
+            match item {
+                ir::Item::Function(func) => {
+                    self.collect_on_demand_instance_candidate(
+                        func,
+                        name,
+                        values,
+                        expected_ret,
+                        span,
+                        &mut matches,
+                    );
+                }
+                ir::Item::Impl(impl_def) => {
+                    for method in &impl_def.methods {
+                        self.collect_on_demand_instance_candidate(
+                            method,
+                            name,
+                            values,
+                            expected_ret,
+                            span,
+                            &mut matches,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if matches.is_empty() {
+            return None;
+        }
+        if matches.len() > 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5014",
+                format!("argument type mismatch for generic call to '{}'", name),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let (func, instance) = matches.remove(0);
+        let inserted = self.register_generic_instance(name, &instance);
+        if inserted {
+            self.defer_monomorphized_function(&func, &instance);
+        }
+        Some(instance)
+    }
+
+    fn collect_on_demand_instance_candidate(
+        &mut self,
+        func: &ir::Function,
+        name: &str,
+        values: &[Value],
+        expected_ret: Option<&LType>,
+        span: crate::span::Span,
+        out: &mut Vec<(ir::Function, GenericFnInstance)>,
+    ) {
+        if func.name != name || func.generics.is_empty() || func.params.len() != values.len() {
+            return;
+        }
+
+        let generic_names = func
+            .generics
+            .iter()
+            .map(|g| g.name.clone())
+            .collect::<Vec<_>>();
+        let mut bindings = BTreeMap::new();
+        for (param, value) in func.params.iter().zip(values.iter()) {
+            let raw = self
+                .type_map
+                .get(&param.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            infer_generic_bindings(&raw, &render_type(&value.ty), &generic_names, &mut bindings);
+        }
+        if let Some(expected) = expected_ret {
+            let expected_rendered = if func.is_async {
+                let LType::Async(inner) = expected else {
+                    return;
+                };
+                render_type(inner)
+            } else {
+                render_type(expected)
+            };
+            let ret_raw = self
+                .type_map
+                .get(&func.ret_type)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            if !infer_generic_bindings(&ret_raw, &expected_rendered, &generic_names, &mut bindings)
+            {
+                return;
+            }
+        }
+
+        for generic in &generic_names {
+            if bindings.contains_key(generic) {
+                continue;
+            }
+            if let Some(active) = self
+                .active_type_bindings
+                .as_ref()
+                .and_then(|map| map.get(generic))
+                .cloned()
+            {
+                bindings.insert(generic.clone(), active);
+            }
+        }
+        if generic_names
+            .iter()
+            .any(|generic| !bindings.contains_key(generic))
+        {
+            return;
+        }
+
+        let mut params = Vec::with_capacity(func.params.len());
+        for param in &func.params {
+            let raw = self
+                .type_map
+                .get(&param.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            let concrete = substitute_type_vars(&raw, &bindings);
+            let Some(ty) = self.parse_type_repr(&concrete, span) else {
+                return;
+            };
+            params.push(ty);
+        }
+        if params
+            .iter()
+            .zip(values.iter())
+            .any(|(expected, actual)| *expected != actual.ty)
+        {
+            return;
+        }
+
+        let ret_raw = self
+            .type_map
+            .get(&func.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        let ret_concrete = substitute_type_vars(&ret_raw, &bindings);
+        let Some(mut ret) = self.parse_type_repr(&ret_concrete, span) else {
+            return;
+        };
+        if func.is_async {
+            ret = LType::Async(Box::new(ret));
+        }
+
+        let type_args = generic_names
+            .iter()
+            .map(|generic| bindings.get(generic).cloned().unwrap_or_default())
+            .collect::<Vec<_>>();
+        let instance = GenericFnInstance {
+            mangled: mangle_generic_instantiation("fn", &func.name, &type_args),
+            params,
+            ret,
+            bindings,
+        };
+        out.push((func.clone(), instance));
+    }
+
+    fn register_generic_instance(&mut self, name: &str, instance: &GenericFnInstance) -> bool {
+        let entry = self
+            .generic_fn_instances
+            .entry(name.to_string())
+            .or_default();
+        if entry
+            .iter()
+            .any(|existing| existing.mangled == instance.mangled)
+        {
+            return false;
+        }
+        entry.push(instance.clone());
+        true
+    }
+
+    fn defer_monomorphized_function(&mut self, func: &ir::Function, inst: &GenericFnInstance) {
+        let start = self.out.len();
+        self.gen_monomorphized_function(func, inst);
+        let lines = self.out.split_off(start);
+        if !lines.is_empty() {
+            self.deferred_fn_defs.push(lines);
         }
     }
 
@@ -7251,6 +7475,9 @@ impl<'a> Generator<'a> {
             "lock_int" | "aic_conc_mutex_lock_intrinsic" => "lock_int",
             "unlock_int" | "aic_conc_mutex_unlock_intrinsic" => "unlock_int",
             "close_mutex" | "aic_conc_mutex_close_intrinsic" => "close_mutex",
+            "aic_conc_payload_store_intrinsic" => "payload_store",
+            "aic_conc_payload_take_intrinsic" => "payload_take",
+            "aic_conc_payload_drop_intrinsic" => "payload_drop",
             _ => return None,
         };
 
@@ -7400,6 +7627,21 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_concurrency_close_mutex_call(name, args, span, fctx))
+            }
+            "payload_store"
+                if self.sig_matches_shape(name, &["String"], "Result[Int, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_payload_store_call(name, args, span, fctx))
+            }
+            "payload_take"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_payload_take_call(name, args, span, fctx))
+            }
+            "payload_drop"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_payload_drop_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -8514,6 +8756,154 @@ impl<'a> Generator<'a> {
         let ok_payload = Value {
             ty: LType::Bool,
             repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_payload_store_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_payload_store_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let payload = self.gen_expr(&args[0], fctx)?;
+        if payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_store_intrinsic expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&payload, args[0].span, fctx)?;
+        let payload_id_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", payload_id_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", payload_id_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_payload_store(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, payload_id_slot
+        ));
+        let payload_id = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            payload_id, payload_id_slot
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(payload_id),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_payload_take_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_payload_take_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let payload_id = self.gen_expr(&args[0], fctx)?;
+        if payload_id.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_take_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_payload_take(i64 {}, i8** {}, i64* {})",
+            err,
+            payload_id.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        self.wrap_concurrency_result(&result_ty, payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_payload_drop_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_payload_drop_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let payload_id = self.gen_expr(&args[0], fctx)?;
+        if payload_id.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_drop_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let dropped_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", dropped_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", dropped_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_payload_drop(i64 {}, i64* {})",
+            err,
+            payload_id.repr.clone().unwrap_or_else(|| "0".to_string()),
+            dropped_slot
+        ));
+        let dropped_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            dropped_i64, dropped_slot
+        ));
+        let dropped_bool = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            dropped_bool, dropped_i64
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(dropped_bool),
         };
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -21431,6 +21821,7 @@ impl<'a> Generator<'a> {
             .resolve_call_sig_for_types(name, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_encode_intrinsic" {
+                    let ret_ty = self.parse_type_repr("Result[JsonValue, JsonError]", span)?;
                     Some(FnSig {
                         is_extern: false,
                         extern_symbol: None,
@@ -21438,7 +21829,7 @@ impl<'a> Generator<'a> {
                         is_intrinsic: false,
                         intrinsic_abi: None,
                         params: arg_types.clone(),
-                        ret: fctx.ret_ty.clone(),
+                        ret: ret_ty,
                     })
                 } else {
                     None
@@ -21493,6 +21884,8 @@ impl<'a> Generator<'a> {
             .resolve_call_sig_for_types(name, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_decode_intrinsic" {
+                    let ret_repr = format!("Result[{}, JsonError]", render_type(&target_ty));
+                    let ret_ty = self.parse_type_repr(&ret_repr, span)?;
                     Some(FnSig {
                         is_extern: false,
                         extern_symbol: None,
@@ -21500,7 +21893,7 @@ impl<'a> Generator<'a> {
                         is_intrinsic: false,
                         intrinsic_abi: None,
                         params: arg_types.clone(),
-                        ret: fctx.ret_ty.clone(),
+                        ret: ret_ty,
                     })
                 } else {
                     None
@@ -21554,6 +21947,7 @@ impl<'a> Generator<'a> {
             .resolve_call_sig_for_types(name, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_schema_intrinsic" {
+                    let ret_ty = self.parse_type_repr("Result[String, JsonError]", span)?;
                     Some(FnSig {
                         is_extern: false,
                         extern_symbol: None,
@@ -21561,7 +21955,7 @@ impl<'a> Generator<'a> {
                         is_intrinsic: false,
                         intrinsic_abi: None,
                         params: arg_types.clone(),
-                        ret: fctx.ret_ty.clone(),
+                        ret: ret_ty,
                     })
                 } else {
                     None
@@ -28515,6 +28909,33 @@ fn const_value_name(value: &ConstValue) -> &'static str {
         ConstValue::Unit => "()",
         ConstValue::String(_) => "String",
     }
+}
+
+fn mangle_generic_instantiation(kind_tag: &str, name: &str, type_args: &[String]) -> String {
+    let mut out = String::new();
+    out.push_str(kind_tag);
+    out.push('_');
+    out.push_str(&mangle_generic_component(name));
+    for arg in type_args {
+        out.push('_');
+        out.push_str(&mangle_generic_component(arg));
+    }
+    out
+}
+
+fn mangle_generic_component(input: &str) -> String {
+    let mut out = String::new();
+    for ch in input.chars() {
+        match ch {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => out.push(ch),
+            '[' => out.push_str("_lb_"),
+            ']' => out.push_str("_rb_"),
+            ',' => out.push_str("_c_"),
+            ' ' => {}
+            other => out.push_str(&format!("_x{:02X}_", other as u32)),
+        }
+    }
+    out
 }
 
 fn mangle(name: &str) -> String {
@@ -38223,11 +38644,46 @@ long aic_rt_conc_mutex_close(long handle) {
     (void)handle;
     return 7;
 }
+
+long aic_rt_conc_payload_store(
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_payload_id
+) {
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    if (out_payload_id != NULL) {
+        *out_payload_id = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_payload_take(long payload_id, char** out_ptr, long* out_len) {
+    (void)payload_id;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
+    (void)payload_id;
+    if (out_dropped != NULL) {
+        *out_dropped = 0;
+    }
+    return 7;
+}
 #else
 #define AIC_RT_CONC_TASK_CAP 128
 #define AIC_RT_CONC_CHANNEL_CAP 128
 #define AIC_RT_CONC_MUTEX_CAP 128
 #define AIC_RT_CONC_SCOPE_CAP 128
+#define AIC_RT_CONC_PAYLOAD_CAP 4096
 
 typedef struct {
     int active;
@@ -38271,11 +38727,19 @@ typedef struct {
     long parent;
 } AicConcScopeSlot;
 
+typedef struct {
+    int active;
+    char* ptr;
+    long len;
+} AicConcPayloadSlot;
+
 static AicConcTaskSlot aic_rt_conc_tasks[AIC_RT_CONC_TASK_CAP];
 static AicConcChannelSlot aic_rt_conc_channels[AIC_RT_CONC_CHANNEL_CAP];
 static AicConcMutexSlot aic_rt_conc_mutexes[AIC_RT_CONC_MUTEX_CAP];
 static AicConcScopeSlot aic_rt_conc_scopes[AIC_RT_CONC_SCOPE_CAP];
+static AicConcPayloadSlot aic_rt_conc_payloads[AIC_RT_CONC_PAYLOAD_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static long aic_rt_conc_map_errno(int err) {
     switch (err) {
@@ -39311,6 +39775,126 @@ long aic_rt_conc_mutex_close(long handle) {
     slot->locked = 0;
     pthread_cond_broadcast(&slot->cond);
     pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_payload_store(
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_payload_id
+) {
+    (void)payload_cap;
+    if (out_payload_id != NULL) {
+        *out_payload_id = 0;
+    }
+    if (payload_ptr == NULL || payload_len < 0) {
+        return 4;
+    }
+    if ((unsigned long)payload_len > SIZE_MAX - 1UL) {
+        return 4;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_conc_payload_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
+        if (!aic_rt_conc_payloads[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 7;
+    }
+
+    size_t size = (size_t)payload_len;
+    char* copy = (char*)malloc(size + 1UL);
+    if (copy == NULL) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 7;
+    }
+    if (size > 0) {
+        memcpy(copy, payload_ptr, size);
+    }
+    copy[size] = '\0';
+
+    aic_rt_conc_payloads[slot_index].active = 1;
+    aic_rt_conc_payloads[slot_index].ptr = copy;
+    aic_rt_conc_payloads[slot_index].len = payload_len;
+    if (out_payload_id != NULL) {
+        *out_payload_id = slot_index + 1;
+    }
+
+    pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+    return 0;
+}
+
+long aic_rt_conc_payload_take(long payload_id, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (payload_id <= 0 || payload_id > AIC_RT_CONC_PAYLOAD_CAP) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_conc_payload_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+
+    AicConcPayloadSlot* slot = &aic_rt_conc_payloads[payload_id - 1];
+    if (!slot->active || slot->ptr == NULL) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 1;
+    }
+
+    if (out_ptr != NULL) {
+        *out_ptr = slot->ptr;
+    }
+    if (out_len != NULL) {
+        *out_len = slot->len;
+    }
+    slot->active = 0;
+    slot->ptr = NULL;
+    slot->len = 0;
+
+    pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+    return 0;
+}
+
+long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
+    if (out_dropped != NULL) {
+        *out_dropped = 0;
+    }
+    if (payload_id <= 0 || payload_id > AIC_RT_CONC_PAYLOAD_CAP) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_conc_payload_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+
+    AicConcPayloadSlot* slot = &aic_rt_conc_payloads[payload_id - 1];
+    if (slot->active && slot->ptr != NULL) {
+        free(slot->ptr);
+        slot->ptr = NULL;
+        slot->len = 0;
+        slot->active = 0;
+        if (out_dropped != NULL) {
+            *out_dropped = 1;
+        }
+    }
+
+    pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
     return 0;
 }
 #endif

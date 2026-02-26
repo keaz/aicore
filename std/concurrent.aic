@@ -1,5 +1,7 @@
 module std.concurrent;
 
+import std.json;
+import std.option;
 import std.result;
 import std.vec;
 
@@ -21,6 +23,14 @@ enum ChannelError {
 }
 
 struct Task {
+    handle: Int,
+}
+
+struct Sender[T] {
+    handle: Int,
+}
+
+struct Receiver[T] {
     handle: Int,
 }
 
@@ -60,6 +70,172 @@ intrinsic fn aic_conc_mutex_int_intrinsic(initial: Int) -> Result[IntMutex, Conc
 intrinsic fn aic_conc_mutex_lock_intrinsic(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_mutex_unlock_intrinsic(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_payload_drop_intrinsic(payload_id: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+
+fn default_blocking_timeout_ms() -> Int {
+    2147483647
+}
+
+fn channel_closed() -> ChannelError {
+    let out: ChannelError = Closed();
+    out
+}
+
+fn channel_timeout() -> ChannelError {
+    let out: ChannelError = Timeout();
+    out
+}
+
+fn map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError {
+    match err {
+        Timeout => channel_timeout(),
+        Closed => channel_closed(),
+        _ => channel_closed(),
+    }
+}
+
+fn take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects { concurrency } {
+    match aic_conc_payload_take_intrinsic(payload_id) {
+        Ok(payload) => Ok(payload),
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
+fn json_stringify_payload(encoded: JsonValue) -> Result[String, ChannelError] {
+    let payload_result: Result[String, JsonError] = aic_json_stringify_intrinsic(encoded);
+    match payload_result {
+        Ok(payload) => Ok(payload),
+        Err(_) => Err(channel_closed()),
+    }
+}
+
+fn json_encode_payload[T](value: T) -> Result[String, ChannelError] {
+    let encoded_result: Result[JsonValue, JsonError] = aic_json_serde_encode_intrinsic(value);
+    match encoded_result {
+        Ok(encoded) => json_stringify_payload(encoded),
+        Err(_) => Err(channel_closed()),
+    }
+}
+
+fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency } {
+    match channel_int_buffered(1) {
+        Ok(ch) => (
+            Sender { handle: ch.handle },
+            Receiver { handle: ch.handle },
+        ),
+        Err(_) => (
+            Sender { handle: 0 },
+            Receiver { handle: 0 },
+        ),
+    }
+}
+
+fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency } {
+    match channel_int_buffered(capacity) {
+        Ok(ch) => (
+            Sender { handle: ch.handle },
+            Receiver { handle: ch.handle },
+        ),
+        Err(_) => (
+            Sender { handle: 0 },
+            Receiver { handle: 0 },
+        ),
+    }
+}
+
+fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    close_channel(IntChannel { handle: tx.handle })
+}
+
+fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    close_channel(IntChannel { handle: rx.handle })
+}
+
+fn send_cleanup_error(payload_id: Int, err: ConcurrencyError) -> ChannelError effects { concurrency } {
+    let _drop_payload = aic_conc_payload_drop_intrinsic(payload_id);
+    map_concurrency_to_channel_error(err)
+}
+
+fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
+    match json_encode_payload(value) {
+        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
+            Ok(payload_id) => match send_int(IntChannel { handle: tx.handle }, payload_id, default_blocking_timeout_ms()) {
+                Ok(_) => Ok(true),
+                Err(err) => Err(send_cleanup_error(payload_id, err)),
+            },
+            Err(err) => Err(map_concurrency_to_channel_error(err)),
+        },
+        Err(_) => Err(channel_closed()),
+    }
+}
+
+fn try_send_cleanup_error(payload_id: Int, err: ChannelError) -> ChannelError effects { concurrency } {
+    let _drop_payload = aic_conc_payload_drop_intrinsic(payload_id);
+    err
+}
+
+fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
+    match json_encode_payload(value) {
+        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
+            Ok(payload_id) => match try_send_int(IntChannel { handle: tx.handle }, payload_id) {
+                Ok(_) => Ok(true),
+                Err(err) => Err(try_send_cleanup_error(payload_id, err)),
+            },
+            Err(err) => Err(map_concurrency_to_channel_error(err)),
+        },
+        Err(_) => Err(channel_closed()),
+    }
+}
+
+fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
+    match recv_int(IntChannel { handle: rx.handle }, default_blocking_timeout_ms()) {
+        Ok(payload_id) => match take_payload_string(payload_id) {
+            Ok(payload) => match aic_json_parse_intrinsic(payload) {
+                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
+                    Ok(value) => Ok(value),
+                    Err(_) => Err(channel_closed()),
+                },
+                Err(_) => Err(channel_closed()),
+            },
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
+fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
+    match try_recv_int(IntChannel { handle: rx.handle }) {
+        Ok(payload_id) => match take_payload_string(payload_id) {
+            Ok(payload) => match aic_json_parse_intrinsic(payload) {
+                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
+                    Ok(value) => Ok(value),
+                    Err(_) => Err(channel_closed()),
+                },
+                Err(_) => Err(channel_closed()),
+            },
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(err),
+    }
+}
+
+fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency } {
+    match recv_int(IntChannel { handle: rx.handle }, timeout_ms) {
+        Ok(payload_id) => match take_payload_string(payload_id) {
+            Ok(payload) => match aic_json_parse_intrinsic(payload) {
+                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
+                    Ok(value) => Ok(value),
+                    Err(_) => Err(channel_closed()),
+                },
+                Err(_) => Err(channel_closed()),
+            },
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
 
 fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
     aic_conc_spawn_intrinsic(value, delay_ms)

@@ -16,13 +16,64 @@ pub struct DeprecatedApi {
     pub note: &'static str,
 }
 
-pub static DEPRECATED_APIS: &[DeprecatedApi] = &[DeprecatedApi {
-    module: "std.time",
-    symbol: "now",
-    replacement: "std.time.now_ms",
-    since: "0.1.0",
-    note: "use millisecond precision API",
-}];
+pub static DEPRECATED_APIS: &[DeprecatedApi] = &[
+    DeprecatedApi {
+        module: "std.time",
+        symbol: "now",
+        replacement: "std.time.now_ms",
+        since: "0.1.0",
+        note: "use millisecond precision API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "channel_int",
+        replacement: "std.concurrent.channel[Int]",
+        since: "0.2.0",
+        note: "prefer generic sender/receiver channel API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "buffered_channel_int",
+        replacement: "std.concurrent.buffered_channel[Int]",
+        since: "0.2.0",
+        note: "prefer generic sender/receiver channel API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "channel_int_buffered",
+        replacement: "std.concurrent.buffered_channel[Int]",
+        since: "0.2.0",
+        note: "prefer generic sender/receiver channel API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "send_int",
+        replacement: "std.concurrent.send[Int]",
+        since: "0.2.0",
+        note: "prefer generic sender API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "recv_int",
+        replacement: "std.concurrent.recv[Int]",
+        since: "0.2.0",
+        note: "prefer generic receiver API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "try_send_int",
+        replacement: "std.concurrent.try_send[Int]",
+        since: "0.2.0",
+        note: "prefer generic sender API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "try_recv_int",
+        replacement: "std.concurrent.try_recv[Int]",
+        since: "0.2.0",
+        note: "prefer generic receiver API",
+    },
+];
 
 pub fn find_deprecated_api(module: &str, symbol: &str) -> Option<&'static DeprecatedApi> {
     DEPRECATED_APIS
