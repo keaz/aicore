@@ -1,0 +1,12 @@
+module app.intrinsic_std_wrapper_migration;
+
+import std.concurrent;
+import std.net;
+import std.proc;
+
+fn main() -> Int effects { concurrency, net, proc, env } {
+    let _pid = proc.current_pid();
+    let _dns = net.dns_lookup("localhost");
+    let _chan = concurrent.channel_int(1);
+    0
+}

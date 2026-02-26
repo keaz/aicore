@@ -82,6 +82,37 @@ fn assert_delegate_call(
     }
 }
 
+fn assert_intrinsic_declaration(source: &str, file: &str, function_name: &str, arity: usize) {
+    let (program, diags) = parse(source, file);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+    let program = program.expect("program");
+
+    let function = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ast::Item::Function(function) if function.name == function_name => {
+                Some(function)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing function `{function_name}`"));
+
+    assert!(
+        function.is_intrinsic,
+        "`{function_name}` should be declared with `intrinsic fn`"
+    );
+    assert_eq!(
+        function.params.len(),
+        arity,
+        "`{function_name}` should expose {arity} parameters"
+    );
+    assert!(
+        function.body.stmts.is_empty() && function.body.tail.is_none(),
+        "`{function_name}` intrinsic declaration must not include a body"
+    );
+}
+
 #[test]
 fn unit_parse_module_and_imports() {
     let src = "module a.b; import std.io; fn main() -> Int { 0 }";
@@ -2131,8 +2162,22 @@ fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
         "aic_proc_pipe_intrinsic",
         2,
     );
-}
 
+    for (name, arity) in [
+        ("aic_proc_spawn_intrinsic", 1usize),
+        ("aic_proc_wait_intrinsic", 1usize),
+        ("aic_proc_kill_intrinsic", 1usize),
+        ("aic_proc_run_intrinsic", 1usize),
+        ("aic_proc_pipe_intrinsic", 2usize),
+        ("aic_proc_run_with_intrinsic", 2usize),
+        ("aic_proc_is_running_intrinsic", 1usize),
+        ("aic_proc_current_pid_intrinsic", 0usize),
+        ("aic_proc_run_timeout_intrinsic", 2usize),
+        ("aic_proc_pipe_chain_intrinsic", 1usize),
+    ] {
+        assert_intrinsic_declaration(&proc_source, "std/proc.aic", name, arity);
+    }
+}
 #[test]
 fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
     let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
@@ -2263,8 +2308,32 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_async_shutdown_intrinsic",
         0,
     );
-}
 
+    for (name, arity) in [
+        ("aic_net_tcp_listen_intrinsic", 1usize),
+        ("aic_net_tcp_local_addr_intrinsic", 1usize),
+        ("aic_net_tcp_accept_intrinsic", 2usize),
+        ("aic_net_tcp_connect_intrinsic", 2usize),
+        ("aic_net_tcp_send_intrinsic", 2usize),
+        ("aic_net_tcp_recv_intrinsic", 3usize),
+        ("aic_net_tcp_close_intrinsic", 1usize),
+        ("aic_net_udp_bind_intrinsic", 1usize),
+        ("aic_net_udp_local_addr_intrinsic", 1usize),
+        ("aic_net_udp_send_to_intrinsic", 3usize),
+        ("aic_net_udp_recv_from_intrinsic", 3usize),
+        ("aic_net_udp_close_intrinsic", 1usize),
+        ("aic_net_dns_lookup_intrinsic", 1usize),
+        ("aic_net_dns_reverse_intrinsic", 1usize),
+        ("aic_net_async_accept_submit_intrinsic", 2usize),
+        ("aic_net_async_send_submit_intrinsic", 2usize),
+        ("aic_net_async_recv_submit_intrinsic", 3usize),
+        ("aic_net_async_wait_int_intrinsic", 2usize),
+        ("aic_net_async_wait_string_intrinsic", 2usize),
+        ("aic_net_async_shutdown_intrinsic", 0usize),
+    ] {
+        assert_intrinsic_declaration(&net_source, "std/net.aic", name, arity);
+    }
+}
 #[test]
 fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
     let url_source = fs::read_to_string("std/url.aic").expect("read std/url.aic");
@@ -3184,8 +3253,30 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "aic_conc_mutex_close_intrinsic",
         1,
     );
-}
 
+    for (name, arity) in [
+        ("aic_conc_spawn_intrinsic", 2usize),
+        ("aic_conc_join_intrinsic", 1usize),
+        ("aic_conc_join_timeout_intrinsic", 2usize),
+        ("aic_conc_cancel_intrinsic", 1usize),
+        ("aic_conc_spawn_group_intrinsic", 2usize),
+        ("aic_conc_select_first_intrinsic", 2usize),
+        ("aic_conc_channel_int_intrinsic", 1usize),
+        ("aic_conc_channel_int_buffered_intrinsic", 1usize),
+        ("aic_conc_send_int_intrinsic", 3usize),
+        ("aic_conc_try_send_int_intrinsic", 2usize),
+        ("aic_conc_recv_int_intrinsic", 2usize),
+        ("aic_conc_try_recv_int_intrinsic", 1usize),
+        ("aic_conc_select_recv_int_intrinsic", 3usize),
+        ("aic_conc_close_channel_intrinsic", 1usize),
+        ("aic_conc_mutex_int_intrinsic", 1usize),
+        ("aic_conc_mutex_lock_intrinsic", 2usize),
+        ("aic_conc_mutex_unlock_intrinsic", 2usize),
+        ("aic_conc_mutex_close_intrinsic", 1usize),
+    ] {
+        assert_intrinsic_declaration(&source, "std/concurrent.aic", name, arity);
+    }
+}
 #[test]
 fn unit_diagnostic_registry_covers_all_emitted_codes() {
     let mut files = Vec::new();
@@ -4888,6 +4979,33 @@ fn main() -> Int { BAD }
 }
 
 #[test]
+fn unit_codegen_reports_missing_runtime_lowering_for_intrinsic_declaration() {
+    let src = r#"
+module std.codegen_intrinsic_test;
+
+intrinsic fn aic_missing_runtime_intrinsic(x: Int) -> Int;
+
+fn main() -> Int {
+    aic_missing_runtime_intrinsic(1)
+}
+"#;
+    let ir = lower(src);
+    let diags = match emit_llvm(&ir, "unit.aic") {
+        Ok(_) => panic!("expected codegen failure"),
+        Err(diags) => diags,
+    };
+    assert!(
+        diags.iter().any(|d| {
+            d.code == "E5020"
+                && d.message.contains(
+                    "missing runtime lowering for intrinsic 'aic_missing_runtime_intrinsic'",
+                )
+        }),
+        "diags={diags:#?}"
+    );
+}
+
+#[test]
 fn unit_type_alias_name_is_preserved_in_return_diagnostic() {
     let src = r#"
 type Meter = Int;
@@ -5212,7 +5330,11 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         "std/net.aic async_wait_string must bridge runtime String to Bytes"
     );
     assert!(
-        net_source.contains("let out: Result[Int, NetError] = Err(Io());"),
-        "std/net.aic byte send intrinsic fallback must avoid fake success"
+        !net_source.contains("fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net } {"),
+        "std/net.aic tcp_send intrinsic must remain declaration-only"
+    );
+    assert!(
+        !net_source.contains("fn aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency } {"),
+        "std/net.aic async wait intrinsic must remain declaration-only"
     );
 }

@@ -24,80 +24,16 @@ struct RunOptions {
     timeout_ms: Int,
 }
 
-fn aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env } {
-    let out: Result[Int, ProcError] = Ok(0);
-    out
-}
-
-fn aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc } {
-    let out: Result[Int, ProcError] = Ok(0);
-    out
-}
-
-fn aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc } {
-    let out: Result[Bool, ProcError] = Ok(true);
-    out
-}
-
-fn aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
-        status: 0,
-        stdout: "",
-        stderr: "",
-    });
-    out
-}
-
-fn aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
-        status: 0,
-        stdout: "",
-        stderr: "",
-    });
-    out
-}
-
-fn aic_proc_run_with_intrinsic(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    let _options = options;
-    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
-        status: 0,
-        stdout: "",
-        stderr: "",
-    });
-    out
-}
-
-fn aic_proc_is_running_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc } {
-    let _handle = handle;
-    let out: Result[Bool, ProcError] = Ok(false);
-    out
-}
-
-fn aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc } {
-    let out: Result[Int, ProcError] = Ok(0);
-    out
-}
-
-fn aic_proc_run_timeout_intrinsic(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    let _command = command;
-    let _timeout_ms = timeout_ms;
-    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
-        status: 0,
-        stdout: "",
-        stderr: "",
-    });
-    out
-}
-
-fn aic_proc_pipe_chain_intrinsic(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    let _stages = stages;
-    let out: Result[ProcOutput, ProcError] = Ok(ProcOutput {
-        status: 0,
-        stdout: "",
-        stderr: "",
-    });
-    out
-}
+intrinsic fn aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env };
+intrinsic fn aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc };
+intrinsic fn aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc };
+intrinsic fn aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env };
+intrinsic fn aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env };
+intrinsic fn aic_proc_run_with_intrinsic(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env };
+intrinsic fn aic_proc_is_running_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc };
+intrinsic fn aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc };
+intrinsic fn aic_proc_run_timeout_intrinsic(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env };
+intrinsic fn aic_proc_pipe_chain_intrinsic(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env };
 
 fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
     aic_proc_spawn_intrinsic(command)

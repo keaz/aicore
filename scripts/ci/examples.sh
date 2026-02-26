@@ -121,6 +121,8 @@ check_pass=(
   "examples/core/closure_fn_values.aic"
   "examples/core/leak_check_closure_capture.aic"
   "examples/core/tuple_types.aic"
+  "examples/core/intrinsic_declaration_demo.aic"
+  "examples/core/intrinsic_std_wrapper_migration.aic"
   "examples/core/named_function_arguments.aic"
   "examples/core/struct_methods.aic"
   "examples/core/struct_defaults.aic"
@@ -142,6 +144,7 @@ check_fail=(
   "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
   "examples/verify/file_protocol_invalid.aic"
   "examples/verify/qv_contract_proof_fail.aic"
+  "examples/core/intrinsic_declaration_invalid_body.aic"
 )
 run_pass=(
   "examples/option_match.aic"

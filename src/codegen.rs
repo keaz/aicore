@@ -20,6 +20,8 @@ struct FnSig {
     is_extern: bool,
     extern_symbol: Option<String>,
     extern_abi: Option<String>,
+    is_intrinsic: bool,
+    intrinsic_abi: Option<String>,
     params: Vec<LType>,
     ret: LType,
 }
@@ -1871,6 +1873,8 @@ impl<'a> Generator<'a> {
                 is_extern: false,
                 extern_symbol: None,
                 extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
                 params: vec![LType::Int],
                 ret: LType::Unit,
             },
@@ -1881,6 +1885,8 @@ impl<'a> Generator<'a> {
                 is_extern: false,
                 extern_symbol: None,
                 extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
                 params: vec![LType::String],
                 ret: LType::Unit,
             },
@@ -1891,6 +1897,8 @@ impl<'a> Generator<'a> {
                 is_extern: false,
                 extern_symbol: None,
                 extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
                 params: vec![LType::Float],
                 ret: LType::Unit,
             },
@@ -1901,6 +1909,8 @@ impl<'a> Generator<'a> {
                 is_extern: false,
                 extern_symbol: None,
                 extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
                 params: vec![LType::String],
                 ret: LType::Int,
             },
@@ -1911,6 +1921,8 @@ impl<'a> Generator<'a> {
                 is_extern: false,
                 extern_symbol: None,
                 extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
                 params: vec![LType::String],
                 ret: LType::Unit,
             },
@@ -1965,6 +1977,8 @@ impl<'a> Generator<'a> {
                         None
                     },
                     extern_abi: func.extern_abi.clone(),
+                    is_intrinsic: func.is_intrinsic,
+                    intrinsic_abi: func.intrinsic_abi.clone(),
                     params,
                     ret,
                 },
@@ -1990,6 +2004,8 @@ impl<'a> Generator<'a> {
                 None
             },
             extern_abi: func.extern_abi.clone(),
+            is_intrinsic: func.is_intrinsic,
+            intrinsic_abi: func.intrinsic_abi.clone(),
             params,
             ret,
         })
@@ -2117,6 +2133,8 @@ impl<'a> Generator<'a> {
             is_extern: false,
             extern_symbol: None,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             params: inst.params.clone(),
             ret: inst.ret.clone(),
         };
@@ -3819,7 +3837,6 @@ impl<'a> Generator<'a> {
                 repr: Some(reg),
             });
         }
-
         let Some(sig) = self.fn_sigs.get(name).cloned() else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
@@ -3829,6 +3846,28 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
+
+        if sig.is_intrinsic {
+            let abi = sig
+                .intrinsic_abi
+                .clone()
+                .unwrap_or_else(|| "<unknown>".to_string());
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5020",
+                    format!(
+                        "missing runtime lowering for intrinsic '{}' (abi '{}')",
+                        name, abi
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help(
+                    "add backend lowering for this intrinsic or call a supported std API wrapper",
+                ),
+            );
+            return None;
+        }
 
         if args.len() != sig.params.len() {
             self.diagnostics.push(Diagnostic::error(
@@ -4740,6 +4779,8 @@ impl<'a> Generator<'a> {
                     is_extern: false,
                     extern_symbol: None,
                     extern_abi: None,
+                    is_intrinsic: false,
+                    intrinsic_abi: None,
                     params: instance.params.clone(),
                     ret: instance.ret.clone(),
                 });
@@ -20954,6 +20995,8 @@ impl<'a> Generator<'a> {
                         is_extern: false,
                         extern_symbol: None,
                         extern_abi: None,
+                        is_intrinsic: false,
+                        intrinsic_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
@@ -21014,6 +21057,8 @@ impl<'a> Generator<'a> {
                         is_extern: false,
                         extern_symbol: None,
                         extern_abi: None,
+                        is_intrinsic: false,
+                        intrinsic_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
@@ -21073,6 +21118,8 @@ impl<'a> Generator<'a> {
                         is_extern: false,
                         extern_symbol: None,
                         extern_abi: None,
+                        is_intrinsic: false,
+                        intrinsic_abi: None,
                         params: arg_types.clone(),
                         ret: fctx.ret_ty.clone(),
                     })
