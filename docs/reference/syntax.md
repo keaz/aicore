@@ -32,10 +32,11 @@ module_decl    = "module" path ";" ;
 import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
-item           = fn_decl | extern_fn_decl | unsafe_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
+item           = fn_decl | extern_fn_decl | intrinsic_fn_decl | unsafe_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
 fn_decl        = "async"? "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
 unsafe_fn_decl = "unsafe" "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
 extern_fn_decl = "extern" string "fn" ident generics? "(" params? ")" "->" type ";" ;
+intrinsic_fn_decl = "intrinsic" "fn" ident "(" params? ")" "->" type effects_clause? ";" ;
 
 generics       = "[" generic_param ("," generic_param)* ","? "]" ;
 generic_param  = ident (":" ident ("+" ident)*)? ;
@@ -84,6 +85,8 @@ highest
 - `let`, `return`, and assignment require trailing semicolons; parser emits deterministic fix suggestions when missing.
 - `null` token is lexed but rejected semantically; absence must be modeled with `Option`.
 - `extern` declarations are signatures only and must end with `;`; effects/contracts are not allowed on extern signatures.
+- `intrinsic` declarations are signature-only runtime bindings, must end with `;`, and preserve effect declarations for callers.
+- Intrinsic declarations with function bodies, contracts, or generics are rejected with stable parser diagnostics (`E1093`).
 - `impl` declarations support:
   - inherent blocks for named type heads (`impl User { ... }`, `impl Status { ... }`)
   - trait impl declarations (`impl Score[Meter];`) and trait impl blocks (`impl Score[Meter] { ... }`)

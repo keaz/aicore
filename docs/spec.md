@@ -58,6 +58,12 @@ async fn use_fetch() -> Int {
     await fetch_plus_one(41)
 }
 
+intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs };
+
+fn file_exists(path: String) -> Bool effects { fs } {
+    aic_fs_exists_intrinsic(path)
+}
+
 trait Sortable[T];
 impl Sortable[Int];
 
@@ -69,6 +75,8 @@ fn pick[T: Sortable](a: T, b: T) -> T {
 - Functions are pure by default.
 - `async fn` declares asynchronous call boundaries.
 - Effects are explicit: `effects { io, fs, net, time, rand }`.
+- `intrinsic fn ...;` declares runtime-bound signature-only APIs (no function body).
+- Intrinsic declarations may declare effects and are serialized in IR/JSON with `is_intrinsic` and `intrinsic_abi` metadata.
 - Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
 - `await` is only valid inside `async fn`.
 - Result propagation uses postfix `?` and requires explicit `Result[_, E]` compatibility.

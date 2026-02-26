@@ -25,17 +25,19 @@ module_decl    = "module" path ";" ;
 import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
-item           = item_visibility? (fn_decl | struct_decl | enum_decl | trait_decl | impl_decl) ;
+item           = item_visibility? (fn_decl | unsafe_fn_decl | extern_fn_decl | intrinsic_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl) ;
 item_visibility = "pub" | "priv" | "pub" "(" "crate" ")" ;
 
-fn_decl        = async_prefix? "fn" ident generics? "(" params? ")" "->" type
-                 effects? contracts? block ;
-async_prefix   = "async" ;
-effects        = "effects" "{" effect_list? "}" ;
-effect_list    = ident ("," ident)* ","? ;
-contracts      = (requires_clause | ensures_clause)* ;
-requires_clause = "requires" expr ;
-ensures_clause  = "ensures" expr ;
+fn_decl           = async_prefix? "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
+unsafe_fn_decl    = "unsafe" "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
+extern_fn_decl    = "extern" string "fn" ident "(" params? ")" "->" type ";" ;
+intrinsic_fn_decl = "intrinsic" "fn" ident "(" params? ")" "->" type effects? ";" ;
+async_prefix      = "async" ;
+effects           = "effects" "{" effect_list? "}" ;
+effect_list       = ident ("," ident)* ","? ;
+contracts         = (requires_clause | ensures_clause)* ;
+requires_clause   = "requires" expr ;
+ensures_clause    = "ensures" expr ;
 
 struct_decl    = "struct" ident generics? "{" fields? "}" invariant_clause? ;
 invariant_clause = "invariant" expr ;
@@ -169,6 +171,9 @@ Visibility and access control:
 - Visibility modifiers are `pub`, `pub(crate)`, and `priv`.
 - Struct fields default to private; mark fields `pub` when cross-module reads/writes are part of the API.
 - User-authored direct calls to runtime intrinsic symbols (`aic_*`) are rejected during type checking.
+- `intrinsic fn` declarations are signature-only and must end with `;`.
+- Intrinsic declarations may include `effects { ... }`, but `requires`/`ensures`, generics, and function bodies are rejected (`E1093`).
+- Canonical IR/JSON encodes intrinsic runtime metadata with `is_intrinsic` and `intrinsic_abi` fields.
 Struct default values:
 - Struct declarations may define defaults with `field: Type = expr`.
 - Struct literals may omit fields that have defaults.

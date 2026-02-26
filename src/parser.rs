@@ -99,6 +99,9 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility_modifier();
         if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
             self.parse_extern_function(visibility).map(Item::Function)
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwIntrinsic)) {
+            self.parse_intrinsic_function(visibility)
+                .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
             if visibility != Visibility::Private {
                 self.diagnostics.push(
@@ -170,7 +173,7 @@ impl<'a> Parser<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1003",
-                    "expected item declaration (`fn`, `async fn`, `unsafe fn`, `extern \"C\" fn`, `type`, `const`, `struct`, `enum`, `trait`, `impl`)",
+                    "expected item declaration (`fn`, `async fn`, `unsafe fn`, `extern \"C\" fn`, `intrinsic fn`, `type`, `const`, `struct`, `enum`, `trait`, `impl`)",
                     self.file,
                     span,
                 )
@@ -277,6 +280,8 @@ impl<'a> Parser<'a> {
             is_unsafe,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics,
             params,
             ret_type,
@@ -381,6 +386,8 @@ impl<'a> Parser<'a> {
             is_unsafe: false,
             is_extern: true,
             extern_abi: Some(abi),
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics,
             params,
             ret_type,
@@ -396,6 +403,112 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_intrinsic_function(&mut self, visibility: Visibility) -> Option<Function> {
+        let start = self.current_span().start;
+        self.bump(); // intrinsic
+
+        if !self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1093",
+                    "expected `fn` after `intrinsic`",
+                    self.file,
+                    self.current_span(),
+                )
+                .with_help("declare intrinsics as `intrinsic fn name(...) -> Ret;`"),
+            );
+            return None;
+        }
+        self.bump(); // fn
+
+        let (name, _) = self.expect_ident("E1004", "expected function name")?;
+        let generics = self.parse_generics();
+        if !generics.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1093",
+                    "intrinsic declarations cannot declare generic parameters",
+                    self.file,
+                    self.previous_span(),
+                )
+                .with_help("use concrete parameter and return types for intrinsic declarations"),
+            );
+        }
+
+        self.expect(
+            |k| matches!(k, TokenKind::LParen),
+            "E1005",
+            "expected '(' after function name",
+        )?;
+        let params = self.parse_params(false)?;
+        self.expect(
+            |k| matches!(k, TokenKind::Arrow),
+            "E1006",
+            "expected '->' with function return type",
+        )?;
+        let ret_type = self.parse_type()?;
+        let effects = self.parse_effects_clause()?;
+
+        if self.at_kind(|k| matches!(k, TokenKind::KwRequires | TokenKind::KwEnsures)) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1093",
+                    "intrinsic declarations cannot declare requires/ensures contracts",
+                    self.file,
+                    self.current_span(),
+                )
+                .with_help("move contracts to wrapper functions around intrinsic calls"),
+            );
+            while !self
+                .at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::LBrace | TokenKind::Eof))
+            {
+                self.bump();
+            }
+        }
+
+        if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1093",
+                    "intrinsic declarations cannot have function bodies",
+                    self.file,
+                    self.current_span(),
+                )
+                .with_help("declare intrinsics as `intrinsic fn name(...) -> Ret;`"),
+            );
+            let _ = self.parse_block();
+            return None;
+        }
+
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1093",
+            "expected ';' after intrinsic declaration",
+        )?;
+        let span = Span::new(start, semi.end);
+        Some(Function {
+            name,
+            visibility,
+            is_async: false,
+            is_unsafe: false,
+            is_extern: false,
+            extern_abi: None,
+            is_intrinsic: true,
+            intrinsic_abi: Some("runtime".to_string()),
+            generics,
+            params,
+            ret_type,
+            effects,
+            requires: None,
+            ensures: None,
+            body: Block {
+                stmts: Vec::new(),
+                tail: None,
+                span: Span::new(semi.start, semi.end),
+            },
+            span,
+        })
+    }
     fn parse_struct(&mut self, visibility: Visibility) -> Option<StructDef> {
         let start = self.current_span().start;
         self.bump(); // struct
@@ -731,6 +844,8 @@ impl<'a> Parser<'a> {
             is_unsafe: false,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics,
             params: Vec::new(),
             ret_type: target_ty,
@@ -776,6 +891,8 @@ impl<'a> Parser<'a> {
             is_unsafe: false,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics: Vec::new(),
             params: Vec::new(),
             ret_type: const_ty,
@@ -982,6 +1099,8 @@ impl<'a> Parser<'a> {
             is_unsafe,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics,
             params,
             ret_type,
@@ -3583,6 +3702,39 @@ fn f(v: Vec[Int], n: Int) -> Int {
                 }
             ));
         }
+    }
+
+    #[test]
+    fn parses_intrinsic_function_declaration() {
+        let src = r#"
+    intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs };
+    "#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let intrinsic_fn = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(intrinsic_fn.is_intrinsic);
+        assert_eq!(intrinsic_fn.intrinsic_abi.as_deref(), Some("runtime"));
+        assert_eq!(intrinsic_fn.effects, vec!["fs".to_string()]);
+        assert!(intrinsic_fn.body.stmts.is_empty());
+        assert!(intrinsic_fn.body.tail.is_none());
+    }
+
+    #[test]
+    fn reports_intrinsic_function_with_body() {
+        let src = r#"
+    intrinsic fn aic_bad_intrinsic() -> Int {
+        1
+    }
+    "#;
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1093"),
+            "diags={diagnostics:#?}"
+        );
     }
 
     #[test]

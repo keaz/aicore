@@ -1716,7 +1716,7 @@ impl<'a> Generator<'a> {
         {
             return;
         }
-        if func.is_extern {
+        if func.is_extern || func.is_intrinsic {
             return;
         }
         if func.generics.is_empty() {

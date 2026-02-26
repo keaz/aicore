@@ -30,6 +30,7 @@ impl FunctionKey {
 struct FunctionDecl {
     span: Span,
     is_extern: bool,
+    is_intrinsic: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +108,7 @@ impl<'a> Analyzer<'a> {
             function_decls.entry(key).or_insert(FunctionDecl {
                 span: func.span,
                 is_extern: func.is_extern,
+                is_intrinsic: func.is_intrinsic,
             });
         }
 
@@ -499,7 +501,7 @@ impl<'a> Analyzer<'a> {
         let reachable = reachable_from_roots(&roots, &self.function_edges, &self.function_decls);
 
         for (key, decl) in &self.function_decls {
-            if key.name == "main" || decl.is_extern {
+            if key.name == "main" || decl.is_extern || decl.is_intrinsic {
                 continue;
             }
 

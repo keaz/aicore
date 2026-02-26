@@ -21,16 +21,18 @@ module_decl    = "module" path ";" ;
 import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
-item           = fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
+item           = fn_decl | unsafe_fn_decl | extern_fn_decl | intrinsic_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
 
-fn_decl        = async_prefix? "fn" ident generics? "(" params? ")" "->" type
-                 effects? contracts? block ;
-async_prefix   = "async" ;
-effects        = "effects" "{" effect_list? "}" ;
-effect_list    = ident ("," ident)* ","? ;
-contracts      = (requires_clause | ensures_clause)* ;
-requires_clause = "requires" expr ;
-ensures_clause  = "ensures" expr ;
+fn_decl           = async_prefix? "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
+unsafe_fn_decl    = "unsafe" "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
+extern_fn_decl    = "extern" string "fn" ident "(" params? ")" "->" type ";" ;
+intrinsic_fn_decl = "intrinsic" "fn" ident "(" params? ")" "->" type effects? ";" ;
+async_prefix      = "async" ;
+effects           = "effects" "{" effect_list? "}" ;
+effect_list       = ident ("," ident)* ","? ;
+contracts         = (requires_clause | ensures_clause)* ;
+requires_clause   = "requires" expr ;
+ensures_clause    = "ensures" expr ;
 
 struct_decl    = "struct" ident generics? "{" fields? "}" invariant_clause? ;
 invariant_clause = "invariant" expr ;

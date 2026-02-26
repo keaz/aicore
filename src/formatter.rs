@@ -135,6 +135,32 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
         return;
     }
 
+    if f.is_intrinsic {
+        out.push_str("intrinsic fn ");
+        out.push_str(&f.name);
+        format_generic_params(out, &f.generics);
+        out.push('(');
+        out.push_str(
+            &f.params
+                .iter()
+                .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        out.push_str(") -> ");
+        out.push_str(&display_type(type_map, &f.ret_type));
+        if !f.effects.is_empty() {
+            let mut effects = f.effects.clone();
+            effects.sort();
+            effects.dedup();
+            out.push_str(" effects { ");
+            out.push_str(&effects.join(", "));
+            out.push_str(" }");
+        }
+        out.push_str(";\n");
+        return;
+    }
+
     if f.is_async {
         out.push_str("async ");
     }

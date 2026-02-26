@@ -20,6 +20,7 @@ pub enum TokenKind {
     KwImport,
     KwAsync,
     KwExtern,
+    KwIntrinsic,
     KwUnsafe,
     KwPub,
     KwPriv,
@@ -342,6 +343,7 @@ impl<'a> Lexer<'a> {
             "import" => TokenKind::KwImport,
             "async" => TokenKind::KwAsync,
             "extern" => TokenKind::KwExtern,
+            "intrinsic" => TokenKind::KwIntrinsic,
             "unsafe" => TokenKind::KwUnsafe,
             "pub" => TokenKind::KwPub,
             "priv" => TokenKind::KwPriv,
@@ -856,11 +858,14 @@ mod tests {
     }
 
     #[test]
-    fn lexes_extern_and_unsafe_keywords() {
-        let src = r#"extern "C" fn c_abs(x: Int) -> Int; unsafe fn wrap(x: Int) -> Int { unsafe { c_abs(x) } }"#;
+    fn lexes_extern_intrinsic_and_unsafe_keywords() {
+        let src = r#"extern "C" fn c_abs(x: Int) -> Int; intrinsic fn aic_math_abs_intrinsic(x: Int) -> Int; unsafe fn wrap(x: Int) -> Int { unsafe { c_abs(x) } }"#;
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwExtern)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::KwIntrinsic)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwUnsafe)));
     }
 

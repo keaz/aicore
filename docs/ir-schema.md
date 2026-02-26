@@ -23,6 +23,8 @@ Core entities:
 Notable function/expression fields:
 
 - `Function.is_async: bool`
+- `Function.is_intrinsic: bool`
+- `Function.intrinsic_abi: Option<String>`
 - `GenericParam.bounds: Vec<String>`
 - `Stmt::Let.mutable: bool`
 - `Stmt::Assign { target, expr, span }`

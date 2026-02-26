@@ -693,6 +693,20 @@ impl<'a> Checker<'a> {
             return;
         }
 
+        if func.is_intrinsic {
+            self.check_intrinsic_function_signature(func);
+            self.effect_usage.insert(func.name.clone(), BTreeSet::new());
+            self.current_param_positions.clear();
+            self.enforce_import_visibility = previous_enforce;
+            self.current_function = previous_function;
+            self.current_module = previous_module;
+            self.current_function_is_async = previous_async;
+            self.current_function_is_unsafe = previous_unsafe;
+            self.current_function_ret_type = previous_ret;
+            self.unsafe_depth = previous_unsafe_depth;
+            return;
+        }
+
         for generic in &func.generics {
             for bound in &generic.bounds {
                 let Some(trait_info) = self.resolution.traits.get(bound) else {
@@ -1185,6 +1199,61 @@ impl<'a> Checker<'a> {
                     func.span,
                 )
                 .with_help("use Int/Bool/() for raw extern signatures and convert in wrapper code"),
+            );
+        }
+    }
+
+    fn check_intrinsic_function_signature(&mut self, func: &ir::Function) {
+        match func.intrinsic_abi.as_deref() {
+            Some("runtime") => {}
+            Some(other) => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2121",
+                        format!(
+                            "unsupported intrinsic ABI '{}' on function '{}'",
+                            other, func.name
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("use `intrinsic fn ...;` declarations with the default runtime ABI"),
+                );
+            }
+            None => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2121",
+                        format!(
+                            "intrinsic function '{}' is missing runtime ABI metadata",
+                            func.name
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("rebuild IR from source so intrinsic ABI metadata is encoded"),
+                );
+            }
+        }
+
+        if func.is_async
+            || !func.generics.is_empty()
+            || func.requires.is_some()
+            || func.ensures.is_some()
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2121",
+                    format!(
+                        "intrinsic function '{}' must be a plain declaration without async/generics/contracts",
+                        func.name
+                    ),
+                    self.file,
+                    func.span,
+                )
+                .with_help(
+                    "declare intrinsic bindings as `intrinsic fn name(...) -> Ret effects { ... };`",
+                ),
             );
         }
     }

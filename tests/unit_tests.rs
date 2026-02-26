@@ -105,6 +105,42 @@ fn unit_parse_function_generics() {
 }
 
 #[test]
+fn unit_intrinsic_declaration_typechecks_and_serializes_metadata() {
+    let src = r#"
+module std.intrinsic_test;
+
+intrinsic fn aic_path_is_abs_intrinsic(path: String) -> Bool effects { fs };
+
+fn main() -> Int { 0 }
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+
+    let ir_json = serde_json::to_value(&ir).expect("serialize ir");
+    let functions = ir_json["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .filter_map(|item| item.get("Function"))
+        .collect::<Vec<_>>();
+    let intrinsic = functions
+        .iter()
+        .find(|func| func["name"] == "aic_path_is_abs_intrinsic")
+        .expect("intrinsic function in IR JSON");
+    assert_eq!(intrinsic["is_intrinsic"], true);
+    assert_eq!(intrinsic["intrinsic_abi"], "runtime");
+}
+
+#[test]
+fn unit_intrinsic_declaration_with_body_reports_e1093() {
+    let src = r#"intrinsic fn aic_bad_intrinsic() -> Int { 1 }"#;
+    let (_program, diags) = parse(src, "unit.aic");
+    assert!(diags.iter().any(|d| d.code == "E1093"), "diags={diags:#?}");
+}
+#[test]
 fn unit_parse_struct_literal_expression() {
     let src = "struct S { x: Int } fn f() -> Int { let s = S { x: 1 }; s.x }";
     let (program, diags) = parse(src, "unit.aic");

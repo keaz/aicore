@@ -106,6 +106,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1081` | Const declaration must end with `;`. | `const BASE: Int = 1` | `const BASE: Int = 1;` |
 | `E1090` | Malformed visibility modifier (expected `pub` or `pub(crate)`). | `pub(package) fn main() -> Int { 0 }` | `pub(crate) fn main() -> Int { 0 }` |
 | `E1091` | Visibility modifiers are not supported on `type` aliases or `const` items. | `pub type Count = Int;` | `type Count = Int;` |
+| `E1093` | Invalid intrinsic declaration form (missing `fn`/`;`, body present, or unsupported contracts/generics). | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool { false }` | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool;` |
 | `E1100` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1101` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1102` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |

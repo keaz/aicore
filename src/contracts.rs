@@ -204,7 +204,7 @@ pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
             continue;
         };
 
-        if func.is_extern {
+        if func.is_extern || func.is_intrinsic {
             continue;
         }
 
@@ -828,6 +828,8 @@ fn build_invariant_helpers(
             is_unsafe: false,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics: spec.generics.clone(),
             params,
             ret_type,

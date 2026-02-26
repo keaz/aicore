@@ -81,6 +81,8 @@ impl Builder {
             is_unsafe: func.is_unsafe,
             is_extern: func.is_extern,
             extern_abi: func.extern_abi.clone(),
+            is_intrinsic: func.is_intrinsic,
+            intrinsic_abi: func.intrinsic_abi.clone(),
             generics: func
                 .generics
                 .iter()
@@ -184,6 +186,8 @@ impl Builder {
             is_unsafe: false,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics: def
                 .generics
                 .iter()
@@ -343,6 +347,8 @@ impl Builder {
             is_unsafe: method.is_unsafe,
             is_extern: false,
             extern_abi: None,
+            is_intrinsic: false,
+            intrinsic_abi: None,
             generics: method
                 .generics
                 .iter()
@@ -392,6 +398,8 @@ impl Builder {
             is_unsafe: method.is_unsafe,
             is_extern: method.is_extern,
             extern_abi: method.extern_abi.clone(),
+            is_intrinsic: method.is_intrinsic,
+            intrinsic_abi: method.intrinsic_abi.clone(),
             generics: method
                 .generics
                 .iter()

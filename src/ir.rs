@@ -146,6 +146,10 @@ pub struct Function {
     pub is_extern: bool,
     #[serde(default)]
     pub extern_abi: Option<String>,
+    #[serde(default)]
+    pub is_intrinsic: bool,
+    #[serde(default)]
+    pub intrinsic_abi: Option<String>,
     pub generics: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub ret_type: TypeId,
