@@ -3572,3 +3572,51 @@ fn intrinsic_placeholder_guard_policy_passes_and_rejects_stubs() {
         String::from_utf8_lossy(&exempt.stderr)
     );
 }
+
+#[test]
+fn intrinsic_declaration_examples_are_ci_wired_and_checkable() {
+    let root = repo_root();
+    let examples_ci = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+
+    for rel in [
+        "examples/core/intrinsic_declaration_demo.aic",
+        "examples/core/intrinsic_declaration_invalid_body.aic",
+        "examples/verify/intrinsics/valid_bindings.aic",
+        "examples/verify/intrinsics/invalid_bindings.aic",
+    ] {
+        assert!(root.join(rel).is_file(), "missing intrinsic example: {rel}");
+        assert!(
+            examples_ci.contains(&format!("\"{rel}\"")),
+            "examples.sh missing intrinsic example wiring: {rel}"
+        );
+    }
+
+    let ok = run_aic(&["check", "examples/core/intrinsic_declaration_demo.aic"]);
+    assert_eq!(
+        ok.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let bad = run_aic(&[
+        "check",
+        "examples/core/intrinsic_declaration_invalid_body.aic",
+        "--json",
+    ]);
+    assert_eq!(bad.status.code(), Some(1));
+    let diagnostics: Value = serde_json::from_slice(&bad.stdout).expect("diagnostics json");
+    let has_e1093 = diagnostics.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item.get("code").and_then(Value::as_str) == Some("E1093"))
+    });
+    assert!(
+        has_e1093,
+        "expected E1093 from invalid intrinsic example\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bad.stdout),
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}

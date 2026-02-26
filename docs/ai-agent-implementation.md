@@ -286,6 +286,12 @@ Canonical IR/JSON excerpt:
 }
 ```
 
+Additional implementation guidance, troubleshooting, and runnable examples:
+
+- `docs/intrinsics-runtime-bindings.md`
+- `examples/core/intrinsic_declaration_demo.aic`
+- `examples/core/intrinsic_declaration_invalid_body.aic`
+
 ### Intrinsic binding verifier (AGX1-T3)
 
 `aic verify-intrinsics [INPUT] --json` validates intrinsic declarations against backend lowering expectations before release.

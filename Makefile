@@ -159,6 +159,7 @@ docs-check:
 	@test -f docs/io-cookbook.md
 	@test -f docs/io-agent-guide.md
 	@test -f docs/io-migration.md
+	@test -f docs/intrinsics-runtime-bindings.md
 	@test -f docs/io-runtime/README.md
 	@test -f docs/io-runtime/net-time-rand.md
 	@test -f docs/io-runtime/error-model.md

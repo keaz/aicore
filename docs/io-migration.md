@@ -27,6 +27,8 @@ make intrinsic-placeholder-guard
 ```
 
 
+See `docs/intrinsics-runtime-bindings.md` for declaration rules, side-effect boundaries, and troubleshooting examples.
+
 ## API Migration Highlights
 
 ### 1. `std.io`: richer interactive and stream APIs

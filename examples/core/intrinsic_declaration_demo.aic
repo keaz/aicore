@@ -1,0 +1,11 @@
+module std.intrinsic_demo;
+
+intrinsic fn aic_path_is_abs_intrinsic(path: String) -> Bool effects { fs };
+
+fn is_abs(path: String) -> Bool effects { fs } {
+    aic_path_is_abs_intrinsic(path)
+}
+
+fn main() -> Int effects { fs } {
+    if is_abs("/tmp") { 1 } else { 0 }
+}

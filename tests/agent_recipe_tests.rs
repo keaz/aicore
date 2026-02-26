@@ -1799,3 +1799,47 @@ fn vscode_auto_import_workspace_example_is_listed_in_ci_and_runs() {
         example_rel, last, stdout
     );
 }
+
+#[test]
+fn intrinsics_runtime_bindings_doc_has_required_sections_and_examples() {
+    let root = repo_root();
+    let doc_path = root.join("docs/intrinsics-runtime-bindings.md");
+    let text = fs::read_to_string(&doc_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", doc_path.display()));
+
+    for marker in [
+        "# Intrinsic Runtime Bindings Guide",
+        "## Declaration Model",
+        "## Runtime Linkage Expectations",
+        "## Side-Effect Boundaries",
+        "## Diagnostics and Guardrails",
+        "## Executable Examples",
+        "make intrinsic-placeholder-guard",
+        "aic verify-intrinsics std --json",
+        "examples/core/intrinsic_declaration_demo.aic",
+        "examples/core/intrinsic_declaration_invalid_body.aic",
+        "examples/verify/intrinsics/valid_bindings.aic",
+        "examples/verify/intrinsics/invalid_bindings.aic",
+    ] {
+        assert!(
+            text.contains(marker),
+            "intrinsic runtime bindings doc missing marker '{}': {}",
+            marker,
+            doc_path.display()
+        );
+    }
+}
+
+#[test]
+fn intrinsics_runtime_bindings_docs_test_commands_are_executable() {
+    let doc_path = repo_root().join("docs/intrinsics-runtime-bindings.md");
+    let text = fs::read_to_string(&doc_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", doc_path.display()));
+    let commands = extract_docs_test_commands(&text);
+    assert!(
+        !commands.is_empty(),
+        "missing docs-test command block in {}",
+        doc_path.display()
+    );
+    run_docs_test_commands(&doc_path, &commands);
+}
