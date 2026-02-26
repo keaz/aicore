@@ -125,6 +125,10 @@ Notes:
 - `std.fs` public APIs delegate to runtime intrinsic wrappers (`aic_fs_*_intrinsic`) and should not be replaced with constant placeholders.
 - `std.config` composes file + JSON + env capabilities for app config loading (`load_json`, `load_env_prefix`, `get_or_default`, `require`).
 - `std.set` mutator/query APIs are `add`, `has`, and `discard`; `union`/`intersection`/`difference` preserve deterministic ordering via `to_vec`.
+- `std.option` and `std.result` expose inherent enum methods:
+  - `Option.unwrap_or`, `Option.map`, `Option.and_then`
+  - `Result.unwrap_or`, `Result.map`, `Result.and_then`
+  - method chains use standard static method dispatch (`value.map(...).and_then(...).unwrap_or(...)`)
 - Current backend support remains `String`-key specialized for set/map key paths; non-`String` set key usage currently emits deterministic backend diagnostic `E5011` (`...String key...`).
 - `std.fs` now exposes production-facing APIs with typed failures:
   - `read_text`, `write_text`, `append_text`, `copy`, `move`, `delete`
@@ -173,6 +177,23 @@ Notes:
   - `examples/data/ingest_transform_emit.aic`
   - `examples/data/data_stack_negative_cases.aic`
   - `examples/data/url_http_negative_cases.aic`
+
+### Enum method chaining example (Option/Result)
+
+```aic
+import std.option;
+import std.result;
+
+fn add_one(x: Int) -> Int { x + 1 }
+fn keep_even_option(x: Int) -> Option[Int] { if x % 2 == 0 { Some(x) } else { None() } }
+fn keep_even_result(x: Int) -> Result[Int, Int] { if x % 2 == 0 { Ok(x) } else { Err(0 - x) } }
+
+fn demo() -> Int {
+    let opt = Some(41).map(add_one).and_then(keep_even_option).unwrap_or(0);
+    let res = Ok(3).map(add_one).and_then(keep_even_result).unwrap_or(0);
+    opt + res
+}
+```
 
 ### Manifest + lockfile workflow (E6-T2)
 

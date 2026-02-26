@@ -4,3 +4,26 @@ enum Option[T] {
     None,
     Some(T),
 }
+
+impl Option {
+    fn unwrap_or[T](self: Option[T], fallback: T) -> T {
+        match self {
+            Some(value) => value,
+            None => fallback,
+        }
+    }
+
+    fn map[T, U](self: Option[T], mapper: Fn(T) -> U) -> Option[U] {
+        match self {
+            Some(value) => Some(mapper(value)),
+            None => None(),
+        }
+    }
+
+    fn and_then[T, U](self: Option[T], mapper: Fn(T) -> Option[U]) -> Option[U] {
+        match self {
+            Some(value) => mapper(value),
+            None => None(),
+        }
+    }
+}

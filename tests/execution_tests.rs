@@ -699,6 +699,63 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_option_methods_map_and_then_unwrap_or_chain() {
+    let src = r#"
+import std.io;
+import std.option;
+
+fn add_one(x: Int) -> Int {
+    x + 1
+}
+
+fn keep_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 { Some(x) } else { None() }
+}
+
+fn main() -> Int effects { io } {
+    let a = Some(41).map(add_one).and_then(keep_even).unwrap_or(0);
+    let b = Some(20).map(add_one).and_then(keep_even).unwrap_or(4);
+    let c = None().map(add_one).unwrap_or(5);
+    print_int(a + b + c);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "51\n");
+}
+
+#[test]
+fn exec_result_methods_map_and_then_unwrap_or_chain() {
+    let src = r#"
+import std.io;
+import std.result;
+
+fn add_one(x: Int) -> Int {
+    x + 1
+}
+
+fn keep_even(x: Int) -> Result[Int, Int] {
+    if x % 2 == 0 { Ok(x) } else { Err(0 - x) }
+}
+
+fn main() -> Int effects { io } {
+    let ok_value: Result[Int, Int] = Ok(41);
+    let odd_value: Result[Int, Int] = Ok(3);
+    let err_value: Result[Int, Int] = Err(7);
+    let a = ok_value.map(add_one).and_then(keep_even).unwrap_or(0);
+    let b = odd_value.and_then(keep_even).unwrap_or(8);
+    let c = err_value.map(add_one).unwrap_or(5);
+    print_int(a + b + c);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "55\n");
+}
+
+#[test]
 fn exec_result_propagation_short_circuits_err() {
     let src = r#"
 import std.io;

@@ -17,13 +17,14 @@ fn_decl          = "fn" ident generics? "(" ... ")" "->" type ... ;
 struct_decl      = "struct" ident generics? "{" ... "}" ... ;
 enum_decl        = "enum" ident generics? "{" ... "}" ;
 trait_decl       = "trait" ident generics? ";" ;
-impl_decl        = "impl" ident "[" type ("," type)* ","? "]" ";" ;
+impl_decl        = "impl" type (";" | "{" impl_method* "}") ;
 ```
 
 ## Semantics and Rules
 
 - Generic parameters are supported on functions, structs, enums, and traits.
 - Type arguments use square-bracket syntax (`Name[T]`).
+- Generic method declarations are supported inside both inherent impl blocks and trait impl blocks.
 - Generic arity is checked for all known generic families.
 - Function generic inference is constraint-based and deterministic:
   - from argument types
@@ -34,6 +35,7 @@ impl_decl        = "impl" ident "[" type ("," type)* ","? "]" ";" ;
   - bound arity must match current bound syntax model
   - concrete substitutions must have matching `impl Trait[ConcreteType];`
 - Resolver enforces impl coherence for identical `(trait, type-argument tuple)` combinations.
+- Inherent impl targets are named types (`struct` or `enum`) and can expose generic behavior through method-level generics.
 - Built-in constructor behavior participates in generic inference:
   - `Some(v)` => `Option[T]`
   - `None` => `Option[<?>]` until constrained

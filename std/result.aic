@@ -4,3 +4,26 @@ enum Result[T, E] {
     Ok(T),
     Err(E),
 }
+
+impl Result {
+    fn unwrap_or[T, E](self: Result[T, E], fallback: T) -> T {
+        match self {
+            Ok(value) => value,
+            Err(_) => fallback,
+        }
+    }
+
+    fn map[T, U, E](self: Result[T, E], mapper: Fn(T) -> U) -> Result[U, E] {
+        match self {
+            Ok(value) => Ok(mapper(value)),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn and_then[T, U, E](self: Result[T, E], mapper: Fn(T) -> Result[U, E]) -> Result[U, E] {
+        match self {
+            Ok(value) => mapper(value),
+            Err(err) => Err(err),
+        }
+    }
+}

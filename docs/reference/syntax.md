@@ -51,8 +51,11 @@ field          = ident ":" type ;
 enum_decl      = "enum" ident generics? "{" variant ("," variant)* ","? "}" ;
 variant        = ident | ident "(" type ")" ;
 
-trait_decl     = "trait" ident generics? ";" ;
-impl_decl      = "impl" ident "[" type ("," type)* ","? "]" ";" ;
+trait_decl     = "trait" ident generics? (";" | "{" trait_method_sig* "}") ;
+trait_method_sig = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type effects_clause? ";" ;
+
+impl_decl      = "impl" type (";" | "{" impl_method* "}") ;
+impl_method    = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
 ```
 
 ### Expression precedence
@@ -81,6 +84,10 @@ highest
 - `let`, `return`, and assignment require trailing semicolons; parser emits deterministic fix suggestions when missing.
 - `null` token is lexed but rejected semantically; absence must be modeled with `Option`.
 - `extern` declarations are signatures only and must end with `;`; effects/contracts are not allowed on extern signatures.
+- `impl` declarations support:
+  - inherent blocks for named type heads (`impl User { ... }`, `impl Status { ... }`)
+  - trait impl declarations (`impl Score[Meter];`) and trait impl blocks (`impl Score[Meter] { ... }`)
+- Inherent `impl` blocks are valid for both structs and enums.
 - `|` is overloaded with context:
   - in expressions, `|...| -> ... { ... }` starts a closure
   - in patterns, `p1 | p2` is an or-pattern

@@ -371,13 +371,15 @@ pub fn resolve_with_item_modules(
                         .unwrap_or_else(|| impl_def.trait_name.clone());
                     let target_name = base_type_name(&target_repr).to_string();
                     let known_target = structs.contains_key(&target_name)
-                        || program.items.iter().any(
-                            |item| matches!(item, ir::Item::Struct(def) if def.name == target_name),
-                        );
+                        || enums.contains_key(&target_name)
+                        || program.items.iter().any(|item| {
+                            matches!(item, ir::Item::Struct(def) if def.name == target_name)
+                                || matches!(item, ir::Item::Enum(def) if def.name == target_name)
+                        });
                     if !known_target {
                         diagnostics.push(Diagnostic::error(
                             "E1106",
-                            format!("unknown struct '{}' in inherent impl", target_name),
+                            format!("unknown type '{}' in inherent impl", target_name),
                             file,
                             impl_def.span,
                         ));

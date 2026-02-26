@@ -176,6 +176,58 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_enum_impl_methods_and_chained_calls_typecheck() {
+    let src = r#"
+enum Wrap {
+    Empty,
+    Value(Int),
+}
+
+impl Wrap {
+    fn unwrap_or(self: Wrap, fallback: Int) -> Int {
+        match self {
+            Value(value) => value,
+            Empty => fallback,
+        }
+    }
+
+    fn map(self: Wrap, mapper: Fn(Int) -> Int) -> Wrap {
+        match self {
+            Value(value) => Value(mapper(value)),
+            Empty => Empty(),
+        }
+    }
+
+    fn and_then(self: Wrap, mapper: Fn(Int) -> Wrap) -> Wrap {
+        match self {
+            Value(value) => mapper(value),
+            Empty => Empty(),
+        }
+    }
+}
+
+fn add_one(x: Int) -> Int {
+    x + 1
+}
+
+fn keep_even(x: Int) -> Wrap {
+    if x % 2 == 0 { Value(x) } else { Empty() }
+}
+
+fn main() -> Int {
+    let a = Value(41).map(add_one).and_then(keep_even).unwrap_or(0);
+    let b = Empty().map(add_one).unwrap_or(7);
+    a + b
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_resolver_duplicate_field() {
     let src = "struct S { x: Int, x: Int }";
     let ir = lower(src);
