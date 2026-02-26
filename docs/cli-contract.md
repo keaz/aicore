@@ -78,6 +78,9 @@ Stable `build` flags include:
 
 - `--artifact` (`exe|obj|lib`)
 - `--debug-info`
+- `--release` (defaults optimization level to `O2`)
+- `--opt-level <LEVEL>` (`0|1|2|3` or `O0|O1|O2|O3`)
+- `-O<LEVEL>` shorthand (for example `-O2`)
 - `--verify-hash <sha256>`
 - `--manifest <path>` (defaults to `build.json` for single-target builds)
 

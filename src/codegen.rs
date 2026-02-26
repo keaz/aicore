@@ -281,6 +281,35 @@ pub struct CodegenOptions {
     pub debug_info: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OptimizationLevel {
+    #[default]
+    O0,
+    O1,
+    O2,
+    O3,
+}
+
+impl OptimizationLevel {
+    pub fn clang_flag(self) -> &'static str {
+        match self {
+            OptimizationLevel::O0 => "-O0",
+            OptimizationLevel::O1 => "-O1",
+            OptimizationLevel::O2 => "-O2",
+            OptimizationLevel::O3 => "-O3",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OptimizationLevel::O0 => "O0",
+            OptimizationLevel::O1 => "O1",
+            OptimizationLevel::O2 => "O2",
+            OptimizationLevel::O3 => "O3",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactKind {
     Exe,
@@ -298,6 +327,7 @@ pub struct LinkOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CompileOptions {
     pub debug_info: bool,
+    pub opt_level: OptimizationLevel,
     pub target_triple: Option<String>,
     pub static_link: bool,
     pub link: LinkOptions,
@@ -462,7 +492,7 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             }
             if wasm_target {
                 command
-                    .arg("-O0")
+                    .arg(options.opt_level.clang_flag())
                     .arg("-nostdlib")
                     .arg(&ll_path)
                     .arg("-Wl,--no-entry")
@@ -474,7 +504,10 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 for flag in &runtime_flags {
                     command.arg(flag);
                 }
-                command.arg("-O0").arg(&ll_path).arg(&runtime_path);
+                command
+                    .arg(options.opt_level.clang_flag())
+                    .arg(&ll_path)
+                    .arg(&runtime_path);
                 if options.static_link {
                     if !target_supports_static_link(options.target_triple.as_deref()) {
                         anyhow::bail!(
@@ -505,7 +538,7 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 command.arg(flag);
             }
             command
-                .arg("-O0")
+                .arg(options.opt_level.clang_flag())
                 .arg("-c")
                 .arg(&ll_path)
                 .arg("-o")
@@ -522,7 +555,7 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 clang_module.arg(flag);
             }
             clang_module
-                .arg("-O0")
+                .arg(options.opt_level.clang_flag())
                 .arg("-c")
                 .arg(&ll_path)
                 .arg("-o")
@@ -542,7 +575,7 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 clang_runtime.arg(flag);
             }
             clang_runtime
-                .arg("-O0")
+                .arg(options.opt_level.clang_flag())
                 .arg("-c")
                 .arg(&runtime_path)
                 .arg("-o")
@@ -578,6 +611,7 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 json!(output_path.to_string_lossy().to_string()),
             ),
             ("static_link".to_string(), json!(options.static_link)),
+            ("opt_level".to_string(), json!(options.opt_level.as_str())),
             ("check_leaks".to_string(), json!(runtime.check_leaks)),
             ("asan".to_string(), json!(runtime.asan)),
         ]);
@@ -44527,8 +44561,8 @@ mod tests {
         emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
         ensure_supported_toolchain_with_pin, instrument_llvm_for_leak_tracking,
         normalize_macos_uuid, parse_llvm_major, rewrite_wasm_entry_wrapper, runtime_c_source,
-        runtime_compile_flags, target_is_wasm, CodegenOptions, RuntimeInstrumentationOptions,
-        ToolchainInfo,
+        runtime_compile_flags, target_is_wasm, CodegenOptions, CompileOptions, OptimizationLevel,
+        RuntimeInstrumentationOptions, ToolchainInfo,
     };
 
     #[test]
@@ -44592,6 +44626,19 @@ mod tests {
         assert!(flags.contains(&"-DAIC_RT_CHECK_LEAKS=1"));
         assert!(flags.contains(&"-fsanitize=address"));
         assert!(flags.contains(&"-fno-omit-frame-pointer"));
+    }
+
+    #[test]
+    fn optimization_levels_map_to_expected_clang_flags() {
+        assert_eq!(OptimizationLevel::O0.clang_flag(), "-O0");
+        assert_eq!(OptimizationLevel::O1.clang_flag(), "-O1");
+        assert_eq!(OptimizationLevel::O2.clang_flag(), "-O2");
+        assert_eq!(OptimizationLevel::O3.clang_flag(), "-O3");
+    }
+
+    #[test]
+    fn compile_options_default_to_o0() {
+        assert_eq!(CompileOptions::default().opt_level, OptimizationLevel::O0);
     }
 
     #[test]

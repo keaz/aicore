@@ -1,0 +1,25 @@
+import std.io;
+
+fn mix(x: Int, y: Int) -> Int {
+    ((x * 31) + y) ^ (y * 17)
+}
+
+fn fold(rounds: Int) -> Int {
+    let mut i = 0;
+    let mut acc = 1;
+    while i < rounds {
+        acc = mix(acc, i);
+        i = i + 1;
+    };
+    acc
+}
+
+fn main() -> Int effects { io } {
+    let value = fold(1000);
+    if value != 0 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

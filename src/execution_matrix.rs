@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions,
+    CompileOptions, OptimizationLevel,
 };
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
@@ -154,6 +154,10 @@ fn run_case(
 
     let lowered = lower_runtime_asserts(&front.ir);
     let debug_info = matches!(mode, MatrixMode::Debug);
+    let opt_level = match mode {
+        MatrixMode::Debug => OptimizationLevel::O0,
+        MatrixMode::Release => OptimizationLevel::O2,
+    };
     let llvm = emit_llvm_with_options(
         &lowered,
         &source_path.to_string_lossy(),
@@ -177,6 +181,7 @@ fn run_case(
         ArtifactKind::Exe,
         CompileOptions {
             debug_info,
+            opt_level,
             ..CompileOptions::default()
         },
     )?;

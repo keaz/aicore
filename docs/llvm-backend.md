@@ -99,6 +99,33 @@ Artifact behavior:
 - `lib`: archives module object + runtime object into static library.
 - `exe` + `--target wasm32`: emits standalone `.wasm` with host-import runtime bindings (no runtime C object linked).
 
+## Optimization Levels (`[PERF-T1]`)
+
+`aic build` now supports optimization-level selection:
+
+- `--opt-level <LEVEL>` where `<LEVEL>` is `0|1|2|3` or `O0|O1|O2|O3`
+- short form: `-O0`, `-O1`, `-O2`, `-O3`
+- `--release` defaults to `O2` unless explicitly overridden by `--opt-level`/`-O`
+
+Examples:
+
+```bash
+# debug-oriented build
+cargo run --quiet --bin aic -- build examples/core/opt_levels_demo.aic -O0
+
+# release-oriented default (O2)
+cargo run --quiet --bin aic -- build examples/core/opt_levels_demo.aic --release
+
+# explicit max optimization
+cargo run --quiet --bin aic -- build examples/core/opt_levels_demo.aic --release -O3
+```
+
+Validation references:
+
+- `tests/e7_cli_tests.rs` (flag propagation + release default)
+- `tests/execution_tests.rs` (semantic equivalence across O0..O3 + O2 vs O0 speed check)
+- `examples/core/opt_levels_demo.aic`
+
 ## Cross-Compilation Targets (`--target`)
 
 `aic build` now accepts explicit target labels:

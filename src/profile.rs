@@ -7,6 +7,7 @@ use std::time::Instant;
 use aicore::cli_contract::{EXIT_DIAGNOSTIC_ERROR, EXIT_OK};
 use aicore::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm, ArtifactKind, CompileOptions,
+    OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{diagnostics_pretty, has_errors, run_frontend_with_options, FrontendOptions};
@@ -110,6 +111,7 @@ pub fn run_profiled(options: RunProfileOptions<'_>) -> anyhow::Result<RunProfile
         ArtifactKind::Exe,
         CompileOptions {
             debug_info: false,
+            opt_level: OptimizationLevel::O0,
             target_triple: None,
             static_link: false,
             link,

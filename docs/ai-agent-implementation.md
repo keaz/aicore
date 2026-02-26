@@ -86,6 +86,8 @@ In `src/codegen.rs`:
 - `String` lowered as `{ i8*, i64, i64 }` (ptr-len-cap)
 - runtime panic ABI: `aic_rt_panic(ptr, len, cap, line, column)`
 - `aic build --debug-info` emits debug metadata and source-mapped panic locations
+- `aic build --opt-level <LEVEL>` accepts `0..3` (`O0..O3`)
+- `aic build --release` defaults optimization to `O2` unless overridden with `--opt-level`/`-O`
 
 ### Artifact modes
 

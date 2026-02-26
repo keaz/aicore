@@ -5,6 +5,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use aicore::diagnostics::{Diagnostic, DiagnosticSpan, Severity};
 use aicore::driver::sort_and_cap_diagnostics;
+use aicore::telemetry::read_events;
 use serde_json::{json, Value};
 use tempfile::tempdir;
 
@@ -26,6 +27,19 @@ fn run_aic_in_dir(cwd: &std::path::Path, args: &[&str]) -> std::process::Output 
         .current_dir(cwd)
         .output()
         .expect("run aic in dir")
+}
+
+fn run_aic_in_dir_with_env(
+    cwd: &std::path::Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_aic"));
+    command.args(args).current_dir(cwd);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().expect("run aic in dir with env")
 }
 
 fn run_aic_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
@@ -93,6 +107,50 @@ fn write_profile_demo_project(root: &std::path::Path) {
     .expect("write profile demo source");
 }
 
+fn write_build_opt_project(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module build.opt;\n",
+            "fn mix(x: Int, y: Int) -> Int {\n",
+            "    ((x * 31) + y) ^ (y * 17)\n",
+            "}\n",
+            "fn main() -> Int {\n",
+            "    let mut i = 0;\n",
+            "    let mut acc = 1;\n",
+            "    while i < 50000 {\n",
+            "        acc = mix(acc, i);\n",
+            "        i = i + 1;\n",
+            "    };\n",
+            "    acc\n",
+            "}\n",
+        ),
+    )
+    .expect("write build opt source");
+}
+
+fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
+    let events = read_events(telemetry_path).expect("read telemetry events");
+    events
+        .into_iter()
+        .find_map(|event| {
+            if event.kind == "phase"
+                && event.command == "codegen"
+                && event.phase.as_deref() == Some("clang_compile")
+                && event.status.as_deref() == Some("ok")
+            {
+                event
+                    .attrs
+                    .get("opt_level")
+                    .and_then(|value| value.as_str())
+                    .map(ToString::to_string)
+            } else {
+                None
+            }
+        })
+        .expect("clang compile telemetry event with opt_level")
+}
 fn write_leak_clean_project(root: &std::path::Path) {
     fs::create_dir_all(root.join("src")).expect("mkdir src");
     fs::write(
@@ -312,6 +370,15 @@ fn cli_help_snapshots_are_stable() {
         );
     }
 
+    let build_help = run_aic(&["build", "--help"]);
+    assert!(build_help.status.success());
+    let build_help_text = String::from_utf8_lossy(&build_help.stdout);
+    for flag in ["--release", "--opt-level <LEVEL>"] {
+        assert!(
+            build_help_text.contains(flag),
+            "missing `{flag}` in build help:\n{build_help_text}"
+        );
+    }
     let run_help = run_aic(&["run", "--help"]);
     assert!(run_help.status.success());
     let run_help_text = String::from_utf8_lossy(&run_help.stdout);
@@ -1983,6 +2050,100 @@ fn main() -> Int effects { io } {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}
+
+#[test]
+fn build_release_defaults_to_o2_and_allows_opt_level_override() {
+    let project = tempdir().expect("project");
+    write_build_opt_project(project.path());
+
+    let release_output = project.path().join("release-default-bin");
+    let release_output_str = release_output.to_string_lossy().to_string();
+    let release_telemetry = project.path().join("telemetry-release.jsonl");
+    let release_telemetry_str = release_telemetry.to_string_lossy().to_string();
+
+    let release = run_aic_in_dir_with_env(
+        project.path(),
+        &[
+            "build",
+            "src/main.aic",
+            "--release",
+            "--output",
+            &release_output_str,
+        ],
+        &[("AIC_TELEMETRY_PATH", &release_telemetry_str)],
+    );
+    assert_eq!(
+        release.status.code(),
+        Some(0),
+        "release build stdout={}\nstderr={}",
+        String::from_utf8_lossy(&release.stdout),
+        String::from_utf8_lossy(&release.stderr)
+    );
+    assert_eq!(read_clang_opt_level(&release_telemetry), "O2");
+
+    let override_output = project.path().join("release-override-bin");
+    let override_output_str = override_output.to_string_lossy().to_string();
+    let override_telemetry = project.path().join("telemetry-override.jsonl");
+    let override_telemetry_str = override_telemetry.to_string_lossy().to_string();
+
+    let overridden = run_aic_in_dir_with_env(
+        project.path(),
+        &[
+            "build",
+            "src/main.aic",
+            "--release",
+            "--opt-level",
+            "O3",
+            "--output",
+            &override_output_str,
+        ],
+        &[("AIC_TELEMETRY_PATH", &override_telemetry_str)],
+    );
+    assert_eq!(
+        overridden.status.code(),
+        Some(0),
+        "override build stdout={}\nstderr={}",
+        String::from_utf8_lossy(&overridden.stdout),
+        String::from_utf8_lossy(&overridden.stderr)
+    );
+    assert_eq!(read_clang_opt_level(&override_telemetry), "O3");
+}
+
+#[test]
+fn build_short_o_flag_propagates_and_invalid_opt_level_is_rejected() {
+    let project = tempdir().expect("project");
+    write_build_opt_project(project.path());
+
+    let output_path = project.path().join("short-o-bin");
+    let output_path_str = output_path.to_string_lossy().to_string();
+    let telemetry_path = project.path().join("telemetry-short-o.jsonl");
+    let telemetry_path_str = telemetry_path.to_string_lossy().to_string();
+
+    let short_o = run_aic_in_dir_with_env(
+        project.path(),
+        &["build", "src/main.aic", "-O1", "--output", &output_path_str],
+        &[("AIC_TELEMETRY_PATH", &telemetry_path_str)],
+    );
+    assert_eq!(
+        short_o.status.code(),
+        Some(0),
+        "short -O build stdout={}\nstderr={}",
+        String::from_utf8_lossy(&short_o.stdout),
+        String::from_utf8_lossy(&short_o.stderr)
+    );
+    assert_eq!(read_clang_opt_level(&telemetry_path), "O1");
+
+    let invalid = run_aic_in_dir(
+        project.path(),
+        &["build", "src/main.aic", "--opt-level", "O9"],
+    );
+    assert_eq!(invalid.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&invalid.stderr);
+    assert!(
+        stderr.contains("invalid optimization level"),
+        "stderr={stderr}"
+    );
 }
 
 #[test]

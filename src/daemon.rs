@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions, LinkOptions,
+    CompileOptions, LinkOptions, OptimizationLevel,
 };
 use crate::contracts::lower_runtime_asserts;
 use crate::diagnostics::Diagnostic;
@@ -323,6 +323,7 @@ impl DaemonState {
             artifact.to_codegen(),
             CompileOptions {
                 debug_info,
+                opt_level: OptimizationLevel::O0,
                 target_triple: None,
                 static_link: false,
                 link,

@@ -14,7 +14,7 @@ use aicore::cli_contract::{
 use aicore::codegen::{
     compile_with_clang_artifact_with_options, compile_with_clang_artifact_with_options_and_runtime,
     emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
-    RuntimeInstrumentationOptions,
+    OptimizationLevel, RuntimeInstrumentationOptions,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::daemon;
@@ -233,6 +233,15 @@ enum Command {
         static_link: bool,
         #[arg(long)]
         debug_info: bool,
+        #[arg(long)]
+        release: bool,
+        #[arg(
+            short = 'O',
+            long = "opt-level",
+            value_name = "LEVEL",
+            value_parser = parse_opt_level
+        )]
+        opt_level: Option<OptimizationLevel>,
         #[arg(long)]
         offline: bool,
         #[arg(long)]
@@ -564,6 +573,19 @@ fn parse_positive_u32(value: &str) -> Result<u32, String> {
         Err("value must be greater than 0".to_string())
     } else {
         Ok(parsed)
+    }
+}
+
+fn parse_opt_level(value: &str) -> Result<OptimizationLevel, String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "0" | "o0" => Ok(OptimizationLevel::O0),
+        "1" | "o1" => Ok(OptimizationLevel::O1),
+        "2" | "o2" => Ok(OptimizationLevel::O2),
+        "3" | "o3" => Ok(OptimizationLevel::O3),
+        _ => Err(format!(
+            "invalid optimization level `{value}`; expected one of: 0, 1, 2, 3, O0, O1, O2, O3"
+        )),
     }
 }
 
@@ -1371,6 +1393,8 @@ fn run_cli() -> anyhow::Result<i32> {
             target,
             static_link,
             debug_info,
+            release,
+            opt_level,
             offline,
             verify_hash,
             manifest,
@@ -1381,6 +1405,11 @@ fn run_cli() -> anyhow::Result<i32> {
                 .unwrap_or_else(|| host_target_label().to_string());
             let target_triple = target.map(|entry| entry.clang_triple().to_string());
             let wasm_target = target.map(BuildTarget::is_wasm).unwrap_or(false);
+            let effective_opt_level = opt_level.unwrap_or(if release {
+                OptimizationLevel::O2
+            } else {
+                OptimizationLevel::O0
+            });
 
             if wasm_target && artifact != BuildArtifact::Exe {
                 eprintln!("--target wasm32 currently supports --artifact exe only");
@@ -1446,6 +1475,13 @@ fn run_cli() -> anyhow::Result<i32> {
                             let source_fingerprint =
                                 compute_package_checksum_for_path(&member.root)?;
                             let mut fingerprint = format!("self={source_fingerprint}\n");
+                            fingerprint.push_str(&format!(
+                                "artifact={}\ntarget={}\ndebug_info={}\nopt_level={}\n",
+                                workspace_artifact.as_str(),
+                                target_label,
+                                debug_info,
+                                effective_opt_level.as_str()
+                            ));
                             for dep in &member.workspace_dependencies {
                                 let dep_fingerprint = member_fingerprints
                                     .get(dep)
@@ -1507,6 +1543,7 @@ fn run_cli() -> anyhow::Result<i32> {
                                 workspace_artifact.to_codegen(),
                                 CompileOptions {
                                     debug_info,
+                                    opt_level: effective_opt_level,
                                     target_triple: target_triple.clone(),
                                     static_link: false,
                                     link,
@@ -1550,6 +1587,7 @@ fn run_cli() -> anyhow::Result<i32> {
                                 artifact.to_codegen(),
                                 CompileOptions {
                                     debug_info,
+                                    opt_level: effective_opt_level,
                                     target_triple: target_triple.clone(),
                                     static_link,
                                     link,
@@ -1610,6 +1648,7 @@ fn run_cli() -> anyhow::Result<i32> {
                         artifact.to_codegen(),
                         CompileOptions {
                             debug_info,
+                            opt_level: effective_opt_level,
                             target_triple,
                             static_link,
                             link,
@@ -3051,6 +3090,7 @@ fn build_file(
         ArtifactKind::Exe,
         CompileOptions {
             debug_info: false,
+            opt_level: OptimizationLevel::O0,
             target_triple: None,
             static_link: false,
             link,

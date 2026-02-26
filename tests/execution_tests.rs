@@ -2,10 +2,12 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use aicore::codegen::{
     compile_with_clang, compile_with_clang_artifact, compile_with_clang_artifact_with_options,
     emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions,
+    OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
@@ -173,6 +175,37 @@ fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
     let lowered = lower_runtime_asserts(&front.ir);
     let llvm = emit_llvm(&lowered, &path.to_string_lossy()).expect("emit llvm");
     llvm.llvm_ir
+}
+
+fn run_binary_best_of(exe: &Path, cwd: &Path, repeats: usize) -> (Duration, String, String) {
+    let mut best = Duration::MAX;
+    let mut best_stdout = String::new();
+    let mut best_stderr = String::new();
+
+    for _ in 0..repeats {
+        let started = Instant::now();
+        let output = Command::new(exe)
+            .current_dir(cwd)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("run benchmark exe");
+        let elapsed = started.elapsed();
+        assert!(
+            output.status.success(),
+            "benchmark exe failed: code={:?} stderr={} stdout={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        );
+        if elapsed < best {
+            best = elapsed;
+            best_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            best_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        }
+    }
+
+    (best, best_stdout, best_stderr)
 }
 
 #[test]
@@ -6371,6 +6404,155 @@ fn main() -> Int effects { io } {
         stderr.contains("AICore panic at 4:"),
         "stderr did not contain mapped source line:\n{stderr}"
     );
+}
+
+#[test]
+fn exec_o2_outperforms_o0_on_deterministic_workload() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("opt_bench.aic");
+    let source = r#"import std.io;
+
+fn mix(x: Int, y: Int) -> Int {
+    let mixed = ((x * 1103515245) + (y * 12345)) ^ (x >> 7);
+    mixed + 17
+}
+
+fn main() -> Int effects { io } {
+    let mut i = 0;
+    let mut acc = 1;
+    while i < 12000000 {
+        acc = mix(acc, i);
+        i = i + 1;
+    };
+    print_int(acc);
+    0
+}
+"#;
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+
+    let exe_o0 = dir.path().join("bench_o0");
+    let exe_o2 = dir.path().join("bench_o2");
+
+    compile_with_clang_artifact_with_options(
+        &llvm.llvm_ir,
+        &exe_o0,
+        dir.path(),
+        ArtifactKind::Exe,
+        CompileOptions {
+            opt_level: OptimizationLevel::O0,
+            ..CompileOptions::default()
+        },
+    )
+    .expect("clang build o0");
+
+    compile_with_clang_artifact_with_options(
+        &llvm.llvm_ir,
+        &exe_o2,
+        dir.path(),
+        ArtifactKind::Exe,
+        CompileOptions {
+            opt_level: OptimizationLevel::O2,
+            ..CompileOptions::default()
+        },
+    )
+    .expect("clang build o2");
+
+    let _ = run_binary_best_of(&exe_o0, dir.path(), 1);
+    let _ = run_binary_best_of(&exe_o2, dir.path(), 1);
+
+    let (o0_best, o0_stdout, o0_stderr) = run_binary_best_of(&exe_o0, dir.path(), 4);
+    let (o2_best, o2_stdout, o2_stderr) = run_binary_best_of(&exe_o2, dir.path(), 4);
+
+    assert_eq!(o0_stdout, o2_stdout, "workload output mismatch");
+    assert_eq!(o0_stderr, "", "o0 stderr={o0_stderr}");
+    assert_eq!(o2_stderr, "", "o2 stderr={o2_stderr}");
+
+    let speedup = o0_best.as_secs_f64() / o2_best.as_secs_f64();
+    assert!(
+        speedup > 1.05,
+        "expected O2 speedup >5%; o0={o0_best:?} o2={o2_best:?} speedup={speedup:.3}"
+    );
+}
+#[test]
+fn exec_optimization_levels_preserve_semantics_across_o0_to_o3() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("opt_semantics.aic");
+    let source = r#"import std.io;
+
+fn branchy(x: Int) -> Int {
+    if x % 2 == 0 {
+        (x * 3) - 7
+    } else {
+        (x * 5) + 11
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut i = 0;
+    let mut acc = 0;
+    while i < 10000 {
+        acc = acc + branchy(i);
+        i = i + 1;
+    };
+    print_int(acc);
+    0
+}
+"#;
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+
+    let levels = [
+        OptimizationLevel::O0,
+        OptimizationLevel::O1,
+        OptimizationLevel::O2,
+        OptimizationLevel::O3,
+    ];
+    let mut observed = Vec::new();
+    for (idx, level) in levels.iter().enumerate() {
+        let exe = dir.path().join(format!("opt_semantics_{idx}"));
+        compile_with_clang_artifact_with_options(
+            &llvm.llvm_ir,
+            &exe,
+            dir.path(),
+            ArtifactKind::Exe,
+            CompileOptions {
+                opt_level: *level,
+                ..CompileOptions::default()
+            },
+        )
+        .expect("clang build");
+        let output = Command::new(&exe).output().expect("run exe");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "opt level {level:?} failed: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        observed.push(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+
+    for window in observed.windows(2) {
+        assert_eq!(window[0], window[1], "output mismatch across opt levels");
+    }
 }
 
 #[test]
