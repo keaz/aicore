@@ -456,15 +456,25 @@ Diagnostics:
 
 ### Built-in fixture harness (E7-T5)
 
-- Harness module: `src/test_harness.rs`
+- Harness modules:
+  - `src/test_harness.rs`
+  - `src/attr_test_runner.rs`
 - Command:
-  - `aic test [path] --mode all|run-pass|compile-fail|golden [--json]`
+  - `aic test [path] --mode all|run-pass|compile-fail|golden [--filter <pattern>] [--json]`
 - Fixture categories discovered by directory segment:
   - `run-pass`
   - `compile-fail`
   - `golden`
+- Attribute-based test discovery (mode `all`):
+  - `#[test]` marks runnable tests
+  - `#[should_panic]` marks expected-failure tests
+  - helper assertions available in test files: `assert(...)`, `assert_eq(...)`, `assert_ne(...)`
+- CI/automation output:
+  - JSON mode emits machine-readable report to stdout
+  - attribute-test runs also persist `test_results.json` at the test root
 - Sample fixtures:
   - `examples/e7/harness/`
+  - `examples/e7/test_framework/`
 
 ### Deterministic incremental daemon (AG-T4)
 

@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod attr_test_runner;
 pub mod cli_contract;
 pub mod codegen;
 pub mod conformance;

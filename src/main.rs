@@ -8,6 +8,7 @@ use std::time::Instant;
 mod coverage;
 mod profile;
 
+use aicore::attr_test_runner::run_attribute_tests;
 use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
 };
@@ -282,6 +283,8 @@ enum Command {
         path: PathBuf,
         #[arg(long, value_enum, default_value = "all")]
         mode: TestModeArg,
+        #[arg(long)]
+        filter: Option<String>,
         #[arg(long)]
         json: bool,
         #[arg(long, conflicts_with = "check_golden")]
@@ -1751,6 +1754,7 @@ fn run_cli() -> anyhow::Result<i32> {
         Command::Test {
             path,
             mode,
+            filter,
             json,
             update_golden,
             check_golden,
@@ -1762,7 +1766,16 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 GoldenMode::Legacy
             };
-            let report = run_harness_with_golden_mode(&path, mode.to_harness_mode(), golden_mode)?;
+            let mut report =
+                run_harness_with_golden_mode(&path, mode.to_harness_mode(), golden_mode)?;
+            if matches!(mode, TestModeArg::All) {
+                let attr_report = run_attribute_tests(&path, filter.as_deref())?;
+                if attr_report.total > 0 {
+                    merge_harness_reports(&mut report, attr_report);
+                    let report_path = test_results_path(&path);
+                    std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)?;
+                }
+            }
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
@@ -3042,10 +3055,55 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
     }
 }
 
+fn merge_harness_reports(
+    base: &mut aicore::test_harness::HarnessReport,
+    mut extra: aicore::test_harness::HarnessReport,
+) {
+    base.total += extra.total;
+    base.passed += extra.passed;
+    base.failed += extra.failed;
+
+    for (category, count) in extra.by_category {
+        *base.by_category.entry(category).or_default() += count;
+    }
+    base.cases.append(&mut extra.cases);
+}
+
+fn test_results_path(path: &Path) -> PathBuf {
+    if path.is_dir() {
+        path.join("test_results.json")
+    } else {
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("test_results.json")
+    }
+}
+
 fn print_harness_report(report: &aicore::test_harness::HarnessReport) {
+    use std::io::IsTerminal;
+
+    let use_color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    let green = "\u{1b}[32m";
+    let red = "\u{1b}[31m";
+    let yellow = "\u{1b}[33m";
+    let reset = "\u{1b}[0m";
+    let colorize = |text: String, color: &str| {
+        if use_color {
+            format!("{color}{text}{reset}")
+        } else {
+            text
+        }
+    };
+
+    let failed_display = if report.failed == 0 {
+        colorize(report.failed.to_string(), green)
+    } else {
+        colorize(report.failed.to_string(), red)
+    };
+
     println!(
         "aic test: total={} passed={} failed={}",
-        report.total, report.passed, report.failed
+        report.total, report.passed, failed_display
     );
     if !report.by_category.is_empty() {
         println!("categories:");
@@ -3054,14 +3112,22 @@ fn print_harness_report(report: &aicore::test_harness::HarnessReport) {
         }
     }
     for case in &report.cases {
-        let status = if case.passed { "ok" } else { "fail" };
+        let status = if case.passed {
+            colorize("ok".to_string(), green)
+        } else {
+            colorize("fail".to_string(), red)
+        };
+        let details = if case.passed {
+            case.details.clone()
+        } else {
+            colorize(case.details.clone(), yellow)
+        };
         println!(
             "{} [{}] {} -> {}",
-            status, case.category, case.file, case.details
+            status, case.category, case.file, details
         );
     }
 }
-
 fn build_file(
     input: &Path,
     output: &Path,

@@ -399,6 +399,7 @@ fn cli_help_snapshots_are_stable() {
     let test_help_text = String::from_utf8_lossy(&test_help.stdout);
     for flag in [
         "--mode <MODE>",
+        "--filter <FILTER>",
         "--json",
         "--update-golden",
         "--check-golden",
@@ -1792,6 +1793,64 @@ fn test_harness_runs_categories_and_reports_json() {
         serde_json::from_slice(&compile_fail_mode.stdout).expect("compile-fail report");
     assert_eq!(report["total"], 1);
     assert_eq!(report["failed"], 0);
+}
+
+#[test]
+fn test_command_discovers_attribute_tests_and_supports_filter() {
+    let dir = tempdir().expect("tempdir");
+    let test_file = dir.path().join("tests.aic");
+    fs::write(
+        &test_file,
+        r#"
+#[test]
+fn test_addition() -> () {
+    assert_eq(1 + 1, 2);
+    assert(true);
+    assert_ne(1, 2);
+}
+
+#[test]
+#[should_panic]
+fn test_division_by_zero() -> () {
+    assert_eq(1, 2);
+}
+"#,
+    )
+    .expect("write attribute tests");
+
+    let root = dir.path().to_string_lossy().to_string();
+
+    let all = run_aic(&["test", &root, "--json"]);
+    assert_eq!(
+        all.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&all.stdout),
+        String::from_utf8_lossy(&all.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("json report");
+    assert_eq!(report["total"], 2, "report={report:#}");
+    assert_eq!(report["failed"], 0, "report={report:#}");
+
+    let report_file = dir.path().join("test_results.json");
+    assert!(
+        report_file.exists(),
+        "missing report file: {}",
+        report_file.display()
+    );
+
+    let filtered = run_aic(&["test", &root, "--filter", "addition", "--json"]);
+    assert_eq!(
+        filtered.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&filtered.stdout),
+        String::from_utf8_lossy(&filtered.stderr)
+    );
+    let filtered_report: serde_json::Value =
+        serde_json::from_slice(&filtered.stdout).expect("filtered json report");
+    assert_eq!(filtered_report["total"], 1, "report={filtered_report:#}");
+    assert_eq!(filtered_report["failed"], 0, "report={filtered_report:#}");
 }
 
 fn write_pkg_project(root: &std::path::Path, name: &str, version: &str, module: &str, body: &str) {

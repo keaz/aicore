@@ -580,6 +580,14 @@ case "$MODE" in
     "${AIC[@]}" test "examples/e7/harness" --json >"$ARTIFACT_DIR/harness_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/harness_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/harness_report.json"
+    "${AIC[@]}" test "examples/e7/test_framework" --json >"$ARTIFACT_DIR/test_framework_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/test_framework_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/test_framework_report.json"
+    grep -q '"total": 2' "$ARTIFACT_DIR/test_framework_report.json"
+    "${AIC[@]}" test "examples/e7/test_framework" --filter "addition" --json >"$ARTIFACT_DIR/test_framework_filtered_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/test_framework_filtered_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/test_framework_filtered_report.json"
+    grep -q '"total": 1' "$ARTIFACT_DIR/test_framework_filtered_report.json"
     DOC_DIR="$ARTIFACT_DIR/doc_sample"
     "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
     expect_file_exists "$DOC_DIR/index.md"
