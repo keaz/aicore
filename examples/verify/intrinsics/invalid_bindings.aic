@@ -1,0 +1,4 @@
+module examples.verify.intrinsics.invalid;
+
+intrinsic fn aic_proc_spawn_intrinsic(command: Int) -> Result[Int, ProcError] effects { proc, env };
+intrinsic fn aic_missing_runtime_intrinsic() -> Result[Int, ProcError] effects { proc };

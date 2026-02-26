@@ -257,6 +257,54 @@ Implementation and test references:
 - `tests/e7_cli_tests.rs` (`build_links_native_c_library_from_manifest_native_section`)
 - `examples/pkg/ffi_zlib.aic`
 
+
+### Intrinsic declarations (AGX1-T1)
+
+`src/lexer.rs`, `src/parser.rs`, `src/ir.rs`, `src/formatter.rs`, and `src/typecheck.rs` model intrinsic runtime bindings directly.
+
+- Surface syntax: `intrinsic fn ... -> ... effects { ... };`
+- Intrinsic declarations are signature-only; parser rejects bodies/contracts/generics with `E1093`.
+- Canonical IR/JSON carries explicit metadata: `is_intrinsic` and `intrinsic_abi`.
+
+Example source:
+
+```aic
+intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs };
+
+fn exists(path: String) -> Bool effects { fs } {
+    aic_fs_exists_intrinsic(path)
+}
+```
+
+Canonical IR/JSON excerpt:
+
+```json
+{
+  "name": "aic_fs_exists_intrinsic",
+  "is_intrinsic": true,
+  "intrinsic_abi": "runtime"
+}
+```
+### Intrinsic binding verifier (AGX1-T3)
+
+`aic verify-intrinsics [INPUT] --json` validates intrinsic declarations against backend lowering expectations before release.
+
+- verifies runtime ABI metadata (`intrinsic_abi = runtime`)
+- verifies every intrinsic has a known backend lowering mapping
+- verifies declaration signatures against accepted backend shapes and runtime symbol mapping
+
+Deterministic JSON fields:
+
+- `schema_version`, `input`, `files_scanned`, `intrinsic_declarations`, `verified_bindings`, `issue_count`, `ok`
+- `issues[]` with stable kinds: `parse_diagnostic`, `unsupported_abi`, `missing_lowering`, `signature_mismatch`, `missing_runtime_symbol`
+
+Examples:
+
+```bash
+aic verify-intrinsics std --json
+aic verify-intrinsics examples/verify/intrinsics/invalid_bindings.aic --json
+```
+
 ### Registry provenance and trust policy (PKG-T4)
 
 `src/package_registry.rs` extends package install security with signature metadata and trust-policy gating.

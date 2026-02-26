@@ -28,6 +28,7 @@ use aicore::driver::{
     sort_diagnostics, FrontendOptions, FrontendOutput,
 };
 use aicore::formatter::format_program;
+use aicore::intrinsic_verifier::verify_intrinsics;
 use aicore::ir::migrate_json_to_current;
 use aicore::ir_builder;
 use aicore::lsp;
@@ -264,6 +265,12 @@ enum Command {
         check: bool,
         #[arg(long, default_value = "docs/std-api-baseline.json")]
         baseline: PathBuf,
+    },
+    VerifyIntrinsics {
+        #[arg(default_value = "std")]
+        input: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
     Diff {
         #[arg(long, required = true)]
@@ -1721,6 +1728,42 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 println!("{}", serde_json::to_string_pretty(&current)?);
                 EXIT_OK
+            }
+        }
+        Command::VerifyIntrinsics { input, json } => {
+            let report = verify_intrinsics(&input)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else if report.ok {
+                println!(
+                    "verify-intrinsics: ok ({} declarations across {} files)",
+                    report.intrinsic_declarations, report.files_scanned
+                );
+            } else {
+                eprintln!(
+                    "verify-intrinsics: failed ({} issue(s), {} declarations across {} files)",
+                    report.issue_count, report.intrinsic_declarations, report.files_scanned
+                );
+                for issue in &report.issues {
+                    eprintln!(
+                        "  - [{}] {}:{}..{} {}",
+                        issue.code, issue.file, issue.span.start, issue.span.end, issue.message
+                    );
+                    if let Some(found_signature) = &issue.found_signature {
+                        eprintln!("    found: {found_signature}");
+                    }
+                    if let Some(expected_signatures) = &issue.expected_signatures {
+                        eprintln!("    expected: {}", expected_signatures.join(" | "));
+                    }
+                    if let Some(runtime_symbol) = &issue.runtime_symbol {
+                        eprintln!("    runtime-symbol: {runtime_symbol}");
+                    }
+                }
+            }
+            if report.ok {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
             }
         }
         Command::Diff {

@@ -307,6 +307,7 @@ fn cli_help_snapshots_are_stable() {
         "ir",
         "migrate",
         "build",
+        "verify-intrinsics",
         "lsp",
         "daemon",
         "repl",
@@ -355,6 +356,18 @@ fn cli_help_snapshots_are_stable() {
             "missing `{flag}` in ast help:\n{ast_help_text}"
         );
     }
+
+    let verify_intrinsics_help = run_aic(&["verify-intrinsics", "--help"]);
+    assert!(verify_intrinsics_help.status.success());
+    let verify_intrinsics_help_text = String::from_utf8_lossy(&verify_intrinsics_help.stdout);
+    assert!(
+        verify_intrinsics_help_text.contains("Usage: aic verify-intrinsics [OPTIONS] [INPUT]"),
+        "verify-intrinsics help mismatch:\n{verify_intrinsics_help_text}"
+    );
+    assert!(
+        verify_intrinsics_help_text.contains("--json"),
+        "verify-intrinsics help missing --json:\n{verify_intrinsics_help_text}"
+    );
 
     let bench_help = run_aic(&["bench", "--help"]);
     assert!(bench_help.status.success());
@@ -580,6 +593,85 @@ fn cli_exit_codes_are_deterministic() {
 
     let usage_fail = run_aic(&["check", "examples/e7/diag_errors.aic", "--json", "--sarif"]);
     assert_eq!(usage_fail.status.code(), Some(2));
+}
+
+#[test]
+fn verify_intrinsics_std_runtime_bindings_emit_stable_json() {
+    let output = run_aic(&["verify-intrinsics", "std", "--json"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: Value = serde_json::from_slice(&output.stdout).expect("verify-intrinsics json");
+    assert_eq!(report["schema_version"], "1.0");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["issue_count"], 0);
+    assert!(
+        report["files_scanned"].as_u64().unwrap_or(0) >= 3,
+        "report={report:#}"
+    );
+    assert!(
+        report["intrinsic_declarations"].as_u64().unwrap_or(0) >= 48,
+        "report={report:#}"
+    );
+    assert!(
+        report["verified_bindings"].as_u64().unwrap_or(0) >= 48,
+        "report={report:#}"
+    );
+}
+
+#[test]
+fn verify_intrinsics_reports_mapping_and_signature_failures() {
+    let fixture = tempdir().expect("fixture");
+    let fixture_file = fixture.path().join("intrinsics_bad.aic");
+    fs::write(
+        &fixture_file,
+        concat!(
+            "module verify.bad;\n",
+            "intrinsic fn aic_proc_spawn_intrinsic(command: Int) -> Result[Int, ProcError] effects { proc, env };\n",
+            "intrinsic fn aic_missing_runtime_intrinsic() -> Result[Int, ProcError] effects { proc };\n",
+        ),
+    )
+    .expect("write intrinsic fixture");
+
+    let fixture_path = fixture.path().to_string_lossy().to_string();
+    let output = run_aic(&["verify-intrinsics", fixture_path.as_str(), "--json"]);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: Value = serde_json::from_slice(&output.stdout).expect("verify-intrinsics json");
+    assert_eq!(report["schema_version"], "1.0");
+    assert_eq!(report["ok"], false);
+    assert_eq!(report["issue_count"], 2);
+
+    let issues = report["issues"].as_array().expect("issues array");
+    let mut kinds = issues
+        .iter()
+        .filter_map(|issue| issue["kind"].as_str())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    kinds.sort();
+    assert_eq!(kinds, vec!["missing_lowering", "signature_mismatch"]);
+
+    let signature_issue = issues
+        .iter()
+        .find(|issue| issue["kind"] == "signature_mismatch")
+        .expect("signature mismatch issue");
+    assert_eq!(
+        signature_issue["intrinsic"],
+        Value::String("aic_proc_spawn_intrinsic".to_string())
+    );
+    assert_eq!(
+        signature_issue["runtime_symbol"],
+        Value::String("aic_rt_proc_spawn".to_string())
+    );
 }
 
 #[test]

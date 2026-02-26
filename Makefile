@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz test-e9 examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz test-e9 verify-intrinsics examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -23,6 +23,7 @@ help:
 	@echo "  make test-e8       Run E8 verification/fuzz/diff/matrix/perf tests"
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make test-e9       Run E9 release/security operations tests"
+	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
 	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
@@ -50,7 +51,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 verify-intrinsics examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -93,6 +94,10 @@ test-e8-nightly-fuzz:
 
 test-e9:
 	$(CARGO) test --locked --test e9_release_ops_tests
+
+verify-intrinsics:
+	./target/debug/aic verify-intrinsics std --json >/tmp/aic-verify-intrinsics.json
+	python3 -m json.tool /tmp/aic-verify-intrinsics.json >/dev/null
 
 examples-check:
 	./scripts/ci/examples.sh check

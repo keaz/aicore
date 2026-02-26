@@ -15,6 +15,446 @@ use crate::telemetry;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
 
+#[derive(Debug, Clone, Copy)]
+pub struct IntrinsicSignatureShape {
+    pub params: &'static [&'static str],
+    pub ret: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IntrinsicBindingExpectation {
+    pub intrinsic: &'static str,
+    pub runtime_symbol: &'static str,
+    pub signatures: &'static [IntrinsicSignatureShape],
+}
+
+const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_spawn_intrinsic",
+        runtime_symbol: "aic_rt_conc_spawn",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Task, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_join_intrinsic",
+        runtime_symbol: "aic_rt_conc_join",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_join_timeout_intrinsic",
+        runtime_symbol: "aic_rt_conc_join_timeout",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_cancel_intrinsic",
+        runtime_symbol: "aic_rt_conc_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_spawn_group_intrinsic",
+        runtime_symbol: "aic_rt_conc_spawn_group",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Vec[Int]", "Int"],
+            ret: "Result[Vec[Int], ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_select_first_intrinsic",
+        runtime_symbol: "aic_rt_conc_select_first",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Vec[Task]", "Int"],
+            ret: "Result[IntTaskSelection, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_channel_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_channel_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[IntChannel, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_channel_int_buffered_intrinsic",
+        runtime_symbol: "aic_rt_conc_channel_int_buffered",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[IntChannel, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_send_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_send_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel", "Int", "Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_try_send_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_try_send_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel", "Int"],
+            ret: "Result[Bool, ChannelError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_recv_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_recv_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_try_recv_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_try_recv_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel"],
+            ret: "Result[Int, ChannelError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_select_recv_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_select_recv_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel", "IntChannel", "Int"],
+            ret: "Result[IntChannelSelection, ChannelError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_close_channel_intrinsic",
+        runtime_symbol: "aic_rt_conc_close_channel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntChannel"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_mutex_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_mutex_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[IntMutex, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_mutex_lock_intrinsic",
+        runtime_symbol: "aic_rt_conc_mutex_lock",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntMutex", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_mutex_unlock_intrinsic",
+        runtime_symbol: "aic_rt_conc_mutex_unlock",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntMutex", "Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_mutex_close_intrinsic",
+        runtime_symbol: "aic_rt_conc_mutex_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntMutex"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_spawn_intrinsic",
+        runtime_symbol: "aic_rt_proc_spawn",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Int, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_wait_intrinsic",
+        runtime_symbol: "aic_rt_proc_wait",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_kill_intrinsic",
+        runtime_symbol: "aic_rt_proc_kill",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_run_intrinsic",
+        runtime_symbol: "aic_rt_proc_run",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[ProcOutput, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_pipe_intrinsic",
+        runtime_symbol: "aic_rt_proc_pipe",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "String"],
+            ret: "Result[ProcOutput, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_run_with_intrinsic",
+        runtime_symbol: "aic_rt_proc_run_with",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "RunOptions"],
+            ret: "Result[ProcOutput, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_is_running_intrinsic",
+        runtime_symbol: "aic_rt_proc_is_running",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_current_pid_intrinsic",
+        runtime_symbol: "aic_rt_proc_current_pid",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Int, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_run_timeout_intrinsic",
+        runtime_symbol: "aic_rt_proc_run_timeout",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "Int"],
+            ret: "Result[ProcOutput, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_proc_pipe_chain_intrinsic",
+        runtime_symbol: "aic_rt_proc_pipe_chain",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Vec[String]"],
+            ret: "Result[ProcOutput, ProcError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_listen_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_listen",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_local_addr_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_local_addr",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_accept_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_accept",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_connect_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_connect",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_send_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_send",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["Int", "String"],
+                ret: "Result[Int, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["Int", "Bytes"],
+                ret: "Result[Int, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_recv_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_recv",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["Int", "Int", "Int"],
+                ret: "Result[String, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["Int", "Int", "Int"],
+                ret: "Result[Bytes, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_close_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_udp_bind_intrinsic",
+        runtime_symbol: "aic_rt_net_udp_bind",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_udp_local_addr_intrinsic",
+        runtime_symbol: "aic_rt_net_udp_local_addr",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_udp_send_to_intrinsic",
+        runtime_symbol: "aic_rt_net_udp_send_to",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["Int", "String", "String"],
+                ret: "Result[Int, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["Int", "String", "Bytes"],
+                ret: "Result[Int, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_udp_recv_from_intrinsic",
+        runtime_symbol: "aic_rt_net_udp_recv_from",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[UdpPacket, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_udp_close_intrinsic",
+        runtime_symbol: "aic_rt_net_udp_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_dns_lookup_intrinsic",
+        runtime_symbol: "aic_rt_net_dns_lookup",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[String, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_dns_reverse_intrinsic",
+        runtime_symbol: "aic_rt_net_dns_reverse",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[String, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_accept_submit_intrinsic",
+        runtime_symbol: "aic_rt_net_async_accept_submit",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[AsyncIntOp, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_send_submit_intrinsic",
+        runtime_symbol: "aic_rt_net_async_send_submit",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["Int", "String"],
+                ret: "Result[AsyncIntOp, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["Int", "Bytes"],
+                ret: "Result[AsyncIntOp, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_recv_submit_intrinsic",
+        runtime_symbol: "aic_rt_net_async_recv_submit",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[AsyncStringOp, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_wait_int_intrinsic",
+        runtime_symbol: "aic_rt_net_async_wait_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncIntOp", "Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_wait_string_intrinsic",
+        runtime_symbol: "aic_rt_net_async_wait_string",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["AsyncStringOp", "Int"],
+                ret: "Result[String, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["AsyncStringOp", "Int"],
+                ret: "Result[Bytes, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_shutdown_intrinsic",
+        runtime_symbol: "aic_rt_net_async_shutdown",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+];
+
+pub fn intrinsic_binding_expectations() -> &'static [IntrinsicBindingExpectation] {
+    INTRINSIC_BINDING_EXPECTATIONS
+}
+
+pub fn intrinsic_binding_expectation(name: &str) -> Option<&'static IntrinsicBindingExpectation> {
+    INTRINSIC_BINDING_EXPECTATIONS
+        .iter()
+        .find(|binding| binding.intrinsic == name)
+}
+
 #[derive(Debug, Clone)]
 struct FnSig {
     is_extern: bool,

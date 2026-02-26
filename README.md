@@ -152,6 +152,7 @@ Agents must handle `Option` branches explicitly; exhaustiveness checks catch mis
 | Package lock/checksum/offline cache workflow | Implemented (`aic lock`, `--offline`) |
 | API docs generation | Implemented (`aic doc`) |
 | Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |
+| Intrinsic binding verification gate | Implemented (`aic verify-intrinsics --json`) |
 | CLI contract + deterministic exits | Implemented (`aic contract`) |
 | SARIF diagnostics export | Implemented (`aic check --sarif`) |
 | Diagnostic explain command | Implemented (`aic explain`) |
@@ -285,6 +286,7 @@ Commands:
 - `aic build`
 - `aic doc`
 - `aic std-compat`
+- `aic verify-intrinsics`
 - `aic explain`
 - `aic lsp`
 - `aic daemon`

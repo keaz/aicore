@@ -10,6 +10,16 @@ cargo run --quiet --bin aic -- std-compat > docs/std-api-baseline.json
 cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json
 ```
 
+## Intrinsic verification gate
+
+Before merging runtime-bound std changes, validate intrinsic declarations:
+
+```bash
+cargo run --quiet --bin aic -- verify-intrinsics std --json
+```
+
+This check fails for missing lowering mappings, signature drift, or unsupported intrinsic ABI metadata.
+
 ## API Migration Highlights
 
 ### 1. `std.io`: richer interactive and stream APIs

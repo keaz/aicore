@@ -75,6 +75,9 @@ jobs:
       - name: E9 release and security tests
         run: make test-e9
 
+      - name: Verify intrinsic bindings
+        run: make verify-intrinsics
+
       - name: Example checks
         run: make examples-check
 

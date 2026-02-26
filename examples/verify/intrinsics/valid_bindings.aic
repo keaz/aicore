@@ -1,0 +1,5 @@
+module examples.verify.intrinsics.valid;
+
+intrinsic fn aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc };
+intrinsic fn aic_net_async_shutdown_intrinsic() -> Result[Bool, NetError] effects { net, concurrency };
+intrinsic fn aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency };

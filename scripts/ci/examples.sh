@@ -473,6 +473,40 @@ validate_wasm_example() {
   echo "note: wasm runtime engine unavailable; validated artifact bytes and imports only" >&2
 }
 
+
+expect_verify_intrinsics_pass() {
+  local target="$1"
+  if ! "${AIC[@]}" verify-intrinsics "$target" --json >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    echo "expected verify-intrinsics success but failed: $target" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+  python3 -m json.tool /tmp/aic-example.out >/dev/null
+  if ! grep -q '"ok": true' /tmp/aic-example.out; then
+    echo "verify-intrinsics success report missing ok=true: $target" >&2
+    cat /tmp/aic-example.out >&2 || true
+    exit 1
+  fi
+}
+
+expect_verify_intrinsics_fail() {
+  local target="$1"
+  local marker="$2"
+  if "${AIC[@]}" verify-intrinsics "$target" --json >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    echo "expected verify-intrinsics failure but passed: $target" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+  python3 -m json.tool /tmp/aic-example.out >/dev/null
+  if ! grep -q "$marker" /tmp/aic-example.out; then
+    echo "verify-intrinsics failure marker not found for $target: $marker" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+}
 case "$MODE" in
   check)
     for f in "${check_pass[@]}"; do
@@ -481,6 +515,10 @@ case "$MODE" in
     for f in "${check_fail[@]}"; do
       expect_check_fail "$f"
     done
+    expect_verify_intrinsics_pass "std"
+    expect_verify_intrinsics_pass "examples/verify/intrinsics/valid_bindings.aic"
+    expect_verify_intrinsics_fail "examples/verify/intrinsics/invalid_bindings.aic" "signature_mismatch"
+    expect_verify_intrinsics_fail "examples/verify/intrinsics/invalid_bindings.aic" "missing_lowering"
     validate_wasm_example
     ;;
   run)
