@@ -1,0 +1,22 @@
+module examples.test.mock_isolation_violation;
+
+import std.net;
+import std.proc;
+
+#[test]
+fn test_real_net_side_effect_is_blocked() -> () effects { io, net } capabilities { io, net } {
+    let connected = match tcp_connect("127.0.0.1:1", 5) {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(connected);
+}
+
+#[test]
+fn test_real_proc_side_effect_is_blocked() -> () effects { io, env, proc } capabilities { io, env, proc } {
+    let launched = match run("echo hi") {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(launched);
+}

@@ -29049,8 +29049,13 @@ static long aic_rt_sandbox_violation(const char* domain, const char* operation, 
     return error_code;
 }
 
+static int aic_rt_mock_no_real_io(void);
+
 #define AIC_RT_SANDBOX_BLOCK_FS(op, code) \
     do { \
+        if (aic_rt_mock_no_real_io()) { \
+            return aic_rt_sandbox_violation("fs", op, code); \
+        } \
         if (!aic_rt_sandbox_allow_fs()) { \
             return aic_rt_sandbox_violation("fs", op, code); \
         } \
@@ -29058,6 +29063,9 @@ static long aic_rt_sandbox_violation(const char* domain, const char* operation, 
 
 #define AIC_RT_SANDBOX_BLOCK_NET(op, code) \
     do { \
+        if (aic_rt_mock_no_real_io()) { \
+            return aic_rt_sandbox_violation("net", op, code); \
+        } \
         if (!aic_rt_sandbox_allow_net()) { \
             return aic_rt_sandbox_violation("net", op, code); \
         } \
@@ -29065,6 +29073,9 @@ static long aic_rt_sandbox_violation(const char* domain, const char* operation, 
 
 #define AIC_RT_SANDBOX_BLOCK_PROC(op, code) \
     do { \
+        if (aic_rt_mock_no_real_io()) { \
+            return aic_rt_sandbox_violation("proc", op, code); \
+        } \
         if (!aic_rt_sandbox_allow_proc()) { \
             return aic_rt_sandbox_violation("proc", op, code); \
         } \

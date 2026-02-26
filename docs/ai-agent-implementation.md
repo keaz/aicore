@@ -519,7 +519,7 @@ Diagnostics:
   - `src/attr_test_runner.rs`
   - `src/property_test_runner.rs`
 - Command:
-  - `aic test [path] --mode all|run-pass|compile-fail|golden [--filter <pattern>] [--seed <n>] [--json]`
+  - `aic test [path] --mode all|run-pass|compile-fail|golden [--filter <pattern>] [--seed <n>] [--replay <id|artifact>] [--json]`
 - Fixture categories discovered by directory segment:
   - `run-pass`
   - `compile-fail`
@@ -537,6 +537,11 @@ Diagnostics:
   - `std.io` exposes `MockReader` / `MockWriter` helpers (`mock_reader_from_lines`, `install_mock_reader`, `mock_writer_take`)
   - runtime IO calls are interceptable in tests via mock APIs and deterministic env controls
   - attribute/property test subprocesses default to deterministic/isolated IO via `AIC_TEST_NO_REAL_IO=1` and `AIC_TEST_IO_CAPTURE=1` (overridable by caller env)
+  - when `AIC_TEST_NO_REAL_IO=1`, accidental real `fs`/`net`/`proc` calls are rejected with structured `sandbox_policy_violation` diagnostics
+- Replay metadata and deterministic rerun:
+  - failing `aic test --json` runs emit `replay` metadata (`replay_id`, artifact path, seed/time/mock/trace context)
+  - replay artifacts persist under `.aic-replay/`
+  - `aic test --replay <id|artifact>` replays with captured deterministic context
 - CI/automation output:
   - JSON mode emits machine-readable report to stdout
   - attribute/property runs persist `test_results.json` at the selected test root
@@ -545,6 +550,8 @@ Diagnostics:
   - `examples/e7/test_framework/`
   - `examples/e7/property_framework/`
   - `examples/test/mock_io.aic`
+  - `examples/test/replay_failure.aic`
+  - `examples/test/mock_isolation_violation.aic`
 
 ### Deterministic incremental daemon (AG-T4)
 

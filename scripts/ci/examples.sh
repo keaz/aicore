@@ -643,10 +643,49 @@ case "$MODE" in
     python3 -m json.tool "$ARTIFACT_DIR/property_framework_filtered_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/property_framework_filtered_report.json"
     grep -q '"total": 1' "$ARTIFACT_DIR/property_framework_filtered_report.json"
-    "${AIC[@]}" test "examples/test" --filter "mock" --seed 123 --json >"$ARTIFACT_DIR/mock_io_report.json"
-    python3 -m json.tool "$ARTIFACT_DIR/mock_io_report.json" >/dev/null
-    grep -q '"failed": 0' "$ARTIFACT_DIR/mock_io_report.json"
-    grep -q '"total": 2' "$ARTIFACT_DIR/mock_io_report.json"
+    "${AIC[@]}" test "examples/test" --filter "mock_reader_and_writer" --seed 123 --json >"$ARTIFACT_DIR/mock_reader_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/mock_reader_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/mock_reader_report.json"
+    grep -q '"total": 1' "$ARTIFACT_DIR/mock_reader_report.json"
+    "${AIC[@]}" test "examples/test" --filter "rand_and_time_determinism" --seed 123 --json >"$ARTIFACT_DIR/mock_rand_time_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/mock_rand_time_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/mock_rand_time_report.json"
+    grep -q '"total": 1' "$ARTIFACT_DIR/mock_rand_time_report.json"
+    if "${AIC[@]}" test "examples/test" --filter "replay_failure" --seed 777 --json >"$ARTIFACT_DIR/replay_failure_report.json"; then
+      echo "expected replay_failure example to fail but passed" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/replay_failure_report.json" >/dev/null
+    grep -q '"replay"' "$ARTIFACT_DIR/replay_failure_report.json"
+    REPLAY_ID="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); print(data.get("replay",{}).get("replay_id",""))' "$ARTIFACT_DIR/replay_failure_report.json")"
+    if [[ -z "$REPLAY_ID" ]]; then
+      echo "missing replay id in replay_failure report" >&2
+      exit 1
+    fi
+    if "${AIC[@]}" test "examples/test" --filter "replay_failure" --replay "$REPLAY_ID" --json >"$ARTIFACT_DIR/replay_failure_replay_report.json"; then
+      echo "expected replay run to reproduce failure but it passed" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/replay_failure_replay_report.json" >/dev/null
+    if "${AIC[@]}" test "examples/test" --filter "isolation_violation" --json >"$ARTIFACT_DIR/mock_isolation_report.json"; then
+      echo "expected mock isolation violation example to fail but passed" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/mock_isolation_report.json" >/dev/null
+    grep -q 'sandbox_policy_violation' "$ARTIFACT_DIR/mock_isolation_report.json"
+    python3 - "$ARTIFACT_DIR/mock_isolation_report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    report = json.load(handle)
+
+details = "\n".join(case.get("details", "") for case in report.get("cases", []))
+if '"domain":"net"' not in details:
+    raise SystemExit("missing net sandbox domain marker")
+if '"domain":"proc"' not in details:
+    raise SystemExit("missing proc sandbox domain marker")
+PY
     DOC_DIR="$ARTIFACT_DIR/doc_sample"
     "${AIC[@]}" doc "examples/e6/doc_sample.aic" -o "$DOC_DIR" >/dev/null
     expect_file_exists "$DOC_DIR/index.md"

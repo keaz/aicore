@@ -46,6 +46,20 @@ pub struct HarnessReport {
     pub failed: usize,
     pub by_category: BTreeMap<String, usize>,
     pub cases: Vec<HarnessCase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay: Option<ReplayMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplayMetadata {
+    pub replay_id: String,
+    pub artifact_path: String,
+    pub seed: u64,
+    pub time_ms: String,
+    pub mock_no_real_io: bool,
+    pub mock_io_capture: bool,
+    pub trace_id: Option<String>,
+    pub generated_at_ms: u64,
 }
 
 pub fn run_harness(root: &Path, mode: HarnessMode) -> anyhow::Result<HarnessReport> {
@@ -70,6 +84,7 @@ pub fn run_harness_with_golden_mode(
         failed: 0,
         by_category: BTreeMap::new(),
         cases: Vec::new(),
+        replay: None,
     };
 
     for file in files {

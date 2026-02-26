@@ -84,6 +84,30 @@ Stable `build` flags include:
 - `--verify-hash <sha256>`
 - `--manifest <path>` (defaults to `build.json` for single-target builds)
 
+Stable `test` flags include:
+
+- `--mode` (`all|run-pass|compile-fail|golden`)
+- `--filter <pattern>`
+- `--seed <N>`
+- `--replay <id-or-artifact>`
+- `--json`
+- `--update-golden`
+- `--check-golden`
+
+Replay contract:
+
+- Failed `aic test --json` runs include a `replay` object:
+  - `replay_id`
+  - `artifact_path`
+  - `seed`
+  - `time_ms`
+  - `mock_no_real_io`
+  - `mock_io_capture`
+  - `trace_id` (optional)
+  - `generated_at_ms`
+- Replay artifacts are written to `.aic-replay/<replay_id>.json`.
+- `aic test --replay <id-or-artifact>` re-runs with captured deterministic context.
+
 Workspace note:
 
 - `aic build <workspace-root>` keeps existing workspace artifact behavior.

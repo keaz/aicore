@@ -62,9 +62,9 @@ use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
 use aicore::telemetry;
-use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode};
+use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode, ReplayMetadata};
 use clap::{Parser, Subcommand, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const DEFAULT_MAX_ERRORS: usize = 20;
 const GRAMMAR_VERSION: &str = "mvp-grammar-v6";
@@ -295,6 +295,8 @@ enum Command {
         filter: Option<String>,
         #[arg(long, value_name = "N")]
         seed: Option<u64>,
+        #[arg(long, value_name = "ID_OR_ARTIFACT")]
+        replay: Option<String>,
         #[arg(long)]
         json: bool,
         #[arg(long, conflicts_with = "check_golden")]
@@ -529,6 +531,25 @@ impl TestModeArg {
             TestModeArg::RunPass => HarnessMode::RunPass,
             TestModeArg::CompileFail => HarnessMode::CompileFail,
             TestModeArg::Golden => HarnessMode::Golden,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            TestModeArg::All => "all",
+            TestModeArg::RunPass => "run-pass",
+            TestModeArg::CompileFail => "compile-fail",
+            TestModeArg::Golden => "golden",
+        }
+    }
+
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "all" => Some(TestModeArg::All),
+            "run-pass" => Some(TestModeArg::RunPass),
+            "compile-fail" => Some(TestModeArg::CompileFail),
+            "golden" => Some(TestModeArg::Golden),
+            _ => None,
         }
     }
 }
@@ -1802,10 +1823,32 @@ fn run_cli() -> anyhow::Result<i32> {
             mode,
             filter,
             seed,
+            replay,
             json,
             update_golden,
             check_golden,
         } => {
+            let mut effective_path = path.clone();
+            let mut effective_mode = mode;
+            let mut effective_filter = filter;
+            let mut effective_seed = seed;
+            let mut replay_trace_id: Option<String> = None;
+            let mut replay_time_ms: Option<String> = None;
+            let mut replay_mock_no_real_io: Option<bool> = None;
+            let mut replay_mock_io_capture: Option<bool> = None;
+
+            if let Some(replay_ref) = replay {
+                let loaded = load_test_replay_artifact(&path, &replay_ref)?;
+                effective_path = loaded.path;
+                effective_mode = loaded.mode;
+                effective_filter = loaded.filter;
+                effective_seed = Some(loaded.seed);
+                replay_trace_id = loaded.trace_id;
+                replay_time_ms = Some(loaded.time_ms);
+                replay_mock_no_real_io = Some(loaded.mock_no_real_io);
+                replay_mock_io_capture = Some(loaded.mock_io_capture);
+            }
+
             let golden_mode = if update_golden {
                 GoldenMode::Update
             } else if check_golden {
@@ -1813,27 +1856,64 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 GoldenMode::Legacy
             };
-            let mut report =
-                run_harness_with_golden_mode(&path, mode.to_harness_mode(), golden_mode)?;
-            if matches!(mode, TestModeArg::All) {
-                let test_seed = resolve_test_seed(seed);
-                let attr_report = run_attribute_tests(&path, filter.as_deref(), test_seed)?;
-                let prop_report = run_property_tests(&path, filter.as_deref(), test_seed)?;
+            let test_seed = resolve_test_seed(effective_seed);
+            let isolation = apply_test_runtime_env_overrides(
+                replay_time_ms.as_deref(),
+                replay_trace_id.as_deref(),
+                replay_mock_no_real_io,
+                replay_mock_io_capture,
+            );
+            let report_result = (|| -> anyhow::Result<aicore::test_harness::HarnessReport> {
+                let mut report = run_harness_with_golden_mode(
+                    &effective_path,
+                    effective_mode.to_harness_mode(),
+                    golden_mode,
+                )?;
+                if matches!(effective_mode, TestModeArg::All) {
+                    let attr_report = run_attribute_tests(
+                        &effective_path,
+                        effective_filter.as_deref(),
+                        test_seed,
+                    )?;
+                    let prop_report = run_property_tests(
+                        &effective_path,
+                        effective_filter.as_deref(),
+                        test_seed,
+                    )?;
 
-                let mut wrote_combined_report = false;
-                if attr_report.total > 0 {
-                    merge_harness_reports(&mut report, attr_report);
-                    wrote_combined_report = true;
+                    if attr_report.total > 0 {
+                        merge_harness_reports(&mut report, attr_report);
+                    }
+                    if prop_report.total > 0 {
+                        merge_harness_reports(&mut report, prop_report);
+                    }
                 }
-                if prop_report.total > 0 {
-                    merge_harness_reports(&mut report, prop_report);
-                    wrote_combined_report = true;
-                }
-                if wrote_combined_report {
-                    let report_path = test_results_path(&path);
-                    std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)?;
-                }
+                Ok(report)
+            })();
+            restore_test_runtime_env(isolation);
+            let mut report = report_result?;
+
+            if report.failed > 0 {
+                let replay_meta = persist_test_replay_artifact(
+                    &effective_path,
+                    effective_mode,
+                    effective_filter.clone(),
+                    test_seed,
+                    &report,
+                )?;
+                report.replay = Some(replay_meta);
+            } else {
+                report.replay = None;
             }
+
+            if matches!(effective_mode, TestModeArg::All)
+                && (report.by_category.contains_key("attribute-test")
+                    || report.by_category.contains_key("property-test"))
+            {
+                let report_path = test_results_path(&effective_path);
+                std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)?;
+            }
+
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
@@ -3138,6 +3218,236 @@ fn resolve_test_seed(cli_seed: Option<u64>) -> u64 {
         .unwrap_or(0)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestReplayArtifact {
+    schema: String,
+    replay_id: String,
+    path: String,
+    mode: String,
+    filter: Option<String>,
+    seed: u64,
+    time_ms: String,
+    mock_no_real_io: bool,
+    mock_io_capture: bool,
+    trace_id: Option<String>,
+    failed_cases: Vec<String>,
+    generated_at_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedTestReplayArtifact {
+    path: PathBuf,
+    mode: TestModeArg,
+    filter: Option<String>,
+    seed: u64,
+    time_ms: String,
+    mock_no_real_io: bool,
+    mock_io_capture: bool,
+    trace_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EnvGuard(Vec<(String, Option<String>)>);
+
+fn replay_artifact_dir(path: &Path) -> PathBuf {
+    if path.is_dir() {
+        path.join(".aic-replay")
+    } else {
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(".aic-replay")
+    }
+}
+
+fn current_time_ms_string() -> String {
+    std::env::var("AIC_TEST_TIME_MS").unwrap_or_else(|_| "1767225600000".to_string())
+}
+
+fn current_trace_id() -> Option<String> {
+    std::env::var("AIC_TRACE_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn replay_artifact_path_for(base_path: &Path, replay_ref: &str) -> PathBuf {
+    let candidate = PathBuf::from(replay_ref);
+    if candidate.exists() {
+        candidate
+    } else {
+        replay_artifact_dir(base_path).join(format!("{replay_ref}.json"))
+    }
+}
+
+fn load_test_replay_artifact(
+    base_path: &Path,
+    replay_ref: &str,
+) -> anyhow::Result<LoadedTestReplayArtifact> {
+    let artifact_path = replay_artifact_path_for(base_path, replay_ref);
+    let text = std::fs::read_to_string(&artifact_path).map_err(|err| {
+        anyhow::anyhow!(
+            "failed to read replay artifact {} ({err})",
+            artifact_path.display()
+        )
+    })?;
+    let artifact: TestReplayArtifact = serde_json::from_str(&text).map_err(|err| {
+        anyhow::anyhow!(
+            "failed to parse replay artifact {} ({err})",
+            artifact_path.display()
+        )
+    })?;
+    if artifact.schema != "aic-test-replay-v1" {
+        anyhow::bail!(
+            "unsupported replay schema `{}` in {}",
+            artifact.schema,
+            artifact_path.display()
+        );
+    }
+    let Some(mode) = TestModeArg::parse(&artifact.mode) else {
+        anyhow::bail!(
+            "invalid replay mode `{}` in {}",
+            artifact.mode,
+            artifact_path.display()
+        );
+    };
+    Ok(LoadedTestReplayArtifact {
+        path: PathBuf::from(artifact.path),
+        mode,
+        filter: artifact.filter,
+        seed: artifact.seed,
+        time_ms: artifact.time_ms,
+        mock_no_real_io: artifact.mock_no_real_io,
+        mock_io_capture: artifact.mock_io_capture,
+        trace_id: artifact.trace_id,
+    })
+}
+
+fn set_env_guarded(name: &str, value: Option<String>, guard: &mut EnvGuard) {
+    let previous = std::env::var(name).ok();
+    guard.0.push((name.to_string(), previous));
+    if let Some(value) = value {
+        std::env::set_var(name, value);
+    } else {
+        std::env::remove_var(name);
+    }
+}
+
+fn apply_test_runtime_env_overrides(
+    replay_time_ms: Option<&str>,
+    replay_trace_id: Option<&str>,
+    replay_mock_no_real_io: Option<bool>,
+    replay_mock_io_capture: Option<bool>,
+) -> EnvGuard {
+    let mut guard = EnvGuard(Vec::new());
+    if let Some(value) = replay_time_ms {
+        set_env_guarded("AIC_TEST_TIME_MS", Some(value.to_string()), &mut guard);
+    }
+    if let Some(value) = replay_trace_id {
+        set_env_guarded("AIC_TRACE_ID", Some(value.to_string()), &mut guard);
+    }
+    if let Some(value) = replay_mock_no_real_io {
+        set_env_guarded(
+            "AIC_TEST_NO_REAL_IO",
+            Some(if value { "1" } else { "0" }.to_string()),
+            &mut guard,
+        );
+    }
+    if let Some(value) = replay_mock_io_capture {
+        set_env_guarded(
+            "AIC_TEST_IO_CAPTURE",
+            Some(if value { "1" } else { "0" }.to_string()),
+            &mut guard,
+        );
+    }
+    guard
+}
+
+fn restore_test_runtime_env(guard: EnvGuard) {
+    for (name, previous) in guard.0.into_iter().rev() {
+        if let Some(value) = previous {
+            std::env::set_var(name, value);
+        } else {
+            std::env::remove_var(name);
+        }
+    }
+}
+
+fn persist_test_replay_artifact(
+    path: &Path,
+    mode: TestModeArg,
+    filter: Option<String>,
+    seed: u64,
+    report: &aicore::test_harness::HarnessReport,
+) -> anyhow::Result<ReplayMetadata> {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path.to_string_lossy().hash(&mut hasher);
+    mode.as_str().hash(&mut hasher);
+    filter.hash(&mut hasher);
+    seed.hash(&mut hasher);
+    for case in report.cases.iter().filter(|case| !case.passed) {
+        case.file.hash(&mut hasher);
+        case.details.hash(&mut hasher);
+    }
+    let replay_id = format!("{:016x}", hasher.finish());
+    let artifact_dir = replay_artifact_dir(path);
+    std::fs::create_dir_all(&artifact_dir)?;
+    let artifact_path = artifact_dir.join(format!("{replay_id}.json"));
+    let generated_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
+    let trace_id = current_trace_id();
+    let artifact = TestReplayArtifact {
+        schema: "aic-test-replay-v1".to_string(),
+        replay_id: replay_id.clone(),
+        path: path.to_string_lossy().to_string(),
+        mode: mode.as_str().to_string(),
+        filter,
+        seed,
+        time_ms: current_time_ms_string(),
+        mock_no_real_io: std::env::var("AIC_TEST_NO_REAL_IO")
+            .ok()
+            .map(|value| env_flag_enabled_value(&value))
+            .unwrap_or(true),
+        mock_io_capture: std::env::var("AIC_TEST_IO_CAPTURE")
+            .ok()
+            .map(|value| env_flag_enabled_value(&value))
+            .unwrap_or(true),
+        trace_id: trace_id.clone(),
+        failed_cases: report
+            .cases
+            .iter()
+            .filter(|case| !case.passed)
+            .map(|case| case.file.clone())
+            .collect(),
+        generated_at_ms,
+    };
+    std::fs::write(&artifact_path, serde_json::to_string_pretty(&artifact)?)?;
+
+    Ok(ReplayMetadata {
+        replay_id,
+        artifact_path: artifact_path.to_string_lossy().to_string(),
+        seed: artifact.seed,
+        time_ms: artifact.time_ms,
+        mock_no_real_io: artifact.mock_no_real_io,
+        mock_io_capture: artifact.mock_io_capture,
+        trace_id,
+        generated_at_ms,
+    })
+}
+
+fn env_flag_enabled_value(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    !matches!(
+        trimmed.to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "no"
+    )
+}
+
 fn test_results_path(path: &Path) -> PathBuf {
     if path.is_dir() {
         path.join("test_results.json")
@@ -3194,6 +3504,12 @@ fn print_harness_report(report: &aicore::test_harness::HarnessReport) {
         println!(
             "{} [{}] {} -> {}",
             status, case.category, case.file, details
+        );
+    }
+    if let Some(replay) = &report.replay {
+        println!(
+            "replay: id={} artifact={}",
+            replay.replay_id, replay.artifact_path
         );
     }
 }

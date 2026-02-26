@@ -414,6 +414,7 @@ fn cli_help_snapshots_are_stable() {
         "--mode <MODE>",
         "--filter <FILTER>",
         "--seed <N>",
+        "--replay <ID_OR_ARTIFACT>",
         "--json",
         "--update-golden",
         "--check-golden",
@@ -3544,6 +3545,129 @@ fn test_rand_and_time_are_deterministic() -> () effects { io, rand, time } capab
         report_file.exists(),
         "missing report file: {}",
         report_file.display()
+    );
+}
+
+#[test]
+fn test_command_emits_replay_metadata_and_replays_failure() {
+    let dir = tempdir().expect("tempdir");
+    let test_file = dir.path().join("replay_failure.aic");
+    fs::write(
+        &test_file,
+        r#"
+#[property(iterations = 4)]
+fn prop_replay_failure(x: Int) -> () {
+    assert_eq(x + 1, x);
+}
+"#,
+    )
+    .expect("write replay fixture");
+
+    let root = dir.path().to_string_lossy().to_string();
+    let first = run_aic(&["test", &root, "--seed", "777", "--json"]);
+    assert_eq!(
+        first.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let first_report: serde_json::Value = serde_json::from_slice(&first.stdout).expect("json");
+    let replay = first_report["replay"].as_object().expect("replay object");
+    let replay_id = replay["replay_id"].as_str().expect("replay id");
+    let artifact_path = replay["artifact_path"].as_str().expect("artifact path");
+    assert_eq!(replay["seed"], 777, "replay={replay:#?}");
+    assert!(
+        std::path::Path::new(artifact_path).exists(),
+        "missing replay artifact: {artifact_path}"
+    );
+
+    let artifact_text = fs::read_to_string(artifact_path).expect("read replay artifact");
+    let artifact_json: serde_json::Value = serde_json::from_str(&artifact_text).expect("json");
+    assert_eq!(
+        artifact_json["schema"].as_str(),
+        Some("aic-test-replay-v1"),
+        "artifact={artifact_json:#?}"
+    );
+    assert_eq!(artifact_json["seed"], 777, "artifact={artifact_json:#?}");
+
+    let replay_run = run_aic(&["test", &root, "--replay", replay_id, "--json"]);
+    assert_eq!(
+        replay_run.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&replay_run.stdout),
+        String::from_utf8_lossy(&replay_run.stderr)
+    );
+    let replay_report: serde_json::Value =
+        serde_json::from_slice(&replay_run.stdout).expect("replay json");
+    assert_eq!(replay_report["failed"], 1, "report={replay_report:#}");
+    assert_eq!(
+        replay_report["cases"][0]["file"], first_report["cases"][0]["file"],
+        "replay report should target same failing case"
+    );
+}
+
+#[test]
+fn test_command_mock_isolation_blocks_real_net_and_proc_side_effects() {
+    let dir = tempdir().expect("tempdir");
+    let test_file = dir.path().join("mock_isolation_violation.aic");
+    fs::write(
+        &test_file,
+        r#"
+import std.net;
+import std.proc;
+
+#[test]
+fn test_real_net_side_effect_is_blocked() -> () effects { io, net } capabilities { io, net } {
+    let connected = match tcp_connect("127.0.0.1:1", 5) {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(connected);
+}
+
+#[test]
+fn test_real_proc_side_effect_is_blocked() -> () effects { io, env, proc } capabilities { io, env, proc } {
+    let launched = match run("echo hi") {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(launched);
+}
+"#,
+    )
+    .expect("write mock isolation fixture");
+
+    let root = dir.path().to_string_lossy().to_string();
+    let result = run_aic(&["test", &root, "--json"]);
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("json report");
+    assert_eq!(report["total"], 2, "report={report:#}");
+    assert_eq!(report["failed"], 2, "report={report:#}");
+    let cases = report["cases"].as_array().expect("cases array");
+    let details = cases
+        .iter()
+        .map(|entry| entry["details"].as_str().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        details.contains("sandbox_policy_violation"),
+        "expected structured isolation diagnostic in details:\n{details}"
+    );
+    assert!(
+        details.contains("\"domain\":\"net\""),
+        "expected net-domain isolation marker in details:\n{details}"
+    );
+    assert!(
+        details.contains("\"domain\":\"proc\""),
+        "expected proc-domain isolation marker in details:\n{details}"
     );
 }
 

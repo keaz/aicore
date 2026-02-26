@@ -7,6 +7,7 @@ Options:
       --mode <MODE>  [default: all] [possible values: all, run-pass, compile-fail, golden]
       --filter <FILTER>
       --seed <N>
+      --replay <ID_OR_ARTIFACT>
       --json
       --update-golden
       --check-golden

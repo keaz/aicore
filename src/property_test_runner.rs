@@ -20,6 +20,21 @@ const MAX_SHRINK_PASSES: usize = 32;
 
 static PROPERTY_TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn env_truthy(name: &str, default: bool) -> bool {
+    let Some(raw) = std::env::var_os(name) else {
+        return default;
+    };
+    let text = raw.to_string_lossy();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return default;
+    }
+    !matches!(
+        trimmed.to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "no"
+    )
+}
+
 #[derive(Debug, Clone)]
 struct PropertyCase {
     file: PathBuf,
@@ -98,6 +113,7 @@ pub fn run_property_tests(
         failed: 0,
         by_category: BTreeMap::new(),
         cases: Vec::new(),
+        replay: None,
     };
 
     if discovered.is_empty() {
@@ -254,11 +270,20 @@ fn run_property_binary(exe: &Path, args: &Value, seed: u64) -> Result<(), Proper
     if std::env::var_os("AIC_TEST_TIME_MS").is_none() {
         command.env("AIC_TEST_TIME_MS", "1767225600000");
     }
+    let no_real_io_enabled = env_truthy("AIC_TEST_NO_REAL_IO", true);
     if std::env::var_os("AIC_TEST_NO_REAL_IO").is_none() {
         command.env("AIC_TEST_NO_REAL_IO", "1");
     }
     if std::env::var_os("AIC_TEST_IO_CAPTURE").is_none() {
         command.env("AIC_TEST_IO_CAPTURE", "1");
+    }
+    if no_real_io_enabled {
+        if std::env::var_os("AIC_SANDBOX_DIAGNOSTIC_JSON").is_none() {
+            command.env("AIC_SANDBOX_DIAGNOSTIC_JSON", "1");
+        }
+        if std::env::var_os("AIC_SANDBOX_PROFILE").is_none() {
+            command.env("AIC_SANDBOX_PROFILE", "mock-isolation");
+        }
     }
 
     match command.output() {

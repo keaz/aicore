@@ -206,6 +206,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
             "--mode",
             "--filter",
             "--seed",
+            "--replay",
             "--json",
             "--update-golden",
             "--check-golden",

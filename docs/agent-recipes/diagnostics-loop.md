@@ -19,6 +19,9 @@ Triage failures quickly with machine-readable diagnostics and deterministic reme
    - `aic suggest-effects <file>`
    - `aic diag apply-fixes <file> --json`
    - `aic check <file> --json`
+5. For test failures, capture and replay:
+   - `aic test <path> --json` (read `.replay.replay_id` + `.replay.artifact_path` on failures)
+   - `aic test <path> --replay <id|artifact> --json`
 
 ## Fallback Behavior
 
@@ -34,4 +37,5 @@ aic explain E2001 --json
 ! aic suggest-effects examples/e7/suggest_effects_demo.aic
 aic diag apply-fixes examples/e7/suggest_effects_demo.aic --dry-run --json
 aic contract --json
+! aic test examples/test/replay_failure.aic --seed 777 --json
 <!-- docs-test:end -->

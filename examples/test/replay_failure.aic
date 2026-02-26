@@ -1,0 +1,6 @@
+module examples.test.replay_failure;
+
+#[property(iterations = 4)]
+fn prop_replay_failure(x: Int) -> () {
+    assert_eq(x + 1, x);
+}
