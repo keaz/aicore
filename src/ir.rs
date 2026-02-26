@@ -185,6 +185,8 @@ pub struct Field {
     pub symbol: SymbolId,
     pub name: String,
     pub ty: TypeId,
+    #[serde(default)]
+    pub default_value: Option<Expr>,
     pub span: Span,
 }
 

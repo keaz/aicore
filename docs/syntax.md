@@ -50,7 +50,7 @@ trait_bounds   = ":" ident ("+" ident)* ;
 params         = param ("," param)* ","? ;
 param          = ident ":" type ;
 fields         = field ("," field)* ","? ;
-field          = ident ":" type ;
+field          = ident ":" type ("=" expr)? ;
 ```
 
 ## Type grammar
@@ -121,6 +121,7 @@ guard_clause   = "if" expr ;
 struct_init    = ident "{" struct_init_fields? "}" ;
 struct_init_fields = struct_init_field ("," struct_init_field)* ","? ;
 struct_init_field = ident ":" expr ;
+
 ```
 
 ## Pattern grammar
@@ -145,6 +146,12 @@ Pattern disambiguation:
 - bare lowercase identifier is treated as a variable binding pattern
 - `|` inside patterns is pattern-or; logical-or in expressions remains `||`
 - match guards (`if <expr>`) are checked as `Bool` expressions
+
+Struct default values:
+- Struct declarations may define defaults with `field: Type = expr`.
+- Struct literals may omit fields that have defaults.
+- `TypeName::default()` is synthesized when all fields declare defaults.
+- Default expressions are compile-time evaluable (literals, const references, and const arithmetic).
 
 Result propagation:
 - `expr?` is a postfix propagation operator.

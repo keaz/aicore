@@ -46,7 +46,7 @@ trait_bounds   = ":" ident ("+" ident)* ;
 params         = param ("," param)* ","? ;
 param          = ident ":" type ;
 fields         = field ("," field)* ","? ;
-field          = ident ":" type ;
+field          = ident ":" type ("=" expr)? ;
 
 type           = unit_type | named_type | hole_type ;
 unit_type      = "(" ")" ;

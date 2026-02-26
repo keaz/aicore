@@ -128,6 +128,8 @@ pub struct StructDef {
 pub struct Field {
     pub name: String,
     pub ty: TypeExpr,
+    #[serde(default)]
+    pub default_value: Option<Expr>,
     pub span: Span,
 }
 

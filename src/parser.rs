@@ -342,10 +342,20 @@ impl<'a> Parser<'a> {
                 "expected ':' after field name",
             )?;
             let ty = self.parse_type()?;
+            let mut field_end = ty.span.end;
+            let default_value = if self.at_kind(|k| matches!(k, TokenKind::Eq)) {
+                self.bump();
+                let expr = self.parse_expr()?;
+                field_end = expr.span.end;
+                Some(expr)
+            } else {
+                None
+            };
             fields.push(Field {
                 name: field_name,
                 ty: ty.clone(),
-                span: Span::new(field_start, ty.span.end),
+                default_value,
+                span: Span::new(field_start, field_end),
             });
             if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                 self.bump();
@@ -3384,5 +3394,39 @@ fn main() -> Int {
             };
             assert_eq!(op, expected);
         }
+    }
+
+    #[test]
+    fn parses_struct_field_defaults() {
+        let src = r#"
+struct Config {
+    port: Int = 40 + 2,
+    enabled: Bool = true,
+    retries: Int,
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let strukt = match &program.items[0] {
+            Item::Struct(s) => s,
+            _ => panic!("expected struct"),
+        };
+        assert_eq!(strukt.fields.len(), 3);
+        assert!(matches!(
+            strukt.fields[0]
+                .default_value
+                .as_ref()
+                .map(|expr| &expr.kind),
+            Some(ExprKind::Binary { op: BinOp::Add, .. })
+        ));
+        assert!(matches!(
+            strukt.fields[1]
+                .default_value
+                .as_ref()
+                .map(|expr| &expr.kind),
+            Some(ExprKind::Bool(true))
+        ));
+        assert!(strukt.fields[2].default_value.is_none());
     }
 }

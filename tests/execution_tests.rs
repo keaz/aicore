@@ -732,6 +732,54 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_struct_defaults_fill_missing_fields_and_support_default_method() {
+    let src = r#"
+import std.io;
+
+struct ServerConfig {
+    host: String = "0.0.0.0",
+    port: Int = 8080,
+    max_connections: Int = 1000,
+    timeout_ms: Int = 30000,
+}
+
+fn main() -> Int effects { io } {
+    let cfg = ServerConfig { port: 9090 };
+    let defaults = ServerConfig::default();
+    let score = cfg.port + defaults.max_connections / 1000 + defaults.timeout_ms / 10000;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "9094\n");
+}
+
+#[test]
+fn exec_struct_defaults_allow_const_arithmetic() {
+    let src = r#"
+import std.io;
+
+const BASE: Int = 40;
+
+struct Config {
+    port: Int = BASE + 2,
+    retries: Int = 1 + 2 * 3,
+}
+
+fn main() -> Int effects { io } {
+    let cfg = Config { };
+    print_int(cfg.port + cfg.retries);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "49\n");
+}
+
+#[test]
 fn exec_option_methods_map_and_then_unwrap_or_chain() {
     let src = r#"
 import std.io;

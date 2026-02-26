@@ -1,0 +1,16 @@
+import std.io;
+
+struct ServerConfig {
+    host: String = "0.0.0.0",
+    port: Int = 8080,
+    max_connections: Int = 1000,
+    timeout_ms: Int = 30000,
+}
+
+fn main() -> Int effects { io } {
+    let config = ServerConfig { port: 9090 };
+    let defaults = ServerConfig::default();
+    let score = config.port + defaults.max_connections / 1000 + defaults.timeout_ms / 10000;
+    print_int(score);
+    0
+}

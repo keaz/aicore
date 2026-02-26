@@ -771,6 +771,15 @@ Verifier-focused examples:
   - `examples/ops/observability_demo/`
   - `examples/ops/sandbox_profiles/`
 
+## Struct Default Fields (ERGO-T5 #171)
+
+- Parser/IR support `field: Type = expr` in struct declarations.
+- Typechecker enforces compile-time-evaluable defaults and validates default type compatibility.
+- Struct literals may omit fields that define defaults; non-default fields remain required.
+- Builder synthesizes `TypeName::default()` for structs where all fields declare defaults.
+- LLVM codegen materializes omitted fields from evaluated default expressions.
+- Example: `examples/core/struct_defaults.aic`.
+
 ## Validation Inventory
 
 ### Tests

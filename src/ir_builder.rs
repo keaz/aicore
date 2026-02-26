@@ -13,11 +13,18 @@ pub fn build(program: &ast::Program) -> ir::Program {
         type_map: BTreeMap::new(),
     };
 
-    let items = program
-        .items
-        .iter()
-        .map(|item| builder.lower_item(item))
-        .collect::<Vec<_>>();
+    let mut items = Vec::new();
+    for item in &program.items {
+        match item {
+            ast::Item::Struct(def) => {
+                items.push(ir::Item::Struct(builder.lower_struct(def)));
+                if let Some(default_fn) = builder.lower_struct_default_fn(def) {
+                    items.push(ir::Item::Function(default_fn));
+                }
+            }
+            _ => items.push(builder.lower_item(item)),
+        }
+    }
 
     ir::Program {
         schema_version: ir::CURRENT_IR_SCHEMA_VERSION,
@@ -102,6 +109,10 @@ impl Builder {
                     symbol: sym,
                     name: field.name.clone(),
                     ty: self.lower_type(&field.ty),
+                    default_value: field
+                        .default_value
+                        .as_ref()
+                        .map(|expr| self.lower_expr(expr)),
                     span: field.span,
                 }
             })
@@ -121,6 +132,70 @@ impl Builder {
             invariant: def.invariant.as_ref().map(|e| self.lower_expr(e)),
             span: def.span,
         }
+    }
+
+    fn lower_struct_default_fn(&mut self, def: &ast::StructDef) -> Option<ir::Function> {
+        if !def.fields.iter().all(|field| field.default_value.is_some()) {
+            return None;
+        }
+
+        let name = format!("{}::default", def.name);
+        let symbol = self.push_symbol(&name, ir::SymbolKind::Function, def.span);
+        let ret_type = self.lower_type(&ast::TypeExpr {
+            kind: ast::TypeKind::Named {
+                name: def.name.clone(),
+                args: def
+                    .generics
+                    .iter()
+                    .map(|generic| ast::TypeExpr {
+                        kind: ast::TypeKind::Named {
+                            name: generic.name.clone(),
+                            args: Vec::new(),
+                        },
+                        span: generic.span,
+                    })
+                    .collect(),
+            },
+            span: def.span,
+        });
+
+        let body = ir::Block {
+            node: self.next_node_id(),
+            stmts: Vec::new(),
+            tail: Some(Box::new(ir::Expr {
+                node: self.next_node_id(),
+                kind: ir::ExprKind::StructInit {
+                    name: def.name.clone(),
+                    fields: Vec::new(),
+                },
+                span: def.span,
+            })),
+            span: def.span,
+        };
+
+        Some(ir::Function {
+            symbol,
+            name,
+            is_async: false,
+            is_unsafe: false,
+            is_extern: false,
+            extern_abi: None,
+            generics: def
+                .generics
+                .iter()
+                .map(|g| ir::GenericParam {
+                    name: g.name.clone(),
+                    bounds: g.bounds.clone(),
+                })
+                .collect(),
+            params: Vec::new(),
+            ret_type,
+            effects: Vec::new(),
+            requires: None,
+            ensures: None,
+            body,
+            span: def.span,
+        })
     }
 
     fn lower_enum(&mut self, def: &ast::EnumDef) -> ir::EnumDef {
@@ -641,5 +716,52 @@ enum Pair[T, U] { Mk(Result[T, U]) }
             }
         }
         assert!(saw_fn && saw_struct && saw_enum);
+    }
+
+    #[test]
+    fn lowers_struct_field_defaults_to_ir() {
+        let src = r#"
+struct Config {
+    port: Int = 40 + 2,
+    enabled: Bool = true,
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "parse diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let strukt = ir
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ir::Item::Struct(s) if s.name == "Config" => Some(s),
+                _ => None,
+            })
+            .expect("struct Config");
+        assert!(matches!(
+            strukt.fields[0]
+                .default_value
+                .as_ref()
+                .map(|expr| &expr.kind),
+            Some(crate::ir::ExprKind::Binary {
+                op: crate::ast::BinOp::Add,
+                ..
+            })
+        ));
+        assert!(matches!(
+            strukt.fields[1]
+                .default_value
+                .as_ref()
+                .map(|expr| &expr.kind),
+            Some(crate::ir::ExprKind::Bool(true))
+        ));
+        let synthesized_default = ir
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ir::Item::Function(f) if f.name == "Config::default" => Some(f),
+                _ => None,
+            })
+            .expect("synthesized Config::default");
+        assert!(synthesized_default.params.is_empty());
     }
 }

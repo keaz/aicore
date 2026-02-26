@@ -43,6 +43,7 @@ pub struct StructInfo {
     pub symbol: ir::SymbolId,
     pub generics: Vec<String>,
     pub fields: BTreeMap<String, ir::TypeId>,
+    pub default_fields: BTreeSet<String>,
     pub invariant: Option<ir::Expr>,
     pub span: crate::span::Span,
 }
@@ -262,6 +263,7 @@ pub fn resolve_with_item_modules(
                 }
 
                 let mut fields = BTreeMap::new();
+                let mut default_fields = BTreeSet::new();
                 for field in &s.fields {
                     if fields.insert(field.name.clone(), field.ty).is_some() {
                         diagnostics.push(Diagnostic::error(
@@ -271,12 +273,16 @@ pub fn resolve_with_item_modules(
                             field.span,
                         ));
                     }
+                    if field.default_value.is_some() {
+                        default_fields.insert(field.name.clone());
+                    }
                 }
 
                 structs.entry(s.name.clone()).or_insert_with(|| StructInfo {
                     symbol: s.symbol,
                     generics: s.generics.iter().map(|g| g.name.clone()).collect(),
                     fields,
+                    default_fields,
                     invariant: s.invariant.clone(),
                     span: s.span,
                 });

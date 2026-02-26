@@ -531,6 +531,11 @@ impl<'a> Checker<'a> {
     }
 
     fn validate_const_initializer(&mut self, const_name: &str, expr: &ir::Expr) {
+        let context = format!("const '{}' initializer", const_name);
+        self.validate_compile_time_expr(&context, expr);
+    }
+
+    fn validate_compile_time_expr(&mut self, context: &str, expr: &ir::Expr) {
         match &expr.kind {
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
@@ -543,8 +548,8 @@ impl<'a> Checker<'a> {
                         Diagnostic::error(
                             "E1287",
                             format!(
-                                "const '{}' initializer can only reference other constants, found '{}'",
-                                const_name, name
+                                "{} can only reference other constants, found '{}'",
+                                context, name
                             ),
                             self.file,
                             expr.span,
@@ -557,21 +562,18 @@ impl<'a> Checker<'a> {
                 crate::ast::UnaryOp::Neg
                 | crate::ast::UnaryOp::Not
                 | crate::ast::UnaryOp::BitNot => {
-                    self.validate_const_initializer(const_name, inner);
+                    self.validate_compile_time_expr(context, inner);
                 }
             },
             ir::ExprKind::Binary { lhs, rhs, .. } => {
-                self.validate_const_initializer(const_name, lhs);
-                self.validate_const_initializer(const_name, rhs);
+                self.validate_compile_time_expr(context, lhs);
+                self.validate_compile_time_expr(context, rhs);
             }
             ir::ExprKind::Call { .. } => {
                 self.diagnostics.push(
                     Diagnostic::error(
                         "E1287",
-                        format!(
-                            "const '{}' initializer cannot call functions at compile time",
-                            const_name
-                        ),
+                        format!("{} cannot call functions at compile time", context),
                         self.file,
                         expr.span,
                     )
@@ -583,8 +585,8 @@ impl<'a> Checker<'a> {
                     Diagnostic::error(
                         "E1287",
                         format!(
-                            "const '{}' initializer only supports literals, unary/binary operators, and const references",
-                            const_name
+                            "{} only supports literals, unary/binary operators, and const references",
+                            context
                         ),
                         self.file,
                         expr.span,
@@ -2120,6 +2122,36 @@ impl<'a> Checker<'a> {
                     .or_insert_with(|| ty.clone());
             }
             self.check_generic_arity(&ty, field.span);
+
+            if let Some(default_expr) = &field.default_value {
+                let context = format!("default value for field '{}.{}'", strukt.name, field.name);
+                self.validate_compile_time_expr(&context, default_expr);
+
+                let mut locals = BTreeMap::new();
+                let mut ctx = ExprContext::default();
+                let default_ty = self.check_expr_with_expected(
+                    default_expr,
+                    &mut locals,
+                    &BTreeSet::new(),
+                    &mut ctx,
+                    true,
+                    Some(&ty),
+                );
+                if contains_unresolved_type(&ty) {
+                    self.observe_struct_field_hole(&strukt.name, &field.name, &default_ty);
+                }
+                if !self.types_compatible(&ty, &default_ty) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1226",
+                        format!(
+                            "default value for field '{}.{}' expects '{}', found '{}'",
+                            strukt.name, field.name, ty, default_ty
+                        ),
+                        self.file,
+                        default_expr.span,
+                    ));
+                }
+            }
         }
 
         if let Some(inv) = &strukt.invariant {
@@ -2699,6 +2731,14 @@ impl<'a> Checker<'a> {
                         expected_err.as_deref(),
                     );
                     return format!("Result[<?>, {}]", err);
+                }
+
+                if !qualified && !self.functions.contains_key(&name) {
+                    if let Some(default_ty) =
+                        self.check_struct_default_call(&name, args, expr.span, expected_ty)
+                    {
+                        return default_ty;
+                    }
                 }
 
                 let mut resolved_module: Option<String> = None;
@@ -4087,7 +4127,9 @@ impl<'a> Checker<'a> {
                 }
 
                 for field in info.fields.keys() {
-                    if !fields.iter().any(|(name, _, _)| name == field) {
+                    if !fields.iter().any(|(name, _, _)| name == field)
+                        && !info.default_fields.contains(field)
+                    {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1227",
@@ -4549,6 +4591,95 @@ impl<'a> Checker<'a> {
             .with_help("define an inherent method or add a trait bound that declares this method"),
         );
         "<?>".to_string()
+    }
+
+    fn check_struct_default_call(
+        &mut self,
+        callable_name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&str>,
+    ) -> Option<String> {
+        let (struct_name, method_name) = callable_name.rsplit_once("::")?;
+        if method_name != "default" {
+            return None;
+        }
+
+        let Some(info) = self.resolution.structs.get(struct_name).cloned() else {
+            return None;
+        };
+
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!(
+                    "function '{}' expects 0 args, got {}",
+                    callable_name,
+                    args.len()
+                ),
+                self.file,
+                span,
+            ));
+            return Some("<?>".to_string());
+        }
+
+        if info.default_fields.len() != info.fields.len() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1218",
+                    format!(
+                        "auto-generated '{}' is unavailable because not all fields have defaults",
+                        callable_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("add default values for every struct field"),
+            );
+            return Some("<?>".to_string());
+        }
+
+        if info.generics.is_empty() {
+            return Some(struct_name.to_string());
+        }
+
+        if let Some(expected) = expected_ty {
+            let expected_norm = self.normalize_type(expected);
+            if base_type_name(&expected_norm) == struct_name {
+                let applied = extract_generic_args(&expected_norm).unwrap_or_default();
+                if applied.len() == info.generics.len() {
+                    if applied.iter().all(|ty| !contains_unresolved_type(ty)) {
+                        self.record_instantiation(
+                            ir::GenericInstantiationKind::Struct,
+                            struct_name,
+                            Some(info.symbol),
+                            &applied,
+                            span,
+                        );
+                    }
+                    return Some(expected_norm);
+                }
+            }
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1212",
+                format!(
+                    "cannot infer generic parameters for auto-generated '{}'",
+                    callable_name
+                ),
+                self.file,
+                span,
+            )
+            .with_help("add a type annotation such as `let x: Struct[T] = Struct::default();`"),
+        );
+
+        Some(format!(
+            "{}[{}]",
+            struct_name,
+            vec!["<?>"; info.generics.len()].join(", ")
+        ))
     }
 
     fn find_trait_bound_method(
@@ -6318,6 +6449,132 @@ fn main() -> Int {
             .holes
             .iter()
             .any(|hole| hole.context == "let binding 'out'" && hole.inferred == "Int"));
+    }
+
+    #[test]
+    fn struct_defaults_allow_omitted_fields_and_auto_default_call() {
+        let src = r#"
+struct Config {
+    port: Int = 40 + 2,
+    enabled: Bool = true,
+}
+
+fn main() -> Int {
+    let c = Config { enabled: false };
+    let d = Config::default();
+    if c.port == 42 && d.enabled { 1 } else { 0 }
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics
+                .iter()
+                .any(|diag| matches!(diag.severity, Severity::Error)),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn struct_literal_still_requires_non_default_fields() {
+        let src = r#"
+struct Config {
+    port: Int = 1,
+    retries: Int,
+}
+
+fn main() -> Int {
+    let c = Config { };
+    c.retries
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.iter().any(|diag| diag.code == "E1227"
+            && diag.message.contains("missing field")
+            && diag.message.contains("Config.retries")));
+    }
+
+    #[test]
+    fn struct_default_call_requires_all_fields_to_have_defaults() {
+        let src = r#"
+struct Config {
+    port: Int = 1,
+    retries: Int,
+}
+
+fn main() -> Int {
+    let c = Config::default();
+    c.port
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.iter().any(|diag| {
+            diag.code == "E1218"
+                && diag.message.contains("auto-generated")
+                && diag.message.contains("Config::default")
+        }));
+    }
+
+    #[test]
+    fn struct_default_expression_must_be_compile_time_evaluable() {
+        let src = r#"
+fn runtime() -> Int { 1 }
+
+struct Bad {
+    value: Int = runtime(),
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.iter().any(|diag| {
+            diag.code == "E1287"
+                && diag.message.contains("default value for field")
+                && diag.message.contains("Bad.value")
+                && diag.message.contains("cannot call functions")
+        }));
+    }
+
+    #[test]
+    fn struct_default_expression_type_must_match_field() {
+        let src = r#"
+struct Bad {
+    value: Bool = 1,
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.iter().any(|diag| {
+            diag.code == "E1226"
+                && diag.message.contains("default value for field")
+                && diag.message.contains("Bad.value")
+                && diag.message.contains("expects")
+                && diag.message.contains("Bool")
+                && diag.message.contains("found")
+                && diag.message.contains("Int")
+        }));
     }
 
     #[test]

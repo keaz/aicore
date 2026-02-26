@@ -72,6 +72,7 @@ struct EnumVariantType {
 struct StructTemplate {
     generics: Vec<String>,
     fields: Vec<(String, String)>,
+    field_defaults: BTreeMap<String, ir::Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -1079,11 +1080,22 @@ fn collect_type_templates(
                         (field.name.clone(), ty)
                     })
                     .collect::<Vec<_>>();
+                let field_defaults = strukt
+                    .fields
+                    .iter()
+                    .filter_map(|field| {
+                        field
+                            .default_value
+                            .as_ref()
+                            .map(|expr| (field.name.clone(), expr.clone()))
+                    })
+                    .collect::<BTreeMap<_, _>>();
                 struct_templates.insert(
                     strukt.name.clone(),
                     StructTemplate {
                         generics: strukt.generics.iter().map(|g| g.name.clone()).collect(),
                         fields,
+                        field_defaults,
                     },
                 );
             }
@@ -23626,6 +23638,17 @@ impl<'a> Generator<'a> {
                         .clone()
                         .unwrap_or_else(|| default_value(&field.ty))
                 }
+            } else if let Some(default_expr) = template.field_defaults.get(&field.name) {
+                if let Some(default_field_value) =
+                    self.eval_struct_field_default(name, &field.name, default_expr, &field.ty, fctx)
+                {
+                    default_field_value
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&field.ty))
+                } else {
+                    default_value(&field.ty)
+                }
             } else {
                 self.diagnostics.push(Diagnostic::error(
                     "E5004",
@@ -26123,6 +26146,35 @@ impl<'a> Generator<'a> {
             },
             ConstValue::String(v) => self.string_literal(v, fctx),
         }
+    }
+
+    fn eval_struct_field_default(
+        &mut self,
+        struct_name: &str,
+        field_name: &str,
+        expr: &ir::Expr,
+        expected_ty: &LType,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let context = format!("default value for field '{}.{}'", struct_name, field_name);
+        let value = self.eval_const_expr(&context, expr, &mut Vec::new())?;
+        let actual_ty = self.const_value_ty(&value);
+        if &actual_ty != expected_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5004",
+                format!(
+                    "default value for field '{}.{}' expects '{}', found '{}'",
+                    struct_name,
+                    field_name,
+                    render_type(expected_ty),
+                    render_type(&actual_ty)
+                ),
+                self.file,
+                expr.span,
+            ));
+            return None;
+        }
+        Some(self.runtime_value_from_const(&value, fctx))
     }
 
     fn normalize_type_repr(&mut self, ty: &str, span: crate::span::Span) -> Option<String> {
