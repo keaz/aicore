@@ -20,6 +20,13 @@ cargo run --quiet --bin aic -- verify-intrinsics std --json
 
 This check fails for missing lowering mappings, signature drift, or unsupported intrinsic ABI metadata.
 
+Guard against reintroducing source-level intrinsic stubs in AGX1 policy modules:
+
+```bash
+make intrinsic-placeholder-guard
+```
+
+
 ## API Migration Highlights
 
 ### 1. `std.io`: richer interactive and stream APIs

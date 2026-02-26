@@ -153,6 +153,7 @@ Agents must handle `Option` branches explicitly; exhaustiveness checks catch mis
 | API docs generation | Implemented (`aic doc`) |
 | Std compatibility/deprecation policy lint | Implemented (`aic std-compat --check`) |
 | Intrinsic binding verification gate | Implemented (`aic verify-intrinsics --json`) |
+| Intrinsic placeholder stub policy gate | Implemented (`make intrinsic-placeholder-guard`) |
 | CLI contract + deterministic exits | Implemented (`aic contract`) |
 | SARIF diagnostics export | Implemented (`aic check --sarif`) |
 | Diagnostic explain command | Implemented (`aic explain`) |
@@ -199,6 +200,7 @@ Useful targets:
 
 - `make ci-fast` (quick pre-commit loop)
 - `make check` (full validation except fmt/lint)
+- `make intrinsic-placeholder-guard`
 - `make examples-check`
 - `make examples-run`
 - `make cli-smoke`

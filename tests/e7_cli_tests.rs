@@ -3499,3 +3499,76 @@ fn test_rand_and_time_are_deterministic() -> () effects { io, rand, time } {
         report_file.display()
     );
 }
+
+#[test]
+fn intrinsic_placeholder_guard_policy_passes_and_rejects_stubs() {
+    let root = repo_root();
+    let script = root.join("scripts/ci/intrinsic_placeholder_guard.py");
+
+    let ok = Command::new("python3")
+        .arg(&script)
+        .current_dir(&root)
+        .output()
+        .expect("run intrinsic placeholder guard");
+    assert!(
+        ok.status.success(),
+        "expected guard success\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let fixture = tempdir().expect("fixture");
+    let bad_file = fixture.path().join("stub_intrinsic.aic");
+    fs::write(
+        &bad_file,
+        concat!(
+            "module guard.bad;\n",
+            "fn aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write guard fixture");
+
+    let bad_path = bad_file.to_string_lossy().to_string();
+    let fail = Command::new("python3")
+        .arg(&script)
+        .arg("--path")
+        .arg(&bad_path)
+        .current_dir(&root)
+        .output()
+        .expect("run intrinsic placeholder guard failure case");
+    assert_eq!(fail.status.code(), Some(1));
+    let fail_stderr = String::from_utf8_lossy(&fail.stderr);
+    assert!(
+        fail_stderr.contains("AGX1P001"),
+        "expected AGX1P001 in stderr:\n{}",
+        fail_stderr
+    );
+    assert!(
+        fail_stderr.contains("declaration-only"),
+        "expected declaration-only guidance in stderr:\n{}",
+        fail_stderr
+    );
+    assert!(
+        fail_stderr.contains("remediation:"),
+        "expected remediation guidance in stderr:\n{}",
+        fail_stderr
+    );
+
+    let exempt = Command::new("python3")
+        .arg(&script)
+        .arg("--path")
+        .arg(&bad_path)
+        .arg("--exempt")
+        .arg(&bad_path)
+        .current_dir(&root)
+        .output()
+        .expect("run intrinsic placeholder guard exemption case");
+    assert!(
+        exempt.status.success(),
+        "expected exemption success\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&exempt.stdout),
+        String::from_utf8_lossy(&exempt.stderr)
+    );
+}

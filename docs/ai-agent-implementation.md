@@ -285,6 +285,7 @@ Canonical IR/JSON excerpt:
   "intrinsic_abi": "runtime"
 }
 ```
+
 ### Intrinsic binding verifier (AGX1-T3)
 
 `aic verify-intrinsics [INPUT] --json` validates intrinsic declarations against backend lowering expectations before release.
@@ -303,7 +304,10 @@ Examples:
 ```bash
 aic verify-intrinsics std --json
 aic verify-intrinsics examples/verify/intrinsics/invalid_bindings.aic --json
+make intrinsic-placeholder-guard
 ```
+
+`make intrinsic-placeholder-guard` enforces that AGX1 runtime-bound std intrinsics remain declaration-only in policy modules (`std/concurrent.aic`, `std/net.aic`, `std/proc.aic`).
 
 ### Registry provenance and trust policy (PKG-T4)
 
