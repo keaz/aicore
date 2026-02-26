@@ -780,6 +780,21 @@ Verifier-focused examples:
 - LLVM codegen materializes omitted fields from evaluated default expressions.
 - Example: `examples/core/struct_defaults.aic`.
 
+## Char Type and std.char (ERGO-T3 #169)
+
+- `Char` is a primitive Unicode scalar value lowered to LLVM `i32`.
+- Lexer/parser accept single-quoted literals (for example `'a'`, `'😀'`, and escapes).
+- `std/char.aic` exposes runtime-backed APIs:
+  - `is_digit(c: Char) -> Bool`
+  - `is_alpha(c: Char) -> Bool`
+  - `is_whitespace(c: Char) -> Bool`
+  - `char_to_int(c: Char) -> Int`
+  - `int_to_char(n: Int) -> Option[Char]`
+  - `chars(s: String) -> Vec[Char]`
+  - `from_chars(cs: Vec[Char]) -> String`
+- JSON serde support encodes `Char` as integer codepoints and rejects invalid scalar values on decode.
+- Reference example: `examples/data/char_ops.aic` (wired into `scripts/ci/examples.sh` check/run sets).
+
 ## Validation Inventory
 
 ### Tests
@@ -821,6 +836,7 @@ Verifier-focused examples:
 - `examples/e8/large_project_bench/`
 - `examples/e9/sandbox_smoke.aic`
 - `examples/data/bitwise_protocol.aic`
+- `examples/data/char_ops.aic`
 - `examples/io/tcp_echo_client.aic`
 
 Examples are integrated into `scripts/ci/examples.sh`.

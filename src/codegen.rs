@@ -29,6 +29,7 @@ enum LType {
     Int,
     Float,
     Bool,
+    Char,
     Unit,
     String,
     Fn(FnLayoutType),
@@ -114,6 +115,7 @@ enum ConstValue {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Char(char),
     Unit,
     String(String),
 }
@@ -1391,6 +1393,13 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare void @aic_rt_string_format(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
+        text.push_str("declare i64 @aic_rt_char_is_digit(i32)\n");
+        text.push_str("declare i64 @aic_rt_char_is_alpha(i32)\n");
+        text.push_str("declare i64 @aic_rt_char_is_whitespace(i32)\n");
+        text.push_str("declare i64 @aic_rt_char_to_int(i32)\n");
+        text.push_str("declare i64 @aic_rt_char_int_to_char(i64, i32*)\n");
+        text.push_str("declare void @aic_rt_char_chars(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_char_from_chars(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_math_abs(i64)\n");
         text.push_str("declare double @aic_rt_math_abs_float(double)\n");
         text.push_str("declare i64 @aic_rt_math_min(i64, i64)\n");
@@ -3123,6 +3132,10 @@ impl<'a> Generator<'a> {
                 ty: LType::Bool,
                 repr: Some(if *v { "1".to_string() } else { "0".to_string() }),
             }),
+            ir::ExprKind::Char(v) => Some(Value {
+                ty: LType::Char,
+                repr: Some((*v as u32).to_string()),
+            }),
             ir::ExprKind::String(s) => Some(self.string_literal(s, fctx)),
             ir::ExprKind::Unit => Some(Value {
                 ty: LType::Unit,
@@ -3418,6 +3431,18 @@ impl<'a> Generator<'a> {
                         let cmp = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
                         (cmp, "i1")
                     }
+                    (LType::Char, LType::Char) => {
+                        let cmp = match op {
+                            BinOp::Eq => "eq",
+                            BinOp::Ne => "ne",
+                            BinOp::Lt => "slt",
+                            BinOp::Le => "sle",
+                            BinOp::Gt => "sgt",
+                            BinOp::Ge => "sge",
+                            _ => unreachable!(),
+                        };
+                        (cmp, "i32")
+                    }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
                             "E5006",
@@ -3628,6 +3653,9 @@ impl<'a> Generator<'a> {
         }
 
         if let Some(result) = self.gen_string_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_char_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
         if let Some(result) = self.gen_math_builtin_call(builtin_name, args, span, fctx) {
@@ -12526,6 +12554,323 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_char_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "is_digit" | "aic_char_is_digit_intrinsic" => "is_digit",
+            "is_alpha" | "aic_char_is_alpha_intrinsic" => "is_alpha",
+            "is_whitespace" | "aic_char_is_whitespace_intrinsic" => "is_whitespace",
+            "char_to_int" | "aic_char_to_int_intrinsic" => "char_to_int",
+            "int_to_char" | "aic_char_int_to_char_intrinsic" => "int_to_char",
+            "chars" | "aic_char_chars_intrinsic" => "chars",
+            "from_chars" | "aic_char_from_chars_intrinsic" => "from_chars",
+            _ => return None,
+        };
+
+        match canonical {
+            "is_digit" if self.sig_matches_shape(name, &["Char"], "Bool") => Some(
+                self.gen_char_bool_unary_call("is_digit", "aic_rt_char_is_digit", args, span, fctx),
+            ),
+            "is_alpha" if self.sig_matches_shape(name, &["Char"], "Bool") => Some(
+                self.gen_char_bool_unary_call("is_alpha", "aic_rt_char_is_alpha", args, span, fctx),
+            ),
+            "is_whitespace" if self.sig_matches_shape(name, &["Char"], "Bool") => {
+                Some(self.gen_char_bool_unary_call(
+                    "is_whitespace",
+                    "aic_rt_char_is_whitespace",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "char_to_int" if self.sig_matches_shape(name, &["Char"], "Int") => {
+                Some(self.gen_char_to_int_call(args, span, fctx))
+            }
+            "int_to_char" if self.sig_matches_shape(name, &["Int"], "Option[Char]") => {
+                Some(self.gen_char_int_to_char_call(name, args, span, fctx))
+            }
+            "chars" if self.sig_matches_shape(name, &["String"], "Vec[Char]") => {
+                Some(self.gen_char_chars_call(name, args, span, fctx))
+            }
+            "from_chars" if self.sig_matches_shape(name, &["Vec[Char]"], "String") => {
+                Some(self.gen_char_from_chars_call(args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn gen_char_bool_unary_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Char {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Char"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i32 {})",
+            raw,
+            runtime_fn,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", reg, raw));
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_char_to_int_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "char_to_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Char {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "char_to_int expects Char",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_char_to_int(i32 {})",
+            reg,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(reg),
+        })
+    }
+
+    fn gen_char_int_to_char_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "int_to_char expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "int_to_char expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+
+        let out_char_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i32", out_char_slot));
+        fctx.lines
+            .push(format!("  store i32 0, i32* {}", out_char_slot));
+
+        let found = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_char_int_to_char(i64 {}, i32* {})",
+            found,
+            value.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_char_slot
+        ));
+
+        let out_char = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i32, i32* {}", out_char, out_char_slot));
+
+        let has_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_value, found));
+
+        let option_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            })?;
+
+        self.wrap_option_with_condition(
+            &option_ty,
+            Value {
+                ty: LType::Char,
+                repr: Some(out_char),
+            },
+            &has_value,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_char_chars_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "chars expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "chars expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let out_items_slot = self.new_temp();
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_char_chars(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            ptr, len, cap, out_items_slot, out_count_slot
+        ));
+        let out_items = self.new_temp();
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+
+        let result_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            })?;
+
+        self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
+    }
+
+    fn gen_char_from_chars_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "from_chars expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let chars_vec = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&chars_vec.ty, "from_chars", args[0].span)?;
+        if elem_ty != LType::Char {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "from_chars expects Vec[Char]",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+
+        let (chars_ptr_int, chars_len, chars_cap) =
+            self.vec_parts(&chars_vec, args[0].span, fctx)?;
+        let chars_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = inttoptr i64 {} to i8*",
+            chars_ptr, chars_ptr_int
+        ));
+
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_char_from_chars(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            chars_ptr, chars_len, chars_cap, out_ptr_slot, out_len_slot
+        ));
+
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
     fn gen_string_bool_binary_call(
         &mut self,
         name: &str,
@@ -20732,6 +21077,7 @@ impl<'a> Generator<'a> {
             LType::Int => self.json_encode_int_runtime(value, span, fctx),
             LType::Float => self.json_encode_float_runtime(value, span, fctx),
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
+            LType::Char => self.json_encode_char_runtime(value, span, fctx),
             LType::String => self.json_encode_string_runtime(value, span, fctx),
             LType::Unit => self.json_encode_null_runtime(span, fctx),
             LType::Fn(_) => {
@@ -21008,6 +21354,7 @@ impl<'a> Generator<'a> {
             LType::Int => self.json_decode_int_runtime(json, span, fctx),
             LType::Float => self.json_decode_float_runtime(json, span, fctx),
             LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
+            LType::Char => self.json_decode_char_runtime(json, span, fctx),
             LType::String => self.json_decode_string_runtime(json, span, fctx),
             LType::Unit => {
                 let kind_tag = self.json_kind_tag_i32(json, span, fctx)?;
@@ -21370,6 +21717,7 @@ impl<'a> Generator<'a> {
             LType::Int => Some("{\"kind\":\"int\"}".to_string()),
             LType::Float => Some("{\"kind\":\"float\"}".to_string()),
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
+            LType::Char => Some("{\"kind\":\"char\"}".to_string()),
             LType::String => Some("{\"kind\":\"string\"}".to_string()),
             LType::Unit => Some("{\"kind\":\"unit\"}".to_string()),
             LType::Fn(layout) => Some(format!(
@@ -21459,6 +21807,34 @@ impl<'a> Generator<'a> {
             return None;
         };
         Some(ty)
+    }
+
+    fn json_encode_char_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        if value.ty != LType::Char {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects Char input",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let char_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = sext i32 {} to i64",
+            char_i64,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let int_value = Value {
+            ty: LType::Int,
+            repr: Some(char_i64),
+        };
+        self.json_encode_int_runtime(&int_value, span, fctx)
     }
 
     fn json_encode_int_runtime(
@@ -21834,6 +22210,73 @@ impl<'a> Generator<'a> {
             value: Value {
                 ty: LType::Int,
                 repr: Some(out),
+            },
+            err_code,
+        })
+    }
+
+    fn json_decode_char_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let decoded_int = self.json_decode_int_runtime(value, span, fctx)?;
+        let int_repr = decoded_int
+            .value
+            .repr
+            .clone()
+            .unwrap_or_else(|| "0".to_string());
+
+        let non_negative = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp sge i64 {}, 0", non_negative, int_repr));
+        let within_max = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp sle i64 {}, 1114111",
+            within_max, int_repr
+        ));
+        let in_scalar_range = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = and i1 {}, {}",
+            in_scalar_range, non_negative, within_max
+        ));
+
+        let below_surrogate = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp slt i64 {}, 55296",
+            below_surrogate, int_repr
+        ));
+        let above_surrogate = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp sgt i64 {}, 57343",
+            above_surrogate, int_repr
+        ));
+        let outside_surrogate = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = or i1 {}, {}",
+            outside_surrogate, below_surrogate, above_surrogate
+        ));
+
+        let valid = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = and i1 {}, {}",
+            valid, in_scalar_range, outside_surrogate
+        ));
+        let char_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 2",
+            char_err, valid
+        ));
+        let err_code = self.combine_error_codes(&decoded_int.err_code, &char_err, fctx);
+
+        let char_i32 = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = trunc i64 {} to i32", char_i32, int_repr));
+        Some(ValueWithErr {
+            value: Value {
+                ty: LType::Char,
+                repr: Some(char_i32),
             },
             err_code,
         })
@@ -25695,6 +26138,7 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Int(v) => Some(ConstValue::Int(*v)),
             ir::ExprKind::Float(v) => Some(ConstValue::Float(*v)),
             ir::ExprKind::Bool(v) => Some(ConstValue::Bool(*v)),
+            ir::ExprKind::Char(v) => Some(ConstValue::Char(*v)),
             ir::ExprKind::String(v) => Some(ConstValue::String(v.clone())),
             ir::ExprKind::Unit => Some(ConstValue::Unit),
             ir::ExprKind::Var(name) => {
@@ -26061,6 +26505,18 @@ impl<'a> Generator<'a> {
                         };
                         Some(ConstValue::Bool(result))
                     }
+                    (ConstValue::Char(a), ConstValue::Char(b)) => {
+                        let result = match op {
+                            BinOp::Eq => a == b,
+                            BinOp::Ne => a != b,
+                            BinOp::Lt => a < b,
+                            BinOp::Le => a <= b,
+                            BinOp::Gt => a > b,
+                            BinOp::Ge => a >= b,
+                            _ => unreachable!(),
+                        };
+                        Some(ConstValue::Bool(result))
+                    }
                     (ConstValue::Bool(a), ConstValue::Bool(b))
                         if matches!(op, BinOp::Eq | BinOp::Ne) =>
                     {
@@ -26121,6 +26577,7 @@ impl<'a> Generator<'a> {
             ConstValue::Int(_) => LType::Int,
             ConstValue::Float(_) => LType::Float,
             ConstValue::Bool(_) => LType::Bool,
+            ConstValue::Char(_) => LType::Char,
             ConstValue::Unit => LType::Unit,
             ConstValue::String(_) => LType::String,
         }
@@ -26139,6 +26596,10 @@ impl<'a> Generator<'a> {
             ConstValue::Bool(v) => Value {
                 ty: LType::Bool,
                 repr: Some(if *v { "1".to_string() } else { "0".to_string() }),
+            },
+            ConstValue::Char(v) => Value {
+                ty: LType::Char,
+                repr: Some((*v as u32).to_string()),
             },
             ConstValue::Unit => Value {
                 ty: LType::Unit,
@@ -26294,6 +26755,7 @@ impl<'a> Generator<'a> {
             "Int" => return Some(LType::Int),
             "Float" => return Some(LType::Float),
             "Bool" => return Some(LType::Bool),
+            "Char" => return Some(LType::Char),
             "String" => return Some(LType::String),
             "()" => return Some(LType::Unit),
             _ => {}
@@ -26924,6 +27386,7 @@ fn collect_closure_captures_expr(
         ir::ExprKind::Int(_)
         | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit => {}
     }
@@ -27080,6 +27543,13 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("string", "bool_to_string") => Some("aic_string_bool_to_string_intrinsic"),
         ("string", "join") => Some("aic_string_join_intrinsic"),
         ("string", "format") => Some("aic_string_format_intrinsic"),
+        ("char", "is_digit") => Some("aic_char_is_digit_intrinsic"),
+        ("char", "is_alpha") => Some("aic_char_is_alpha_intrinsic"),
+        ("char", "is_whitespace") => Some("aic_char_is_whitespace_intrinsic"),
+        ("char", "char_to_int") => Some("aic_char_to_int_intrinsic"),
+        ("char", "int_to_char") => Some("aic_char_int_to_char_intrinsic"),
+        ("char", "chars") => Some("aic_char_chars_intrinsic"),
+        ("char", "from_chars") => Some("aic_char_from_chars_intrinsic"),
         ("math", "abs") => Some("aic_math_abs_intrinsic"),
         ("math", "abs_float") => Some("aic_math_abs_float_intrinsic"),
         ("math", "min") => Some("aic_math_min_intrinsic"),
@@ -27195,6 +27665,7 @@ fn llvm_type(ty: &LType) -> String {
         LType::Int => "i64".to_string(),
         LType::Float => "double".to_string(),
         LType::Bool => "i1".to_string(),
+        LType::Char => "i32".to_string(),
         LType::Unit => "void".to_string(),
         LType::String => "{ i8*, i64, i64 }".to_string(),
         LType::Fn(_) => "{ i8*, i8* }".to_string(),
@@ -27236,6 +27707,7 @@ fn default_value(ty: &LType) -> String {
         LType::Int => "0".to_string(),
         LType::Float => llvm_float_literal(0.0_f64),
         LType::Bool => "0".to_string(),
+        LType::Char => "0".to_string(),
         LType::Unit => String::new(),
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
         LType::Fn(_) => "{ i8* null, i8* null }".to_string(),
@@ -27307,6 +27779,7 @@ fn render_type(ty: &LType) -> String {
         LType::Int => "Int".to_string(),
         LType::Float => "Float".to_string(),
         LType::Bool => "Bool".to_string(),
+        LType::Char => "Char".to_string(),
         LType::Unit => "()".to_string(),
         LType::String => "String".to_string(),
         LType::Fn(layout) => layout.repr.clone(),
@@ -27463,6 +27936,7 @@ fn const_value_name(value: &ConstValue) -> &'static str {
         ConstValue::Int(_) => "Int",
         ConstValue::Float(_) => "Float",
         ConstValue::Bool(_) => "Bool",
+        ConstValue::Char(_) => "Char",
         ConstValue::Unit => "()",
         ConstValue::String(_) => "String",
     }
@@ -32397,6 +32871,68 @@ static int aic_rt_string_utf8_is_valid(const char* ptr, size_t len) {
     return 1;
 }
 
+static size_t aic_rt_char_decode_utf8(const unsigned char* bytes, size_t remaining, uint32_t* out_codepoint) {
+    if (out_codepoint != NULL) {
+        *out_codepoint = 0xFFFDu;
+    }
+    size_t width = aic_rt_string_utf8_valid_prefix(bytes, remaining);
+    if (width == 0) {
+        return 0;
+    }
+    uint32_t codepoint = 0;
+    if (width == 1) {
+        codepoint = bytes[0];
+    } else if (width == 2) {
+        codepoint = ((uint32_t)(bytes[0] & 0x1Fu) << 6) |
+                    (uint32_t)(bytes[1] & 0x3Fu);
+    } else if (width == 3) {
+        codepoint = ((uint32_t)(bytes[0] & 0x0Fu) << 12) |
+                    ((uint32_t)(bytes[1] & 0x3Fu) << 6) |
+                    (uint32_t)(bytes[2] & 0x3Fu);
+    } else {
+        codepoint = ((uint32_t)(bytes[0] & 0x07u) << 18) |
+                    ((uint32_t)(bytes[1] & 0x3Fu) << 12) |
+                    ((uint32_t)(bytes[2] & 0x3Fu) << 6) |
+                    (uint32_t)(bytes[3] & 0x3Fu);
+    }
+    if (out_codepoint != NULL) {
+        *out_codepoint = codepoint;
+    }
+    return width;
+}
+
+static size_t aic_rt_char_encode_utf8(uint32_t codepoint, unsigned char out[4]) {
+    if (out == NULL) {
+        return 0;
+    }
+    if (codepoint <= 0x7Fu) {
+        out[0] = (unsigned char)codepoint;
+        return 1;
+    }
+    if (codepoint <= 0x7FFu) {
+        out[0] = (unsigned char)(0xC0u | (codepoint >> 6));
+        out[1] = (unsigned char)(0x80u | (codepoint & 0x3Fu));
+        return 2;
+    }
+    if (codepoint >= 0xD800u && codepoint <= 0xDFFFu) {
+        return 0;
+    }
+    if (codepoint <= 0xFFFFu) {
+        out[0] = (unsigned char)(0xE0u | (codepoint >> 12));
+        out[1] = (unsigned char)(0x80u | ((codepoint >> 6) & 0x3Fu));
+        out[2] = (unsigned char)(0x80u | (codepoint & 0x3Fu));
+        return 3;
+    }
+    if (codepoint <= 0x10FFFFu) {
+        out[0] = (unsigned char)(0xF0u | (codepoint >> 18));
+        out[1] = (unsigned char)(0x80u | ((codepoint >> 12) & 0x3Fu));
+        out[2] = (unsigned char)(0x80u | ((codepoint >> 6) & 0x3Fu));
+        out[3] = (unsigned char)(0x80u | (codepoint & 0x3Fu));
+        return 4;
+    }
+    return 0;
+}
+
 static long aic_rt_string_find_first_raw(
     const char* haystack,
     size_t haystack_len,
@@ -34897,6 +35433,191 @@ void aic_rt_string_bool_to_string(long value, char** out_ptr, long* out_len) {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("true", 4));
     } else {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("false", 5));
+    }
+}
+
+long aic_rt_char_is_digit(int value) {
+    uint32_t cp = (uint32_t)value;
+    return (cp >= (uint32_t)'0' && cp <= (uint32_t)'9') ? 1 : 0;
+}
+
+long aic_rt_char_is_alpha(int value) {
+    uint32_t cp = (uint32_t)value;
+    if ((cp >= (uint32_t)'A' && cp <= (uint32_t)'Z') ||
+        (cp >= (uint32_t)'a' && cp <= (uint32_t)'z')) {
+        return 1;
+    }
+    return 0;
+}
+
+long aic_rt_char_is_whitespace(int value) {
+    uint32_t cp = (uint32_t)value;
+    if (cp == 0x0009u || cp == 0x000Au || cp == 0x000Bu || cp == 0x000Cu ||
+        cp == 0x000Du || cp == 0x0020u || cp == 0x0085u || cp == 0x00A0u ||
+        cp == 0x1680u || cp == 0x2028u || cp == 0x2029u || cp == 0x202Fu ||
+        cp == 0x205Fu || cp == 0x3000u) {
+        return 1;
+    }
+    if (cp >= 0x2000u && cp <= 0x200Au) {
+        return 1;
+    }
+    return 0;
+}
+
+long aic_rt_char_to_int(int value) {
+    return (long)(uint32_t)value;
+}
+
+long aic_rt_char_int_to_char(long value, int* out_char) {
+    if (out_char != NULL) {
+        *out_char = 0;
+    }
+    if (value < 0 || value > 0x10FFFFL) {
+        return 0;
+    }
+    if (value >= 0xD800L && value <= 0xDFFFL) {
+        return 0;
+    }
+    if (out_char != NULL) {
+        *out_char = (int)value;
+    }
+    return 1;
+}
+
+void aic_rt_char_chars(
+    const char* s_ptr,
+    long s_len,
+    long s_cap,
+    char** out_ptr,
+    long* out_count
+) {
+    (void)s_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
+        return;
+    }
+    size_t n = (size_t)s_len;
+    if (n == 0) {
+        return;
+    }
+
+    size_t cursor = 0;
+    size_t count = 0;
+    while (cursor < n) {
+        size_t width = aic_rt_string_utf8_valid_prefix((const unsigned char*)(s_ptr + cursor), n - cursor);
+        if (width == 0) {
+            width = 1;
+        }
+        cursor += width;
+        count += 1;
+    }
+    if (count > (size_t)LONG_MAX) {
+        return;
+    }
+
+    int32_t* codepoints = (int32_t*)calloc(count, sizeof(int32_t));
+    if (codepoints == NULL) {
+        return;
+    }
+
+    cursor = 0;
+    size_t index = 0;
+    while (cursor < n && index < count) {
+        uint32_t codepoint = 0xFFFDu;
+        size_t width = aic_rt_char_decode_utf8((const unsigned char*)(s_ptr + cursor), n - cursor, &codepoint);
+        if (width == 0) {
+            width = 1;
+            codepoint = 0xFFFDu;
+        }
+        codepoints[index++] = (int32_t)codepoint;
+        cursor += width;
+    }
+
+    if (out_count != NULL) {
+        *out_count = (long)count;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = (char*)codepoints;
+    } else {
+        free(codepoints);
+    }
+}
+
+void aic_rt_char_from_chars(
+    const char* chars_ptr,
+    long chars_len,
+    long chars_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)chars_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (chars_len < 0 || (chars_len > 0 && chars_ptr == NULL)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t count = (size_t)chars_len;
+    if (count == 0) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    if (count > (SIZE_MAX - 1) / 4) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    char* out = (char*)malloc(count * 4 + 1);
+    if (out == NULL) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    const int32_t* codepoints = (const int32_t*)chars_ptr;
+    size_t out_pos = 0;
+    for (size_t i = 0; i < count; ++i) {
+        long raw = (long)codepoints[i];
+        uint32_t cp = raw < 0 ? 0xFFFDu : (uint32_t)raw;
+        if (cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
+            cp = 0xFFFDu;
+        }
+        unsigned char encoded[4];
+        size_t width = aic_rt_char_encode_utf8(cp, encoded);
+        if (width == 0) {
+            width = aic_rt_char_encode_utf8(0xFFFDu, encoded);
+        }
+        if (out_pos > SIZE_MAX - width - 1) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        memcpy(out + out_pos, encoded, width);
+        out_pos += width;
+    }
+
+    out[out_pos] = '\0';
+    if (out_len != NULL) {
+        if (out_pos > (size_t)LONG_MAX) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        *out_len = (long)out_pos;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
     }
 }
 

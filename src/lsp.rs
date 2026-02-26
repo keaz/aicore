@@ -1678,6 +1678,7 @@ fn collect_expr_semantic_tokens(
         ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)
         | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
         | ast::ExprKind::Continue
         | ast::ExprKind::Unit => {}
@@ -2294,6 +2295,7 @@ fn collect_expr_call_sites(
         ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)
         | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
         | ast::ExprKind::Unit
         | ast::ExprKind::Var(_) => {}
@@ -2572,6 +2574,7 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
         ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)
         | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
         | ast::ExprKind::Unit
         | ast::ExprKind::Var(_) => {}
@@ -2899,6 +2902,7 @@ fn collect_expr_selection_spans(
         ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)
         | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
         | ast::ExprKind::Unit
         | ast::ExprKind::Var(_) => {}
@@ -3499,6 +3503,7 @@ fn collect_expr_inlay_hints(
         | ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)
         | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
         | ast::ExprKind::Unit
         | ast::ExprKind::Var(_) => {}
@@ -3513,6 +3518,7 @@ fn infer_expr_type(
         ast::ExprKind::Int(_) => Some("Int".to_string()),
         ast::ExprKind::Float(_) => Some("Float".to_string()),
         ast::ExprKind::Bool(_) => Some("Bool".to_string()),
+        ast::ExprKind::Char(_) => Some("Char".to_string()),
         ast::ExprKind::String(_) => Some("String".to_string()),
         ast::ExprKind::Unit => Some("Unit".to_string()),
         ast::ExprKind::StructInit { name, .. } => Some(name.clone()),

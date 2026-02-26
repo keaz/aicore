@@ -967,6 +967,7 @@ fn rewrite_struct_inits_in_expr(
         ir::ExprKind::Int(_)
         | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_) => {}
@@ -1127,6 +1128,7 @@ fn lower_ensures_in_expr(
         ir::ExprKind::Int(_)
         | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_) => {}
@@ -1393,6 +1395,7 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
         ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
         ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
+        ir::ExprKind::Char(v) => ir::ExprKind::Char(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
         ir::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
@@ -1562,6 +1565,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
         ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
         ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
+        ir::ExprKind::Char(v) => ir::ExprKind::Char(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
         ir::ExprKind::Unit => ir::ExprKind::Unit,
         ir::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
@@ -1925,6 +1929,7 @@ fn make(x: Int) -> NonEmpty {
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
+            | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit
             | ir::ExprKind::Var(_) => 0,

@@ -3,7 +3,7 @@
 This file is the frozen grammar contract for the current parser implementation.
 If parser behavior changes, this file must be updated in the same change.
 
-Version: `mvp-grammar-v6`
+Version: `mvp-grammar-v7`
 
 ## Lexical tokens
 
@@ -11,6 +11,7 @@ Version: `mvp-grammar-v6`
 - `int`: decimal integer literal (`0`, `1`, `42`, ...)
 - `float`: decimal/scientific literal (`3.14`, `0.5`, `1e10`, `2.5e-3`)
 - `string`: double-quoted UTF-8 string with escape support
+- `char`: single-quoted Unicode scalar literal with escape support (examples: `'a'`, `'😀'`; escapes like backslash-n and unicode codepoint escapes)
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
 - operators: `+ - * / % == != < <= > >= && || ! ? & = |`
@@ -101,6 +102,7 @@ try_suffix     = "?" ;
 primary_expr   = int
                | float
                | string
+               | char
                | bool
                | unit_lit
                | ident

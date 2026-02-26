@@ -1919,6 +1919,13 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
+            TokenKind::Char(value) => {
+                self.bump();
+                Some(Expr {
+                    kind: ExprKind::Char(value),
+                    span: token.span,
+                })
+            }
             TokenKind::KwTrue => {
                 self.bump();
                 Some(Expr {
@@ -3271,6 +3278,24 @@ fn main() -> Float {
         };
         assert!(matches!(lhs.kind, ExprKind::Float(v) if (v - 3.125).abs() < 1e-12));
         assert!(matches!(rhs.kind, ExprKind::Float(v) if (v - 2.5e-3).abs() < 1e-12));
+    }
+
+    #[test]
+    fn parses_char_literals() {
+        let src = r#"
+fn main() -> Char {
+    '\u{1F600}'
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        assert!(matches!(tail.kind, ExprKind::Char('😀')));
     }
 
     #[test]

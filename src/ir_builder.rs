@@ -474,6 +474,7 @@ impl Builder {
             ast::ExprKind::Int(v) => ir::ExprKind::Int(*v),
             ast::ExprKind::Float(v) => ir::ExprKind::Float(*v),
             ast::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
+            ast::ExprKind::Char(v) => ir::ExprKind::Char(*v),
             ast::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
             ast::ExprKind::Unit => ir::ExprKind::Unit,
             ast::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),

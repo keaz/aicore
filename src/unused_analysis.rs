@@ -355,6 +355,7 @@ impl<'a> Analyzer<'a> {
             ast::ExprKind::Int(_)
             | ast::ExprKind::Float(_)
             | ast::ExprKind::Bool(_)
+            | ast::ExprKind::Char(_)
             | ast::ExprKind::String(_)
             | ast::ExprKind::Unit => {}
         }
@@ -797,6 +798,7 @@ impl<'a> VariableAnalyzer<'a> {
             ast::ExprKind::Int(_)
             | ast::ExprKind::Float(_)
             | ast::ExprKind::Bool(_)
+            | ast::ExprKind::Char(_)
             | ast::ExprKind::String(_)
             | ast::ExprKind::Unit => {}
         }

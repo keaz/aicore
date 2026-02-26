@@ -472,6 +472,7 @@ fn format_expr(
         ir::ExprKind::Int(v) => out.push_str(&v.to_string()),
         ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
         ir::ExprKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
+        ir::ExprKind::Char(v) => out.push_str(&format!("{:?}", v)),
         ir::ExprKind::String(v) => {
             out.push('"');
             out.push_str(&v.replace('\\', "\\\\").replace('"', "\\\""));

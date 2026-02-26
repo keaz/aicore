@@ -1,0 +1,47 @@
+import std.char;
+import std.io;
+import std.option;
+import std.vec;
+
+fn opt_char_code(v: Option[Char], fallback: Int) -> Int {
+    match v {
+        Some(value) => char_to_int(value),
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let digit_ok = if is_digit('5') { 1 } else { 0 };
+    let alpha_ok = if is_alpha('A') { 1 } else { 0 };
+    let whitespace_ok = if is_whitespace('\n') { 1 } else { 0 };
+    let to_int_ok = if char_to_int('A') == 65 { 1 } else { 0 };
+    let emoji_ok = if char_to_int('😀') == 128512 { 1 } else { 0 };
+
+    let from_int_ok = if opt_char_code(int_to_char(128512), -1) == 128512 { 1 } else { 0 };
+    let invalid_low_ok = if opt_char_code(int_to_char(-1), -1) == -1 { 1 } else { 0 };
+    let invalid_surrogate_ok = if opt_char_code(int_to_char(55296), -1) == -1 { 1 } else { 0 };
+
+    let ascii_chars_ok = if vec_len(chars("hello")) == 5 { 1 } else { 0 };
+    let unicode_chars_ok = if vec_len(chars("hé😀")) == 3 { 1 } else { 0 };
+    let roundtrip_ok = if vec_len(chars(from_chars(chars("hé😀")))) == 3 { 1 } else { 0 };
+
+    let score =
+        digit_ok +
+        alpha_ok +
+        whitespace_ok +
+        to_int_ok +
+        emoji_ok +
+        from_int_ok +
+        invalid_low_ok +
+        invalid_surrogate_ok +
+        ascii_chars_ok +
+        unicode_chars_ok +
+        roundtrip_ok;
+
+    if score == 11 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

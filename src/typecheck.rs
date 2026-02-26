@@ -540,6 +540,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
+            | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit => {}
             ir::ExprKind::Var(name) => {
@@ -1382,6 +1383,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
+            | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit
             | ir::ExprKind::Var(_) => {}
@@ -1801,6 +1803,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
             | ir::ExprKind::Bool(_)
+            | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit => Vec::new(),
             ir::ExprKind::Var(name) => {
@@ -2049,6 +2052,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Int(_) => Some("Int".to_string()),
             ir::ExprKind::Float(_) => Some("Float".to_string()),
             ir::ExprKind::Bool(_) => Some("Bool".to_string()),
+            ir::ExprKind::Char(_) => Some("Char".to_string()),
             ir::ExprKind::String(_) => Some("String".to_string()),
             ir::ExprKind::Unit => Some("()".to_string()),
             _ => None,
@@ -2518,6 +2522,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Int(_) => "Int".to_string(),
             ir::ExprKind::Float(_) => "Float".to_string(),
             ir::ExprKind::Bool(_) => "Bool".to_string(),
+            ir::ExprKind::Char(_) => "Char".to_string(),
             ir::ExprKind::String(_) => "String".to_string(),
             ir::ExprKind::Unit => "()".to_string(),
             ir::ExprKind::Var(name) => {
@@ -4865,10 +4870,12 @@ impl<'a> Checker<'a> {
                 "Bool".to_string()
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if !(lhs_norm == rhs_norm && (lhs_norm == "Int" || lhs_norm == "Float")) {
+                if !(lhs_norm == rhs_norm
+                    && (lhs_norm == "Int" || lhs_norm == "Float" || lhs_norm == "Char"))
+                {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
-                        "comparison operators require matching Int or Float operands",
+                        "comparison operators require matching Int, Float, or Char operands",
                         self.file,
                         span,
                     ));
@@ -6105,7 +6112,8 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     if contains_unresolved_type(ty) {
         return false;
     }
-    matches!(base_type_name(ty), "Int" | "Bool" | "Float") && extract_generic_args(ty).is_none()
+    matches!(base_type_name(ty), "Int" | "Bool" | "Float" | "Char")
+        && extract_generic_args(ty).is_none()
 }
 
 fn is_ident_byte(byte: u8) -> bool {

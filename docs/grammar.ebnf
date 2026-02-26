@@ -1,5 +1,5 @@
 (* AICore frozen grammar artifact *)
-(* Version: mvp-grammar-v6 *)
+(* Version: mvp-grammar-v7 *)
 (* Source contract: docs/syntax.md *)
 
 ident          = letter (letter | digit)* ;
@@ -8,11 +8,13 @@ float          = digit+ "." digit+ exponent?
                | digit+ exponent ;
 exponent       = ("e" | "E") ("+" | "-")? digit+ ;
 string         = "\"" string_char* "\"" ;
+char           = "'" char_lit "'" ;
 bool           = "true" | "false" ;
 
 letter         = "A".."Z" | "a".."z" | "_" ;
 digit          = "0".."9" ;
 string_char    = ? any UTF-8 code point or escape sequence accepted by lexer ? ;
+char_lit       = ? exactly one Unicode scalar value or supported escape sequence ? ;
 
 program        = module_decl? import_decl* item* EOF ;
 module_decl    = "module" path ";" ;
@@ -83,6 +85,7 @@ try_suffix     = "?" ;
 primary_expr   = int
                | float
                | string
+               | char
                | bool
                | unit_lit
                | ident

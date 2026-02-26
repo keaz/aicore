@@ -347,6 +347,7 @@ fn render_expr(expr: &ir::Expr) -> String {
         ir::ExprKind::Int(v) => v.to_string(),
         ir::ExprKind::Float(v) => render_float_literal(*v),
         ir::ExprKind::Bool(v) => v.to_string(),
+        ir::ExprKind::Char(v) => format!("{:?}", v),
         ir::ExprKind::String(s) => format!("\"{}\"", s),
         ir::ExprKind::Unit => "()".to_string(),
         ir::ExprKind::Var(name) => name.clone(),

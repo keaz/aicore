@@ -1,0 +1,66 @@
+module std.char;
+
+import std.option;
+import std.vec;
+
+fn aic_char_is_digit_intrinsic(c: Char) -> Bool {
+    false
+}
+
+fn aic_char_is_alpha_intrinsic(c: Char) -> Bool {
+    false
+}
+
+fn aic_char_is_whitespace_intrinsic(c: Char) -> Bool {
+    false
+}
+
+fn aic_char_to_int_intrinsic(c: Char) -> Int {
+    0
+}
+
+fn aic_char_int_to_char_intrinsic(n: Int) -> Option[Char] {
+    let out: Option[Char] = None();
+    out
+}
+
+fn aic_char_chars_intrinsic(s: String) -> Vec[Char] {
+    let out: Vec[Char] = Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    };
+    out
+}
+
+fn aic_char_from_chars_intrinsic(cs: Vec[Char]) -> String {
+    ""
+}
+
+fn is_digit(c: Char) -> Bool {
+    aic_char_is_digit_intrinsic(c)
+}
+
+fn is_alpha(c: Char) -> Bool {
+    aic_char_is_alpha_intrinsic(c)
+}
+
+fn is_whitespace(c: Char) -> Bool {
+    aic_char_is_whitespace_intrinsic(c)
+}
+
+fn char_to_int(c: Char) -> Int {
+    aic_char_to_int_intrinsic(c)
+}
+
+fn int_to_char(n: Int) -> Option[Char] {
+    aic_char_int_to_char_intrinsic(n)
+}
+
+fn chars(s: String) -> Vec[Char] {
+    aic_char_chars_intrinsic(s)
+}
+
+fn from_chars(cs: Vec[Char]) -> String {
+    aic_char_from_chars_intrinsic(cs)
+}

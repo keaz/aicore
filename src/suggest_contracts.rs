@@ -330,6 +330,7 @@ fn collect_requires_from_expr(
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
+        | ExprKind::Char(_)
         | ExprKind::String(_)
         | ExprKind::Unit
         | ExprKind::Var(_) => {}
@@ -496,6 +497,7 @@ fn collect_explicit_returns_from_expr<'a>(
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
+        | ExprKind::Char(_)
         | ExprKind::String(_)
         | ExprKind::Unit
         | ExprKind::Var(_) => {}
@@ -521,6 +523,7 @@ fn return_observation_evidence(
                 ExprKind::Int(_)
                 | ExprKind::Float(_)
                 | ExprKind::Bool(_)
+                | ExprKind::Char(_)
                 | ExprKind::String(_)
                 | ExprKind::Unit => (
                     0.92,
@@ -627,6 +630,7 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
+        | ExprKind::Char(_)
         | ExprKind::String(_)
         | ExprKind::Unit => {}
     }
@@ -695,6 +699,7 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
         ExprKind::Int(value) => Some(value.to_string()),
         ExprKind::Float(value) => Some(format_float_literal(*value)),
         ExprKind::Bool(value) => Some(value.to_string()),
+        ExprKind::Char(value) => Some(format!("{:?}", value)),
         ExprKind::String(value) => serde_json::to_string(value).ok(),
         ExprKind::Unit => Some("()".to_string()),
         ExprKind::Var(name) => Some(name.clone()),

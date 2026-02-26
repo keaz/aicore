@@ -2703,6 +2703,7 @@ fn repl_type_expr_name(ty: &aicore::ast::TypeExpr) -> Result<&'static str, Strin
                 "Int" => Ok("Int"),
                 "Float" => Ok("Float"),
                 "Bool" => Ok("Bool"),
+                "Char" => Ok("Int"),
                 "String" => Ok("String"),
                 "Unit" => Ok("Unit"),
                 other => Err(format!("unsupported type annotation `{other}` in repl")),
@@ -2724,6 +2725,7 @@ fn eval_repl_expr(
         ExprKind::Int(v) => Ok(ReplValue::Int(*v)),
         ExprKind::Float(v) => Ok(ReplValue::Float(*v)),
         ExprKind::Bool(v) => Ok(ReplValue::Bool(*v)),
+        ExprKind::Char(v) => Ok(ReplValue::Int(*v as i64)),
         ExprKind::String(v) => Ok(ReplValue::String(v.clone())),
         ExprKind::Unit => Ok(ReplValue::Unit),
         ExprKind::Var(name) => env
@@ -3017,6 +3019,7 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
         aicore::ast::ExprKind::Int(_) => "integer literal",
         aicore::ast::ExprKind::Float(_) => "float literal",
         aicore::ast::ExprKind::Bool(_) => "bool literal",
+        aicore::ast::ExprKind::Char(_) => "char literal",
         aicore::ast::ExprKind::String(_) => "string literal",
         aicore::ast::ExprKind::Unit => "unit literal",
         aicore::ast::ExprKind::Var(_) => "variable",

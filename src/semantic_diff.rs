@@ -408,6 +408,7 @@ fn render_expr(expr: &Expr) -> String {
         ExprKind::Int(value) => value.to_string(),
         ExprKind::Float(value) => render_float_literal(*value),
         ExprKind::Bool(value) => value.to_string(),
+        ExprKind::Char(value) => format!("{:?}", value),
         ExprKind::String(value) => format!("{value:?}"),
         ExprKind::Unit => "()".to_string(),
         ExprKind::Var(name) => name.clone(),

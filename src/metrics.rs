@@ -357,6 +357,7 @@ impl ComplexityAnalyzer {
             ExprKind::Int(_)
             | ExprKind::Float(_)
             | ExprKind::Bool(_)
+            | ExprKind::Char(_)
             | ExprKind::String(_)
             | ExprKind::Unit
             | ExprKind::Var(_)

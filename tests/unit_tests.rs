@@ -2387,6 +2387,61 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_char_public_apis_delegate_to_runtime_intrinsics() {
+    let char_source = fs::read_to_string("std/char.aic").expect("read std/char.aic");
+
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "is_digit",
+        "aic_char_is_digit_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "is_alpha",
+        "aic_char_is_alpha_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "is_whitespace",
+        "aic_char_is_whitespace_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "char_to_int",
+        "aic_char_to_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "int_to_char",
+        "aic_char_int_to_char_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "chars",
+        "aic_char_chars_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &char_source,
+        "std/char.aic",
+        "from_chars",
+        "aic_char_from_chars_intrinsic",
+        1,
+    );
+}
+
+#[test]
 fn unit_std_math_public_apis_delegate_to_runtime_intrinsics() {
     let math_source = fs::read_to_string("std/math.aic").expect("read std/math.aic");
 

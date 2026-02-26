@@ -72,6 +72,76 @@
       "signature": "Bytes { data: String }"
     },
     {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_chars_intrinsic(s: String) -> Vec[Char]"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_from_chars_intrinsic(cs: Vec[Char]) -> String"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_int_to_char_intrinsic(n: Int) -> Option[Char]"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_is_alpha_intrinsic(c: Char) -> Bool"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_is_digit_intrinsic(c: Char) -> Bool"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_is_whitespace_intrinsic(c: Char) -> Bool"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "aic_char_to_int_intrinsic(c: Char) -> Int"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "char_to_int(c: Char) -> Int"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "chars(s: String) -> Vec[Char]"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "from_chars(cs: Vec[Char]) -> String"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "int_to_char(n: Int) -> Option[Char]"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "is_alpha(c: Char) -> Bool"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "is_digit(c: Char) -> Bool"
+    },
+    {
+      "module": "std.char",
+      "kind": "fn",
+      "signature": "is_whitespace(c: Char) -> Bool"
+    },
+    {
       "module": "std.concurrent",
       "kind": "enum",
       "signature": "ChannelError { Closed, Full, Empty, Timeout }"
@@ -279,12 +349,12 @@
     {
       "module": "std.concurrent",
       "kind": "struct",
-      "signature": "IntTaskSelection { task_index: Int, value: Int }"
+      "signature": "IntMutex { handle: Int }"
     },
     {
       "module": "std.concurrent",
       "kind": "struct",
-      "signature": "IntMutex { handle: Int }"
+      "signature": "IntTaskSelection { task_index: Int, value: Int }"
     },
     {
       "module": "std.concurrent",
@@ -1899,6 +1969,11 @@
     {
       "module": "std.map",
       "kind": "fn",
+      "signature": "aic_map_close_intrinsic[K, V](m: Map[K, V]) -> ()"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
       "signature": "aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool"
     },
     {
@@ -1940,6 +2015,11 @@
       "module": "std.map",
       "kind": "fn",
       "signature": "aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V]"
+    },
+    {
+      "module": "std.map",
+      "kind": "fn",
+      "signature": "close_map[K, V](m: Map[K, V]) -> ()"
     },
     {
       "module": "std.map",
@@ -2367,6 +2447,11 @@
       "signature": "Option[T] { None, Some(T) }"
     },
     {
+      "module": "std.option",
+      "kind": "impl",
+      "signature": "Option[];"
+    },
+    {
       "module": "std.path",
       "kind": "fn",
       "signature": "aic_path_basename_intrinsic(path: String) -> String"
@@ -2675,6 +2760,11 @@
       "module": "std.result",
       "kind": "enum",
       "signature": "Result[T, E] { Ok(T), Err(E) }"
+    },
+    {
+      "module": "std.result",
+      "kind": "impl",
+      "signature": "Result[];"
     },
     {
       "module": "std.retry",
@@ -3494,6 +3584,11 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "aic_vec_new_with_capacity_intrinsic[T](capacity: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "aic_vec_of_intrinsic[T](value: T) -> Vec[T]"
     },
     {
@@ -3514,12 +3609,22 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "aic_vec_reserve_intrinsic[T](v: Vec[T], additional: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "aic_vec_reverse_intrinsic[T](v: Vec[T]) -> Vec[T]"
     },
     {
       "module": "std.vec",
       "kind": "fn",
       "signature": "aic_vec_set_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "aic_vec_shrink_to_fit_intrinsic[T](v: Vec[T]) -> Vec[T]"
     },
     {
       "module": "std.vec",
@@ -3619,6 +3724,11 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "new_vec_with_capacity[T](capacity: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "pop[T](v: Vec[T]) -> Vec[T]"
     },
     {
@@ -3639,12 +3749,22 @@
     {
       "module": "std.vec",
       "kind": "fn",
+      "signature": "reserve[T](v: Vec[T], additional: Int) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
       "signature": "reverse[T](v: Vec[T]) -> Vec[T]"
     },
     {
       "module": "std.vec",
       "kind": "fn",
       "signature": "set[T](v: Vec[T], index: Int, value: T) -> Vec[T]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "shrink_to_fit[T](v: Vec[T]) -> Vec[T]"
     },
     {
       "module": "std.vec",

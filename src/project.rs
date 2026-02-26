@@ -89,6 +89,8 @@ fn panic(message: String) -> () effects { io } {
         include_str!("../std/string.aic"),
     )?;
 
+    fs::write(path.join("std/char.aic"), include_str!("../std/char.aic"))?;
+
     fs::write(path.join("std/bytes.aic"), include_str!("../std/bytes.aic"))?;
 
     fs::write(

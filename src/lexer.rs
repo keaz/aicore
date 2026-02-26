@@ -13,6 +13,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     String(String),
+    Char(char),
 
     KwModule,
     KwImport,
@@ -150,6 +151,7 @@ impl<'a> Lexer<'a> {
                 }
                 '0'..='9' => self.lex_number(),
                 '"' => self.lex_string(),
+                '\'' => self.lex_char(),
                 '(' => self.single(TokenKind::LParen),
                 ')' => self.single(TokenKind::RParen),
                 '{' => self.single(TokenKind::LBrace),
@@ -481,33 +483,8 @@ impl<'a> Lexer<'a> {
                 }
                 '\\' => {
                     self.bump();
-                    match self.peek() {
-                        Some('n') => {
-                            self.bump();
-                            out.push('\n');
-                        }
-                        Some('t') => {
-                            self.bump();
-                            out.push('\t');
-                        }
-                        Some('"') => {
-                            self.bump();
-                            out.push('"');
-                        }
-                        Some('\\') => {
-                            self.bump();
-                            out.push('\\');
-                        }
-                        Some(other) => {
-                            let esc_start = self.offset;
-                            self.bump();
-                            self.error(
-                                "E0005",
-                                format!("unsupported escape sequence '\\{}'", other),
-                                Span::new(esc_start.saturating_sub(1), self.offset),
-                            );
-                        }
-                        None => break,
+                    if let Some(value) = self.lex_escape_sequence() {
+                        out.push(value);
                     }
                 }
                 '\n' => {
@@ -533,6 +510,179 @@ impl<'a> Lexer<'a> {
             return;
         }
         self.push(TokenKind::String(out), Span::new(start, self.offset));
+    }
+
+    fn lex_char(&mut self) {
+        let start = self.offset;
+        self.bump(); // opening quote
+
+        if self.peek() == Some('\'') {
+            self.bump();
+            self.error(
+                "E0008",
+                "char literal must contain exactly one Unicode codepoint",
+                Span::new(start, self.offset),
+            );
+            return;
+        }
+
+        let value = match self.peek() {
+            Some('\n') | None => {
+                self.error(
+                    "E0006",
+                    "unterminated char literal",
+                    Span::new(start, self.offset),
+                );
+                return;
+            }
+            Some('\\') => {
+                self.bump();
+                self.lex_escape_sequence()
+            }
+            Some(ch) => {
+                self.bump();
+                Some(ch)
+            }
+        };
+
+        if self.peek() == Some('\'') {
+            self.bump();
+        } else {
+            while let Some(ch) = self.peek() {
+                if ch == '\'' {
+                    self.bump();
+                    break;
+                }
+                if ch == '\n' {
+                    break;
+                }
+                self.bump();
+            }
+            self.error(
+                "E0008",
+                "char literal must contain exactly one Unicode codepoint",
+                Span::new(start, self.offset),
+            );
+            return;
+        }
+
+        if let Some(ch) = value {
+            self.push(TokenKind::Char(ch), Span::new(start, self.offset));
+        }
+    }
+
+    fn lex_escape_sequence(&mut self) -> Option<char> {
+        match self.peek() {
+            Some('n') => {
+                self.bump();
+                Some('\n')
+            }
+            Some('r') => {
+                self.bump();
+                Some('\r')
+            }
+            Some('t') => {
+                self.bump();
+                Some('\t')
+            }
+            Some('0') => {
+                self.bump();
+                Some('\0')
+            }
+            Some('"') => {
+                self.bump();
+                Some('"')
+            }
+            Some('\'') => {
+                self.bump();
+                Some('\'')
+            }
+            Some('\\') => {
+                self.bump();
+                Some('\\')
+            }
+            Some('u') => self.lex_unicode_escape(),
+            Some(other) => {
+                let esc_start = self.offset;
+                self.bump();
+                self.error(
+                    "E0005",
+                    format!("unsupported escape sequence '\\\\{}'", other),
+                    Span::new(esc_start.saturating_sub(1), self.offset),
+                );
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn lex_unicode_escape(&mut self) -> Option<char> {
+        let escape_start = self.offset.saturating_sub(1); // include '\\'
+        self.bump(); // consume 'u'
+        if self.peek() != Some('{') {
+            self.error(
+                "E0005",
+                "invalid Unicode escape, expected `\\u{...}`",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        }
+        self.bump(); // consume '{'
+        let digits_start = self.offset;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_hexdigit() {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        let digits_end = self.offset;
+        if self.peek() != Some('}') {
+            self.error(
+                "E0005",
+                "invalid Unicode escape, expected closing `}`",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        }
+        self.bump(); // consume '}'
+
+        if digits_start == digits_end {
+            self.error(
+                "E0005",
+                "invalid Unicode escape, missing codepoint digits",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        }
+
+        let digits = &self.source[digits_start..digits_end];
+        if digits.len() > 6 {
+            self.error(
+                "E0005",
+                "invalid Unicode escape, codepoint has too many hex digits",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        }
+
+        let Some(codepoint) = u32::from_str_radix(digits, 16).ok() else {
+            self.error(
+                "E0005",
+                "invalid Unicode escape codepoint",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        };
+        let Some(ch) = char::from_u32(codepoint) else {
+            self.error(
+                "E0005",
+                "invalid Unicode codepoint in escape sequence",
+                Span::new(escape_start, self.offset),
+            );
+            return None;
+        };
+        Some(ch)
     }
 
     fn single(&mut self, kind: TokenKind) {
@@ -614,6 +764,25 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(&t.kind, TokenKind::String(s) if s == "hello")));
+    }
+
+    #[test]
+    fn lexes_char_literals_and_escapes() {
+        let src = r#"let a = 'x'; let b = '\n'; let c = '\u{1F600}'; let d = '\'';"#;
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Char('x'))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Char('\n'))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Char('😀'))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Char('\''))));
     }
 
     #[test]
