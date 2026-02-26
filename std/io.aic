@@ -6,6 +6,8 @@ import std.fs;
 import std.net;
 import std.proc;
 import std.env;
+import std.string;
+import std.vec;
 
 enum IoError {
     EndOfInput,
@@ -36,6 +38,15 @@ enum Writer {
     WriteStderr,
     WriteFile(FileHandle),
     WriteTcp(Int),
+}
+
+struct MockReader {
+    lines: String,
+}
+
+enum MockWriter {
+    MockStdout,
+    MockStderr,
 }
 
 fn io_end_of_input() -> IoError {
@@ -124,6 +135,7 @@ fn io_is_end_of_input(err: IoError) -> Bool {
         _ => false,
     }
 }
+
 
 fn aic_io_print_int_intrinsic(x: Int) -> () effects { io } {
     ()
@@ -235,6 +247,19 @@ fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Re
 fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io } {
     let _handle = handle;
     io_ok_bool_true()
+}
+
+fn aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool, IoError] effects { io } {
+    let _serialized_lines = serialized_lines;
+    io_ok_bool_false()
+}
+
+fn aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects { io } {
+    io_err_string_result()
+}
+
+fn aic_io_mock_writer_take_stderr_intrinsic() -> Result[String, IoError] effects { io } {
+    io_err_string_result()
 }
 
 fn from_fs_error(err: FsError) -> IoError {
@@ -552,6 +577,44 @@ fn stream_copy(reader: Reader, writer: Writer) -> Result[Int, IoError] effects {
             None => io_ok_int_zero(),
         },
         Err(err) => io_err_int_result_with(err),
+    }
+}
+
+/// Build a deterministic mocked stdin reader from lines consumed by `read_line` in tests.
+fn mock_reader_from_lines(lines: Vec[String]) -> MockReader {
+    MockReader {
+        lines: aic_string_join_intrinsic(lines, "\n"),
+    }
+}
+
+/// Install mocked stdin lines for subsequent IO reads in the current process.
+fn install_mock_reader(reader: MockReader) -> Result[Bool, IoError] effects { io } {
+    aic_io_mock_reader_install_intrinsic(reader.lines)
+}
+
+/// Create a mocked stdout writer view for capturing emitted output.
+fn mock_stdout_writer() -> MockWriter {
+    MockStdout()
+}
+
+/// Create a mocked stderr writer view for capturing emitted output.
+fn mock_stderr_writer() -> MockWriter {
+    MockStderr()
+}
+
+/// Write through the mock writer channel using the same effect path as normal writers.
+fn mock_write(writer: MockWriter, content: String) -> Result[Int, IoError] effects { io } {
+    match writer {
+        MockStdout => write_stdout_stream(content),
+        MockStderr => write_stderr_stream(content),
+    }
+}
+
+/// Drain captured output from the selected mock writer channel.
+fn mock_writer_take(writer: MockWriter) -> Result[String, IoError] effects { io } {
+    match writer {
+        MockStdout => aic_io_mock_writer_take_stdout_intrinsic(),
+        MockStderr => aic_io_mock_writer_take_stderr_intrinsic(),
     }
 }
 

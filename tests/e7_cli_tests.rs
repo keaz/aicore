@@ -3293,3 +3293,117 @@ fn prop_fails(x: Int) -> () {
     assert_eq!(filtered_report["total"], 1, "report={filtered_report:#}");
     assert_eq!(filtered_report["failed"], 0, "report={filtered_report:#}");
 }
+
+#[test]
+fn test_command_runs_mock_io_tests_with_deterministic_rand_and_time() {
+    let dir = tempdir().expect("tempdir");
+    let test_file = dir.path().join("mock_io.aic");
+    fs::write(
+        &test_file,
+        r#"
+import std.io;
+import std.rand;
+import std.time;
+import std.vec;
+import std.string;
+
+#[test]
+fn test_mock_reader_writer_and_no_real_io() -> () effects { io, rand, time } {
+    let reader = mock_reader_from_lines(append(vec_of("hello"), vec_of("world")));
+    let install_ok = match install_mock_reader(reader) {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(install_ok);
+
+    let first = match read_line() {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let second = match read_line() {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let eof_ok = match read_line() {
+        Ok(_) => false,
+        Err(err) => io_is_end_of_input(err),
+    };
+
+    assert(byte_length(first) == 5);
+    assert(starts_with(first, "hello"));
+    assert(byte_length(second) == 5);
+    assert(starts_with(second, "world"));
+    assert(eof_ok);
+
+    print_str("A");
+    println_int(7);
+
+    let writer_for_write = mock_stdout_writer();
+    let wrote_ok = match mock_write(writer_for_write, "B") {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(wrote_ok);
+
+    let writer_for_take = mock_stdout_writer();
+    let captured = match mock_writer_take(writer_for_take) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let captured_len = byte_length(captured);
+    assert(captured_len >= 3);
+}
+
+#[test]
+fn test_rand_and_time_are_deterministic() -> () effects { io, rand, time } {
+    seed(42);
+    let first = random_int();
+    seed(42);
+    let second = random_int();
+
+    assert_eq(first, second);
+    assert_eq(now_ms(), 1767225600000);
+}
+"#,
+    )
+    .expect("write mock io tests");
+
+    let root = dir.path().to_string_lossy().to_string();
+
+    let first_run = run_aic(&["test", &root, "--seed", "123", "--json"]);
+    assert_eq!(
+        first_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first_run.stdout),
+        String::from_utf8_lossy(&first_run.stderr)
+    );
+    let first_report: serde_json::Value =
+        serde_json::from_slice(&first_run.stdout).expect("first json report");
+    assert_eq!(first_report["total"], 2, "report={first_report:#}");
+    assert_eq!(first_report["failed"], 0, "report={first_report:#}");
+    assert_eq!(
+        first_report["by_category"]["attribute-test"], 2,
+        "report={first_report:#}"
+    );
+
+    let second_run = run_aic(&["test", &root, "--seed", "123", "--json"]);
+    assert_eq!(
+        second_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&second_run.stdout),
+        String::from_utf8_lossy(&second_run.stderr)
+    );
+    let second_report: serde_json::Value =
+        serde_json::from_slice(&second_run.stdout).expect("second json report");
+
+    assert_eq!(first_report, second_report, "reports must be deterministic");
+
+    let report_file = dir.path().join("test_results.json");
+    assert!(
+        report_file.exists(),
+        "missing report file: {}",
+        report_file.display()
+    );
+}

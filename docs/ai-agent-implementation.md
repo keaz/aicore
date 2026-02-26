@@ -475,6 +475,10 @@ Diagnostics:
   - `#[property(iterations = N)]` overrides iteration count per property
   - supported generated input types: `Int`, `Float`, `Bool`, `String`, `Vec[T]`, `Option[T]`
   - failing runs report seed + counterexample and perform shrinking for smaller repro inputs
+- Effect mocking support (mode `all`):
+  - `std.io` exposes `MockReader` / `MockWriter` helpers (`mock_reader_from_lines`, `install_mock_reader`, `mock_writer_take`)
+  - runtime IO calls are interceptable in tests via mock APIs and deterministic env controls
+  - attribute/property test subprocesses default to deterministic/isolated IO via `AIC_TEST_NO_REAL_IO=1` and `AIC_TEST_IO_CAPTURE=1` (overridable by caller env)
 - CI/automation output:
   - JSON mode emits machine-readable report to stdout
   - attribute/property runs persist `test_results.json` at the selected test root
@@ -482,6 +486,7 @@ Diagnostics:
   - `examples/e7/harness/`
   - `examples/e7/test_framework/`
   - `examples/e7/property_framework/`
+  - `examples/test/mock_io.aic`
 
 ### Deterministic incremental daemon (AG-T4)
 

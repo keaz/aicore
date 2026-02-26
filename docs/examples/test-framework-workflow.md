@@ -38,11 +38,31 @@ fn prop_generators_cover_all(
 }
 ```
 
+## Mock IO tests
+
+```aic
+import std.io;
+import std.vec;
+
+#[test]
+fn test_mock_reader() -> () effects { io } {
+    let reader = mock_reader_from_lines(append(vec_of("hello"), vec_of("world")));
+    let _ = install_mock_reader(reader);
+
+    let first = match read_line() { Ok(v) => v, Err(_) => "" };
+    let second = match read_line() { Ok(v) => v, Err(_) => "" };
+
+    assert_eq(first, "hello");
+    assert_eq(second, "world");
+}
+```
+
 ## Run all tests
 
 ```bash
 cargo run --quiet --bin aic -- test examples/e7/test_framework --json
 cargo run --quiet --bin aic -- test examples/e7/property_framework --seed 123 --json
+cargo run --quiet --bin aic -- test examples/test --seed 123 --json
 ```
 
 ## Run filtered subset
@@ -50,6 +70,7 @@ cargo run --quiet --bin aic -- test examples/e7/property_framework --seed 123 --
 ```bash
 cargo run --quiet --bin aic -- test examples/e7/test_framework --filter addition --json
 cargo run --quiet --bin aic -- test examples/e7/property_framework --filter reverse --seed 123 --json
+cargo run --quiet --bin aic -- test examples/test --filter mock --seed 123 --json
 ```
 
 ## CI contract
@@ -57,4 +78,5 @@ cargo run --quiet --bin aic -- test examples/e7/property_framework --filter reve
 - JSON mode prints a machine-readable report to stdout.
 - Attribute/property runs also write `test_results.json` to the selected test root.
 - Property failure details include iteration, seed, counterexample, and shrunk input.
+- Test runner sets deterministic defaults for tests (`AIC_TEST_SEED`, `AIC_TEST_TIME_MS`) and can run with mocked IO isolation (`AIC_TEST_NO_REAL_IO`, `AIC_TEST_IO_CAPTURE`).
 - CI reference example: `scripts/ci/examples.sh`.

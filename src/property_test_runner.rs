@@ -254,6 +254,12 @@ fn run_property_binary(exe: &Path, args: &Value, seed: u64) -> Result<(), Proper
     if std::env::var_os("AIC_TEST_TIME_MS").is_none() {
         command.env("AIC_TEST_TIME_MS", "1767225600000");
     }
+    if std::env::var_os("AIC_TEST_NO_REAL_IO").is_none() {
+        command.env("AIC_TEST_NO_REAL_IO", "1");
+    }
+    if std::env::var_os("AIC_TEST_IO_CAPTURE").is_none() {
+        command.env("AIC_TEST_IO_CAPTURE", "1");
+    }
 
     match command.output() {
         Ok(output) if output.status.success() => Ok(()),
@@ -851,7 +857,7 @@ fn transform_source_for_property_case(source: &str, case: &PropertyCase) -> anyh
         .join(", ");
 
     Ok(format!(
-        "{}\n{}\nstruct {} {{\n{}\n}}\n\nfn {}(decoded: {}) -> Int effects {{ io }} {{\n    {}({});\n    0\n}}\n\nfn {}(raw: String) -> Int effects {{ io }} {{\n    let parsed = match parse(raw) {{\n        Ok(value) => value,\n        Err(_) => encode_null(),\n    }};\n\n    let marker: Option[{}] = None();\n    match decode_with(parsed, marker) {{\n        Ok(value) => {}(value),\n        Err(_) => 3,\n    }}\n}}\n\nfn main() -> Int effects {{ io, env }} {{\n    let raw = match env.get(\"AIC_PROP_ARGS_JSON\") {{\n        Ok(value) => value,\n        Err(_) => \"\",\n    }};\n    {}(raw)\n}}\n",
+        "{}\n{}\nstruct {} {{\n{}\n}}\n\nfn {}(decoded: {}) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}({});\n    0\n}}\n\nfn {}(raw: String) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let parsed = match parse(raw) {{\n        Ok(value) => value,\n        Err(_) => encode_null(),\n    }};\n\n    let marker: Option[{}] = None();\n    match decode_with(parsed, marker) {{\n        Ok(value) => {}(value),\n        Err(_) => 3,\n    }}\n}}\n\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let raw = match env.get(\"AIC_PROP_ARGS_JSON\") {{\n        Ok(value) => value,\n        Err(_) => \"\",\n    }};\n    {}(raw)\n}}\n",
         rewritten,
         ASSERT_HELPERS,
         struct_name,
@@ -939,7 +945,7 @@ fn add_io_effect_to_property_fn(source: &str, function_name: &str) -> anyhow::Re
                 signature_has_effects = true;
             }
 
-            if let Some(brace_index) = line.find('{') {
+            if let Some(brace_index) = line.rfind('{') {
                 if signature_has_effects {
                     out.push_str(line);
                 } else {

@@ -240,6 +240,12 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     if std::env::var_os("AIC_TEST_TIME_MS").is_none() {
         command.env("AIC_TEST_TIME_MS", "1767225600000");
     }
+    if std::env::var_os("AIC_TEST_NO_REAL_IO").is_none() {
+        command.env("AIC_TEST_NO_REAL_IO", "1");
+    }
+    if std::env::var_os("AIC_TEST_IO_CAPTURE").is_none() {
+        command.env("AIC_TEST_IO_CAPTURE", "1");
+    }
 
     let output = command.output()?;
     let _ = fs::remove_dir_all(&temp_dir);
@@ -289,7 +295,7 @@ fn transform_source_for_test(source: &str, test_name: &str) -> anyhow::Result<St
     let rewritten = rewrite_assert_calls(&with_import);
 
     Ok(format!(
-        "{}\n{}\nfn main() -> Int effects {{ io }} {{\n    {}();\n    0\n}}\n",
+        "{}\n{}\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}();\n    0\n}}\n",
         rewritten, ASSERT_HELPERS, test_name
     ))
 }
@@ -317,7 +323,7 @@ fn add_io_effect_to_test_fns(source: &str, test_names: &[String]) -> anyhow::Res
         let indent = &line[..indent_len];
         if let Some(name) = parse_fn_name(trimmed) {
             if test_names.iter().any(|test_name| test_name == &name) {
-                let brace_idx = trimmed.find('{').ok_or_else(|| {
+                let brace_idx = trimmed.rfind('{').ok_or_else(|| {
                     anyhow::anyhow!(
                         "test function '{}' must keep '{{' on the same line as the signature",
                         name
@@ -489,7 +495,9 @@ fn test_addition() -> () {
         assert!(transformed.contains("test_assert_eq_internal("));
         assert!(transformed.contains("test_assert_ne_internal("));
         assert!(transformed.contains("test_assert_internal(true)"));
-        assert!(transformed.contains("fn main() -> Int effects { io }"));
+        assert!(transformed.contains(
+            "fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency }"
+        ));
     }
 
     #[test]

@@ -1345,6 +1345,9 @@ impl<'a> Generator<'a> {
         text.push_str("declare void @aic_rt_println_bool(i64)\n");
         text.push_str("declare void @aic_rt_flush_stdout()\n");
         text.push_str("declare void @aic_rt_flush_stderr()\n");
+        text.push_str("declare i64 @aic_rt_mock_io_set_stdin(i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_mock_io_take_stdout(i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_mock_io_take_stderr(i8**, i64*)\n");
         text.push_str("declare void @aic_rt_log_emit(i64, i8*, i64, i64)\n");
         text.push_str("declare void @aic_rt_log_set_level(i64)\n");
         text.push_str("declare void @aic_rt_log_set_json(i64)\n");
@@ -4782,6 +4785,9 @@ impl<'a> Generator<'a> {
             "aic_io_tcp_send_intrinsic" => "io_tcp_send",
             "aic_io_tcp_recv_intrinsic" => "io_tcp_recv",
             "aic_io_tcp_close_intrinsic" => "io_tcp_close",
+            "aic_io_mock_reader_install_intrinsic" => "io_mock_reader_install",
+            "aic_io_mock_writer_take_stdout_intrinsic" => "io_mock_writer_take_stdout",
+            "aic_io_mock_writer_take_stderr_intrinsic" => "io_mock_writer_take_stderr",
             "aic_log_emit_intrinsic" => "log_emit",
             "aic_log_set_level_intrinsic" => "log_set_level",
             "aic_log_set_json_output_intrinsic" => "log_set_json",
@@ -4909,6 +4915,35 @@ impl<'a> Generator<'a> {
             }
             "io_tcp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, IoError]") => {
                 Some(self.gen_io_tcp_close_call(name, args, span, fctx))
+            }
+            "io_mock_reader_install"
+                if self.sig_matches_shape(name, &["String"], "Result[Bool, IoError]") =>
+            {
+                Some(self.gen_io_mock_reader_install_call(name, args, span, fctx))
+            }
+            "io_mock_writer_take_stdout"
+                if self.sig_matches_shape(name, &[], "Result[String, IoError]") =>
+            {
+                Some(self.gen_io_string_result_noarg_call(
+                    name,
+                    "aic_rt_mock_io_take_stdout",
+                    args,
+                    "aic_io_mock_writer_take_stdout_intrinsic",
+                    span,
+                    fctx,
+                ))
+            }
+            "io_mock_writer_take_stderr"
+                if self.sig_matches_shape(name, &[], "Result[String, IoError]") =>
+            {
+                Some(self.gen_io_string_result_noarg_call(
+                    name,
+                    "aic_rt_mock_io_take_stderr",
+                    args,
+                    "aic_io_mock_writer_take_stderr_intrinsic",
+                    span,
+                    fctx,
+                ))
             }
             "log_emit" if self.sig_matches_shape(name, &["Int", "String"], "()") => {
                 Some(self.gen_log_emit_call(args, span, fctx))
@@ -5170,6 +5205,59 @@ impl<'a> Generator<'a> {
             return None;
         };
         self.wrap_io_result(&result_ty, ok_payload, "0", span, fctx)
+    }
+
+    fn gen_io_mock_reader_install_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_io_mock_reader_install_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_io_mock_reader_install_intrinsic expects String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+
+        let (ptr, len, cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let io_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_mock_io_set_stdin(i8* {}, i64 {}, i64 {})",
+            io_err, ptr, len, cap
+        ));
+
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        self.wrap_io_result(&result_ty, ok_payload, &io_err, span, fctx)
     }
 
     fn map_fs_err_to_io_code(&mut self, fs_err: &str, fctx: &mut FnCtx) -> String {
@@ -28510,43 +28598,316 @@ static long aic_rt_sandbox_violation(const char* domain, const char* operation, 
         } \
     } while (0)
 
+typedef struct {
+    char* data;
+    size_t len;
+    size_t cap;
+} AicRtMockBuffer;
+
+static char* aic_rt_mock_stdin_data = NULL;
+static size_t aic_rt_mock_stdin_len = 0;
+static size_t aic_rt_mock_stdin_offset = 0;
+static int aic_rt_mock_stdin_initialized = 0;
+static int aic_rt_mock_stdin_loaded_from_env = 0;
+
+static AicRtMockBuffer aic_rt_mock_stdout = { NULL, 0, 0 };
+static AicRtMockBuffer aic_rt_mock_stderr = { NULL, 0, 0 };
+
+static int aic_rt_mock_truthy(const char* name) {
+    const char* value = getenv(name);
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    if (strcmp(value, "0") == 0 ||
+        strcmp(value, "false") == 0 ||
+        strcmp(value, "FALSE") == 0 ||
+        strcmp(value, "off") == 0 ||
+        strcmp(value, "OFF") == 0 ||
+        strcmp(value, "no") == 0 ||
+        strcmp(value, "NO") == 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int aic_rt_mock_capture_enabled(void) {
+    return aic_rt_mock_truthy("AIC_TEST_IO_CAPTURE");
+}
+
+static int aic_rt_mock_no_real_io(void) {
+    return aic_rt_mock_truthy("AIC_TEST_NO_REAL_IO");
+}
+
+static int aic_rt_mock_buffer_reserve(AicRtMockBuffer* buf, size_t needed) {
+    if (buf == NULL) {
+        return 0;
+    }
+    if (needed <= buf->cap) {
+        return 1;
+    }
+
+    size_t next_cap = buf->cap == 0 ? 64 : buf->cap;
+    while (next_cap < needed) {
+        if (next_cap > SIZE_MAX / 2) {
+            next_cap = needed;
+            break;
+        }
+        next_cap *= 2;
+    }
+
+    char* grown = (char*)realloc(buf->data, next_cap + 1);
+    if (grown == NULL) {
+        return 0;
+    }
+    buf->data = grown;
+    buf->cap = next_cap;
+    if (buf->len == 0) {
+        buf->data[0] = '\0';
+    }
+    return 1;
+}
+
+static int aic_rt_mock_buffer_append(AicRtMockBuffer* buf, const char* ptr, size_t len) {
+    if (buf == NULL) {
+        return 0;
+    }
+    if (len == 0) {
+        return 1;
+    }
+    if (ptr == NULL) {
+        return 0;
+    }
+
+    size_t needed = buf->len + len;
+    if (needed < buf->len) {
+        return 0;
+    }
+    if (!aic_rt_mock_buffer_reserve(buf, needed)) {
+        return 0;
+    }
+
+    memcpy(buf->data + buf->len, ptr, len);
+    buf->len = needed;
+    buf->data[buf->len] = '\0';
+    return 1;
+}
+
+static void aic_rt_mock_buffer_clear(AicRtMockBuffer* buf) {
+    if (buf == NULL || buf->data == NULL) {
+        return;
+    }
+    buf->len = 0;
+    buf->data[0] = '\0';
+}
+
+static long aic_rt_mock_take_buffer(AicRtMockBuffer* buf, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (buf == NULL || out_ptr == NULL || out_len == NULL) {
+        return 2;
+    }
+
+    size_t len = buf->len;
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return 3;
+    }
+    if (len > 0) {
+        memcpy(out, buf->data, len);
+    }
+    out[len] = '\0';
+    *out_ptr = out;
+    *out_len = (long)len;
+    aic_rt_mock_buffer_clear(buf);
+    return 0;
+}
+
+long aic_rt_mock_io_set_stdin(const char* ptr, long len, long cap) {
+    (void)cap;
+    if (len < 0) {
+        return 2;
+    }
+    if (len > 0 && ptr == NULL) {
+        return 2;
+    }
+
+    char* next = NULL;
+    if (len > 0) {
+        next = (char*)malloc((size_t)len + 1);
+        if (next == NULL) {
+            return 3;
+        }
+        memcpy(next, ptr, (size_t)len);
+        next[(size_t)len] = '\0';
+    }
+
+    if (aic_rt_mock_stdin_data != NULL) {
+        free(aic_rt_mock_stdin_data);
+    }
+    aic_rt_mock_stdin_data = next;
+    aic_rt_mock_stdin_len = len <= 0 ? 0 : (size_t)len;
+    aic_rt_mock_stdin_offset = 0;
+    aic_rt_mock_stdin_initialized = 1;
+    return 0;
+}
+
+static void aic_rt_mock_io_load_stdin_from_env_once(void) {
+    if (aic_rt_mock_stdin_loaded_from_env) {
+        return;
+    }
+    aic_rt_mock_stdin_loaded_from_env = 1;
+
+    const char* raw = getenv("AIC_TEST_IO_STDIN");
+    if (raw == NULL) {
+        return;
+    }
+
+    size_t len = strlen(raw);
+    if (len > (size_t)LONG_MAX) {
+        len = (size_t)LONG_MAX;
+    }
+    (void)aic_rt_mock_io_set_stdin(raw, (long)len, (long)len);
+}
+
+static long aic_rt_mock_read_line(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    if (!aic_rt_mock_stdin_initialized) {
+        return 1;
+    }
+
+    if (aic_rt_mock_stdin_data == NULL || aic_rt_mock_stdin_offset >= aic_rt_mock_stdin_len) {
+        return 1;
+    }
+
+    size_t start = aic_rt_mock_stdin_offset;
+    size_t cursor = start;
+    while (cursor < aic_rt_mock_stdin_len) {
+        char ch = aic_rt_mock_stdin_data[cursor];
+        if (ch == '\n' || ch == '\r') {
+            break;
+        }
+        cursor += 1;
+    }
+
+    size_t line_len = cursor - start;
+    char* line = (char*)malloc(line_len + 1);
+    if (line == NULL) {
+        return 3;
+    }
+    if (line_len > 0) {
+        memcpy(line, aic_rt_mock_stdin_data + start, line_len);
+    }
+    line[line_len] = '\0';
+
+    if (cursor < aic_rt_mock_stdin_len) {
+        if (aic_rt_mock_stdin_data[cursor] == '\r' &&
+            cursor + 1 < aic_rt_mock_stdin_len &&
+            aic_rt_mock_stdin_data[cursor + 1] == '\n') {
+            cursor += 2;
+        } else {
+            cursor += 1;
+        }
+    }
+    aic_rt_mock_stdin_offset = cursor;
+
+    if (out_ptr != NULL) {
+        *out_ptr = line;
+    } else {
+        free(line);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)line_len;
+    }
+    return 0;
+}
+
+long aic_rt_mock_io_take_stdout(char** out_ptr, long* out_len) {
+    return aic_rt_mock_take_buffer(&aic_rt_mock_stdout, out_ptr, out_len);
+}
+
+long aic_rt_mock_io_take_stderr(char** out_ptr, long* out_len) {
+    return aic_rt_mock_take_buffer(&aic_rt_mock_stderr, out_ptr, out_len);
+}
+
+static void aic_rt_mock_write_stdout(const char* ptr, size_t len) {
+    if (aic_rt_mock_capture_enabled()) {
+        (void)aic_rt_mock_buffer_append(&aic_rt_mock_stdout, ptr, len);
+    }
+}
+
+static void aic_rt_mock_write_stderr(const char* ptr, size_t len) {
+    if (aic_rt_mock_capture_enabled()) {
+        (void)aic_rt_mock_buffer_append(&aic_rt_mock_stderr, ptr, len);
+    }
+}
 void aic_rt_print_int(long x) {
-    printf("%ld\n", x);
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%ld\n", x);
+    if (written <= 0) {
+        return;
+    }
+    aic_rt_mock_write_stdout(buf, (size_t)written);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(buf, 1, (size_t)written, stdout);
+    }
 }
 
 void aic_rt_print_float(double x) {
     char buf[64];
     int written = snprintf(buf, sizeof(buf), "%.17g", x);
     if (written <= 0) {
-        printf("0.0\n");
-        return;
-    }
-    int has_decimal = 0;
-    for (int i = 0; i < written; ++i) {
-        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
-            has_decimal = 1;
-            break;
+        memcpy(buf, "0.0", 3);
+        written = 3;
+    } else {
+        int has_decimal = 0;
+        for (int i = 0; i < written; ++i) {
+            if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
+                has_decimal = 1;
+                break;
+            }
+        }
+        if (!has_decimal && written < (int)sizeof(buf) - 2) {
+            buf[written++] = '.';
+            buf[written++] = '0';
         }
     }
-    if (!has_decimal && written < (int)sizeof(buf) - 2) {
-        buf[written++] = '.';
-        buf[written++] = '0';
-        buf[written] = '\0';
+    if (written < (int)sizeof(buf) - 1) {
+        buf[written++] = '\n';
     }
-    printf("%s\n", buf);
+    buf[written] = '\0';
+    aic_rt_mock_write_stdout(buf, (size_t)written);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(buf, 1, (size_t)written, stdout);
+    }
 }
 
 void aic_rt_print_str(const char* ptr, long len, long cap) {
     (void)cap;
+    const char* out_ptr = ptr;
+    size_t out_len = 0;
     if (ptr == NULL) {
-        fputs("<null>", stdout);
-        return;
+        out_ptr = "<null>";
+        out_len = 6;
+    } else if (len < 0) {
+        out_ptr = "<invalid-string>";
+        out_len = 16;
+    } else {
+        out_len = (size_t)len;
     }
-    if (len < 0) {
-        fputs("<invalid-string>", stdout);
-        return;
+    aic_rt_mock_write_stdout(out_ptr, out_len);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(out_ptr, 1, out_len, stdout);
     }
-    fwrite(ptr, 1, (size_t)len, stdout);
 }
 
 static int aic_rt_io_is_space(unsigned char ch) {
@@ -28575,6 +28936,15 @@ long aic_rt_read_line(char** out_ptr, long* out_len) {
     }
     if (out_len != NULL) {
         *out_len = 0;
+    }
+
+    aic_rt_mock_io_load_stdin_from_env_once();
+    long mock_rc = aic_rt_mock_read_line(out_ptr, out_len);
+    if (mock_rc != 1) {
+        return mock_rc;
+    }
+    if (aic_rt_mock_no_real_io()) {
+        return 1;
     }
 
     size_t cap = 128;
@@ -28728,7 +29098,7 @@ long aic_rt_read_char(char** out_ptr, long* out_len) {
     } else if (width == 2) {
         codepoint = ((unsigned long)(bytes[0] & 0x1F) << 6) |
             (unsigned long)(bytes[1] & 0x3F);
-        if (codepoint < 0x80) {
+        if (codepoint < 0x80 || codepoint > 0x7FF) {
             free(line);
             return 2;
         }
@@ -28751,13 +29121,22 @@ long aic_rt_read_char(char** out_ptr, long* out_len) {
         }
     }
 
-    if (out_ptr != NULL) {
-        *out_ptr = line;
-    } else {
+    char* out = (char*)malloc(width + 1);
+    if (out == NULL) {
         free(line);
+        return 3;
+    }
+    memcpy(out, line, width);
+    out[width] = '\0';
+    free(line);
+
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
     }
     if (out_len != NULL) {
-        *out_len = line_len;
+        *out_len = (long)width;
     }
     return 0;
 }
@@ -28781,12 +29160,15 @@ long aic_rt_prompt(
     }
     if (message_len > 0) {
         size_t target = (size_t)message_len;
-        size_t written = fwrite(message_ptr, 1, target, stdout);
-        if (written != target) {
-            return 3;
+        aic_rt_mock_write_stdout(message_ptr, target);
+        if (!aic_rt_mock_no_real_io()) {
+            size_t written = fwrite(message_ptr, 1, target, stdout);
+            if (written != target) {
+                return 3;
+            }
         }
     }
-    if (fflush(stdout) != 0) {
+    if (!aic_rt_mock_no_real_io() && fflush(stdout) != 0) {
         return 3;
     }
     return aic_rt_read_line(out_ptr, out_len);
@@ -28794,61 +29176,96 @@ long aic_rt_prompt(
 
 void aic_rt_eprint_str(const char* ptr, long len, long cap) {
     (void)cap;
+    const char* out_ptr = ptr;
+    size_t out_len = 0;
     if (ptr == NULL) {
-        fputs("<null>", stderr);
-        return;
+        out_ptr = "<null>";
+        out_len = 6;
+    } else if (len < 0) {
+        out_ptr = "<invalid-string>";
+        out_len = 16;
+    } else {
+        out_len = (size_t)len;
     }
-    if (len < 0) {
-        fputs("<invalid-string>", stderr);
-        return;
+    aic_rt_mock_write_stderr(out_ptr, out_len);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(out_ptr, 1, out_len, stderr);
     }
-    fwrite(ptr, 1, (size_t)len, stderr);
 }
 
 void aic_rt_eprint_int(long x) {
-    fprintf(stderr, "%ld", x);
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%ld", x);
+    if (written <= 0) {
+        return;
+    }
+    aic_rt_mock_write_stderr(buf, (size_t)written);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(buf, 1, (size_t)written, stderr);
+    }
 }
 
 void aic_rt_println_str(const char* ptr, long len, long cap) {
     (void)cap;
+    const char* out_ptr = ptr;
+    size_t out_len = 0;
     if (ptr == NULL) {
-        printf("<null>\n");
-        return;
+        out_ptr = "<null>";
+        out_len = 6;
+    } else if (len < 0) {
+        out_ptr = "<invalid-string>";
+        out_len = 16;
+    } else {
+        out_len = (size_t)len;
     }
-    if (len < 0) {
-        printf("<invalid-string>\n");
-        return;
+    aic_rt_mock_write_stdout(out_ptr, out_len);
+    aic_rt_mock_write_stdout("\n", 1);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(out_ptr, 1, out_len, stdout);
+        fputc('\n', stdout);
     }
-    fwrite(ptr, 1, (size_t)len, stdout);
-    fputc('\n', stdout);
 }
 
 void aic_rt_println_int(long x) {
-    printf("%ld\n", x);
+    char buf[64];
+    int written = snprintf(buf, sizeof(buf), "%ld\n", x);
+    if (written <= 0) {
+        return;
+    }
+    aic_rt_mock_write_stdout(buf, (size_t)written);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(buf, 1, (size_t)written, stdout);
+    }
 }
 
 void aic_rt_print_bool(long value) {
-    if (value != 0) {
-        fputs("true", stdout);
-    } else {
-        fputs("false", stdout);
+    const char* text = value != 0 ? "true" : "false";
+    size_t len = value != 0 ? 4 : 5;
+    aic_rt_mock_write_stdout(text, len);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(text, 1, len, stdout);
     }
 }
 
 void aic_rt_println_bool(long value) {
-    if (value != 0) {
-        fputs("true\n", stdout);
-    } else {
-        fputs("false\n", stdout);
+    const char* text = value != 0 ? "true\n" : "false\n";
+    size_t len = value != 0 ? 5 : 6;
+    aic_rt_mock_write_stdout(text, len);
+    if (!aic_rt_mock_no_real_io()) {
+        fwrite(text, 1, len, stdout);
     }
 }
 
 void aic_rt_flush_stdout(void) {
-    fflush(stdout);
+    if (!aic_rt_mock_no_real_io()) {
+        fflush(stdout);
+    }
 }
 
 void aic_rt_flush_stderr(void) {
-    fflush(stderr);
+    if (!aic_rt_mock_no_real_io()) {
+        fflush(stderr);
+    }
 }
 
 static long aic_rt_log_level = 1;
@@ -46784,6 +47201,15 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_rand_range(i64, i64)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_mock_io_set_stdin(i8*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_mock_io_take_stdout(i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_mock_io_take_stderr(i8**, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_conc_spawn(i64, i64, i64*)"));
         assert!(output
             .llvm_ir
@@ -46965,6 +47391,14 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
         assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
         assert!(runtime_c_source().contains("AIC_TEST_SEED"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_mock_io_set_stdin(const char* ptr, long len, long cap)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_mock_io_take_stdout(char** out_ptr, long* out_len)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_mock_io_take_stderr(char** out_ptr, long* out_len)"));
+        assert!(runtime_c_source().contains("AIC_TEST_NO_REAL_IO"));
+        assert!(runtime_c_source().contains("AIC_TEST_IO_CAPTURE"));
         assert!(runtime_c_source().contains("long aic_rt_conc_spawn(long value, long delay_ms"));
         assert!(runtime_c_source().contains("long aic_rt_conc_join(long handle, long* out_value)"));
         assert!(runtime_c_source().contains(

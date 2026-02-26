@@ -1,0 +1,67 @@
+module examples.test.mock_io;
+
+import std.io;
+import std.rand;
+import std.time;
+import std.vec;
+import std.string;
+
+#[test]
+fn test_mock_reader_and_writer() -> () effects { io, rand, time } {
+    let lines = append(vec_of("hello"), vec_of("world"));
+    let reader = mock_reader_from_lines(lines);
+
+    let install_ok = match install_mock_reader(reader) {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(install_ok);
+
+    let first = match read_line() {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let second = match read_line() {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let eof_reached = match read_line() {
+        Ok(_) => false,
+        Err(err) => io_is_end_of_input(err),
+    };
+
+    assert(byte_length(first) == 5);
+    assert(starts_with(first, "hello"));
+    assert(byte_length(second) == 5);
+    assert(starts_with(second, "world"));
+    assert(eof_reached);
+
+    print_str("A");
+    println_int(7);
+
+    let writer_for_write = mock_stdout_writer();
+    let wrote_ok = match mock_write(writer_for_write, "B") {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    assert(wrote_ok);
+
+    let writer_for_take = mock_stdout_writer();
+    let captured = match mock_writer_take(writer_for_take) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let captured_len = byte_length(captured);
+    assert(captured_len >= 3);
+}
+
+#[test]
+fn test_rand_and_time_determinism() -> () effects { io, rand, time } {
+    seed(9);
+    let first = random_int();
+    seed(9);
+    let second = random_int();
+
+    assert_eq(first, second);
+    assert_eq(now_ms(), 1767225600000);
+}

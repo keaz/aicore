@@ -1678,6 +1678,21 @@ fn unit_std_io_public_apis_delegate_to_runtime_intrinsics() {
         "aic_io_panic_intrinsic",
         1,
     );
+    assert_delegate_call(
+        &io_source,
+        "std/io.aic",
+        "install_mock_reader",
+        "aic_io_mock_reader_install_intrinsic",
+        1,
+    );
+    assert!(
+        io_source.contains("aic_io_mock_writer_take_stdout_intrinsic"),
+        "std/io.aic must expose stdout mock capture intrinsic"
+    );
+    assert!(
+        io_source.contains("aic_io_mock_writer_take_stderr_intrinsic"),
+        "std/io.aic must expose stderr mock capture intrinsic"
+    );
 }
 
 #[test]
