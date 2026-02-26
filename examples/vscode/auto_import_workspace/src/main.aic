@@ -3,7 +3,7 @@ module auto_import_workspace.main;
 import std.io;
 import auto_import_workspace.net;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     // In VS Code, removing the import above and accepting completion for
     // demo_tcp_connect() should auto-insert `import auto_import_workspace.net;`.
     let value = demo_tcp_connect();

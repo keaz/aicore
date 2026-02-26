@@ -52,7 +52,7 @@ fn time_code(err: TimeError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let bad_regex = match compile_with_flags("[unterminated", no_flags()) {
         Ok(_) => 0,
         Err(err) => regex_code(err),

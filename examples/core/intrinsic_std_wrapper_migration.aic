@@ -4,7 +4,7 @@ import std.concurrent;
 import std.net;
 import std.proc;
 
-fn main() -> Int effects { concurrency, net, proc, env } {
+fn main() -> Int effects { concurrency, net, proc, env } capabilities { concurrency, net, proc, env  } {
     let _pid = proc.current_pid();
     let _dns = net.dns_lookup("localhost");
     let _chan = concurrent.channel_int(1);

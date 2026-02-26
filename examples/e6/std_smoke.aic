@@ -12,7 +12,7 @@ import std.option;
 import std.result;
 import std.bytes;
 
-fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } {
+fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } capabilities { io, fs, net, time, rand, env, concurrency  } {
     let _a = exists("data.txt");
     let _b = read_text("data.txt");
     write_text("out.txt", "ok");

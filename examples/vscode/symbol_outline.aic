@@ -36,7 +36,7 @@ fn choose(status: Status, counter: Counter) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let value = choose(Ready(BASE), Counter { value: BASE });
     print_int(value);
     0

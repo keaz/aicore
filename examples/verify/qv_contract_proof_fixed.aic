@@ -9,7 +9,7 @@ fn abs_non_negative(x: Int) -> Int ensures result >= 0 {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let value = abs_non_negative(-7);
     print_int(value);
     0

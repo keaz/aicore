@@ -24,7 +24,7 @@ fn code(err: JsonError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let old_doc = match parse("{\"host\":\"svc\",\"port\":8080}") {
         Ok(value) => value,
         Err(_) => encode_null(),

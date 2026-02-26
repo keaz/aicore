@@ -122,12 +122,16 @@ Per-suggestion fields (deterministic ordering by function name):
 - `current_effects`
 - `required_effects`
 - `missing_effects`
+- `current_capabilities`
+- `required_capabilities`
+- `missing_capabilities`
 - `reason` (effect-to-call-chain mapping, for example `"io": "top -> middle -> leaf"`)
+- `capability_reason` (capability-to-call-chain mapping, for example `"io": "top -> middle -> leaf"`)
 
 Exit behavior:
 
 - returns `0` when no diagnostics errors exist for the input
-- returns `1` when diagnostics include errors (including missing effect declarations)
+- returns `1` when diagnostics include errors (including missing effect/capability declarations)
 
 ## `aic suggest-contracts` output modes
 

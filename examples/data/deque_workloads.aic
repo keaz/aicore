@@ -81,7 +81,7 @@ fn round_robin_score() -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let score = bfs_queue_score() + sliding_window_score() + round_robin_score();
     if score == 3 {
         print_int(42);

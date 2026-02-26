@@ -1,7 +1,7 @@
 import std.io;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(len("hello"));
     0
 }

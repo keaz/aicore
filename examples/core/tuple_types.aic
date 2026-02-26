@@ -8,7 +8,7 @@ fn tuple_first[T, U](pair: (T, U)) -> T {
     pair.0
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let pair = swap(2, 40);
     let (left, right) = pair;
     let matched = match pair {

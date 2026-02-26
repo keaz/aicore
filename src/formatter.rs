@@ -157,6 +157,14 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
             out.push_str(&effects.join(", "));
             out.push_str(" }");
         }
+        if !f.capabilities.is_empty() {
+            let mut capabilities = f.capabilities.clone();
+            capabilities.sort();
+            capabilities.dedup();
+            out.push_str(" capabilities { ");
+            out.push_str(&capabilities.join(", "));
+            out.push_str(" }");
+        }
         out.push_str(";\n");
         return;
     }
@@ -187,6 +195,14 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
         effects.dedup();
         out.push_str(" effects { ");
         out.push_str(&effects.join(", "));
+        out.push_str(" }");
+    }
+    if !f.capabilities.is_empty() {
+        let mut capabilities = f.capabilities.clone();
+        capabilities.sort();
+        capabilities.dedup();
+        out.push_str(" capabilities { ");
+        out.push_str(&capabilities.join(", "));
         out.push_str(" }");
     }
 
@@ -371,6 +387,14 @@ fn format_method_signature(
         effects.dedup();
         out.push_str(" effects { ");
         out.push_str(&effects.join(", "));
+        out.push_str(" }");
+    }
+    if !method.capabilities.is_empty() {
+        let mut capabilities = method.capabilities.clone();
+        capabilities.sort();
+        capabilities.dedup();
+        out.push_str(" capabilities { ");
+        out.push_str(&capabilities.join(", "));
         out.push_str(" }");
     }
     if let Some(req) = &method.requires {

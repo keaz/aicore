@@ -2,7 +2,7 @@ module examples.ops.sandbox_profiles.time_blocked_demo;
 
 import std.time;
 
-fn main() -> Int effects { time } {
+fn main() -> Int effects { time } capabilities { time  } {
     let result = time.parse_rfc3339("2026-01-01T00:00:00.000Z");
     match result {
         Ok(_) => 1,

@@ -5,7 +5,7 @@ import std.string;
 import std.url;
 import std.vec;
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let fallback = Url {
         scheme: "",
         host: "",

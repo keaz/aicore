@@ -26,7 +26,7 @@ fn code(err: TimeError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let audit = match parse_rfc3339("2026-02-21T18:45:10.230+05:30") {
         Ok(value) => value,
         Err(_) => fallback(),

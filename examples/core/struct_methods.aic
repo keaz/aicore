@@ -16,7 +16,7 @@ impl User {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let user = User::new(30);
     let score = if user.is_adult() { user.age_plus() } else { 0 };
     print_int(score);

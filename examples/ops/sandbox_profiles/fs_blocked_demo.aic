@@ -2,7 +2,7 @@ module examples.ops.sandbox_profiles.fs_blocked_demo;
 
 import std.fs;
 
-fn main() -> Int effects { fs } {
+fn main() -> Int effects { fs } capabilities { fs  } {
     let result = fs.read_text("Cargo.toml");
     match result {
         Ok(_) => 1,

@@ -5,7 +5,7 @@ import std.net;
 import std.string;
 import std.bytes;
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,

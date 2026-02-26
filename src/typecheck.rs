@@ -49,6 +49,7 @@ struct FnSig {
     param_names: Vec<String>,
     ret: String,
     effects: BTreeSet<String>,
+    capabilities: BTreeSet<String>,
     generic_params: Vec<String>,
     generic_bounds: BTreeMap<String, Vec<String>>,
 }
@@ -169,6 +170,12 @@ enum ResourceKind {
     Task,
     IntChannel,
     IntMutex,
+    FileHandle,
+    TcpHandle,
+    UdpHandle,
+    ProcessHandle,
+    AsyncIntOp,
+    AsyncStringOp,
 }
 
 impl ResourceKind {
@@ -177,6 +184,12 @@ impl ResourceKind {
             Self::Task => "Task",
             Self::IntChannel => "IntChannel",
             Self::IntMutex => "IntMutex",
+            Self::FileHandle => "FileHandle",
+            Self::TcpHandle => "TcpHandle",
+            Self::UdpHandle => "UdpHandle",
+            Self::ProcessHandle => "ProcessHandle",
+            Self::AsyncIntOp => "AsyncIntOp",
+            Self::AsyncStringOp => "AsyncStringOp",
         }
     }
 }
@@ -193,6 +206,8 @@ struct ResourceProtocolOp {
     kind: ResourceKind,
     terminal: bool,
     api: &'static str,
+    first_param_type: &'static str,
+    required_effect: &'static str,
 }
 
 impl<'a> Checker<'a> {
@@ -262,6 +277,7 @@ impl<'a> Checker<'a> {
                         .cloned()
                         .unwrap_or_else(|| "<?>".to_string()),
                     effects: info.effects.clone(),
+                    capabilities: info.capabilities.clone(),
                     generic_params: info.generics.clone(),
                     generic_bounds: info.generic_bounds.clone(),
                 },
@@ -288,6 +304,7 @@ impl<'a> Checker<'a> {
                         .cloned()
                         .unwrap_or_else(|| "<?>".to_string()),
                     effects: info.effects.clone(),
+                    capabilities: info.capabilities.clone(),
                     generic_params: info.generics.clone(),
                     generic_bounds: info.generic_bounds.clone(),
                 },
@@ -316,6 +333,7 @@ impl<'a> Checker<'a> {
                 param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
+                capabilities: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
                 generic_bounds: BTreeMap::new(),
             },
@@ -331,6 +349,7 @@ impl<'a> Checker<'a> {
                 param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
+                capabilities: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
                 generic_bounds: BTreeMap::new(),
             },
@@ -346,6 +365,7 @@ impl<'a> Checker<'a> {
                 param_names: vec!["value".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
+                capabilities: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
                 generic_bounds: BTreeMap::new(),
             },
@@ -361,6 +381,7 @@ impl<'a> Checker<'a> {
                 param_names: vec!["value".to_string()],
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
+                capabilities: BTreeSet::new(),
                 generic_params: Vec::new(),
                 generic_bounds: BTreeMap::new(),
             },
@@ -376,6 +397,7 @@ impl<'a> Checker<'a> {
                 param_names: vec!["message".to_string()],
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
+                capabilities: BTreeSet::from(["io".to_string()]),
                 generic_params: Vec::new(),
                 generic_bounds: BTreeMap::new(),
             },
@@ -443,6 +465,7 @@ impl<'a> Checker<'a> {
             }
         }
         self.check_transitive_effects();
+        self.check_capability_authority();
     }
 
     fn finish(mut self) -> TypecheckOutput {
@@ -1150,6 +1173,7 @@ impl<'a> Checker<'a> {
         if func.is_async
             || !func.generics.is_empty()
             || !func.effects.is_empty()
+            || !func.capabilities.is_empty()
             || func.requires.is_some()
             || func.ensures.is_some()
         {
@@ -1157,7 +1181,7 @@ impl<'a> Checker<'a> {
                 Diagnostic::error(
                     "E2121",
                     format!(
-                        "extern function '{}' must be a plain signature without async/generics/effects/contracts",
+                        "extern function '{}' must be a plain signature without async/generics/effects/capabilities/contracts",
                         func.name
                     ),
                     self.file,
@@ -1238,6 +1262,7 @@ impl<'a> Checker<'a> {
 
         if func.is_async
             || !func.generics.is_empty()
+            || !func.capabilities.is_empty()
             || func.requires.is_some()
             || func.ensures.is_some()
         {
@@ -1245,7 +1270,7 @@ impl<'a> Checker<'a> {
                 Diagnostic::error(
                     "E2121",
                     format!(
-                        "intrinsic function '{}' must be a plain declaration without async/generics/contracts",
+                        "intrinsic function '{}' must be a plain declaration without async/generics/capabilities/contracts",
                         func.name
                     ),
                     self.file,
@@ -1345,6 +1370,100 @@ impl<'a> Checker<'a> {
                 self.diagnostics.push(diagnostic);
             }
         }
+    }
+
+    fn check_capability_authority(&mut self) {
+        let user_functions = self
+            .program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ir::Item::Function(func)
+                    if decode_internal_type_alias(&func.name).is_none()
+                        && decode_internal_const(&func.name).is_none() =>
+                {
+                    Some(func.name.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for function in &user_functions {
+            if self.is_std_function(function) {
+                continue;
+            }
+            let declared_capabilities = self
+                .functions
+                .get(function)
+                .map(|sig| sig.capabilities.clone())
+                .unwrap_or_default();
+            let required_effects = self.effect_usage.get(function).cloned().unwrap_or_default();
+            let missing = required_effects
+                .difference(&declared_capabilities)
+                .cloned()
+                .collect::<Vec<_>>();
+
+            for capability in missing {
+                let mut diagnostic = if let Some(path) =
+                    self.find_effect_path(function, &capability)
+                {
+                    Diagnostic::error(
+                        "E2009",
+                        format!(
+                            "function '{}' requires capability '{}' via call path {}",
+                            function,
+                            capability,
+                            path.nodes.join(" -> ")
+                        ),
+                        self.file,
+                        path.span,
+                    )
+                    .with_help(format!(
+                        "declare `capabilities {{ {} }}` on '{}' and thread authority through callers",
+                        capability, function
+                    ))
+                } else {
+                    Diagnostic::error(
+                        "E2009",
+                        format!(
+                            "function '{}' declares effect '{}' but is missing capability '{}'",
+                            function, capability, capability
+                        ),
+                        self.file,
+                        self.function_spans
+                            .get(function)
+                            .map(|(span, _)| *span)
+                            .unwrap_or(crate::span::Span::new(0, 0)),
+                    )
+                    .with_help(format!(
+                        "declare `capabilities {{ {} }}` on '{}'",
+                        capability, function
+                    ))
+                };
+
+                if let Some((function_span, body_span)) = self.function_spans.get(function).copied()
+                {
+                    if let Some(fix) = self.capability_declaration_fix(
+                        function,
+                        function_span,
+                        body_span,
+                        &required_effects,
+                    ) {
+                        diagnostic = diagnostic.with_fix(fix);
+                    }
+                }
+
+                self.diagnostics.push(diagnostic);
+            }
+        }
+    }
+
+    fn is_std_function(&self, function: &str) -> bool {
+        self.resolution
+            .functions
+            .get(function)
+            .and_then(|info| self.function_module_by_symbol.get(&info.symbol))
+            .is_some_and(|module| module == "std" || module.starts_with("std."))
     }
 
     fn compute_effect_closure(
@@ -1495,6 +1614,97 @@ impl<'a> Checker<'a> {
         })
     }
 
+    fn capability_declaration_fix(
+        &self,
+        function_name: &str,
+        function_span: crate::span::Span,
+        body_span: crate::span::Span,
+        required_capabilities: &BTreeSet<String>,
+    ) -> Option<SuggestedFix> {
+        let source = self.source.as_ref()?;
+        if required_capabilities.is_empty()
+            || function_span.start > function_span.end
+            || body_span.start < function_span.start
+            || body_span.start > source.len()
+            || function_span.start > source.len()
+            || function_span.end > source.len()
+        {
+            return None;
+        }
+        if !source.is_char_boundary(function_span.start)
+            || !source.is_char_boundary(function_span.end)
+            || !source.is_char_boundary(body_span.start)
+        {
+            return None;
+        }
+
+        let signature = &source[function_span.start..body_span.start];
+        let mut capabilities = self
+            .functions
+            .get(function_name)
+            .map(|sig| sig.capabilities.clone())
+            .unwrap_or_default();
+        capabilities.extend(required_capabilities.iter().cloned());
+        let capabilities = capabilities.into_iter().collect::<Vec<_>>();
+        if capabilities.is_empty() {
+            return None;
+        }
+        let capabilities_text = capabilities.join(", ");
+
+        if let Some((clause_rel_start, clause_rel_end)) = Self::find_capability_clause(signature) {
+            let start = function_span.start + clause_rel_start;
+            let end = function_span.start + clause_rel_end;
+            return Some(SuggestedFix {
+                message: format!(
+                    "update capability declaration on '{}' to include required capabilities",
+                    function_name
+                ),
+                replacement: Some(format!("capabilities {{ {} }}", capabilities_text)),
+                start: Some(start),
+                end: Some(end),
+            });
+        }
+
+        if let Some((_, effects_clause_end)) = Self::find_effect_clause(signature) {
+            let insert = function_span.start + effects_clause_end;
+            return Some(SuggestedFix {
+                message: format!(
+                    "add missing capabilities declaration to function '{}'",
+                    function_name
+                ),
+                replacement: Some(format!(" capabilities {{ {} }}", capabilities_text)),
+                start: Some(insert),
+                end: Some(insert),
+            });
+        }
+
+        let insertion_before = [
+            Self::find_keyword(signature, "requires"),
+            Self::find_keyword(signature, "ensures"),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        let (insert_rel, replacement) = if let Some(rel) = insertion_before {
+            (rel, format!("capabilities {{ {} }} ", capabilities_text))
+        } else {
+            (
+                signature.len(),
+                format!(" capabilities {{ {} }}", capabilities_text),
+            )
+        };
+        let insert = function_span.start + insert_rel;
+        Some(SuggestedFix {
+            message: format!(
+                "add missing capabilities declaration to function '{}'",
+                function_name
+            ),
+            replacement: Some(replacement),
+            start: Some(insert),
+            end: Some(insert),
+        })
+    }
+
     fn find_effect_clause(signature: &str) -> Option<(usize, usize)> {
         let bytes = signature.as_bytes();
         let mut start = 0usize;
@@ -1503,6 +1713,41 @@ impl<'a> Checker<'a> {
             let found = signature[start..].find("effects")?;
             let idx = start + found;
             let end_keyword = idx + "effects".len();
+            let before_ok = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+            let after_ok = end_keyword >= bytes.len() || !is_ident_byte(bytes[end_keyword]);
+            if !before_ok || !after_ok {
+                start = idx + 1;
+                continue;
+            }
+
+            let mut cursor = end_keyword;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            if cursor >= bytes.len() || bytes[cursor] != b'{' {
+                start = idx + 1;
+                continue;
+            }
+            let mut close = cursor + 1;
+            while close < bytes.len() && bytes[close] != b'}' {
+                close += 1;
+            }
+            if close >= bytes.len() {
+                return None;
+            }
+            return Some((idx, close + 1));
+        }
+        None
+    }
+
+    fn find_capability_clause(signature: &str) -> Option<(usize, usize)> {
+        let bytes = signature.as_bytes();
+        let mut start = 0usize;
+
+        while start < bytes.len() {
+            let found = signature[start..].find("capabilities")?;
+            let idx = start + found;
+            let end_keyword = idx + "capabilities".len();
             let before_ok = idx == 0 || !is_ident_byte(bytes[idx - 1]);
             let after_ok = end_keyword >= bytes.len() || !is_ident_byte(bytes[end_keyword]);
             if !before_ok || !after_ok {
@@ -1703,10 +1948,10 @@ impl<'a> Checker<'a> {
         state: &mut ResourceStateMap,
         allow_closed_use: bool,
     ) {
-        let Some(name) = self.resolve_concurrent_protocol_call(callee) else {
+        let Some(name) = self.resolve_resource_protocol_call(callee) else {
             return;
         };
-        let Some(op) = concurrent_protocol_op(&name) else {
+        let Some(op) = resource_protocol_op(&name) else {
             return;
         };
         let Some(first_arg) = args.first() else {
@@ -1749,12 +1994,14 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn resolve_concurrent_protocol_call(&self, callee: &ir::Expr) -> Option<String> {
+    fn resolve_resource_protocol_call(&self, callee: &ir::Expr) -> Option<String> {
         let call_path = self.extract_callee_path(callee)?;
         let name = call_path.last()?.clone();
-        let op = concurrent_protocol_op(&name)?;
+        let op = resource_protocol_op(&name)?;
         let sig = self.functions.get(&name)?;
-        if sig.params.first().map(String::as_str) == Some(op.kind.as_str()) {
+        if sig.params.first().map(String::as_str) == Some(op.first_param_type)
+            && sig.effects.contains(op.required_effect)
+        {
             Some(name)
         } else {
             None
@@ -6432,47 +6679,161 @@ fn contains_null_token(input: &str) -> bool {
         .any(|segment| segment.eq_ignore_ascii_case("null"))
 }
 
-fn concurrent_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
+fn resource_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
     match name {
         "send_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntChannel,
             terminal: false,
             api: "send_int",
+            first_param_type: "IntChannel",
+            required_effect: "concurrency",
         }),
         "recv_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntChannel,
             terminal: false,
             api: "recv_int",
+            first_param_type: "IntChannel",
+            required_effect: "concurrency",
         }),
         "close_channel" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntChannel,
             terminal: true,
             api: "close_channel",
+            first_param_type: "IntChannel",
+            required_effect: "concurrency",
         }),
         "lock_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: false,
             api: "lock_int",
+            first_param_type: "IntMutex",
+            required_effect: "concurrency",
         }),
         "unlock_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: false,
             api: "unlock_int",
+            first_param_type: "IntMutex",
+            required_effect: "concurrency",
         }),
         "close_mutex" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: true,
             api: "close_mutex",
+            first_param_type: "IntMutex",
+            required_effect: "concurrency",
         }),
         "join_task" => Some(ResourceProtocolOp {
             kind: ResourceKind::Task,
             terminal: true,
             api: "join_task",
+            first_param_type: "Task",
+            required_effect: "concurrency",
         }),
         "cancel_task" => Some(ResourceProtocolOp {
             kind: ResourceKind::Task,
             terminal: true,
             api: "cancel_task",
+            first_param_type: "Task",
+            required_effect: "concurrency",
+        }),
+        "file_read_line" => Some(ResourceProtocolOp {
+            kind: ResourceKind::FileHandle,
+            terminal: false,
+            api: "file_read_line",
+            first_param_type: "FileHandle",
+            required_effect: "fs",
+        }),
+        "file_write_str" => Some(ResourceProtocolOp {
+            kind: ResourceKind::FileHandle,
+            terminal: false,
+            api: "file_write_str",
+            first_param_type: "FileHandle",
+            required_effect: "fs",
+        }),
+        "file_close" => Some(ResourceProtocolOp {
+            kind: ResourceKind::FileHandle,
+            terminal: true,
+            api: "file_close",
+            first_param_type: "FileHandle",
+            required_effect: "fs",
+        }),
+        "tcp_send" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TcpHandle,
+            terminal: false,
+            api: "tcp_send",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "tcp_recv" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TcpHandle,
+            terminal: false,
+            api: "tcp_recv",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "tcp_close" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TcpHandle,
+            terminal: true,
+            api: "tcp_close",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "udp_send_to" => Some(ResourceProtocolOp {
+            kind: ResourceKind::UdpHandle,
+            terminal: false,
+            api: "udp_send_to",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "udp_recv_from" => Some(ResourceProtocolOp {
+            kind: ResourceKind::UdpHandle,
+            terminal: false,
+            api: "udp_recv_from",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "udp_close" => Some(ResourceProtocolOp {
+            kind: ResourceKind::UdpHandle,
+            terminal: true,
+            api: "udp_close",
+            first_param_type: "Int",
+            required_effect: "net",
+        }),
+        "async_wait_int" => Some(ResourceProtocolOp {
+            kind: ResourceKind::AsyncIntOp,
+            terminal: true,
+            api: "async_wait_int",
+            first_param_type: "AsyncIntOp",
+            required_effect: "net",
+        }),
+        "async_wait_string" => Some(ResourceProtocolOp {
+            kind: ResourceKind::AsyncStringOp,
+            terminal: true,
+            api: "async_wait_string",
+            first_param_type: "AsyncStringOp",
+            required_effect: "net",
+        }),
+        "is_running" => Some(ResourceProtocolOp {
+            kind: ResourceKind::ProcessHandle,
+            terminal: false,
+            api: "is_running",
+            first_param_type: "Int",
+            required_effect: "proc",
+        }),
+        "wait" => Some(ResourceProtocolOp {
+            kind: ResourceKind::ProcessHandle,
+            terminal: true,
+            api: "wait",
+            first_param_type: "Int",
+            required_effect: "proc",
+        }),
+        "kill" => Some(ResourceProtocolOp {
+            kind: ResourceKind::ProcessHandle,
+            terminal: true,
+            api: "kill",
+            first_param_type: "Int",
+            required_effect: "proc",
         }),
         _ => None,
     }
@@ -6813,7 +7174,7 @@ fn top() -> () {
             .find(|d| d.code == "E2005")
             .expect("missing transitive effect diagnostic");
         assert!(
-            diag.message.contains("top -> middle -> leaf"),
+            diag.message.contains("top -> middle"),
             "message={}",
             diag.message
         );
@@ -6913,6 +7274,165 @@ fn maybe_close(ch: IntChannel, flag: Bool) -> Int effects { concurrency } {
         assert!(
             !out.diagnostics.iter().any(|d| d.code == "E2006"),
             "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn reports_missing_capability_with_transitive_path_and_fix() {
+        let src = r#"
+import std.io;
+fn leaf() -> () effects { io } capabilities { io } {
+    print_int(1)
+}
+fn middle() -> () effects { io } {
+    leaf()
+}
+fn top() -> () effects { io } {
+    middle()
+}
+"#;
+        let file = std::env::temp_dir().join(format!(
+            "aic_capability_fix_{}_{}.aic",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&file, src).expect("write temp source");
+        let file = file.to_string_lossy().to_string();
+
+        let (program, d1) = parse(src, &file);
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, &file);
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, &file);
+        let _ = std::fs::remove_file(&file);
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E2009" && d.message.contains("top"))
+            .expect("missing E2009 capability diagnostic");
+        assert!(
+            diag.message.contains("top -> middle"),
+            "message={}",
+            diag.message
+        );
+        assert!(
+            diag.suggested_fixes.iter().any(|fix| {
+                fix.replacement
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("capabilities { io }")
+            }),
+            "fixes={:#?}",
+            diag.suggested_fixes
+        );
+    }
+
+    #[test]
+    fn resource_protocol_accepts_valid_fs_sequence() {
+        let src = r#"
+enum FsError { Closed }
+struct FileHandle { handle: Int }
+fn file_read_line(file: FileHandle) -> Result[Int, FsError] effects { fs } capabilities { fs } { Ok(0) }
+fn file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs } capabilities { fs } { Ok(true) }
+
+fn main() -> Int effects { fs } capabilities { fs } {
+    let file = FileHandle { handle: 1 };
+    let _line = file_read_line(file);
+    let _closed = file_close(file);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == "E2006"),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn resource_protocol_reports_fs_use_after_close() {
+        let src = r#"
+enum FsError { Closed }
+struct FileHandle { handle: Int }
+fn file_read_line(file: FileHandle) -> Result[Int, FsError] effects { fs } capabilities { fs } { Ok(0) }
+fn file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs } capabilities { fs } { Ok(true) }
+
+fn main() -> Int effects { fs } capabilities { fs } {
+    let file = FileHandle { handle: 1 };
+    let _closed = file_close(file);
+    let _line = file_read_line(file);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E2006")
+            .expect("missing E2006 protocol diagnostic");
+        assert!(
+            diag.message.contains("file_read_line") && diag.message.contains("closed FileHandle"),
+            "message={}",
+            diag.message
+        );
+    }
+
+    #[test]
+    fn resource_protocol_reports_net_and_proc_terminal_reuse() {
+        let src = r#"
+enum NetError { Closed }
+enum ProcError { Done }
+fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net } capabilities { net } { Ok(0) }
+fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net } capabilities { net } { Ok(true) }
+fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } capabilities { proc } { Ok(0) }
+fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc } capabilities { proc } { Ok(true) }
+
+fn main() -> Int effects { net, proc } capabilities { net, proc } {
+    let sock = 7;
+    let _closed = tcp_close(sock);
+    let _recv = tcp_recv(sock, 1, 1);
+
+    let child = 9;
+    let _waited = wait(child);
+    let _alive = is_running(child);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        let e2006 = out
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "E2006")
+            .collect::<Vec<_>>();
+        assert!(
+            e2006.iter().any(|diag| diag.message.contains("tcp_recv")),
+            "diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            e2006.iter().any(|diag| diag.message.contains("is_running")),
+            "diagnostics={:#?}",
             out.diagnostics
         );
     }

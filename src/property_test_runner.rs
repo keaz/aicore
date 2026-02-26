@@ -857,7 +857,7 @@ fn transform_source_for_property_case(source: &str, case: &PropertyCase) -> anyh
         .join(", ");
 
     Ok(format!(
-        "{}\n{}\nstruct {} {{\n{}\n}}\n\nfn {}(decoded: {}) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}({});\n    0\n}}\n\nfn {}(raw: String) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let parsed = match parse(raw) {{\n        Ok(value) => value,\n        Err(_) => encode_null(),\n    }};\n\n    let marker: Option[{}] = None();\n    match decode_with(parsed, marker) {{\n        Ok(value) => {}(value),\n        Err(_) => 3,\n    }}\n}}\n\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let raw = match env.get(\"AIC_PROP_ARGS_JSON\") {{\n        Ok(value) => value,\n        Err(_) => \"\",\n    }};\n    {}(raw)\n}}\n",
+        "{}\n{}\nstruct {} {{\n{}\n}}\n\nfn {}(decoded: {}) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} capabilities {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}({});\n    0\n}}\n\nfn {}(raw: String) -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} capabilities {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let parsed = match parse(raw) {{\n        Ok(value) => value,\n        Err(_) => encode_null(),\n    }};\n\n    let marker: Option[{}] = None();\n    match decode_with(parsed, marker) {{\n        Ok(value) => {}(value),\n        Err(_) => 3,\n    }}\n}}\n\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} capabilities {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    let raw = match env.get(\"AIC_PROP_ARGS_JSON\") {{\n        Ok(value) => value,\n        Err(_) => \"\",\n    }};\n    {}(raw)\n}}\n",
         rewritten,
         ASSERT_HELPERS,
         struct_name,
@@ -926,6 +926,7 @@ fn add_io_effect_to_property_fn(source: &str, function_name: &str) -> anyhow::Re
     let mut out = String::new();
     let mut in_signature = false;
     let mut signature_has_effects = false;
+    let mut signature_has_capabilities = false;
     let mut found = false;
 
     for line in source.lines() {
@@ -936,6 +937,7 @@ fn add_io_effect_to_property_fn(source: &str, function_name: &str) -> anyhow::Re
                 if name == function_name {
                     in_signature = true;
                     signature_has_effects = trimmed.contains("effects {");
+                    signature_has_capabilities = trimmed.contains("capabilities {");
                 }
             }
         }
@@ -944,14 +946,24 @@ fn add_io_effect_to_property_fn(source: &str, function_name: &str) -> anyhow::Re
             if trimmed.contains("effects {") {
                 signature_has_effects = true;
             }
+            if trimmed.contains("capabilities {") {
+                signature_has_capabilities = true;
+            }
 
             if let Some(brace_index) = line.rfind('{') {
-                if signature_has_effects {
+                if signature_has_effects && signature_has_capabilities {
                     out.push_str(line);
                 } else {
                     let (prefix, suffix) = line.split_at(brace_index);
-                    out.push_str(prefix.trim_end());
-                    out.push_str(" effects { io } ");
+                    let mut patched = prefix.trim_end().to_string();
+                    if !signature_has_effects {
+                        patched.push_str(" effects { io }");
+                    }
+                    if !signature_has_capabilities {
+                        patched.push_str(" capabilities { io }");
+                    }
+                    out.push_str(&patched);
+                    out.push(' ');
                     out.push_str(suffix);
                 }
                 out.push('\n');
@@ -1075,7 +1087,7 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
 }
 
 const ASSERT_HELPERS: &str = r#"
-fn test_assert_internal(cond: Bool) -> () effects { io } {
+fn test_assert_internal(cond: Bool) -> () effects { io } capabilities { io } {
     if cond {
         ()
     } else {
@@ -1083,7 +1095,7 @@ fn test_assert_internal(cond: Bool) -> () effects { io } {
     }
 }
 
-fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } {
+fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } capabilities { io } {
     if left == right {
         ()
     } else {
@@ -1091,7 +1103,7 @@ fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } {
     }
 }
 
-fn test_assert_ne_internal[T](left: T, right: T) -> () effects { io } {
+fn test_assert_ne_internal[T](left: T, right: T) -> () effects { io } capabilities { io } {
     if left != right {
         ()
     } else {

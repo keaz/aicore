@@ -402,7 +402,7 @@ import std.time;
 import std.io;
 import std.option;
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time } {
     let stamp = std.time.now();
     let maybe: Option[Int] = null;
     let out = match maybe {
@@ -462,7 +462,7 @@ import std.time;
 import std.io;
 import std.option;
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time } {
     let stamp = std.time.now();
     let maybe: Option[Int] = null;
     let out = match maybe {

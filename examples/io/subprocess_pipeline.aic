@@ -13,7 +13,7 @@ fn fallback_output() -> ProcOutput {
     }
 }
 
-fn main() -> Int effects { io, proc, env } {
+fn main() -> Int effects { io, proc, env } capabilities { io, proc, env  } {
     let run_out = match run("printf 'hello'") {
         Ok(value) => value,
         Err(_) => fallback_output(),

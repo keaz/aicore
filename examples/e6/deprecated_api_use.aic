@@ -2,6 +2,6 @@ module example.deprecated_api_use;
 
 import std.time;
 
-fn main() -> Int effects { time } {
+fn main() -> Int effects { time } capabilities { time  } {
     now()
 }

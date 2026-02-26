@@ -1,0 +1,16 @@
+module verify.capability_missing_invalid;
+
+import std.io;
+
+fn leaf() -> () effects { io } capabilities { io } {
+    print_int(1)
+}
+
+fn middle() -> () effects { io } {
+    leaf()
+}
+
+fn main() -> Int effects { io } {
+    middle();
+    0
+}

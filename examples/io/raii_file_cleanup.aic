@@ -18,7 +18,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn append_with_let_move(path: String, line: String) -> Int effects { fs } {
+fn append_with_let_move(path: String, line: String) -> Int effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     let moved = file;
     if moved.handle == 0 {
@@ -31,25 +31,25 @@ fn append_with_let_move(path: String, line: String) -> Int effects { fs } {
     }
 }
 
-fn open_via_return(path: String) -> FileHandle effects { fs } {
+fn open_via_return(path: String) -> FileHandle effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     return file;
     FileHandle { handle: 0 }
 }
 
-fn open_via_tail(path: String) -> FileHandle effects { fs } {
+fn open_via_tail(path: String) -> FileHandle effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     file
 }
 
-fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } {
+fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } capabilities { fs  } {
     let file = open_append(path)?;
     file_write_str(file, "gamma\n")?;
     read_text("")?;
     Ok(1)
 }
 
-fn append_with_handle(file: FileHandle, line: String) -> Int effects { fs } {
+fn append_with_handle(file: FileHandle, line: String) -> Int effects { fs } capabilities { fs  } {
     if file.handle == 0 {
         0
     } else {
@@ -71,7 +71,7 @@ fn map_set_reader_raii_marker() -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let path = "raii_file_cleanup.txt";
     let wrote_let = append_with_let_move(path, "alpha\n");
     let wrote_return = append_with_handle(open_via_return(path), "beta\n");

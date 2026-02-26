@@ -53,7 +53,7 @@ fn parse_float_err_non_empty(v: Result[Float, String]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let request_line = "GET /api/users HTTP/1.1";
     let parts = split(request_line, " ");
     let header_parts = split_first("Content-Type: application/json", ":");

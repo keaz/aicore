@@ -18,7 +18,7 @@ fn eval[T: Score](x: T) -> Int {
     x.score()
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(eval(Meter { value: 41 }));
     0
 }

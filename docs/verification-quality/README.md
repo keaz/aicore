@@ -45,6 +45,12 @@ cargo test --locked --test e8_perf_tests
 - `examples/verify/qv_contract_proof_fixed.aic` (proof-friendly fix)
 - `examples/verify/file_protocol.aic` (valid state transitions)
 - `examples/verify/file_protocol_invalid.aic` (expected `E2006`)
+- `examples/verify/fs_protocol_ok.aic` (valid filesystem handle lifecycle)
+- `examples/verify/fs_protocol_invalid.aic` (expected `E2006`)
+- `examples/verify/net_proc_protocol_ok.aic` (valid net/proc handle lifecycle)
+- `examples/verify/net_proc_protocol_invalid.aic` (expected `E2006`)
+- `examples/verify/capability_protocol_ok.aic` (valid effect+capability authority)
+- `examples/verify/capability_missing_invalid.aic` (expected `E2009`)
 
 ## Incident Reproduction
 

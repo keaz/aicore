@@ -13,7 +13,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { env, io } {
     let headers0: Map[String, String] = map.new_map();
     let headers1 = map.insert(headers0, "content-type", "application/json");
     let headers2 = map.insert(headers1, "accept", "*/*");

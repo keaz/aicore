@@ -14,6 +14,17 @@ pub const KNOWN_EFFECTS: &[&str] = &[
     "concurrency",
 ];
 
+pub const KNOWN_CAPABILITIES: &[&str] = &[
+    "io",
+    "fs",
+    "net",
+    "time",
+    "rand",
+    "env",
+    "proc",
+    "concurrency",
+];
+
 pub fn normalize_effect_declarations(program: &mut ir::Program, file: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let known: BTreeSet<&str> = KNOWN_EFFECTS.iter().copied().collect();
@@ -65,10 +76,79 @@ pub fn check_effect_declarations(program: &ir::Program, file: &str) -> Vec<Diagn
     normalize_effect_declarations(&mut cloned, file)
 }
 
+pub fn normalize_capability_declarations(program: &mut ir::Program, file: &str) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let known: BTreeSet<&str> = KNOWN_CAPABILITIES.iter().copied().collect();
+
+    for item in &mut program.items {
+        let ir::Item::Function(func) = item else {
+            continue;
+        };
+
+        let mut seen = BTreeSet::new();
+        let mut normalized = Vec::new();
+
+        for capability in &func.capabilities {
+            if !known.contains(capability.as_str()) {
+                let mut diag = Diagnostic::error(
+                    "E2007",
+                    format!("unknown capability '{}'", capability),
+                    file,
+                    func.span,
+                )
+                .with_help(format!(
+                    "known capabilities: {}",
+                    KNOWN_CAPABILITIES.join(", ")
+                ));
+                if let Some(suggestion) = closest_known_capability(capability) {
+                    diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                }
+                diagnostics.push(diag);
+                continue;
+            }
+            if !seen.insert(capability.clone()) {
+                diagnostics.push(Diagnostic::error(
+                    "E2008",
+                    format!("duplicate capability '{}' in signature", capability),
+                    file,
+                    func.span,
+                ));
+                continue;
+            }
+            normalized.push(capability.clone());
+        }
+
+        normalized.sort();
+        func.capabilities = normalized;
+    }
+
+    diagnostics
+}
+
+pub fn check_capability_declarations(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
+    let mut cloned = program.clone();
+    normalize_capability_declarations(&mut cloned, file)
+}
+
 fn closest_known_effect(effect: &str) -> Option<&'static str> {
     let mut best: Option<(&str, usize)> = None;
     for candidate in KNOWN_EFFECTS {
         let distance = levenshtein(effect, candidate);
+        if distance > 2 {
+            continue;
+        }
+        match best {
+            Some((_, best_distance)) if best_distance <= distance => {}
+            _ => best = Some((candidate, distance)),
+        }
+    }
+    best.map(|(candidate, _)| candidate)
+}
+
+fn closest_known_capability(capability: &str) -> Option<&'static str> {
+    let mut best: Option<(&str, usize)> = None;
+    for candidate in KNOWN_CAPABILITIES {
+        let distance = levenshtein(capability, candidate);
         if distance > 2 {
             continue;
         }
@@ -112,7 +192,10 @@ fn levenshtein(a: &str, b: &str) -> usize {
 mod tests {
     use crate::{ir_builder::build, parser::parse};
 
-    use super::{check_effect_declarations, normalize_effect_declarations};
+    use super::{
+        check_capability_declarations, check_effect_declarations,
+        normalize_capability_declarations, normalize_effect_declarations,
+    };
 
     #[test]
     fn catches_unknown_effect() {
@@ -172,6 +255,44 @@ mod tests {
             diag.help.iter().any(|h| h.contains("did you mean 'io'?")),
             "help={:?}",
             diag.help
+        );
+    }
+
+    #[test]
+    fn catches_unknown_capability() {
+        let src = "fn f() -> () capabilities { mystery } { () }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let diags = check_capability_declarations(&ir, "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E2007"));
+    }
+
+    #[test]
+    fn catches_duplicate_capabilities() {
+        let src = "fn f() -> () capabilities { io, io } { () }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let ir = build(&program.expect("program"));
+        let diags = check_capability_declarations(&ir, "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E2008"));
+    }
+
+    #[test]
+    fn normalizes_capability_signature_order() {
+        let src = "fn f() -> () capabilities { time, io, fs } { () }";
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty());
+        let mut ir = build(&program.expect("program"));
+        let diags = normalize_capability_declarations(&mut ir, "test.aic");
+        assert!(diags.is_empty());
+        let func = match &ir.items[0] {
+            crate::ir::Item::Function(func) => func,
+            _ => panic!("expected function"),
+        };
+        assert_eq!(
+            func.capabilities,
+            vec!["fs".to_string(), "io".to_string(), "time".to_string()]
         );
     }
 }

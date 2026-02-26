@@ -7,7 +7,7 @@ struct ServerConfig {
     timeout_ms: Int = 30000,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let config = ServerConfig { port: 9090 };
     let defaults = ServerConfig::default();
     let score = config.port + defaults.max_connections / 1000 + defaults.timeout_ms / 10000;

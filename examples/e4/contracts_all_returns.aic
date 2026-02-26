@@ -6,7 +6,7 @@ fn normalized(x: Int) -> Int ensures result >= 0 {
     x
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(normalized(-4));
     0
 }

@@ -38,7 +38,7 @@ fn at_eof(v: Result[Option[String], FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let wrote_input = ok_bool(write_text("file_processor.in", "alpha\nbeta\ngamma"));
 
     let reader = unwrap_handle(open_read("file_processor.in"));

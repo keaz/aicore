@@ -3,7 +3,7 @@ module pkg.main;
 import std.io;
 import util.math;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(add(40, 2));
     0
 }

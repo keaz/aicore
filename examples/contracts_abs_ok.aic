@@ -5,7 +5,7 @@ fn abs(x: Int) -> Int ensures result >= 0 {
     if x >= 0 { x } else { 0 - x }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let v = abs(-7);
     print_int(v);
     0

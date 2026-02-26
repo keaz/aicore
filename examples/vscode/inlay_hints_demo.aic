@@ -2,11 +2,11 @@ module examples.vscode.inlay_hints_demo;
 
 import std.io;
 
-fn checked(x: Int) -> Int effects { io } requires x >= 0 ensures result >= 0 {
+fn checked(x: Int) -> Int effects { io } capabilities { io } requires x >= 0 ensures result >= 0 {
     x
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let seed = 41;
     let value = checked(seed);
     print_int(value + 1);

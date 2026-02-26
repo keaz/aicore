@@ -108,6 +108,8 @@ pub struct Function {
     pub params: Vec<Param>,
     pub ret_type: TypeExpr,
     pub effects: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
     pub requires: Option<Expr>,
     pub ensures: Option<Expr>,
     pub body: Block,

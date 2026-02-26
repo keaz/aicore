@@ -7,7 +7,7 @@ fn stable_sort2[T: Sortable](a: T, b: T) -> T {
     a
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(stable_sort2(42, 7));
     0
 }

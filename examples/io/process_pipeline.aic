@@ -13,7 +13,7 @@ fn ok_bool(v: Result[Bool, EnvError]) -> Int {
     }
 }
 
-fn main() -> Int effects { proc, env, fs } {
+fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
     let run_out = match run("echo out; echo err 1>&2; exit 7") {
         Ok(out) => out,
         Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },

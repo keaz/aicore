@@ -10,7 +10,7 @@ fn io_err_code(err: IoError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     println_str("Interactive greeter");
     flush_stdout();
 

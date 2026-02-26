@@ -111,7 +111,10 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E2003` | Unknown effect name in a function signature. | Use only known effects: `io, fs, net, time, rand, env, proc, concurrency`. |
 | `E2004` | Duplicate effect listed in one function signature. | Remove duplicates; keep one declaration per effect. |
 | `E2005` | Transitive effect required through call graph but not declared at caller boundary. | Declare the transitive effect at the root function or refactor call boundaries. |
-| `E2006` | Concurrency resource protocol violation (operation on already-closed channel/mutex handle). | Recreate resource before reuse or reorder close/use lifecycle. |
+| `E2006` | Resource protocol violation (operation on already-closed/consumed resource handle). | Recreate resource before reuse or reorder close/use lifecycle. |
+| `E2007` | Unknown capability name in a function signature. | Use only known capabilities: `io, fs, net, time, rand, env, proc, concurrency`. |
+| `E2008` | Duplicate capability listed in one function signature. | Remove duplicates; keep one declaration per capability. |
+| `E2009` | Missing capability authority for declared or transitive effects. | Add `capabilities { ... }` to match required effect authority and thread capability boundaries across callers. |
 | `E5023` | Backend hit a guarded `match` arm (guard lowering not supported yet). | Hoist guard logic outside `match` or remove guards in codegen-targeted paths. |
 | `E5024` | Unsupported extern backend lowering path (currently only `extern \"C\"` is supported). | Use `extern \"C\"` plain signatures and wrapper functions. |
 | `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |

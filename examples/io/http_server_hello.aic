@@ -13,7 +13,7 @@ fn string_eq(left: String, right: String) -> Int {
     }
 }
 
-fn request_ok(req: Request) -> Int effects { env } {
+fn request_ok(req: Request) -> Int effects { env } capabilities { env } {
     let name = match map.get(req.query, "name") {
         Some(v) => v,
         None => "",
@@ -28,7 +28,7 @@ fn request_ok(req: Request) -> Int effects { env } {
     }
 }
 
-fn main() -> Int effects { io, net, env } {
+fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
     let listener = match listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,

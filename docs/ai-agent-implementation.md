@@ -693,6 +693,7 @@ Agent-grade docs for all QV gates:
 - `docs/verification-quality/README.md`
 - `docs/verification-quality/contracts-proof-obligations.md`
 - `docs/verification-quality/effect-protocols.md`
+- `docs/capability-protocols.md`
 - `docs/verification-quality/fuzz-differential-runbook.md`
 - `docs/verification-quality/perf-sla-playbook.md`
 - `docs/verification-quality/incident-reproduction.md`
@@ -701,8 +702,14 @@ Verifier-focused examples:
 
 - `examples/verify/qv_contract_proof_fail.aic`
 - `examples/verify/qv_contract_proof_fixed.aic`
+- `examples/verify/capability_protocol_ok.aic`
+- `examples/verify/capability_missing_invalid.aic`
+- `examples/verify/fs_protocol_ok.aic`
+- `examples/verify/fs_protocol_invalid.aic`
 - `examples/verify/file_protocol.aic`
 - `examples/verify/file_protocol_invalid.aic`
+- `examples/verify/net_proc_protocol_ok.aic`
+- `examples/verify/net_proc_protocol_invalid.aic`
 
 ## E9 Summary (Release Security + Operations)
 

@@ -8,7 +8,7 @@ fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let named = connect(timeout_ms: 30, retry: true, host: 10, port: 2);
     let mixed = connect(10, port: 2, timeout_ms: 30, retry: true);
     if named == 42 && mixed == 42 {

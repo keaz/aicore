@@ -9,7 +9,7 @@ fn pair_first[T, U](x: Pair[T, U]) -> T {
     x.left
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let pair = Pair { left: 42, right: true };
     print_int(pair_first(pair));
     0

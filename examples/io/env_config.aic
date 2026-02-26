@@ -12,7 +12,7 @@ fn ok_bool(v: Result[Bool, EnvError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, env, fs } {
+fn main() -> Int effects { io, env, fs } capabilities { io, env, fs  } {
     let set_ok = ok_bool(env.set("AIC_ENV_CONFIG_MODE", "enabled"));
     let read_ok = match env.get("AIC_ENV_CONFIG_MODE") {
         Ok(value) => if len(value) == 7 { 1 } else { 0 },

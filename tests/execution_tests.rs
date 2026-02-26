@@ -217,7 +217,7 @@ fn maybe_even(x: Int) -> Option[Int] {
     if x % 2 == 0 { Some(x) } else { None() }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let out = match maybe_even(42) {
         None => 0,
         Some(v) => v,
@@ -236,12 +236,12 @@ fn exec_panic_emits_backtrace_when_enabled() {
     let src = r#"
 import std.io;
 
-fn crash() -> Int effects { io } {
+fn crash() -> Int effects { io } capabilities { io  } {
     panic("trace-check");
     0
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     crash()
 }
 "#;
@@ -268,7 +268,7 @@ async fn ping(x: Int) -> Int {
     x + 1
 }
 
-async fn main() -> Int effects { io } {
+async fn main() -> Int effects { io } capabilities { io  } {
     let value = await ping(41);
     print_int(value);
     0
@@ -298,7 +298,7 @@ fn err_code(err: NetError) -> Int {
     }
 }
 
-async fn main() -> Int effects { io, net, concurrency } {
+async fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -340,7 +340,7 @@ import std.io;
 import std.net;
 import std.vec;
 
-fn main() -> Int effects { io, net, concurrency } {
+fn main() -> Int effects { io, net, concurrency, env } capabilities { io, net, concurrency, env } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -418,7 +418,7 @@ fn apply(f: Fn(Int) -> Int, value: Int) -> Int {
     f(value)
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     print_int(apply(add2, 40));
     0
 }
@@ -437,7 +437,7 @@ fn apply(f: Fn(Int) -> Int, value: Int) -> Int {
     f(value)
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let inc = |x: Int| -> Int { x + 1 };
     print_int(apply(inc, 41));
     0
@@ -453,7 +453,7 @@ fn exec_closure_capture_from_outer_scope() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let base = 41;
     let add = |x: Int| -> Int { x + base };
     print_int(add(1));
@@ -470,7 +470,7 @@ fn exec_while_and_continue_flow() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut i = 5;
     let mut total = 0;
     while i > 0 {
@@ -497,7 +497,7 @@ fn exec_loop_break_value() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let value = loop {
         break 42
     };
@@ -515,7 +515,7 @@ fn exec_for_range_literal_with_continue_and_break() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut total = 0;
     for i in 0..8 {
         if i == 2 {
@@ -545,7 +545,7 @@ fn exec_for_range_function_and_vec_iteration() {
 import std.io;
 import std.vec;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut from_range = 0;
     for i in range(1, 5) {
         from_range = from_range + i;
@@ -576,7 +576,7 @@ import std.io;
 import std.map;
 import std.vec;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut m: Map[String, Int] = map.new_map();
     m = map.insert(m, "b", 2);
     m = map.insert(m, "a", 40);
@@ -607,7 +607,7 @@ fn pick[T: Order](a: T, b: T) -> T {
     a
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(pick(42, 7));
     0
 }
@@ -638,7 +638,7 @@ fn eval[T: Score](x: T) -> Int {
     x.score()
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(eval(Meter { value: 41 }));
     0
 }
@@ -655,7 +655,7 @@ import std.io;
 
 struct BoxedInt { value: Int }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut b = BoxedInt { value: 1 };
     let moved = b;
     let first = moved.value;
@@ -682,7 +682,7 @@ fn tuple_first[T, U](pair: (T, U)) -> T {
     pair.0
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let pair = swap(2, 40);
     let (left, right) = pair;
     let matched = match pair {
@@ -719,7 +719,7 @@ impl User {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let user = User::new(30);
     let score = if user.is_adult() { user.age_plus() } else { 0 };
     print_int(score);
@@ -743,7 +743,7 @@ struct ServerConfig {
     timeout_ms: Int = 30000,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let cfg = ServerConfig { port: 9090 };
     let defaults = ServerConfig::default();
     let score = cfg.port + defaults.max_connections / 1000 + defaults.timeout_ms / 10000;
@@ -768,7 +768,7 @@ struct Config {
     retries: Int = 1 + 2 * 3,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let cfg = Config { };
     print_int(cfg.port + cfg.retries);
     0
@@ -793,7 +793,7 @@ fn keep_even(x: Int) -> Option[Int] {
     if x % 2 == 0 { Some(x) } else { None() }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let a = Some(41).map(add_one).and_then(keep_even).unwrap_or(0);
     let b = Some(20).map(add_one).and_then(keep_even).unwrap_or(4);
     let c = None().map(add_one).unwrap_or(5);
@@ -820,7 +820,7 @@ fn keep_even(x: Int) -> Result[Int, Int] {
     if x % 2 == 0 { Ok(x) } else { Err(0 - x) }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let ok_value: Result[Int, Int] = Ok(41);
     let odd_value: Result[Int, Int] = Ok(3);
     let err_value: Result[Int, Int] = Err(7);
@@ -857,7 +857,7 @@ fn unwrap_or_neg(v: Result[Int, Int]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(unwrap_or_neg(bump_checked(-42)));
     0
 }
@@ -878,7 +878,7 @@ fn grow(v: Vec[Int]) -> Vec[Int] {
     next
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut v: Vec[Int] = Vec { ptr: 0, len: 1, cap: 4 };
     v = grow(v);
     print_int(vec_len(v));
@@ -903,7 +903,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut v: Vec[Int] = vec.new_vec();
     v = vec.push(v, 10);
     v = vec.push(v, 20);
@@ -956,7 +956,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut v: Vec[Int] = vec.vec_of(2);
     v = vec.insert(v, 0, 1);
     v = vec.push(v, 4);
@@ -1002,7 +1002,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut vs: Vec[String] = vec.new_vec();
     vs = vec.push(vs, "red");
     vs = vec.push(vs, "blue");
@@ -1048,7 +1048,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut v: Vec[Int] = vec.new_vec();
     let get_empty_ok = match vec.get(v, 0) {
         None => 1,
@@ -1105,7 +1105,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut v: Vec[Int] = vec.new_vec_with_capacity(5);
     let init_cap = vec.vec_cap(v);
     let init_cap_ok = if init_cap == 5 { 1 } else { 0 };
@@ -1159,7 +1159,7 @@ fn abs(x: Int) -> Int {
     if x >= 0 { x } else { 0 - x }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(abs(-7));
     0
 }
@@ -1181,7 +1181,7 @@ fn as_int(b: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(as_int(true));
     0
 }
@@ -1202,7 +1202,7 @@ fn collapse(b: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(collapse(false));
     0
 }
@@ -1223,7 +1223,7 @@ fn collapse(x: Option[Int]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(collapse(Some(0)));
     0
 }
@@ -1246,7 +1246,7 @@ fn f(x: Bool, allow: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(f(true, true));
     0
 }
@@ -1293,7 +1293,7 @@ fn fold(x: Wrap[Pair]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(fold(Full(Pair { left: 20, right: 22 })));
     0
 }
@@ -1319,7 +1319,7 @@ fn as_int(b: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let a = id(41);
     let b = id(true);
     print_int(a + as_int(b));
@@ -1337,7 +1337,7 @@ fn exec_string_len() {
 import std.io;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(len("abc"));
     0
 }
@@ -1354,7 +1354,7 @@ import std.io;
 import std.string;
 import std.vec;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let empty_args: Vec[String] = Vec {
         ptr: 0,
         len: 0,
@@ -1431,7 +1431,7 @@ fn exec_template_literals_match_concat_and_support_escapes() {
 import std.io;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let name = "Ada";
 
     let basic = f"Hello, {name}";
@@ -1519,7 +1519,7 @@ fn result_err_non_empty(v: Result[Int, String]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let contains_ok = if string.contains("alpha beta", "pha") { 1 } else { 0 };
     let starts_ok = if starts_with("alpha beta", "alpha") { 1 } else { 0 };
     let ends_ok = if ends_with("alpha beta", "beta") { 1 } else { 0 };
@@ -1628,7 +1628,7 @@ fn opt_char_code(v: Option[Char], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let digit_ok = if is_digit('5') { 1 } else { 0 };
     let alpha_ok = if is_alpha('A') { 1 } else { 0 };
     let whitespace_ok = if is_whitespace('\n') { 1 } else { 0 };
@@ -1684,7 +1684,7 @@ fn encoding_err_code(err: EncodingError) -> Int {
     }
 }
 
-fn load_invalid() -> Bytes effects { fs } {
+fn load_invalid() -> Bytes effects { fs } capabilities { fs  } {
     match read_bytes("invalid.bin") {
         Ok(value) => Bytes { data: value.data },
         Err(_) => string_to_bytes(""),
@@ -1698,7 +1698,7 @@ fn decode_len(v: Result[String, EncodingError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let ascii_len_ok = if byte_length("hello") == 5 { 1 } else { 0 };
     let ascii_flag_ok = if is_ascii("hello") { 1 } else { 0 };
     let ascii_valid_ok = if string.is_valid_utf8(string_to_bytes("hello")) { 1 } else { 0 };
@@ -1779,7 +1779,7 @@ fn approx_eq(a: Float, b: Float, epsilon: Float) -> Bool {
     abs_float(a - b) <= epsilon
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let abs_ok = if abs(-42) == 42 { 1 } else { 0 };
     let abs_float_ok = if approx_eq(abs_float(-3.5), 3.5, 0.000000001) { 1 } else { 0 };
     let min_ok = if min(7, -2) == -2 { 1 } else { 0 };
@@ -1849,7 +1849,7 @@ fn exec_math_ops_are_deterministic() {
 import std.io;
 import std.math;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let signal_a = round(pow(2.0, 8.0) + sqrt(81.0) + sin(PI / 2.0) * 10.0);
     let signal_b = round(pow(2.0, 8.0) + sqrt(81.0) + sin(PI / 2.0) * 10.0);
     let slope_a = round(log(E) * 10.0 + cos(PI) * 10.0);
@@ -1907,7 +1907,7 @@ fn parse_or_zero(v: Result[Int, String]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let request_line = "GET /api/users HTTP/1.1";
     let line_parts = split(request_line, " ");
     let parts_ok = if vec_len(line_parts) == 3 { 1 } else { 0 };
@@ -1973,7 +1973,7 @@ fn string_len(v: Result[String, RegexError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let re = match compile_with_flags("^error [0-9]+$", flag_case_insensitive() + flag_multiline()) {
         Ok(value) => value,
         Err(_) => Regex { pattern: "", flags: 0 },
@@ -2043,7 +2043,7 @@ fn no_match(v: Result[String, RegexError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let bad = invalid_pattern(compile_with_flags("[unterminated", no_flags()));
     let unsupported = unsupported_flags(
         compile_with_flags("a.*b", flag_multiline() + flag_dot_matches_newline())
@@ -2082,7 +2082,7 @@ fn parse_or(v: Result[Int, String], fallback: Int) -> Int {
     }
 }
 
-fn capture_from_match(m: RegexMatch) -> Int effects { env } {
+fn capture_from_match(m: RegexMatch) -> Int effects { env } capabilities { env  } {
     let g1 = match vec.get(m.groups, 0) {
         Some(value) => value,
         None => "",
@@ -2099,7 +2099,7 @@ fn capture_from_match(m: RegexMatch) -> Int effects { env } {
     { 1 } else { 0 }
 }
 
-fn capture_ok(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env } {
+fn capture_ok(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env } capabilities { env  } {
     match v {
         Ok(found) => match found {
             Some(m) => capture_from_match(m),
@@ -2119,12 +2119,12 @@ fn captures_none(v: Result[Option[RegexMatch], RegexError]) -> Int {
     }
 }
 
-fn empty_groups() -> Vec[String] effects { env } {
+fn empty_groups() -> Vec[String] effects { env } capabilities { env  } {
     let groups: Vec[String] = vec.new_vec();
     groups
 }
 
-fn all_ok_items(items: Vec[RegexMatch]) -> Int effects { env } {
+fn all_ok_items(items: Vec[RegexMatch]) -> Int effects { env } capabilities { env  } {
     if items.len != 3 {
         0
     } else {
@@ -2168,7 +2168,7 @@ fn all_ok_items(items: Vec[RegexMatch]) -> Int effects { env } {
     }
 }
 
-fn all_ok(v: Result[Vec[RegexMatch], RegexError]) -> Int effects { env } {
+fn all_ok(v: Result[Vec[RegexMatch], RegexError]) -> Int effects { env } capabilities { env  } {
     match v {
         Ok(items) => all_ok_items(items),
         Err(_) => 0,
@@ -2182,7 +2182,7 @@ fn all_none(v: Result[Vec[RegexMatch], RegexError]) -> Int {
     }
 }
 
-fn main() -> Int effects { env, io } {
+fn main() -> Int effects { env, io } capabilities { env, io  } {
     let re = match compile("([0-9]+)-([0-9]+)") {
         Ok(value) => value,
         Err(_) => Regex { pattern: "", flags: 0 },
@@ -2219,7 +2219,7 @@ fn unwrap_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs, env } {
+fn main() -> Int effects { io, fs, env } capabilities { io, fs, env  } {
     let wrote = unwrap_bool(write_text("a.txt", "ab"));
     let appended = unwrap_bool(append_text("a.txt", "cd"));
     let copied = unwrap_bool(copy("a.txt", "b.txt"));
@@ -2248,7 +2248,7 @@ import std.io;
 import std.fs;
 import std.vec;
 
-fn main() -> Int effects { io, fs, env } {
+fn main() -> Int effects { io, fs, env } capabilities { io, fs, env  } {
     let tmp_file = match fs.temp_file("aic_io_test_") {
         Ok(path) => path,
         Err(_) => "",
@@ -2293,7 +2293,7 @@ fn err_code(err: FsError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let missing = match read_text("missing-aicore-file.txt") {
         Ok(_) => 0,
         Err(err) => err_code(err),
@@ -2330,7 +2330,7 @@ fn err_code(err: FsError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let result = read_text("secret.txt");
     let code = match result {
         Ok(_) => 0,
@@ -2367,7 +2367,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let wrote = ok_bool(write_bytes("bytes.bin", bytes.from_string("abc")));
     let appended = ok_bool(append_bytes("bytes.bin", bytes.from_string("XYZ")));
     let payload = match read_bytes("bytes.bin") {
@@ -2435,7 +2435,7 @@ fn eof(v: Result[Option[String], FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let writer = unwrap_handle(open_write("lines.txt"));
     let writer_ok = if writer.handle > 0 { 1 } else { 0 };
     let wrote = ok_bool(file_write_str(writer, "alpha\nbeta\ngamma"));
@@ -2484,7 +2484,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn scope_cycle(path: String) -> Int effects { fs } {
+fn scope_cycle(path: String) -> Int effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     if file.handle == 0 {
         0
@@ -2496,7 +2496,7 @@ fn scope_cycle(path: String) -> Int effects { fs } {
     }
 }
 
-fn early_cycle(path: String) -> Int effects { fs } {
+fn early_cycle(path: String) -> Int effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     if file.handle == 0 {
         0
@@ -2505,7 +2505,7 @@ fn early_cycle(path: String) -> Int effects { fs } {
     }
 }
 
-fn run_scope(path: String, iterations: Int) -> Int effects { fs } {
+fn run_scope(path: String, iterations: Int) -> Int effects { fs } capabilities { fs  } {
     let mut i = 0;
     let mut ok = 0;
     while i < iterations {
@@ -2515,7 +2515,7 @@ fn run_scope(path: String, iterations: Int) -> Int effects { fs } {
     ok
 }
 
-fn run_early(path: String, iterations: Int) -> Int effects { fs } {
+fn run_early(path: String, iterations: Int) -> Int effects { fs } capabilities { fs  } {
     let mut i = 0;
     let mut ok = 0;
     while i < iterations {
@@ -2525,7 +2525,7 @@ fn run_early(path: String, iterations: Int) -> Int effects { fs } {
     ok
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let scope_path = "raii_scope_handles.txt";
     let early_path = "raii_early_handles.txt";
 
@@ -2561,21 +2561,21 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } {
+fn append_then_fail(path: String) -> Result[Int, FsError] effects { fs } capabilities { fs  } {
     let file = open_append(path)?;
     file_write_str(file, "x")?;
     read_text("")?;
     Ok(1)
 }
 
-fn error_cycle(path: String) -> Int effects { fs } {
+fn error_cycle(path: String) -> Int effects { fs } capabilities { fs  } {
     match append_then_fail(path) {
         Ok(_) => 0,
         Err(_) => 1,
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let path = "raii_try_handles.txt";
     let iterations = 1100;
     let mut i = 0;
@@ -2625,18 +2625,18 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn open_via_return(path: String) -> FileHandle effects { fs } {
+fn open_via_return(path: String) -> FileHandle effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     return file;
     FileHandle { handle: 0 }
 }
 
-fn open_via_tail(path: String) -> FileHandle effects { fs } {
+fn open_via_tail(path: String) -> FileHandle effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     file
 }
 
-fn append_via_let_move(path: String, line: String) -> Int effects { fs } {
+fn append_via_let_move(path: String, line: String) -> Int effects { fs } capabilities { fs  } {
     let file = unwrap_handle(open_append(path));
     let moved = file;
     if moved.handle == 0 {
@@ -2649,7 +2649,7 @@ fn append_via_let_move(path: String, line: String) -> Int effects { fs } {
     }
 }
 
-fn append_via_return_move(path: String, line: String) -> Int effects { fs } {
+fn append_via_return_move(path: String, line: String) -> Int effects { fs } capabilities { fs  } {
     let file = open_via_return(path);
     if file.handle == 0 {
         0
@@ -2661,7 +2661,7 @@ fn append_via_return_move(path: String, line: String) -> Int effects { fs } {
     }
 }
 
-fn append_via_tail_move(path: String, line: String) -> Int effects { fs } {
+fn append_via_tail_move(path: String, line: String) -> Int effects { fs } capabilities { fs  } {
     let file = open_via_tail(path);
     if file.handle == 0 {
         0
@@ -2673,7 +2673,7 @@ fn append_via_tail_move(path: String, line: String) -> Int effects { fs } {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let path = "raii_move_transfer.txt";
     let wrote_let = append_via_let_move(path, "alpha\n");
     let wrote_return = append_via_return_move(path, "beta\n");
@@ -2723,7 +2723,7 @@ struct AuditDrop {
 }
 
 impl Drop[AuditDrop] {
-    fn drop(self) -> () effects { fs } {
+    fn drop(self) -> () effects { fs } capabilities { fs  } {
         let _ignored = append_text(self.path, self.marker);
         ()
     }
@@ -2736,20 +2736,20 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn drop_scope(path: String) -> Int effects { fs } {
+fn drop_scope(path: String) -> Int effects { fs } capabilities { fs  } {
     let first = AuditDrop { path: path, marker: "A", id: 1 };
     let second = AuditDrop { path: path, marker: "B", id: 2 };
     if first.id + second.id == 3 { 1 } else { 0 }
 }
 
-fn drop_try(path: String) -> Int effects { fs } {
+fn drop_try(path: String) -> Int effects { fs } capabilities { fs  } {
     match drop_fail(path) {
         Ok(_) => 0,
         Err(_) => 1,
     }
 }
 
-fn drop_fail(path: String) -> Result[Int, FsError] effects { fs } {
+fn drop_fail(path: String) -> Result[Int, FsError] effects { fs } capabilities { fs  } {
     let probe = AuditDrop { path: path, marker: "C", id: 3 };
     read_text("")?;
     Ok(probe.id)
@@ -2760,12 +2760,12 @@ fn make_probe(path: String) -> AuditDrop {
     probe
 }
 
-fn drop_move(path: String) -> Int effects { fs } {
+fn drop_move(path: String) -> Int effects { fs } capabilities { fs  } {
     let moved = make_probe(path);
     if moved.id == 4 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let path = "drop_trait_runtime.txt";
     let reset = ok_bool(write_text(path, ""));
     let scope_ok = drop_scope(path);
@@ -2813,7 +2813,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let root = "tree_root";
     let level1 = path.join(root, "a");
     let level2 = path.join(level1, "b");
@@ -2861,7 +2861,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let root = "list_root";
     let nested = path.join(root, "nested");
     let top_file = path.join(root, "top.txt");
@@ -2923,7 +2923,7 @@ fn ok_bool(v: Result[Bool, EnvError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, env, fs } {
+fn main() -> Int effects { io, env, fs } capabilities { io, env, fs  } {
     let original = match env.cwd() {
         Ok(path) => path,
         Err(_) => "",
@@ -2975,7 +2975,7 @@ import std.env;
 import std.vec;
 import std.string;
 
-fn main() -> Int effects { io, env } {
+fn main() -> Int effects { io, env } capabilities { io, env  } {
     let values = args();
     let count = arg_count();
     let same_count = if vec_len(values) == count { 1 } else { 0 };
@@ -3034,7 +3034,7 @@ fn temp_ok(v: Result[String, EnvError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, env, fs } {
+fn main() -> Int effects { io, env, fs } capabilities { io, env, fs  } {
     let vars_ok = if vec_len(all_vars()) > 0 { 1 } else { 0 };
     let os = os_name();
     let os_linux = if len(os) == 5 && starts_with(os, "linux") { 1 } else { 0 };
@@ -3063,7 +3063,7 @@ fn exec_env_exit_sets_process_exit_code() {
 import std.io;
 import std.env;
 
-fn main() -> Int effects { io, env } {
+fn main() -> Int effects { io, env } capabilities { io, env  } {
     print_int(1);
     exit(0);
     print_int(2);
@@ -3078,7 +3078,7 @@ fn main() -> Int effects { io, env } {
 import std.io;
 import std.env;
 
-fn main() -> Int effects { io, env } {
+fn main() -> Int effects { io, env } capabilities { io, env  } {
     print_int(1);
     exit(1);
     print_int(2);
@@ -3106,7 +3106,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let m0: Map[String, String] = map.new_map();
     let m1 = map.insert(m0, "content-type", "application/json");
     let m2 = map.insert(m1, "accept", "*/*");
@@ -3176,7 +3176,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let m0: Map[String, Int] = map.new_map();
     let m1 = map.insert(m0, "b", 2);
     let m2 = map.insert(m1, "a", 1);
@@ -3216,7 +3216,7 @@ fn exec_map_close_api_is_stable() {
 import std.io;
 import std.map;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let m0: Map[Int, Int] = map.new_map();
     let m1 = map.insert(m0, 7, 11);
     map.close_map(m1);
@@ -3244,7 +3244,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let s0: Set[String] = set.new_set();
     let s1 = set.add(s0, "pear");
     let s2 = set.add(s1, "apple");
@@ -3290,7 +3290,7 @@ fn exec_set_int_ops_work_or_emit_string_key_diagnostic() {
 import std.io;
 import std.set;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let s0: Set[Int] = set.new_set();
     let s1 = set.add(s0, 3);
     let s2 = set.add(s1, 1);
@@ -3330,7 +3330,7 @@ fn exec_set_bool_ops_work_or_emit_string_key_diagnostic() {
 import std.io;
 import std.set;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let s0: Set[Bool] = set.new_set();
     let s1 = set.add(s0, true);
     let s2 = set.add(s1, false);
@@ -3446,7 +3446,7 @@ fn round_robin_score() -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let score = bfs_queue_score() + sliding_window_score() + round_robin_score();
     if score == 3 {
         print_int(42);
@@ -3466,7 +3466,7 @@ fn exec_structured_logging_json_mode_filters_by_level() {
     let src = r#"
 import std.log;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     set_json_output(true);
     set_level(Info());
     debug("hidden debug");
@@ -3539,7 +3539,7 @@ fn over_two(x: Int) -> Bool {
     x > 2
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let mut nums: Vec[Int] = vec.new_vec();
     nums = vec.push(nums, 3);
     nums = vec.push(nums, 1);
@@ -3603,7 +3603,7 @@ fn exec_time_helpers_are_predictable() {
 import std.io;
 import std.time;
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let wall = now_ms();
     let start = monotonic_ms();
     let deadline = deadline_after_ms(25);
@@ -3662,7 +3662,7 @@ fn fallback() -> DateTime {
     }
 }
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let parsed = match parse_rfc3339("2026-02-21T18:45:10.230+05:30") {
         Ok(value) => value,
         Err(_) => fallback(),
@@ -3726,7 +3726,7 @@ fn format_text_score(text: String) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let base = DateTime {
         year: 2026,
         month: 2,
@@ -3829,7 +3829,7 @@ fn format_code(v: Result[String, TimeError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let invalid_format = parse_code(parse_rfc3339("2026-02-21 18:45:10Z"));
     let invalid_date = parse_code(parse_iso8601("2025-02-29"));
     let invalid_time = parse_code(parse_iso8601("2026-02-21T24:00:00Z"));
@@ -3872,7 +3872,7 @@ fn bool_eq(a: Bool, b: Bool) -> Int {
     if a == b { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, rand } {
+fn main() -> Int effects { io, rand } capabilities { io, rand  } {
     seed(20260220);
     let a = random_int();
     let b = random_int();
@@ -3909,7 +3909,7 @@ import std.io;
 import std.rand;
 import std.time;
 
-fn main() -> Int effects { io, rand, time } {
+fn main() -> Int effects { io, rand, time } capabilities { io, rand, time  } {
     let now = now_ms();
     let first = random_int();
 
@@ -3949,7 +3949,7 @@ import std.rand;
 import std.retry;
 import std.time;
 
-fn flaky_connect() -> Result[Int, String] effects { rand } {
+fn flaky_connect() -> Result[Int, String] effects { rand } capabilities { rand  } {
     let roll = random_range(0, 4);
     if roll == 2 {
         Ok(42)
@@ -3958,11 +3958,11 @@ fn flaky_connect() -> Result[Int, String] effects { rand } {
     }
 }
 
-fn run_retry_int(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } {
+fn run_retry_int(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } capabilities { time, rand  } {
     retry(config, operation)
 }
 
-fn main() -> Int effects { io, time, rand } {
+fn main() -> Int effects { io, time, rand } capabilities { io, time, rand  } {
     seed(424242);
     let cfg = RetryConfig {
         max_attempts: 5,
@@ -4001,7 +4001,7 @@ import std.io;
 import std.retry;
 import std.time;
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let timeout_result = with_timeout(5, | | -> Int {
         sleep_ms(20);
         7
@@ -4077,7 +4077,7 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
     let t1 = unwrap_task(spawn_task(10, 20));
     let t2 = unwrap_task(spawn_task(11, 5));
     let ch = unwrap_channel(channel_int(4));
@@ -4176,7 +4176,7 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
     let to_cancel = unwrap_task(spawn_task(9, 80));
     let cancelled = match cancel_task(to_cancel) {
         Ok(v) => bool_to_int(v),
@@ -4262,7 +4262,7 @@ fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
     }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
     let ch1 = unwrap_channel(buffered_channel_int(1));
     let ch2 = unwrap_channel(channel_int_buffered(1));
 
@@ -4354,7 +4354,7 @@ fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
     }
 }
 
-fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
+fn group_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env  } {
     let a = match vec.get(values, 0) {
         Some(v) => if v == 2 { 1 } else { 0 },
         None => 0,
@@ -4370,7 +4370,7 @@ fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
     if a + b + c == 3 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, concurrency, env } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let grouped = spawn_group(vec.range(1, 4), 10);
     let group_ok = match grouped {
         Ok(values) => group_values_ok(values),
@@ -4444,7 +4444,7 @@ fn err_code(err: ConcurrencyError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency, env } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let mut tasks: Vec[Task] = vec.new_vec();
     let mut i = 0;
     while i < 10 {
@@ -4514,7 +4514,7 @@ fn exec_proc_run_pipe_spawn_wait_and_kill() {
 import std.proc;
 import std.string;
 
-fn main() -> Int effects { proc, env } {
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let run_out = match run("echo out; echo err 1>&2; exit 7") {
         Ok(out) => out,
         Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
@@ -4572,7 +4572,7 @@ fn invalid_input_code(err: ProcError) -> Int {
     }
 }
 
-fn main() -> Int effects { proc, env } {
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let opts = RunOptions {
         stdin: "from-stdin",
         cwd: "workdir",
@@ -4647,7 +4647,7 @@ fn invalid_input_code(err: ProcError) -> Int {
     }
 }
 
-fn main() -> Int effects { proc, env } {
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let mut stages: Vec[String] = vec.vec_of("echo beta");
     stages = vec.push(stages, "tr a-z A-Z");
     let chained = match pipe_chain(stages) {
@@ -4706,7 +4706,7 @@ import std.net;
 import std.string;
 import std.bytes;
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -4766,7 +4766,7 @@ import std.net;
 import std.string;
 import std.bytes;
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let receiver = match udp_bind("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -4831,7 +4831,7 @@ import std.net;
 import std.string;
 import std.bytes;
 
-fn main() -> Int effects { io, net, concurrency } {
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -4957,7 +4957,7 @@ fn exec_net_async_queue_backpressure_and_shutdown() {
 import std.io;
 import std.net;
 
-fn main() -> Int effects { io, net, concurrency } {
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -5019,7 +5019,7 @@ fn err_code(err: NetError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -5061,7 +5061,7 @@ fn err_code(err: NetError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -5118,7 +5118,7 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, net, concurrency } {
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency  } {
     let invalid_int_wait = match async_wait_int(AsyncIntOp { handle: 0 }, 10) {
         Ok(_) => 0,
         Err(err) => err_code(err),
@@ -5233,7 +5233,7 @@ import std.map;
 import std.string;
 import std.bytes;
 
-fn request_matches(req: Request) -> Int effects { env } {
+fn request_matches(req: Request) -> Int effects { env } capabilities { env  } {
     let query_name = match map.get(req.query, "name") {
         Some(v) => v,
         None => "",
@@ -5262,7 +5262,7 @@ fn request_matches(req: Request) -> Int effects { env } {
     }
 }
 
-fn main() -> Int effects { io, net, env } {
+fn main() -> Int effects { io, net, env } capabilities { io, net, env  } {
     let listener = match listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -5358,7 +5358,7 @@ fn err_code(err: ServerError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -5431,7 +5431,7 @@ fn err_code(err: RouterError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let router = match new_router() {
         Ok(value) => value,
         Err(_) => Router { handle: 0 },
@@ -5460,7 +5460,7 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let parsed = match parse("{\"name\":\"svc\",\"enabled\":true,\"retries\":3,\"nested\":{\"mode\":\"safe\"},\"items\":[1,2]}") {
         Ok(value) => value,
         Err(_) => object_empty(),
@@ -5555,7 +5555,7 @@ fn err_code(err: JsonError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let malformed = match parse("{\"name\":") {
         Ok(_) => 0,
         Err(err) => err_code(err),
@@ -5594,7 +5594,7 @@ fn exec_json_option_null_semantics() {
 import std.io;
 import std.json;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let doc = match parse("{\"a\":null,\"b\":7,\"c\":null}") {
         Ok(value) => value,
         Err(_) => object_empty(),
@@ -5667,7 +5667,7 @@ fn exec_float_arithmetic_and_comparisons() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let a = 3.5;
     let b = 2.0;
     let sum = a + b;
@@ -5698,7 +5698,7 @@ import std.io;
 import std.json;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let parsed = match parse_float("3.125") {
         Ok(v) => v,
         Err(_) => 0.0,
@@ -5768,7 +5768,7 @@ fn string_roundtrip(v: String) -> Int {
     }
 }
 
-fn main() -> Int effects { io, rand } {
+fn main() -> Int effects { io, rand } capabilities { io, rand  } {
     seed(20260220);
     let i1 = random_range(0, 500);
     let i2 = random_range(0, 500);
@@ -5823,7 +5823,7 @@ struct Envelope[T] {
     data: T,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let creds = Credentials {
         user: "alice",
         pass: "p@ss",
@@ -5911,7 +5911,7 @@ fn err_code(err: JsonError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let old_doc = match parse("{\"host\":\"svc\",\"port\":8080}") {
         Ok(value) => value,
         Err(_) => encode_null(),
@@ -5962,7 +5962,7 @@ struct Model {
     status: Status,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let marker1: Option[Model] = None();
     let marker2: Option[Model] = None();
     let s1 = match schema(marker1) {
@@ -5996,7 +5996,7 @@ import std.string;
 import std.url;
 import std.vec;
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let fallback = Url {
         scheme: "",
         host: "",
@@ -6123,7 +6123,7 @@ fn http_err_code(err: HttpError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let bad_scheme = match parse("1tp://example.com") {
         Ok(_) => 0,
         Err(err) => url_err_code(err),
@@ -6224,7 +6224,7 @@ fn expect_err(v: Result[String, IoError], code: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let name_ok = ok_len(prompt("prompt> "), 5);
     let char_ok = ok_char(read_char(), "Q");
     let invalid_char = expect_err(read_char(), 2);
@@ -6271,7 +6271,7 @@ fn expect_err(v: Result[Int, IoError], code: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let ok_value = expect_ok(read_int(), 99);
     let invalid = expect_err(read_int(), 2);
     let eof = expect_err(read_int(), 1);
@@ -6295,7 +6295,7 @@ fn exec_io_stderr_stdout_separation_and_newline_semantics() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     eprint_str("err:");
     eprint_int(7);
     flush_stderr();
@@ -6332,7 +6332,7 @@ fn io_code(err: IoError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let fs_missing: FsError = NotFound();
     let fs_invalid: FsError = InvalidInput();
     let net_timeout: NetError = Timeout();
@@ -6365,7 +6365,7 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let reader = stdin_reader();
     let out = stdout_writer();
     let err = stderr_writer();
@@ -6426,21 +6426,21 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } {
+fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     match close_reader(reader) {
         Ok(value) => bool_to_int(value),
         Err(_) => 0,
     }
 }
 
-fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } {
+fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     match close_writer(writer) {
         Ok(value) => bool_to_int(value),
         Err(_) => 0,
     }
 }
 
-fn main() -> Int effects { io, fs, net } {
+fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     let file_reader_stream = match file_reader("stream_input.txt") {
         Ok(value) => value,
         Err(_) => stdin_reader(),
@@ -6516,7 +6516,7 @@ fn exec_debug_build_reports_panic_source_line() {
     let src = dir.path().join("panic_line_map.aic");
     let source = r#"import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     panic("boom");
     0
 }
@@ -6571,7 +6571,7 @@ fn mix(x: Int, y: Int) -> Int {
     mixed + 17
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut i = 0;
     let mut acc = 1;
     while i < 12000000 {
@@ -6651,7 +6651,7 @@ fn branchy(x: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut i = 0;
     let mut acc = 0;
     while i < 10000 {
@@ -6718,7 +6718,7 @@ fn bad(x: Int) -> Int ensures result >= 0 {
     x
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(bad(-5));
     0
 }
@@ -6877,7 +6877,7 @@ fn score(sig: Signal) -> Int {
     }
 }
 
-fn main() -> Int effects { io, proc } {
+fn main() -> Int effects { io, proc } capabilities { io, proc  } {
     register_shutdown_handlers();
     println_str("ready");
     flush_stdout();
@@ -6967,7 +6967,7 @@ fn bytes_err_code(v: Result[String, BytesError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let input = match read_bytes("blob.bin") {
         Ok(value) => value,
         Err(_) => bytes.empty(),
@@ -7033,7 +7033,7 @@ fn decode_ok(v: Result[String, BytesError], expected: String) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net  } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -7107,7 +7107,7 @@ fn exec_bitwise_and_shift_with_hex_literals_and_compound_assignments() {
     let src = r#"
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut x = 0xFF;
     x &= 0x0F;
     x |= 0x20;
@@ -7145,7 +7145,7 @@ fn connect(host: Int, port: Int, timeout_ms: Int, retry: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let named = connect(timeout_ms: 30, retry: true, host: 10, port: 2);
     let mixed = connect(10, retry: true, timeout_ms: 30, port: 2);
 

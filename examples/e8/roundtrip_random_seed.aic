@@ -17,7 +17,7 @@ fn normalize(x: Wrap[Pair]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(normalize(Full(Pair { left: 19, right: 23 })));
     0
 }

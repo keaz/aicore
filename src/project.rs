@@ -28,7 +28,7 @@ fn maybe_even(x: Int) -> Option[Int] {
 }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let v = maybe_even(10);
     let out = match v {
     Some(n) => n,

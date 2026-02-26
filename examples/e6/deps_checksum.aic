@@ -2,7 +2,7 @@ module example.deps_checksum;
 
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(42);
     0
 }

@@ -17,7 +17,11 @@ pub struct FunctionEffectSuggestion {
     pub current_effects: Vec<String>,
     pub required_effects: Vec<String>,
     pub missing_effects: Vec<String>,
+    pub current_capabilities: Vec<String>,
+    pub required_capabilities: Vec<String>,
+    pub missing_capabilities: Vec<String>,
     pub reason: BTreeMap<String, String>,
+    pub capability_reason: BTreeMap<String, String>,
 }
 
 pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
@@ -38,12 +42,24 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
             .cloned()
             .unwrap_or_else(|| current.clone());
         let missing = required.difference(&current).cloned().collect::<Vec<_>>();
-        if missing.is_empty() {
+        let current_capabilities = function
+            .capabilities
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let required_capabilities = required.clone();
+        let missing_capabilities = required_capabilities
+            .difference(&current_capabilities)
+            .cloned()
+            .collect::<Vec<_>>();
+        if missing.is_empty() && missing_capabilities.is_empty() {
             continue;
         }
 
         let current_effects = current.into_iter().collect::<Vec<_>>();
         let required_effects = required.into_iter().collect::<Vec<_>>();
+        let current_capabilities = current_capabilities.into_iter().collect::<Vec<_>>();
+        let required_capabilities = required_capabilities.into_iter().collect::<Vec<_>>();
         let reasons_for_function = front.typecheck.function_effect_reasons.get(&function.name);
         let reason = required_effects
             .iter()
@@ -55,13 +71,27 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
                 (effect.clone(), chain.join(" -> "))
             })
             .collect::<BTreeMap<_, _>>();
+        let capability_reason = required_capabilities
+            .iter()
+            .map(|capability| {
+                let chain = reasons_for_function
+                    .and_then(|by_effect| by_effect.get(capability))
+                    .cloned()
+                    .unwrap_or_else(|| vec![function.name.clone()]);
+                (capability.clone(), chain.join(" -> "))
+            })
+            .collect::<BTreeMap<_, _>>();
 
         suggestions.push(FunctionEffectSuggestion {
             function: function.name.clone(),
             current_effects,
             required_effects,
             missing_effects: missing,
+            current_capabilities,
+            required_capabilities,
+            missing_capabilities,
             reason,
+            capability_reason,
         });
     }
 
@@ -132,8 +162,15 @@ mod tests {
         assert_eq!(middle.current_effects, Vec::<String>::new());
         assert_eq!(middle.required_effects, vec!["io".to_string()]);
         assert_eq!(middle.missing_effects, vec!["io".to_string()]);
+        assert_eq!(middle.current_capabilities, Vec::<String>::new());
+        assert_eq!(middle.required_capabilities, vec!["io".to_string()]);
+        assert_eq!(middle.missing_capabilities, vec!["io".to_string()]);
         assert_eq!(
             middle.reason.get("io").map(String::as_str),
+            Some("middle -> leaf")
+        );
+        assert_eq!(
+            middle.capability_reason.get("io").map(String::as_str),
             Some("middle -> leaf")
         );
 
@@ -145,8 +182,15 @@ mod tests {
         assert_eq!(top.current_effects, Vec::<String>::new());
         assert_eq!(top.required_effects, vec!["io".to_string()]);
         assert_eq!(top.missing_effects, vec!["io".to_string()]);
+        assert_eq!(top.current_capabilities, Vec::<String>::new());
+        assert_eq!(top.required_capabilities, vec!["io".to_string()]);
+        assert_eq!(top.missing_capabilities, vec!["io".to_string()]);
         assert_eq!(
             top.reason.get("io").map(String::as_str),
+            Some("top -> middle -> leaf")
+        );
+        assert_eq!(
+            top.capability_reason.get("io").map(String::as_str),
             Some("top -> middle -> leaf")
         );
     }

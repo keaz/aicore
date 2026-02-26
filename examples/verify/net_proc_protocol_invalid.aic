@@ -1,0 +1,17 @@
+module verify.net_proc_protocol_invalid;
+
+import std.bytes;
+import std.net;
+import std.proc;
+
+fn main() -> Int effects { net, proc } capabilities { net, proc } {
+    let tcp = 10;
+    let child = 12;
+
+    let _tcp_closed = net.tcp_close(tcp);
+    let _sent = net.tcp_send(tcp, Bytes { data: "ping" });
+
+    let _waited = proc.wait(child);
+    let _alive = proc.is_running(child);
+    0
+}

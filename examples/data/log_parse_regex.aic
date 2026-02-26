@@ -19,7 +19,7 @@ fn string_len(v: Result[String, RegexError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let event_re = match compile_with_flags("^ERROR [0-9]+ user=[a-z]+$", no_flags()) {
         Ok(value) => value,
         Err(_) => Regex { pattern: "", flags: 0 },

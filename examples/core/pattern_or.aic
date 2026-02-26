@@ -6,7 +6,7 @@ fn collapse(x: Option[Int]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(collapse(Some(0)));
     0
 }

@@ -2,7 +2,7 @@ import std.io;
 
 struct BoxedInt { value: Int }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let mut b = BoxedInt { value: 1 };
     let moved = b;
     let first = moved.value;

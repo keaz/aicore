@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostics::{Diagnostic, SuggestedFix};
 
 const SAFE_FIX_CODES: &[&str] = &[
-    "E1033", "E1034", "E1041", "E1062", "E2001", "E2005", "E6004", "E6006",
+    "E1033", "E1034", "E1041", "E1062", "E2001", "E2005", "E2009", "E6004", "E6006",
 ];
 const FIX_PROTOCOL_VERSION: &str = "1.0";
 
@@ -88,6 +88,18 @@ pub fn collect_safe_fix_plan(diagnostics: &[Diagnostic]) -> FixPlan {
         });
         if duplicate {
             continue;
+        }
+
+        if let Some(existing) = accepted.iter_mut().find(|existing| {
+            existing.file == candidate.file
+                && existing.start == candidate.start
+                && existing.end == candidate.end
+                && existing.start == existing.end
+                && candidate.start == candidate.end
+        }) {
+            if try_merge_effect_and_capability_insert(existing, &candidate) {
+                continue;
+            }
         }
 
         let conflict_with = accepted.iter().find(|existing| {
@@ -257,6 +269,82 @@ fn ranges_conflict(start_a: usize, end_a: usize, start_b: usize, end_b: usize) -
     start_a < end_b && start_b < end_a
 }
 
+fn try_merge_effect_and_capability_insert(
+    existing: &mut CandidateEdit,
+    candidate: &CandidateEdit,
+) -> bool {
+    if !is_effect_capability_fix_code(&existing.code)
+        || !is_effect_capability_fix_code(&candidate.code)
+    {
+        return false;
+    }
+
+    let existing_effect = extract_named_clause(&existing.replacement, "effects");
+    let existing_capability = extract_named_clause(&existing.replacement, "capabilities");
+    let candidate_effect = extract_named_clause(&candidate.replacement, "effects");
+    let candidate_capability = extract_named_clause(&candidate.replacement, "capabilities");
+
+    if existing_effect.is_none()
+        && existing_capability.is_none()
+        && candidate_effect.is_none()
+        && candidate_capability.is_none()
+    {
+        return false;
+    }
+
+    let effect_clause = candidate_effect.or(existing_effect);
+    let capability_clause = candidate_capability.or(existing_capability);
+    let mut parts = Vec::new();
+    if let Some(effect) = effect_clause {
+        parts.push(effect);
+    }
+    if let Some(capability) = capability_clause {
+        parts.push(capability);
+    }
+    if parts.is_empty() {
+        return false;
+    }
+
+    let leading_space =
+        existing.replacement.starts_with(' ') || candidate.replacement.starts_with(' ');
+    let trailing_space =
+        existing.replacement.ends_with(' ') || candidate.replacement.ends_with(' ');
+
+    let mut merged = parts.join(" ");
+    if leading_space {
+        merged = format!(" {merged}");
+    }
+    if trailing_space {
+        merged.push(' ');
+    }
+    existing.replacement = merged;
+    true
+}
+
+fn is_effect_capability_fix_code(code: &str) -> bool {
+    matches!(code, "E2001" | "E2005" | "E2009")
+}
+
+fn extract_named_clause(text: &str, keyword: &str) -> Option<String> {
+    let idx = text.find(keyword)?;
+    let bytes = text.as_bytes();
+    let mut cursor = idx + keyword.len();
+    while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+        cursor += 1;
+    }
+    if cursor >= bytes.len() || bytes[cursor] != b'{' {
+        return None;
+    }
+    let mut end = cursor + 1;
+    while end < bytes.len() && bytes[end] != b'}' {
+        end += 1;
+    }
+    if end >= bytes.len() {
+        return None;
+    }
+    Some(text[idx..=end].trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{diagnostics::SuggestedFix, span::Span};
@@ -334,6 +422,25 @@ mod tests {
         let plan = collect_safe_fix_plan(&diagnostics);
         assert_eq!(plan.applied_edits.len(), 1);
         assert!(plan.conflicts.is_empty());
+    }
+
+    #[test]
+    fn effect_and_capability_insertions_are_merged_for_one_pass_fix() {
+        let diagnostics = vec![
+            make_diag("E2001", "main.aic", 30, 30, Some(" effects { io }")),
+            make_diag("E2009", "main.aic", 30, 30, Some(" capabilities { io }")),
+        ];
+
+        let plan = collect_safe_fix_plan(&diagnostics);
+        assert_eq!(plan.applied_edits.len(), 1);
+        assert!(plan.conflicts.is_empty());
+        assert!(
+            plan.applied_edits[0]
+                .replacement
+                .contains("effects { io } capabilities { io }"),
+            "replacement={}",
+            plan.applied_edits[0].replacement
+        );
     }
 
     #[test]

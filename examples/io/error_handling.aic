@@ -14,7 +14,7 @@ fn io_code(err: IoError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let fs_missing: FsError = NotFound();
     let fs_invalid: FsError = InvalidInput();
     let net_timeout: NetError = Timeout();

@@ -5,7 +5,7 @@ fn bad_abs(x: Int) -> Int ensures result >= 0 {
     x
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let v = bad_abs(-5);
     print_int(v);
     0

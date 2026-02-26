@@ -120,7 +120,7 @@ For each effectful API in docs:
 
 - include the exact `effects { ... }` list,
 - document required effect declarations at call sites,
-- call out effect-related diagnostics where relevant (`E2001-E2006`).
+- call out effect/capability diagnostics where relevant (`E2001-E2009`).
 
 ## Errors policy
 

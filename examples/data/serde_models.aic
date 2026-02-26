@@ -18,7 +18,7 @@ struct Envelope[T] {
     data: T,
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let creds = Credentials {
         user: "alice",
         pass: "p@ss",

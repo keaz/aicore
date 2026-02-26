@@ -2,14 +2,14 @@ module verify.file_protocol_invalid;
 
 import std.concurrent;
 
-fn open_channel() -> IntChannel effects { concurrency } {
+fn open_channel() -> IntChannel effects { concurrency } capabilities { concurrency } {
     match channel_int(1) {
         Ok(ch) => ch,
         Err(_) => IntChannel { handle: 0 },
     }
 }
 
-fn main() -> Int effects { concurrency } {
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
     let ch = open_channel();
     let _closed = close_channel(ch);
     let _sent = send_int(ch, 1, 50);

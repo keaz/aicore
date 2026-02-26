@@ -14,7 +14,7 @@ fn choose(x: Int, y: Int) -> Int ensures result >= y {
     x
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(abs(-7));
     print_int(choose(9, 4));
     0

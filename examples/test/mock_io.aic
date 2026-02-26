@@ -7,7 +7,7 @@ import std.vec;
 import std.string;
 
 #[test]
-fn test_mock_reader_and_writer() -> () effects { io, rand, time } {
+fn test_mock_reader_and_writer() -> () effects { io, rand, time } capabilities { io, rand, time } {
     let lines = append(vec_of("hello"), vec_of("world"));
     let reader = mock_reader_from_lines(lines);
 
@@ -56,7 +56,7 @@ fn test_mock_reader_and_writer() -> () effects { io, rand, time } {
 }
 
 #[test]
-fn test_rand_and_time_determinism() -> () effects { io, rand, time } {
+fn test_rand_and_time_determinism() -> () effects { io, rand, time } capabilities { io, rand, time } {
     seed(9);
     let first = random_int();
     seed(9);

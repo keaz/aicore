@@ -8,7 +8,7 @@ fn map_option[T](x: Option[T]) -> Option[T] {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let first = map_option(Some(41));
     let second = map_option(first);
     let out = match second {

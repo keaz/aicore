@@ -1,0 +1,13 @@
+module verify.fs_protocol_ok;
+
+import std.fs;
+
+fn main() -> Int effects { fs } capabilities { fs } {
+    let file = match fs.open_read("README.md") {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    };
+    let _line = fs.file_read_line(file);
+    let _closed = fs.file_close(file);
+    0
+}

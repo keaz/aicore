@@ -15,7 +15,7 @@ fn err_code(err: FsError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let wrote = match write_text("backup_source.txt", "42") {
         Ok(_) => 1,
         Err(err) => err_code(err),

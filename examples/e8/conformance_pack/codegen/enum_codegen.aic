@@ -12,7 +12,7 @@ fn unwrap_or_zero(value: Maybe[Int]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(unwrap_or_zero(Has(42)));
     0
 }

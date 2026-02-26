@@ -14,7 +14,7 @@ fn keep_even_result(x: Int) -> Result[Int, Int] {
     if x % 2 == 0 { Ok(x) } else { Err(0 - x) }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let option_value = Some(41).map(add_one).and_then(keep_even_option).unwrap_or(0);
     let err_value: Result[Int, Int] = Err(7);
     let result_value = err_value.map(add_one).and_then(keep_even_result).unwrap_or(4);

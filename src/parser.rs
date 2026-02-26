@@ -254,6 +254,7 @@ impl<'a> Parser<'a> {
         let ret_type = self.parse_type()?;
         self.parse_where_clause(&mut generics);
         let effects = self.parse_effects_clause()?;
+        let capabilities = self.parse_capabilities_clause()?;
 
         let mut requires = None;
         let mut ensures = None;
@@ -286,6 +287,7 @@ impl<'a> Parser<'a> {
             params,
             ret_type,
             effects,
+            capabilities,
             requires,
             ensures,
             body,
@@ -356,17 +358,20 @@ impl<'a> Parser<'a> {
         if self.at_kind(|k| {
             matches!(
                 k,
-                TokenKind::KwEffects | TokenKind::KwRequires | TokenKind::KwEnsures
+                TokenKind::KwEffects
+                    | TokenKind::KwCapabilities
+                    | TokenKind::KwRequires
+                    | TokenKind::KwEnsures
             )
         }) {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1066",
-                    "extern function declarations cannot have effects/contracts",
+                    "extern function declarations cannot have effects/capabilities/contracts",
                     self.file,
                     self.current_span(),
                 )
-                .with_help("declare `extern` signatures only; wrap them in normal functions for effects/contracts"),
+                .with_help("declare `extern` signatures only; wrap them in normal functions for effects/capabilities/contracts"),
             );
             while !self.at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::Eof)) {
                 self.bump();
@@ -392,6 +397,7 @@ impl<'a> Parser<'a> {
             params,
             ret_type,
             effects: Vec::new(),
+            capabilities: Vec::new(),
             requires: None,
             ensures: None,
             body: Block {
@@ -448,6 +454,7 @@ impl<'a> Parser<'a> {
         )?;
         let ret_type = self.parse_type()?;
         let effects = self.parse_effects_clause()?;
+        let capabilities = self.parse_capabilities_clause()?;
 
         if self.at_kind(|k| matches!(k, TokenKind::KwRequires | TokenKind::KwEnsures)) {
             self.diagnostics.push(
@@ -499,6 +506,7 @@ impl<'a> Parser<'a> {
             params,
             ret_type,
             effects,
+            capabilities,
             requires: None,
             ensures: None,
             body: Block {
@@ -850,6 +858,7 @@ impl<'a> Parser<'a> {
             params: Vec::new(),
             ret_type: target_ty,
             effects: Vec::new(),
+            capabilities: Vec::new(),
             requires: None,
             ensures: None,
             body: Block {
@@ -897,6 +906,7 @@ impl<'a> Parser<'a> {
             params: Vec::new(),
             ret_type: const_ty,
             effects: Vec::new(),
+            capabilities: Vec::new(),
             requires: None,
             ensures: None,
             body: Block {
@@ -1047,6 +1057,35 @@ impl<'a> Parser<'a> {
         Some(effects)
     }
 
+    fn parse_capabilities_clause(&mut self) -> Option<Vec<String>> {
+        if !self.at_kind(|k| matches!(k, TokenKind::KwCapabilities)) {
+            return Some(Vec::new());
+        }
+
+        self.bump();
+        self.expect(
+            |k| matches!(k, TokenKind::LBrace),
+            "E1017",
+            "expected '{' after capabilities",
+        )?;
+        let mut capabilities = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+            let (name, _) = self.expect_ident("E1018", "expected capability name")?;
+            capabilities.push(name);
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        self.expect(
+            |k| matches!(k, TokenKind::RBrace),
+            "E1019",
+            "expected '}' to close capabilities list",
+        )?;
+        Some(capabilities)
+    }
+
     fn parse_trait_method_signature(
         &mut self,
         is_async: bool,
@@ -1071,6 +1110,7 @@ impl<'a> Parser<'a> {
         let ret_type = self.parse_type()?;
         self.parse_where_clause(&mut generics);
         let effects = self.parse_effects_clause()?;
+        let capabilities = self.parse_capabilities_clause()?;
         if self.at_kind(|k| matches!(k, TokenKind::KwRequires | TokenKind::KwEnsures)) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -1105,6 +1145,7 @@ impl<'a> Parser<'a> {
             params,
             ret_type,
             effects,
+            capabilities,
             requires: None,
             ensures: None,
             body: Block {
@@ -3721,6 +3762,24 @@ fn f(v: Vec[Int], n: Int) -> Int {
         assert_eq!(intrinsic_fn.effects, vec!["fs".to_string()]);
         assert!(intrinsic_fn.body.stmts.is_empty());
         assert!(intrinsic_fn.body.tail.is_none());
+    }
+
+    #[test]
+    fn parses_function_capabilities_clause() {
+        let src = r#"
+    fn run() -> Int effects { io, fs } capabilities { io, fs } {
+        0
+    }
+    "#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let func = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert_eq!(func.effects, vec!["io".to_string(), "fs".to_string()]);
+        assert_eq!(func.capabilities, vec!["io".to_string(), "fs".to_string()]);
     }
 
     #[test]

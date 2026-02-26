@@ -1,6 +1,6 @@
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let offset = 2;
     let plus_offset = |x: Int| -> Int { x + offset };
     print_int(plus_offset(40));

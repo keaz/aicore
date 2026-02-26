@@ -8,7 +8,7 @@ fn zlib_compile_flags() -> Int {
     unsafe { zlibCompileFlags() }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(zlib_compile_flags());
     0
 }

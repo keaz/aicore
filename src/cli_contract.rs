@@ -54,7 +54,8 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     },
     CommandContract {
         name: "suggest-effects",
-        description: "Suggest missing function effects from transitive inference data",
+        description:
+            "Suggest missing function effects and capabilities from transitive inference data",
         stable_flags: &["--offline"],
         output_modes: &["json"],
     },

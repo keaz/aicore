@@ -4,7 +4,7 @@ async fn ping(x: Int) -> Int {
     x + 1
 }
 
-async fn main() -> Int effects { io } {
+async fn main() -> Int effects { io } capabilities { io  } {
     let value = await ping(41);
     print_int(value);
     0

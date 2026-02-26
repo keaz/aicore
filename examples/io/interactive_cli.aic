@@ -8,14 +8,14 @@ fn io_err_code(err: IoError) -> Int {
     }
 }
 
-fn read_name() -> String effects { io } {
+fn read_name() -> String effects { io } capabilities { io  } {
     match prompt("Name: ") {
         Ok(value) => value,
         Err(_) => "guest",
     }
 }
 
-fn read_score() -> Int effects { io } {
+fn read_score() -> Int effects { io } capabilities { io  } {
     println_str("Score:");
     match read_int() {
         Ok(value) => value,
@@ -23,7 +23,7 @@ fn read_score() -> Int effects { io } {
     }
 }
 
-fn read_initial() -> String effects { io } {
+fn read_initial() -> String effects { io } capabilities { io  } {
     println_str("Initial:");
     match read_char() {
         Ok(value) => value,
@@ -31,7 +31,7 @@ fn read_initial() -> String effects { io } {
     }
 }
 
-fn read_note() -> String effects { io } {
+fn read_note() -> String effects { io } capabilities { io  } {
     println_str("Note:");
     match read_line() {
         Ok(value) => value,
@@ -39,7 +39,7 @@ fn read_note() -> String effects { io } {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let name = read_name();
     let score = read_score();
     let initial = read_initial();

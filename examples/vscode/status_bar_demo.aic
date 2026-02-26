@@ -6,7 +6,7 @@ fn compute(seed: Int) -> Int {
     seed + 1
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let value = compute(41);
     print_int(value);
     0

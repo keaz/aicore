@@ -2,7 +2,7 @@ module examples.ops.sandbox_profiles.proc_blocked_demo;
 
 import std.proc;
 
-fn main() -> Int effects { proc, env } {
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let result = proc.run("echo sandbox");
     match result {
         Ok(_) => 1,

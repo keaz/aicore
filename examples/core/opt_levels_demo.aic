@@ -14,7 +14,7 @@ fn fold(rounds: Int) -> Int {
     acc
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let value = fold(1000);
     if value != 0 {
         print_int(42);

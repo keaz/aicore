@@ -225,11 +225,16 @@ fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, S
     } else {
         format!(" effects {{ {} }}", func.effects.join(", "))
     };
+    let capabilities = if func.capabilities.is_empty() {
+        String::new()
+    } else {
+        format!(" capabilities {{ {} }}", func.capabilities.join(", "))
+    };
 
     let async_prefix = if func.is_async { "async " } else { "" };
     format!(
-        "{}fn {}{}({}) -> {}{}",
-        async_prefix, func.name, generics, params, ret, effects
+        "{}fn {}{}({}) -> {}{}{}",
+        async_prefix, func.name, generics, params, ret, effects, capabilities
     )
 }
 
@@ -489,11 +494,11 @@ mod tests {
             r#"module app.main;
 import std.time;
 
-fn abs(x: Int) -> Int effects { time } requires x >= 0 ensures result >= 0 {
+fn abs(x: Int) -> Int effects { time } capabilities { time } requires x >= 0 ensures result >= 0 {
     x
 }
 
-fn main() -> Int effects { time } {
+fn main() -> Int effects { time } capabilities { time } {
     now();
     abs(1)
 }
@@ -510,7 +515,7 @@ fn main() -> Int effects { time } {
 
         let out = generate_docs(&front, &dir.path().join("docs/api")).expect("docgen");
         let index = fs::read_to_string(out.index_path).expect("read index");
-        assert!(index.contains("fn abs(x: Int) -> Int effects { time }"));
+        assert!(index.contains("fn abs(x: Int) -> Int effects { time } capabilities { time }"));
         assert!(index.contains("Requires: `(x >= 0)`"));
         assert!(index.contains("Ensures: `(result >= 0)`"));
     }

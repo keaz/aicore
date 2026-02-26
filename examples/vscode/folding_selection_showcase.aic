@@ -24,7 +24,7 @@ fn classify(x: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let base = 41;
     let result = classify(base);
     if result > 0 {

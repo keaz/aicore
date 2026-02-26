@@ -51,6 +51,7 @@ pub enum TokenKind {
     KwWhere,
     KwInvariant,
     KwEffects,
+    KwCapabilities,
     KwNull,
     KwAwait,
 
@@ -374,6 +375,7 @@ impl<'a> Lexer<'a> {
             "where" => TokenKind::KwWhere,
             "invariant" => TokenKind::KwInvariant,
             "effects" => TokenKind::KwEffects,
+            "capabilities" => TokenKind::KwCapabilities,
             "null" => TokenKind::KwNull,
             "await" => TokenKind::KwAwait,
             _ => TokenKind::Ident(text.to_string()),
@@ -778,7 +780,7 @@ mod tests {
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let src = "type Id = Int; const BASE: Int = 1; async fn main() -> Int effects { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } for i in 0..1 { break; } }";
+        let src = "type Id = Int; const BASE: Int = 1; async fn main() -> Int effects { io } capabilities { io } { let mut x = await ping()?; let y = &mut x; while true { continue; } loop { break; } match x { Some(v) | None => v } for i in 0..1 { break; } }";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty());
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwType)));
@@ -789,6 +791,9 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwEffects)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::KwCapabilities)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwMut)));
         assert!(tokens
             .iter()

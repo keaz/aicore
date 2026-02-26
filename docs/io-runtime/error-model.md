@@ -12,7 +12,10 @@ Use `aic check --json` for machine-readable diagnostics.
 | `E2003` | unknown effect declaration | typo in effect name | use known taxonomy: `io, fs, net, time, rand, env, proc, concurrency` |
 | `E2004` | duplicate effect declaration | same effect listed twice | remove duplicates; canonical order is auto-normalized |
 | `E2005` | transitive effect path missing | indirect calls reach effectful leaf | add effect on top-level caller or split pure/effectful paths |
-| `E2006` | resource protocol violation | operation on closed/consumed concurrent handle | reorder lifecycle calls or allocate a fresh handle before reuse |
+| `E2006` | resource protocol violation | operation on closed/consumed resource handle | reorder lifecycle calls or allocate a fresh handle before reuse |
+| `E2007` | unknown capability declaration | typo in capability name | use known taxonomy: `io, fs, net, time, rand, env, proc, concurrency` |
+| `E2008` | duplicate capability declaration | same capability listed twice | remove duplicates; canonical order is auto-normalized |
+| `E2009` | missing capability authority | effect declaration/call path lacks matching capability | add `capabilities { ... }` and thread authority through callers |
 | `E2100` | missing imported module | module not available/imported | add valid `import` and ensure module exists |
 | `E2102` | symbol requires explicit import | symbol reachable only through module import | add explicit `import module.path;` |
 
@@ -92,7 +95,7 @@ fn wait_retry(base: Int, attempt: Int) -> () effects { time, rand } {
 
 ## Diagnostics + Runtime Correlation
 
-- Compile-time diagnostics catch API misuse and missing effects before execution.
+- Compile-time diagnostics catch API misuse and missing effect/capability authority before execution.
 - Runtime enums capture host/runtime outcomes after effects are allowed.
 - Agent policy should prioritize fixing diagnostics first, then applying runtime fallback branches.
 
@@ -100,4 +103,5 @@ fn wait_retry(base: Int, attempt: Int) -> () effects { time, rand } {
 
 - `examples/io/effect_misuse_fs.aic` intentionally triggers `E2001` to validate effect enforcement.
 - `examples/verify/file_protocol_invalid.aic` intentionally triggers `E2006` to validate protocol enforcement.
+- `examples/verify/capability_missing_invalid.aic` intentionally triggers `E2009` to validate capability enforcement.
 - `examples/e5/panic_line_map.aic` validates runtime panic surfacing and panic-location diagnostics.

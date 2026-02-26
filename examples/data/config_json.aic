@@ -6,7 +6,7 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let cfg = match parse("{\"service\":\"billing\",\"enabled\":true,\"port\":8080}") {
         Ok(value) => value,
         Err(_) => object_empty(),

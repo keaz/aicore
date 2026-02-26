@@ -295,7 +295,7 @@ fn transform_source_for_test(source: &str, test_name: &str) -> anyhow::Result<St
     let rewritten = rewrite_assert_calls(&with_import);
 
     Ok(format!(
-        "{}\n{}\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}();\n    0\n}}\n",
+        "{}\n{}\nfn main() -> Int effects {{ io, fs, net, time, rand, env, proc, concurrency }} capabilities {{ io, fs, net, time, rand, env, proc, concurrency }} {{\n    {}();\n    0\n}}\n",
         rewritten, ASSERT_HELPERS, test_name
     ))
 }
@@ -336,6 +336,9 @@ fn add_io_effect_to_test_fns(source: &str, test_names: &[String]) -> anyhow::Res
                 }
                 if !prefix.contains("effects {") {
                     prefix.push_str(" effects { io }");
+                }
+                if !prefix.contains("capabilities {") {
+                    prefix.push_str(" capabilities { io }");
                 }
                 let suffix = &trimmed[brace_idx..];
 
@@ -428,7 +431,7 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
 }
 
 const ASSERT_HELPERS: &str = r#"
-fn test_assert_internal(cond: Bool) -> () effects { io } {
+fn test_assert_internal(cond: Bool) -> () effects { io } capabilities { io } {
     if cond {
         ()
     } else {
@@ -436,7 +439,7 @@ fn test_assert_internal(cond: Bool) -> () effects { io } {
     }
 }
 
-fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } {
+fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } capabilities { io } {
     if left == right {
         ()
     } else {
@@ -444,7 +447,7 @@ fn test_assert_eq_internal[T](left: T, right: T) -> () effects { io } {
     }
 }
 
-fn test_assert_ne_internal[T](left: T, right: T) -> () effects { io } {
+fn test_assert_ne_internal[T](left: T, right: T) -> () effects { io } capabilities { io } {
     if left != right {
         ()
     } else {

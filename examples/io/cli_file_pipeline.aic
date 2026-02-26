@@ -21,7 +21,7 @@ fn ok_env(v: Result[Bool, EnvError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs, env, time } {
+fn main() -> Int effects { io, fs, env, time } capabilities { io, fs, env, time  } {
     let scratch = match fs.temp_dir("cli_pipeline_") {
         Ok(path) => path,
         Err(_) => ".",

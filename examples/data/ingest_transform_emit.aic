@@ -23,7 +23,7 @@ fn fallback_time() -> DateTime {
     }
 }
 
-fn main() -> Int effects { io, time } {
+fn main() -> Int effects { io, time } capabilities { io, time  } {
     let line = "2026-02-21T18:45:10.230+05:30 INFO request_id=abc path=/v1/pay";
     let matcher = match compile("^[0-9T:+.-]+ INFO request_id=[a-z]+ path=/[a-z0-9/]+$") {
         Ok(value) => value,

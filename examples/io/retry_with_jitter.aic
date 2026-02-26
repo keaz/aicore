@@ -5,7 +5,7 @@ import std.rand;
 import std.retry;
 import std.time;
 
-fn connect_flaky() -> Result[Int, String] effects { rand } {
+fn connect_flaky() -> Result[Int, String] effects { rand } capabilities { rand  } {
     let roll = random_range(0, 4);
     if roll == 2 {
         Ok(42)
@@ -14,11 +14,11 @@ fn connect_flaky() -> Result[Int, String] effects { rand } {
     }
 }
 
-fn run_retry_int(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } {
+fn run_retry_int(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } capabilities { time, rand  } {
     retry(config, operation)
 }
 
-fn main() -> Int effects { io, time, rand } {
+fn main() -> Int effects { io, time, rand } capabilities { io, time, rand  } {
     seed(424242);
     let default_cfg = default_retry_config();
     let config = RetryConfig {

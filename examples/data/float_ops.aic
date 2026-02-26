@@ -2,7 +2,7 @@ import std.io;
 import std.json;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let a = 3.5;
     let b = 2.0;
     let total = (a + b) * 2.0;

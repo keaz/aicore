@@ -21,7 +21,7 @@ impl Score[Counter] {
     }
 }
 
-fn ensure_non_negative(value: Int) -> Int effects { io } requires value >= 0 ensures result >= 0 {
+fn ensure_non_negative(value: Int) -> Int effects { io } capabilities { io } requires value >= 0 ensures result >= 0 {
     value
 }
 
@@ -32,7 +32,7 @@ fn unpack(payload: Payload) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let counter = Counter { value: 42 };
     let payload = Value(counter.score());
     let parsed = unpack(payload);

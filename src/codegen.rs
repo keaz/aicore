@@ -46773,7 +46773,7 @@ fn main() -> Int {
             r#"
 import std.fs;
 
-fn helper() -> Result[Int, FsError] effects { fs } {
+fn helper() -> Result[Int, FsError] effects { fs } capabilities { fs } {
     let file = FileHandle { handle: 3 };
     read_text("")?;
     if file.handle == 3 {
@@ -46783,7 +46783,7 @@ fn helper() -> Result[Int, FsError] effects { fs } {
     }
 }
 
-fn main() -> Int effects { fs } {
+fn main() -> Int effects { fs } capabilities { fs } {
     match helper() {
         Ok(v) => v,
         Err(_) => 0,
@@ -47308,7 +47308,7 @@ async fn ping(x: Int) -> Int {
     x + 1
 }
 
-async fn main() -> Int effects { io } {
+async fn main() -> Int effects { io } capabilities { io } {
     let value = await ping(41);
     value
 }
@@ -47360,7 +47360,7 @@ async fn main() -> Int effects { io } {
             r#"
 import std.net;
 
-async fn main() -> Int effects { net, concurrency } {
+async fn main() -> Int effects { net, concurrency } capabilities { net, concurrency } {
     let accepted = await async_accept_submit(0, 25);
     let _recv = await async_tcp_recv_submit(0, 8, 25);
     let _server = match accepted {

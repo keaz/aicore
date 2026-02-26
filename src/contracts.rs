@@ -834,6 +834,7 @@ fn build_invariant_helpers(
             params,
             ret_type,
             effects: Vec::new(),
+            capabilities: Vec::new(),
             requires: None,
             ensures: None,
             body: ir::Block {

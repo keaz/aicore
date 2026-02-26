@@ -4,7 +4,7 @@ fn bump(x: Int) -> Int {
     x + 1
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     print_int(bump(41));
     0
 }

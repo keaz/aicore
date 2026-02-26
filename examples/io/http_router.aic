@@ -11,7 +11,7 @@ fn string_eq(left: String, right: String) -> Int {
     }
 }
 
-fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_value: String) -> Int effects { env } {
+fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_value: String) -> Int effects { env } capabilities { env } {
     let id_ok = if found.route_id == expected_id { 1 } else { 0 };
     let param_ok = if len(param_key) == 0 {
         1
@@ -28,7 +28,7 @@ fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_
     }
 }
 
-fn expect_route(found: Result[Option[RouteMatch], RouterError], expected_id: Int, param_key: String, param_value: String) -> Int effects { env } {
+fn expect_route(found: Result[Option[RouteMatch], RouterError], expected_id: Int, param_key: String, param_value: String) -> Int effects { env } capabilities { env } {
     match found {
         Ok(value) => match value {
             Some(route) => route_match_ok(route, expected_id, param_key, param_value),
@@ -47,7 +47,7 @@ fn router_err_code(err: RouterError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, env } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let router0 = match new_router() {
         Ok(value) => value,
         Err(_) => Router { handle: 0 },

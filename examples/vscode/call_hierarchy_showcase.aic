@@ -10,7 +10,7 @@ fn invoke() -> Int {
     normalize(41)
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let value = invoke();
     print_int(value);
     0

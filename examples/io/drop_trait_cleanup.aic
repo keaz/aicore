@@ -13,7 +13,7 @@ struct AuditDrop {
 }
 
 impl Drop[AuditDrop] {
-    fn drop(self: AuditDrop) -> () effects { fs } {
+    fn drop(self: AuditDrop) -> () effects { fs } capabilities { fs  } {
         let _ignored = append_text(self.path, self.marker);
         ()
     }
@@ -26,13 +26,13 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn drop_scope(path: String) -> Int effects { fs } {
+fn drop_scope(path: String) -> Int effects { fs } capabilities { fs  } {
     let first = AuditDrop { path: path, marker: "A", id: 1 };
     let second = AuditDrop { path: path, marker: "B", id: 2 };
     if first.id + second.id == 3 { 1 } else { 0 }
 }
 
-fn drop_fail(path: String) -> Result[Int, FsError] effects { fs } {
+fn drop_fail(path: String) -> Result[Int, FsError] effects { fs } capabilities { fs  } {
     let probe = AuditDrop { path: path, marker: "C", id: 3 };
     read_text("")?;
     Ok(probe.id)
@@ -48,7 +48,7 @@ fn drop_move(path: String) -> Int {
     if moved.id == 4 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let path = "drop_trait_cleanup.txt";
     let reset = ok_bool(write_text(path, ""));
     let scope_ok = drop_scope(path);

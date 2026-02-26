@@ -11,7 +11,7 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     let reset = ok_bool(write_text("log_tee.log", ""));
     let add_a = ok_bool(append_text("log_tee.log", "INFO startup\n"));
     let add_b = ok_bool(append_text("log_tee.log", "WARN fallback\n"));

@@ -38,6 +38,7 @@ pub struct FunctionInfo {
     pub param_types: Vec<ir::TypeId>,
     pub ret_type: ir::TypeId,
     pub effects: BTreeSet<String>,
+    pub capabilities: BTreeSet<String>,
     pub span: crate::span::Span,
 }
 
@@ -92,6 +93,7 @@ fn function_info_for(f: &ir::Function) -> FunctionInfo {
         param_types: f.params.iter().map(|p| p.ty).collect(),
         ret_type: f.ret_type,
         effects: f.effects.iter().cloned().collect(),
+        capabilities: f.capabilities.iter().cloned().collect(),
         span: f.span,
     }
 }

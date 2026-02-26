@@ -1456,7 +1456,7 @@ fn unit_frontend_canonicalizes_effect_signature_order() {
     fs::write(
         &source_path,
         r#"
-fn main() -> Int effects { time, io, fs } {
+fn main() -> Int effects { time, io, fs } capabilities { time, io, fs } {
     0
 }
 "#,
@@ -3321,7 +3321,7 @@ fn unit_multi_file_package_loads_and_typechecks() {
 import app.math;
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(add(1, 2));
     0
 }
@@ -3390,7 +3390,7 @@ import std.concurrent;
 import std.http_server;
 import std.router;
 
-fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
+fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } capabilities { io, fs, net, time, rand, env, proc, concurrency } {
     let _exists = exists("foo.txt");
     let _read = read_text("foo.txt");
     let _write = write_text("foo.txt", "ok");
@@ -3793,7 +3793,7 @@ fn unit_deprecated_std_api_emits_warning() {
         r#"module app.main;
 import std.time;
 
-fn main() -> Int effects { time } {
+fn main() -> Int effects { time } capabilities { time } {
     now()
 }
 "#,

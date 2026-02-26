@@ -10,7 +10,7 @@ fn opt_char_code(v: Option[Char], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let digit_ok = if is_digit('5') { 1 } else { 0 };
     let alpha_ok = if is_alpha('A') { 1 } else { 0 };
     let whitespace_ok = if is_whitespace('\n') { 1 } else { 0 };

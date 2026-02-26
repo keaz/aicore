@@ -1843,3 +1843,50 @@ fn intrinsics_runtime_bindings_docs_test_commands_are_executable() {
     );
     run_docs_test_commands(&doc_path, &commands);
 }
+
+#[test]
+fn capability_protocols_doc_has_required_sections_and_examples() {
+    let root = repo_root();
+    let doc_path = root.join("docs/capability-protocols.md");
+    let text = fs::read_to_string(&doc_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", doc_path.display()));
+
+    for marker in [
+        "# Capability-Safe Effects And Resource Protocols",
+        "## Capability Tokens",
+        "## Signature Threading Rules",
+        "## Async, Higher-Order, And Modules",
+        "## Migration From Declaration-Only Effects",
+        "## Resource Protocol Diagnostics",
+        "## Executable Examples",
+        "E2006",
+        "E2009",
+        "examples/verify/capability_protocol_ok.aic",
+        "examples/verify/capability_missing_invalid.aic",
+        "examples/verify/fs_protocol_ok.aic",
+        "examples/verify/fs_protocol_invalid.aic",
+        "examples/verify/net_proc_protocol_ok.aic",
+        "examples/verify/net_proc_protocol_invalid.aic",
+    ] {
+        assert!(
+            text.contains(marker),
+            "capability protocols doc missing marker '{}': {}",
+            marker,
+            doc_path.display()
+        );
+    }
+}
+
+#[test]
+fn capability_protocols_docs_test_commands_are_executable() {
+    let doc_path = repo_root().join("docs/capability-protocols.md");
+    let text = fs::read_to_string(&doc_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", doc_path.display()));
+    let commands = extract_docs_test_commands(&text);
+    assert!(
+        !commands.is_empty(),
+        "missing docs-test command block in {}",
+        doc_path.display()
+    );
+    run_docs_test_commands(&doc_path, &commands);
+}

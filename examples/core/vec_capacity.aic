@@ -8,7 +8,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { env, io } {
     let mut values: Vec[Int] = vec.new_vec_with_capacity(6);
     let start_cap = vec.vec_cap(values);
 

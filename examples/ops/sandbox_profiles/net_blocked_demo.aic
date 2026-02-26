@@ -2,7 +2,7 @@ module examples.ops.sandbox_profiles.net_blocked_demo;
 
 import std.net;
 
-fn main() -> Int effects { net } {
+fn main() -> Int effects { net } capabilities { net  } {
     let result = net.dns_lookup("localhost");
     match result {
         Ok(_) => 1,

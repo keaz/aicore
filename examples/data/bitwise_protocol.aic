@@ -10,7 +10,7 @@ fn has_flag(flags: Int, bit: Int) -> Bool {
     (flags & (1 << bit)) != 0
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let payload_len = 38;
     let total_len = payload_len + 4;
     let b3 = (total_len >> 24) & 0xFF;

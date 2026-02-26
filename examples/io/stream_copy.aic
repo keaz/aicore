@@ -9,21 +9,21 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } {
+fn close_reader_ok(reader: Reader) -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     match close_reader(reader) {
         Ok(value) => bool_to_int(value),
         Err(_) => 0,
     }
 }
 
-fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } {
+fn close_writer_ok(writer: Writer) -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     match close_writer(writer) {
         Ok(value) => bool_to_int(value),
         Err(_) => 0,
     }
 }
 
-fn main() -> Int effects { io, fs, net } {
+fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
     let wrote = match fs.write_text("stream_copy_input.txt", "payload-42") {
         Ok(_) => 1,
         Err(_) => 0,

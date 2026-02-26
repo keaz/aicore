@@ -33,7 +33,7 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
     let t1 = unwrap_task(spawn_task(10, 20));
     let t2 = unwrap_task(spawn_task(11, 5));
     let ch = unwrap_channel(channel_int(4));

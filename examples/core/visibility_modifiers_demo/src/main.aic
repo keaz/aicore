@@ -2,7 +2,7 @@ module visibility_demo.main;
 import visibility_demo.api;
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     let record = api.make_record(20);
     let score = api.public_add(record.visible, api.crate_value());
     print_int(score);

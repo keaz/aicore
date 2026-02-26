@@ -5,14 +5,14 @@ ensures result >= 0 {
     if x >= 0 { x } else { 0 - x }
 }
 
-fn emit(v: Int) -> Int effects { io }
+fn emit(v: Int) -> Int effects { io } capabilities { io }
 requires v >= 0
 ensures result >= 0 {
     print_int(v);
     v
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io  } {
     emit(abs(-42));
     0
 }

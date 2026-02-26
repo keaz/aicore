@@ -102,6 +102,7 @@ const LSP_KEYWORDS: &[&str] = &[
     "where",
     "invariant",
     "effects",
+    "capabilities",
     "null",
     "await",
 ];
@@ -3617,14 +3618,20 @@ fn render_function_signature(func: &ast::Function) -> String {
     } else {
         format!(" effects {{ {} }}", func.effects.join(", "))
     };
+    let capabilities = if func.capabilities.is_empty() {
+        String::new()
+    } else {
+        format!(" capabilities {{ {} }}", func.capabilities.join(", "))
+    };
 
     format!(
-        "fn {}{}({}) -> {}{}",
+        "fn {}{}({}) -> {}{}{}",
         func.name,
         generics,
         params,
         render_type_expr(&func.ret_type),
-        effects
+        effects,
+        capabilities
     )
 }
 

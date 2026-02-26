@@ -21,7 +21,7 @@ fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
     }
 }
 
-fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
+fn group_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env  } {
     let a = match vec.get(values, 0) {
         Some(v) => if v == 2 { 1 } else { 0 },
         None => 0,
@@ -37,7 +37,7 @@ fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
     if a + b + c == 3 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, concurrency, env } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let grouped = spawn_group(vec.range(1, 4), 10);
     let group_ok = match grouped {
         Ok(values) => group_values_ok(values),

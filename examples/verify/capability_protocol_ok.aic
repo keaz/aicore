@@ -1,0 +1,29 @@
+module verify.capability_protocol_ok;
+
+import std.fs;
+import std.net;
+import std.proc;
+
+fn read_once(path: String) -> Int effects { fs } capabilities { fs } {
+    let file = match fs.open_read(path) {
+        Ok(handle) => handle,
+        Err(_) => FileHandle { handle: 0 },
+    };
+    let _line = fs.file_read_line(file);
+    let _closed = fs.file_close(file);
+    0
+}
+
+fn check_handles(tcp: Int, udp: Int, child: Int) -> Int effects { net, proc } capabilities { net, proc } {
+    let _alive = proc.is_running(child);
+    let _waited = proc.wait(child);
+    let _tcp_closed = net.tcp_close(tcp);
+    let _udp_closed = net.udp_close(udp);
+    0
+}
+
+fn main() -> Int effects { fs, net, proc } capabilities { fs, net, proc } {
+    let _fs = read_once("README.md");
+    let _handles = check_handles(10, 11, 12);
+    0
+}

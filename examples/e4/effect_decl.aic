@@ -1,12 +1,12 @@
 module examples.e4.effect_decl;
 import std.io;
 
-fn noisy() -> () effects { time, io, fs } {
+fn noisy() -> () effects { time, io, fs } capabilities { time, io, fs  } {
     print_int(1);
     ()
 }
 
-fn main() -> Int effects { fs, io, time } {
+fn main() -> Int effects { fs, io, time } capabilities { fs, io, time  } {
     noisy();
     0
 }

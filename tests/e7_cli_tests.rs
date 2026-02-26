@@ -98,7 +98,7 @@ fn write_profile_demo_project(root: &std::path::Path) {
         concat!(
             "module profile.demo;\n",
             "import std.io;\n",
-            "fn main() -> Int effects { io } {\n",
+            "fn main() -> Int effects { io } capabilities { io } {\n",
             "    print_int(7);\n",
             "    0\n",
             "}\n",
@@ -757,7 +757,7 @@ fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects(
         concat!(
             "module suggest.effect_inference;\n",
             "import std.io;\n",
-            "fn leaf() -> () effects { io } {\n",
+            "fn leaf() -> () effects { io } capabilities { io } {\n",
             "    print_int(1)\n",
             "}\n",
             "fn middle() -> () {\n",
@@ -792,7 +792,11 @@ fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects(
     assert_eq!(middle["current_effects"], json!([]));
     assert_eq!(middle["required_effects"], json!(["io"]));
     assert_eq!(middle["missing_effects"], json!(["io"]));
+    assert_eq!(middle["current_capabilities"], json!([]));
+    assert_eq!(middle["required_capabilities"], json!(["io"]));
+    assert_eq!(middle["missing_capabilities"], json!(["io"]));
     assert_eq!(middle["reason"]["io"], "middle -> leaf");
+    assert_eq!(middle["capability_reason"]["io"], "middle -> leaf");
 
     let top = suggestions
         .iter()
@@ -801,7 +805,11 @@ fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects(
     assert_eq!(top["current_effects"], json!([]));
     assert_eq!(top["required_effects"], json!(["io"]));
     assert_eq!(top["missing_effects"], json!(["io"]));
+    assert_eq!(top["current_capabilities"], json!([]));
+    assert_eq!(top["required_capabilities"], json!(["io"]));
+    assert_eq!(top["missing_capabilities"], json!(["io"]));
     assert_eq!(top["reason"]["io"], "top -> middle -> leaf");
+    assert_eq!(top["capability_reason"]["io"], "top -> middle -> leaf");
 
     let apply = run_aic(&["diag", "apply-fixes", &source_path_str, "--json"]);
     assert_eq!(
@@ -836,6 +844,10 @@ fn suggest_effects_reports_transitive_reasons_and_diag_apply_fixes_adds_effects(
     assert!(
         rewritten.contains("effects { io }"),
         "expected rewritten source to include io effect declarations: {rewritten}"
+    );
+    assert!(
+        rewritten.contains("capabilities { io }"),
+        "expected rewritten source to include io capability declarations: {rewritten}"
     );
 
     let suggest_after = run_aic(&["suggest-effects", &source_path_str]);
@@ -1098,7 +1110,7 @@ fn metrics_command_emits_deterministic_json_shape() {
         &source,
         concat!(
             "module metrics.demo;\n",
-            "fn beta(a: Int, b: Int) -> Int effects { io } {\n",
+            "fn beta(a: Int, b: Int) -> Int effects { io } capabilities { io } {\n",
             "    if a > 0 && b > 0 {\n",
             "        if a > b { a } else { b }\n",
             "    } else {\n",
@@ -1388,6 +1400,41 @@ fn resource_protocol_violation_reports_e2006() {
     assert!(
         items.iter().any(|diag| diag["code"] == "E2006"),
         "expected E2006 protocol diagnostic; diagnostics={diagnostics:#}"
+    );
+}
+
+#[test]
+fn resource_protocol_violation_reports_e2006_for_fs_and_net_proc_examples() {
+    for input in [
+        "examples/verify/fs_protocol_invalid.aic",
+        "examples/verify/net_proc_protocol_invalid.aic",
+    ] {
+        let out = run_aic(&["check", input, "--json"]);
+        assert_eq!(out.status.code(), Some(1), "input={input}");
+        let diagnostics: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("diagnostics json");
+        let items = diagnostics.as_array().expect("diagnostics array");
+        assert!(
+            items.iter().any(|diag| diag["code"] == "E2006"),
+            "expected E2006 for {input}; diagnostics={diagnostics:#}"
+        );
+    }
+}
+
+#[test]
+fn missing_capability_reports_e2009() {
+    let out = run_aic(&[
+        "check",
+        "examples/verify/capability_missing_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("diagnostics json");
+    let items = diagnostics.as_array().expect("diagnostics array");
+    assert!(
+        items.iter().any(|diag| diag["code"] == "E2009"),
+        "expected E2009 capability diagnostic; diagnostics={diagnostics:#}"
     );
 }
 
@@ -2046,7 +2093,7 @@ fn write_incremental_daemon_demo(root: &std::path::Path) {
             "module inc_app.main;\n",
             "import std.io;\n",
             "import inc_dep.main;\n",
-            "fn main() -> Int effects { io } {\n",
+            "fn main() -> Int effects { io } capabilities { io } {\n",
             "  print_int(inc_dep.main.base() + 2);\n",
             "  0\n",
             "}\n",
@@ -2159,7 +2206,7 @@ fn add42(x: Int) -> Int {
     unsafe { ffi_add42(x) }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(add42(0));
     0
 }
@@ -3400,7 +3447,7 @@ import std.vec;
 import std.string;
 
 #[test]
-fn test_mock_reader_writer_and_no_real_io() -> () effects { io, rand, time } {
+fn test_mock_reader_writer_and_no_real_io() -> () effects { io, rand, time } capabilities { io, rand, time } {
     let reader = mock_reader_from_lines(append(vec_of("hello"), vec_of("world")));
     let install_ok = match install_mock_reader(reader) {
         Ok(_) => true,
@@ -3447,7 +3494,7 @@ fn test_mock_reader_writer_and_no_real_io() -> () effects { io, rand, time } {
 }
 
 #[test]
-fn test_rand_and_time_are_deterministic() -> () effects { io, rand, time } {
+fn test_rand_and_time_are_deterministic() -> () effects { io, rand, time } capabilities { io, rand, time } {
     seed(42);
     let first = random_int();
     seed(42);

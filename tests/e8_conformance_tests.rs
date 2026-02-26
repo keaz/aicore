@@ -78,7 +78,9 @@ fn verification_quality_docs_cover_qv_gates() {
     let effects = fs::read_to_string(root.join("docs/verification-quality/effect-protocols.md"))
         .expect("read effects runbook");
     assert!(effects.contains("E2006"));
+    assert!(effects.contains("E2009"));
     assert!(effects.contains("IntChannel"));
+    assert!(effects.contains("FileHandle"));
 
     let fuzz =
         fs::read_to_string(root.join("docs/verification-quality/fuzz-differential-runbook.md"))
@@ -172,4 +174,50 @@ fn verification_quality_examples_report_expected_statuses() {
 
     let protocol_ok = run_aic(&["check", "examples/verify/file_protocol.aic", "--json"]);
     assert_eq!(protocol_ok.status.code(), Some(0));
+
+    let fs_protocol_fail = run_aic(&["check", "examples/verify/fs_protocol_invalid.aic", "--json"]);
+    assert_eq!(fs_protocol_fail.status.code(), Some(1));
+    assert!(
+        has_code(&fs_protocol_fail.stdout, "E2006"),
+        "expected E2006 from invalid fs protocol example"
+    );
+
+    let net_proc_fail = run_aic(&[
+        "check",
+        "examples/verify/net_proc_protocol_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(net_proc_fail.status.code(), Some(1));
+    assert!(
+        has_code(&net_proc_fail.stdout, "E2006"),
+        "expected E2006 from invalid net/proc protocol example"
+    );
+
+    let capability_fail = run_aic(&[
+        "check",
+        "examples/verify/capability_missing_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(capability_fail.status.code(), Some(1));
+    assert!(
+        has_code(&capability_fail.stdout, "E2009"),
+        "expected E2009 from missing capability example"
+    );
+
+    let fs_protocol_ok = run_aic(&["check", "examples/verify/fs_protocol_ok.aic", "--json"]);
+    assert_eq!(fs_protocol_ok.status.code(), Some(0));
+
+    let net_proc_ok = run_aic(&[
+        "check",
+        "examples/verify/net_proc_protocol_ok.aic",
+        "--json",
+    ]);
+    assert_eq!(net_proc_ok.status.code(), Some(0));
+
+    let capability_ok = run_aic(&[
+        "check",
+        "examples/verify/capability_protocol_ok.aic",
+        "--json",
+    ]);
+    assert_eq!(capability_ok.status.code(), Some(0));
 }

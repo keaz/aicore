@@ -405,7 +405,7 @@ mod tests {
                 "import std.time;\n",
                 "import std.rand;\n",
                 "\n",
-                "fn main() -> Int effects { io, time, rand } {\n",
+                "fn main() -> Int effects { io, time, rand } capabilities { io, time, rand } {\n",
                 "    let now = now_ms();\n",
                 "    let first = random_int();\n",
                 "    seed(0);\n",

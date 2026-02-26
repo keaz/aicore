@@ -14,7 +14,7 @@ use crate::codegen::{
 };
 use crate::contracts::{lower_runtime_asserts, verify_static};
 use crate::diagnostics::{Diagnostic, Severity, SuggestedFix};
-use crate::effects::normalize_effect_declarations;
+use crate::effects::{normalize_capability_declarations, normalize_effect_declarations};
 use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
@@ -137,6 +137,7 @@ pub fn run_frontend_with_options(
     timings.ir_build_ms = elapsed_ms(ir_build_started);
     let normalize_started = Instant::now();
     diagnostics.extend(normalize_effect_declarations(&mut ir, &file));
+    diagnostics.extend(normalize_capability_declarations(&mut ir, &file));
     timings.effect_normalize_ms = elapsed_ms(normalize_started);
 
     let resolve_started = Instant::now();

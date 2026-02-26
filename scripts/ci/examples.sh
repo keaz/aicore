@@ -131,7 +131,10 @@ check_pass=(
   "examples/core/cross_compile_targets.aic"
   "examples/core/pattern_or.aic"
   "examples/core/pattern_guard_check.aic"
+  "examples/verify/capability_protocol_ok.aic"
+  "examples/verify/fs_protocol_ok.aic"
   "examples/verify/file_protocol.aic"
+  "examples/verify/net_proc_protocol_ok.aic"
   "examples/verify/range_proofs.aic"
   "examples/verify/qv_contract_proof_fixed.aic"
 )
@@ -142,7 +145,10 @@ check_fail=(
   "examples/vscode/error_lens_diagnostics.aic"
   "examples/io/effect_misuse_fs.aic"
   "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
+  "examples/verify/capability_missing_invalid.aic"
+  "examples/verify/fs_protocol_invalid.aic"
   "examples/verify/file_protocol_invalid.aic"
+  "examples/verify/net_proc_protocol_invalid.aic"
   "examples/verify/qv_contract_proof_fail.aic"
   "examples/core/intrinsic_declaration_invalid_body.aic"
 )
