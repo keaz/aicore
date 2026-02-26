@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp};
+use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, Visibility};
 use crate::diagnostics::{Diagnostic, DiagnosticSpan, SuggestedFix};
 use crate::ir;
 use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo};
@@ -73,6 +73,7 @@ struct Checker<'a> {
     call_graph: BTreeMap<String, Vec<CallEdge>>,
     function_spans: BTreeMap<String, (crate::span::Span, crate::span::Span)>,
     current_function: Option<String>,
+    current_module: Option<String>,
     current_function_is_async: bool,
     current_function_is_unsafe: bool,
     current_function_ret_type: Option<String>,
@@ -386,6 +387,7 @@ impl<'a> Checker<'a> {
             call_graph: BTreeMap::new(),
             function_spans: BTreeMap::new(),
             current_function: None,
+            current_module: None,
             current_function_is_async: false,
             current_function_is_unsafe: false,
             current_function_ret_type: None,
@@ -601,11 +603,18 @@ impl<'a> Checker<'a> {
     fn check_function(&mut self, func: &ir::Function) {
         let previous_enforce = self.enforce_import_visibility;
         let previous_function = self.current_function.replace(func.name.clone());
+        let previous_module = self.current_module.clone();
         let previous_async = self.current_function_is_async;
         let previous_unsafe = self.current_function_is_unsafe;
         let previous_ret = self.current_function_ret_type.clone();
         let previous_unsafe_depth = self.unsafe_depth;
         self.enforce_import_visibility = self.should_enforce_import_visibility(func.symbol);
+        self.current_module = self
+            .function_module_by_symbol
+            .get(&func.symbol)
+            .cloned()
+            .or_else(|| self.resolution.entry_module.clone())
+            .or_else(|| Some("<root>".to_string()));
         self.current_function_is_async = func.is_async;
         self.current_function_is_unsafe = func.is_unsafe;
         self.unsafe_depth = 0;
@@ -664,6 +673,7 @@ impl<'a> Checker<'a> {
             self.current_param_positions.clear();
             self.enforce_import_visibility = previous_enforce;
             self.current_function = previous_function;
+            self.current_module = previous_module;
             self.current_function_is_async = previous_async;
             self.current_function_is_unsafe = previous_unsafe;
             self.current_function_ret_type = previous_ret;
@@ -843,6 +853,7 @@ impl<'a> Checker<'a> {
         self.current_param_positions.clear();
         self.enforce_import_visibility = previous_enforce;
         self.current_function = previous_function;
+        self.current_module = previous_module;
         self.current_function_is_async = previous_async;
         self.current_function_is_unsafe = previous_unsafe;
         self.current_function_ret_type = previous_ret;
@@ -857,6 +868,49 @@ impl<'a> Checker<'a> {
             Some(entry_module) => function_module == entry_module,
             None => function_module == "<root>",
         }
+    }
+
+    fn module_matches_current(&self, module: &str) -> bool {
+        self.current_module.as_deref() == Some(module)
+    }
+
+    fn visibility_allows_cross_module_access(&self, visibility: Visibility) -> bool {
+        !matches!(visibility, Visibility::Private)
+    }
+
+    fn function_is_accessible_from_current(&self, module: &str, info: &FunctionInfo) -> bool {
+        self.module_matches_current(module)
+            || self.visibility_allows_cross_module_access(info.visibility)
+    }
+
+    fn field_is_accessible_from_current(&self, owner_module: &str, visibility: Visibility) -> bool {
+        self.module_matches_current(owner_module)
+            || self.visibility_allows_cross_module_access(visibility)
+    }
+
+    fn is_user_written_intrinsic_use(&self, name: &str, span: crate::span::Span) -> bool {
+        if !name.starts_with("aic_") {
+            return false;
+        }
+        if self
+            .current_module
+            .as_deref()
+            .map(|module| module == "std" || module.starts_with("std."))
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        let Some(source) = self.source.as_ref() else {
+            return true;
+        };
+        if span.end > source.len() || span.start >= span.end {
+            return true;
+        }
+        source[span.start..span.end].contains(name)
+    }
+
+    fn is_compiler_internal_intrinsic_use(&self, name: &str, span: crate::span::Span) -> bool {
+        name.starts_with("aic_") && !self.is_user_written_intrinsic_use(name, span)
     }
 
     fn check_extern_function_signature(
@@ -2539,6 +2593,25 @@ impl<'a> Checker<'a> {
                 if let Some(ty) = self.const_types.get(name) {
                     return ty.clone();
                 }
+                if self.is_user_written_intrinsic_use(name, expr.span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2102",
+                            format!(
+                                "intrinsic symbol '{}' is private runtime implementation detail",
+                                name
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help(
+                            "call the corresponding public std API instead of intrinsic symbols",
+                        ),
+                    );
+                    return "<?>".to_string();
+                }
+                let internal_intrinsic_use =
+                    self.is_compiler_internal_intrinsic_use(name, expr.span);
                 if let Some(sig) = self.functions.get(name) {
                     if self
                         .resolution
@@ -2557,6 +2630,37 @@ impl<'a> Checker<'a> {
                             .with_help("qualify the function or add a type annotation"),
                         );
                         return "<?>".to_string();
+                    }
+
+                    if let Some(modules) = self.resolution.function_modules.get(name) {
+                        if let Some(module_name) = modules.iter().next() {
+                            if let Some(info) = self
+                                .resolution
+                                .module_function_infos
+                                .get(&(module_name.clone(), name.clone()))
+                            {
+                                if !internal_intrinsic_use
+                                    && !self.function_is_accessible_from_current(module_name, info)
+                                {
+                                    self.diagnostics.push(
+                                        Diagnostic::error(
+                                            "E2102",
+                                            format!(
+                                                "symbol '{}.{}' is private and not accessible from this module",
+                                                module_name, name
+                                            ),
+                                            self.file,
+                                            expr.span,
+                                        )
+                                        .with_help(format!(
+                                            "mark '{}.{}' as `pub fn` or call it within module '{}'.",
+                                            module_name, name, module_name
+                                        )),
+                                    );
+                                    return "<?>".to_string();
+                                }
+                            }
+                        }
                     }
 
                     if !sig.generic_params.is_empty() {
@@ -2648,6 +2752,26 @@ impl<'a> Checker<'a> {
                 };
                 let qualified = call_path.len() > 1;
                 let rendered_path = call_path.join(".");
+
+                if self.is_user_written_intrinsic_use(&name, callee.span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2102",
+                            format!(
+                                "intrinsic symbol '{}' is private runtime implementation detail",
+                                name
+                            ),
+                            self.file,
+                            callee.span,
+                        )
+                        .with_help(
+                            "call the corresponding public std API instead of intrinsic symbols",
+                        ),
+                    );
+                    return "<?>".to_string();
+                }
+                let internal_intrinsic_use =
+                    self.is_compiler_internal_intrinsic_use(&name, callee.span);
 
                 if !qualified {
                     if let Some(local_ty) = locals.get(&name).cloned() {
@@ -2778,13 +2902,13 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
-                    let exported = self
+                    let has_symbol = self
                         .resolution
                         .module_functions
                         .get(&module)
                         .map(|s| s.contains(&name))
                         .unwrap_or(false);
-                    if !exported {
+                    if !has_symbol {
                         self.diagnostics.push(Diagnostic::error(
                             "E1218",
                             format!("unknown callable '{}'", rendered_path),
@@ -2794,15 +2918,68 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
+                    if let Some(info) = self
+                        .resolution
+                        .module_function_infos
+                        .get(&(module.clone(), name.clone()))
+                    {
+                        if !internal_intrinsic_use
+                            && !self.function_is_accessible_from_current(&module, info)
+                        {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E2102",
+                                    format!("symbol '{}.{}' is private and not accessible from this module", module, name),
+                                    self.file,
+                                    callee.span,
+                                )
+                                .with_help(format!("mark '{}.{}' as `pub fn` or call it within module '{}'.", module, name, module)),
+                            );
+                            return "<?>".to_string();
+                        }
+                    }
+
                     resolved_module = Some(module.clone());
                     name.clone()
                 } else {
                     if self.enforce_import_visibility
+                        && !internal_intrinsic_use
                         && !self.resolution.visible_functions.contains(&name)
                     {
                         if let Some(modules) = self.resolution.function_modules.get(&name) {
                             let mut modules = modules.iter().cloned().collect::<Vec<_>>();
                             modules.sort();
+                            if let Some(private_module) = modules
+                                .iter()
+                                .find(|module| {
+                                    self.resolution
+                                        .module_function_infos
+                                        .get(&((*module).clone(), name.clone()))
+                                        .map(|info| {
+                                            !self.function_is_accessible_from_current(module, info)
+                                        })
+                                        .unwrap_or(false)
+                                })
+                                .cloned()
+                            {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E2102",
+                                        format!(
+                                            "symbol '{}.{}' is private and not accessible from this module",
+                                            private_module, name
+                                        ),
+                                        self.file,
+                                        callee.span,
+                                    )
+                                    .with_help(format!(
+                                        "mark '{}.{}' as `pub fn` or call it within module '{}'.",
+                                        private_module, name, private_module
+                                    )),
+                                );
+                                return "<?>".to_string();
+                            }
+
                             let import_hint = modules
                                 .first()
                                 .cloned()
@@ -2861,6 +3038,35 @@ impl<'a> Checker<'a> {
                 };
 
                 if let Some(mut sig) = sig {
+                    if let Some(module_name) = resolved_module.as_deref() {
+                        if let Some(info) = self
+                            .resolution
+                            .module_function_infos
+                            .get(&(module_name.to_string(), resolved_name.clone()))
+                        {
+                            if !internal_intrinsic_use
+                                && !self.function_is_accessible_from_current(module_name, info)
+                            {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E2102",
+                                        format!(
+                                            "symbol '{}.{}' is private and not accessible from this module",
+                                            module_name, resolved_name
+                                        ),
+                                        self.file,
+                                        callee.span,
+                                    )
+                                    .with_help(format!(
+                                        "mark '{}.{}' as `pub fn` or call it within module '{}'.",
+                                        module_name, resolved_name, module_name
+                                    )),
+                                );
+                                return "<?>".to_string();
+                            }
+                        }
+                    }
+
                     for (idx, param_ty) in sig.params.iter_mut().enumerate() {
                         if contains_unresolved_type(param_ty) {
                             let key = (resolved_name.clone(), idx);
@@ -4057,6 +4263,25 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 };
 
+                if !self.field_is_accessible_from_current(&info.module, info.visibility) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2102",
+                            format!(
+                                "type '{}.{}' is private and not accessible from this module",
+                                info.module, name
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help(format!(
+                            "mark '{}.{}' as `pub struct` or construct it within module '{}'.",
+                            info.module, name, info.module
+                        )),
+                    );
+                    return "<?>".to_string();
+                }
+
                 let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
                 let mut generic_bindings = BTreeMap::new();
                 let mut seen_fields = BTreeSet::new();
@@ -4084,6 +4309,26 @@ impl<'a> Checker<'a> {
                         ));
                         continue;
                     };
+                    if let Some(field_visibility) = info.field_visibility.get(field_name).copied() {
+                        if !self.field_is_accessible_from_current(&info.module, field_visibility) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E2102",
+                                    format!(
+                                        "field '{}.{}' is private and not accessible from this module",
+                                        name, field_name
+                                    ),
+                                    self.file,
+                                    *span,
+                                )
+                                .with_help(format!(
+                                    "mark '{}.{}' as `pub` or access it within module '{}'.",
+                                    name, field_name, info.module
+                                )),
+                            );
+                            continue;
+                        }
+                    }
                     let expected_ty = self
                         .types
                         .get(expected)
@@ -4208,6 +4453,28 @@ impl<'a> Checker<'a> {
                 if let Some(info) = self.find_struct(&base_ty) {
                     let struct_name = base_type_name(&base_ty_norm).to_string();
                     if let Some(field_ty_id) = info.fields.get(field) {
+                        if let Some(field_visibility) = info.field_visibility.get(field).copied() {
+                            if !self
+                                .field_is_accessible_from_current(&info.module, field_visibility)
+                            {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E2102",
+                                        format!(
+                                            "field '{}.{}' is private and not accessible from this module",
+                                            struct_name, field
+                                        ),
+                                        self.file,
+                                        expr.span,
+                                    )
+                                    .with_help(format!(
+                                        "mark '{}.{}' as `pub` or access it within module '{}'.",
+                                        struct_name, field, info.module
+                                    )),
+                                );
+                                return "<?>".to_string();
+                            }
+                        }
                         let mut field_ty = self
                             .types
                             .get(field_ty_id)
@@ -5650,6 +5917,9 @@ impl<'a> Checker<'a> {
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
         let mut out = Vec::new();
         for (enum_name, info) in &self.resolution.enums {
+            if !self.field_is_accessible_from_current(&info.module, info.visibility) {
+                continue;
+            }
             if let Some(payload) = info.variants.get(name) {
                 let payload_ty = payload.and_then(|id| self.types.get(&id).cloned());
                 out.push(VariantMatch {

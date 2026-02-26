@@ -5,7 +5,7 @@
     {
       "name": "util",
       "path": "deps/util",
-      "checksum": "sha256:e88cb393aceb553fb411433d60bf0f3c15d66c467b286be717b94bf3b59e230c"
+      "checksum": "sha256:72c0fbf599bea618a23bb1df5ac996c13874fb62dccfebafc7a8858b91e74ba6"
     }
   ]
 }

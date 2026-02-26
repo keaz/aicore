@@ -1,5 +1,5 @@
 module lsp_workspace.math;
 
-fn base() -> Int {
+pub fn base() -> Int {
     21
 }

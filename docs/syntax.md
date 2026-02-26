@@ -25,7 +25,8 @@ module_decl    = "module" path ";" ;
 import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
-item           = fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
+item           = item_visibility? (fn_decl | struct_decl | enum_decl | trait_decl | impl_decl) ;
+item_visibility = "pub" | "priv" | "pub" "(" "crate" ")" ;
 
 fn_decl        = async_prefix? "fn" ident generics? "(" params? ")" "->" type
                  effects? contracts? block ;
@@ -52,7 +53,8 @@ trait_bounds   = ":" ident ("+" ident)* ;
 params         = param ("," param)* ","? ;
 param          = ident ":" type ;
 fields         = field ("," field)* ","? ;
-field          = ident ":" type ("=" expr)? ;
+field          = field_visibility? ident ":" type ("=" expr)? ;
+field_visibility = item_visibility ;
 ```
 
 ## Type grammar
@@ -161,6 +163,12 @@ Template literals:
 - Interpolation segments use `{expr}` and are lowered to `aic_string_format_intrinsic(template, args)`.
 - Literal braces must be escaped as `\{` and `\}`.
 - Interpolated values must type-check as `String`; use explicit conversion helpers like `int_to_string(...)` when needed.
+
+Visibility and access control:
+- Top-level `fn`, `struct`, `enum`, `trait`, and `impl` items default to private visibility.
+- Visibility modifiers are `pub`, `pub(crate)`, and `priv`.
+- Struct fields default to private; mark fields `pub` when cross-module reads/writes are part of the API.
+- User-authored direct calls to runtime intrinsic symbols (`aic_*`) are rejected during type checking.
 Struct default values:
 - Struct declarations may define defaults with `field: Type = expr`.
 - Struct literals may omit fields that have defaults.

@@ -76,6 +76,7 @@ impl Builder {
         ir::Function {
             symbol,
             name: func.name.clone(),
+            visibility: func.visibility,
             is_async: func.is_async,
             is_unsafe: func.is_unsafe,
             is_extern: func.is_extern,
@@ -108,6 +109,7 @@ impl Builder {
                 ir::Field {
                     symbol: sym,
                     name: field.name.clone(),
+                    visibility: field.visibility,
                     ty: self.lower_type(&field.ty),
                     default_value: field
                         .default_value
@@ -120,6 +122,7 @@ impl Builder {
         ir::StructDef {
             symbol,
             name: def.name.clone(),
+            visibility: def.visibility,
             generics: def
                 .generics
                 .iter()
@@ -176,6 +179,7 @@ impl Builder {
         Some(ir::Function {
             symbol,
             name,
+            visibility: ast::Visibility::Private,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -216,6 +220,7 @@ impl Builder {
         ir::EnumDef {
             symbol,
             name: def.name.clone(),
+            visibility: def.visibility,
             generics: def
                 .generics
                 .iter()
@@ -234,6 +239,7 @@ impl Builder {
         ir::TraitDef {
             symbol,
             name: def.name.clone(),
+            visibility: def.visibility,
             generics: def
                 .generics
                 .iter()
@@ -274,6 +280,7 @@ impl Builder {
             return ir::ImplDef {
                 symbol,
                 trait_name: def.trait_name.clone(),
+                visibility: def.visibility,
                 trait_args: Vec::new(),
                 target: Some(self.lower_type(&target)),
                 methods,
@@ -296,6 +303,7 @@ impl Builder {
         ir::ImplDef {
             symbol,
             trait_name: def.trait_name.clone(),
+            visibility: def.visibility,
             trait_args: def
                 .trait_args
                 .iter()
@@ -330,6 +338,7 @@ impl Builder {
         ir::Function {
             symbol,
             name: method.name.clone(),
+            visibility: method.visibility,
             is_async: method.is_async,
             is_unsafe: method.is_unsafe,
             is_extern: false,
@@ -378,6 +387,7 @@ impl Builder {
         ir::Function {
             symbol,
             name: lowered_name,
+            visibility: method.visibility,
             is_async: method.is_async,
             is_unsafe: method.is_unsafe,
             is_extern: method.is_extern,

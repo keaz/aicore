@@ -1,1 +1,5 @@
-self=sha256:9a539fccb6d64b4a24082f891a6719fcfbbc0ae48181ef2e043e1d056b71572d
+self=sha256:636d02f289d5ae35b0e8bad8defdd372e4f203a8561fc9ff8d006b5a0ca831fe
+artifact=lib
+target=aarch64-macos
+debug_info=false
+opt_level=O0

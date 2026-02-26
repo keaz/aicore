@@ -1,5 +1,5 @@
 module auto_import_workspace.net;
 
-fn demo_tcp_connect() -> Int {
+pub fn demo_tcp_connect() -> Int {
     42
 }

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{decode_internal_const, decode_internal_type_alias};
+use crate::ast::{decode_internal_const, decode_internal_type_alias, Visibility};
 use crate::diagnostics::Diagnostic;
 use crate::ir;
 
@@ -18,6 +18,7 @@ pub struct Resolution {
     pub entry_module: Option<String>,
     pub function_modules: BTreeMap<String, BTreeSet<String>>,
     pub module_functions: BTreeMap<String, BTreeSet<String>>,
+    pub module_exported_functions: BTreeMap<String, BTreeSet<String>>,
     pub visible_functions: BTreeSet<String>,
     pub import_aliases: BTreeMap<String, String>,
     pub ambiguous_import_aliases: BTreeSet<String>,
@@ -26,6 +27,7 @@ pub struct Resolution {
 #[derive(Debug, Clone)]
 pub struct FunctionInfo {
     pub symbol: ir::SymbolId,
+    pub visibility: Visibility,
     pub is_async: bool,
     pub is_unsafe: bool,
     pub is_extern: bool,
@@ -41,8 +43,11 @@ pub struct FunctionInfo {
 #[derive(Debug, Clone)]
 pub struct StructInfo {
     pub symbol: ir::SymbolId,
+    pub module: String,
+    pub visibility: Visibility,
     pub generics: Vec<String>,
     pub fields: BTreeMap<String, ir::TypeId>,
+    pub field_visibility: BTreeMap<String, Visibility>,
     pub default_fields: BTreeSet<String>,
     pub invariant: Option<ir::Expr>,
     pub span: crate::span::Span,
@@ -51,6 +56,8 @@ pub struct StructInfo {
 #[derive(Debug, Clone)]
 pub struct EnumInfo {
     pub symbol: ir::SymbolId,
+    pub module: String,
+    pub visibility: Visibility,
     pub generics: Vec<String>,
     pub variants: BTreeMap<String, Option<ir::TypeId>>,
     pub span: crate::span::Span,
@@ -59,6 +66,8 @@ pub struct EnumInfo {
 #[derive(Debug, Clone)]
 pub struct TraitInfo {
     pub symbol: ir::SymbolId,
+    pub module: String,
+    pub visibility: Visibility,
     pub generics: Vec<String>,
     pub methods: BTreeMap<String, FunctionInfo>,
     pub span: crate::span::Span,
@@ -67,6 +76,7 @@ pub struct TraitInfo {
 fn function_info_for(f: &ir::Function) -> FunctionInfo {
     FunctionInfo {
         symbol: f.symbol,
+        visibility: f.visibility,
         is_async: f.is_async,
         is_unsafe: f.is_unsafe,
         is_extern: f.is_extern,
@@ -84,6 +94,16 @@ fn function_info_for(f: &ir::Function) -> FunctionInfo {
     }
 }
 
+fn effective_visibility(module_name: &str, declared: Visibility, symbol_name: &str) -> Visibility {
+    if declared != Visibility::Private {
+        return declared;
+    }
+    if module_name.starts_with("std.") && !symbol_name.starts_with("aic_") {
+        return Visibility::Public;
+    }
+    Visibility::Private
+}
+
 fn register_function_item(
     module_name: &str,
     f: &ir::Function,
@@ -92,6 +112,7 @@ fn register_function_item(
     type_decl_kind_by_module_name: &mut BTreeMap<(String, String), &'static str>,
     diagnostics: &mut Vec<Diagnostic>,
     module_functions: &mut BTreeMap<String, BTreeSet<String>>,
+    module_exported_functions: &mut BTreeMap<String, BTreeSet<String>>,
     function_modules: &mut BTreeMap<String, BTreeSet<String>>,
     module_function_infos: &mut BTreeMap<(String, String), FunctionInfo>,
     functions: &mut BTreeMap<String, FunctionInfo>,
@@ -163,7 +184,15 @@ fn register_function_item(
         .or_default()
         .insert(module_name.to_string());
 
-    let info = function_info_for(f);
+    let mut info = function_info_for(f);
+    info.visibility = effective_visibility(module_name, info.visibility, &f.name);
+    if info.visibility != Visibility::Private {
+        module_exported_functions
+            .entry(module_name.to_string())
+            .or_default()
+            .insert(f.name.clone());
+    }
+
     module_function_infos.insert((module_name.to_string(), f.name.clone()), info.clone());
     functions.entry(f.name.clone()).or_insert_with(|| info);
 }
@@ -217,6 +246,7 @@ pub fn resolve_with_item_modules(
 
     let mut function_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut module_functions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut module_exported_functions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     // Namespace model:
     // - Value namespace: functions
@@ -239,6 +269,7 @@ pub fn resolve_with_item_modules(
                 &mut type_decl_kind_by_module_name,
                 &mut diagnostics,
                 &mut module_functions,
+                &mut module_exported_functions,
                 &mut function_modules,
                 &mut module_function_infos,
                 &mut functions,
@@ -263,6 +294,7 @@ pub fn resolve_with_item_modules(
                 }
 
                 let mut fields = BTreeMap::new();
+                let mut field_visibility = BTreeMap::new();
                 let mut default_fields = BTreeSet::new();
                 for field in &s.fields {
                     if fields.insert(field.name.clone(), field.ty).is_some() {
@@ -273,23 +305,30 @@ pub fn resolve_with_item_modules(
                             field.span,
                         ));
                     }
+                    let effective_field_visibility =
+                        effective_visibility(&module_name, field.visibility, &field.name);
+                    field_visibility.insert(field.name.clone(), effective_field_visibility);
                     if field.default_value.is_some() {
                         default_fields.insert(field.name.clone());
                     }
                 }
 
+                let struct_visibility = effective_visibility(&module_name, s.visibility, &s.name);
                 structs.entry(s.name.clone()).or_insert_with(|| StructInfo {
                     symbol: s.symbol,
+                    module: module_name.clone(),
+                    visibility: struct_visibility,
                     generics: s.generics.iter().map(|g| g.name.clone()).collect(),
                     fields,
+                    field_visibility,
                     default_fields,
                     invariant: s.invariant.clone(),
                     span: s.span,
                 });
             }
             ir::Item::Enum(e) => {
-                if let Some(existing_kind) =
-                    type_decl_kind_by_module_name.insert((module_name, e.name.clone()), "enum")
+                if let Some(existing_kind) = type_decl_kind_by_module_name
+                    .insert((module_name.clone(), e.name.clone()), "enum")
                 {
                     diagnostics.push(
                         Diagnostic::error(
@@ -321,16 +360,19 @@ pub fn resolve_with_item_modules(
                     }
                 }
 
+                let enum_visibility = effective_visibility(&module_name, e.visibility, &e.name);
                 enums.entry(e.name.clone()).or_insert_with(|| EnumInfo {
                     symbol: e.symbol,
+                    module: module_name.clone(),
+                    visibility: enum_visibility,
                     generics: e.generics.iter().map(|g| g.name.clone()).collect(),
                     variants,
                     span: e.span,
                 });
             }
             ir::Item::Trait(t) => {
-                if let Some(existing_kind) =
-                    type_decl_kind_by_module_name.insert((module_name, t.name.clone()), "trait")
+                if let Some(existing_kind) = type_decl_kind_by_module_name
+                    .insert((module_name.clone(), t.name.clone()), "trait")
                 {
                     diagnostics.push(
                         Diagnostic::error(
@@ -349,7 +391,9 @@ pub fn resolve_with_item_modules(
                 let mut methods = BTreeMap::new();
                 for method in &t.methods {
                     let method_key = method_name_key(&method.name).to_string();
-                    let info = function_info_for(method);
+                    let mut info = function_info_for(method);
+                    info.visibility =
+                        effective_visibility(&module_name, info.visibility, &method.name);
                     if methods.insert(method_key.clone(), info).is_some() {
                         diagnostics.push(
                             Diagnostic::error(
@@ -362,8 +406,11 @@ pub fn resolve_with_item_modules(
                         );
                     }
                 }
+                let trait_visibility = effective_visibility(&module_name, t.visibility, &t.name);
                 traits.entry(t.name.clone()).or_insert_with(|| TraitInfo {
                     symbol: t.symbol,
+                    module: module_name.clone(),
+                    visibility: trait_visibility,
                     generics: t.generics.iter().map(|g| g.name.clone()).collect(),
                     methods,
                     span: t.span,
@@ -399,6 +446,7 @@ pub fn resolve_with_item_modules(
                             &mut type_decl_kind_by_module_name,
                             &mut diagnostics,
                             &mut module_functions,
+                            &mut module_exported_functions,
                             &mut function_modules,
                             &mut module_function_infos,
                             &mut functions,
@@ -411,15 +459,20 @@ pub fn resolve_with_item_modules(
                     program.items.iter().find_map(|item| match item {
                         ir::Item::Trait(t) if t.name == impl_def.trait_name => Some(TraitInfo {
                             symbol: t.symbol,
+                            module: ROOT_MODULE.to_string(),
+                            visibility: effective_visibility(ROOT_MODULE, t.visibility, &t.name),
                             generics: t.generics.iter().map(|g| g.name.clone()).collect(),
                             methods: t
                                 .methods
                                 .iter()
                                 .map(|method| {
-                                    (
-                                        method_name_key(&method.name).to_string(),
-                                        function_info_for(method),
-                                    )
+                                    let mut info = function_info_for(method);
+                                    info.visibility = effective_visibility(
+                                        ROOT_MODULE,
+                                        info.visibility,
+                                        &method.name,
+                                    );
+                                    (method_name_key(&method.name).to_string(), info)
                                 })
                                 .collect(),
                             span: t.span,
@@ -598,6 +651,7 @@ pub fn resolve_with_item_modules(
                         &mut type_decl_kind_by_module_name,
                         &mut diagnostics,
                         &mut module_functions,
+                        &mut module_exported_functions,
                         &mut function_modules,
                         &mut module_function_infos,
                         &mut functions,
@@ -618,9 +672,17 @@ pub fn resolve_with_item_modules(
     }
     visible_modules.extend(imports.iter().cloned());
 
+    let own_module = entry_module
+        .clone()
+        .unwrap_or_else(|| ROOT_MODULE.to_string());
     let mut visible_functions = BTreeSet::new();
     for module in &visible_modules {
-        if let Some(names) = module_functions.get(module) {
+        let source = if module == &own_module {
+            module_functions.get(module)
+        } else {
+            module_exported_functions.get(module)
+        };
+        if let Some(names) = source {
             visible_functions.extend(names.iter().cloned());
         }
     }
@@ -657,6 +719,7 @@ pub fn resolve_with_item_modules(
             entry_module,
             function_modules,
             module_functions,
+            module_exported_functions,
             visible_functions,
             import_aliases,
             ambiguous_import_aliases,

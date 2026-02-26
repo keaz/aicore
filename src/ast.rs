@@ -20,6 +20,14 @@ pub fn decode_internal_const(name: &str) -> Option<&str> {
     name.strip_prefix(INTERNAL_CONST_PREFIX)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Visibility {
+    #[default]
+    Private,
+    Public,
+    Crate,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Program {
     pub module: Option<ModuleDecl>,
@@ -83,6 +91,8 @@ pub struct GenericParam {
 pub struct Function {
     pub name: String,
     #[serde(default)]
+    pub visibility: Visibility,
+    #[serde(default)]
     pub is_async: bool,
     #[serde(default)]
     pub is_unsafe: bool,
@@ -118,6 +128,8 @@ pub struct ClosureParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructDef {
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     pub fields: Vec<Field>,
     pub invariant: Option<Expr>,
@@ -127,6 +139,8 @@ pub struct StructDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub ty: TypeExpr,
     #[serde(default)]
     pub default_value: Option<Expr>,
@@ -136,6 +150,8 @@ pub struct Field {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnumDef {
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
     pub span: Span,
@@ -144,6 +160,8 @@ pub struct EnumDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraitDef {
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     #[serde(default)]
     pub methods: Vec<Function>,
@@ -153,6 +171,8 @@ pub struct TraitDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImplDef {
     pub trait_name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     #[serde(default)]
     pub trait_args: Vec<TypeExpr>,
     #[serde(default)]

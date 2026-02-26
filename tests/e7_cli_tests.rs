@@ -1838,7 +1838,7 @@ fn write_workspace_demo(root: &std::path::Path) {
     .expect("write util manifest");
     fs::write(
         root.join("packages/util/src/main.aic"),
-        "module util_pkg.main;\nfn value() -> Int { 42 }\n",
+        "module util_pkg.main;\npub fn value() -> Int { 42 }\n",
     )
     .expect("write util source");
 
@@ -1872,7 +1872,7 @@ fn write_incremental_daemon_demo(root: &std::path::Path) {
     .expect("write dep manifest");
     fs::write(
         root.join("dep/src/main.aic"),
-        "module inc_dep.main;\nfn base() -> Int { 40 }\n",
+        "module inc_dep.main;\npub fn base() -> Int { 40 }\n",
     )
     .expect("write dep source");
 
@@ -1914,7 +1914,7 @@ fn pkg_publish_search_install_roundtrip() {
         "http_client",
         "1.2.0",
         "http_client",
-        "fn get() -> Int { 42 }",
+        "pub fn get() -> Int { 42 }",
     );
 
     let publish = run_aic(&[
@@ -2412,7 +2412,7 @@ fn workspace_build_is_incremental_for_unchanged_members() {
 
     fs::write(
         workspace.path().join("packages/util/src/main.aic"),
-        "module util_pkg.main;\nfn value() -> Int { 7 }\n",
+        "module util_pkg.main;\npub fn value() -> Int { 7 }\n",
     )
     .expect("rewrite util source");
 
@@ -2463,7 +2463,7 @@ fn daemon_cache_invalidation_tracks_dependency_content_hashes() {
 
     fs::write(
         dep_source,
-        "module inc_dep.main;\nfn base() -> Int { 41 }\n",
+        "module inc_dep.main;\npub fn base() -> Int { 41 }\n",
     )
     .expect("rewrite dep source");
 

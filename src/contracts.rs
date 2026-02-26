@@ -823,6 +823,7 @@ fn build_invariant_helpers(
         helpers.push(ir::Function {
             symbol: ir::SymbolId(alloc.next_symbol()),
             name: helper_name,
+            visibility: crate::ast::Visibility::Private,
             is_async: false,
             is_unsafe: false,
             is_extern: false,

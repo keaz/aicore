@@ -96,11 +96,34 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> Option<Item> {
+        let visibility = self.parse_visibility_modifier();
         if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
-            self.parse_extern_function().map(Item::Function)
+            self.parse_extern_function(visibility).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
+            if visibility != Visibility::Private {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1091",
+                        "visibility modifiers are not supported on `type` aliases",
+                        self.file,
+                        self.current_span(),
+                    )
+                    .with_help("remove the visibility modifier from this `type` alias"),
+                );
+            }
             self.parse_type_alias().map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwConst)) {
+            if visibility != Visibility::Private {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1091",
+                        "visibility modifiers are not supported on `const` items",
+                        self.file,
+                        self.current_span(),
+                    )
+                    .with_help("remove the visibility modifier from this `const` item"),
+                );
+            }
             self.parse_const_item().map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
             let start = self.current_span().start;
@@ -114,7 +137,7 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(false, true, start, false)
+            self.parse_function(false, true, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
             let start = self.current_span().start;
@@ -128,20 +151,20 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(true, false, start, false)
+            self.parse_function(true, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
             let start = self.current_span().start;
-            self.parse_function(false, false, start, false)
+            self.parse_function(false, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
-            self.parse_struct().map(Item::Struct)
+            self.parse_struct(visibility).map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
-            self.parse_enum().map(Item::Enum)
+            self.parse_enum(visibility).map(Item::Enum)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwTrait)) {
-            self.parse_trait().map(Item::Trait)
+            self.parse_trait(visibility).map(Item::Trait)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwImpl)) {
-            self.parse_impl().map(Item::Impl)
+            self.parse_impl(visibility).map(Item::Impl)
         } else {
             let span = self.current_span();
             self.diagnostics.push(
@@ -157,12 +180,59 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_visibility_modifier(&mut self) -> Visibility {
+        if self.at_kind(|k| matches!(k, TokenKind::KwPriv)) {
+            self.bump();
+            return Visibility::Private;
+        }
+        if !self.at_kind(|k| matches!(k, TokenKind::KwPub)) {
+            return Visibility::Private;
+        }
+
+        self.bump();
+        if !self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+            return Visibility::Public;
+        }
+
+        let marker_span = self.current_span();
+        self.bump(); // (
+        if !self.at_kind(|k| matches!(k, TokenKind::KwCrate)) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1090",
+                    "expected `crate` in visibility modifier `pub(crate)`",
+                    self.file,
+                    marker_span,
+                )
+                .with_help("use `pub` or `pub(crate)`"),
+            );
+            while !self.at_kind(|k| matches!(k, TokenKind::RParen | TokenKind::Eof)) {
+                self.bump();
+            }
+            let _ = self.expect(
+                |k| matches!(k, TokenKind::RParen),
+                "E1090",
+                "expected ')' after visibility modifier",
+            );
+            return Visibility::Public;
+        }
+
+        self.bump(); // crate
+        let _ = self.expect(
+            |k| matches!(k, TokenKind::RParen),
+            "E1090",
+            "expected ')' after visibility modifier",
+        );
+        Visibility::Crate
+    }
+
     fn parse_function(
         &mut self,
         is_async: bool,
         is_unsafe: bool,
         start: usize,
         allow_self_receiver: bool,
+        visibility: Visibility,
     ) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
@@ -202,6 +272,7 @@ impl<'a> Parser<'a> {
         let span = Span::new(start, body.span.end);
         Some(Function {
             name,
+            visibility,
             is_async,
             is_unsafe,
             is_extern: false,
@@ -217,7 +288,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_extern_function(&mut self) -> Option<Function> {
+    fn parse_extern_function(&mut self, visibility: Visibility) -> Option<Function> {
         let start = self.current_span().start;
         self.bump(); // extern
         let abi_token = self.current().clone();
@@ -305,6 +376,7 @@ impl<'a> Parser<'a> {
         let span = Span::new(start, semi.end);
         Some(Function {
             name,
+            visibility,
             is_async: false,
             is_unsafe: false,
             is_extern: true,
@@ -324,7 +396,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_struct(&mut self) -> Option<StructDef> {
+    fn parse_struct(&mut self, visibility: Visibility) -> Option<StructDef> {
         let start = self.current_span().start;
         self.bump(); // struct
         let (name, _) = self.expect_ident("E1010", "expected struct name")?;
@@ -337,6 +409,7 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let field_start = self.current_span().start;
+            let field_visibility = self.parse_visibility_modifier();
             let (field_name, _) = self.expect_ident("E1012", "expected field name")?;
             self.expect(
                 |k| matches!(k, TokenKind::Colon),
@@ -355,6 +428,7 @@ impl<'a> Parser<'a> {
             };
             fields.push(Field {
                 name: field_name,
+                visibility: field_visibility,
                 ty: ty.clone(),
                 default_value,
                 span: Span::new(field_start, field_end),
@@ -380,6 +454,7 @@ impl<'a> Parser<'a> {
 
         Some(StructDef {
             name,
+            visibility,
             generics,
             fields,
             invariant,
@@ -387,7 +462,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum(&mut self) -> Option<EnumDef> {
+    fn parse_enum(&mut self, visibility: Visibility) -> Option<EnumDef> {
         let start = self.current_span().start;
         self.bump(); // enum
         let (name, _) = self.expect_ident("E1015", "expected enum name")?;
@@ -435,13 +510,14 @@ impl<'a> Parser<'a> {
         )?;
         Some(EnumDef {
             name,
+            visibility,
             generics,
             variants,
             span: Span::new(start, close.end),
         })
     }
 
-    fn parse_trait(&mut self) -> Option<TraitDef> {
+    fn parse_trait(&mut self, visibility: Visibility) -> Option<TraitDef> {
         let start = self.current_span().start;
         self.bump(); // trait
         let (name, _) = self.expect_ident("E1053", "expected trait name")?;
@@ -456,6 +532,7 @@ impl<'a> Parser<'a> {
                 .end;
             return Some(TraitDef {
                 name,
+                visibility,
                 generics,
                 methods: Vec::new(),
                 span: Span::new(start, end),
@@ -470,6 +547,7 @@ impl<'a> Parser<'a> {
         let mut methods = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
             let method_start = self.current_span().start;
+            let method_visibility = self.parse_visibility_modifier();
             let mut is_async = false;
             let mut is_unsafe = false;
             if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
@@ -493,9 +571,12 @@ impl<'a> Parser<'a> {
                 self.recover_item();
                 continue;
             }
-            if let Some(method) =
-                self.parse_trait_method_signature(is_async, is_unsafe, method_start)
-            {
+            if let Some(method) = self.parse_trait_method_signature(
+                is_async,
+                is_unsafe,
+                method_start,
+                method_visibility,
+            ) {
                 methods.push(method);
             } else {
                 self.recover_item();
@@ -508,13 +589,14 @@ impl<'a> Parser<'a> {
         )?;
         Some(TraitDef {
             name,
+            visibility,
             generics,
             methods,
             span: Span::new(start, close.end),
         })
     }
 
-    fn parse_impl(&mut self) -> Option<ImplDef> {
+    fn parse_impl(&mut self, visibility: Visibility) -> Option<ImplDef> {
         let start = self.current_span().start;
         self.bump(); // impl
         let head_ty = self.parse_type()?;
@@ -523,6 +605,7 @@ impl<'a> Parser<'a> {
             let mut methods = Vec::new();
             while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
                 let method_start = self.current_span().start;
+                let method_visibility = self.parse_visibility_modifier();
                 let mut is_async = false;
                 let mut is_unsafe = false;
                 if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
@@ -546,7 +629,9 @@ impl<'a> Parser<'a> {
                     self.recover_item();
                     continue;
                 }
-                if let Some(method) = self.parse_function(is_async, is_unsafe, method_start, true) {
+                if let Some(method) =
+                    self.parse_function(is_async, is_unsafe, method_start, true, method_visibility)
+                {
                     methods.push(method);
                 } else {
                     self.recover_item();
@@ -572,6 +657,7 @@ impl<'a> Parser<'a> {
             if !head_args.is_empty() {
                 return Some(ImplDef {
                     trait_name: head_name,
+                    visibility,
                     trait_args: head_args,
                     target: None,
                     methods,
@@ -581,6 +667,7 @@ impl<'a> Parser<'a> {
             }
             return Some(ImplDef {
                 trait_name: head_name,
+                visibility,
                 trait_args: Vec::new(),
                 target: Some(head_ty),
                 methods,
@@ -611,6 +698,7 @@ impl<'a> Parser<'a> {
             .end;
         Some(ImplDef {
             trait_name,
+            visibility,
             trait_args,
             target: None,
             methods: Vec::new(),
@@ -638,6 +726,7 @@ impl<'a> Parser<'a> {
 
         Some(Function {
             name: encode_internal_type_alias(&alias_name),
+            visibility: Visibility::Private,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -682,6 +771,7 @@ impl<'a> Parser<'a> {
 
         Some(Function {
             name: encode_internal_const(&const_name),
+            visibility: Visibility::Private,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -845,6 +935,7 @@ impl<'a> Parser<'a> {
         is_async: bool,
         is_unsafe: bool,
         start: usize,
+        visibility: Visibility,
     ) -> Option<Function> {
         self.bump(); // fn
         let (name, _) = self.expect_ident("E1004", "expected method name")?;
@@ -886,6 +977,7 @@ impl<'a> Parser<'a> {
         )?;
         Some(Function {
             name,
+            visibility,
             is_async,
             is_unsafe,
             is_extern: false,

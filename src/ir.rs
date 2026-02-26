@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, UnaryOp};
+use crate::ast::{BinOp, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -137,6 +137,8 @@ pub struct Function {
     pub symbol: SymbolId,
     pub name: String,
     #[serde(default)]
+    pub visibility: Visibility,
+    #[serde(default)]
     pub is_async: bool,
     #[serde(default)]
     pub is_unsafe: bool,
@@ -174,6 +176,8 @@ pub struct ClosureParam {
 pub struct StructDef {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     pub fields: Vec<Field>,
     pub invariant: Option<Expr>,
@@ -184,6 +188,8 @@ pub struct StructDef {
 pub struct Field {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub ty: TypeId,
     #[serde(default)]
     pub default_value: Option<Expr>,
@@ -194,6 +200,8 @@ pub struct Field {
 pub struct EnumDef {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
     pub span: Span,
@@ -203,6 +211,8 @@ pub struct EnumDef {
 pub struct TraitDef {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub generics: Vec<GenericParam>,
     #[serde(default)]
     pub methods: Vec<Function>,
@@ -213,6 +223,8 @@ pub struct TraitDef {
 pub struct ImplDef {
     pub symbol: SymbolId,
     pub trait_name: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     #[serde(default)]
     pub trait_args: Vec<TypeId>,
     #[serde(default)]

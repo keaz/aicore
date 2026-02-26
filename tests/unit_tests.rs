@@ -3171,7 +3171,7 @@ fn main() -> Int effects { io } {
         root.join("src/math.aic"),
         r#"module app.math;
 
-fn add(x: Int, y: Int) -> Int {
+pub fn add(x: Int, y: Int) -> Int {
     x + y
 }
 "#,
@@ -3733,7 +3733,7 @@ fn main() -> Int {
         r#"module app.api;
 import app.util;
 
-fn handle() -> Int {
+pub fn handle() -> Int {
     answer()
 }
 "#,
@@ -3744,7 +3744,7 @@ fn handle() -> Int {
         root.join("src/util.aic"),
         r#"module app.util;
 
-fn answer() -> Int {
+pub fn answer() -> Int {
     42
 }
 "#,
@@ -3781,7 +3781,7 @@ fn main() -> Int {
         root.join("src/math.aic"),
         r#"module app.math;
 
-fn add(x: Int, y: Int) -> Int {
+pub fn add(x: Int, y: Int) -> Int {
     x + y
 }
 "#,
@@ -3819,7 +3819,7 @@ fn main() -> Int {
         root.join("src/math.aic"),
         r#"module app.math;
 
-fn add(x: Int, y: Int) -> Int {
+pub fn add(x: Int, y: Int) -> Int {
     x + y
 }
 "#,
@@ -3830,7 +3830,7 @@ fn add(x: Int, y: Int) -> Int {
         root.join("src/more.aic"),
         r#"module app.more;
 
-fn add(x: Int, y: Int) -> Int {
+pub fn add(x: Int, y: Int) -> Int {
     x - y
 }
 "#,
@@ -3839,6 +3839,199 @@ fn add(x: Int, y: Int) -> Int {
 
     let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
     assert!(out.diagnostics.iter().any(|d| d.code == "E2104"));
+}
+
+#[test]
+fn unit_pub_and_pub_crate_functions_are_cross_module_accessible() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.lib;
+
+fn main() -> Int {
+    lib.public_add(20, 22) + lib.crate_add(0, 0)
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/lib.aic"),
+        r#"module app.lib;
+
+pub fn public_add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+pub(crate) fn crate_add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+fn hidden_add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write lib");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_private_function_access_reports_e2102() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.lib;
+
+fn main() -> Int {
+    lib.hidden_add(1, 2)
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/lib.aic"),
+        r#"module app.lib;
+
+fn hidden_add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    )
+    .expect("write lib");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2102"));
+}
+
+#[test]
+fn unit_struct_field_visibility_blocks_private_field_access() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.model;
+
+fn main() -> Int {
+    let person = model.new_person(42);
+    person.secret
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/model.aic"),
+        r#"module app.model;
+
+pub struct Person {
+    pub age: Int,
+    secret: Int,
+}
+
+pub fn new_person(age: Int) -> Person {
+    Person { age: age, secret: 7 }
+}
+"#,
+    )
+    .expect("write model");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E2102"));
+}
+
+#[test]
+fn unit_user_intrinsic_calls_are_rejected_even_when_qualified() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.string;
+
+fn main() -> Int {
+    let _raw = aic_string_len_intrinsic("abc");
+    let _qualified = string.aic_string_len_intrinsic("abc");
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    let intrinsic_errors = out
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            d.code == "E2102" && d.message.contains("private runtime implementation detail")
+        })
+        .count();
+    assert!(intrinsic_errors >= 2, "diagnostics={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_malformed_pub_visibility_reports_e1090() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+pub(package) fn main() -> Int {
+    0
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1090"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_visibility_modifier_on_type_alias_reports_e1091() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+pub type Count = Int;
+
+fn main() -> Int {
+    let value: Count = 1;
+    value
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1091"),
+        "diags={:#?}",
+        out.diagnostics
+    );
 }
 
 #[test]

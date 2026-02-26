@@ -1,0 +1,3 @@
+[package]
+name = "visibility_modifiers_demo"
+main = "src/main.aic"

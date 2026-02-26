@@ -13,8 +13,8 @@ fn string_eq(left: String, right: String) -> Int {
     }
 }
 
-fn request_ok(req: Request) -> Int {
-    let name = match aic_map_get_intrinsic(req.query, "name") {
+fn request_ok(req: Request) -> Int effects { env } {
+    let name = match map.get(req.query, "name") {
         Some(v) => v,
         None => "",
     };
@@ -28,7 +28,7 @@ fn request_ok(req: Request) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net, env } {
     let listener = match listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,

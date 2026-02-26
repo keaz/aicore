@@ -796,6 +796,15 @@ Verifier-focused examples:
 - Reference example: `examples/data/char_ops.aic` (wired into `scripts/ci/examples.sh` check/run sets).
 
 
+## Visibility Modifiers and Access Control (ERGO-T1 #167)
+
+- Parser/AST/IR support `pub`, `pub(crate)`, and `priv` on `fn`, `struct`, `enum`, `trait`, and `impl`, plus field-level visibility on structs.
+- Default visibility is private, so cross-module access now requires explicit `pub` or `pub(crate)`.
+- Resolver stores per-module visibility metadata and exports only non-private symbols for imported-module lookup.
+- Typechecker rejects cross-module access to private symbols and emits `E2102` with actionable `pub` guidance.
+- User-authored direct intrinsic calls (`aic_*`) are rejected as private runtime implementation details; compiler-generated intrinsic lowering paths remain valid.
+- Reference example: `examples/core/visibility_modifiers_demo` (wired into `scripts/ci/examples.sh` check/run sets).
+
 ## Template Literals (ERGO-T2 #168)
 
 - Lexer accepts prefixed template strings: `f"..."` and `$"..."`.

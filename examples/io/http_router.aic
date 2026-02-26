@@ -11,12 +11,12 @@ fn string_eq(left: String, right: String) -> Int {
     }
 }
 
-fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_value: String) -> Int {
+fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_value: String) -> Int effects { env } {
     let id_ok = if found.route_id == expected_id { 1 } else { 0 };
     let param_ok = if len(param_key) == 0 {
         1
     } else {
-        match aic_map_get_intrinsic(found.params, param_key) {
+        match map.get(found.params, param_key) {
             Some(value) => string_eq(value, param_value),
             None => 0,
         }
@@ -28,7 +28,7 @@ fn route_match_ok(found: RouteMatch, expected_id: Int, param_key: String, param_
     }
 }
 
-fn expect_route(found: Result[Option[RouteMatch], RouterError], expected_id: Int, param_key: String, param_value: String) -> Int {
+fn expect_route(found: Result[Option[RouteMatch], RouterError], expected_id: Int, param_key: String, param_value: String) -> Int effects { env } {
     match found {
         Ok(value) => match value {
             Some(route) => route_match_ok(route, expected_id, param_key, param_value),
@@ -47,7 +47,7 @@ fn router_err_code(err: RouterError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io, env } {
     let router0 = match new_router() {
         Ok(value) => value,
         Err(_) => Router { handle: 0 },

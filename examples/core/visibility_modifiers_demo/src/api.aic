@@ -1,0 +1,26 @@
+module visibility_demo.api;
+
+pub struct Record {
+    pub visible: Int,
+    hidden: Int,
+}
+
+pub fn make_record(value: Int) -> Record {
+    Record { visible: value, hidden: 22 }
+}
+
+pub fn public_add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+pub(crate) fn crate_value() -> Int {
+    22
+}
+
+fn private_value() -> Int {
+    1
+}
+
+pub fn reveal_hidden(record: Record) -> Int {
+    record.hidden + private_value()
+}

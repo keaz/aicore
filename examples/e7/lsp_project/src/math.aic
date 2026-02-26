@@ -1,5 +1,5 @@
 module e7.lsp.math;
 
-fn add(x: Int, y: Int) -> Int {
+pub fn add(x: Int, y: Int) -> Int {
   x + y
 }

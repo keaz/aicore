@@ -120,6 +120,7 @@ pub fn run_frontend_with_options(
                 entry_module: None,
                 function_modules: Default::default(),
                 module_functions: Default::default(),
+                module_exported_functions: Default::default(),
                 visible_functions: Default::default(),
                 import_aliases: Default::default(),
                 ambiguous_import_aliases: Default::default(),

@@ -21,23 +21,23 @@ fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
     }
 }
 
-fn group_values_ok(values: Vec[Int]) -> Int {
-    let a = match aic_vec_get_intrinsic(values, 0) {
+fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
+    let a = match vec.get(values, 0) {
         Some(v) => if v == 2 { 1 } else { 0 },
         None => 0,
     };
-    let b = match aic_vec_get_intrinsic(values, 1) {
+    let b = match vec.get(values, 1) {
         Some(v) => if v == 4 { 1 } else { 0 },
         None => 0,
     };
-    let c = match aic_vec_get_intrinsic(values, 2) {
+    let c = match vec.get(values, 2) {
         Some(v) => if v == 6 { 1 } else { 0 },
         None => 0,
     };
     if a + b + c == 3 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency, env } {
     let grouped = spawn_group(vec.range(1, 4), 10);
     let group_ok = match grouped {
         Ok(values) => group_values_ok(values),

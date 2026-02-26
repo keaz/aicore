@@ -1,5 +1,5 @@
 module inc_dep.main;
 
-fn base() -> Int {
+pub fn base() -> Int {
     40
 }

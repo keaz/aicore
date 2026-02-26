@@ -4354,23 +4354,23 @@ fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
     }
 }
 
-fn group_values_ok(values: Vec[Int]) -> Int {
-    let a = match aic_vec_get_intrinsic(values, 0) {
+fn group_values_ok(values: Vec[Int]) -> Int effects { env } {
+    let a = match vec.get(values, 0) {
         Some(v) => if v == 2 { 1 } else { 0 },
         None => 0,
     };
-    let b = match aic_vec_get_intrinsic(values, 1) {
+    let b = match vec.get(values, 1) {
         Some(v) => if v == 4 { 1 } else { 0 },
         None => 0,
     };
-    let c = match aic_vec_get_intrinsic(values, 2) {
+    let c = match vec.get(values, 2) {
         Some(v) => if v == 6 { 1 } else { 0 },
         None => 0,
     };
     if a + b + c == 3 { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency, env } {
     let grouped = spawn_group(vec.range(1, 4), 10);
     let group_ok = match grouped {
         Ok(values) => group_values_ok(values),
@@ -4444,7 +4444,7 @@ fn err_code(err: ConcurrencyError) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } {
+fn main() -> Int effects { io, concurrency, env } {
     let mut tasks: Vec[Task] = vec.new_vec();
     let mut i = 0;
     while i < 10 {
@@ -4458,7 +4458,7 @@ fn main() -> Int effects { io, concurrency } {
     let mut cancel_ok = 0;
     let mut c = 0;
     while c < 3 {
-        cancel_ok = cancel_ok + match aic_vec_get_intrinsic(tasks, c) {
+        cancel_ok = cancel_ok + match vec.get(tasks, c) {
             Some(task) => match cancel_task(task) {
                 Ok(done) => bool_to_int(done),
                 Err(_) => 0,
@@ -4473,7 +4473,7 @@ fn main() -> Int effects { io, concurrency } {
     let mut sum = 0;
     let mut j = 0;
     while j < 10 {
-        let join_value_or_err = match aic_vec_get_intrinsic(tasks, j) {
+        let join_value_or_err = match vec.get(tasks, j) {
             Some(task) => match join_task(task) {
                 Ok(v) => v,
                 Err(err) => 0 - err_code(err),
@@ -5233,16 +5233,16 @@ import std.map;
 import std.string;
 import std.bytes;
 
-fn request_matches(req: Request) -> Int {
-    let query_name = match aic_map_get_intrinsic(req.query, "name") {
+fn request_matches(req: Request) -> Int effects { env } {
+    let query_name = match map.get(req.query, "name") {
         Some(v) => v,
         None => "",
     };
-    let host = match aic_map_get_intrinsic(req.headers, "host") {
+    let host = match map.get(req.headers, "host") {
         Some(v) => v,
         None => "",
     };
-    let trace = match aic_map_get_intrinsic(req.headers, "x-trace") {
+    let trace = match map.get(req.headers, "x-trace") {
         Some(v) => v,
         None => "",
     };
@@ -5262,7 +5262,7 @@ fn request_matches(req: Request) -> Int {
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net, env } {
     let listener = match listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
