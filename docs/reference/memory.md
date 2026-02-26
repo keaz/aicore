@@ -107,6 +107,36 @@ impl Drop[AuditDrop] {
   - `aic run --asan <input>` or `AIC_RUN_ASAN=1 aic run <input>`
   - `AIC_ASAN=1` for direct build/codegen compile paths.
 
+## Vec Capacity APIs
+
+`std.vec` now exposes explicit capacity-management APIs:
+
+- `new_vec_with_capacity[T](capacity: Int) -> Vec[T]`
+- `reserve[T](v: Vec[T], additional: Int) -> Vec[T]`
+- `shrink_to_fit[T](v: Vec[T]) -> Vec[T]`
+
+Runtime behavior contract:
+
+- `new_vec_with_capacity` pre-allocates backing storage up to `capacity`.
+- `reserve` ensures capacity for `len(v) + additional` without changing length.
+- `shrink_to_fit` reduces capacity to current length (`cap == len`), preserving values.
+- Growth factor remains 2x when capacity must grow.
+
+AI-friendly pattern:
+
+```aic
+import std.vec;
+
+fn demo() -> Int {
+    let mut v: Vec[Int] = vec.new_vec_with_capacity(8);
+    v = vec.reserve(v, 16);   // plan upcoming pushes
+    v = vec.push(v, 1);
+    v = vec.push(v, 2);
+    v = vec.shrink_to_fit(v); // cap now equals len
+    vec.vec_cap(v)
+}
+```
+
 ## Diagnostic mapping
 
 - `E1263`: conflicting mutable borrow

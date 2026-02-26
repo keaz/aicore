@@ -1,0 +1,44 @@
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut values: Vec[Int] = vec.new_vec_with_capacity(6);
+    let start_cap = vec.vec_cap(values);
+
+    let mut i = 0;
+    while i < 6 {
+        values = vec.push(values, i);
+        i = i + 1;
+    };
+    let prealloc_ok = if vec.vec_cap(values) == start_cap { 1 } else { 0 };
+
+    values = vec.reserve(values, 10);
+    let reserved_cap = vec.vec_cap(values);
+    let reserve_ok = if reserved_cap >= vec.vec_len(values) + 10 { 1 } else { 0 };
+
+    let mut j = 6;
+    while j < 16 {
+        values = vec.push(values, j);
+        j = j + 1;
+    };
+    let reserved_growth_ok = if vec.vec_cap(values) == reserved_cap { 1 } else { 0 };
+
+    values = vec.shrink_to_fit(values);
+    let shrink_ok = if vec.vec_cap(values) == vec.vec_len(values) { 1 } else { 0 };
+    let value_ok = if opt_int_or(vec.get(values, 15), -1) == 15 { 1 } else { 0 };
+
+    let score = prealloc_ok + reserve_ok + reserved_growth_ok + shrink_ok + value_ok;
+    if score == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

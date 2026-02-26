@@ -1360,6 +1360,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_vec_len(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_cap(i8*, i64, i64)\n");
         text.push_str("declare void @aic_rt_vec_new(i8**, i64*, i64*)\n");
+        text.push_str("declare i64 @aic_rt_vec_with_capacity(i64, i64, i8**, i64*, i64*)\n");
         text.push_str("declare i64 @aic_rt_vec_of(i8*, i64, i8**, i64*, i64*)\n");
         text.push_str("declare i64 @aic_rt_vec_get(i8*, i64, i64, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_push(i8**, i64*, i64*, i64, i8*)\n");
@@ -1367,6 +1368,8 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_vec_set(i8*, i64, i64, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_insert(i8**, i64*, i64*, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_remove_at(i8**, i64*, i64*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_vec_reserve(i8**, i64*, i64*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_vec_shrink_to_fit(i8**, i64*, i64*, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_contains(i8*, i64, i64, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_index_of(i8*, i64, i64, i64, i64, i8*, i64*)\n");
         text.push_str("declare i64 @aic_rt_vec_reverse(i8*, i64, i64, i64)\n");
@@ -10999,6 +11002,7 @@ impl<'a> Generator<'a> {
     ) -> Option<Option<Value>> {
         let canonical = match name {
             "aic_vec_new_intrinsic" => "new_vec",
+            "aic_vec_new_with_capacity_intrinsic" => "new_vec_with_capacity",
             "aic_vec_of_intrinsic" => "vec_of",
             "aic_vec_get_intrinsic" => "get",
             "aic_vec_first_intrinsic" => "first",
@@ -11014,10 +11018,15 @@ impl<'a> Generator<'a> {
             "aic_vec_slice_intrinsic" => "slice",
             "aic_vec_append_intrinsic" => "append",
             "aic_vec_clear_intrinsic" => "clear",
+            "aic_vec_reserve_intrinsic" => "reserve",
+            "aic_vec_shrink_to_fit_intrinsic" => "shrink_to_fit",
             _ => return None,
         };
         match canonical {
             "new_vec" => Some(self.gen_vec_new_call(name, args, span, expected_ty, fctx)),
+            "new_vec_with_capacity" => {
+                Some(self.gen_vec_new_with_capacity_call(name, args, span, expected_ty, fctx))
+            }
             "vec_of" => Some(self.gen_vec_of_call(name, args, span, expected_ty, fctx)),
             "get" => Some(self.gen_vec_get_call(args, span, fctx)),
             "first" => Some(self.gen_vec_first_call(args, span, fctx)),
@@ -11033,6 +11042,8 @@ impl<'a> Generator<'a> {
             "slice" => Some(self.gen_vec_slice_call(args, span, fctx)),
             "append" => Some(self.gen_vec_append_call(args, span, fctx)),
             "clear" => Some(self.gen_vec_clear_call(args, span, fctx)),
+            "reserve" => Some(self.gen_vec_reserve_call(args, span, fctx)),
+            "shrink_to_fit" => Some(self.gen_vec_shrink_to_fit_call(args, span, fctx)),
             _ => None,
         }
     }
@@ -11045,6 +11056,7 @@ impl<'a> Generator<'a> {
     ) -> Option<LType> {
         let canonical_name = match name {
             "aic_vec_new_intrinsic" => "new_vec",
+            "aic_vec_new_with_capacity_intrinsic" => "new_vec_with_capacity",
             "aic_vec_of_intrinsic" => "vec_of",
             "aic_vec_get_intrinsic" => "get",
             "aic_vec_first_intrinsic" => "first",
@@ -11060,6 +11072,8 @@ impl<'a> Generator<'a> {
             "aic_vec_slice_intrinsic" => "slice",
             "aic_vec_append_intrinsic" => "append",
             "aic_vec_clear_intrinsic" => "clear",
+            "aic_vec_reserve_intrinsic" => "reserve",
+            "aic_vec_shrink_to_fit_intrinsic" => "shrink_to_fit",
             _ => name,
         };
         if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
@@ -11336,6 +11350,63 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!(
             "  call void @aic_rt_vec_new(i8** {}, i64* {}, i64* {})",
             out_ptr_slot, out_len_slot, out_cap_slot
+        ));
+        self.load_vec_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            &out_cap_slot,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_vec_new_with_capacity_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "new_vec_with_capacity expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let capacity = self.gen_expr(&args[0], fctx)?;
+        if capacity.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "new_vec_with_capacity expects Int capacity",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let result_ty = self.vec_result_ty(name, span, expected_ty)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&result_ty, "new_vec_with_capacity", span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        let out_cap_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_cap_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_with_capacity(i64 {}, i64 {}, i8** {}, i64* {}, i64* {})",
+            _err,
+            capacity.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size,
+            out_ptr_slot,
+            out_len_slot,
+            out_cap_slot
         ));
         self.load_vec_from_slots(
             &result_ty,
@@ -12122,6 +12193,79 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!(
             "  call void @aic_rt_vec_clear(i8** {}, i64* {}, i64* {})",
             ptr_slot, len_slot, cap_slot
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_reserve_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "reserve expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let additional = self.gen_expr(&args[1], fctx)?;
+        if additional.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "reserve expects Int additional",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "reserve", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_reserve(i8** {}, i64* {}, i64* {}, i64 {}, i64 {})",
+            _err,
+            ptr_slot,
+            len_slot,
+            cap_slot,
+            additional.repr.clone().unwrap_or_else(|| "0".to_string()),
+            elem_size
+        ));
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
+    }
+
+    fn gen_vec_shrink_to_fit_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "shrink_to_fit expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let vec_value = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) =
+            self.vec_element_info(&vec_value.ty, "shrink_to_fit", args[0].span)?;
+        let elem_size = self.vec_elem_size(&elem_ty, fctx);
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_vec_shrink_to_fit(i8** {}, i64* {}, i64* {}, i64 {})",
+            _err, ptr_slot, len_slot, cap_slot, elem_size
         ));
         self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
     }
@@ -26808,6 +26952,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("map", "values") => Some("aic_map_values_intrinsic"),
         ("map", "entries") => Some("aic_map_entries_intrinsic"),
         ("vec", "new_vec") => Some("aic_vec_new_intrinsic"),
+        ("vec", "new_vec_with_capacity") => Some("aic_vec_new_with_capacity_intrinsic"),
         ("vec", "vec_of") => Some("aic_vec_of_intrinsic"),
         ("vec", "get") => Some("aic_vec_get_intrinsic"),
         ("vec", "first") => Some("aic_vec_first_intrinsic"),
@@ -26823,6 +26968,8 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("vec", "slice") => Some("aic_vec_slice_intrinsic"),
         ("vec", "append") => Some("aic_vec_append_intrinsic"),
         ("vec", "clear") => Some("aic_vec_clear_intrinsic"),
+        ("vec", "reserve") => Some("aic_vec_reserve_intrinsic"),
+        ("vec", "shrink_to_fit") => Some("aic_vec_shrink_to_fit_intrinsic"),
         ("string", "len") => Some("aic_string_len_intrinsic"),
         ("string", "contains") => Some("aic_string_contains_intrinsic"),
         ("string", "starts_with") => Some("aic_string_starts_with_intrinsic"),
@@ -28495,6 +28642,41 @@ void aic_rt_vec_new(unsigned char** out_ptr, long* out_len, long* out_cap) {
     aic_rt_vec_set_empty(out_ptr, out_len, out_cap);
 }
 
+long aic_rt_vec_with_capacity(
+    long capacity,
+    long elem_size,
+    unsigned char** out_ptr,
+    long* out_len,
+    long* out_cap
+) {
+    aic_rt_vec_set_empty(out_ptr, out_len, out_cap);
+    size_t cap_n = 0;
+    size_t elem_n = 0;
+    if (out_ptr == NULL ||
+        out_len == NULL ||
+        out_cap == NULL ||
+        !aic_rt_vec_checked_non_negative_long(capacity, &cap_n) ||
+        !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0) {
+        return 1;
+    }
+    if (cap_n == 0) {
+        return 0;
+    }
+    if (cap_n > (size_t)LONG_MAX ||
+        cap_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    unsigned char* out = (unsigned char*)malloc(cap_n * elem_n);
+    if (out == NULL) {
+        return 1;
+    }
+    *out_ptr = out;
+    *out_len = 0;
+    *out_cap = (long)cap_n;
+    return 0;
+}
+
 long aic_rt_vec_of(
     const unsigned char* value_ptr,
     long elem_size,
@@ -28731,6 +28913,80 @@ long aic_rt_vec_remove_at(
     }
     *io_len = (long)len_n;
     return 1;
+}
+
+long aic_rt_vec_reserve(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long additional,
+    long elem_size
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    size_t add_n = 0;
+    (void)cap_n;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    if (additional <= 0) {
+        return 0;
+    }
+    if (!aic_rt_vec_checked_non_negative_long(additional, &add_n)) {
+        return 1;
+    }
+    if (len_n > SIZE_MAX - add_n ||
+        len_n + add_n > (size_t)LONG_MAX) {
+        return 1;
+    }
+    return aic_rt_vec_ensure_capacity(io_ptr, io_cap, len_n + add_n, elem_n);
+}
+
+long aic_rt_vec_shrink_to_fit(
+    unsigned char** io_ptr,
+    long* io_len,
+    long* io_cap,
+    long elem_size
+) {
+    size_t elem_n = 0;
+    size_t len_n = 0;
+    size_t cap_n = 0;
+    if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
+        elem_n == 0 ||
+        io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL) {
+        return 1;
+    }
+    (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
+    if (len_n == cap_n) {
+        return 0;
+    }
+    if (len_n == 0) {
+        free(*io_ptr);
+        *io_ptr = NULL;
+        *io_len = 0;
+        *io_cap = 0;
+        return 0;
+    }
+    if (len_n > (size_t)LONG_MAX ||
+        len_n > SIZE_MAX / elem_n) {
+        return 1;
+    }
+    void* shrunk = realloc(*io_ptr, len_n * elem_n);
+    if (shrunk == NULL) {
+        return 1;
+    }
+    *io_ptr = (unsigned char*)shrunk;
+    *io_len = (long)len_n;
+    *io_cap = (long)len_n;
+    return 0;
 }
 
 long aic_rt_vec_contains(
@@ -45583,6 +45839,9 @@ fn main() -> Int effects { io } {
             .contains("declare void @aic_rt_vec_new(i8**, i64*, i64*)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_vec_with_capacity(i64, i64, i8**, i64*, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_vec_of(i8*, i64, i8**, i64*, i64*)"));
         assert!(output
             .llvm_ir
@@ -45602,6 +45861,12 @@ fn main() -> Int effects { io } {
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_vec_remove_at(i8**, i64*, i64*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_reserve(i8**, i64*, i64*, i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_vec_shrink_to_fit(i8**, i64*, i64*, i64)"));
         assert!(output
             .llvm_ir
             .contains("declare i64 @aic_rt_vec_contains(i8*, i64, i64, i64, i64, i8*)"));
@@ -45833,6 +46098,7 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_string_parse_int("));
         assert!(runtime_c_source().contains("void aic_rt_string_join("));
         assert!(runtime_c_source().contains("void aic_rt_vec_new("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_with_capacity("));
         assert!(runtime_c_source().contains("long aic_rt_vec_of("));
         assert!(runtime_c_source().contains("long aic_rt_vec_get("));
         assert!(runtime_c_source().contains("long aic_rt_vec_push("));
@@ -45840,6 +46106,8 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_vec_set("));
         assert!(runtime_c_source().contains("long aic_rt_vec_insert("));
         assert!(runtime_c_source().contains("long aic_rt_vec_remove_at("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_reserve("));
+        assert!(runtime_c_source().contains("long aic_rt_vec_shrink_to_fit("));
         assert!(runtime_c_source().contains("long aic_rt_vec_contains("));
         assert!(runtime_c_source().contains("long aic_rt_vec_index_of("));
         assert!(runtime_c_source().contains("long aic_rt_vec_reverse("));

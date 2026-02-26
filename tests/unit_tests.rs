@@ -1825,6 +1825,13 @@ fn unit_std_vec_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &vec_source,
         "std/vec.aic",
+        "new_vec_with_capacity",
+        "aic_vec_new_with_capacity_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
         "vec_of",
         "aic_vec_of_intrinsic",
         1,
@@ -1925,6 +1932,20 @@ fn unit_std_vec_public_apis_delegate_to_runtime_intrinsics() {
         "std/vec.aic",
         "clear",
         "aic_vec_clear_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "reserve",
+        "aic_vec_reserve_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &vec_source,
+        "std/vec.aic",
+        "shrink_to_fit",
+        "aic_vec_shrink_to_fit_intrinsic",
         1,
     );
 }
@@ -3260,6 +3281,9 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } {
     let _ascii = is_ascii("hello");
     let _joined_parts = string.join(_parts, "|");
     let _v0: Vec[Int] = vec.new_vec();
+    let _v0_cap: Vec[Int] = vec.new_vec_with_capacity(4);
+    let _v0_reserve = vec.reserve(_v0_cap, 2);
+    let _v0_shrink = vec.shrink_to_fit(_v0_reserve);
     let _v1 = vec.push(_v0, 1);
     let _v2 = vec.insert(_v1, 0, 0);
     let _v3 = vec.set(_v2, 1, 2);
@@ -3857,6 +3881,34 @@ fn main() -> Int {
     let values = vec.new_vec();
     let values_next = vec.push(values, 41);
     vec.vec_len(values_next)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_vec_capacity_apis_typecheck_and_infer() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.vec;
+
+fn main() -> Int {
+    let mut values = vec.new_vec_with_capacity(2);
+    values = vec.push(values, 1);
+    values = vec.reserve(values, 4);
+    values = vec.push(values, 2);
+    values = vec.shrink_to_fit(values);
+    vec.vec_len(values)
 }
 "#,
     )

@@ -1012,6 +1012,64 @@ fn main() -> Int effects { io } {
 }
 
 #[test]
+fn exec_vec_capacity_preallocation_reserve_shrink_and_growth() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } {
+    let mut v: Vec[Int] = vec.new_vec_with_capacity(5);
+    let init_cap = vec.vec_cap(v);
+    let init_cap_ok = if init_cap == 5 { 1 } else { 0 };
+
+    let mut i = 0;
+    while i < 5 {
+        v = vec.push(v, i);
+        i = i + 1;
+    };
+    let prealloc_ok = if vec.vec_cap(v) == init_cap { 1 } else { 0 };
+
+    v = vec.push(v, 5);
+    let growth_2x_ok = if vec.vec_cap(v) == init_cap * 2 { 1 } else { 0 };
+
+    v = vec.reserve(v, 15);
+    let reserved_cap = vec.vec_cap(v);
+    let reserve_need_ok = if reserved_cap >= vec.vec_len(v) + 15 { 1 } else { 0 };
+
+    let mut j = 6;
+    while j < 21 {
+        v = vec.push(v, j);
+        j = j + 1;
+    };
+    let reserve_no_realloc_ok = if vec.vec_cap(v) == reserved_cap { 1 } else { 0 };
+
+    v = vec.shrink_to_fit(v);
+    let shrink_len_ok = if vec.vec_cap(v) == vec.vec_len(v) { 1 } else { 0 };
+    let value_ok = if opt_int_or(vec.get(v, 20), -1) == 20 { 1 } else { 0 };
+
+    let cap_after_first_shrink = vec.vec_cap(v);
+    v = vec.shrink_to_fit(v);
+    let shrink_idempotent_ok = if vec.vec_cap(v) == cap_after_first_shrink { 1 } else { 0 };
+
+    let score = init_cap_ok + prealloc_ok + growth_2x_ok + reserve_need_ok +
+        reserve_no_realloc_ok + shrink_len_ok + value_ok + shrink_idempotent_ok;
+    print_int(score);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "8\n");
+}
+
+#[test]
 fn exec_abs_if_expression() {
     let src = r#"
 import std.io;

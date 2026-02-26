@@ -34,6 +34,15 @@ fn aic_vec_new_intrinsic[T]() -> Vec[T] {
     }
 }
 
+fn aic_vec_new_with_capacity_intrinsic[T](capacity: Int) -> Vec[T] {
+    let _capacity = capacity;
+    Vec {
+        ptr: 0,
+        len: 0,
+        cap: 0,
+    }
+}
+
 fn aic_vec_of_intrinsic[T](value: T) -> Vec[T] {
     let _value = value;
     Vec {
@@ -120,8 +129,21 @@ fn aic_vec_clear_intrinsic[T](v: Vec[T]) -> Vec[T] {
     v
 }
 
+fn aic_vec_reserve_intrinsic[T](v: Vec[T], additional: Int) -> Vec[T] {
+    let _additional = additional;
+    v
+}
+
+fn aic_vec_shrink_to_fit_intrinsic[T](v: Vec[T]) -> Vec[T] {
+    v
+}
+
 fn new_vec[T]() -> Vec[T] {
     aic_vec_new_intrinsic()
+}
+
+fn new_vec_with_capacity[T](capacity: Int) -> Vec[T] {
+    aic_vec_new_with_capacity_intrinsic(capacity)
 }
 
 fn vec_of[T](value: T) -> Vec[T] {
@@ -186,6 +208,14 @@ fn append[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
 
 fn clear[T](v: Vec[T]) -> Vec[T] {
     aic_vec_clear_intrinsic(v)
+}
+
+fn reserve[T](v: Vec[T], additional: Int) -> Vec[T] {
+    aic_vec_reserve_intrinsic(v, additional)
+}
+
+fn shrink_to_fit[T](v: Vec[T]) -> Vec[T] {
+    aic_vec_shrink_to_fit_intrinsic(v)
 }
 
 /// Build a vector containing start <= value < end.

@@ -125,6 +125,7 @@ Notes:
 - `std.fs` public APIs delegate to runtime intrinsic wrappers (`aic_fs_*_intrinsic`) and should not be replaced with constant placeholders.
 - `std.config` composes file + JSON + env capabilities for app config loading (`load_json`, `load_env_prefix`, `get_or_default`, `require`).
 - `std.set` mutator/query APIs are `add`, `has`, and `discard`; `union`/`intersection`/`difference` preserve deterministic ordering via `to_vec`.
+- `std.vec` capacity APIs are production-facing: `new_vec_with_capacity`, `reserve`, `shrink_to_fit`; runtime growth remains 2x and capacity behavior is exercised in `tests/execution_tests.rs` and `examples/core/vec_capacity.aic`.
 - `std.option` and `std.result` expose inherent enum methods:
   - `Option.unwrap_or`, `Option.map`, `Option.and_then`
   - `Result.unwrap_or`, `Result.map`, `Result.and_then`
