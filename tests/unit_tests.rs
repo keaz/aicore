@@ -2565,6 +2565,54 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         source.contains("ca_cert_path: None()"),
         "std/tls.aic default_tls_config must default to system CA bundle"
     );
+    assert!(
+        source.contains("fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig"),
+        "std/tls.aic must expose explicit unsafe override helper"
+    );
+    assert!(
+        source.contains("verify_server: false"),
+        "std/tls.aic unsafe override helper must explicitly disable server verification"
+    );
+}
+
+#[test]
+fn unit_tls_policy_manifest_matches_runtime_defaults() {
+    let manifest_text = fs::read_to_string("docs/security-ops/tls-policy.v1.json")
+        .expect("read docs/security-ops/tls-policy.v1.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_text).expect("parse tls policy manifest json");
+
+    assert_eq!(
+        manifest.get("schema_version").and_then(|v| v.as_i64()),
+        Some(1),
+        "tls policy schema_version must be pinned to 1"
+    );
+    assert_eq!(
+        manifest
+            .get("defaults")
+            .and_then(|v| v.get("verify_server"))
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "tls policy default verify_server must stay secure-by-default"
+    );
+    assert_eq!(
+        manifest
+            .get("defaults")
+            .and_then(|v| v.get("min_protocol"))
+            .and_then(|v| v.as_str()),
+        Some("TLS1.2"),
+        "tls policy default minimum protocol must remain TLS1.2"
+    );
+    assert!(
+        manifest_text.contains("\"AIC_TLS_POLICY_UNSAFE\""),
+        "tls policy manifest must include unsafe override audit tag"
+    );
+
+    let runtime_source = fs::read_to_string("src/codegen.rs").expect("read src/codegen.rs");
+    assert!(
+        runtime_source.contains("AIC_TLS_POLICY_UNSAFE verify_server=false disables certificate and hostname validation"),
+        "runtime must emit explicit audit warning when TLS verification is disabled"
+    );
 }
 
 #[test]

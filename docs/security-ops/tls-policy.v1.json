@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "profile": "secure-default",
+  "deterministic": true,
+  "defaults": {
+    "verify_server": true,
+    "min_protocol": "TLS1.2",
+    "ca_source": "system",
+    "client_cert_required": false
+  },
+  "unsafe_overrides": [
+    {
+      "id": "insecure_skip_verify",
+      "config_surface": "TlsConfig.verify_server=false",
+      "api": "unsafe_insecure_tls_config",
+      "audit_tag": "AIC_TLS_POLICY_UNSAFE",
+      "warning": "certificate and hostname verification disabled"
+    }
+  ]
+}

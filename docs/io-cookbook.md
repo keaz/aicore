@@ -212,13 +212,7 @@ fn tls_connected(stream: TlsStream) -> Int effects { net } {
 }
 
 fn tls_probe(addr: String, host: String) -> Int effects { net } {
-    let cfg = TlsConfig {
-        verify_server: false,
-        ca_cert_path: None(),
-        client_cert_path: None(),
-        client_key_path: None(),
-        server_name: Some(host),
-    };
+    let cfg = unsafe_insecure_tls_config(Some(host));
     match tls_connect_addr(addr, cfg, 3000) {
         Ok(stream) => tls_connected(stream),
         Err(ProtocolError) => 0,
@@ -229,3 +223,4 @@ fn tls_probe(addr: String, host: String) -> Int effects { net } {
 ```
 
 Reference: `examples/io/tls_connect.aic`.
+Policy: `docs/security-ops/tls-policy.v1.json`.

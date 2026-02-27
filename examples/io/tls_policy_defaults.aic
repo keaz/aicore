@@ -1,0 +1,31 @@
+module example.io.tls_policy_defaults;
+
+import std.io;
+import std.string;
+import std.tls;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let secure = default_tls_config();
+    let insecure = unsafe_insecure_tls_config(Some("localhost"));
+
+    let secure_default_ok = secure.verify_server;
+    let insecure_override_ok = !insecure.verify_server;
+    let carries_server_name = match insecure.server_name {
+        Some(name) => len(name) > 0,
+        None => false,
+    };
+
+    let score = bool_to_int(secure_default_ok)
+        + bool_to_int(insecure_override_ok)
+        + bool_to_int(carries_server_name);
+    if score == 3 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}

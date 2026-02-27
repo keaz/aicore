@@ -4163,6 +4163,11 @@
     },
     {
       "module": "std.tls",
+      "kind": "fn",
+      "signature": "unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig"
+    },
+    {
+      "module": "std.tls",
       "kind": "struct",
       "signature": "TlsConfig { verify_server: Bool, ca_cert_path: Option[String], client_cert_path: Option[String], client_key_path: Option[String], server_name: Option[String] }"
     },

@@ -186,6 +186,7 @@ docs-check:
 	@test -f docs/security-ops/sandbox-operations.md
 	@test -f docs/security-ops/telemetry.md
 	@test -f docs/security-ops/telemetry.schema.json
+	@test -f docs/security-ops/tls-policy.v1.json
 	@test -f docs/release/lts-policy.md
 	@test -f docs/release/compatibility-matrix.json
 	@test -f docs/security-ops/migration.md
@@ -199,6 +200,7 @@ docs-check:
 	@python3 -m json.tool docs/agent-tooling/schemas/build-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
+	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md

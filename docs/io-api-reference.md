@@ -418,6 +418,7 @@ struct TlsStream {
 }
 
 fn default_tls_config() -> TlsConfig
+fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig
 fn tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
 fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }
@@ -431,6 +432,9 @@ fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError]
 Notes:
 
 - `default_tls_config()` is secure-by-default (`verify_server: true`).
+- `unsafe_insecure_tls_config(...)` is the explicit unsafe override path (`verify_server: false`).
+- Unsafe override emits runtime audit warning tag: `AIC_TLS_POLICY_UNSAFE`.
+- Machine-readable policy contract: `docs/security-ops/tls-policy.v1.json`.
 - `tls_connect` upgrades an existing TCP connection handle after protocol negotiation (for example StartTLS/SSLRequest flows).
 - `tls_connect_addr` performs TCP connect + TLS handshake in one call.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.

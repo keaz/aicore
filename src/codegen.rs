@@ -47384,6 +47384,7 @@ typedef struct {
 static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
 #if AIC_RT_TLS_OPENSSL
 static int aic_rt_tls_initialized = 0;
+static int aic_rt_tls_warned_insecure = 0;
 #endif
 
 static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
@@ -47663,6 +47664,13 @@ static long aic_rt_tls_connect_core(
         }
     } else {
         SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+        if (!aic_rt_tls_warned_insecure) {
+            aic_rt_tls_warned_insecure = 1;
+            fprintf(
+                stderr,
+                "[aic][tls-policy][unsafe] AIC_TLS_POLICY_UNSAFE verify_server=false disables certificate and hostname validation\n"
+            );
+        }
     }
 
     if (has_client_cert != 0) {

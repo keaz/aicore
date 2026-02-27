@@ -66,6 +66,16 @@ fn default_tls_config() -> TlsConfig {
     }
 }
 
+fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig {
+    TlsConfig {
+        verify_server: false,
+        ca_cert_path: None(),
+        client_cert_path: None(),
+        client_key_path: None(),
+        server_name: server_name,
+    }
+}
+
 fn option_text(value: Option[String]) -> String {
     match value {
         Some(text) => text,
