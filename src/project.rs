@@ -94,6 +94,11 @@ fn panic(message: String) -> () effects { io } {
     fs::write(path.join("std/bytes.aic"), include_str!("../std/bytes.aic"))?;
 
     fs::write(
+        path.join("std/buffer.aic"),
+        include_str!("../std/buffer.aic"),
+    )?;
+
+    fs::write(
         path.join("std/vec.aic"),
         r#"module std.vec;
 

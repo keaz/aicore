@@ -122,7 +122,35 @@ References:
 - `examples/io/retry_with_jitter.aic`
 - `docs/examples/retry-workflow.md`
 
-## 7. Platform Caveat Patterns
+## 7. Binary Framing With `std.buffer`
+
+Use `ByteBuffer` for protocol layouts that require endian-aware integers, null-terminated strings, and backpatching.
+
+```aic
+import std.buffer;
+
+fn frame() -> ByteBuffer {
+    let buf = new_buffer(128);
+    let write_len = buf_write_i32_be(buf, 0);
+    let write_kind = buf_write_u8(buf, 1);
+    let write_tag = buf_write_cstring(buf, "msg");
+    let end = buf_position(buf);
+    let seek_header = buf_seek(buf, 0);
+    let patch_len = buf_write_i32_be(buf, end);
+    let seek_end = buf_seek(buf, end);
+    let _a = write_len;
+    let _b = write_kind;
+    let _c = write_tag;
+    let _d = seek_header;
+    let _e = patch_len;
+    let _f = seek_end;
+    buf
+}
+```
+
+Reference: `examples/data/binary_protocol.aic`.
+
+## 8. Platform Caveat Patterns
 
 When cross-platform behavior differs, branch on typed errors.
 

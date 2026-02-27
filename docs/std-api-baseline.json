@@ -2,6 +2,286 @@
   "schema_version": 1,
   "symbols": [
     {
+      "module": "std.buffer",
+      "kind": "enum",
+      "signature": "BufferError { Underflow, Overflow, InvalidUtf8, InvalidInput }"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_from_bytes_intrinsic(data: Bytes) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_new_intrinsic(capacity: Int) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_position_intrinsic(buf: ByteBuffer) -> Int"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_bytes_intrinsic(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_cstring_intrinsic(buf: ByteBuffer) -> Result[String, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_length_prefixed_intrinsic(buf: ByteBuffer) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_remaining_intrinsic(buf: ByteBuffer) -> Int"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_reset_intrinsic(buf: ByteBuffer) -> ()"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_seek_intrinsic(buf: ByteBuffer, position: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_to_bytes_intrinsic(buf: ByteBuffer) -> Bytes"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_bytes_intrinsic(buf: ByteBuffer, data: Bytes) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_cstring_intrinsic(buf: ByteBuffer, s: String) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_string_prefixed_intrinsic(buf: ByteBuffer, s: String) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_position(buf: ByteBuffer) -> Int"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_cstring(buf: ByteBuffer) -> Result[String, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_remaining(buf: ByteBuffer) -> Int"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_reset(buf: ByteBuffer) -> ()"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_bytes(buf: ByteBuffer, data: Bytes) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_cstring(buf: ByteBuffer, s: String) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_from_bytes(data: Bytes) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_to_bytes(buf: ByteBuffer) -> Bytes"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "new_buffer(capacity: Int) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "struct",
+      "signature": "ByteBuffer { handle: Int }"
+    },
+    {
       "module": "std.bytes",
       "kind": "enum",
       "signature": "BytesError { InvalidUtf8, InvalidInput, Io }"
@@ -204,6 +484,21 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_payload_drop_intrinsic(payload_id: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_recv_int_intrinsic(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -244,12 +539,27 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "buffered_channel[T](capacity: Int) -> Tuple[Sender[T], Receiver[T]] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "channel[T]() -> Tuple[Sender[T], Receiver[T]] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "channel_closed() -> ChannelError"
     },
     {
       "module": "std.concurrent",
@@ -264,6 +574,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "channel_timeout() -> ChannelError"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -274,7 +589,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "default_blocking_timeout_ms() -> Int"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "json_encode_payload[T](value: T) -> Result[String, ChannelError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "json_stringify_payload(encoded: JsonValue) -> Result[String, ChannelError]"
     },
     {
       "module": "std.concurrent",
@@ -284,12 +624,27 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -300,6 +655,16 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "send_cleanup_error(payload_id: Int, err: ConcurrencyError) -> ChannelError effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -319,12 +684,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "try_send_cleanup_error(payload_id: Int, err: ChannelError) -> ChannelError effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -355,6 +740,16 @@
       "module": "std.concurrent",
       "kind": "struct",
       "signature": "IntTaskSelection { task_index: Int, value: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "Receiver[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "Sender[T] { handle: Int }"
     },
     {
       "module": "std.concurrent",
@@ -1189,6 +1584,11 @@
     {
       "module": "std.io",
       "kind": "enum",
+      "signature": "MockWriter { MockStdout, MockStderr }"
+    },
+    {
+      "module": "std.io",
+      "kind": "enum",
       "signature": "Reader { ReadStdin, ReadFile(FileHandle), ReadTcp(TcpReader) }"
     },
     {
@@ -1230,6 +1630,21 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "aic_io_flush_stdout_intrinsic() -> () effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_mock_writer_take_stderr_intrinsic() -> Result[String, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects { io }"
     },
     {
       "module": "std.io",
@@ -1444,6 +1859,11 @@
     {
       "module": "std.io",
       "kind": "fn",
+      "signature": "install_mock_reader(reader: MockReader) -> Result[Bool, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
       "signature": "io_end_of_input() -> IoError"
     },
     {
@@ -1545,6 +1965,31 @@
       "module": "std.io",
       "kind": "fn",
       "signature": "mapped_error_with_context(mapped: IoError, context: String, source: String) -> IoErrorContext"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "mock_reader_from_lines(lines: Vec[String]) -> MockReader"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "mock_stderr_writer() -> MockWriter"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "mock_stdout_writer() -> MockWriter"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "mock_write(writer: MockWriter, content: String) -> Result[Int, IoError] effects { io }"
+    },
+    {
+      "module": "std.io",
+      "kind": "fn",
+      "signature": "mock_writer_take(writer: MockWriter) -> Result[String, IoError] effects { io }"
     },
     {
       "module": "std.io",
@@ -1700,6 +2145,11 @@
       "module": "std.io",
       "kind": "struct",
       "signature": "IoErrorContext { error: IoError, context: String, chain: String }"
+    },
+    {
+      "module": "std.io",
+      "kind": "struct",
+      "signature": "MockReader { lines: String }"
     },
     {
       "module": "std.io",

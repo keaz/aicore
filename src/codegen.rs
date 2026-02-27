@@ -467,6 +467,222 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
             ret: "Result[Bool, NetError]",
         }],
     },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_new_intrinsic",
+        runtime_symbol: "aic_rt_buffer_new",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "ByteBuffer",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_from_bytes_intrinsic",
+        runtime_symbol: "aic_rt_buffer_from_bytes",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Bytes"],
+            ret: "ByteBuffer",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_to_bytes_intrinsic",
+        runtime_symbol: "aic_rt_buffer_to_bytes",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Bytes",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_position_intrinsic",
+        runtime_symbol: "aic_rt_buffer_position",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Int",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_remaining_intrinsic",
+        runtime_symbol: "aic_rt_buffer_remaining",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Int",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_seek_intrinsic",
+        runtime_symbol: "aic_rt_buffer_seek",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_reset_intrinsic",
+        runtime_symbol: "aic_rt_buffer_reset",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "()",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u8_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u8",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i16_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i16_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i32_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i32_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i64_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i64_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i16_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i16_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i32_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i32_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_i64_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_i64_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_bytes_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_bytes",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[Bytes, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_cstring_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_cstring",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[String, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_length_prefixed_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_length_prefixed",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Bytes, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u8_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u8",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i16_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i16_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i32_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i32_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i64_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i64_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i16_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i16_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i32_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i32_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_i64_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_i64_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_bytes_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_bytes",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Bytes"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_cstring_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_cstring",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "String"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_string_prefixed_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_string_prefixed",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "String"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
 ];
 
 pub fn intrinsic_binding_expectations() -> &'static [IntrinsicBindingExpectation] {
@@ -2018,6 +2234,33 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_map_entries_string_bool_key(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_map_entries_int_int_key(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_map_entries_int_bool_key(i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_buffer_new(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_to_bytes(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_position(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_remaining(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_seek(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_reset(i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_u8(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i16_be(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i32_be(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i64_be(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i16_le(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i32_le(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_i64_le(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_bytes(i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_cstring(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_read_length_prefixed(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_u8(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i16_be(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i32_be(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i64_be(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i16_le(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i32_le(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_i64_le(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_bytes(i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_cstring(i64, i8*, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_write_string_prefixed(i64, i8*, i64, i64)\n\n");
         text.push_str("declare void @aic_rt_path_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_path_basename(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_path_dirname(i8*, i64, i64, i8**, i64*)\n");
@@ -4217,6 +4460,9 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_net_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_buffer_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
         if let Some(result) = self.gen_url_builtin_call(builtin_name, args, span, fctx) {
@@ -16970,6 +17216,915 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn sig_matches_buffer_unit_result(&mut self, name: &str, params: &[&str]) -> bool {
+        self.sig_matches_shape(name, params, "Result[(), BufferError]")
+            || self.sig_matches_shape(name, params, "Result[Unit, BufferError]")
+    }
+
+    fn gen_buffer_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "new_buffer" | "aic_buffer_new_intrinsic" => "new_buffer",
+            "buffer_from_bytes" | "aic_buffer_from_bytes_intrinsic" => "buffer_from_bytes",
+            "buffer_to_bytes" | "aic_buffer_to_bytes_intrinsic" => "buffer_to_bytes",
+            "buf_position" | "aic_buffer_position_intrinsic" => "buf_position",
+            "buf_remaining" | "aic_buffer_remaining_intrinsic" => "buf_remaining",
+            "buf_seek" | "aic_buffer_seek_intrinsic" => "buf_seek",
+            "buf_reset" | "aic_buffer_reset_intrinsic" => "buf_reset",
+            "buf_read_u8" | "aic_buffer_read_u8_intrinsic" => "buf_read_u8",
+            "buf_read_i16_be" | "aic_buffer_read_i16_be_intrinsic" => "buf_read_i16_be",
+            "buf_read_i32_be" | "aic_buffer_read_i32_be_intrinsic" => "buf_read_i32_be",
+            "buf_read_i64_be" | "aic_buffer_read_i64_be_intrinsic" => "buf_read_i64_be",
+            "buf_read_i16_le" | "aic_buffer_read_i16_le_intrinsic" => "buf_read_i16_le",
+            "buf_read_i32_le" | "aic_buffer_read_i32_le_intrinsic" => "buf_read_i32_le",
+            "buf_read_i64_le" | "aic_buffer_read_i64_le_intrinsic" => "buf_read_i64_le",
+            "buf_read_bytes" | "aic_buffer_read_bytes_intrinsic" => "buf_read_bytes",
+            "buf_read_cstring" | "aic_buffer_read_cstring_intrinsic" => "buf_read_cstring",
+            "buf_read_length_prefixed" | "aic_buffer_read_length_prefixed_intrinsic" => {
+                "buf_read_length_prefixed"
+            }
+            "buf_write_u8" | "aic_buffer_write_u8_intrinsic" => "buf_write_u8",
+            "buf_write_i16_be" | "aic_buffer_write_i16_be_intrinsic" => "buf_write_i16_be",
+            "buf_write_i32_be" | "aic_buffer_write_i32_be_intrinsic" => "buf_write_i32_be",
+            "buf_write_i64_be" | "aic_buffer_write_i64_be_intrinsic" => "buf_write_i64_be",
+            "buf_write_i16_le" | "aic_buffer_write_i16_le_intrinsic" => "buf_write_i16_le",
+            "buf_write_i32_le" | "aic_buffer_write_i32_le_intrinsic" => "buf_write_i32_le",
+            "buf_write_i64_le" | "aic_buffer_write_i64_le_intrinsic" => "buf_write_i64_le",
+            "buf_write_bytes" | "aic_buffer_write_bytes_intrinsic" => "buf_write_bytes",
+            "buf_write_cstring" | "aic_buffer_write_cstring_intrinsic" => "buf_write_cstring",
+            "buf_write_string_prefixed" | "aic_buffer_write_string_prefixed_intrinsic" => {
+                "buf_write_string_prefixed"
+            }
+            _ => return None,
+        };
+
+        match canonical {
+            "new_buffer" if self.sig_matches_shape(name, &["Int"], "ByteBuffer") => {
+                Some(self.gen_buffer_new_call(name, args, span, fctx))
+            }
+            "buffer_from_bytes" if self.sig_matches_shape(name, &["Bytes"], "ByteBuffer") => {
+                Some(self.gen_buffer_from_bytes_call(name, args, span, fctx))
+            }
+            "buffer_to_bytes" if self.sig_matches_shape(name, &["ByteBuffer"], "Bytes") => {
+                Some(self.gen_buffer_to_bytes_call(name, args, span, fctx))
+            }
+            "buf_position" if self.sig_matches_shape(name, &["ByteBuffer"], "Int") => {
+                Some(self.gen_buffer_position_like_call(
+                    "buf_position",
+                    "aic_rt_buffer_position",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_remaining" if self.sig_matches_shape(name, &["ByteBuffer"], "Int") => {
+                Some(self.gen_buffer_position_like_call(
+                    "buf_remaining",
+                    "aic_rt_buffer_remaining",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_seek" if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) => {
+                Some(self.gen_buffer_seek_call(name, args, span, fctx))
+            }
+            "buf_reset"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Unit")
+                    || self.sig_matches_shape(name, &["ByteBuffer"], "()") =>
+            {
+                Some(self.gen_buffer_reset_call(name, args, span, fctx))
+            }
+            "buf_read_u8"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u8", args, span, fctx))
+            }
+            "buf_read_i16_be"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i16_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_i32_be"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i32_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_i64_be"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i64_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_i16_le"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i16_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_i32_le"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i32_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_i64_le"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_int_call(
+                    name,
+                    "aic_rt_buffer_read_i64_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_bytes"
+                if self.sig_matches_shape(
+                    name,
+                    &["ByteBuffer", "Int"],
+                    "Result[Bytes, BufferError]",
+                ) =>
+            {
+                Some(self.gen_buffer_read_bytes_call(name, args, span, fctx))
+            }
+            "buf_read_cstring"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[String, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_string_or_bytes_call(
+                    name,
+                    "aic_rt_buffer_read_cstring",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_read_length_prefixed"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Bytes, BufferError]") =>
+            {
+                Some(self.gen_buffer_read_string_or_bytes_call(
+                    name,
+                    "aic_rt_buffer_read_length_prefixed",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_u8" if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) => {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_u8",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i16_be"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i16_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i32_be"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i32_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i64_be"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i64_be",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i16_le"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i16_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i32_le"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i32_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_i64_le"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
+            {
+                Some(self.gen_buffer_write_int_call(
+                    name,
+                    "aic_rt_buffer_write_i64_le",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_bytes"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Bytes"]) =>
+            {
+                Some(self.gen_buffer_write_bytes_call(name, args, span, fctx))
+            }
+            "buf_write_cstring"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "String"]) =>
+            {
+                Some(self.gen_buffer_write_string_payload_call(
+                    name,
+                    "aic_rt_buffer_write_cstring",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "buf_write_string_prefixed"
+                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "String"]) =>
+            {
+                Some(self.gen_buffer_write_string_payload_call(
+                    name,
+                    "aic_rt_buffer_write_string_prefixed",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn buffer_result_ty(&mut self, name: &str, span: crate::span::Span) -> Option<LType> {
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        Some(result_ty)
+    }
+
+    fn build_buffer_value_from_handle(
+        &mut self,
+        buffer_ty: &LType,
+        handle: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let LType::Struct(layout) = buffer_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects ByteBuffer return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "ByteBuffer"
+            || layout.fields.len() != 1
+            || layout.fields[0].name != "handle"
+            || layout.fields[0].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects ByteBuffer return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.build_struct_value(
+            layout,
+            &[Value {
+                ty: LType::Int,
+                repr: Some(handle.to_string()),
+            }],
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_buffer_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "new_buffer expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let capacity = self.gen_expr(&args[0], fctx)?;
+        if capacity.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "new_buffer expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_handle_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_handle_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_new(i64 {}, i64* {})",
+            _err,
+            capacity.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, out_handle_slot));
+        let result_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "ByteBuffer".to_string(),
+                    fields: vec![StructFieldType {
+                        name: "handle".to_string(),
+                        ty: LType::Int,
+                    }],
+                })
+            });
+        self.build_buffer_value_from_handle(&result_ty, &handle, "new_buffer", span, fctx)
+    }
+
+    fn gen_buffer_from_bytes_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buffer_from_bytes expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let bytes = self.gen_expr(&args[0], fctx)?;
+        let (ptr, len, cap) = self.bytes_parts(&bytes, "buffer_from_bytes", args[0].span, fctx)?;
+        let out_handle_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_handle_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_from_bytes(i8* {}, i64 {}, i64 {}, i64* {})",
+            _err, ptr, len, cap, out_handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, out_handle_slot));
+        let result_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| {
+                LType::Struct(StructLayoutType {
+                    repr: "ByteBuffer".to_string(),
+                    fields: vec![StructFieldType {
+                        name: "handle".to_string(),
+                        ty: LType::Int,
+                    }],
+                })
+            });
+        self.build_buffer_value_from_handle(&result_ty, &handle, "buffer_from_bytes", span, fctx)
+    }
+
+    fn gen_buffer_to_bytes_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buffer_to_bytes expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buffer_to_bytes",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_to_bytes(i64 {}, i8** {}, i64* {})",
+            _err, handle, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let result_ty = self
+            .fn_sigs
+            .get(name)
+            .map(|sig| sig.ret.clone())
+            .unwrap_or_else(|| self.parse_type_repr("Bytes", span).unwrap_or(LType::String));
+        if result_ty == LType::String {
+            return Some(data_value);
+        }
+        self.build_bytes_value_from_data(&result_ty, data_value, "buffer_to_bytes", span, fctx)
+    }
+
+    fn gen_buffer_position_like_call(
+        &mut self,
+        context: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            context,
+            args[0].span,
+            fctx,
+        )?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        fctx.lines.push(format!("  store i64 0, i64* {}", out_slot));
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64* {})",
+            _err, runtime_fn, handle, out_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, out_slot));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        })
+    }
+
+    fn gen_buffer_seek_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buf_seek expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let position = self.gen_expr(&args[1], fctx)?;
+        if position.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "buf_seek expects Int position",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buf_seek",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_seek(i64 {}, i64 {})",
+            err,
+            handle,
+            position.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Unit,
+            repr: None,
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_reset_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buf_reset expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buf_reset",
+            args[0].span,
+            fctx,
+        )?;
+        let _err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_reset(i64 {})",
+            _err, handle
+        ));
+        Some(Value {
+            ty: LType::Unit,
+            repr: None,
+        })
+    }
+
+    fn gen_buffer_read_int_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle =
+            self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        fctx.lines.push(format!("  store i64 0, i64* {}", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64* {})",
+            err, runtime_fn, handle, out_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        let result_ty = self.buffer_result_ty(name, span)?;
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_read_bytes_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buf_read_bytes expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let count = self.gen_expr(&args[1], fctx)?;
+        if count.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "buf_read_bytes expects Int count",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buf_read_bytes",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_read_bytes(i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            handle,
+            count.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let ok_payload = if ok_ty == LType::String {
+            data_value
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, data_value, name, span, fctx)?
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_read_string_or_bytes_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle =
+            self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i8** {}, i64* {})",
+            err, runtime_fn, handle, out_ptr_slot, out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let ok_payload = if ok_ty == LType::String {
+            data_value
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, data_value, name, span, fctx)?
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_write_int_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int value"),
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let handle =
+            self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64 {})",
+            err,
+            runtime_fn,
+            handle,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Unit,
+            repr: None,
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_write_bytes_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buf_write_bytes expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buf_write_bytes",
+            args[0].span,
+            fctx,
+        )?;
+        let (ptr, len, cap) = self.bytes_parts(&payload, "buf_write_bytes", args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_write_bytes(i64 {}, i8* {}, i64 {}, i64 {})",
+            err, handle, ptr, len, cap
+        ));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Unit,
+            repr: None,
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_buffer_write_string_payload_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        if payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String payload"),
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let handle =
+            self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let (ptr, len, cap) = self.string_parts(&payload, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i8* {}, i64 {}, i64 {})",
+            err, runtime_fn, handle, ptr, len, cap
+        ));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Unit,
+            repr: None,
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     fn gen_net_listen_or_bind_call(
         &mut self,
         name: &str,
@@ -18057,6 +19212,91 @@ impl<'a> Generator<'a> {
         let ok_label = self.new_label("net_ok");
         let err_label = self.new_label("net_err");
         let cont_label = self.new_label("net_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
+    fn wrap_buffer_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "buffer builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_buffer_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("buffer_ok");
+        let err_label = self.new_label("buffer_err");
+        let cont_label = self.new_label("buffer_cont");
         fctx.lines.push(format!(
             "  br i1 {}, label %{}, label %{}",
             is_ok, ok_label, err_label
@@ -24228,6 +25468,16 @@ impl<'a> Generator<'a> {
         ));
         for (idx, variant) in layout.variants.iter().enumerate() {
             let (slot_ty, slot_repr) = if let Some(payload_ty) = &variant.payload {
+                let slot_ty_for_payload = if *payload_ty == LType::Unit {
+                    "i8".to_string()
+                } else {
+                    llvm_type(payload_ty)
+                };
+                let slot_default_for_payload = if *payload_ty == LType::Unit {
+                    "0".to_string()
+                } else {
+                    default_value(payload_ty)
+                };
                 if idx == variant_index {
                     if let Some(payload_value) = payload.as_ref() {
                         if payload_value.ty != *payload_ty {
@@ -24241,15 +25491,17 @@ impl<'a> Generator<'a> {
                                 self.file,
                                 span,
                             ));
-                            (llvm_type(payload_ty), default_value(payload_ty))
+                            (slot_ty_for_payload, slot_default_for_payload)
                         } else {
-                            (
-                                llvm_type(payload_ty),
+                            let slot_repr = if *payload_ty == LType::Unit {
+                                "0".to_string()
+                            } else {
                                 payload_value
                                     .repr
                                     .clone()
-                                    .unwrap_or_else(|| default_value(payload_ty)),
-                            )
+                                    .unwrap_or_else(|| default_value(payload_ty))
+                            };
+                            (slot_ty_for_payload, slot_repr)
                         }
                     } else {
                         self.diagnostics.push(Diagnostic::error(
@@ -24258,10 +25510,10 @@ impl<'a> Generator<'a> {
                             self.file,
                             span,
                         ));
-                        (llvm_type(payload_ty), default_value(payload_ty))
+                        (slot_ty_for_payload, slot_default_for_payload)
                     }
                 } else {
-                    (llvm_type(payload_ty), default_value(payload_ty))
+                    (slot_ty_for_payload, slot_default_for_payload)
                 }
             } else {
                 ("i8".to_string(), "0".to_string())
@@ -24644,6 +25896,30 @@ impl<'a> Generator<'a> {
                 (7, "Io"),
             ],
             "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
+    fn build_buffer_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "BufferError",
+            "buffer",
+            &[
+                (1, "Underflow"),
+                (2, "Overflow"),
+                (3, "InvalidUtf8"),
+                (4, "InvalidInput"),
+            ],
+            "InvalidInput",
             err_code,
             span,
             fctx,
@@ -25688,16 +26964,28 @@ impl<'a> Generator<'a> {
 
         for (idx, variant) in layout.variants.iter().enumerate() {
             let (slot_ty, slot_repr) = if let Some(payload_ty) = &variant.payload {
+                let slot_ty_for_payload = if *payload_ty == LType::Unit {
+                    "i8".to_string()
+                } else {
+                    llvm_type(payload_ty)
+                };
+                let slot_default_for_payload = if *payload_ty == LType::Unit {
+                    "0".to_string()
+                } else {
+                    default_value(payload_ty)
+                };
                 if idx == variant_index {
                     if let Some(value) = payload {
                         if value.ty == *payload_ty {
-                            (
-                                llvm_type(payload_ty),
+                            let slot_repr = if *payload_ty == LType::Unit {
+                                "0".to_string()
+                            } else {
                                 value
                                     .repr
                                     .clone()
-                                    .unwrap_or_else(|| default_value(payload_ty)),
-                            )
+                                    .unwrap_or_else(|| default_value(payload_ty))
+                            };
+                            (slot_ty_for_payload, slot_repr)
                         } else {
                             self.diagnostics.push(Diagnostic::error(
                                 "E5022",
@@ -25725,7 +27013,7 @@ impl<'a> Generator<'a> {
                         return None;
                     }
                 } else {
-                    (llvm_type(payload_ty), default_value(payload_ty))
+                    (slot_ty_for_payload, slot_default_for_payload)
                 }
             } else {
                 ("i8".to_string(), "0".to_string())
@@ -28566,6 +29854,35 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_wait_int") => Some("aic_net_async_wait_int_intrinsic"),
         ("net", "async_wait_string") => Some("aic_net_async_wait_string_intrinsic"),
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
+        ("buffer", "new_buffer") => Some("aic_buffer_new_intrinsic"),
+        ("buffer", "buffer_from_bytes") => Some("aic_buffer_from_bytes_intrinsic"),
+        ("buffer", "buffer_to_bytes") => Some("aic_buffer_to_bytes_intrinsic"),
+        ("buffer", "buf_position") => Some("aic_buffer_position_intrinsic"),
+        ("buffer", "buf_remaining") => Some("aic_buffer_remaining_intrinsic"),
+        ("buffer", "buf_seek") => Some("aic_buffer_seek_intrinsic"),
+        ("buffer", "buf_reset") => Some("aic_buffer_reset_intrinsic"),
+        ("buffer", "buf_read_u8") => Some("aic_buffer_read_u8_intrinsic"),
+        ("buffer", "buf_read_i16_be") => Some("aic_buffer_read_i16_be_intrinsic"),
+        ("buffer", "buf_read_i32_be") => Some("aic_buffer_read_i32_be_intrinsic"),
+        ("buffer", "buf_read_i64_be") => Some("aic_buffer_read_i64_be_intrinsic"),
+        ("buffer", "buf_read_i16_le") => Some("aic_buffer_read_i16_le_intrinsic"),
+        ("buffer", "buf_read_i32_le") => Some("aic_buffer_read_i32_le_intrinsic"),
+        ("buffer", "buf_read_i64_le") => Some("aic_buffer_read_i64_le_intrinsic"),
+        ("buffer", "buf_read_bytes") => Some("aic_buffer_read_bytes_intrinsic"),
+        ("buffer", "buf_read_cstring") => Some("aic_buffer_read_cstring_intrinsic"),
+        ("buffer", "buf_read_length_prefixed") => Some("aic_buffer_read_length_prefixed_intrinsic"),
+        ("buffer", "buf_write_u8") => Some("aic_buffer_write_u8_intrinsic"),
+        ("buffer", "buf_write_i16_be") => Some("aic_buffer_write_i16_be_intrinsic"),
+        ("buffer", "buf_write_i32_be") => Some("aic_buffer_write_i32_be_intrinsic"),
+        ("buffer", "buf_write_i64_be") => Some("aic_buffer_write_i64_be_intrinsic"),
+        ("buffer", "buf_write_i16_le") => Some("aic_buffer_write_i16_le_intrinsic"),
+        ("buffer", "buf_write_i32_le") => Some("aic_buffer_write_i32_le_intrinsic"),
+        ("buffer", "buf_write_i64_le") => Some("aic_buffer_write_i64_le_intrinsic"),
+        ("buffer", "buf_write_bytes") => Some("aic_buffer_write_bytes_intrinsic"),
+        ("buffer", "buf_write_cstring") => Some("aic_buffer_write_cstring_intrinsic"),
+        ("buffer", "buf_write_string_prefixed") => {
+            Some("aic_buffer_write_string_prefixed_intrinsic")
+        }
         ("url", "parse") => Some("aic_url_parse_intrinsic"),
         ("url", "normalize") => Some("aic_url_normalize_intrinsic"),
         ("url", "net_addr") => Some("aic_url_net_addr_intrinsic"),
@@ -28662,7 +29979,13 @@ fn llvm_type(ty: &LType) -> String {
             parts.push("i32".to_string());
             for variant in &layout.variants {
                 parts.push(match &variant.payload {
-                    Some(payload) => llvm_type(payload),
+                    Some(payload) => {
+                        if *payload == LType::Unit {
+                            "i8".to_string()
+                        } else {
+                            llvm_type(payload)
+                        }
+                    }
                     None => "i8".to_string(),
                 });
             }
@@ -28704,7 +30027,15 @@ fn default_value(ty: &LType) -> String {
             for variant in &layout.variants {
                 match &variant.payload {
                     Some(payload) => {
-                        fields.push(format!("{} {}", llvm_type(payload), default_value(payload)))
+                        if *payload == LType::Unit {
+                            fields.push("i8 0".to_string());
+                        } else {
+                            fields.push(format!(
+                                "{} {}",
+                                llvm_type(payload),
+                                default_value(payload)
+                            ));
+                        }
                     }
                     None => fields.push("i8 0".to_string()),
                 }
@@ -29075,6 +30406,14 @@ typedef struct {
 } AicMapSlot;
 
 typedef struct {
+    int in_use;
+    unsigned char* data;
+    size_t len;
+    size_t cap;
+    size_t pos;
+} AicBufferSlot;
+
+typedef struct {
     const char* key_ptr;
     long key_len;
     long key_cap;
@@ -29121,6 +30460,8 @@ typedef struct {
 
 static AicMapSlot* aic_rt_maps = NULL;
 static size_t aic_rt_maps_len = 0;
+static AicBufferSlot* aic_rt_buffers = NULL;
+static size_t aic_rt_buffers_len = 0;
 static int aic_rt_argc = 0;
 static char** aic_rt_argv = NULL;
 #ifndef _WIN32
@@ -35751,6 +37092,783 @@ long aic_rt_map_entries_int_bool_key(long handle, char** out_ptr, long* out_coun
         *out_ptr = (char*)entries;
     } else {
         free(entries);
+    }
+    return 0;
+}
+
+static AicBufferSlot* aic_rt_buffer_get_slot(long handle) {
+    if (handle <= 0) {
+        return NULL;
+    }
+    size_t index = (size_t)(handle - 1);
+    if (index >= aic_rt_buffers_len) {
+        return NULL;
+    }
+    AicBufferSlot* slot = &aic_rt_buffers[index];
+    if (!slot->in_use) {
+        return NULL;
+    }
+    return slot;
+}
+
+static int aic_rt_buffer_valid_slice(const char* ptr, long len) {
+    if (len < 0) {
+        return 0;
+    }
+    if (len > 0 && ptr == NULL) {
+        return 0;
+    }
+    return 1;
+}
+
+static int aic_rt_buffer_ensure_slot_capacity(size_t needed) {
+    if (needed <= aic_rt_buffers_len) {
+        return 1;
+    }
+    size_t next = aic_rt_buffers_len == 0 ? 8 : aic_rt_buffers_len;
+    while (next < needed) {
+        if (next > SIZE_MAX / 2) {
+            return 0;
+        }
+        next *= 2;
+    }
+    AicBufferSlot* grown =
+        (AicBufferSlot*)realloc(aic_rt_buffers, next * sizeof(AicBufferSlot));
+    if (grown == NULL) {
+        return 0;
+    }
+    if (next > aic_rt_buffers_len) {
+        memset(grown + aic_rt_buffers_len, 0, (next - aic_rt_buffers_len) * sizeof(AicBufferSlot));
+    }
+    aic_rt_buffers = grown;
+    aic_rt_buffers_len = next;
+    return 1;
+}
+
+static long aic_rt_buffer_alloc_slot(AicBufferSlot** out_slot, long* out_handle) {
+    if (out_slot != NULL) {
+        *out_slot = NULL;
+    }
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+
+    size_t index = 0;
+    while (index < aic_rt_buffers_len) {
+        if (!aic_rt_buffers[index].in_use) {
+            break;
+        }
+        index += 1;
+    }
+
+    if (index == aic_rt_buffers_len) {
+        if (!aic_rt_buffer_ensure_slot_capacity(index + 1)) {
+            return 4;
+        }
+    }
+
+    if (index >= (size_t)LONG_MAX) {
+        return 4;
+    }
+    AicBufferSlot* slot = &aic_rt_buffers[index];
+    memset(slot, 0, sizeof(*slot));
+    slot->in_use = 1;
+
+    if (out_slot != NULL) {
+        *out_slot = slot;
+    }
+    if (out_handle != NULL) {
+        *out_handle = (long)(index + 1);
+    }
+    return 0;
+}
+
+static long aic_rt_buffer_read_span(
+    AicBufferSlot* slot,
+    size_t count,
+    const unsigned char** out_data
+) {
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    if (slot == NULL || !slot->in_use) {
+        return 4;
+    }
+    if (count > SIZE_MAX - slot->pos) {
+        return 1;
+    }
+    size_t end = slot->pos + count;
+    if (end > slot->len) {
+        return 1;
+    }
+    if (out_data != NULL) {
+        *out_data = slot->data == NULL ? NULL : (slot->data + slot->pos);
+    }
+    slot->pos = end;
+    return 0;
+}
+
+static long aic_rt_buffer_write_span(
+    AicBufferSlot* slot,
+    size_t count,
+    unsigned char** out_data
+) {
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    if (slot == NULL || !slot->in_use) {
+        return 4;
+    }
+    if (count > SIZE_MAX - slot->pos) {
+        return 2;
+    }
+    size_t end = slot->pos + count;
+    if (end > slot->cap) {
+        return 2;
+    }
+    if (count > 0 && slot->data == NULL) {
+        return 2;
+    }
+    if (out_data != NULL) {
+        *out_data = slot->data == NULL ? NULL : (slot->data + slot->pos);
+    }
+    slot->pos = end;
+    if (slot->len < end) {
+        slot->len = end;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_new(long capacity, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (capacity < 0) {
+        return 4;
+    }
+    size_t cap = (size_t)capacity;
+    unsigned char* data = NULL;
+    if (cap > 0) {
+        data = (unsigned char*)malloc(cap);
+        if (data == NULL) {
+            return 4;
+        }
+        memset(data, 0, cap);
+    }
+
+    AicBufferSlot* slot = NULL;
+    long handle = 0;
+    long alloc_err = aic_rt_buffer_alloc_slot(&slot, &handle);
+    if (alloc_err != 0) {
+        free(data);
+        return alloc_err;
+    }
+    slot->data = data;
+    slot->len = 0;
+    slot->cap = cap;
+    slot->pos = 0;
+    if (out_handle != NULL) {
+        *out_handle = handle;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_from_bytes(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    long* out_handle
+) {
+    (void)data_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (!aic_rt_buffer_valid_slice(data_ptr, data_len)) {
+        return 4;
+    }
+    size_t len = (size_t)data_len;
+    unsigned char* data = NULL;
+    if (len > 0) {
+        data = (unsigned char*)malloc(len);
+        if (data == NULL) {
+            return 4;
+        }
+        memcpy(data, data_ptr, len);
+    }
+
+    AicBufferSlot* slot = NULL;
+    long handle = 0;
+    long alloc_err = aic_rt_buffer_alloc_slot(&slot, &handle);
+    if (alloc_err != 0) {
+        free(data);
+        return alloc_err;
+    }
+    slot->data = data;
+    slot->len = len;
+    slot->cap = len;
+    slot->pos = 0;
+    if (out_handle != NULL) {
+        *out_handle = handle;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_to_bytes(long handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    char* out = aic_rt_copy_bytes((const char*)slot->data, slot->len);
+    if (out == NULL) {
+        return 4;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        if (slot->len > (size_t)LONG_MAX) {
+            *out_len = 0;
+            return 4;
+        }
+        *out_len = (long)slot->len;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_position(long handle, long* out_pos) {
+    if (out_pos != NULL) {
+        *out_pos = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    if (out_pos != NULL) {
+        if (slot->pos > (size_t)LONG_MAX) {
+            *out_pos = LONG_MAX;
+        } else {
+            *out_pos = (long)slot->pos;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_buffer_remaining(long handle, long* out_remaining) {
+    if (out_remaining != NULL) {
+        *out_remaining = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    size_t remaining = slot->pos <= slot->len ? (slot->len - slot->pos) : 0;
+    if (out_remaining != NULL) {
+        if (remaining > (size_t)LONG_MAX) {
+            *out_remaining = LONG_MAX;
+        } else {
+            *out_remaining = (long)remaining;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_buffer_seek(long handle, long position) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    if (position < 0) {
+        return 4;
+    }
+    size_t pos = (size_t)position;
+    if (pos > slot->len) {
+        return 4;
+    }
+    slot->pos = pos;
+    return 0;
+}
+
+long aic_rt_buffer_reset(long handle) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    slot->pos = 0;
+    return 0;
+}
+
+long aic_rt_buffer_read_u8(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 1, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    if (out_value != NULL) {
+        *out_value = (long)bytes[0];
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i16_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 2, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint16_t raw = ((uint16_t)bytes[0] << 8) | (uint16_t)bytes[1];
+    if (out_value != NULL) {
+        *out_value = (long)(int16_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i32_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 4, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint32_t raw = ((uint32_t)bytes[0] << 24) |
+        ((uint32_t)bytes[1] << 16) |
+        ((uint32_t)bytes[2] << 8) |
+        (uint32_t)bytes[3];
+    if (out_value != NULL) {
+        *out_value = (long)(int32_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i64_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 8, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint64_t raw = ((uint64_t)bytes[0] << 56) |
+        ((uint64_t)bytes[1] << 48) |
+        ((uint64_t)bytes[2] << 40) |
+        ((uint64_t)bytes[3] << 32) |
+        ((uint64_t)bytes[4] << 24) |
+        ((uint64_t)bytes[5] << 16) |
+        ((uint64_t)bytes[6] << 8) |
+        (uint64_t)bytes[7];
+    if (out_value != NULL) {
+        *out_value = (long)(int64_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i16_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 2, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint16_t raw = ((uint16_t)bytes[1] << 8) | (uint16_t)bytes[0];
+    if (out_value != NULL) {
+        *out_value = (long)(int16_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i32_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 4, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint32_t raw = ((uint32_t)bytes[3] << 24) |
+        ((uint32_t)bytes[2] << 16) |
+        ((uint32_t)bytes[1] << 8) |
+        (uint32_t)bytes[0];
+    if (out_value != NULL) {
+        *out_value = (long)(int32_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_i64_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 8, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint64_t raw = ((uint64_t)bytes[7] << 56) |
+        ((uint64_t)bytes[6] << 48) |
+        ((uint64_t)bytes[5] << 40) |
+        ((uint64_t)bytes[4] << 32) |
+        ((uint64_t)bytes[3] << 24) |
+        ((uint64_t)bytes[2] << 16) |
+        ((uint64_t)bytes[1] << 8) |
+        (uint64_t)bytes[0];
+    if (out_value != NULL) {
+        *out_value = (long)(int64_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_bytes(long handle, long count, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (count < 0) {
+        return 4;
+    }
+    size_t needed = (size_t)count;
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, needed, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    char* out = aic_rt_copy_bytes((const char*)bytes, needed);
+    if (out == NULL) {
+        return 4;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = count;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_cstring(long handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    size_t cursor = slot->pos;
+    while (cursor < slot->len && slot->data[cursor] != 0) {
+        cursor += 1;
+    }
+    if (cursor >= slot->len) {
+        return 1;
+    }
+    size_t text_len = cursor - slot->pos;
+    const char* start = (const char*)(slot->data + slot->pos);
+    if (!aic_rt_string_utf8_is_valid(start, text_len)) {
+        return 3;
+    }
+    char* out = aic_rt_copy_bytes(start, text_len);
+    if (out == NULL) {
+        return 4;
+    }
+    slot->pos = cursor + 1;
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        if (text_len > (size_t)LONG_MAX) {
+            *out_len = 0;
+            return 4;
+        }
+        *out_len = (long)text_len;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_length_prefixed(long handle, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL) {
+        return 4;
+    }
+    if (slot->pos > SIZE_MAX - 4 || slot->pos + 4 > slot->len) {
+        return 1;
+    }
+    const unsigned char* bytes = slot->data + slot->pos;
+    uint32_t raw = ((uint32_t)bytes[0] << 24) |
+        ((uint32_t)bytes[1] << 16) |
+        ((uint32_t)bytes[2] << 8) |
+        (uint32_t)bytes[3];
+    int32_t signed_len = (int32_t)raw;
+    if (signed_len < 0) {
+        return 4;
+    }
+    size_t payload_len = (size_t)signed_len;
+    if (slot->pos + 4 > SIZE_MAX - payload_len) {
+        return 1;
+    }
+    size_t payload_start = slot->pos + 4;
+    size_t payload_end = payload_start + payload_len;
+    if (payload_end > slot->len) {
+        return 1;
+    }
+    char* out = aic_rt_copy_bytes((const char*)(slot->data + payload_start), payload_len);
+    if (out == NULL) {
+        return 4;
+    }
+    slot->pos = payload_end;
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        if (payload_len > (size_t)LONG_MAX) {
+            *out_len = 0;
+            return 4;
+        }
+        *out_len = (long)payload_len;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_write_u8(long handle, long value) {
+    if (value < 0 || value > 255) {
+        return 4;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 1, &out);
+    if (err != 0) {
+        return err;
+    }
+    out[0] = (unsigned char)value;
+    return 0;
+}
+
+long aic_rt_buffer_write_i16_be(long handle, long value) {
+    if (value < (long)INT16_MIN || value > (long)INT16_MAX) {
+        return 4;
+    }
+    uint16_t raw = (uint16_t)(int16_t)value;
+    unsigned char bytes[2];
+    bytes[0] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[1] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 2, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 2);
+    return 0;
+}
+
+long aic_rt_buffer_write_i32_be(long handle, long value) {
+    if (value < (long)INT32_MIN || value > (long)INT32_MAX) {
+        return 4;
+    }
+    uint32_t raw = (uint32_t)(int32_t)value;
+    unsigned char bytes[4];
+    bytes[0] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[3] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 4, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 4);
+    return 0;
+}
+
+long aic_rt_buffer_write_i64_be(long handle, long value) {
+    uint64_t raw = (uint64_t)(int64_t)value;
+    unsigned char bytes[8];
+    bytes[0] = (unsigned char)((raw >> 56) & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 48) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 40) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 32) & 0xFFu);
+    bytes[4] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[5] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[6] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[7] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 8, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 8);
+    return 0;
+}
+
+long aic_rt_buffer_write_i16_le(long handle, long value) {
+    if (value < (long)INT16_MIN || value > (long)INT16_MAX) {
+        return 4;
+    }
+    uint16_t raw = (uint16_t)(int16_t)value;
+    unsigned char bytes[2];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 2, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 2);
+    return 0;
+}
+
+long aic_rt_buffer_write_i32_le(long handle, long value) {
+    if (value < (long)INT32_MIN || value > (long)INT32_MAX) {
+        return 4;
+    }
+    uint32_t raw = (uint32_t)(int32_t)value;
+    unsigned char bytes[4];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 24) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 4, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 4);
+    return 0;
+}
+
+long aic_rt_buffer_write_i64_le(long handle, long value) {
+    uint64_t raw = (uint64_t)(int64_t)value;
+    unsigned char bytes[8];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[4] = (unsigned char)((raw >> 32) & 0xFFu);
+    bytes[5] = (unsigned char)((raw >> 40) & 0xFFu);
+    bytes[6] = (unsigned char)((raw >> 48) & 0xFFu);
+    bytes[7] = (unsigned char)((raw >> 56) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 8, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 8);
+    return 0;
+}
+
+long aic_rt_buffer_write_bytes(long handle, const char* data_ptr, long data_len, long data_cap) {
+    (void)data_cap;
+    if (!aic_rt_buffer_valid_slice(data_ptr, data_len)) {
+        return 4;
+    }
+    size_t len = (size_t)data_len;
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, len, &out);
+    if (err != 0) {
+        return err;
+    }
+    if (len > 0) {
+        memcpy(out, data_ptr, len);
+    }
+    return 0;
+}
+
+long aic_rt_buffer_write_cstring(long handle, const char* s_ptr, long s_len, long s_cap) {
+    (void)s_cap;
+    if (!aic_rt_buffer_valid_slice(s_ptr, s_len)) {
+        return 4;
+    }
+    size_t text_len = (size_t)s_len;
+    if (text_len == SIZE_MAX) {
+        return 2;
+    }
+    size_t total = text_len + 1;
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, total, &out);
+    if (err != 0) {
+        return err;
+    }
+    if (text_len > 0) {
+        memcpy(out, s_ptr, text_len);
+    }
+    out[text_len] = 0;
+    return 0;
+}
+
+long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_len, long s_cap) {
+    (void)s_cap;
+    if (!aic_rt_buffer_valid_slice(s_ptr, s_len)) {
+        return 4;
+    }
+    if (s_len < 0 || s_len > (long)INT32_MAX) {
+        return 4;
+    }
+    size_t text_len = (size_t)s_len;
+    if (text_len > SIZE_MAX - 4) {
+        return 2;
+    }
+    size_t total = text_len + 4;
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, total, &out);
+    if (err != 0) {
+        return err;
+    }
+    uint32_t raw = (uint32_t)(int32_t)s_len;
+    out[0] = (unsigned char)((raw >> 24) & 0xFFu);
+    out[1] = (unsigned char)((raw >> 16) & 0xFFu);
+    out[2] = (unsigned char)((raw >> 8) & 0xFFu);
+    out[3] = (unsigned char)(raw & 0xFFu);
+    if (text_len > 0) {
+        memcpy(out + 4, s_ptr, text_len);
     }
     return 0;
 }
@@ -48352,6 +50470,25 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_net_async_shutdown()"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_buffer_new(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_buffer_to_bytes(i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_buffer_read_length_prefixed(i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_buffer_write_string_prefixed(i64, i8*, i64, i64)"));
+        assert!(
+            !output.llvm_ir.contains("{ i32, void"),
+            "enum payload lowering must not materialize void fields"
+        );
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"));
         assert!(output
             .llvm_ir
@@ -48458,6 +50595,16 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_map_values_int("));
         assert!(runtime_c_source().contains("long aic_rt_map_entries_string("));
         assert!(runtime_c_source().contains("long aic_rt_map_entries_int("));
+        assert!(
+            runtime_c_source().contains("long aic_rt_buffer_new(long capacity, long* out_handle)")
+        );
+        assert!(runtime_c_source().contains("long aic_rt_buffer_from_bytes("));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_buffer_to_bytes(long handle, char** out_ptr, long* out_len)"));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_buffer_read_length_prefixed(long handle, char** out_ptr, long* out_len)"
+        ));
+        assert!(runtime_c_source().contains("long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_len, long s_cap)"));
         assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
         assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));
         assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(long ms)"));

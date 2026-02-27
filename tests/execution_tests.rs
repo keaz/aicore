@@ -7242,3 +7242,154 @@ fn main() -> Int effects { io } capabilities { io  } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }
+
+#[test]
+fn exec_buffer_binary_protocol_roundtrip() {
+    let src = r#"
+import std.io;
+import std.buffer;
+import std.bytes;
+import std.string;
+
+fn read_int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn read_string_or(v: Result[String, BufferError], fallback: String) -> String {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn read_bytes_or_empty(v: Result[Bytes, BufferError]) -> Bytes {
+    match v {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn bytes_to_text_or(v: Bytes, fallback: String) -> String {
+    match bytes.to_string(v) {
+        Ok(text) => text,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let buf = new_buffer(128);
+    let write_placeholder = buf_write_i32_be(buf, 0);
+    let write_little = buf_write_i16_le(buf, 0x1234);
+    let write_cstring = buf_write_cstring(buf, "hello");
+    let write_payload = buf_write_string_prefixed(buf, "payload");
+
+    let frame_len = buf_position(buf);
+    let seek_to_header = buf_seek(buf, 0);
+    let backpatch_len = buf_write_i32_be(buf, frame_len);
+    let seek_to_tail = buf_seek(buf, frame_len);
+    let _write_status = write_placeholder;
+    let _little_status = write_little;
+    let _cstring_status = write_cstring;
+    let _payload_status = write_payload;
+    let _seek_header_status = seek_to_header;
+    let _backpatch_status = backpatch_len;
+    let _seek_tail_status = seek_to_tail;
+
+    buf_reset(buf);
+    let wire_len = read_int_or(buf_read_i32_be(buf), -1);
+    let little = read_int_or(buf_read_i16_le(buf), -1);
+    let cstring = read_string_or(buf_read_cstring(buf), "bad");
+    let payload = read_bytes_or_empty(buf_read_length_prefixed(buf));
+    let payload_text = bytes_to_text_or(payload, "bad");
+
+    let cstring_ok = string.len(cstring) == 5 && string.contains(cstring, "hello");
+    let payload_ok = string.len(payload_text) == 7 && string.contains(payload_text, "payload");
+
+    if wire_len == frame_len && little == 0x1234 && cstring_ok && payload_ok {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_buffer_negative_paths_are_typed_and_deterministic() {
+    let src = r#"
+import std.io;
+import std.buffer;
+
+fn is_underflow(v: Result[Int, BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            Underflow => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_overflow(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            Overflow => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_utf8(v: Result[String, BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidUtf8 => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_input(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let tiny = new_buffer(2);
+    let overflow_ok = is_overflow(buf_write_i32_be(tiny, 7));
+    let underflow_ok = is_underflow(buf_read_u8(tiny));
+    let invalid_seek_ok = is_invalid_input(buf_seek(tiny, 99));
+
+    let utf = new_buffer(4);
+    let write_invalid_utf8_byte = buf_write_u8(utf, 255);
+    let write_nul = buf_write_u8(utf, 0);
+    buf_reset(utf);
+    let _utf_write_status = write_invalid_utf8_byte;
+    let _nul_status = write_nul;
+    let invalid_utf8_ok = is_invalid_utf8(buf_read_cstring(utf));
+
+    if overflow_ok && underflow_ok && invalid_seek_ok && invalid_utf8_ok {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}

@@ -867,6 +867,33 @@ Verifier-focused examples:
   - `examples/io/tcp_echo_client.aic`
   - `examples/io/net_all_ops.aic`
 
+## Connectivity Binary Protocol Buffer (CONN-T5)
+
+- Module surface:
+  - `std/buffer.aic`
+  - `BufferError` variants: `Underflow`, `Overflow`, `InvalidUtf8`, `InvalidInput`
+  - Cursor APIs: `buf_position`, `buf_remaining`, `buf_seek`, `buf_reset`
+  - Framing APIs: endian-aware read/write (`u8`, `i16/i32/i64` BE/LE), `buf_read_cstring`, `buf_read_length_prefixed`, `buf_write_cstring`, `buf_write_string_prefixed`
+- Runtime ABI surface:
+  - `aic_rt_buffer_new`
+  - `aic_rt_buffer_from_bytes`
+  - `aic_rt_buffer_to_bytes`
+  - `aic_rt_buffer_seek` / `aic_rt_buffer_reset`
+  - `aic_rt_buffer_read_*` / `aic_rt_buffer_write_*`
+- Deterministic failure semantics:
+  - Read past available data => `Underflow`
+  - Write past capacity => `Overflow`
+  - Invalid UTF-8 C-string payload => `InvalidUtf8`
+  - Invalid cursor/length/input => `InvalidInput`
+- Verification:
+  - `tests/execution_tests.rs`:
+    - `exec_buffer_binary_protocol_roundtrip`
+    - `exec_buffer_negative_paths_are_typed_and_deterministic`
+  - `make verify-intrinsics`
+- Example and CI integration:
+  - `examples/data/binary_protocol.aic`
+  - `scripts/ci/examples.sh` includes the example in both `check` and `run` gates
+
 ## Verification Gate Blocking (EPIC-QV #63)
 
 - Required gate command:

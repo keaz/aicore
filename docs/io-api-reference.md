@@ -20,6 +20,7 @@ Covered modules:
 - `std.retry`
 - `std.set`
 - `std.log`
+- `std.buffer`
 
 ## Effect Taxonomy
 
@@ -49,6 +50,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
 | `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io` |
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
 | `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
+| `BufferError` | `1=Underflow`, `2=Overflow`, `3=InvalidUtf8`, `4=InvalidInput` |
 
 ## `std.io`
 
@@ -472,6 +474,61 @@ Notes:
 - Jitter is optional and controlled by `jitter_enabled` + `jitter_ms`.
 - `RetryResult` always reports `attempts` and total `elapsed_ms`.
 - `with_timeout` enforces deadline checks before and after operation execution; the wrapped operation is not force-cancelled mid-call.
+
+## `std.buffer`
+
+```aic
+enum BufferError {
+    Underflow,
+    Overflow,
+    InvalidUtf8,
+    InvalidInput,
+}
+
+struct ByteBuffer {
+    handle: Int,
+}
+
+fn new_buffer(capacity: Int) -> ByteBuffer
+fn buffer_from_bytes(data: Bytes) -> ByteBuffer
+fn buffer_to_bytes(buf: ByteBuffer) -> Bytes
+
+fn buf_position(buf: ByteBuffer) -> Int
+fn buf_remaining(buf: ByteBuffer) -> Int
+fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]
+fn buf_reset(buf: ByteBuffer) -> ()
+
+fn buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]
+fn buf_read_cstring(buf: ByteBuffer) -> Result[String, BufferError]
+fn buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError]
+
+fn buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_bytes(buf: ByteBuffer, data: Bytes) -> Result[(), BufferError]
+fn buf_write_cstring(buf: ByteBuffer, s: String) -> Result[(), BufferError]
+fn buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferError]
+```
+
+Notes:
+
+- APIs are pure (no effect declaration required).
+- `new_buffer(capacity)` is fixed-capacity; writes past capacity return `Overflow`.
+- Reads past available bytes return `Underflow` (never panic).
+- `buf_read_cstring` requires null-terminated valid UTF-8; invalid payload returns `InvalidUtf8`.
+- `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
+- `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
 
 ## Deterministic Validation Commands
 

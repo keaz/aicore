@@ -1,0 +1,65 @@
+import std.io;
+import std.buffer;
+import std.bytes;
+
+fn read_int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn read_string_or(v: Result[String, BufferError], fallback: String) -> String {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn read_bytes_or_empty(v: Result[Bytes, BufferError]) -> Bytes {
+    match v {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn bytes_to_text_or(v: Bytes, fallback: String) -> String {
+    match bytes.to_string(v) {
+        Ok(text) => text,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let frame = new_buffer(128);
+    let write_placeholder = buf_write_i32_be(frame, 0);
+    let write_flags = buf_write_i16_le(frame, 0x1234);
+    let write_tag = buf_write_cstring(frame, "hello");
+    let write_payload = buf_write_string_prefixed(frame, "payload");
+
+    let frame_len = buf_position(frame);
+    let seek_header = buf_seek(frame, 0);
+    let write_length = buf_write_i32_be(frame, frame_len);
+    let seek_end = buf_seek(frame, frame_len);
+    let _placeholder_status = write_placeholder;
+    let _flags_status = write_flags;
+    let _tag_status = write_tag;
+    let _payload_status = write_payload;
+    let _seek_header_status = seek_header;
+    let _write_length_status = write_length;
+    let _seek_end_status = seek_end;
+
+    let wire = buffer_to_bytes(frame);
+    let parser = buffer_from_bytes(wire);
+
+    let total_len = read_int_or(buf_read_i32_be(parser), -1);
+    let flags = read_int_or(buf_read_i16_le(parser), -1);
+    let tag = read_string_or(buf_read_cstring(parser), "bad-tag");
+    let payload = bytes_to_text_or(read_bytes_or_empty(buf_read_length_prefixed(parser)), "bad-payload");
+
+    println_int(total_len);
+    println_int(flags);
+    println_str(tag);
+    println_str(payload);
+    0
+}

@@ -5310,6 +5310,147 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
 }
 
 #[test]
+fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
+    let source = fs::read_to_string("std/buffer.aic").expect("read std/buffer.aic");
+
+    for (wrapper, intrinsic, arity) in [
+        ("new_buffer", "aic_buffer_new_intrinsic", 1usize),
+        (
+            "buffer_from_bytes",
+            "aic_buffer_from_bytes_intrinsic",
+            1usize,
+        ),
+        ("buffer_to_bytes", "aic_buffer_to_bytes_intrinsic", 1usize),
+        ("buf_position", "aic_buffer_position_intrinsic", 1usize),
+        ("buf_remaining", "aic_buffer_remaining_intrinsic", 1usize),
+        ("buf_seek", "aic_buffer_seek_intrinsic", 2usize),
+        ("buf_reset", "aic_buffer_reset_intrinsic", 1usize),
+        ("buf_read_u8", "aic_buffer_read_u8_intrinsic", 1usize),
+        (
+            "buf_read_i16_be",
+            "aic_buffer_read_i16_be_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_i32_be",
+            "aic_buffer_read_i32_be_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_i64_be",
+            "aic_buffer_read_i64_be_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_i16_le",
+            "aic_buffer_read_i16_le_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_i32_le",
+            "aic_buffer_read_i32_le_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_i64_le",
+            "aic_buffer_read_i64_le_intrinsic",
+            1usize,
+        ),
+        ("buf_read_bytes", "aic_buffer_read_bytes_intrinsic", 2usize),
+        (
+            "buf_read_cstring",
+            "aic_buffer_read_cstring_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_length_prefixed",
+            "aic_buffer_read_length_prefixed_intrinsic",
+            1usize,
+        ),
+        ("buf_write_u8", "aic_buffer_write_u8_intrinsic", 2usize),
+        (
+            "buf_write_i16_be",
+            "aic_buffer_write_i16_be_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_i32_be",
+            "aic_buffer_write_i32_be_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_i64_be",
+            "aic_buffer_write_i64_be_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_i16_le",
+            "aic_buffer_write_i16_le_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_i32_le",
+            "aic_buffer_write_i32_le_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_i64_le",
+            "aic_buffer_write_i64_le_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_bytes",
+            "aic_buffer_write_bytes_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_cstring",
+            "aic_buffer_write_cstring_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_string_prefixed",
+            "aic_buffer_write_string_prefixed_intrinsic",
+            2usize,
+        ),
+    ] {
+        assert_delegate_call(&source, "std/buffer.aic", wrapper, intrinsic, arity);
+    }
+
+    for (intrinsic, arity) in [
+        ("aic_buffer_new_intrinsic", 1usize),
+        ("aic_buffer_from_bytes_intrinsic", 1usize),
+        ("aic_buffer_to_bytes_intrinsic", 1usize),
+        ("aic_buffer_position_intrinsic", 1usize),
+        ("aic_buffer_remaining_intrinsic", 1usize),
+        ("aic_buffer_seek_intrinsic", 2usize),
+        ("aic_buffer_reset_intrinsic", 1usize),
+        ("aic_buffer_read_u8_intrinsic", 1usize),
+        ("aic_buffer_read_i16_be_intrinsic", 1usize),
+        ("aic_buffer_read_i32_be_intrinsic", 1usize),
+        ("aic_buffer_read_i64_be_intrinsic", 1usize),
+        ("aic_buffer_read_i16_le_intrinsic", 1usize),
+        ("aic_buffer_read_i32_le_intrinsic", 1usize),
+        ("aic_buffer_read_i64_le_intrinsic", 1usize),
+        ("aic_buffer_read_bytes_intrinsic", 2usize),
+        ("aic_buffer_read_cstring_intrinsic", 1usize),
+        ("aic_buffer_read_length_prefixed_intrinsic", 1usize),
+        ("aic_buffer_write_u8_intrinsic", 2usize),
+        ("aic_buffer_write_i16_be_intrinsic", 2usize),
+        ("aic_buffer_write_i32_be_intrinsic", 2usize),
+        ("aic_buffer_write_i64_be_intrinsic", 2usize),
+        ("aic_buffer_write_i16_le_intrinsic", 2usize),
+        ("aic_buffer_write_i32_le_intrinsic", 2usize),
+        ("aic_buffer_write_i64_le_intrinsic", 2usize),
+        ("aic_buffer_write_bytes_intrinsic", 2usize),
+        ("aic_buffer_write_cstring_intrinsic", 2usize),
+        ("aic_buffer_write_string_prefixed_intrinsic", 2usize),
+    ] {
+        assert_intrinsic_declaration(&source, "std/buffer.aic", intrinsic, arity);
+    }
+}
+
+#[test]
 fn unit_std_fs_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
 
