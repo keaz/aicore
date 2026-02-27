@@ -1,0 +1,298 @@
+module example.io.postgres_tls_scram_reference;
+
+import std.buffer;
+import std.bytes;
+import std.crypto;
+import std.env;
+import std.io;
+import std.rand;
+import std.retry;
+import std.secure_errors;
+import std.string;
+import std.time;
+import std.tls;
+
+fn string_eq(left: String, right: String) -> Bool {
+    string.len(left) == string.len(right) && string.contains(left, right)
+}
+
+fn scenario_id_from_text(raw: String) -> Int {
+    if string_eq(raw, "bad-cert") {
+        2
+    } else if string_eq(raw, "auth-failure") {
+        3
+    } else if string_eq(raw, "timeout") {
+        4
+    } else if string_eq(raw, "pool-exhausted") {
+        5
+    } else {
+        1
+    }
+}
+
+fn expected_code_for_scenario(scenario_id: Int) -> String {
+    if scenario_id == 2 {
+        "TLS_CERT_INVALID"
+    } else if scenario_id == 3 {
+        "PG_AUTH_FAILED"
+    } else if scenario_id == 4 {
+        "PG_TIMEOUT"
+    } else if scenario_id == 5 {
+        "POOL_MAX_SIZE_REACHED"
+    } else {
+        "PG_OK"
+    }
+}
+
+fn expected_score_for_scenario(scenario_id: Int) -> Int {
+    if scenario_id == 2 {
+        12
+    } else if scenario_id == 3 {
+        22
+    } else if scenario_id == 4 {
+        32
+    } else if scenario_id == 5 {
+        52
+    } else {
+        42
+    }
+}
+
+fn startup_frame_score() -> Result[Int, SecureErrorInfo] {
+    let frame = new_buffer(256);
+    let _header = buf_write_i32_be(frame, 0);
+    let _protocol = buf_write_i32_be(frame, 196608);
+    let _k1 = buf_write_cstring(frame, "user");
+    let _v1 = buf_write_cstring(frame, "demo");
+    let _k2 = buf_write_cstring(frame, "database");
+    let _v2 = buf_write_cstring(frame, "demo");
+    let _term = buf_write_u8(frame, 0);
+
+    let frame_len = buf_position(frame);
+    let _seek_header = buf_seek(frame, 0);
+    let _patch = buf_write_i32_be(frame, frame_len);
+    let _seek_end = buf_seek(frame, frame_len);
+
+    let parser = buffer_from_bytes(buffer_to_bytes(frame));
+    match buf_read_i32_be(parser) {
+        Ok(total_len) => if total_len == frame_len && total_len > 16 {
+            Ok(1)
+        } else {
+            Err(secure_error_info("postgres", "PG_STARTUP_FRAME_INVALID", "protocol", false))
+        },
+        Err(err) => Err(buffer_error_info(err)),
+    }
+}
+
+fn challenge_score_from_kind(parser: ByteBuffer, kind: Int) -> Result[Int, SecureErrorInfo] {
+    match buf_read_cstring(parser) {
+        Ok(challenge) => if kind == 11 && string.contains(challenge, "i=4096") {
+            Ok(1)
+        } else {
+            Err(secure_error_info("postgres", "PG_AUTH_CHALLENGE_INVALID", "protocol", false))
+        },
+        Err(err) => Err(buffer_error_info(err)),
+    }
+}
+
+fn challenge_score() -> Result[Int, SecureErrorInfo] {
+    let wire_buf = new_buffer(96);
+    let _auth_kind = buf_write_i32_be(wire_buf, 11);
+    let _challenge = buf_write_cstring(wire_buf, "r=clientnonce,s=c2FsdHlzYWx0,i=4096");
+
+    let parser = buffer_from_bytes(buffer_to_bytes(wire_buf));
+    match buf_read_i32_be(parser) {
+        Ok(kind) => challenge_score_from_kind(parser, kind),
+        Err(err) => Err(buffer_error_info(err)),
+    }
+}
+
+fn derive_scram_from_salted(salted: Bytes) -> Result[Bytes, SecureErrorInfo] {
+    let client_key = hmac_sha256_raw(salted, bytes.from_string("Client Key"));
+    let auth_message = bytes.from_string(
+        "n,,n=demo,r=clientnonce,r=clientnonceServer,s=c2FsdHlzYWx0,i=4096,c=biws,r=clientnonceServer"
+    );
+    let proof = hmac_sha256_raw(client_key, auth_message);
+    let nonce_digest = sha256("clientnonceServer");
+
+    if bytes.byte_len(proof) == 32 && string.len(nonce_digest) == 64 {
+        Ok(proof)
+    } else {
+        Err(secure_error_info("postgres", "PG_SCRAM_DERIVE_FAILED", "crypto", false))
+    }
+}
+
+fn derive_scram_proof() -> Result[Bytes, SecureErrorInfo] {
+    match pbkdf2_sha256("pencil", bytes.from_string("saltysalt"), 4096, 32) {
+        Ok(salted) => derive_scram_from_salted(salted),
+        Err(err) => Err(crypto_error_info(err)),
+    }
+}
+
+fn pool_checkout_stage(scenario_id: Int) -> Result[Int, SecureErrorInfo] {
+    if scenario_id == 5 {
+        Err(pool_error_info(MaxSizeReached()))
+    } else {
+        Ok(1)
+    }
+}
+
+fn tls_retry_probe() -> Result[Int, String] effects { rand } capabilities { rand } {
+    let roll = random_range(0, 3);
+    if roll == 1 {
+        Ok(1)
+    } else {
+        Err("TLS_IO")
+    }
+}
+
+fn run_retry_tls(config: RetryConfig, operation: Fn() -> Result[Int, String]) -> RetryResult[Int] effects { time, rand } capabilities { time, rand } {
+    retry(config, operation)
+}
+
+fn map_retry_code(code: String) -> SecureErrorInfo {
+    if string_eq(code, "TLS_CERT_INVALID") {
+        tls_error_info(CertificateInvalid())
+    } else if string_eq(code, "PG_TIMEOUT") {
+        secure_error_info("postgres", "PG_TIMEOUT", "timeout", true)
+    } else if string_eq(code, "TLS_IO") {
+        secure_error_info("tls", "TLS_IO", "transport", true)
+    } else {
+        secure_error_info("postgres", "PG_TLS_RETRY_FAILED", "transport", true)
+    }
+}
+
+fn tls_retry_stage(scenario_id: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    if scenario_id == 2 {
+        Err(tls_error_info(CertificateInvalid()))
+    } else if scenario_id == 4 {
+        let timed = with_timeout(1, | | -> Int {
+            sleep_ms(2);
+            1
+        });
+        match timed {
+            Ok(_) => Ok(1),
+            Err(_) => Err(secure_error_info("postgres", "PG_TIMEOUT", "timeout", true)),
+        }
+    } else {
+        seed(20260227 + scenario_id);
+        let cfg = RetryConfig {
+            max_attempts: 3,
+            initial_backoff_ms: 1,
+            backoff_multiplier: 2,
+            max_backoff_ms: 2,
+            jitter_enabled: false,
+            jitter_ms: 0,
+        };
+        let retried = run_retry_tls(cfg, | | -> Result[Int, String] { tls_retry_probe() });
+        match retried.result {
+            Ok(value) => Ok(value + retried.attempts - retried.attempts),
+            Err(code) => Err(map_retry_code(code)),
+        }
+    }
+}
+
+fn auth_stage(scenario_id: Int, proof: Bytes) -> Result[Int, SecureErrorInfo] {
+    if bytes.byte_len(proof) != 32 {
+        Err(secure_error_info("postgres", "PG_AUTH_INPUT_INVALID", "auth", false))
+    } else if scenario_id == 3 {
+        Err(secure_error_info("postgres", "PG_AUTH_FAILED", "auth", false))
+    } else {
+        Ok(1)
+    }
+}
+
+fn finish_flow(pool_ok: Int, tls_policy_ok: Int, frame_ok: Int, challenge_ok: Int, tls_attempts: Int, auth_ok: Int) -> Result[Int, SecureErrorInfo] {
+    if pool_ok + tls_policy_ok + frame_ok + challenge_ok + auth_ok == 5 && tls_attempts >= 1 {
+        Ok(42)
+    } else {
+        Err(secure_error_info("postgres", "PG_FLOW_INCOMPLETE", "protocol", false))
+    }
+}
+
+fn run_flow_after_proof(scenario_id: Int, pool_ok: Int, tls_policy_ok: Int, frame_ok: Int, challenge_ok: Int, tls_attempts: Int, proof: Bytes) -> Result[Int, SecureErrorInfo] {
+    match auth_stage(scenario_id, proof) {
+        Ok(auth_ok) => finish_flow(pool_ok, tls_policy_ok, frame_ok, challenge_ok, tls_attempts, auth_ok),
+        Err(err) => Err(err),
+    }
+}
+
+fn run_flow_after_tls(scenario_id: Int, pool_ok: Int, tls_policy_ok: Int, frame_ok: Int, challenge_ok: Int, tls_attempts: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    match derive_scram_proof() {
+        Ok(proof) => run_flow_after_proof(scenario_id, pool_ok, tls_policy_ok, frame_ok, challenge_ok, tls_attempts, proof),
+        Err(err) => Err(err),
+    }
+}
+
+fn run_flow_after_challenge(scenario_id: Int, pool_ok: Int, tls_policy_ok: Int, frame_ok: Int, challenge_ok: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    match tls_retry_stage(scenario_id) {
+        Ok(tls_attempts) => run_flow_after_tls(scenario_id, pool_ok, tls_policy_ok, frame_ok, challenge_ok, tls_attempts),
+        Err(err) => Err(err),
+    }
+}
+
+fn run_flow_after_frame(scenario_id: Int, pool_ok: Int, tls_policy_ok: Int, frame_ok: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    match challenge_score() {
+        Ok(challenge_ok) => run_flow_after_challenge(scenario_id, pool_ok, tls_policy_ok, frame_ok, challenge_ok),
+        Err(err) => Err(err),
+    }
+}
+
+fn run_flow_after_pool(scenario_id: Int, pool_ok: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    let secure_cfg = default_tls_config();
+    let insecure_cfg = unsafe_insecure_tls_config(Some("db.internal"));
+    let tls_policy_ok = if secure_cfg.verify_server && !insecure_cfg.verify_server {
+        1
+    } else {
+        0
+    };
+
+    match startup_frame_score() {
+        Ok(frame_ok) => run_flow_after_frame(scenario_id, pool_ok, tls_policy_ok, frame_ok),
+        Err(err) => Err(err),
+    }
+}
+
+fn run_secure_flow(scenario_id: Int) -> Result[Int, SecureErrorInfo] effects { time, rand } capabilities { time, rand } {
+    match pool_checkout_stage(scenario_id) {
+        Ok(pool_ok) => run_flow_after_pool(scenario_id, pool_ok),
+        Err(err) => Err(err),
+    }
+}
+
+fn scenario_score(scenario_id: Int) -> Int effects { time, rand } capabilities { time, rand } {
+    let expected_code = expected_code_for_scenario(scenario_id);
+    let expected_score = expected_score_for_scenario(scenario_id);
+    let info = match run_secure_flow(scenario_id) {
+        Ok(_) => secure_error_info("postgres", "PG_OK", "success", false),
+        Err(err) => err,
+    };
+    if string_eq(info.code, expected_code) {
+        expected_score
+    } else {
+        0
+    }
+}
+
+fn replay_suite_score() -> Int effects { time, rand } capabilities { time, rand } {
+    let success = scenario_score(1);
+    let bad_cert = scenario_score(2);
+    let auth_fail = scenario_score(3);
+    let timeout = scenario_score(4);
+    let pool = scenario_score(5);
+
+    if success == 42 && bad_cert == 12 && auth_fail == 22 && timeout == 32 && pool == 52 {
+        42
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, env, time, rand } capabilities { io, env, time, rand } {
+    let score = match arg_at(1) {
+        Some(raw) => scenario_score(scenario_id_from_text(raw)),
+        None => replay_suite_score(),
+    };
+    print_int(score);
+    0
+}

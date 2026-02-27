@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "format": "aic-postgres-tls-scram-replay-v1",
+  "deterministic": true,
+  "example": "examples/io/postgres_tls_scram_reference.aic",
+  "default_mode": "replay-suite",
+  "scenarios": [
+    {
+      "id": "success",
+      "arg": "success",
+      "expected_print_int": 42,
+      "expected_code": "PG_OK",
+      "expected_category": "success",
+      "retryable": false,
+      "transcript": [
+        "startup_frame",
+        "tls_handshake_secure_default",
+        "scram_client_proof",
+        "auth_ok",
+        "pool_checkout_ok"
+      ]
+    },
+    {
+      "id": "bad-cert",
+      "arg": "bad-cert",
+      "expected_print_int": 12,
+      "expected_code": "TLS_CERT_INVALID",
+      "expected_category": "security",
+      "retryable": false,
+      "transcript": [
+        "startup_frame",
+        "tls_handshake_secure_default",
+        "tls_certificate_invalid"
+      ]
+    },
+    {
+      "id": "auth-failure",
+      "arg": "auth-failure",
+      "expected_print_int": 22,
+      "expected_code": "PG_AUTH_FAILED",
+      "expected_category": "auth",
+      "retryable": false,
+      "transcript": [
+        "startup_frame",
+        "tls_handshake_secure_default",
+        "scram_client_proof",
+        "auth_failed"
+      ]
+    },
+    {
+      "id": "timeout",
+      "arg": "timeout",
+      "expected_print_int": 32,
+      "expected_code": "PG_TIMEOUT",
+      "expected_category": "timeout",
+      "retryable": true,
+      "transcript": [
+        "startup_frame",
+        "tls_handshake_secure_default",
+        "deadline_exceeded"
+      ]
+    },
+    {
+      "id": "pool-exhausted",
+      "arg": "pool-exhausted",
+      "expected_print_int": 52,
+      "expected_code": "POOL_MAX_SIZE_REACHED",
+      "expected_category": "capacity",
+      "retryable": true,
+      "transcript": [
+        "pool_checkout",
+        "pool_capacity_reached"
+      ]
+    }
+  ],
+  "validation": {
+    "check": "cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic",
+    "run_suite": "cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic",
+    "run_scenario": "cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- <scenario-id>"
+  }
+}

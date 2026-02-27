@@ -6,6 +6,7 @@ This directory defines reproducible autonomous workflows for common development 
 - bugfix/autofix (`bugfix-loop.md`)
 - deterministic refactor (`refactor-loop.md`)
 - diagnostics triage (`diagnostics-loop.md`)
+- secure Postgres TLS/SCRAM replay (`secure-postgres-tls-scram-loop.md`)
 
 Each recipe contains:
 

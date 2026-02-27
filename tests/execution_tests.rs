@@ -11,6 +11,7 @@ use aicore::codegen::{
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
+use serde_json::Value;
 use tempfile::tempdir;
 
 fn compile_and_run_with_setup_and_args_and_input<F>(
@@ -7927,6 +7928,46 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_postgres_tls_scram_replay_scenarios_are_deterministic() {
+    let src = fs::read_to_string("examples/io/postgres_tls_scram_reference.aic")
+        .expect("read examples/io/postgres_tls_scram_reference.aic");
+    let replay_text = fs::read_to_string("docs/security-ops/postgres-tls-scram-replay.v1.json")
+        .expect("read docs/security-ops/postgres-tls-scram-replay.v1.json");
+    let replay: Value =
+        serde_json::from_str(&replay_text).expect("parse postgres tls scram replay json");
+    let scenarios = replay
+        .get("scenarios")
+        .and_then(|v| v.as_array())
+        .expect("scenarios array");
+    assert!(
+        !scenarios.is_empty(),
+        "replay contract must provide deterministic scenario cases"
+    );
+
+    for scenario in scenarios {
+        let arg = scenario
+            .get("arg")
+            .and_then(|v| v.as_str())
+            .expect("scenario arg");
+        let expected = scenario
+            .get("expected_print_int")
+            .and_then(|v| v.as_i64())
+            .expect("expected_print_int") as i32;
+        let (code, stdout, stderr) = compile_and_run_with_args(&src, &[arg]);
+        assert_eq!(code, 0, "scenario={arg} stderr={stderr}");
+        assert_eq!(
+            stdout,
+            format!("{expected}\n"),
+            "scenario={arg} expected deterministic replay output"
+        );
+    }
+
+    let (suite_code, suite_stdout, suite_stderr) = compile_and_run(&src);
+    assert_eq!(suite_code, 0, "stderr={suite_stderr}");
+    assert_eq!(suite_stdout, "42\n");
 }
 
 #[test]

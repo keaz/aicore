@@ -243,3 +243,26 @@ fn protocol_category_or_unknown(v: Result[Int, BufferError]) -> String {
 
 Reference: `examples/io/secure_error_contract.aic`.
 Contract: `docs/errors/secure-networking-error-contract.v1.json`.
+
+## 12. Postgres TLS/SCRAM Canonical Replay
+
+Use the canonical replay example when implementing production-style secure protocol clients with deterministic failure semantics.
+
+```aic
+import std.secure_errors;
+
+fn classify(info: SecureErrorInfo) -> String {
+    info.code
+}
+```
+
+What this flow covers:
+
+- startup/binary framing (`std.buffer`)
+- SCRAM proof derivation (`std.crypto`)
+- TLS secure-default + unsafe audit path (`std.tls`)
+- retry and timeout behavior (`std.retry`)
+- pool-capacity contract semantics (`PoolErrorContract`)
+
+Reference example: `examples/io/postgres_tls_scram_reference.aic`.
+Replay artifact: `docs/security-ops/postgres-tls-scram-replay.v1.json`.

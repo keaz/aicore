@@ -12,6 +12,7 @@ Before changing IO code:
 3. Confirm platform caveats for `std.proc`, `std.net`, and `std.tls`.
 4. Confirm TLS policy contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/tls-policy.v1.json`.
 5. Confirm unified secure error contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`.
+6. Confirm Postgres TLS/SCRAM deterministic replay contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/postgres-tls-scram-replay.v1.json`.
 
 ## 2. Effect-First Authoring
 
@@ -53,6 +54,9 @@ Treat error enums as control-flow boundaries, not exceptions.
     - `run`, `pipe`, `current_pid` available.
     - `spawn`, `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
     - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
+- Postgres TLS/SCRAM replay reference (`examples/io/postgres_tls_scram_reference.aic`):
+  - deterministic and CI-safe (no external network dependency).
+  - pool behavior is currently modeled via `PoolErrorContract` compatibility contract until full pool runtime APIs are widened.
 
 ## 5. Resource Lifecycle Rules
 
@@ -86,6 +90,12 @@ cargo run --quiet --bin aic -- check examples/io/subprocess_pipeline.aic
 cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 cargo run --quiet --bin aic -- check examples/io/tls_policy_defaults.aic
 cargo run --quiet --bin aic -- check examples/io/secure_error_contract.aic
+cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- bad-cert
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- auth-failure
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- timeout
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- pool-exhausted
 ```
 
 ## 7. Upgrade Hygiene

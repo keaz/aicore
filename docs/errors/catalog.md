@@ -18,6 +18,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 `aic explain` covers compiler/runtime diagnostics (`E...`). Module-level secure-networking failures are standardized separately:
 
 - Contract file: `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`
+- Deterministic replay file: `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/postgres-tls-scram-replay.v1.json`
 - AIC mapping APIs: `std.secure_errors` (`buffer_error_info`, `crypto_error_info`, `tls_error_info`, `pool_error_info`)
 - Compatibility rules:
   - existing `code` values are immutable

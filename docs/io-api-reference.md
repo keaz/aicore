@@ -438,6 +438,8 @@ Notes:
 - `tls_connect` upgrades an existing TCP connection handle after protocol negotiation (for example StartTLS/SSLRequest flows).
 - `tls_connect_addr` performs TCP connect + TLS handshake in one call.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
+- Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.
+- Replay contract: `docs/security-ops/postgres-tls-scram-replay.v1.json`.
 - On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.
 
 ## `std.secure_errors`
@@ -556,6 +558,7 @@ Notes:
 - Jitter is optional and controlled by `jitter_enabled` + `jitter_ms`.
 - `RetryResult` always reports `attempts` and total `elapsed_ms`.
 - `with_timeout` enforces deadline checks before and after operation execution; the wrapped operation is not force-cancelled mid-call.
+- Secure pooled retry reference (including timeout/capacity negatives): `examples/io/postgres_tls_scram_reference.aic`.
 
 ## `std.buffer`
 
@@ -646,6 +649,7 @@ Notes:
 - `secure_eq` is byte-oriented and intended for secret comparisons.
 - `hex_decode`, `base64_decode`, and `pbkdf2_sha256` return typed `CryptoError` variants instead of panicking.
 - Reference flow for Postgres MD5 + SCRAM derivations: `examples/crypto/pg_scram_auth.aic`.
+- End-to-end secure replay template: `examples/io/postgres_tls_scram_reference.aic`.
 
 ## Deterministic Validation Commands
 
@@ -653,5 +657,7 @@ Notes:
 cargo run --quiet --bin aic -- std-compat
 cargo run --quiet --bin aic -- check examples/io/interactive_greeter.aic
 cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
+cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic
 cargo run --quiet --bin aic -- explain E2001
 ```

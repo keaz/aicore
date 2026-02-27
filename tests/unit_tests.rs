@@ -2661,6 +2661,85 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
 }
 
 #[test]
+fn unit_postgres_tls_scram_replay_contract_and_example_are_in_sync() {
+    let source = fs::read_to_string("examples/io/postgres_tls_scram_reference.aic")
+        .expect("read examples/io/postgres_tls_scram_reference.aic");
+    let manifest_text = fs::read_to_string("docs/security-ops/postgres-tls-scram-replay.v1.json")
+        .expect("read docs/security-ops/postgres-tls-scram-replay.v1.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_text).expect("parse postgres tls scram replay manifest");
+
+    assert_eq!(
+        manifest.get("schema_version").and_then(|v| v.as_i64()),
+        Some(1),
+        "postgres tls replay schema_version must be pinned to 1"
+    );
+    assert_eq!(
+        manifest.get("deterministic").and_then(|v| v.as_bool()),
+        Some(true),
+        "postgres tls replay contract must stay deterministic"
+    );
+    assert_eq!(
+        manifest.get("example").and_then(|v| v.as_str()),
+        Some("examples/io/postgres_tls_scram_reference.aic"),
+        "postgres tls replay contract must point at canonical example"
+    );
+
+    let scenarios = manifest
+        .get("scenarios")
+        .and_then(|v| v.as_array())
+        .expect("scenarios array");
+    assert_eq!(
+        scenarios.len(),
+        5,
+        "postgres tls replay must define success + four negative scenarios"
+    );
+
+    let mut ids = BTreeSet::new();
+    for scenario in scenarios {
+        let id = scenario
+            .get("id")
+            .and_then(|v| v.as_str())
+            .expect("scenario id");
+        let expected_code = scenario
+            .get("expected_code")
+            .and_then(|v| v.as_str())
+            .expect("expected_code");
+        let expected_print_int = scenario
+            .get("expected_print_int")
+            .and_then(|v| v.as_i64())
+            .expect("expected_print_int");
+        ids.insert(id.to_string());
+        assert!(
+            source.contains(expected_code),
+            "canonical replay example must encode typed failure `{expected_code}`"
+        );
+        assert!(
+            expected_print_int > 0,
+            "scenario `{id}` must define a non-zero deterministic score"
+        );
+    }
+
+    assert!(
+        ids.contains("success")
+            && ids.contains("bad-cert")
+            && ids.contains("auth-failure")
+            && ids.contains("timeout")
+            && ids.contains("pool-exhausted"),
+        "replay contract must preserve required scenario ids"
+    );
+    assert!(
+        source.contains("fn replay_suite_score() -> Int"),
+        "canonical replay example must expose replay suite entrypoint"
+    );
+    assert!(
+        source.contains("default_tls_config()")
+            && source.contains("unsafe_insecure_tls_config(Some(\"db.internal\"))"),
+        "canonical replay example must document both secure-default and unsafe-audit TLS paths"
+    );
+}
+
+#[test]
 fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     let string_source = fs::read_to_string("std/string.aic").expect("read std/string.aic");
 
