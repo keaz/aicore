@@ -83,7 +83,7 @@ impl Drop[AuditDrop] {
 }
 ```
 
-- Remaining `#157` gaps: full move-out tracking for complex expressions/control-flow joins, partial-move destructor semantics, and panic/unwind drop paths.
+- Remaining `#157` future implementation items: full move-out tracking for complex expressions/control-flow joins, partial-move destructor semantics, and panic/unwind drop paths.
 
 ## Debug Leak Detection
 

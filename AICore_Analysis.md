@@ -115,9 +115,9 @@ The primary author of AICore code is meant to be **autonomous AI agents**, with 
 
 ---
 
-## Part 2: Challenges NOT Fully Addressed (Gaps)
+## Part 2: Challenges NOT Fully Addressed (Future Implementations)
 
-### 🔴 Gap 1: Semantic Code Search / Retrieval-Augmented Generation Support
+### 🔴 Future Implementation 1: Semantic Code Search / Retrieval-Augmented Generation Support
 
 **Challenge**: AI agents frequently need to understand existing codebases before generating new code. They need to search for relevant types, functions, patterns, and examples to avoid reinventing or conflicting with existing code.
 
@@ -137,7 +137,7 @@ aic symbols --project . --format json
 
 ---
 
-### 🔴 Gap 2: AI-Friendly Code Scaffolding / Template Generation
+### 🔴 Future Implementation 2: AI-Friendly Code Scaffolding / Template Generation
 
 **Challenge**: AI agents waste significant tokens and make errors when generating boilerplate (struct constructors, match arms, error types, test stubs). Having language-level scaffolding would reduce errors.
 
@@ -158,7 +158,7 @@ aic scaffold test --for process_user
 
 ---
 
-### 🔴 Gap 3: Semantic Diff and Patch Protocol for Agent Edits
+### 🔴 Future Implementation 3: Semantic Diff and Patch Protocol for Agent Edits
 
 **Challenge**: AI agents typically output full file replacements or line-based patches, which are error-prone and wasteful. They need a structured way to express "add this function" or "modify this match arm" without touching the rest of the file.
 
@@ -196,7 +196,7 @@ aic scaffold test --for process_user
 
 ---
 
-### 🔴 Gap 4: Context Window Management / Incremental Code Understanding
+### 🔴 Future Implementation 4: Context Window Management / Incremental Code Understanding
 
 **Challenge**: AI agents have finite context windows. When working on large projects, they cannot hold the entire codebase in context and need efficient ways to request only the relevant subset.
 
@@ -228,7 +228,7 @@ Output:
 
 ---
 
-### 🔴 Gap 5: Intent-Level Programming / Specification-First Workflow
+### 🔴 Future Implementation 5: Intent-Level Programming / Specification-First Workflow
 
 **Challenge**: AI agents are often given high-level requirements ("add user validation") but must infer the full type signatures, effects, contracts, and error handling. This gap between intent and implementation is where most AI coding errors occur.
 
@@ -257,7 +257,7 @@ aic synthesize --from spec validate_user --json
 
 ---
 
-### 🔴 Gap 6: Automatic Test Generation from Contracts and Types
+### 🔴 Future Implementation 6: Automatic Test Generation from Contracts and Types
 
 **Challenge**: AI agents generate code but rarely generate comprehensive test suites. Even when they do, tests are often shallow and miss edge cases.
 
@@ -278,7 +278,7 @@ aic testgen --for AppError --strategy exhaustive-match --json
 
 ---
 
-### 🔴 Gap 7: Rollback and Undo Protocol
+### 🔴 Future Implementation 7: Rollback and Undo Protocol
 
 **Challenge**: AI agents make mistakes and need to undo changes safely. In most workflows, rolling back requires git operations or manual file restoration.
 
@@ -299,7 +299,7 @@ aic checkpoint diff --from "before_refactor" --to current --json
 
 ---
 
-### 🔴 Gap 8: Multi-Agent Collaboration Protocol
+### 🔴 Future Implementation 8: Multi-Agent Collaboration Protocol
 
 **Challenge**: Complex tasks may require multiple specialized agents working on different parts of a codebase simultaneously (e.g., one agent on types, another on tests, another on implementation).
 
@@ -319,7 +319,7 @@ aic session conflicts --json                 # list conflicting edits
 
 ---
 
-### 🔴 Gap 9: Hallucination Detection / API Conformance Checking
+### 🔴 Future Implementation 9: Hallucination Detection / API Conformance Checking
 
 **Challenge**: AI agents frequently hallucinate APIs — calling functions that don't exist, using wrong parameter types, or inventing enum variants.
 
@@ -338,7 +338,7 @@ aic suggest --partial "std.fs.rea" --json
 
 ---
 
-### 🟡 Gap 10: Error Recovery Guidance for Agents
+### 🟡 Future Implementation 10: Error Recovery Guidance for Agents
 
 **Challenge**: When compilation fails, agents often enter retry loops, making the same mistake repeatedly because they don't understand the root cause.
 
@@ -404,20 +404,20 @@ Add a **diagnostic reasoning chain** to JSON diagnostics:
 ## Part 4: Prioritized Recommendations
 
 ### Tier 1 — High Impact, Moderate Effort
-1. **Semantic Code Search** (Gap 1) — Unblocks all agent workflows
-2. **Context Window Management** (Gap 4) — Critical for scaling to real projects
-3. **Hallucination Detection** (Gap 9) — Prevents the most common agent failure mode
+1. **Semantic Code Search** (Future Implementation 1) — Unblocks all agent workflows
+2. **Context Window Management** (Future Implementation 4) — Critical for scaling to real projects
+3. **Hallucination Detection** (Future Implementation 9) — Prevents the most common agent failure mode
 
 ### Tier 2 — High Impact, Higher Effort
-4. **Code Scaffolding** (Gap 2) — Reduces token waste and boilerplate errors
-5. **Structured Patch Protocol** (Gap 3) — Enables precise, surgical edits
-6. **Error Recovery Reasoning** (Gap 10) — Breaks retry loops
+4. **Code Scaffolding** (Future Implementation 2) — Reduces token waste and boilerplate errors
+5. **Structured Patch Protocol** (Future Implementation 3) — Enables precise, surgical edits
+6. **Error Recovery Reasoning** (Future Implementation 10) — Breaks retry loops
 
 ### Tier 3 — Strategic, Long-term
-7. **Auto Test Generation** (Gap 6) — Transforms quality assurance
-8. **Spec-First Workflow** (Gap 5) — The ultimate agent-native paradigm
-9. **Rollback Protocol** (Gap 7) — Enables safe exploration
-10. **Multi-Agent Collaboration** (Gap 8) — Enables complex parallel work
+7. **Auto Test Generation** (Future Implementation 6) — Transforms quality assurance
+8. **Spec-First Workflow** (Future Implementation 5) — The ultimate agent-native paradigm
+9. **Rollback Protocol** (Future Implementation 7) — Enables safe exploration
+10. **Multi-Agent Collaboration** (Future Implementation 8) — Enables complex parallel work
 
 ---
 
