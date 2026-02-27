@@ -15,6 +15,8 @@ This runbook documents resource protocol checks in `src/typecheck.rs`.
 
 Tracked resource kinds:
 
+- `Sender[T]`
+- `Receiver[T]`
 - `IntChannel`
 - `IntMutex`
 - `Task`
@@ -26,8 +28,8 @@ Tracked resource kinds:
 
 Operation classes:
 
-- non-terminal operations keep resource open (`send_int`, `recv_int`, `lock_int`, `unlock_int`)
-- terminal operations close/consume resource (`close_channel`, `close_mutex`, `join_task`, `cancel_task`)
+- non-terminal operations keep resource open (`send`, `recv`, `recv_timeout`, `send_int`, `recv_int`, `lock_int`, `unlock_int`)
+- terminal operations close/consume resource (`close_sender`, `close_receiver`, `close_channel`, `close_mutex`, `join_task`, `cancel_task`)
 
 Invalid transitions:
 
@@ -44,6 +46,7 @@ Valid transitions:
 
 ```bash
 aic check examples/verify/file_protocol.aic --json
+aic check examples/verify/generic_channel_protocol_ok.aic --json
 aic check examples/verify/capability_protocol_ok.aic --json
 ```
 
@@ -51,6 +54,7 @@ Invalid transitions (`E2006`, `E2009`):
 
 ```bash
 aic check examples/verify/file_protocol_invalid.aic --json
+aic check examples/verify/generic_channel_protocol_invalid.aic --json
 aic check examples/verify/net_proc_protocol_invalid.aic --json
 aic check examples/verify/capability_missing_invalid.aic --json
 ```

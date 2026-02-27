@@ -44,4 +44,13 @@ Expected output: `7`
 make test-e8
 ```
 
-This confirms conformance, fuzzing, differential, matrix, and performance gates remain green.
+This confirms conformance, fuzzing, differential, matrix, concurrency-stress, and performance gates remain green.
+
+## Step 5: Concurrency Stress Replay (when applicable)
+
+If `make test-e8` fails in `e8_concurrency_stress_tests`, use generated replay metadata:
+
+```bash
+cat target/e8/concurrency-stress-replay.txt
+AIC_CONC_STRESS_REPLAY='<seed>:<round>:<case_id>' cargo test --locked --test e8_concurrency_stress_tests -- --exact concurrency_stress_suite_is_replayable_and_within_budget --nocapture --test-threads=1
+```

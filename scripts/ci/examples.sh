@@ -136,6 +136,7 @@ check_pass=(
   "examples/verify/capability_protocol_ok.aic"
   "examples/verify/fs_protocol_ok.aic"
   "examples/verify/file_protocol.aic"
+  "examples/verify/generic_channel_protocol_ok.aic"
   "examples/verify/net_proc_protocol_ok.aic"
   "examples/verify/range_proofs.aic"
   "examples/verify/qv_contract_proof_fixed.aic"
@@ -150,6 +151,7 @@ check_fail=(
   "examples/verify/capability_missing_invalid.aic"
   "examples/verify/fs_protocol_invalid.aic"
   "examples/verify/file_protocol_invalid.aic"
+  "examples/verify/generic_channel_protocol_invalid.aic"
   "examples/verify/net_proc_protocol_invalid.aic"
   "examples/verify/qv_contract_proof_fail.aic"
   "examples/core/intrinsic_declaration_invalid_body.aic"
@@ -243,6 +245,7 @@ run_pass=(
   "examples/core/enum_methods_option_result.aic"
   "examples/core/cross_compile_targets.aic"
   "examples/core/pattern_or.aic"
+  "examples/verify/generic_channel_protocol_ok.aic"
   "examples/verify/range_proofs.aic"
   "examples/verify/qv_contract_proof_fixed.aic"
 )
@@ -330,6 +333,9 @@ wasm_target_unavailable() {
   local err_file="$1"
   local stderr_lower
   stderr_lower="$(tr '[:upper:]' '[:lower:]' <"$err_file")"
+  if [[ "$stderr_lower" == *"failed to locate a working clang toolchain"* ]] || [[ "$stderr_lower" == *"set aic_clang to a valid clang binary"* ]] || [[ "$stderr_lower" == *"clang toolchain"* ]]; then
+    return 0
+  fi
   if [[ "$stderr_lower" != *"wasm32-unknown-unknown"* ]]; then
     return 1
   fi
@@ -445,7 +451,7 @@ validate_wasm_example() {
   local manifest="$ARTIFACT_DIR/wasm_hello_world.build.json"
   if ! "${AIC[@]}" build "$file" --target wasm32 -o "$wasm" --manifest "$manifest" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
     if wasm_target_unavailable /tmp/aic-example.err; then
-      echo "note: skipping wasm example validation (toolchain lacks wasm32 target support)" >&2
+      echo "note: skipping wasm example validation (toolchain lacks wasm32 prerequisites)" >&2
       return 0
     fi
     echo "wasm example build failed: $file" >&2

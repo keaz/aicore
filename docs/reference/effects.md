@@ -37,6 +37,8 @@ async_fn_decl   = "async" "fn" ident ... "->" type effects_clause? capabilities_
   - calling `async fn` still contributes the callee effect set
   - `await` does not erase effect obligations
 - Resource protocol checks detect invalid use-after-close/double-close patterns for selected handles:
+  - `Sender[T]`: `send`, `try_send`, terminal `close_sender`
+  - `Receiver[T]`: `recv`, `try_recv`, `recv_timeout`, terminal `close_receiver`
   - `IntChannel`: `send_int`, `recv_int`, terminal `close_channel`
   - `IntMutex`: `lock_int`, `unlock_int`, terminal `close_mutex`
   - `Task`: terminal `join_task` or `cancel_task`

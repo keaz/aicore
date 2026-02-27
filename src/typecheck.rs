@@ -168,6 +168,8 @@ struct TempBorrow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ResourceKind {
     Task,
+    Sender,
+    Receiver,
     IntChannel,
     IntMutex,
     FileHandle,
@@ -182,6 +184,8 @@ impl ResourceKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Task => "Task",
+            Self::Sender => "Sender",
+            Self::Receiver => "Receiver",
             Self::IntChannel => "IntChannel",
             Self::IntMutex => "IntMutex",
             Self::FileHandle => "FileHandle",
@@ -197,16 +201,18 @@ impl ResourceKind {
 #[derive(Debug, Clone, Copy)]
 struct ResourceState {
     closed_at: crate::span::Span,
+    closed_by: &'static str,
 }
 
 type ResourceStateMap = BTreeMap<(String, ResourceKind), ResourceState>;
+type ResourceBindingTypeMap = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, Copy)]
 struct ResourceProtocolOp {
     kind: ResourceKind,
     terminal: bool,
     api: &'static str,
-    first_param_type: &'static str,
+    first_param_base_type: &'static str,
     required_effect: &'static str,
 }
 
@@ -1817,79 +1823,141 @@ impl<'a> Checker<'a> {
 
     fn check_resource_protocols(&mut self, func: &ir::Function) {
         let mut state = ResourceStateMap::new();
-        self.check_resource_protocol_block(&func.body, &mut state);
+        let mut binding_types = ResourceBindingTypeMap::new();
+        for param in &func.params {
+            let ty = self
+                .types
+                .get(&param.ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            binding_types.insert(param.name.clone(), self.normalize_type(&ty));
+        }
+        self.check_resource_protocol_block(&func.body, &mut state, &mut binding_types);
     }
 
-    fn check_resource_protocol_block(&mut self, block: &ir::Block, state: &mut ResourceStateMap) {
+    fn check_resource_protocol_block(
+        &mut self,
+        block: &ir::Block,
+        state: &mut ResourceStateMap,
+        binding_types: &mut ResourceBindingTypeMap,
+    ) {
         for stmt in &block.stmts {
             match stmt {
-                ir::Stmt::Let { name, expr, .. } => {
-                    self.check_resource_protocol_expr(expr, state);
+                ir::Stmt::Let { name, ty, expr, .. } => {
+                    self.check_resource_protocol_expr(expr, state, binding_types);
                     clear_resource_state_for_var(name, state);
+                    if let Some(binding_ty) =
+                        self.infer_resource_binding_type(expr, *ty, binding_types)
+                    {
+                        binding_types.insert(name.clone(), binding_ty);
+                    } else {
+                        binding_types.remove(name);
+                    }
                 }
                 ir::Stmt::Assign { target, expr, .. } => {
-                    self.check_resource_protocol_expr(expr, state);
+                    self.check_resource_protocol_expr(expr, state, binding_types);
                     clear_resource_state_for_var(target, state);
+                    if let Some(binding_ty) =
+                        self.infer_resource_binding_type(expr, None, binding_types)
+                    {
+                        binding_types.insert(target.clone(), binding_ty);
+                    } else {
+                        binding_types.remove(target);
+                    }
                 }
-                ir::Stmt::Expr { expr, .. } => self.check_resource_protocol_expr(expr, state),
+                ir::Stmt::Expr { expr, .. } => {
+                    self.check_resource_protocol_expr(expr, state, binding_types)
+                }
                 ir::Stmt::Return {
                     expr: Some(expr), ..
                 }
-                | ir::Stmt::Assert { expr, .. } => self.check_resource_protocol_expr(expr, state),
+                | ir::Stmt::Assert { expr, .. } => {
+                    self.check_resource_protocol_expr(expr, state, binding_types)
+                }
                 ir::Stmt::Return { expr: None, .. } => {}
             }
         }
 
         if let Some(tail) = &block.tail {
-            self.check_resource_protocol_expr(tail, state);
+            self.check_resource_protocol_expr(tail, state, binding_types);
         }
     }
 
-    fn check_resource_protocol_expr(&mut self, expr: &ir::Expr, state: &mut ResourceStateMap) {
-        self.check_resource_protocol_expr_mode(expr, state, false);
+    fn check_resource_protocol_expr(
+        &mut self,
+        expr: &ir::Expr,
+        state: &mut ResourceStateMap,
+        binding_types: &mut ResourceBindingTypeMap,
+    ) {
+        self.check_resource_protocol_expr_mode(expr, state, binding_types, false);
     }
 
     fn check_resource_protocol_expr_mode(
         &mut self,
         expr: &ir::Expr,
         state: &mut ResourceStateMap,
+        binding_types: &mut ResourceBindingTypeMap,
         allow_closed_use: bool,
     ) {
         match &expr.kind {
             ir::ExprKind::Call { callee, args, .. } => {
-                self.check_resource_protocol_expr_mode(callee, state, false);
+                self.check_resource_protocol_expr_mode(callee, state, binding_types, false);
                 for arg in args {
-                    self.check_resource_protocol_expr_mode(arg, state, false);
+                    self.check_resource_protocol_expr_mode(arg, state, binding_types, false);
                 }
-                self.check_resource_protocol_call(callee, args, expr.span, state, allow_closed_use);
+                self.check_resource_protocol_call(
+                    callee,
+                    args,
+                    expr.span,
+                    state,
+                    binding_types,
+                    allow_closed_use,
+                );
             }
             ir::ExprKind::Closure { body, .. } => {
                 let mut closure_state = state.clone();
-                self.check_resource_protocol_block(body, &mut closure_state);
+                let mut closure_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(
+                    body,
+                    &mut closure_state,
+                    &mut closure_binding_types,
+                );
             }
             ir::ExprKind::If {
                 cond,
                 then_block,
                 else_block,
             } => {
-                self.check_resource_protocol_expr_mode(cond, state, false);
+                self.check_resource_protocol_expr_mode(cond, state, binding_types, false);
                 let mut then_state = state.clone();
-                self.check_resource_protocol_block(then_block, &mut then_state);
+                let mut then_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(
+                    then_block,
+                    &mut then_state,
+                    &mut then_binding_types,
+                );
                 let mut else_state = state.clone();
-                self.check_resource_protocol_block(else_block, &mut else_state);
+                let mut else_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(
+                    else_block,
+                    &mut else_state,
+                    &mut else_binding_types,
+                );
             }
             ir::ExprKind::While { cond, body } => {
-                self.check_resource_protocol_expr_mode(cond, state, false);
+                self.check_resource_protocol_expr_mode(cond, state, binding_types, false);
                 let mut loop_state = state.clone();
-                self.check_resource_protocol_block(body, &mut loop_state);
+                let mut loop_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(body, &mut loop_state, &mut loop_binding_types);
             }
             ir::ExprKind::Loop { body } => {
                 let mut loop_state = state.clone();
-                self.check_resource_protocol_block(body, &mut loop_state);
+                let mut loop_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(body, &mut loop_state, &mut loop_binding_types);
             }
             ir::ExprKind::Break { expr } => {
                 if let Some(expr) = expr {
-                    self.check_resource_protocol_expr_mode(expr, state, false);
+                    self.check_resource_protocol_expr_mode(expr, state, binding_types, false);
                 }
             }
             ir::ExprKind::Continue => {}
@@ -1899,36 +1967,52 @@ impl<'a> Checker<'a> {
             } => {
                 // `match call(...) { ... }` explicitly handles `Result` branches, including
                 // expected runtime closed/cancelled outcomes.
-                self.check_resource_protocol_expr_mode(scrutinee, state, true);
+                self.check_resource_protocol_expr_mode(scrutinee, state, binding_types, true);
                 for arm in arms {
                     let mut arm_state = state.clone();
+                    let mut arm_binding_types = binding_types.clone();
                     if let Some(guard) = &arm.guard {
-                        self.check_resource_protocol_expr_mode(guard, &mut arm_state, false);
+                        self.check_resource_protocol_expr_mode(
+                            guard,
+                            &mut arm_state,
+                            &mut arm_binding_types,
+                            false,
+                        );
                     }
-                    self.check_resource_protocol_expr_mode(&arm.body, &mut arm_state, false);
+                    self.check_resource_protocol_expr_mode(
+                        &arm.body,
+                        &mut arm_state,
+                        &mut arm_binding_types,
+                        false,
+                    );
                 }
             }
             ir::ExprKind::UnsafeBlock { block } => {
                 let mut block_state = state.clone();
-                self.check_resource_protocol_block(block, &mut block_state);
+                let mut block_binding_types = binding_types.clone();
+                self.check_resource_protocol_block(
+                    block,
+                    &mut block_state,
+                    &mut block_binding_types,
+                );
             }
             ir::ExprKind::Binary { lhs, rhs, .. } => {
-                self.check_resource_protocol_expr_mode(lhs, state, false);
-                self.check_resource_protocol_expr_mode(rhs, state, false);
+                self.check_resource_protocol_expr_mode(lhs, state, binding_types, false);
+                self.check_resource_protocol_expr_mode(rhs, state, binding_types, false);
             }
             ir::ExprKind::Unary { expr, .. }
             | ir::ExprKind::Borrow { expr, .. }
             | ir::ExprKind::Await { expr }
             | ir::ExprKind::Try { expr } => {
-                self.check_resource_protocol_expr_mode(expr, state, false);
+                self.check_resource_protocol_expr_mode(expr, state, binding_types, false);
             }
             ir::ExprKind::StructInit { fields, .. } => {
                 for (_, value, _) in fields {
-                    self.check_resource_protocol_expr_mode(value, state, false);
+                    self.check_resource_protocol_expr_mode(value, state, binding_types, false);
                 }
             }
             ir::ExprKind::FieldAccess { base, .. } => {
-                self.check_resource_protocol_expr_mode(base, state, false);
+                self.check_resource_protocol_expr_mode(base, state, binding_types, false);
             }
             ir::ExprKind::Int(_)
             | ir::ExprKind::Float(_)
@@ -1946,12 +2030,10 @@ impl<'a> Checker<'a> {
         args: &[ir::Expr],
         span: crate::span::Span,
         state: &mut ResourceStateMap,
+        binding_types: &ResourceBindingTypeMap,
         allow_closed_use: bool,
     ) {
-        let Some(name) = self.resolve_resource_protocol_call(callee) else {
-            return;
-        };
-        let Some(op) = resource_protocol_op(&name) else {
+        let Some(op) = self.resolve_resource_protocol_call(callee) else {
             return;
         };
         let Some(first_arg) = args.first() else {
@@ -1961,14 +2043,16 @@ impl<'a> Checker<'a> {
             return;
         };
         let key = (var_name.clone(), op.kind);
+        let binding_label = self.resource_protocol_binding_label(var_name, op, binding_types);
         if let Some(previous) = state.get(&key).copied() {
             if !allow_closed_use {
                 let mut diag = Diagnostic::error(
                     "E2006",
                     format!(
-                        "resource protocol violation: '{}' called on closed {} '{}'",
+                        "resource protocol violation: '{}' called after terminal '{}' on closed {} '{}'",
                         op.api,
-                        op.kind.as_str(),
+                        previous.closed_by,
+                        binding_label,
                         var_name
                     ),
                     self.file,
@@ -1976,7 +2060,7 @@ impl<'a> Checker<'a> {
                 )
                 .with_help(format!(
                     "create a new {} before calling '{}' again",
-                    op.kind.as_str(),
+                    binding_label,
                     op.api
                 ));
                 diag.spans.push(DiagnosticSpan {
@@ -1990,21 +2074,68 @@ impl<'a> Checker<'a> {
             return;
         }
         if op.terminal {
-            state.insert(key, ResourceState { closed_at: span });
+            state.insert(
+                key,
+                ResourceState {
+                    closed_at: span,
+                    closed_by: op.api,
+                },
+            );
         }
     }
 
-    fn resolve_resource_protocol_call(&self, callee: &ir::Expr) -> Option<String> {
+    fn resolve_resource_protocol_call(&self, callee: &ir::Expr) -> Option<ResourceProtocolOp> {
         let call_path = self.extract_callee_path(callee)?;
-        let name = call_path.last()?.clone();
-        let op = resource_protocol_op(&name)?;
-        let sig = self.functions.get(&name)?;
-        if sig.params.first().map(String::as_str) == Some(op.first_param_type)
+        let name = call_path.last()?;
+        let op = resource_protocol_op(name)?;
+        let sig = self.functions.get(name)?;
+        let first_param = sig.params.first()?;
+        let first_param_normalized = self.normalize_type(first_param);
+        if base_type_name(&first_param_normalized) == op.first_param_base_type
             && sig.effects.contains(op.required_effect)
         {
-            Some(name)
+            Some(op)
         } else {
             None
+        }
+    }
+
+    fn infer_resource_binding_type(
+        &self,
+        expr: &ir::Expr,
+        declared_ty: Option<ir::TypeId>,
+        binding_types: &ResourceBindingTypeMap,
+    ) -> Option<String> {
+        if let Some(ty_id) = declared_ty {
+            let ty = self.types.get(&ty_id)?.clone();
+            return Some(self.normalize_type(&ty));
+        }
+        match &expr.kind {
+            ir::ExprKind::Var(name) => binding_types.get(name).cloned(),
+            ir::ExprKind::FieldAccess { base, field } => {
+                let base_ty = self.infer_resource_binding_type(base, None, binding_types)?;
+                let index = field.parse::<usize>().ok()?;
+                let elem_ty = extract_tuple_field_type(&base_ty, index)?;
+                Some(self.normalize_type(&elem_ty))
+            }
+            _ => None,
+        }
+    }
+
+    fn resource_protocol_binding_label(
+        &self,
+        var_name: &str,
+        op: ResourceProtocolOp,
+        binding_types: &ResourceBindingTypeMap,
+    ) -> String {
+        let Some(binding_ty) = binding_types.get(var_name) else {
+            return op.kind.as_str().to_string();
+        };
+        let normalized = self.normalize_type(binding_ty);
+        if base_type_name(&normalized) == op.first_param_base_type {
+            normalized
+        } else {
+            op.kind.as_str().to_string()
         }
     }
 
@@ -6685,154 +6816,203 @@ fn resource_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
             kind: ResourceKind::IntChannel,
             terminal: false,
             api: "send_int",
-            first_param_type: "IntChannel",
+            first_param_base_type: "IntChannel",
             required_effect: "concurrency",
         }),
         "recv_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntChannel,
             terminal: false,
             api: "recv_int",
-            first_param_type: "IntChannel",
+            first_param_base_type: "IntChannel",
             required_effect: "concurrency",
         }),
         "close_channel" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntChannel,
             terminal: true,
             api: "close_channel",
-            first_param_type: "IntChannel",
+            first_param_base_type: "IntChannel",
+            required_effect: "concurrency",
+        }),
+        "send" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Sender,
+            terminal: false,
+            api: "send",
+            first_param_base_type: "Sender",
+            required_effect: "concurrency",
+        }),
+        "try_send" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Sender,
+            terminal: false,
+            api: "try_send",
+            first_param_base_type: "Sender",
+            required_effect: "concurrency",
+        }),
+        "close_sender" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Sender,
+            terminal: true,
+            api: "close_sender",
+            first_param_base_type: "Sender",
+            required_effect: "concurrency",
+        }),
+        "recv" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Receiver,
+            terminal: false,
+            api: "recv",
+            first_param_base_type: "Receiver",
+            required_effect: "concurrency",
+        }),
+        "try_recv" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Receiver,
+            terminal: false,
+            api: "try_recv",
+            first_param_base_type: "Receiver",
+            required_effect: "concurrency",
+        }),
+        "recv_timeout" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Receiver,
+            terminal: false,
+            api: "recv_timeout",
+            first_param_base_type: "Receiver",
+            required_effect: "concurrency",
+        }),
+        "close_receiver" => Some(ResourceProtocolOp {
+            kind: ResourceKind::Receiver,
+            terminal: true,
+            api: "close_receiver",
+            first_param_base_type: "Receiver",
             required_effect: "concurrency",
         }),
         "lock_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: false,
             api: "lock_int",
-            first_param_type: "IntMutex",
+            first_param_base_type: "IntMutex",
             required_effect: "concurrency",
         }),
         "unlock_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: false,
             api: "unlock_int",
-            first_param_type: "IntMutex",
+            first_param_base_type: "IntMutex",
             required_effect: "concurrency",
         }),
         "close_mutex" => Some(ResourceProtocolOp {
             kind: ResourceKind::IntMutex,
             terminal: true,
             api: "close_mutex",
-            first_param_type: "IntMutex",
+            first_param_base_type: "IntMutex",
             required_effect: "concurrency",
         }),
         "join_task" => Some(ResourceProtocolOp {
             kind: ResourceKind::Task,
             terminal: true,
             api: "join_task",
-            first_param_type: "Task",
+            first_param_base_type: "Task",
             required_effect: "concurrency",
         }),
         "cancel_task" => Some(ResourceProtocolOp {
             kind: ResourceKind::Task,
             terminal: true,
             api: "cancel_task",
-            first_param_type: "Task",
+            first_param_base_type: "Task",
             required_effect: "concurrency",
         }),
         "file_read_line" => Some(ResourceProtocolOp {
             kind: ResourceKind::FileHandle,
             terminal: false,
             api: "file_read_line",
-            first_param_type: "FileHandle",
+            first_param_base_type: "FileHandle",
             required_effect: "fs",
         }),
         "file_write_str" => Some(ResourceProtocolOp {
             kind: ResourceKind::FileHandle,
             terminal: false,
             api: "file_write_str",
-            first_param_type: "FileHandle",
+            first_param_base_type: "FileHandle",
             required_effect: "fs",
         }),
         "file_close" => Some(ResourceProtocolOp {
             kind: ResourceKind::FileHandle,
             terminal: true,
             api: "file_close",
-            first_param_type: "FileHandle",
+            first_param_base_type: "FileHandle",
             required_effect: "fs",
         }),
         "tcp_send" => Some(ResourceProtocolOp {
             kind: ResourceKind::TcpHandle,
             terminal: false,
             api: "tcp_send",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "tcp_recv" => Some(ResourceProtocolOp {
             kind: ResourceKind::TcpHandle,
             terminal: false,
             api: "tcp_recv",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "tcp_close" => Some(ResourceProtocolOp {
             kind: ResourceKind::TcpHandle,
             terminal: true,
             api: "tcp_close",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "udp_send_to" => Some(ResourceProtocolOp {
             kind: ResourceKind::UdpHandle,
             terminal: false,
             api: "udp_send_to",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "udp_recv_from" => Some(ResourceProtocolOp {
             kind: ResourceKind::UdpHandle,
             terminal: false,
             api: "udp_recv_from",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "udp_close" => Some(ResourceProtocolOp {
             kind: ResourceKind::UdpHandle,
             terminal: true,
             api: "udp_close",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "net",
         }),
         "async_wait_int" => Some(ResourceProtocolOp {
             kind: ResourceKind::AsyncIntOp,
             terminal: true,
             api: "async_wait_int",
-            first_param_type: "AsyncIntOp",
+            first_param_base_type: "AsyncIntOp",
             required_effect: "net",
         }),
         "async_wait_string" => Some(ResourceProtocolOp {
             kind: ResourceKind::AsyncStringOp,
             terminal: true,
             api: "async_wait_string",
-            first_param_type: "AsyncStringOp",
+            first_param_base_type: "AsyncStringOp",
             required_effect: "net",
         }),
         "is_running" => Some(ResourceProtocolOp {
             kind: ResourceKind::ProcessHandle,
             terminal: false,
             api: "is_running",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "proc",
         }),
         "wait" => Some(ResourceProtocolOp {
             kind: ResourceKind::ProcessHandle,
             terminal: true,
             api: "wait",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "proc",
         }),
         "kill" => Some(ResourceProtocolOp {
             kind: ResourceKind::ProcessHandle,
             terminal: true,
             api: "kill",
-            first_param_type: "Int",
+            first_param_base_type: "Int",
             required_effect: "proc",
         }),
         _ => None,
@@ -6841,6 +7021,15 @@ fn resource_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
 
 fn clear_resource_state_for_var(name: &str, state: &mut ResourceStateMap) {
     state.retain(|(var, _), _| var != name);
+}
+
+fn extract_tuple_field_type(ty: &str, index: usize) -> Option<String> {
+    let trimmed = ty.trim();
+    if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
+        return None;
+    }
+    let inner = &trimmed[1..trimmed.len() - 1];
+    split_top_level(inner).get(index).cloned()
 }
 
 fn contains_unresolved_type(ty: &str) -> bool {
@@ -7244,6 +7433,105 @@ fn main() -> Int effects { concurrency } {
             diag.message.contains("send_int") && diag.message.contains("closed IntChannel"),
             "message={}",
             diag.message
+        );
+    }
+
+    #[test]
+    fn resource_protocol_accepts_valid_generic_channel_sequence() {
+        let src = r#"
+enum ChannelError { Closed }
+enum ConcurrencyError { Closed }
+struct Sender[T] { handle: Int }
+struct Receiver[T] { handle: Int }
+fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } { Ok(true) }
+fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } { Err(Closed()) }
+fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+
+fn main() -> Int effects { concurrency } {
+    let tx: Sender[String] = Sender { handle: 1 };
+    let rx: Receiver[String] = Receiver { handle: 2 };
+    let _sent = send(tx, "hello");
+    let _recv = recv(rx);
+    let _close_tx = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == "E2006"),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn resource_protocol_reports_generic_terminal_reuse_matrix() {
+        let src = r#"
+enum ChannelError { Closed, Timeout }
+enum ConcurrencyError { Closed }
+struct Sender[T] { handle: Int }
+struct Receiver[T] { handle: Int }
+fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } { Ok(true) }
+fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency } { Err(Timeout()) }
+fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } { Ok(true) }
+
+fn main() -> Int effects { concurrency } {
+    let tx: Sender[String] = Sender { handle: 1 };
+    let rx: Receiver[String] = Receiver { handle: 2 };
+    let _close_tx = close_sender(tx);
+    let _send_again = send(tx, "x");
+    let _close_tx_again = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+    let _recv_again = recv_timeout(rx, 10);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={:#?}", d1);
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={:#?}", d2);
+        let out = check(&ir, &res, "test.aic");
+        let e2006 = out
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "E2006")
+            .collect::<Vec<_>>();
+        assert_eq!(e2006.len(), 3, "diagnostics={:#?}", out.diagnostics);
+        assert!(
+            e2006.iter().any(|diag| {
+                diag.message.contains("send")
+                    && diag.message.contains("close_sender")
+                    && diag.message.contains("Sender[String]")
+            }),
+            "diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            e2006.iter().any(|diag| {
+                diag.message.contains("close_sender")
+                    && diag.message.contains("Sender[String]")
+                    && diag.message.contains("terminal 'close_sender'")
+            }),
+            "diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            e2006.iter().any(|diag| {
+                diag.message.contains("recv_timeout")
+                    && diag.message.contains("close_receiver")
+                    && diag.message.contains("Receiver[String]")
+            }),
+            "diagnostics={:#?}",
+            out.diagnostics
         );
     }
 

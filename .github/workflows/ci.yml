@@ -72,6 +72,17 @@ jobs:
       - name: E8 verification gates
         run: make test-e8
 
+      - name: Upload E8 concurrency stress artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e8-concurrency-stress-linux
+          path: |
+            target/e8/concurrency-stress-report.json
+            target/e8/concurrency-stress-schedule.json
+            target/e8/concurrency-stress-replay.txt
+          if-no-files-found: ignore
+
       - name: E9 release and security tests
         run: make test-e9
 

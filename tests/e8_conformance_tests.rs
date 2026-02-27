@@ -60,8 +60,11 @@ fn verification_quality_docs_cover_qv_gates() {
         "QV-T3",
         "QV-T4",
         "QV-T5",
+        "AGX3-T3",
         "examples/verify/qv_contract_proof_fail.aic",
         "examples/verify/qv_contract_proof_fixed.aic",
+        "concurrency-stress-replay.md",
+        "e8_concurrency_stress_tests",
     ] {
         assert!(
             readme.contains(token),
@@ -93,11 +96,18 @@ fn verification_quality_docs_cover_qv_gates() {
     assert!(perf.contains("budget.v1.json"));
     assert!(perf.contains("Regression Triage"));
 
+    let concurrency =
+        fs::read_to_string(root.join("docs/verification-quality/concurrency-stress-replay.md"))
+            .expect("read concurrency stress runbook");
+    assert!(concurrency.contains("AIC_CONC_STRESS_REPLAY"));
+    assert!(concurrency.contains("concurrency-stress-report.json"));
+
     let incident =
         fs::read_to_string(root.join("docs/verification-quality/incident-reproduction.md"))
             .expect("read incident runbook");
     assert!(incident.contains("qv_contract_proof_fail"));
     assert!(incident.contains("make test-e8"));
+    assert!(incident.contains("concurrency-stress-replay.txt"));
 }
 
 #[test]
@@ -108,6 +118,8 @@ fn verification_quality_workflows_are_release_blocking() {
     for token in [
         "E8 verification gates",
         "make test-e8",
+        "Upload E8 concurrency stress artifacts",
+        "e8-concurrency-stress-linux",
         "Upload E8 perf report",
         "e8-perf-report-linux",
     ] {
@@ -175,6 +187,17 @@ fn verification_quality_examples_report_expected_statuses() {
     let protocol_ok = run_aic(&["check", "examples/verify/file_protocol.aic", "--json"]);
     assert_eq!(protocol_ok.status.code(), Some(0));
 
+    let generic_protocol_fail = run_aic(&[
+        "check",
+        "examples/verify/generic_channel_protocol_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(generic_protocol_fail.status.code(), Some(1));
+    assert!(
+        has_code(&generic_protocol_fail.stdout, "E2006"),
+        "expected E2006 from generic channel protocol invalid example"
+    );
+
     let fs_protocol_fail = run_aic(&["check", "examples/verify/fs_protocol_invalid.aic", "--json"]);
     assert_eq!(fs_protocol_fail.status.code(), Some(1));
     assert!(
@@ -220,4 +243,11 @@ fn verification_quality_examples_report_expected_statuses() {
         "--json",
     ]);
     assert_eq!(capability_ok.status.code(), Some(0));
+
+    let generic_protocol_ok = run_aic(&[
+        "check",
+        "examples/verify/generic_channel_protocol_ok.aic",
+        "--json",
+    ]);
+    assert_eq!(generic_protocol_ok.status.code(), Some(0));
 }

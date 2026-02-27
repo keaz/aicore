@@ -1,0 +1,15 @@
+module verify.generic_channel_protocol_invalid;
+
+import std.concurrent;
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let tx: Sender[String] = Sender { handle: 1 };
+    let rx: Receiver[String] = Receiver { handle: 2 };
+
+    let _close_tx = close_sender(tx);
+    let _send_again = send(tx, "after-close");
+
+    let _close_rx = close_receiver(rx);
+    let _recv_again = recv_timeout(rx, 10);
+    0
+}

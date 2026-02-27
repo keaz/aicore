@@ -87,6 +87,8 @@ fn main() -> Int effects { io, net } {
 - Concurrency worker pool: `examples/io/worker_pool.aic`
 - Legacy-to-generic channel migration compatibility: `examples/io/channel_migration_compat.aic`
 - Generic channel payloads (`String`/`Vec[Int]`/struct): `examples/io/generic_channel_types.aic`
+- Generic channel protocol-valid lifecycle: `examples/verify/generic_channel_protocol_ok.aic`
+- Generic channel protocol-invalid lifecycle: `examples/verify/generic_channel_protocol_invalid.aic` (expected check failure, `E2006`)
 - Structured task group/select/timeout: `examples/io/structured_concurrency.aic`
 - Negative effect-enforcement example: `examples/io/effect_misuse_fs.aic` (expected check failure)
 

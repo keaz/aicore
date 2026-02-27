@@ -103,5 +103,6 @@ fn wait_retry(base: Int, attempt: Int) -> () effects { time, rand } {
 
 - `examples/io/effect_misuse_fs.aic` intentionally triggers `E2001` to validate effect enforcement.
 - `examples/verify/file_protocol_invalid.aic` intentionally triggers `E2006` to validate protocol enforcement.
+- `examples/verify/generic_channel_protocol_invalid.aic` intentionally triggers `E2006` for generic sender/receiver terminal-reuse diagnostics.
 - `examples/verify/capability_missing_invalid.aic` intentionally triggers `E2009` to validate capability enforcement.
 - `examples/e5/panic_line_map.aic` validates runtime panic surfacing and panic-location diagnostics.

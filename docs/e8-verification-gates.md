@@ -114,6 +114,34 @@ aic bench --budget benchmarks/service_baseline/budget.v1.json --compare benchmar
 cargo test --locked --test e8_perf_tests
 ```
 
+## AGX3-T3: Deterministic concurrency stress/replay gate
+
+- Stress plan (machine-readable): `examples/e8/concurrency-stress-plan.json`
+- Gate test: `tests/e8_concurrency_stress_tests.rs`
+- CI artifact upload: `.github/workflows/ci.yml` (`Upload E8 concurrency stress artifacts`)
+- Artifacts:
+  - `target/e8/concurrency-stress-report.json`
+  - `target/e8/concurrency-stress-schedule.json`
+  - `target/e8/concurrency-stress-replay.txt`
+
+Coverage focus:
+
+- channels/generic channel lifecycle: `examples/io/generic_channel_types.aic`
+- mutex + task coordination: `examples/io/worker_pool.aic`
+- task race/select semantics: `examples/io/structured_concurrency.aic`
+
+Runtime budget and flaky policy:
+
+- runtime budget is enforced by `max_runtime_seconds` in the stress plan.
+- CI policy is no retries; failures must be replayed with a single deterministic token.
+
+Replay example:
+
+```bash
+cat target/e8/concurrency-stress-replay.txt
+AIC_CONC_STRESS_REPLAY='<seed>:<round>:<case_id>' cargo test --locked --test e8_concurrency_stress_tests -- --exact concurrency_stress_suite_is_replayable_and_within_budget --nocapture --test-threads=1
+```
+
 ## Unified command
 
 Run all E8 gates with:

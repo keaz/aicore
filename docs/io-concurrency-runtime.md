@@ -221,3 +221,5 @@ Codegen lowers to these runtime symbols:
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`
 - `examples/io/async_await_submit_bridge.aic`
+- `examples/verify/generic_channel_protocol_ok.aic` (`aic check`)
+- `examples/verify/generic_channel_protocol_invalid.aic` (`aic check`, expected `E2006`)

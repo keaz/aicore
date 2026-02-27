@@ -695,6 +695,23 @@ Diagnostics:
   - `make test-e8` in Linux full validation job.
   - per-target perf gate run in `execution-matrix` job (Linux + macOS) with perf artifacts uploaded.
 
+### Deterministic concurrency stress/replay (AGX3-T3)
+
+- Plan:
+  - `examples/e8/concurrency-stress-plan.json`
+- Gate:
+  - `tests/e8_concurrency_stress_tests.rs`
+- Coverage:
+  - `examples/io/worker_pool.aic`
+  - `examples/io/structured_concurrency.aic`
+  - `examples/io/generic_channel_types.aic`
+- Artifacts:
+  - `target/e8/concurrency-stress-report.json`
+  - `target/e8/concurrency-stress-schedule.json`
+  - `target/e8/concurrency-stress-replay.txt`
+- Replay control:
+  - `AIC_CONC_STRESS_REPLAY=<seed>:<round>:<case_id>`
+
 ### Verification-quality runbooks (QV-T6)
 
 Agent-grade docs for all QV gates:
@@ -704,6 +721,7 @@ Agent-grade docs for all QV gates:
 - `docs/verification-quality/effect-protocols.md`
 - `docs/capability-protocols.md`
 - `docs/verification-quality/fuzz-differential-runbook.md`
+- `docs/verification-quality/concurrency-stress-replay.md`
 - `docs/verification-quality/perf-sla-playbook.md`
 - `docs/verification-quality/incident-reproduction.md`
 

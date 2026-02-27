@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -21,6 +21,7 @@ help:
 	@echo "  make test-exec     Run LLVM execution tests"
 	@echo "  make test-e7       Run E7 CLI + LSP integration tests"
 	@echo "  make test-e8       Run E8 verification/fuzz/diff/matrix/perf tests"
+	@echo "  make test-e8-concurrency-stress Run deterministic concurrency stress/replay gate"
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make test-e9       Run E9 release/security operations tests"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
@@ -88,7 +89,11 @@ test-e8:
 	$(CARGO) test --locked --test e8_fuzz_tests
 	$(CARGO) test --locked --test e8_differential_tests
 	$(CARGO) test --locked --test e8_matrix_tests
+	$(CARGO) test --locked --test e8_concurrency_stress_tests
 	$(CARGO) test --locked --test e8_perf_tests
+
+test-e8-concurrency-stress:
+	$(CARGO) test --locked --test e8_concurrency_stress_tests
 
 test-e8-nightly-fuzz:
 	$(CARGO) test --locked --test e8_fuzz_tests -- --ignored
@@ -172,6 +177,7 @@ docs-check:
 	@test -f docs/verification-quality/contracts-proof-obligations.md
 	@test -f docs/verification-quality/effect-protocols.md
 	@test -f docs/verification-quality/fuzz-differential-runbook.md
+	@test -f docs/verification-quality/concurrency-stress-replay.md
 	@test -f docs/verification-quality/perf-sla-playbook.md
 	@test -f docs/verification-quality/incident-reproduction.md
 	@test -f docs/release-security-ops.md

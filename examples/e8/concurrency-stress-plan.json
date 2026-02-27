@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "description": "Deterministic concurrency stress plan for channels, tasks, mutexes, and select semantics.",
+  "seeds": [
+    2717908993,
+    2717908999,
+    2717909011
+  ],
+  "rounds_per_seed": 2,
+  "max_runtime_seconds": 120,
+  "cases": [
+    {
+      "id": "worker_pool",
+      "path": "examples/io/worker_pool.aic",
+      "expected_stdout": "42"
+    },
+    {
+      "id": "structured_concurrency",
+      "path": "examples/io/structured_concurrency.aic",
+      "expected_stdout": "42"
+    },
+    {
+      "id": "generic_channel_types",
+      "path": "examples/io/generic_channel_types.aic",
+      "expected_stdout": "42"
+    }
+  ]
+}
