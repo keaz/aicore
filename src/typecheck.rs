@@ -4231,6 +4231,24 @@ impl<'a> Checker<'a> {
                             return candidate.enum_name.clone();
                         }
 
+                        if let Some(expected) = expected_ty {
+                            let expected_norm = self.normalize_type(expected);
+                            if base_type_name(&expected_norm) == candidate.enum_name {
+                                let enum_template = format!(
+                                    "{}[{}]",
+                                    candidate.enum_name,
+                                    candidate.generic_params.join(", ")
+                                );
+                                let template_norm = self.normalize_type(&enum_template);
+                                infer_generic_bindings(
+                                    &template_norm,
+                                    &expected_norm,
+                                    &generic_set,
+                                    &mut generic_bindings,
+                                );
+                            }
+                        }
+
                         let applied = candidate
                             .generic_params
                             .iter()
@@ -4410,10 +4428,11 @@ impl<'a> Checker<'a> {
                         cond.span,
                     ));
                 }
+                let branch_expected = expected_ty.unwrap_or("()");
                 let then_ty = self.check_block(
                     then_block,
                     locals,
-                    "()",
+                    branch_expected,
                     allowed_effects,
                     ctx,
                     contract_mode,
@@ -4421,7 +4440,7 @@ impl<'a> Checker<'a> {
                 let else_ty = self.check_block(
                     else_block,
                     locals,
-                    "()",
+                    branch_expected,
                     allowed_effects,
                     ctx,
                     contract_mode,
@@ -4589,12 +4608,13 @@ impl<'a> Checker<'a> {
                             &mut wildcard_seen,
                         );
                     }
-                    let body_ty = self.check_expr(
+                    let body_ty = self.check_expr_with_expected(
                         &arm.body,
                         &mut arm_scope,
                         allowed_effects,
                         ctx,
                         contract_mode,
+                        expected_ty,
                     );
                     arm_types.push(body_ty);
                 }
@@ -7795,6 +7815,119 @@ fn f(flag: Bool) -> Int {
         assert!(d2.is_empty());
         let out = check(&ir, &res, "test.aic");
         assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn infers_multi_generic_enum_variant_from_expected_type() {
+        let src = r#"
+enum SelectResult[A, B] {
+    First(A),
+    Second(B),
+    Timeout,
+}
+
+fn pick_first[A, B](value: A) -> SelectResult[A, B] {
+    First(value)
+}
+
+fn pick_second[A, B](value: B) -> SelectResult[A, B] {
+    Second(value)
+}
+
+fn pick_timeout[A, B]() -> SelectResult[A, B] {
+    Timeout()
+}
+
+fn main() -> Int {
+    let first: SelectResult[Int, String] = pick_first(7);
+    let second: SelectResult[Int, String] = pick_second("quit");
+    let timeout: SelectResult[Int, String] = pick_timeout();
+    let first_ok = match first {
+        First(v) => if v == 7 { 1 } else { 0 },
+        Second(_) => 0,
+        Timeout => 0,
+    };
+    let second_ok = match second {
+        First(_) => 0,
+        Second(v) => if v == "quit" { 1 } else { 0 },
+        Timeout => 0,
+    };
+    let timeout_ok = match timeout {
+        Timeout => 1,
+        _ => 0,
+    };
+    if first_ok + second_ok + timeout_ok == 3 { 1 } else { 0 }
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|diag| diag.code == "E1212"),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            !out.diagnostics.iter().any(|diag| diag.code == "E2104"),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn propagates_expected_type_into_if_and_match_branches() {
+        let src = r#"
+enum SelectResult[A, B] {
+    First(A),
+    Second(B),
+    Timeout,
+}
+
+fn from_if[A, B](ok: Bool, a: A, b: B) -> SelectResult[A, B] {
+    if ok { First(a) } else { Second(b) }
+}
+
+fn from_match[A, B](code: Int, a: A, b: B) -> SelectResult[A, B] {
+    match code {
+        0 => First(a),
+        1 => Second(b),
+        _ => Timeout(),
+    }
+}
+
+fn main() -> Int {
+    let a = from_if(true, 7, "quit");
+    let b = from_match(2, 7, "quit");
+    let a_ok = match a {
+        First(v) => if v == 7 { 1 } else { 0 },
+        _ => 0,
+    };
+    let b_ok = match b {
+        Timeout => 1,
+        _ => 0,
+    };
+    if a_ok + b_ok == 2 { 1 } else { 0 }
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics.iter().any(|diag| diag.code == "E1212"),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            !out.diagnostics.iter().any(|diag| diag.code == "E2104"),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
     }
 
     #[test]

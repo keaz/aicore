@@ -1,5 +1,6 @@
 import std.concurrent;
 import std.io;
+import std.vec;
 
 fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
     match v {

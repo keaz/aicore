@@ -4095,7 +4095,7 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let t1 = unwrap_task(spawn_task(10, 20));
     let t2 = unwrap_task(spawn_task(11, 5));
     let ch = unwrap_channel(channel_int(4));
@@ -4275,7 +4275,7 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let to_cancel = unwrap_task(spawn_task(9, 80));
     let cancelled = match cancel_task(to_cancel) {
         Ok(v) => bool_to_int(v),
@@ -4361,7 +4361,7 @@ fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
     }
 }
 
-fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let ch1 = unwrap_channel(buffered_channel_int(1));
     let ch2 = unwrap_channel(channel_int_buffered(1));
 
@@ -4414,6 +4414,122 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
 
     if sent + backpressure + try_full + first_recv + empty_recv + sent_second +
         selected + close1 + close2 + closed_recv == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_select2_and_select_any_cover_fan_in_and_timeout_paths() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.vec;
+
+fn channel_err_code(err: ChannelError) -> Int {
+    match err {
+        Closed => 1,
+        Full => 2,
+        Empty => 3,
+        Timeout => 4,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let pair_data: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let tx_data = pair_data.0;
+    let rx_data = pair_data.1;
+    let pair_quit: (Sender[Bool], Receiver[Bool]) = buffered_channel(1);
+    let tx_quit = pair_quit.0;
+    let rx_quit = pair_quit.1;
+
+    let first_ok = match send(tx_data, 7) {
+        Ok(_) => match select2(rx_data, rx_quit, 100) {
+            First(value) => if value == 7 { 1 } else { 0 },
+            Second(_) => 0,
+            Timeout => 0,
+            Closed => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let second_ok = match send(tx_quit, true) {
+        Ok(_) => match select2(rx_data, rx_quit, 100) {
+            First(_) => 0,
+            Second(value) => if value { 1 } else { 0 },
+            Timeout => 0,
+            Closed => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let timeout_ok = match select2(rx_data, rx_quit, 0) {
+        Timeout => 1,
+        _ => 0,
+    };
+
+    let pair0: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let pair1: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let pair2: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let tx0 = pair0.0;
+    let rx0 = pair0.1;
+    let tx1 = pair1.0;
+    let rx1 = pair1.1;
+    let tx2 = pair2.0;
+    let rx2 = pair2.1;
+
+    let _send0 = send(tx0, 11);
+    let _send1 = send(tx1, 22);
+    let _send2 = send(tx2, 33);
+
+    let mut receivers: Vec[Receiver[Int]] = vec.new_vec();
+    receivers = vec.push(receivers, rx0);
+    receivers = vec.push(receivers, rx1);
+    receivers = vec.push(receivers, rx2);
+
+    let pick1 = match select_any(receivers, 20) {
+        Ok(found) => if found.0 == 0 && found.1 == 11 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let pick2 = match select_any(receivers, 20) {
+        Ok(found) => if found.0 == 1 && found.1 == 22 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let pick3 = match select_any(receivers, 20) {
+        Ok(found) => if found.0 == 2 && found.1 == 33 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let timeout_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let timeout_rx = timeout_pair.1;
+    let timeout_any = match select_any(vec.vec_of(timeout_rx), 0) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 4 { 1 } else { 0 },
+    };
+
+    let closed_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let closed_tx = closed_pair.0;
+    let closed_rx = closed_pair.1;
+    let _close_closed_tx = close_sender(closed_tx);
+    let closed_any = match select_any(vec.vec_of(closed_rx), 0) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 1 { 1 } else { 0 },
+    };
+
+    let _close_data_tx = close_sender(tx_data);
+    let _close_data_rx = close_receiver(rx_data);
+    let _close_quit_tx = close_sender(tx_quit);
+    let _close_quit_rx = close_receiver(rx_quit);
+
+    if first_ok + second_ok + timeout_ok + pick1 + pick2 + pick3 + timeout_any + closed_any == 8 {
         print_int(42);
     } else {
         print_int(0);

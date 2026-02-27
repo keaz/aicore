@@ -1,0 +1,77 @@
+import std.concurrent;
+import std.io;
+import std.vec;
+
+fn channel_err_code(err: ChannelError) -> Int {
+    match err {
+        Closed => 1,
+        Full => 2,
+        Empty => 3,
+        Timeout => 4,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let pair_data: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let tx_data = pair_data.0;
+    let rx_data = pair_data.1;
+    let pair_quit: (Sender[Bool], Receiver[Bool]) = buffered_channel(1);
+    let tx_quit = pair_quit.0;
+    let rx_quit = pair_quit.1;
+
+    let _send_data = send(tx_data, 7);
+    let data_selected = match select2(rx_data, rx_quit, 100) {
+        First(value) => if value == 7 { 1 } else { 0 },
+        Second(_) => 0,
+        Timeout => 0,
+        Closed => 0,
+    };
+
+    let _send_quit = send(tx_quit, true);
+    let quit_selected = match select2(rx_data, rx_quit, 100) {
+        First(_) => 0,
+        Second(message) => if message { 1 } else { 0 },
+        Timeout => 0,
+        Closed => 0,
+    };
+
+    let c0: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let c1: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let c2: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let _s0 = send(c0.0, 11);
+    let _s1 = send(c1.0, 22);
+    let _s2 = send(c2.0, 33);
+
+    let mut receivers: Vec[Receiver[Int]] = vec.new_vec();
+    receivers = vec.push(receivers, c0.1);
+    receivers = vec.push(receivers, c1.1);
+    receivers = vec.push(receivers, c2.1);
+
+    let mut sum = 0;
+    let mut reads = 0;
+    while reads < 3 {
+        let picked = match select_any(receivers, 100) {
+            Ok(found) => found.1,
+            Err(_) => 0,
+        };
+        if picked == 0 {
+            reads = 3;
+        } else {
+            sum = sum + picked;
+            reads = reads + 1;
+        };
+    };
+
+    let timeout_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let timeout_ok = match select_any(vec.vec_of(timeout_pair.1), 0) {
+        Ok(_) => 0,
+        Err(err) => if channel_err_code(err) == 4 { 1 } else { 0 },
+    };
+
+    if data_selected + quit_selected + timeout_ok == 3 && sum == 66 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

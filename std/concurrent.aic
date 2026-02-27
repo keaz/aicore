@@ -52,6 +52,13 @@ struct IntTaskSelection {
     value: Int,
 }
 
+enum SelectResult[A, B] {
+    First(A),
+    Second(B),
+    Timeout,
+    Closed,
+}
+
 intrinsic fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_join_timeout_intrinsic(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
@@ -116,6 +123,24 @@ fn json_encode_payload[T](value: T) -> Result[String, ChannelError] {
     match encoded_result {
         Ok(encoded) => json_stringify_payload(encoded),
         Err(_) => Err(channel_closed()),
+    }
+}
+
+fn none_from_receiver[T](hint: Receiver[T]) -> Option[T] {
+    let _hint = hint;
+    None()
+}
+
+fn decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
+    match take_payload_string(payload_id) {
+        Ok(payload) => match aic_json_parse_intrinsic(payload) {
+            Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, none_from_receiver(hint)) {
+                Ok(value) => Ok(value),
+                Err(_) => Err(channel_closed()),
+            },
+            Err(_) => Err(channel_closed()),
+        },
+        Err(err) => Err(err),
     }
 }
 
@@ -291,6 +316,115 @@ fn try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurren
 
 fn select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency } {
     aic_conc_select_recv_int_intrinsic(ch1, ch2, timeout_ms)
+}
+
+fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency } {
+    match select_recv_int(
+        IntChannel { handle: rx1.handle },
+        IntChannel { handle: rx2.handle },
+        timeout_ms,
+    ) {
+        Ok(selection) => if selection.channel_index == 0 {
+            match decode_payload_for_receiver(selection.value, rx1) {
+                Ok(value) => First(value),
+                Err(_) => Closed(),
+            }
+        } else {
+            match decode_payload_for_receiver(selection.value, rx2) {
+                Ok(value) => Second(value),
+                Err(_) => Closed(),
+            }
+        },
+        Err(err) => match err {
+            Timeout => Timeout(),
+            Closed => Closed(),
+            _ => Closed(),
+        },
+    }
+}
+
+fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env } {
+    if timeout_ms < 0 {
+        Err(channel_timeout())
+    } else {
+            let count = receivers.len;
+        if count <= 0 {
+            Err(channel_closed())
+        } else {
+            let mut remaining = timeout_ms;
+            let mut turn = 0;
+            let mut done = false;
+            let mut found_index = 0;
+            let mut found_value: Option[T] = None();
+            let mut final_error = channel_timeout();
+            while !done {
+                let mut i = 0;
+                let mut saw_open = false;
+                while i < count && !done {
+                    let index = (turn + i) % count;
+                    let rx = match aic_vec_get_intrinsic(receivers, index) {
+                        Some(value) => value,
+                        None => Receiver { handle: 0 },
+                    };
+                    let outcome = match try_recv(rx) {
+                        Ok(value) => (true, index, Some(value), saw_open, final_error),
+                        Err(err) => match err {
+                            Empty => (false, found_index, found_value, true, final_error),
+                            Closed => (false, found_index, found_value, saw_open, final_error),
+                            Timeout => (false, found_index, found_value, true, final_error),
+                            Full => (false, found_index, found_value, true, final_error),
+                        },
+                    };
+                    done = if outcome.0 { true } else { done };
+                    found_index = if outcome.0 { outcome.1 } else { found_index };
+                    found_value = outcome.2;
+                    saw_open = outcome.3;
+                    final_error = outcome.4;
+                    i = i + 1;
+                };
+
+                if done {
+                    ()
+                } else {
+                    if saw_open {
+                        if remaining == 0 {
+                            final_error = channel_timeout();
+                            done = true;
+                        } else {
+                            let wait_index = turn % count;
+                            let wait_rx = match aic_vec_get_intrinsic(receivers, wait_index) {
+                                Some(value) => value,
+                                None => Receiver { handle: 0 },
+                            };
+                            let wait_outcome = match recv_timeout(wait_rx, 1) {
+                                Ok(value) => (true, wait_index, Some(value), final_error),
+                                Err(err) => match err {
+                                    Closed => (false, found_index, found_value, final_error),
+                                    Empty => (false, found_index, found_value, final_error),
+                                    Full => (false, found_index, found_value, final_error),
+                                    Timeout => (false, found_index, found_value, final_error),
+                                },
+                            };
+                            done = if wait_outcome.0 { true } else { done };
+                            found_index = if wait_outcome.0 { wait_outcome.1 } else { found_index };
+                            found_value = wait_outcome.2;
+                            final_error = wait_outcome.3;
+                            remaining = remaining - 1;
+                            turn = (turn + 1) % count;
+                        }
+                    } else {
+                        final_error = channel_closed();
+                        done = true;
+                    }
+                };
+            };
+
+            match found_value {
+                Some(value) => Ok((found_index, value)),
+                None => Err(final_error),
+            }
+        }
+    }
 }
 
 fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {

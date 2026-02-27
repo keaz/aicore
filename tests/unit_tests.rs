@@ -3533,6 +3533,15 @@ fn unit_std_config_env_prefix_and_missing_key_paths_present() {
 fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
 
+    assert!(source.contains("enum SelectResult[A, B] {"));
+    assert!(source.contains("First(A),"));
+    assert!(source.contains("Second(B),"));
+    assert!(source.contains("Timeout,"));
+    assert!(source.contains("Closed,"));
+    assert!(source.contains("fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B]"));
+    assert!(source.contains("fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }"));
+    assert!(source.contains("turn = (turn + 1) % count"));
+
     assert_delegate_call(
         &source,
         "std/concurrent.aic",

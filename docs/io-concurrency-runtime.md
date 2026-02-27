@@ -11,6 +11,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Task lifecycle: `spawn_task`, `join_task`, `cancel_task`
 - Structured task orchestration: `spawn_group`, `timeout_task`, `select_first`
 - Generic channels: `Sender[T]` / `Receiver[T]` with buffered creation, blocking/non-blocking send/recv
+- Typed channel selection: `select2` and `select_any`
 - Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
 - Synchronization utility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 
@@ -43,6 +44,7 @@ enum ChannelError {
 struct Task { handle: Int }
 struct Sender[T] { handle: Int }
 struct Receiver[T] { handle: Int }
+enum SelectResult[A, B] { First(A), Second(B), Timeout, Closed }
 struct IntTaskSelection { task_index: Int, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
@@ -66,6 +68,8 @@ fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
 fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }
+fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency }
+fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }
 fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 
@@ -99,6 +103,7 @@ Legacy-to-preferred mapping:
 - `recv_int(ch, timeout)` -> `recv_timeout(Receiver { handle: ch.handle }, timeout)` (or migrate consumer to typed receiver)
 - `try_send_int(ch, value)` -> `try_send(Sender { handle: ch.handle }, value)`
 - `try_recv_int(ch)` -> `try_recv(Receiver { handle: ch.handle })`
+- `select_recv_int(ch1, ch2, timeout)` -> `select2(Receiver { handle: ch1.handle }, Receiver { handle: ch2.handle }, timeout)`
 
 Planned legacy-to-generic transitions (sequenced with MT-T2/MT-T4):
 
@@ -146,6 +151,14 @@ Sunset policy:
   - `select_recv_int(ch1, ch2, timeout_ms)` waits for the first available receive across two channels.
   - Return payload includes selected channel index (`0` or `1`) and received value.
   - Selection alternates polling order between channels to reduce starvation.
+- Typed select helpers:
+  - `select2(rx1, rx2, timeout_ms)` returns `SelectResult[A, B]`:
+    - `First(a)`: first receiver won.
+    - `Second(b)`: second receiver won.
+    - `Timeout`: timeout.
+    - `Closed`: channel closed/invalid payload path.
+  - `select_any(receivers, timeout_ms)` supports fan-in for `N` same-typed receivers and returns `(receiver_index, value)` (`effects { concurrency, env }`).
+  - `select_any` probes receivers in rotating order and uses bounded 1ms waits to avoid fixed-index starvation.
 - Cancellation:
   - `cancel_task` is cooperative and returns `Ok(true)` when cancellation was requested before completion.
   - `join_task` on a cancelled task returns `Err(Cancelled)`.
@@ -220,6 +233,7 @@ Codegen lowers to these runtime symbols:
 - `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`
+- `examples/io/select_multi_channel.aic`
 - `examples/io/async_await_submit_bridge.aic`
 - `examples/verify/generic_channel_protocol_ok.aic` (`aic check`)
 - `examples/verify/generic_channel_protocol_invalid.aic` (`aic check`, expected `E2006`)
