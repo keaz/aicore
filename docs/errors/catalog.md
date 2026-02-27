@@ -13,6 +13,18 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 - `error_chain(...)` returns the flattened chain string.
 - `io_error(...)` / `error_value(...)` recover the mapped typed error without changing existing `Result[..., IoError]` APIs.
 
+## Secure networking error contract (module-level)
+
+`aic explain` covers compiler/runtime diagnostics (`E...`). Module-level secure-networking failures are standardized separately:
+
+- Contract file: `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`
+- AIC mapping APIs: `std.secure_errors` (`buffer_error_info`, `crypto_error_info`, `tls_error_info`, `pool_error_info`)
+- Compatibility rules:
+  - existing `code` values are immutable
+  - existing `category` and `retryable` flags are immutable
+  - new codes are additive-only
+  - agent tooling should branch on `code` first, then `category` / `retryable`
+
 | Code | Description | Trigger example | Fix example |
 |---|---|---|---|
 | `E0001` | Invalid character in source token stream. | `fn main() -> Int { @ }` | `fn main() -> Int { 0 }` |

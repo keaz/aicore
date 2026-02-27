@@ -7876,6 +7876,60 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
 }
 
 #[test]
+fn exec_secure_error_contract_maps_cross_module_negative_paths() {
+    let src = r#"
+import std.io;
+import std.buffer;
+import std.bytes;
+import std.crypto;
+import std.tls;
+import std.secure_errors;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let b = new_buffer(1);
+    let buffer_info = match buf_read_u8(b) {
+        Ok(_) => secure_error_info("none", "NONE", "none", false),
+        Err(err) => buffer_error_info(err),
+    };
+
+    let crypto_info = match base64_decode("%%%=") {
+        Ok(_) => secure_error_info("none", "NONE", "none", false),
+        Err(err) => crypto_error_info(err),
+    };
+
+    let bad = TlsStream { handle: 9999 };
+    let tls_info = match tls_send_bytes(bad, bytes.from_string("x")) {
+        Ok(_) => secure_error_info("none", "NONE", "none", false),
+        Err(err) => tls_error_info(err),
+    };
+
+    let pool_err: PoolErrorContract = Timeout();
+    let pool_info = pool_error_info(pool_err);
+
+    let score = bool_to_int(string.contains(buffer_info.code, "BUF_"))
+        + bool_to_int(string.contains(crypto_info.code, "CRYPTO_"))
+        + bool_to_int(string.contains(tls_info.code, "TLS_"))
+        + bool_to_int(pool_info.retryable);
+    if score == 4 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_tls_httpbin_https_handshake_or_deterministic_fallback() {
     let src = r#"
 import std.io;

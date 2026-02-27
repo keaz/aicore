@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "contract": "secure-networking-error-contract",
+  "deterministic": true,
+  "modules": {
+    "buffer": {
+      "BUF_UNDERFLOW": { "category": "protocol", "retryable": false },
+      "BUF_OVERFLOW": { "category": "capacity", "retryable": false },
+      "BUF_INVALID_UTF8": { "category": "data", "retryable": false },
+      "BUF_INVALID_INPUT": { "category": "input", "retryable": false }
+    },
+    "crypto": {
+      "CRYPTO_INVALID_INPUT": { "category": "input", "retryable": false },
+      "CRYPTO_UNSUPPORTED_ALGORITHM": { "category": "unsupported", "retryable": false },
+      "CRYPTO_INTERNAL": { "category": "internal", "retryable": true }
+    },
+    "tls": {
+      "TLS_HANDSHAKE_FAILED": { "category": "security", "retryable": true },
+      "TLS_CERT_INVALID": { "category": "security", "retryable": false },
+      "TLS_CERT_EXPIRED": { "category": "security", "retryable": false },
+      "TLS_HOSTNAME_MISMATCH": { "category": "security", "retryable": false },
+      "TLS_PROTOCOL_ERROR": { "category": "protocol", "retryable": false },
+      "TLS_CONNECTION_CLOSED": { "category": "transport", "retryable": true },
+      "TLS_IO": { "category": "transport", "retryable": true }
+    },
+    "pool": {
+      "POOL_MAX_SIZE_REACHED": { "category": "capacity", "retryable": true },
+      "POOL_TIMEOUT": { "category": "timeout", "retryable": true },
+      "POOL_CONNECTION_FAILED": { "category": "transport", "retryable": true },
+      "POOL_CLOSED": { "category": "lifecycle", "retryable": false },
+      "POOL_HEALTH_CHECK_FAILED": { "category": "health", "retryable": true }
+    }
+  },
+  "compatibility": {
+    "stability": "additive-only",
+    "constraints": [
+      "existing codes are immutable",
+      "category and retryable flags for existing codes are immutable",
+      "new codes must be additive"
+    ]
+  }
+}

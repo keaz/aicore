@@ -193,6 +193,7 @@ docs-check:
 	@test -f docs/security-ops/incident-response.md
 	@test -f docs/security-threat-model.md
 	@test -f docs/compatibility-migration-policy.md
+	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
@@ -201,6 +202,7 @@ docs-check:
 	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
+	@python3 -m json.tool docs/errors/secure-networking-error-contract.v1.json >/dev/null
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md

@@ -11,6 +11,7 @@ Before changing IO code:
 2. Confirm effect requirements for all edited functions.
 3. Confirm platform caveats for `std.proc`, `std.net`, and `std.tls`.
 4. Confirm TLS policy contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/tls-policy.v1.json`.
+5. Confirm unified secure error contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`.
 
 ## 2. Effect-First Authoring
 
@@ -38,6 +39,7 @@ Treat error enums as control-flow boundaries, not exceptions.
 - For filesystem: do not retry `InvalidInput`; retries are only for explicit transient policy.
 - For process/network: evaluate `status` and typed errors independently.
 - For time parsing: branch by `TimeError` to separate format defects from data defects.
+- For secure networking (`std.buffer`, `std.crypto`, `std.tls`, pooled flows): normalize to `std.secure_errors` and branch on stable `code/category/retryable` fields.
 
 ## 4. Platform Matrix (Current Runtime)
 
@@ -83,6 +85,7 @@ cargo run --quiet --bin aic -- check examples/io/env_config.aic
 cargo run --quiet --bin aic -- check examples/io/subprocess_pipeline.aic
 cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 cargo run --quiet --bin aic -- check examples/io/tls_policy_defaults.aic
+cargo run --quiet --bin aic -- check examples/io/secure_error_contract.aic
 ```
 
 ## 7. Upgrade Hygiene

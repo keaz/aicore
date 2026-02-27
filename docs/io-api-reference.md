@@ -440,6 +440,36 @@ Notes:
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
 - On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.
 
+## `std.secure_errors`
+
+```aic
+struct SecureErrorInfo {
+    module_name: String,
+    code: String,
+    category: String,
+    retryable: Bool,
+}
+
+enum PoolErrorContract {
+    MaxSizeReached,
+    Timeout,
+    ConnectionFailed,
+    Closed,
+    HealthCheckFailed,
+}
+
+fn buffer_error_info(err: BufferError) -> SecureErrorInfo
+fn crypto_error_info(err: CryptoError) -> SecureErrorInfo
+fn tls_error_info(err: TlsError) -> SecureErrorInfo
+fn pool_error_info(err: PoolErrorContract) -> SecureErrorInfo
+```
+
+Notes:
+
+- Canonical machine-readable contract: `docs/errors/secure-networking-error-contract.v1.json`.
+- Existing error `code` values, `category`, and `retryable` flags are compatibility-stable.
+- Contract is additive-only for future changes.
+
 ## `std.time`
 
 ```aic

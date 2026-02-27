@@ -2616,6 +2616,51 @@ fn unit_tls_policy_manifest_matches_runtime_defaults() {
 }
 
 #[test]
+fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
+    let source = fs::read_to_string("std/secure_errors.aic").expect("read std/secure_errors.aic");
+    assert!(
+        source.contains("struct SecureErrorInfo"),
+        "std/secure_errors.aic must expose unified secure error info struct"
+    );
+    assert!(
+        source.contains("fn buffer_error_info(err: BufferError) -> SecureErrorInfo"),
+        "std/secure_errors.aic must map buffer errors"
+    );
+    assert!(
+        source.contains("fn crypto_error_info(err: CryptoError) -> SecureErrorInfo"),
+        "std/secure_errors.aic must map crypto errors"
+    );
+    assert!(
+        source.contains("fn tls_error_info(err: TlsError) -> SecureErrorInfo"),
+        "std/secure_errors.aic must map tls errors"
+    );
+    assert!(
+        source.contains("fn pool_error_info(err: PoolErrorContract) -> SecureErrorInfo"),
+        "std/secure_errors.aic must map pool contract errors"
+    );
+
+    let manifest_text = fs::read_to_string("docs/errors/secure-networking-error-contract.v1.json")
+        .expect("read docs/errors/secure-networking-error-contract.v1.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_text).expect("parse secure networking error contract json");
+    assert_eq!(
+        manifest.get("schema_version").and_then(|v| v.as_i64()),
+        Some(1),
+        "secure networking error contract schema_version must be pinned to 1"
+    );
+    assert_eq!(
+        manifest
+            .get("modules")
+            .and_then(|v| v.get("tls"))
+            .and_then(|v| v.get("TLS_PROTOCOL_ERROR"))
+            .and_then(|v| v.get("category"))
+            .and_then(|v| v.as_str()),
+        Some("protocol"),
+        "TLS_PROTOCOL_ERROR category must stay protocol"
+    );
+}
+
+#[test]
 fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     let string_source = fs::read_to_string("std/string.aic").expect("read std/string.aic");
 

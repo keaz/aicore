@@ -1401,5 +1401,10 @@ fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { conc
 "#,
     )?;
 
+    fs::write(
+        path.join("std/secure_errors.aic"),
+        include_str!("../std/secure_errors.aic"),
+    )?;
+
     Ok(())
 }

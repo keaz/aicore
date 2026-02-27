@@ -224,3 +224,22 @@ fn tls_probe(addr: String, host: String) -> Int effects { net } {
 
 Reference: `examples/io/tls_connect.aic`.
 Policy: `docs/security-ops/tls-policy.v1.json`.
+
+## 11. Unified Secure Error Contract
+
+Normalize module-specific errors to machine-readable secure error metadata for deterministic branching.
+
+```aic
+import std.secure_errors;
+import std.buffer;
+
+fn protocol_category_or_unknown(v: Result[Int, BufferError]) -> String {
+    match v {
+        Ok(_) => "ok",
+        Err(err) => secure_errors.buffer_error_info(err).category,
+    }
+}
+```
+
+Reference: `examples/io/secure_error_contract.aic`.
+Contract: `docs/errors/secure-networking-error-contract.v1.json`.

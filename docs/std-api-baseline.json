@@ -3452,6 +3452,41 @@
       "signature": "Router { handle: Int }"
     },
     {
+      "module": "std.secure_errors",
+      "kind": "enum",
+      "signature": "PoolErrorContract { MaxSizeReached, Timeout, ConnectionFailed, Closed, HealthCheckFailed }"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "fn",
+      "signature": "buffer_error_info(err: BufferError) -> SecureErrorInfo"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "fn",
+      "signature": "crypto_error_info(err: CryptoError) -> SecureErrorInfo"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "fn",
+      "signature": "pool_error_info(err: PoolErrorContract) -> SecureErrorInfo"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "fn",
+      "signature": "secure_error_info(module_name: String, code: String, category: String, retryable: Bool) -> SecureErrorInfo"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "fn",
+      "signature": "tls_error_info(err: TlsError) -> SecureErrorInfo"
+    },
+    {
+      "module": "std.secure_errors",
+      "kind": "struct",
+      "signature": "SecureErrorInfo { module_name: String, code: String, category: String, retryable: Bool }"
+    },
+    {
       "module": "std.set",
       "kind": "fn",
       "signature": "add[T](s: Set[T], value: T) -> Set[T]"

@@ -1,0 +1,73 @@
+module std.secure_errors;
+
+import std.buffer;
+import std.crypto;
+import std.tls;
+
+struct SecureErrorInfo {
+    module_name: String,
+    code: String,
+    category: String,
+    retryable: Bool,
+}
+
+enum PoolErrorContract {
+    MaxSizeReached,
+    Timeout,
+    ConnectionFailed,
+    Closed,
+    HealthCheckFailed,
+}
+
+fn secure_error_info(module_name: String, code: String, category: String, retryable: Bool) -> SecureErrorInfo {
+    SecureErrorInfo {
+        module_name: module_name,
+        code: code,
+        category: category,
+        retryable: retryable,
+    }
+}
+
+fn buffer_error_info(err: BufferError) -> SecureErrorInfo {
+    match err {
+        Underflow => secure_error_info("buffer", "BUF_UNDERFLOW", "protocol", false),
+        Overflow => secure_error_info("buffer", "BUF_OVERFLOW", "capacity", false),
+        InvalidUtf8 => secure_error_info("buffer", "BUF_INVALID_UTF8", "data", false),
+        InvalidInput => secure_error_info("buffer", "BUF_INVALID_INPUT", "input", false),
+    }
+}
+
+fn crypto_error_info(err: CryptoError) -> SecureErrorInfo {
+    match err {
+        InvalidInput => secure_error_info("crypto", "CRYPTO_INVALID_INPUT", "input", false),
+        UnsupportedAlgorithm => secure_error_info(
+            "crypto",
+            "CRYPTO_UNSUPPORTED_ALGORITHM",
+            "unsupported",
+            false,
+        ),
+        Internal => secure_error_info("crypto", "CRYPTO_INTERNAL", "internal", true),
+    }
+}
+
+fn tls_error_info(err: TlsError) -> SecureErrorInfo {
+    match err {
+        HandshakeFailed => secure_error_info("tls", "TLS_HANDSHAKE_FAILED", "security", true),
+        CertificateInvalid => secure_error_info("tls", "TLS_CERT_INVALID", "security", false),
+        CertificateExpired => secure_error_info("tls", "TLS_CERT_EXPIRED", "security", false),
+        HostnameMismatch => secure_error_info("tls", "TLS_HOSTNAME_MISMATCH", "security", false),
+        ProtocolError => secure_error_info("tls", "TLS_PROTOCOL_ERROR", "protocol", false),
+        ConnectionClosed => secure_error_info("tls", "TLS_CONNECTION_CLOSED", "transport", true),
+        Io => secure_error_info("tls", "TLS_IO", "transport", true),
+    }
+}
+
+fn pool_error_info(err: PoolErrorContract) -> SecureErrorInfo {
+    match err {
+        MaxSizeReached => secure_error_info("pool", "POOL_MAX_SIZE_REACHED", "capacity", true),
+        Timeout => secure_error_info("pool", "POOL_TIMEOUT", "timeout", true),
+        ConnectionFailed => secure_error_info("pool", "POOL_CONNECTION_FAILED", "transport", true),
+        Closed => secure_error_info("pool", "POOL_CLOSED", "lifecycle", false),
+        HealthCheckFailed => secure_error_info("pool", "POOL_HEALTH_CHECK_FAILED", "health", true),
+    }
+}
