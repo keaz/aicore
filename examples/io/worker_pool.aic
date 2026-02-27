@@ -1,7 +1,7 @@
 import std.io;
 import std.concurrent;
 
-fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+fn unwrap_task(v: Result[Task[Int], ConcurrencyError]) -> Task[Int] {
     match v {
         Ok(task) => task,
         Err(_) => Task { handle: 0 },

@@ -429,17 +429,6 @@ impl<'a> Parser<'a> {
 
         let (name, _) = self.expect_ident("E1004", "expected function name")?;
         let generics = self.parse_generics();
-        if !generics.is_empty() {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    "E1093",
-                    "intrinsic declarations cannot declare generic parameters",
-                    self.file,
-                    self.previous_span(),
-                )
-                .with_help("use concrete parameter and return types for intrinsic declarations"),
-            );
-        }
 
         self.expect(
             |k| matches!(k, TokenKind::LParen),
@@ -1941,7 +1930,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary(&mut self) -> Option<Expr> {
-        if self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+        if self.at_kind(|k| matches!(k, TokenKind::Pipe | TokenKind::OrOr)) {
             return self.parse_closure_expr();
         }
         if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
@@ -2014,41 +2003,45 @@ impl<'a> Parser<'a> {
 
     fn parse_closure_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
-        self.expect(
-            |k| matches!(k, TokenKind::Pipe),
-            "E1071",
-            "expected '|' to start closure expression",
-        )?;
-
         let mut params = Vec::new();
-        while !self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
-            let param_start = self.current_span().start;
-            let (name, name_span) =
-                self.expect_ident("E1072", "expected closure parameter name")?;
-            let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
-                self.bump();
-                Some(self.parse_type()?)
-            } else {
-                None
-            };
-            let param_end = ty.as_ref().map(|t| t.span.end).unwrap_or(name_span.end);
-            params.push(ClosureParam {
-                name,
-                ty,
-                span: Span::new(param_start, param_end),
-            });
-            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
+        if self.at_kind(|k| matches!(k, TokenKind::OrOr)) {
+            self.bump();
+        } else {
+            self.expect(
+                |k| matches!(k, TokenKind::Pipe),
+                "E1071",
+                "expected '|' to start closure expression",
+            )?;
 
-        self.expect(
-            |k| matches!(k, TokenKind::Pipe),
-            "E1073",
-            "expected '|' to end closure parameters",
-        )?;
+            while !self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
+                let param_start = self.current_span().start;
+                let (name, name_span) =
+                    self.expect_ident("E1072", "expected closure parameter name")?;
+                let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
+                    self.bump();
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                let param_end = ty.as_ref().map(|t| t.span.end).unwrap_or(name_span.end);
+                params.push(ClosureParam {
+                    name,
+                    ty,
+                    span: Span::new(param_start, param_end),
+                });
+                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+
+            self.expect(
+                |k| matches!(k, TokenKind::Pipe),
+                "E1073",
+                "expected '|' to end closure parameters",
+            )?;
+        }
         self.expect(
             |k| matches!(k, TokenKind::Arrow),
             "E1074",
@@ -3854,6 +3847,31 @@ fn apply(f: Fn(Int) -> Int, x: Int) -> Int {
 fn main() -> Int {
     let inc = |x: Int| -> Int { x + 1 };
     apply(inc, 41)
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let main_fn = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let Stmt::Let { expr, .. } = &main_fn.body.stmts[0] else {
+            panic!("expected let stmt");
+        };
+        assert!(matches!(expr.kind, ExprKind::Closure { .. }));
+    }
+
+    #[test]
+    fn parses_zero_arg_closure_expression() {
+        let src = r#"
+fn apply(f: Fn() -> Int) -> Int {
+    f()
+}
+
+fn main() -> Int {
+    let one = || -> Int { 1 };
+    apply(one)
 }
 "#;
         let (program, diagnostics) = parse(src, "test.aic");

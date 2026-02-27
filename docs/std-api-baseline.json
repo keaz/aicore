@@ -433,8 +433,13 @@
     },
     {
       "module": "std.concurrent",
+      "kind": "enum",
+      "signature": "SelectResult[A, B] { First(A), Second(B), Timeout, Closed }"
+    },
+    {
+      "module": "std.concurrent",
       "kind": "fn",
-      "signature": "aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+      "signature": "aic_conc_cancel_intrinsic(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -454,12 +459,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }"
+      "signature": "aic_conc_join_intrinsic(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "aic_conc_join_timeout_intrinsic(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+      "signature": "aic_conc_join_timeout_intrinsic(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_join_value_intrinsic[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -504,7 +514,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "aic_conc_select_first_intrinsic(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }"
+      "signature": "aic_conc_scope_cancel_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_scope_close_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_scope_join_all_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_scope_new_intrinsic() -> Result[Scope, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_scope_spawn_fn_intrinsic[T](scope: Scope, f: Fn[T]) -> Result[Task[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_select_first_intrinsic(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -519,12 +554,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_spawn_fn_intrinsic[T](f: Fn[T]) -> Result[Task[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_spawn_fn_named_intrinsic[T](name: String, f: Fn[T]) -> Result[Task[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_spawn_group_intrinsic(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }"
+      "signature": "aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -549,7 +594,7 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+      "signature": "cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -599,12 +644,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "decode_task_payload[T](payload_id: Int) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "default_blocking_timeout_ms() -> Int"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }"
+      "signature": "join[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "join_task(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -624,12 +689,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "map_channel_to_concurrency_error(err: ChannelError) -> ConcurrencyError"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "none_from_receiver[T](hint: Receiver[T]) -> Option[T]"
     },
     {
       "module": "std.concurrent",
@@ -649,7 +724,42 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }"
+      "signature": "scope_cancel(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "scope_join_all(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "scope_spawn[T](scope: Scope, f: Fn[T]) -> Task[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "scoped[T](f: Fn[Scope, T]) -> T effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "scoped_run_with_scope[T](created_scope: Scope, f: Fn[Scope, T]) -> T effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[Tuple[Int, T], ChannelError] effects { concurrency, env }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -674,12 +784,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "spawn[T](f: Fn[T]) -> Task[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }"
+      "signature": "spawn_named[T](name: String, f: Fn[T]) -> Task[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -689,7 +809,7 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
-      "signature": "timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+      "signature": "timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -749,12 +869,17 @@
     {
       "module": "std.concurrent",
       "kind": "struct",
+      "signature": "Scope { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
       "signature": "Sender[T] { handle: Int }"
     },
     {
       "module": "std.concurrent",
       "kind": "struct",
-      "signature": "Task { handle: Int }"
+      "signature": "Task[T] { handle: Int }"
     },
     {
       "module": "std.config",

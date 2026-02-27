@@ -777,6 +777,25 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_zero_arg_closure_typechecks() {
+    let src = r#"
+fn apply(f: Fn() -> Int) -> Int {
+    f()
+}
+
+fn main() -> Int {
+    let one = || -> Int { 1 };
+    apply(one)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_break_outside_loop_is_rejected() {
     let src = r#"
 fn bad() -> Int {
@@ -3541,6 +3560,11 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(source.contains("fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B]"));
     assert!(source.contains("fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }"));
     assert!(source.contains("turn = (turn + 1) % count"));
+    assert!(source.contains("struct Scope {"));
+    assert!(source.contains("fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency }"));
+    assert!(source.contains(
+        "fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency }"
+    ));
 
     assert_delegate_call(
         &source,
@@ -3640,12 +3664,34 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "aic_conc_mutex_close_intrinsic",
         1,
     );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "scope_cancel",
+        "aic_conc_scope_cancel_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "scope_join_all",
+        "aic_conc_scope_join_all_intrinsic",
+        1,
+    );
 
     for (name, arity) in [
         ("aic_conc_spawn_intrinsic", 2usize),
         ("aic_conc_join_intrinsic", 1usize),
         ("aic_conc_join_timeout_intrinsic", 2usize),
         ("aic_conc_cancel_intrinsic", 1usize),
+        ("aic_conc_spawn_fn_intrinsic", 1usize),
+        ("aic_conc_spawn_fn_named_intrinsic", 2usize),
+        ("aic_conc_join_value_intrinsic", 1usize),
+        ("aic_conc_scope_new_intrinsic", 0usize),
+        ("aic_conc_scope_spawn_fn_intrinsic", 2usize),
+        ("aic_conc_scope_join_all_intrinsic", 1usize),
+        ("aic_conc_scope_cancel_intrinsic", 1usize),
+        ("aic_conc_scope_close_intrinsic", 1usize),
         ("aic_conc_spawn_group_intrinsic", 2usize),
         ("aic_conc_select_first_intrinsic", 2usize),
         ("aic_conc_channel_int_intrinsic", 1usize),
@@ -3832,7 +3878,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _dir = dirname(_path_join);
     let _ext = extension(_path_join);
     let _abs = is_abs(_path_join);
-    let _spawn = spawn("echo smoke");
+    let _spawn = proc.spawn("echo smoke");
     let _wait = wait(1);
     let _kill = kill(1);
     let _run = run("echo smoke");
@@ -4243,11 +4289,10 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
         warnings.len() >= 3,
         "expected deprecation warnings for channel_int/send_int/recv_int, got {warnings:#?}"
     );
-    assert!(warnings.iter().any(|d| {
-        d.help
-            .iter()
-            .any(|h| h.contains("std.concurrent.buffered_channel[Int]"))
-    }));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.channel[Int]"))));
     assert!(warnings.iter().any(|d| d
         .help
         .iter()

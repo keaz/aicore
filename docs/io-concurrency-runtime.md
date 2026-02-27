@@ -8,7 +8,9 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 
 `std.concurrent` provides bounded, explicit-effect concurrency primitives:
 
-- Task lifecycle: `spawn_task`, `join_task`, `cancel_task`
+- Generic task lifecycle: `spawn`, `join`, `join_value`, `spawn_named`
+- Scoped concurrency: `scoped`, `scope_spawn`, `scope_join_all`, `scope_cancel`
+- Legacy task compatibility: `spawn_task`, `join_task`, `timeout_task`, `cancel_task`
 - Structured task orchestration: `spawn_group`, `timeout_task`, `select_first`
 - Generic channels: `Sender[T]` / `Receiver[T]` with buffered creation, blocking/non-blocking send/recv
 - Typed channel selection: `select2` and `select_any`
@@ -41,7 +43,8 @@ enum ChannelError {
     Timeout,
 }
 
-struct Task { handle: Int }
+struct Task[T] { handle: Int }
+struct Scope { handle: Int }
 struct Sender[T] { handle: Int }
 struct Receiver[T] { handle: Int }
 enum SelectResult[A, B] { First(A), Second(B), Timeout, Closed }
@@ -54,12 +57,22 @@ struct IntMutex { handle: Int }
 ## API
 
 ```aic
-fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency }
-fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency }
-fn timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
-fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency }
+fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency }
+fn spawn_named[T](name: String, f: Fn() -> T) -> Task[T] effects { concurrency }
+fn join[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }
+fn join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }
+
+fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency }
+fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency }
+fn scope_join_all(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }
+fn scope_cancel(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }
+
+fn spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency }
+fn join_task(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency }
+fn timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
+fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }
-fn select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }
+fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }
 
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency }
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency }
@@ -109,6 +122,9 @@ Planned legacy-to-generic transitions (sequenced with MT-T2/MT-T4):
 
 - `IntMutex` / `lock_int` / `unlock_int` -> `Mutex[T]` / guard-based lock APIs
 - `Task` + `spawn_task(value, delay_ms)` -> `Task[T]` + closure-based `spawn(fn() -> T)`
+- Named/structured threads:
+  - `spawn_named("worker-a", || -> T { ... })` for debuggable thread labels
+  - `scoped(|scope| -> T { let _t = scope_spawn(scope, || -> U { ... }); ... })` for join-on-scope-exit guarantees
 - During transition, legacy forms remain supported and should be migrated incrementally with deterministic diagnostics.
 
 Sunset policy:
@@ -119,9 +135,15 @@ Sunset policy:
 
 ## Runtime Semantics
 
-- Task scheduler:
-  - Runtime uses host threads with bounded handle tables.
-  - `spawn_task(value, delay_ms)` produces a task that completes with `value * 2` after `delay_ms`.
+- Generic task scheduler:
+  - Runtime uses host threads with bounded handle tables and payload slots.
+  - `spawn(f)` executes closure `f` on a dedicated worker thread and returns `Task[T]`.
+  - `join(task)` / `join_value(task)` block until completion and deserialize captured result payload as `T`.
+  - `spawn_named(name, f)` behaves like `spawn`, additionally attaching best-effort OS thread names on supported platforms.
+- Scoped threads:
+  - `scoped(f)` creates a runtime scope, executes `f(scope)`, and always performs `scope_join_all` + scope close before returning.
+  - `scope_spawn(scope, f)` ties child task lifecycle to the owning scope.
+  - `scope_cancel(scope)` requests cooperative cancellation for all tasks currently tracked by that scope.
 - Structured fork-join:
   - `spawn_group(values, delay_ms)` spawns one task per input value, executes them in parallel, and joins in input order.
   - Success path returns ordered outputs where each element follows task semantics (`value * 2`).
@@ -196,9 +218,17 @@ Runtime codegen maps channel status codes to `ChannelError`:
 Codegen lowers to these runtime symbols:
 
 - `aic_rt_conc_spawn`
+- `aic_rt_conc_spawn_fn`
+- `aic_rt_conc_spawn_fn_named`
 - `aic_rt_conc_join`
+- `aic_rt_conc_join_value`
 - `aic_rt_conc_join_timeout`
 - `aic_rt_conc_cancel`
+- `aic_rt_conc_scope_new`
+- `aic_rt_conc_scope_spawn_fn`
+- `aic_rt_conc_scope_join_all`
+- `aic_rt_conc_scope_cancel`
+- `aic_rt_conc_scope_close`
 - `aic_rt_conc_spawn_group`
 - `aic_rt_conc_select_first`
 - `aic_rt_conc_channel_int`
@@ -224,7 +254,7 @@ Codegen lowers to these runtime symbols:
 - Linux/macOS:
   - Full channel/task/mutex runtime behavior is implemented.
 - Windows:
-  - Existing concurrency APIs return `ConcurrencyError::Io` for unsupported runtime paths.
+  - Existing concurrency APIs (including generic spawn/join/scoped APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
   - Channel try/select APIs return deterministic `ChannelError::Closed`.
 
 ## Example

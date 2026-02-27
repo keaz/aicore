@@ -582,6 +582,8 @@ case "$MODE" in
     expect_run_value "examples/io/worker_pool.aic" "42"
     expect_run_value "examples/io/channel_migration_compat.aic" "42"
     expect_run_value "examples/io/generic_channel_types.aic" "42"
+    expect_run_value "examples/io/structured_concurrency.aic" "42"
+    expect_run_value "examples/io/select_multi_channel.aic" "42"
     expect_run_value "examples/data/log_parse_regex.aic" "42"
     expect_run_value "examples/data/join_module_qualification.aic" "42"
     expect_run_value "examples/data/map_headers.aic" "42"

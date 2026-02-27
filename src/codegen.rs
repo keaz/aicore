@@ -34,14 +34,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         runtime_symbol: "aic_rt_conc_spawn",
         signatures: &[IntrinsicSignatureShape {
             params: &["Int", "Int"],
-            ret: "Result[Task, ConcurrencyError]",
+            ret: "Result[Task[Int], ConcurrencyError]",
         }],
     },
     IntrinsicBindingExpectation {
         intrinsic: "aic_conc_join_intrinsic",
         runtime_symbol: "aic_rt_conc_join",
         signatures: &[IntrinsicSignatureShape {
-            params: &["Task"],
+            params: &["Task[Int]"],
             ret: "Result[Int, ConcurrencyError]",
         }],
     },
@@ -49,7 +49,7 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         intrinsic: "aic_conc_join_timeout_intrinsic",
         runtime_symbol: "aic_rt_conc_join_timeout",
         signatures: &[IntrinsicSignatureShape {
-            params: &["Task", "Int"],
+            params: &["Task[Int]", "Int"],
             ret: "Result[Int, ConcurrencyError]",
         }],
     },
@@ -57,7 +57,71 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         intrinsic: "aic_conc_cancel_intrinsic",
         runtime_symbol: "aic_rt_conc_cancel",
         signatures: &[IntrinsicSignatureShape {
-            params: &["Task"],
+            params: &["Task[Int]"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_spawn_fn_intrinsic",
+        runtime_symbol: "aic_rt_conc_spawn_fn",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Fn[T]"],
+            ret: "Result[Task[T], ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_spawn_fn_named_intrinsic",
+        runtime_symbol: "aic_rt_conc_spawn_fn_named",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "Fn[T]"],
+            ret: "Result[Task[T], ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_join_value_intrinsic",
+        runtime_symbol: "aic_rt_conc_join_value",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task[T]"],
+            ret: "Result[T, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_scope_new_intrinsic",
+        runtime_symbol: "aic_rt_conc_scope_new",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Scope, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_scope_spawn_fn_intrinsic",
+        runtime_symbol: "aic_rt_conc_scope_spawn_fn",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Scope", "Fn[T]"],
+            ret: "Result[Task[T], ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_scope_join_all_intrinsic",
+        runtime_symbol: "aic_rt_conc_scope_join_all",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Scope"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_scope_cancel_intrinsic",
+        runtime_symbol: "aic_rt_conc_scope_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Scope"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_scope_close_intrinsic",
+        runtime_symbol: "aic_rt_conc_scope_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Scope"],
             ret: "Result[Bool, ConcurrencyError]",
         }],
     },
@@ -73,7 +137,7 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         intrinsic: "aic_conc_select_first_intrinsic",
         runtime_symbol: "aic_rt_conc_select_first",
         signatures: &[IntrinsicSignatureShape {
-            params: &["Vec[Task]", "Int"],
+            params: &["Vec[Task[Int]]", "Int"],
             ret: "Result[IntTaskSelection, ConcurrencyError]",
         }],
     },
@@ -2374,7 +2438,15 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_rand_next()\n");
         text.push_str("declare i64 @aic_rt_rand_range(i64, i64)\n\n");
         text.push_str("declare i64 @aic_rt_conc_spawn(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_spawn_fn(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_spawn_fn_named(i64, i64, i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_join(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_join_value(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_scope_new(i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_scope_spawn_fn(i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_scope_join_all(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_scope_cancel(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_scope_close(i64)\n");
         text.push_str("declare i64 @aic_rt_conc_join_timeout(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_cancel(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_spawn_group(i8*, i64, i64, i64, i64**, i64*)\n");
@@ -5322,6 +5394,9 @@ impl<'a> Generator<'a> {
     }
 
     fn defer_monomorphized_function(&mut self, func: &ir::Function, inst: &GenericFnInstance) {
+        if func.is_extern || func.is_intrinsic {
+            return;
+        }
         let start = self.out.len();
         self.gen_monomorphized_function(func, inst);
         let lines = self.out.split_off(start);
@@ -7973,6 +8048,14 @@ impl<'a> Generator<'a> {
             "join_task" | "aic_conc_join_intrinsic" => "join_task",
             "timeout_task" | "aic_conc_join_timeout_intrinsic" => "timeout_task",
             "cancel_task" | "aic_conc_cancel_intrinsic" => "cancel_task",
+            "aic_conc_spawn_fn_intrinsic" => "spawn_fn",
+            "aic_conc_spawn_fn_named_intrinsic" => "spawn_fn_named",
+            "aic_conc_join_value_intrinsic" => "join_value",
+            "aic_conc_scope_new_intrinsic" => "scope_new",
+            "aic_conc_scope_spawn_fn_intrinsic" => "scope_spawn_fn",
+            "aic_conc_scope_join_all_intrinsic" => "scope_join_all",
+            "aic_conc_scope_cancel_intrinsic" => "scope_cancel",
+            "aic_conc_scope_close_intrinsic" => "scope_close",
             "spawn_group" | "aic_conc_spawn_group_intrinsic" => "spawn_group",
             "select_first" | "aic_conc_select_first_intrinsic" => "select_first",
             "channel_int" | "aic_conc_channel_int_intrinsic" => "channel_int",
@@ -8000,29 +8083,63 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(
                     name,
                     &["Int", "Int"],
-                    "Result[Task, ConcurrencyError]",
+                    "Result[Task[Int], ConcurrencyError]",
                 ) =>
             {
                 Some(self.gen_concurrency_spawn_task_call(name, args, span, fctx))
             }
             "join_task"
-                if self.sig_matches_shape(name, &["Task"], "Result[Int, ConcurrencyError]") =>
+                if self.sig_matches_shape(
+                    name,
+                    &["Task[Int]"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
             {
                 Some(self.gen_concurrency_join_task_call(name, args, span, fctx))
             }
             "timeout_task"
                 if self.sig_matches_shape(
                     name,
-                    &["Task", "Int"],
+                    &["Task[Int]", "Int"],
                     "Result[Int, ConcurrencyError]",
                 ) =>
             {
                 Some(self.gen_concurrency_timeout_task_call(name, args, span, fctx))
             }
             "cancel_task"
-                if self.sig_matches_shape(name, &["Task"], "Result[Bool, ConcurrencyError]") =>
+                if self.sig_matches_shape(
+                    name,
+                    &["Task[Int]"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
             {
                 Some(self.gen_concurrency_cancel_task_call(name, args, span, fctx))
+            }
+            "spawn_fn" => Some(self.gen_concurrency_spawn_fn_call(name, args, span, fctx)),
+            "spawn_fn_named" => {
+                Some(self.gen_concurrency_spawn_fn_named_call(name, args, span, fctx))
+            }
+            "join_value" => Some(self.gen_concurrency_join_value_call(name, args, span, fctx)),
+            "scope_new" if self.sig_matches_shape(name, &[], "Result[Scope, ConcurrencyError]") => {
+                Some(self.gen_concurrency_scope_new_call(name, args, span, fctx))
+            }
+            "scope_spawn_fn" => {
+                Some(self.gen_concurrency_scope_spawn_fn_call(name, args, span, fctx))
+            }
+            "scope_join_all"
+                if self.sig_matches_shape(name, &["Scope"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_scope_join_all_call(name, args, span, fctx))
+            }
+            "scope_cancel"
+                if self.sig_matches_shape(name, &["Scope"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_scope_cancel_call(name, args, span, fctx))
+            }
+            "scope_close"
+                if self.sig_matches_shape(name, &["Scope"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_scope_close_call(name, args, span, fctx))
             }
             "spawn_group"
                 if self.sig_matches_shape(
@@ -8036,7 +8153,7 @@ impl<'a> Generator<'a> {
             "select_first"
                 if self.sig_matches_shape(
                     name,
-                    &["Vec[Task]", "Int"],
+                    &["Vec[Task[Int]]", "Int"],
                     "Result[IntTaskSelection, ConcurrencyError]",
                 ) =>
             {
@@ -8174,6 +8291,61 @@ impl<'a> Generator<'a> {
         Some(result_ty)
     }
 
+    fn concurrency_spawn_fn_result_ty(
+        &mut self,
+        name: &str,
+        return_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<LType> {
+        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        let rendered = render_type(return_ty);
+        let repr = format!("Result[Task[{rendered}], ConcurrencyError]");
+        self.parse_type_repr(&repr, span)
+    }
+
+    fn concurrency_join_value_result_ty(
+        &mut self,
+        name: &str,
+        task_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<LType> {
+        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        let LType::Struct(layout) = task_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "join expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Task" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "join expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task_args = extract_generic_args(&layout.repr).unwrap_or_default();
+        if task_args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "join expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let repr = format!("Result[{}, ConcurrencyError]", task_args[0]);
+        self.parse_type_repr(&repr, span)
+    }
+
     fn extract_named_handle_from_value(
         &mut self,
         value: &Value,
@@ -8309,6 +8481,560 @@ impl<'a> Generator<'a> {
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
+    fn emit_concurrency_spawn_entry_helper(&mut self, helper_name: &str, fn_layout: &FnLayoutType) {
+        let fn_pair_ty = llvm_type(&LType::Fn(fn_layout.clone()));
+        let ret_ty = llvm_type(&fn_layout.ret);
+        let fn_sig_ty = format!("{} (i8*)*", ret_ty);
+        let mut lines = vec![
+            format!("define i64 @{}(i8* %ctx_raw) {{", helper_name),
+            "entry:".to_string(),
+            format!("  %ctx = bitcast i8* %ctx_raw to {}*", fn_pair_ty),
+            format!("  %pair = load {}, {}* %ctx", fn_pair_ty, fn_pair_ty),
+            format!("  %fn_ptr = extractvalue {} %pair, 0", fn_pair_ty),
+            format!("  %fn_env = extractvalue {} %pair, 1", fn_pair_ty),
+            format!("  %fn_typed = bitcast i8* %fn_ptr to {}", fn_sig_ty),
+        ];
+        if *fn_layout.ret == LType::Unit {
+            lines.push("  call void %fn_typed(i8* %fn_env)".to_string());
+            lines.push("  ret i64 0".to_string());
+        } else {
+            lines.push(format!(
+                "  %ret_value = call {} %fn_typed(i8* %fn_env)",
+                ret_ty
+            ));
+            lines.push(format!(
+                "  %ret_size_ptr = getelementptr inbounds {}, {}* null, i32 1",
+                ret_ty, ret_ty
+            ));
+            lines.push(format!(
+                "  %ret_size = ptrtoint {}* %ret_size_ptr to i64",
+                ret_ty
+            ));
+            lines.push("  %ret_heap = call i8* @malloc(i64 %ret_size)".to_string());
+            lines.push(format!(
+                "  %ret_heap_typed = bitcast i8* %ret_heap to {}*",
+                ret_ty
+            ));
+            lines.push(format!(
+                "  store {} %ret_value, {}* %ret_heap_typed",
+                ret_ty, ret_ty
+            ));
+            lines.push("  %ret_raw = ptrtoint i8* %ret_heap to i64".to_string());
+            lines.push("  ret i64 %ret_raw".to_string());
+        }
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+    }
+
+    fn gen_concurrency_spawn_fn_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "spawn expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let fn_value = self.gen_expr(&args[0], fctx)?;
+        let LType::Fn(fn_layout) = fn_value.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_fn expects Fn() -> T",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !fn_layout.params.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_fn expects Fn() -> T",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+
+        let fn_pair_ty = llvm_type(&LType::Fn(fn_layout.clone()));
+        let fn_repr = fn_value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&fn_value.ty));
+        let pair_tmp = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", pair_tmp, fn_pair_ty));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, fn_repr, fn_pair_ty, pair_tmp
+        ));
+        let pair_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            pair_size_ptr, fn_pair_ty, fn_pair_ty
+        ));
+        let pair_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            pair_size, fn_pair_ty, pair_size_ptr
+        ));
+        let pair_heap = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            pair_heap, pair_size
+        ));
+        let pair_heap_typed = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            pair_heap_typed, pair_heap, fn_pair_ty
+        ));
+        let pair_loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            pair_loaded, fn_pair_ty, fn_pair_ty, pair_tmp
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, pair_loaded, fn_pair_ty, pair_heap_typed
+        ));
+
+        let helper_name = format!("__aic_spawn_entry_{}", self.closure_counter);
+        self.closure_counter += 1;
+        self.emit_concurrency_spawn_entry_helper(&helper_name, &fn_layout);
+
+        let entry_fn_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i64 (i8*)* @{} to i64",
+            entry_fn_raw, helper_name
+        ));
+        let entry_env_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i8* {} to i64",
+            entry_env_raw, pair_heap
+        ));
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_spawn_fn(i64 {}, i64 {}, i64* {})",
+            err, entry_fn_raw, entry_env_raw, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_spawn_fn_result_ty(name, fn_layout.ret.as_ref(), span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Task", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_spawn_fn_named_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "spawn_named expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let thread_name = self.gen_expr(&args[0], fctx)?;
+        if thread_name.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_named expects (String, Fn() -> T)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (name_ptr, name_len, name_cap) = self.string_parts(&thread_name, args[0].span, fctx)?;
+
+        let fn_value = self.gen_expr(&args[1], fctx)?;
+        let LType::Fn(fn_layout) = fn_value.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_named expects (String, Fn() -> T)",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !fn_layout.params.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "spawn_named expects (String, Fn() -> T)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+
+        let fn_pair_ty = llvm_type(&LType::Fn(fn_layout.clone()));
+        let fn_repr = fn_value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&fn_value.ty));
+        let pair_tmp = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", pair_tmp, fn_pair_ty));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, fn_repr, fn_pair_ty, pair_tmp
+        ));
+        let pair_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            pair_size_ptr, fn_pair_ty, fn_pair_ty
+        ));
+        let pair_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            pair_size, fn_pair_ty, pair_size_ptr
+        ));
+        let pair_heap = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            pair_heap, pair_size
+        ));
+        let pair_heap_typed = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            pair_heap_typed, pair_heap, fn_pair_ty
+        ));
+        let pair_loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            pair_loaded, fn_pair_ty, fn_pair_ty, pair_tmp
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, pair_loaded, fn_pair_ty, pair_heap_typed
+        ));
+
+        let helper_name = format!("__aic_spawn_entry_{}", self.closure_counter);
+        self.closure_counter += 1;
+        self.emit_concurrency_spawn_entry_helper(&helper_name, &fn_layout);
+
+        let entry_fn_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i64 (i8*)* @{} to i64",
+            entry_fn_raw, helper_name
+        ));
+        let entry_env_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i8* {} to i64",
+            entry_env_raw, pair_heap
+        ));
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_spawn_fn_named(i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err, entry_fn_raw, entry_env_raw, name_ptr, name_len, name_cap, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_spawn_fn_result_ty(name, fn_layout.ret.as_ref(), span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Task", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_scope_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "scope_new expects zero arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let scope_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", scope_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_scope_new(i64* {})",
+            err, scope_slot
+        ));
+        let scope_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            scope_handle, scope_slot
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = self.build_concurrency_ok_handle_payload(
+            &result_ty,
+            "Scope",
+            &scope_handle,
+            span,
+            fctx,
+        )?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_scope_spawn_fn_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "scope_spawn expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let scope_value = self.gen_expr(&args[0], fctx)?;
+        let scope_handle = self.extract_named_handle_from_value(
+            &scope_value,
+            "Scope",
+            "scope_spawn",
+            args[0].span,
+            fctx,
+        )?;
+
+        let fn_value = self.gen_expr(&args[1], fctx)?;
+        let LType::Fn(fn_layout) = fn_value.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "scope_spawn expects (Scope, Fn() -> T)",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !fn_layout.params.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "scope_spawn expects (Scope, Fn() -> T)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+
+        let fn_pair_ty = llvm_type(&LType::Fn(fn_layout.clone()));
+        let fn_repr = fn_value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&fn_value.ty));
+        let pair_tmp = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", pair_tmp, fn_pair_ty));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, fn_repr, fn_pair_ty, pair_tmp
+        ));
+        let pair_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            pair_size_ptr, fn_pair_ty, fn_pair_ty
+        ));
+        let pair_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            pair_size, fn_pair_ty, pair_size_ptr
+        ));
+        let pair_heap = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            pair_heap, pair_size
+        ));
+        let pair_heap_typed = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            pair_heap_typed, pair_heap, fn_pair_ty
+        ));
+        let pair_loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            pair_loaded, fn_pair_ty, fn_pair_ty, pair_tmp
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, pair_loaded, fn_pair_ty, pair_heap_typed
+        ));
+
+        let helper_name = format!("__aic_spawn_entry_{}", self.closure_counter);
+        self.closure_counter += 1;
+        self.emit_concurrency_spawn_entry_helper(&helper_name, &fn_layout);
+
+        let entry_fn_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i64 (i8*)* @{} to i64",
+            entry_fn_raw, helper_name
+        ));
+        let entry_env_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i8* {} to i64",
+            entry_env_raw, pair_heap
+        ));
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_scope_spawn_fn(i64 {}, i64 {}, i64 {}, i64* {})",
+            err, scope_handle, entry_fn_raw, entry_env_raw, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_spawn_fn_result_ty(name, fn_layout.ret.as_ref(), span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "Task", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_scope_join_all_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "scope_join_all expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let scope_value = self.gen_expr(&args[0], fctx)?;
+        let scope_handle = self.extract_named_handle_from_value(
+            &scope_value,
+            "Scope",
+            "scope_join_all",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_scope_join_all(i64 {})",
+            err, scope_handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_scope_cancel_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "scope_cancel expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let scope_value = self.gen_expr(&args[0], fctx)?;
+        let scope_handle = self.extract_named_handle_from_value(
+            &scope_value,
+            "Scope",
+            "scope_cancel",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_scope_cancel(i64 {})",
+            err, scope_handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_scope_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "scope_close expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let scope_value = self.gen_expr(&args[0], fctx)?;
+        let scope_handle = self.extract_named_handle_from_value(
+            &scope_value,
+            "Scope",
+            "scope_close",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_scope_close(i64 {})",
+            err, scope_handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     fn gen_concurrency_join_task_call(
         &mut self,
         name: &str,
@@ -8342,6 +9068,107 @@ impl<'a> Generator<'a> {
         let ok_payload = Value {
             ty: LType::Int,
             repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_join_value_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "join expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task = self.gen_expr(&args[0], fctx)?;
+        let handle =
+            self.extract_named_handle_from_value(&task, "Task", "join", args[0].span, fctx)?;
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_join_value(i64 {}, i64* {})",
+            err, handle, value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+
+        let result_ty = self.concurrency_join_value_result_ty(name, &task.ty, span)?;
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+
+        let ok_payload = if ok_ty == LType::Unit {
+            Value {
+                ty: LType::Unit,
+                repr: None,
+            }
+        } else {
+            self.extern_decls
+                .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+            let ok_llvm = llvm_type(&ok_ty);
+            let ok_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", ok_stack, ok_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm,
+                default_value(&ok_ty),
+                ok_llvm,
+                ok_stack
+            ));
+
+            let has_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp ne i64 {}, 0", has_ptr, out_value));
+            let load_label = self.new_label("conc_join_value_load");
+            let cont_label = self.new_label("conc_join_value_cont");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                has_ptr, load_label, cont_label
+            ));
+            fctx.lines.push(format!("{}:", load_label));
+            let out_ptr_i8 = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = inttoptr i64 {} to i8*",
+                out_ptr_i8, out_value
+            ));
+            let typed_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* {} to {}*",
+                typed_ptr, out_ptr_i8, ok_llvm
+            ));
+            let loaded_ok = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded_ok, ok_llvm, ok_llvm, typed_ptr
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm, loaded_ok, ok_llvm, ok_stack
+            ));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr_i8));
+            fctx.lines.push(format!("  br label %{}", cont_label));
+            fctx.lines.push(format!("{}:", cont_label));
+            let final_ok = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                final_ok, ok_llvm, ok_llvm, ok_stack
+            ));
+            Value {
+                ty: ok_ty,
+                repr: Some(final_ok),
+            }
         };
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -8557,7 +9384,7 @@ impl<'a> Generator<'a> {
         if !is_task_element {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "select_first expects (Vec[Task], Int)",
+                "select_first expects (Vec[Task[Int]], Int)",
                 self.file,
                 span,
             ));
@@ -8567,7 +9394,7 @@ impl<'a> Generator<'a> {
         if timeout_ms.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "select_first expects (Vec[Task], Int)",
+                "select_first expects (Vec[Task[Int]], Int)",
                 self.file,
                 span,
             ));
@@ -31282,6 +32109,8 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("conc", "join_task") => Some("aic_conc_join_intrinsic"),
         ("conc", "timeout_task") => Some("aic_conc_join_timeout_intrinsic"),
         ("conc", "cancel_task") => Some("aic_conc_cancel_intrinsic"),
+        ("conc", "spawn_fn") => Some("aic_conc_spawn_fn_intrinsic"),
+        ("conc", "join_value") => Some("aic_conc_join_value_intrinsic"),
         ("conc", "spawn_group") => Some("aic_conc_spawn_group_intrinsic"),
         ("conc", "select_first") => Some("aic_conc_select_first_intrinsic"),
         ("conc", "channel_int") => Some("aic_conc_channel_int_intrinsic"),
@@ -43216,11 +44045,79 @@ long aic_rt_conc_spawn(long value, long delay_ms, long* out_handle) {
     return 7;
 }
 
+long aic_rt_conc_spawn_fn(long entry_fn, long entry_env, long* out_handle) {
+    (void)entry_fn;
+    (void)entry_env;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_spawn_fn_named(
+    long entry_fn,
+    long entry_env,
+    const char* name_ptr,
+    long name_len,
+    long name_cap,
+    long* out_handle
+) {
+    (void)entry_fn;
+    (void)entry_env;
+    (void)name_ptr;
+    (void)name_len;
+    (void)name_cap;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
 long aic_rt_conc_join(long handle, long* out_value) {
     (void)handle;
     if (out_value != NULL) {
         *out_value = 0;
     }
+    return 7;
+}
+
+long aic_rt_conc_join_value(long handle, long* out_value) {
+    (void)handle;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_scope_new(long* out_scope) {
+    if (out_scope != NULL) {
+        *out_scope = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_scope_spawn_fn(long scope_id, long entry_fn, long entry_env, long* out_handle) {
+    (void)scope_id;
+    (void)entry_fn;
+    (void)entry_env;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_scope_join_all(long scope_id) {
+    (void)scope_id;
+    return 7;
+}
+
+long aic_rt_conc_scope_cancel(long scope_id) {
+    (void)scope_id;
+    return 7;
+}
+
+long aic_rt_conc_scope_close(long scope_id) {
+    (void)scope_id;
     return 7;
 }
 
@@ -43417,15 +44314,21 @@ long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
 #define AIC_RT_CONC_SCOPE_CAP 128
 #define AIC_RT_CONC_PAYLOAD_CAP 4096
 
+typedef long (*AicConcEntryFn)(void*);
+
 typedef struct {
     int active;
     int finished;
     int cancelled;
     int panic;
+    int mode;
     long scope_id;
     long input_value;
     long delay_ms;
     long result;
+    AicConcEntryFn entry_fn;
+    void* entry_env;
+    char thread_name[64];
     pthread_t thread;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
@@ -43506,7 +44409,7 @@ static int aic_rt_conc_make_deadline(long timeout_ms, struct timespec* out_deadl
     return 0;
 }
 
-static long aic_rt_conc_scope_new(long parent_scope, long* out_scope) {
+static long aic_rt_conc_scope_new_internal(long parent_scope, long* out_scope) {
     if (out_scope != NULL) {
         *out_scope = 0;
     }
@@ -43564,7 +44467,7 @@ static int aic_rt_conc_scope_is_cancelled(long scope_id) {
     return 0;
 }
 
-static void aic_rt_conc_scope_cancel(long scope_id) {
+static void aic_rt_conc_scope_cancel_internal(long scope_id) {
     if (scope_id <= 0) {
         return;
     }
@@ -43578,7 +44481,7 @@ static void aic_rt_conc_scope_cancel(long scope_id) {
     pthread_mutex_unlock(&aic_rt_conc_scope_mutex);
 }
 
-static void aic_rt_conc_scope_release(long scope_id) {
+static void aic_rt_conc_scope_release_internal(long scope_id) {
     if (scope_id <= 0) {
         return;
     }
@@ -43590,6 +44493,19 @@ static void aic_rt_conc_scope_release(long scope_id) {
         memset(&aic_rt_conc_scopes[scope_id - 1], 0, sizeof(AicConcScopeSlot));
     }
     pthread_mutex_unlock(&aic_rt_conc_scope_mutex);
+}
+
+static int aic_rt_conc_scope_is_active(long scope_id) {
+    if (scope_id <= 0 || scope_id > AIC_RT_CONC_SCOPE_CAP) {
+        return 0;
+    }
+    int lock_rc = pthread_mutex_lock(&aic_rt_conc_scope_mutex);
+    if (lock_rc != 0) {
+        return 0;
+    }
+    int active = aic_rt_conc_scopes[scope_id - 1].active;
+    pthread_mutex_unlock(&aic_rt_conc_scope_mutex);
+    return active;
 }
 
 static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
@@ -43625,6 +44541,37 @@ static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
     return slot;
 }
 
+static void aic_rt_conc_task_set_name(
+    AicConcTaskSlot* slot,
+    const char* name_ptr,
+    long name_len
+) {
+    if (slot == NULL) {
+        return;
+    }
+    slot->thread_name[0] = '\0';
+    if (name_ptr == NULL || name_len <= 0) {
+        return;
+    }
+    size_t copy_len = (size_t)name_len;
+    if (copy_len >= sizeof(slot->thread_name)) {
+        copy_len = sizeof(slot->thread_name) - 1;
+    }
+    memcpy(slot->thread_name, name_ptr, copy_len);
+    slot->thread_name[copy_len] = '\0';
+}
+
+static void aic_rt_conc_set_thread_name(const char* name) {
+    if (name == NULL || name[0] == '\0') {
+        return;
+    }
+#if defined(__APPLE__)
+    (void)pthread_setname_np(name);
+#elif defined(__linux__)
+    (void)pthread_setname_np(pthread_self(), name);
+#endif
+}
+
 static void* aic_rt_conc_task_main(void* raw_slot) {
     long slot_index = -1;
     if (raw_slot != NULL) {
@@ -43635,6 +44582,47 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
         return NULL;
     }
     AicConcTaskSlot* slot = &aic_rt_conc_tasks[slot_index];
+    aic_rt_conc_set_thread_name(slot->thread_name);
+    if (slot->mode == 1) {
+        pthread_mutex_lock(&slot->mutex);
+        if (slot->cancelled || aic_rt_conc_scope_is_cancelled(slot->scope_id)) {
+            void* entry_env = slot->entry_env;
+            slot->entry_env = NULL;
+            slot->cancelled = 1;
+            slot->finished = 1;
+            pthread_cond_broadcast(&slot->cond);
+            pthread_mutex_unlock(&slot->mutex);
+            free(entry_env);
+            return NULL;
+        }
+        AicConcEntryFn entry_fn = slot->entry_fn;
+        void* entry_env = slot->entry_env;
+        slot->entry_env = NULL;
+        pthread_mutex_unlock(&slot->mutex);
+
+        if (entry_fn == NULL) {
+            free(entry_env);
+            pthread_mutex_lock(&slot->mutex);
+            slot->panic = 1;
+            slot->finished = 1;
+            pthread_cond_broadcast(&slot->cond);
+            pthread_mutex_unlock(&slot->mutex);
+            return NULL;
+        }
+
+        long result = entry_fn(entry_env);
+        free(entry_env);
+        pthread_mutex_lock(&slot->mutex);
+        if (slot->cancelled || aic_rt_conc_scope_is_cancelled(slot->scope_id)) {
+            slot->cancelled = 1;
+        } else {
+            slot->result = result;
+        }
+        slot->finished = 1;
+        pthread_cond_broadcast(&slot->cond);
+        pthread_mutex_unlock(&slot->mutex);
+        return NULL;
+    }
 
     long remaining = slot->delay_ms;
     while (remaining > 0) {
@@ -43737,6 +44725,109 @@ long aic_rt_conc_spawn(long value, long delay_ms, long* out_handle) {
     return aic_rt_conc_spawn_with_scope(value, delay_ms, 0, out_handle);
 }
 
+static long aic_rt_conc_spawn_fn_with_scope(
+    long entry_fn,
+    long entry_env,
+    long scope_id,
+    const char* name_ptr,
+    long name_len,
+    long* out_handle
+) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (entry_fn == 0) {
+        return 4;
+    }
+    if (name_len < 0) {
+        return 4;
+    }
+    if (scope_id > 0 && aic_rt_conc_scope_is_cancelled(scope_id)) {
+        return 3;
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+        if (!aic_rt_conc_tasks[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        return 7;
+    }
+
+    AicConcTaskSlot* slot = &aic_rt_conc_tasks[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    slot->active = 1;
+    slot->mode = 1;
+    slot->scope_id = scope_id;
+    slot->entry_fn = (AicConcEntryFn)(intptr_t)entry_fn;
+    slot->entry_env = (void*)(intptr_t)entry_env;
+    aic_rt_conc_task_set_name(slot, name_ptr, name_len);
+    if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_cond_init(&slot->cond, NULL) != 0) {
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+
+    long* arg = (long*)malloc(sizeof(long));
+    if (arg == NULL) {
+        pthread_cond_destroy(&slot->cond);
+        pthread_mutex_destroy(&slot->mutex);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    *arg = slot_index;
+    int create_rc = pthread_create(&slot->thread, NULL, aic_rt_conc_task_main, arg);
+    if (create_rc != 0) {
+        free(arg);
+        pthread_cond_destroy(&slot->cond);
+        pthread_mutex_destroy(&slot->mutex);
+        free(slot->entry_env);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (out_handle != NULL) {
+        *out_handle = slot_index + 1;
+    }
+    return 0;
+}
+
+long aic_rt_conc_spawn_fn(long entry_fn, long entry_env, long* out_handle) {
+    return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, 0, NULL, 0, out_handle);
+}
+
+long aic_rt_conc_spawn_fn_named(
+    long entry_fn,
+    long entry_env,
+    const char* name_ptr,
+    long name_len,
+    long name_cap,
+    long* out_handle
+) {
+    (void)name_cap;
+    return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, 0, name_ptr, name_len, out_handle);
+}
+
+long aic_rt_conc_scope_new(long* out_scope) {
+    return aic_rt_conc_scope_new_internal(0, out_scope);
+}
+
+long aic_rt_conc_scope_spawn_fn(long scope_id, long entry_fn, long entry_env, long* out_handle) {
+    if (!aic_rt_conc_scope_is_active(scope_id)) {
+        if (out_handle != NULL) {
+            *out_handle = 0;
+        }
+        return 4;
+    }
+    return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, scope_id, NULL, 0, out_handle);
+}
+
 static long aic_rt_conc_join_internal(
     long handle,
     long timeout_ms,
@@ -43814,6 +44905,10 @@ long aic_rt_conc_join(long handle, long* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 0, out_value);
 }
 
+long aic_rt_conc_join_value(long handle, long* out_value) {
+    return aic_rt_conc_join_internal(handle, 0, 0, out_value);
+}
+
 long aic_rt_conc_cancel(long handle, long* out_cancelled);
 
 long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value) {
@@ -43868,8 +44963,57 @@ long aic_rt_conc_cancel(long handle, long* out_cancelled) {
     }
     pthread_mutex_unlock(&slot->mutex);
     if (propagate_scope_cancel && scope_id > 0) {
-        aic_rt_conc_scope_cancel(scope_id);
+        aic_rt_conc_scope_cancel_internal(scope_id);
     }
+    return 0;
+}
+
+long aic_rt_conc_scope_join_all(long scope_id) {
+    if (!aic_rt_conc_scope_is_active(scope_id)) {
+        return 4;
+    }
+    long handles[AIC_RT_CONC_TASK_CAP];
+    long handle_count = 0;
+    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+        AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
+        if (!slot->active || slot->scope_id != scope_id) {
+            continue;
+        }
+        handles[handle_count] = i + 1;
+        handle_count += 1;
+    }
+    long first_err = 0;
+    for (long i = 0; i < handle_count; ++i) {
+        long out_value = 0;
+        long rc = aic_rt_conc_join(handles[i], &out_value);
+        if (rc != 0 && rc != 1 && first_err == 0) {
+            first_err = rc;
+        }
+    }
+    return first_err;
+}
+
+long aic_rt_conc_scope_cancel(long scope_id) {
+    if (!aic_rt_conc_scope_is_active(scope_id)) {
+        return 4;
+    }
+    aic_rt_conc_scope_cancel_internal(scope_id);
+    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+        AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
+        if (!slot->active || slot->scope_id != scope_id) {
+            continue;
+        }
+        long out_cancelled = 0;
+        (void)aic_rt_conc_cancel(i + 1, &out_cancelled);
+    }
+    return 0;
+}
+
+long aic_rt_conc_scope_close(long scope_id) {
+    if (!aic_rt_conc_scope_is_active(scope_id)) {
+        return 4;
+    }
+    aic_rt_conc_scope_release_internal(scope_id);
     return 0;
 }
 
@@ -43914,7 +45058,7 @@ long aic_rt_conc_spawn_group(
     }
 
     long scope_id = 0;
-    long scope_rc = aic_rt_conc_scope_new(0, &scope_id);
+    long scope_rc = aic_rt_conc_scope_new_internal(0, &scope_id);
     if (scope_rc != 0) {
         free(handles);
         free(results);
@@ -43925,7 +45069,7 @@ long aic_rt_conc_spawn_group(
         long handle = 0;
         long spawn_rc = aic_rt_conc_spawn_with_scope(values[i], delay_ms, scope_id, &handle);
         if (spawn_rc != 0) {
-            aic_rt_conc_scope_cancel(scope_id);
+            aic_rt_conc_scope_cancel_internal(scope_id);
             for (size_t j = 0; j < i; ++j) {
                 if (handles[j] > 0) {
                     long cancelled = 0;
@@ -43934,7 +45078,7 @@ long aic_rt_conc_spawn_group(
                     (void)aic_rt_conc_join(handles[j], &discard);
                 }
             }
-            aic_rt_conc_scope_release(scope_id);
+            aic_rt_conc_scope_release_internal(scope_id);
             free(handles);
             free(results);
             return spawn_rc;
@@ -43946,7 +45090,7 @@ long aic_rt_conc_spawn_group(
         long rc = aic_rt_conc_join(handles[i], &results[i]);
         handles[i] = 0;
         if (rc != 0) {
-            aic_rt_conc_scope_cancel(scope_id);
+            aic_rt_conc_scope_cancel_internal(scope_id);
             for (size_t j = i + 1; j < count; ++j) {
                 if (handles[j] > 0) {
                     long cancelled = 0;
@@ -43955,14 +45099,14 @@ long aic_rt_conc_spawn_group(
                     (void)aic_rt_conc_join(handles[j], &discard);
                 }
             }
-            aic_rt_conc_scope_release(scope_id);
+            aic_rt_conc_scope_release_internal(scope_id);
             free(handles);
             free(results);
             return rc;
         }
     }
 
-    aic_rt_conc_scope_release(scope_id);
+    aic_rt_conc_scope_release_internal(scope_id);
     free(handles);
     *out_values_ptr = results;
     *out_count = (long)count;

@@ -1288,7 +1288,7 @@ enum ConcurrencyError {
     Io,
 }
 
-struct Task {
+struct Task[T] {
     handle: Int,
 }
 
@@ -1300,17 +1300,17 @@ struct IntMutex {
     handle: Int,
 }
 
-fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
-    let out: Result[Task, ConcurrencyError] = Ok(Task { handle: 0 });
+fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency } {
+    let out: Result[Task[Int], ConcurrencyError] = Ok(Task { handle: 0 });
     out
 }
 
-fn aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency } {
+fn aic_conc_join_intrinsic(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency } {
     let out: Result[Int, ConcurrencyError] = Ok(0);
     out
 }
 
-fn aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+fn aic_conc_cancel_intrinsic(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     let out: Result[Bool, ConcurrencyError] = Ok(true);
     out
 }
@@ -1355,15 +1355,15 @@ fn aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyEr
     out
 }
 
-fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
+fn spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency } {
     aic_conc_spawn_intrinsic(value, delay_ms)
 }
 
-fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency } {
+fn join_task(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_join_intrinsic(task)
 }
 
-fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_cancel_intrinsic(task)
 }
 

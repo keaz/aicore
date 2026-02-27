@@ -22,7 +22,11 @@ enum ChannelError {
     Timeout,
 }
 
-struct Task {
+struct Task[T] {
+    handle: Int,
+}
+
+struct Scope {
     handle: Int,
 }
 
@@ -59,12 +63,20 @@ enum SelectResult[A, B] {
     Closed,
 }
 
-intrinsic fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency };
-intrinsic fn aic_conc_join_intrinsic(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency };
-intrinsic fn aic_conc_join_timeout_intrinsic(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
-intrinsic fn aic_conc_cancel_intrinsic(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_join_intrinsic(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_join_timeout_intrinsic(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_cancel_intrinsic(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_spawn_fn_intrinsic[T](f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_spawn_fn_named_intrinsic[T](name: String, f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_join_value_intrinsic[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_scope_new_intrinsic() -> Result[Scope, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_scope_spawn_fn_intrinsic[T](scope: Scope, f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_scope_join_all_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_scope_cancel_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_scope_close_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_spawn_group_intrinsic(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency };
-intrinsic fn aic_conc_select_first_intrinsic(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_select_first_intrinsic(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_channel_int_buffered_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
@@ -100,6 +112,15 @@ fn map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError {
         Timeout => channel_timeout(),
         Closed => channel_closed(),
         _ => channel_closed(),
+    }
+}
+
+fn map_channel_to_concurrency_error(err: ChannelError) -> ConcurrencyError {
+    match err {
+        Timeout => Timeout(),
+        Closed => Closed(),
+        Full => InvalidInput(),
+        Empty => NotFound(),
     }
 }
 
@@ -144,8 +165,16 @@ fn decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[
     }
 }
 
+fn decode_task_payload[T](payload_id: Int) -> Result[T, ConcurrencyError] effects { concurrency } {
+    let hint: Receiver[T] = Receiver { handle: 0 };
+    match decode_payload_for_receiver(payload_id, hint) {
+        Ok(value) => Ok(value),
+        Err(err) => Err(map_channel_to_concurrency_error(err)),
+    }
+}
+
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency } {
-    match channel_int_buffered(1) {
+    match aic_conc_channel_int_buffered_intrinsic(1) {
         Ok(ch) => (
             Sender { handle: ch.handle },
             Receiver { handle: ch.handle },
@@ -158,7 +187,7 @@ fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency } {
 }
 
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency } {
-    match channel_int_buffered(capacity) {
+    match aic_conc_channel_int_buffered_intrinsic(capacity) {
         Ok(ch) => (
             Sender { handle: ch.handle },
             Receiver { handle: ch.handle },
@@ -186,7 +215,7 @@ fn send_cleanup_error(payload_id: Int, err: ConcurrencyError) -> ChannelError ef
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
-            Ok(payload_id) => match send_int(IntChannel { handle: tx.handle }, payload_id, default_blocking_timeout_ms()) {
+            Ok(payload_id) => match aic_conc_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id, default_blocking_timeout_ms()) {
                 Ok(_) => Ok(true),
                 Err(err) => Err(send_cleanup_error(payload_id, err)),
             },
@@ -204,7 +233,7 @@ fn try_send_cleanup_error(payload_id: Int, err: ChannelError) -> ChannelError ef
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
-            Ok(payload_id) => match try_send_int(IntChannel { handle: tx.handle }, payload_id) {
+            Ok(payload_id) => match aic_conc_try_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id) {
                 Ok(_) => Ok(true),
                 Err(err) => Err(try_send_cleanup_error(payload_id, err)),
             },
@@ -215,7 +244,7 @@ fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { 
 }
 
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
-    match recv_int(IntChannel { handle: rx.handle }, default_blocking_timeout_ms()) {
+    match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, default_blocking_timeout_ms()) {
         Ok(payload_id) => match take_payload_string(payload_id) {
             Ok(payload) => match aic_json_parse_intrinsic(payload) {
                 Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
@@ -231,7 +260,7 @@ fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
 }
 
 fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
-    match try_recv_int(IntChannel { handle: rx.handle }) {
+    match aic_conc_try_recv_int_intrinsic(IntChannel { handle: rx.handle }) {
         Ok(payload_id) => match take_payload_string(payload_id) {
             Ok(payload) => match aic_json_parse_intrinsic(payload) {
                 Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
@@ -247,7 +276,7 @@ fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency
 }
 
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency } {
-    match recv_int(IntChannel { handle: rx.handle }, timeout_ms) {
+    match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, timeout_ms) {
         Ok(payload_id) => match take_payload_string(payload_id) {
             Ok(payload) => match aic_json_parse_intrinsic(payload) {
                 Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
@@ -262,19 +291,73 @@ fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] 
     }
 }
 
-fn spawn_task(value: Int, delay_ms: Int) -> Result[Task, ConcurrencyError] effects { concurrency } {
+fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency } {
+    match aic_conc_spawn_fn_intrinsic(f) {
+        Ok(task) => Task { handle: task.handle },
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn join[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
+    aic_conc_join_value_intrinsic(task)
+}
+
+fn join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
+    aic_conc_join_value_intrinsic(task)
+}
+
+fn spawn_named[T](name: String, f: Fn() -> T) -> Task[T] effects { concurrency } {
+    match aic_conc_spawn_fn_named_intrinsic(name, f) {
+        Ok(task) => Task { handle: task.handle },
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency } {
+    match aic_conc_scope_new_intrinsic() {
+        Ok(created_scope) => scoped_run_with_scope(created_scope, f),
+        Err(_) => f(Scope { handle: 0 }),
+    }
+}
+
+fn scoped_run_with_scope[T](created_scope: Scope, f: Fn(Scope) -> T) -> T effects { concurrency } {
+    let scope_handle = created_scope.handle;
+    let value = f(created_scope);
+    let scope_for_join = Scope { handle: scope_handle };
+    let scope_for_close = Scope { handle: scope_handle };
+    let _join = aic_conc_scope_join_all_intrinsic(scope_for_join);
+    let _close = aic_conc_scope_close_intrinsic(scope_for_close);
+    value
+}
+
+fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency } {
+    match aic_conc_scope_spawn_fn_intrinsic(scope, f) {
+        Ok(task) => Task { handle: task.handle },
+        Err(_) => Task { handle: 0 },
+    }
+}
+
+fn scope_cancel(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_scope_cancel_intrinsic(scope)
+}
+
+fn scope_join_all(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_scope_join_all_intrinsic(scope)
+}
+
+fn spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency } {
     aic_conc_spawn_intrinsic(value, delay_ms)
 }
 
-fn join_task(task: Task) -> Result[Int, ConcurrencyError] effects { concurrency } {
+fn join_task(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_join_intrinsic(task)
 }
 
-fn timeout_task(task: Task, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
+fn timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_join_timeout_intrinsic(task, timeout_ms)
 }
 
-fn cancel_task(task: Task) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_cancel_intrinsic(task)
 }
 
@@ -282,7 +365,7 @@ fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyE
     aic_conc_spawn_group_intrinsic(values, delay_ms)
 }
 
-fn select_first(tasks: Vec[Task], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency } {
+fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency } {
     aic_conc_select_first_intrinsic(tasks, timeout_ms)
 }
 

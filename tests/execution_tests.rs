@@ -4067,7 +4067,7 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+fn unwrap_task(v: Result[Task[Int], ConcurrencyError]) -> Task[Int] {
     match v {
         Ok(task) => task,
         Err(_) => Task { handle: 0 },
@@ -4150,6 +4150,7 @@ fn exec_concurrency_generic_channels_support_string_struct_and_vec() {
 import std.concurrent;
 import std.io;
 import std.string;
+import std.string;
 import std.vec;
 
 struct Message {
@@ -4226,6 +4227,99 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_spawn_join_generic_closure_capture_is_stable() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.string;
+
+struct Job {
+    id: Int,
+    label: String,
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let base = 40;
+    let int_task: Task[Int] = spawn_named("int", || -> Int { base + 2 });
+    let int_ok = match join_value(int_task) {
+        Ok(value) => if value == 42 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let job_task: Task[Job] = spawn_named("job", || -> Job { Job { id: 7, label: "ok" } });
+    let job_ok = match join_value(job_task) {
+        Ok(job) => if job.id == 7 && len(job.label) == 2 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if int_ok + job_ok == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_scoped_spawn_joins_before_scope_exit() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn recv_or_zero(rx: Receiver[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match try_recv(rx) {
+        Ok(v) => v,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let pair: (Sender[Int], Receiver[Int]) = buffered_channel(4);
+    let tx = pair.0;
+    let rx = pair.1;
+    let tx1: Sender[Int] = Sender { handle: tx.handle };
+    let tx2: Sender[Int] = Sender { handle: tx.handle };
+
+    let scoped_ok = scoped(|scope: Scope| -> Int {
+        let _first: Task[Int] = scope_spawn(scope, || -> Int {
+            let _sent = send(tx1, 11);
+            11
+        });
+        let _second: Task[Int] = scope_spawn(scope, || -> Int {
+            let _sent = send(tx2, 31);
+            31
+        });
+        1
+    });
+
+    let rx1: Receiver[Int] = Receiver { handle: rx.handle };
+    let rx2: Receiver[Int] = Receiver { handle: rx.handle };
+    let first = recv_or_zero(rx1);
+    let second = recv_or_zero(rx2);
+    let _close_tx = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+
+    if scoped_ok == 1 && first + second == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_cancellation_timeout_and_panic_are_stable() {
     let src = r#"
 import std.io;
@@ -4247,7 +4341,7 @@ fn err_code(err: ConcurrencyError) -> Int {
     }
 }
 
-fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+fn unwrap_task(v: Result[Task[Int], ConcurrencyError]) -> Task[Int] {
     match v {
         Ok(task) => task,
         Err(_) => Task { handle: 0 },
@@ -4562,7 +4656,7 @@ fn err_code(err: ConcurrencyError) -> Int {
     }
 }
 
-fn unwrap_task(v: Result[Task, ConcurrencyError]) -> Task {
+fn unwrap_task(v: Result[Task[Int], ConcurrencyError]) -> Task[Int] {
     match v {
         Ok(task) => task,
         Err(_) => Task { handle: 0 },
@@ -4601,7 +4695,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
     let t0 = unwrap_task(spawn_task(1, 80));
     let t1 = unwrap_task(spawn_task(9, 5));
     let t2 = unwrap_task(spawn_task(3, 90));
-    let mut race: Vec[Task] = vec.new_vec();
+    let mut race: Vec[Task[Int]] = vec.new_vec();
     race = vec.push(race, t0);
     race = vec.push(race, t1);
     race = vec.push(race, t2);
@@ -4615,7 +4709,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         (match join_task(t1) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } }) +
         (match join_task(t2) { Ok(_) => 0, Err(err) => if err_code(err) == 1 { 1 } else { 0 } });
 
-    let empty_tasks: Vec[Task] = vec.new_vec();
+    let empty_tasks: Vec[Task[Int]] = vec.new_vec();
     let invalid_empty = match select_first(empty_tasks, 20) {
         Ok(_) => 0,
         Err(err) => if err_code(err) == 4 { 1 } else { 0 },
@@ -4660,7 +4754,7 @@ fn err_code(err: ConcurrencyError) -> Int {
 }
 
 fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
-    let mut tasks: Vec[Task] = vec.new_vec();
+    let mut tasks: Vec[Task[Int]] = vec.new_vec();
     let mut i = 0;
     while i < 10 {
         tasks = match spawn_task(i + 1, 40 + i) {

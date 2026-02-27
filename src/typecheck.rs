@@ -1267,7 +1267,6 @@ impl<'a> Checker<'a> {
         }
 
         if func.is_async
-            || !func.generics.is_empty()
             || !func.capabilities.is_empty()
             || func.requires.is_some()
             || func.ensures.is_some()
@@ -1276,7 +1275,7 @@ impl<'a> Checker<'a> {
                 Diagnostic::error(
                     "E2121",
                     format!(
-                        "intrinsic function '{}' must be a plain declaration without async/generics/capabilities/contracts",
+                        "intrinsic function '{}' must be a plain declaration without async/capabilities/contracts",
                         func.name
                     ),
                     self.file,
