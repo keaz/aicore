@@ -827,6 +827,136 @@
       "signature": "require(config: Map[String, String], key: String) -> Result[String, ConfigError]"
     },
     {
+      "module": "std.crypto",
+      "kind": "enum",
+      "signature": "CryptoError { InvalidInput, UnsupportedAlgorithm, Internal }"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_base64_decode_intrinsic(b64: String) -> Result[String, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_base64_encode_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_hex_decode_intrinsic(hex: String) -> Result[String, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_hex_encode_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_hmac_sha256_intrinsic(key: String, message: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_hmac_sha256_raw_intrinsic(key: String, message: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_md5_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_pbkdf2_sha256_intrinsic(password: String, salt: String, iterations: Int, key_length: Int) -> Result[String, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_random_bytes_intrinsic(count: Int) -> String effects { rand }"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_secure_eq_intrinsic(a: String, b: String) -> Bool"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_sha256_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "aic_crypto_sha256_raw_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "base64_decode(b64: String) -> Result[Bytes, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "base64_encode(data: Bytes) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "hex_decode(hex: String) -> Result[Bytes, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "hex_encode(data: Bytes) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "hmac_sha256(key: String, message: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "hmac_sha256_raw(key: Bytes, message: Bytes) -> Bytes"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "md5(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "md5_bytes(data: Bytes) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "pbkdf2_sha256(password: String, salt: Bytes, iterations: Int, key_length: Int) -> Result[Bytes, CryptoError]"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "random_bytes(count: Int) -> Bytes effects { rand }"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "secure_eq(a: Bytes, b: Bytes) -> Bool"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "sha256(data: String) -> String"
+    },
+    {
+      "module": "std.crypto",
+      "kind": "fn",
+      "signature": "sha256_raw(data: String) -> Bytes"
+    },
+    {
       "module": "std.deque",
       "kind": "fn",
       "signature": "deque_len[T](d: Deque[T]) -> Int"

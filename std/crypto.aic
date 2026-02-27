@@ -1,0 +1,93 @@
+module std.crypto;
+
+import std.bytes;
+import std.result;
+
+enum CryptoError {
+    InvalidInput,
+    UnsupportedAlgorithm,
+    Internal,
+}
+
+intrinsic fn aic_crypto_md5_intrinsic(data: String) -> String;
+intrinsic fn aic_crypto_sha256_intrinsic(data: String) -> String;
+intrinsic fn aic_crypto_sha256_raw_intrinsic(data: String) -> String;
+intrinsic fn aic_crypto_hmac_sha256_intrinsic(key: String, message: String) -> String;
+intrinsic fn aic_crypto_hmac_sha256_raw_intrinsic(key: String, message: String) -> String;
+intrinsic fn aic_crypto_pbkdf2_sha256_intrinsic(password: String, salt: String, iterations: Int, key_length: Int) -> Result[String, CryptoError];
+intrinsic fn aic_crypto_hex_encode_intrinsic(data: String) -> String;
+intrinsic fn aic_crypto_hex_decode_intrinsic(hex: String) -> Result[String, CryptoError];
+intrinsic fn aic_crypto_base64_encode_intrinsic(data: String) -> String;
+intrinsic fn aic_crypto_base64_decode_intrinsic(b64: String) -> Result[String, CryptoError];
+intrinsic fn aic_crypto_random_bytes_intrinsic(count: Int) -> String effects { rand };
+intrinsic fn aic_crypto_secure_eq_intrinsic(a: String, b: String) -> Bool;
+
+fn md5(data: String) -> String {
+    aic_crypto_md5_intrinsic(data)
+}
+
+fn md5_bytes(data: Bytes) -> String {
+    aic_crypto_md5_intrinsic(data.data)
+}
+
+fn sha256(data: String) -> String {
+    aic_crypto_sha256_intrinsic(data)
+}
+
+fn sha256_raw(data: String) -> Bytes {
+    Bytes {
+        data: aic_crypto_sha256_raw_intrinsic(data),
+    }
+}
+
+fn hmac_sha256(key: String, message: String) -> String {
+    aic_crypto_hmac_sha256_intrinsic(key, message)
+}
+
+fn hmac_sha256_raw(key: Bytes, message: Bytes) -> Bytes {
+    Bytes {
+        data: aic_crypto_hmac_sha256_raw_intrinsic(key.data, message.data),
+    }
+}
+
+fn pbkdf2_sha256(password: String, salt: Bytes, iterations: Int, key_length: Int) -> Result[Bytes, CryptoError] {
+    let raw = aic_crypto_pbkdf2_sha256_intrinsic(password, salt.data, iterations, key_length);
+    match raw {
+        Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+fn hex_encode(data: Bytes) -> String {
+    aic_crypto_hex_encode_intrinsic(data.data)
+}
+
+fn hex_decode(hex: String) -> Result[Bytes, CryptoError] {
+    let raw = aic_crypto_hex_decode_intrinsic(hex);
+    match raw {
+        Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+fn base64_encode(data: Bytes) -> String {
+    aic_crypto_base64_encode_intrinsic(data.data)
+}
+
+fn base64_decode(b64: String) -> Result[Bytes, CryptoError] {
+    let raw = aic_crypto_base64_decode_intrinsic(b64);
+    match raw {
+        Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+fn random_bytes(count: Int) -> Bytes effects { rand } {
+    Bytes {
+        data: aic_crypto_random_bytes_intrinsic(count),
+    }
+}
+
+fn secure_eq(a: Bytes, b: Bytes) -> Bool {
+    aic_crypto_secure_eq_intrinsic(a.data, b.data)
+}

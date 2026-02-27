@@ -7393,3 +7393,191 @@ fn main() -> Int effects { io } capabilities { io  } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }
+
+#[test]
+fn exec_crypto_vectors_roundtrip_and_secure_compare_paths() {
+    let src = r#"
+import std.io;
+import std.crypto;
+import std.bytes;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn bytes_or_empty(v: Result[Bytes, CryptoError]) -> Bytes {
+    match v {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn bytes_match_hex(data: Bytes, expected_hex: String) -> Bool {
+    match hex_decode(expected_hex) {
+        Ok(expected) => secure_eq(data, expected),
+        Err(_) => false,
+    }
+}
+
+fn digest_matches_hex(digest_hex: String, expected_hex: String) -> Bool {
+    match hex_decode(digest_hex) {
+        Ok(actual) => bytes_match_hex(actual, expected_hex),
+        Err(_) => false,
+    }
+}
+
+fn main() -> Int effects { io, rand } capabilities { io, rand } {
+    let md5_ok = bool_to_int(
+        digest_matches_hex(md5("hello"), "5d41402abc4b2a76b9719d911017c592")
+    );
+    let md5_empty_ok = bool_to_int(
+        digest_matches_hex(md5(""), "d41d8cd98f00b204e9800998ecf8427e")
+    );
+    let sha_ok = bool_to_int(
+        digest_matches_hex(
+            sha256("hello"),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        )
+    );
+    let sha_empty_ok = bool_to_int(
+        digest_matches_hex(
+            sha256(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
+    );
+    let hmac_ok = bool_to_int(
+        digest_matches_hex(
+            hmac_sha256("key", "The quick brown fox jumps over the lazy dog"),
+            "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8",
+        )
+    );
+    let hmac_rfc_ok = bool_to_int(
+        bytes_match_hex(
+            hmac_sha256_raw(
+                bytes_or_empty(hex_decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")),
+                bytes.from_string("Hi There"),
+            ),
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+        )
+    );
+
+    let pb = bytes_or_empty(
+        pbkdf2_sha256("password", bytes.from_string("salt"), 1, 32)
+    );
+    let pb_ok = bool_to_int(bytes_match_hex(pb, "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"));
+    let pb_rfc_ok = bool_to_int(
+        bytes_match_hex(
+            bytes_or_empty(
+                pbkdf2_sha256("password", bytes.from_string("salt"), 4096, 32)
+            ),
+            "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a",
+        )
+    );
+
+    let sha_raw_len_ok = bool_to_int(bytes.byte_len(sha256_raw("hello")) == 32);
+    let hmac_raw_len_ok = bool_to_int(
+        bytes.byte_len(
+            hmac_sha256_raw(bytes.from_string("key"), bytes.from_string("message"))
+        ) == 32
+    );
+
+    let sample = bytes.from_string("aicore");
+    let hex_roundtrip = match hex_decode(hex_encode(sample)) {
+        Ok(decoded) => secure_eq(decoded, sample),
+        Err(_) => false,
+    };
+    let b64_roundtrip = match base64_decode(base64_encode(sample)) {
+        Ok(decoded) => secure_eq(decoded, sample),
+        Err(_) => false,
+    };
+
+    let random_a = random_bytes(16);
+    let random_b = random_bytes(16);
+    let random_len_ok = bool_to_int(bytes.byte_len(random_a) == 16 && bytes.byte_len(random_b) == 16);
+
+    let secure_eq_ok = bool_to_int(
+        secure_eq(bytes.from_string("same"), bytes.from_string("same"))
+            && !secure_eq(bytes.from_string("same"), bytes.from_string("diff"))
+    );
+
+    let score =
+        md5_ok +
+        md5_empty_ok +
+        sha_ok +
+        sha_empty_ok +
+        hmac_ok +
+        hmac_rfc_ok +
+        pb_ok +
+        pb_rfc_ok +
+        sha_raw_len_ok +
+        hmac_raw_len_ok +
+        bool_to_int(hex_roundtrip) +
+        bool_to_int(b64_roundtrip) +
+        random_len_ok +
+        secure_eq_ok;
+
+    if score == 14 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_crypto_invalid_inputs_return_stable_error_variants() {
+    let src = r#"
+import std.io;
+import std.crypto;
+import std.bytes;
+
+fn is_invalid_input(v: Result[Bytes, CryptoError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn pbkdf2_invalid(iterations: Int, key_len: Int) -> Bool {
+    match pbkdf2_sha256("password", bytes.from_string("salt"), iterations, key_len) {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let bad_hex_len_ok = is_invalid_input(hex_decode("0"));
+    let bad_hex_char_ok = is_invalid_input(hex_decode("zz"));
+    let bad_b64_ok = is_invalid_input(base64_decode("%%%="));
+    let bad_pbkdf2_iterations_ok = pbkdf2_invalid(0, 32);
+    let bad_pbkdf2_key_len_ok = pbkdf2_invalid(1, 0);
+
+    if bad_hex_len_ok &&
+        bad_hex_char_ok &&
+        bad_b64_ok &&
+        bad_pbkdf2_iterations_ok &&
+        bad_pbkdf2_key_len_ok {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}

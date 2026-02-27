@@ -150,7 +150,29 @@ fn frame() -> ByteBuffer {
 
 Reference: `examples/data/binary_protocol.aic`.
 
-## 8. Platform Caveat Patterns
+## 8. Crypto Patterns (Hashes, HMAC, PBKDF2)
+
+Use byte-level checks for digest validation and prefer typed decode/derive error handling.
+
+```aic
+import std.crypto;
+import std.bytes;
+
+fn bytes_or_empty(v: Result[Bytes, CryptoError]) -> Bytes {
+    match v {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn scram_seed(password: String) -> Bytes {
+    bytes_or_empty(pbkdf2_sha256(password, bytes.from_string("salt"), 4096, 32))
+}
+```
+
+Reference: `examples/crypto/pg_scram_auth.aic`.
+
+## 9. Platform Caveat Patterns
 
 When cross-platform behavior differs, branch on typed errors.
 

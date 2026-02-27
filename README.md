@@ -674,6 +674,8 @@ AICore provides deterministic behavior across every stage of the pipeline:
 - **Deterministic diagnostics** — ordered by span/code/message for reproducible output
 - **Reproducible builds** — lockfile, checksums, and release manifests ensure byte-identical outputs
 
+Agent-oriented REST and workflow guide: `docs/ai-agent-rest-guide.md`.
+
 ---
 
 ## Diagnostics

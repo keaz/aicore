@@ -305,6 +305,11 @@ fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { 
 
     fs::write(path.join("std/net.aic"), include_str!("../std/net.aic"))?;
 
+    fs::write(
+        path.join("std/crypto.aic"),
+        include_str!("../std/crypto.aic"),
+    )?;
+
     fs::write(path.join("std/time.aic"), include_str!("../std/time.aic"))?;
 
     fs::write(

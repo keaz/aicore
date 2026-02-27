@@ -1,0 +1,64 @@
+import std.io;
+import std.crypto;
+import std.bytes;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn bytes_or_empty(v: Result[Bytes, CryptoError]) -> Bytes {
+    match v {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn bytes_match_hex(data: Bytes, expected_hex: String) -> Bool {
+    match hex_decode(expected_hex) {
+        Ok(expected) => secure_eq(data, expected),
+        Err(_) => false,
+    }
+}
+
+fn bytes_match_base64(data: Bytes, expected_b64: String) -> Bool {
+    match base64_decode(expected_b64) {
+        Ok(expected) => secure_eq(data, expected),
+        Err(_) => false,
+    }
+}
+
+fn digest_matches_hex(digest_hex: String, expected_hex: String) -> Bool {
+    match hex_decode(digest_hex) {
+        Ok(actual) => bytes_match_hex(actual, expected_hex),
+        Err(_) => false,
+    }
+}
+
+fn main() -> Int effects { io, rand } capabilities { io, rand } {
+    let legacy_step = md5("passworduser");
+    let legacy_final = md5("4d45974e13472b5a0be3533de4666414abcd");
+
+    let salted = bytes_or_empty(
+        pbkdf2_sha256("pencil", bytes.from_string("saltysalt"), 4096, 32)
+    );
+    let client_key = hmac_sha256_raw(salted, bytes.from_string("Client Key"));
+    let auth_sig = hmac_sha256_raw(salted, bytes.from_string("auth-message"));
+    let nonce = random_bytes(18);
+
+    let score =
+        bool_to_int(digest_matches_hex(legacy_step, "4d45974e13472b5a0be3533de4666414")) +
+        bool_to_int(digest_matches_hex(legacy_final, "d5d3316b3e3c349e6ec421e824f2f990")) +
+        bool_to_int(bytes_match_hex(salted, "fa8a6f21d067f7b9369b247b002a2683307ce8fd4601074ae76dedfc6d7b1e60")) +
+        bool_to_int(bytes_match_base64(salted, "+opvIdBn97k2myR7AComgzB86P1GAQdK523t/G17HmA=")) +
+        bool_to_int(bytes_match_hex(client_key, "b9458e206ae748e3d335736e94c20ba0bbcff12bf78ee9c6b372344dd28d9efa")) +
+        bool_to_int(bytes_match_base64(auth_sig, "zFeIvrf04aDdWQsZg1LKt+iJMjB5JFO9jX3VTU8nn4I=")) +
+        bool_to_int(bytes.byte_len(nonce) == 18) +
+        bool_to_int(!secure_eq(client_key, auth_sig));
+
+    if score == 8 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}

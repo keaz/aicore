@@ -138,7 +138,7 @@ In `src/codegen.rs`:
 
 Current std set under `std/`:
 
-- `io`, `fs`, `env`, `config`, `path`, `proc`, `net`, `time`, `rand`, `json`, `url`, `http`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`
+- `io`, `fs`, `env`, `config`, `path`, `proc`, `net`, `time`, `rand`, `crypto`, `json`, `url`, `http`, `regex`, `concurrent`, `string`, `vec`, `option`, `result`
 
 Notes:
 
@@ -148,6 +148,8 @@ Notes:
 - `std.config` composes file + JSON + env capabilities for app config loading (`load_json`, `load_env_prefix`, `get_or_default`, `require`).
 - `std.set` mutator/query APIs are `add`, `has`, and `discard`; `union`/`intersection`/`difference` preserve deterministic ordering via `to_vec`.
 - `std.vec` capacity APIs are production-facing: `new_vec_with_capacity`, `reserve`, `shrink_to_fit`; runtime growth remains 2x and capacity behavior is exercised in `tests/execution_tests.rs` and `examples/core/vec_capacity.aic`.
+- `std.crypto` provides runtime-backed primitives for MD5/SHA-256/HMAC/PBKDF2 plus hex/base64 encoding, secure random bytes, and constant-time byte comparison.
+- `std.crypto` runtime error mapping is stable (`InvalidInput`, `UnsupportedAlgorithm`, `Internal`) and exercised by positive + negative execution tests.
 - `std.option` and `std.result` expose inherent enum methods:
   - `Option.unwrap_or`, `Option.map`, `Option.and_then`
   - `Result.unwrap_or`, `Result.map`, `Result.and_then`
@@ -202,6 +204,10 @@ Notes:
   - `examples/data/ingest_transform_emit.aic`
   - `examples/data/data_stack_negative_cases.aic`
   - `examples/data/url_http_negative_cases.aic`
+- Crypto contract and example:
+  - `docs/io-api-reference.md` (`std.crypto` section)
+  - `docs/io-cookbook.md` (`Crypto Patterns`)
+  - `examples/crypto/pg_scram_auth.aic`
 
 ### Enum method chaining example (Option/Result)
 

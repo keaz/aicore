@@ -683,6 +683,102 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
             ret: "Result[(), BufferError]",
         }],
     },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_md5_intrinsic",
+        runtime_symbol: "aic_rt_crypto_md5",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_sha256_intrinsic",
+        runtime_symbol: "aic_rt_crypto_sha256",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_sha256_raw_intrinsic",
+        runtime_symbol: "aic_rt_crypto_sha256_raw",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_hmac_sha256_intrinsic",
+        runtime_symbol: "aic_rt_crypto_hmac_sha256",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_hmac_sha256_raw_intrinsic",
+        runtime_symbol: "aic_rt_crypto_hmac_sha256_raw",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_pbkdf2_sha256_intrinsic",
+        runtime_symbol: "aic_rt_crypto_pbkdf2_sha256",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "String", "Int", "Int"],
+            ret: "Result[String, CryptoError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_hex_encode_intrinsic",
+        runtime_symbol: "aic_rt_crypto_hex_encode",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_hex_decode_intrinsic",
+        runtime_symbol: "aic_rt_crypto_hex_decode",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[String, CryptoError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_base64_encode_intrinsic",
+        runtime_symbol: "aic_rt_crypto_base64_encode",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_base64_decode_intrinsic",
+        runtime_symbol: "aic_rt_crypto_base64_decode",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[String, CryptoError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_random_bytes_intrinsic",
+        runtime_symbol: "aic_rt_crypto_random_bytes",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_crypto_secure_eq_intrinsic",
+        runtime_symbol: "aic_rt_crypto_secure_eq",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "String"],
+            ret: "Bool",
+        }],
+    },
 ];
 
 pub fn intrinsic_binding_expectations() -> &'static [IntrinsicBindingExpectation] {
@@ -2261,6 +2357,24 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_buffer_write_bytes(i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_buffer_write_cstring(i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_buffer_write_string_prefixed(i64, i8*, i64, i64)\n\n");
+        text.push_str("declare void @aic_rt_crypto_md5(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_crypto_sha256(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_crypto_sha256_raw(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str(
+            "declare void @aic_rt_crypto_hmac_sha256(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare void @aic_rt_crypto_hmac_sha256_raw(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_crypto_pbkdf2_sha256(i8*, i64, i64, i8*, i64, i64, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str("declare void @aic_rt_crypto_hex_encode(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_crypto_hex_decode(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_crypto_base64_encode(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_crypto_base64_decode(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_crypto_random_bytes(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_crypto_secure_eq(i8*, i64, i64, i8*, i64, i64)\n\n");
         text.push_str("declare void @aic_rt_path_join(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_path_basename(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_path_dirname(i8*, i64, i64, i8**, i64*)\n");
@@ -4463,6 +4577,9 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_buffer_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_crypto_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
         if let Some(result) = self.gen_url_builtin_call(builtin_name, args, span, fctx) {
@@ -19343,6 +19460,630 @@ impl<'a> Generator<'a> {
         })
     }
 
+    fn gen_crypto_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "md5" | "aic_crypto_md5_intrinsic" => "md5",
+            "md5_bytes" => "md5_bytes",
+            "sha256" | "aic_crypto_sha256_intrinsic" => "sha256",
+            "sha256_raw" | "aic_crypto_sha256_raw_intrinsic" => "sha256_raw",
+            "hmac_sha256" | "aic_crypto_hmac_sha256_intrinsic" => "hmac_sha256",
+            "hmac_sha256_raw" | "aic_crypto_hmac_sha256_raw_intrinsic" => "hmac_sha256_raw",
+            "pbkdf2_sha256" | "aic_crypto_pbkdf2_sha256_intrinsic" => "pbkdf2_sha256",
+            "hex_encode" | "aic_crypto_hex_encode_intrinsic" => "hex_encode",
+            "hex_decode" | "aic_crypto_hex_decode_intrinsic" => "hex_decode",
+            "base64_encode" | "aic_crypto_base64_encode_intrinsic" => "base64_encode",
+            "base64_decode" | "aic_crypto_base64_decode_intrinsic" => "base64_decode",
+            "random_bytes" | "aic_crypto_random_bytes_intrinsic" => "random_bytes",
+            "secure_eq" | "aic_crypto_secure_eq_intrinsic" => "secure_eq",
+            _ => return None,
+        };
+
+        match canonical {
+            "md5" if self.sig_matches_shape(name, &["String"], "String") => Some(
+                self.gen_crypto_unary_data_call(name, args, "aic_rt_crypto_md5", "md5", span, fctx),
+            ),
+            "md5_bytes" if self.sig_matches_shape(name, &["Bytes"], "String") => {
+                Some(self.gen_crypto_unary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_md5",
+                    "md5_bytes",
+                    span,
+                    fctx,
+                ))
+            }
+            "sha256" if self.sig_matches_shape(name, &["String"], "String") => {
+                Some(self.gen_crypto_unary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_sha256",
+                    "sha256",
+                    span,
+                    fctx,
+                ))
+            }
+            "sha256_raw"
+                if self.sig_matches_shape(name, &["String"], "Bytes")
+                    || self.sig_matches_shape(name, &["String"], "String") =>
+            {
+                Some(self.gen_crypto_unary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_sha256_raw",
+                    "sha256_raw",
+                    span,
+                    fctx,
+                ))
+            }
+            "hmac_sha256" if self.sig_matches_shape(name, &["String", "String"], "String") => {
+                Some(self.gen_crypto_binary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_hmac_sha256",
+                    "hmac_sha256",
+                    span,
+                    fctx,
+                ))
+            }
+            "hmac_sha256_raw"
+                if self.sig_matches_shape(name, &["Bytes", "Bytes"], "Bytes")
+                    || self.sig_matches_shape(name, &["String", "String"], "String") =>
+            {
+                Some(self.gen_crypto_binary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_hmac_sha256_raw",
+                    "hmac_sha256_raw",
+                    span,
+                    fctx,
+                ))
+            }
+            "pbkdf2_sha256"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "Bytes", "Int", "Int"],
+                    "Result[Bytes, CryptoError]",
+                ) || self.sig_matches_shape(
+                    name,
+                    &["String", "String", "Int", "Int"],
+                    "Result[String, CryptoError]",
+                ) =>
+            {
+                Some(self.gen_crypto_pbkdf2_call(name, args, span, fctx))
+            }
+            "hex_encode"
+                if self.sig_matches_shape(name, &["Bytes"], "String")
+                    || self.sig_matches_shape(name, &["String"], "String") =>
+            {
+                Some(self.gen_crypto_unary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_hex_encode",
+                    "hex_encode",
+                    span,
+                    fctx,
+                ))
+            }
+            "hex_decode"
+                if self.sig_matches_shape(name, &["String"], "Result[Bytes, CryptoError]")
+                    || self.sig_matches_shape(name, &["String"], "Result[String, CryptoError]") =>
+            {
+                Some(self.gen_crypto_decode_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_hex_decode",
+                    "hex_decode",
+                    span,
+                    fctx,
+                ))
+            }
+            "base64_encode"
+                if self.sig_matches_shape(name, &["Bytes"], "String")
+                    || self.sig_matches_shape(name, &["String"], "String") =>
+            {
+                Some(self.gen_crypto_unary_data_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_base64_encode",
+                    "base64_encode",
+                    span,
+                    fctx,
+                ))
+            }
+            "base64_decode"
+                if self.sig_matches_shape(name, &["String"], "Result[Bytes, CryptoError]")
+                    || self.sig_matches_shape(name, &["String"], "Result[String, CryptoError]") =>
+            {
+                Some(self.gen_crypto_decode_call(
+                    name,
+                    args,
+                    "aic_rt_crypto_base64_decode",
+                    "base64_decode",
+                    span,
+                    fctx,
+                ))
+            }
+            "random_bytes"
+                if self.sig_matches_shape(name, &["Int"], "Bytes")
+                    || self.sig_matches_shape(name, &["Int"], "String") =>
+            {
+                Some(self.gen_crypto_random_bytes_call(name, args, span, fctx))
+            }
+            "secure_eq"
+                if self.sig_matches_shape(name, &["Bytes", "Bytes"], "Bool")
+                    || self.sig_matches_shape(name, &["String", "String"], "Bool") =>
+            {
+                Some(self.gen_crypto_secure_eq_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn crypto_data_parts(
+        &mut self,
+        value: &Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        if value.ty == LType::String {
+            self.string_parts(value, span, fctx)
+        } else {
+            self.bytes_parts(value, context, span, fctx)
+        }
+    }
+
+    fn crypto_data_output_from_slots(
+        &mut self,
+        output_ty: &LType,
+        out_ptr_slot: &str,
+        out_len_slot: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let raw = self.load_string_from_out_slots(out_ptr_slot, out_len_slot, fctx)?;
+        if *output_ty == LType::String {
+            Some(raw)
+        } else {
+            self.build_bytes_value_from_data(output_ty, raw, context, span, fctx)
+        }
+    }
+
+    fn gen_crypto_unary_data_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        runtime_fn: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let data = self.gen_expr(&args[0], fctx)?;
+        let (ptr, len, cap) = self.crypto_data_parts(&data, context, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.crypto_data_output_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            context,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_crypto_binary_data_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        runtime_fn: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let left = self.gen_expr(&args[0], fctx)?;
+        let right = self.gen_expr(&args[1], fctx)?;
+        let (lptr, llen, lcap) = self.crypto_data_parts(&left, context, args[0].span, fctx)?;
+        let (rptr, rlen, rcap) = self.crypto_data_parts(&right, context, args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            runtime_fn, lptr, llen, lcap, rptr, rlen, rcap, out_ptr_slot, out_len_slot
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.crypto_data_output_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            context,
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_crypto_pbkdf2_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 4 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "pbkdf2_sha256 expects four arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let password = self.gen_expr(&args[0], fctx)?;
+        if password.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "pbkdf2_sha256 expects first argument as String",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let salt = self.gen_expr(&args[1], fctx)?;
+        let iterations = self.gen_expr(&args[2], fctx)?;
+        let key_length = self.gen_expr(&args[3], fctx)?;
+        if iterations.ty != LType::Int || key_length.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "pbkdf2_sha256 expects (String, Bytes/String, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pwd_ptr, pwd_len, pwd_cap) = self.string_parts(&password, args[0].span, fctx)?;
+        let (salt_ptr, salt_len, salt_cap) =
+            self.crypto_data_parts(&salt, "pbkdf2_sha256", args[1].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_crypto_pbkdf2_sha256(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            pwd_ptr,
+            pwd_len,
+            pwd_cap,
+            salt_ptr,
+            salt_len,
+            salt_cap,
+            iterations.repr.clone().unwrap_or_else(|| "0".to_string()),
+            key_length.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+
+        let raw = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = if ok_ty == LType::String {
+            raw
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, raw, "pbkdf2_sha256", span, fctx)?
+        };
+        self.wrap_crypto_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_crypto_decode_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        runtime_fn: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let encoded = self.gen_expr(&args[0], fctx)?;
+        if encoded.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&encoded, args[0].span, fctx)?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, runtime_fn, ptr, len, cap, out_ptr_slot, out_len_slot
+        ));
+        let raw = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_payload = if ok_ty == LType::String {
+            raw
+        } else {
+            self.build_bytes_value_from_data(&ok_ty, raw, context, span, fctx)?
+        };
+        self.wrap_crypto_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_crypto_random_bytes_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "random_bytes expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let count = self.gen_expr(&args[0], fctx)?;
+        if count.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "random_bytes expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_crypto_random_bytes(i64 {}, i8** {}, i64* {})",
+            count.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.crypto_data_output_from_slots(
+            &result_ty,
+            &out_ptr_slot,
+            &out_len_slot,
+            "random_bytes",
+            span,
+            fctx,
+        )
+    }
+
+    fn gen_crypto_secure_eq_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "secure_eq expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let left = self.gen_expr(&args[0], fctx)?;
+        let right = self.gen_expr(&args[1], fctx)?;
+        let (lptr, llen, lcap) = self.crypto_data_parts(&left, "secure_eq", args[0].span, fctx)?;
+        let (rptr, rlen, rcap) = self.crypto_data_parts(&right, "secure_eq", args[1].span, fctx)?;
+        let raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_crypto_secure_eq(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+            raw, lptr, llen, lcap, rptr, rlen, rcap
+        ));
+        let bool_reg = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", bool_reg, raw));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if result_ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "secure_eq expects Bool return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        Some(Value {
+            ty: LType::Bool,
+            repr: Some(bool_reg),
+        })
+    }
+
+    fn wrap_crypto_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "crypto builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_crypto_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("crypto_ok");
+        let err_label = self.new_label("crypto_err");
+        let cont_label = self.new_label("crypto_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn gen_url_builtin_call(
         &mut self,
         name: &str,
@@ -25926,6 +26667,29 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn build_crypto_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "CryptoError",
+            "crypto",
+            &[
+                (1, "InvalidInput"),
+                (2, "UnsupportedAlgorithm"),
+                (3, "Internal"),
+            ],
+            "Internal",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
     fn build_url_error_from_code(
         &mut self,
         err_ty: &LType,
@@ -29883,6 +30647,19 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("buffer", "buf_write_string_prefixed") => {
             Some("aic_buffer_write_string_prefixed_intrinsic")
         }
+        ("crypto", "md5") => Some("aic_crypto_md5_intrinsic"),
+        ("crypto", "md5_bytes") => Some("aic_crypto_md5_intrinsic"),
+        ("crypto", "sha256") => Some("aic_crypto_sha256_intrinsic"),
+        ("crypto", "sha256_raw") => Some("aic_crypto_sha256_raw_intrinsic"),
+        ("crypto", "hmac_sha256") => Some("aic_crypto_hmac_sha256_intrinsic"),
+        ("crypto", "hmac_sha256_raw") => Some("aic_crypto_hmac_sha256_raw_intrinsic"),
+        ("crypto", "pbkdf2_sha256") => Some("aic_crypto_pbkdf2_sha256_intrinsic"),
+        ("crypto", "hex_encode") => Some("aic_crypto_hex_encode_intrinsic"),
+        ("crypto", "hex_decode") => Some("aic_crypto_hex_decode_intrinsic"),
+        ("crypto", "base64_encode") => Some("aic_crypto_base64_encode_intrinsic"),
+        ("crypto", "base64_decode") => Some("aic_crypto_base64_decode_intrinsic"),
+        ("crypto", "random_bytes") => Some("aic_crypto_random_bytes_intrinsic"),
+        ("crypto", "secure_eq") => Some("aic_crypto_secure_eq_intrinsic"),
         ("url", "parse") => Some("aic_url_parse_intrinsic"),
         ("url", "normalize") => Some("aic_url_normalize_intrinsic"),
         ("url", "net_addr") => Some("aic_url_net_addr_intrinsic"),
@@ -33293,6 +34070,1006 @@ long aic_rt_rand_range(long min_inclusive, long max_exclusive) {
     unsigned long long value = (unsigned long long)aic_rt_rand_next();
     unsigned long long offset = value % span;
     return min_inclusive + (long)offset;
+}
+
+typedef struct {
+    uint32_t state[4];
+    uint64_t bitlen;
+    unsigned char data[64];
+    size_t datalen;
+} AicRtMd5Ctx;
+
+typedef struct {
+    uint32_t state[8];
+    uint64_t bitlen;
+    unsigned char data[64];
+    size_t datalen;
+} AicRtSha256Ctx;
+
+static const uint32_t aic_rt_md5_r[64] = {
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
+};
+
+static const uint32_t aic_rt_md5_k[64] = {
+    0xd76aa478U, 0xe8c7b756U, 0x242070dbU, 0xc1bdceeeU,
+    0xf57c0fafU, 0x4787c62aU, 0xa8304613U, 0xfd469501U,
+    0x698098d8U, 0x8b44f7afU, 0xffff5bb1U, 0x895cd7beU,
+    0x6b901122U, 0xfd987193U, 0xa679438eU, 0x49b40821U,
+    0xf61e2562U, 0xc040b340U, 0x265e5a51U, 0xe9b6c7aaU,
+    0xd62f105dU, 0x02441453U, 0xd8a1e681U, 0xe7d3fbc8U,
+    0x21e1cde6U, 0xc33707d6U, 0xf4d50d87U, 0x455a14edU,
+    0xa9e3e905U, 0xfcefa3f8U, 0x676f02d9U, 0x8d2a4c8aU,
+    0xfffa3942U, 0x8771f681U, 0x6d9d6122U, 0xfde5380cU,
+    0xa4beea44U, 0x4bdecfa9U, 0xf6bb4b60U, 0xbebfbc70U,
+    0x289b7ec6U, 0xeaa127faU, 0xd4ef3085U, 0x04881d05U,
+    0xd9d4d039U, 0xe6db99e5U, 0x1fa27cf8U, 0xc4ac5665U,
+    0xf4292244U, 0x432aff97U, 0xab9423a7U, 0xfc93a039U,
+    0x655b59c3U, 0x8f0ccc92U, 0xffeff47dU, 0x85845dd1U,
+    0x6fa87e4fU, 0xfe2ce6e0U, 0xa3014314U, 0x4e0811a1U,
+    0xf7537e82U, 0xbd3af235U, 0x2ad7d2bbU, 0xeb86d391U
+};
+
+static const uint32_t aic_rt_sha256_k[64] = {
+    0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U,
+    0x3956c25bU, 0x59f111f1U, 0x923f82a4U, 0xab1c5ed5U,
+    0xd807aa98U, 0x12835b01U, 0x243185beU, 0x550c7dc3U,
+    0x72be5d74U, 0x80deb1feU, 0x9bdc06a7U, 0xc19bf174U,
+    0xe49b69c1U, 0xefbe4786U, 0x0fc19dc6U, 0x240ca1ccU,
+    0x2de92c6fU, 0x4a7484aaU, 0x5cb0a9dcU, 0x76f988daU,
+    0x983e5152U, 0xa831c66dU, 0xb00327c8U, 0xbf597fc7U,
+    0xc6e00bf3U, 0xd5a79147U, 0x06ca6351U, 0x14292967U,
+    0x27b70a85U, 0x2e1b2138U, 0x4d2c6dfcU, 0x53380d13U,
+    0x650a7354U, 0x766a0abbU, 0x81c2c92eU, 0x92722c85U,
+    0xa2bfe8a1U, 0xa81a664bU, 0xc24b8b70U, 0xc76c51a3U,
+    0xd192e819U, 0xd6990624U, 0xf40e3585U, 0x106aa070U,
+    0x19a4c116U, 0x1e376c08U, 0x2748774cU, 0x34b0bcb5U,
+    0x391c0cb3U, 0x4ed8aa4aU, 0x5b9cca4fU, 0x682e6ff3U,
+    0x748f82eeU, 0x78a5636fU, 0x84c87814U, 0x8cc70208U,
+    0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U
+};
+
+static uint32_t aic_rt_crypto_rotl32(uint32_t x, uint32_t n) {
+    return (x << n) | (x >> (32U - n));
+}
+
+static uint32_t aic_rt_crypto_rotr32(uint32_t x, uint32_t n) {
+    return (x >> n) | (x << (32U - n));
+}
+
+static void aic_rt_crypto_set_empty(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    char* empty = (char*)malloc(1);
+    if (empty == NULL) {
+        return;
+    }
+    empty[0] = '\0';
+    *out_ptr = empty;
+    *out_len = 0;
+}
+
+static int aic_rt_crypto_write_bytes(
+    const unsigned char* data,
+    size_t len,
+    char** out_ptr,
+    long* out_len
+) {
+    if (out_ptr == NULL || out_len == NULL) {
+        return 0;
+    }
+    if (len > (size_t)LONG_MAX) {
+        return 0;
+    }
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return 0;
+    }
+    if (len > 0 && data != NULL) {
+        memcpy(out, data, len);
+    }
+    out[len] = '\0';
+    *out_ptr = out;
+    *out_len = (long)len;
+    return 1;
+}
+
+static int aic_rt_crypto_write_hex(
+    const unsigned char* data,
+    size_t len,
+    char** out_ptr,
+    long* out_len
+) {
+    static const char* hex = "0123456789abcdef";
+    if (out_ptr == NULL || out_len == NULL) {
+        return 0;
+    }
+    if (len > SIZE_MAX / 2) {
+        return 0;
+    }
+    size_t out_n = len * 2;
+    if (out_n > (size_t)LONG_MAX) {
+        return 0;
+    }
+    char* out = (char*)malloc(out_n + 1);
+    if (out == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char byte = data[i];
+        out[i * 2] = hex[(byte >> 4) & 0x0F];
+        out[i * 2 + 1] = hex[byte & 0x0F];
+    }
+    out[out_n] = '\0';
+    *out_ptr = out;
+    *out_len = (long)out_n;
+    return 1;
+}
+
+static int aic_rt_crypto_hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+static int aic_rt_crypto_b64_value(unsigned char ch) {
+    if (ch >= 'A' && ch <= 'Z') {
+        return (int)(ch - 'A');
+    }
+    if (ch >= 'a' && ch <= 'z') {
+        return (int)(ch - 'a') + 26;
+    }
+    if (ch >= '0' && ch <= '9') {
+        return (int)(ch - '0') + 52;
+    }
+    if (ch == '+') {
+        return 62;
+    }
+    if (ch == '/') {
+        return 63;
+    }
+    return -1;
+}
+
+static void aic_rt_md5_transform(AicRtMd5Ctx* ctx, const unsigned char data[64]) {
+    uint32_t m[16];
+    for (size_t i = 0; i < 16; ++i) {
+        m[i] = (uint32_t)data[i * 4]
+            | ((uint32_t)data[i * 4 + 1] << 8)
+            | ((uint32_t)data[i * 4 + 2] << 16)
+            | ((uint32_t)data[i * 4 + 3] << 24);
+    }
+
+    uint32_t a = ctx->state[0];
+    uint32_t b = ctx->state[1];
+    uint32_t c = ctx->state[2];
+    uint32_t d = ctx->state[3];
+
+    for (uint32_t i = 0; i < 64; ++i) {
+        uint32_t f = 0;
+        uint32_t g = 0;
+        if (i < 16) {
+            f = (b & c) | ((~b) & d);
+            g = i;
+        } else if (i < 32) {
+            f = (d & b) | ((~d) & c);
+            g = (5U * i + 1U) % 16U;
+        } else if (i < 48) {
+            f = b ^ c ^ d;
+            g = (3U * i + 5U) % 16U;
+        } else {
+            f = c ^ (b | (~d));
+            g = (7U * i) % 16U;
+        }
+
+        uint32_t temp = d;
+        d = c;
+        c = b;
+        uint32_t sum = a + f + aic_rt_md5_k[i] + m[g];
+        b = b + aic_rt_crypto_rotl32(sum, aic_rt_md5_r[i]);
+        a = temp;
+    }
+
+    ctx->state[0] += a;
+    ctx->state[1] += b;
+    ctx->state[2] += c;
+    ctx->state[3] += d;
+}
+
+static void aic_rt_md5_init(AicRtMd5Ctx* ctx) {
+    ctx->datalen = 0;
+    ctx->bitlen = 0;
+    ctx->state[0] = 0x67452301U;
+    ctx->state[1] = 0xefcdab89U;
+    ctx->state[2] = 0x98badcfeU;
+    ctx->state[3] = 0x10325476U;
+}
+
+static void aic_rt_md5_update(AicRtMd5Ctx* ctx, const unsigned char* data, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        ctx->data[ctx->datalen] = data[i];
+        ctx->datalen += 1;
+        if (ctx->datalen == 64) {
+            aic_rt_md5_transform(ctx, ctx->data);
+            ctx->bitlen += 512;
+            ctx->datalen = 0;
+        }
+    }
+}
+
+static void aic_rt_md5_final(AicRtMd5Ctx* ctx, unsigned char digest[16]) {
+    size_t i = ctx->datalen;
+
+    ctx->data[i++] = 0x80;
+    if (i > 56) {
+        while (i < 64) {
+            ctx->data[i++] = 0;
+        }
+        aic_rt_md5_transform(ctx, ctx->data);
+        i = 0;
+    }
+    while (i < 56) {
+        ctx->data[i++] = 0;
+    }
+
+    ctx->bitlen += (uint64_t)ctx->datalen * 8U;
+    for (size_t j = 0; j < 8; ++j) {
+        ctx->data[56 + j] = (unsigned char)((ctx->bitlen >> (8U * j)) & 0xFFU);
+    }
+    aic_rt_md5_transform(ctx, ctx->data);
+
+    for (size_t j = 0; j < 4; ++j) {
+        digest[j * 4] = (unsigned char)(ctx->state[j] & 0xFFU);
+        digest[j * 4 + 1] = (unsigned char)((ctx->state[j] >> 8) & 0xFFU);
+        digest[j * 4 + 2] = (unsigned char)((ctx->state[j] >> 16) & 0xFFU);
+        digest[j * 4 + 3] = (unsigned char)((ctx->state[j] >> 24) & 0xFFU);
+    }
+}
+
+static uint32_t aic_rt_sha256_ch(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ ((~x) & z);
+}
+
+static uint32_t aic_rt_sha256_maj(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ (x & z) ^ (y & z);
+}
+
+static uint32_t aic_rt_sha256_ep0(uint32_t x) {
+    return aic_rt_crypto_rotr32(x, 2U) ^ aic_rt_crypto_rotr32(x, 13U) ^ aic_rt_crypto_rotr32(x, 22U);
+}
+
+static uint32_t aic_rt_sha256_ep1(uint32_t x) {
+    return aic_rt_crypto_rotr32(x, 6U) ^ aic_rt_crypto_rotr32(x, 11U) ^ aic_rt_crypto_rotr32(x, 25U);
+}
+
+static uint32_t aic_rt_sha256_sig0(uint32_t x) {
+    return aic_rt_crypto_rotr32(x, 7U) ^ aic_rt_crypto_rotr32(x, 18U) ^ (x >> 3U);
+}
+
+static uint32_t aic_rt_sha256_sig1(uint32_t x) {
+    return aic_rt_crypto_rotr32(x, 17U) ^ aic_rt_crypto_rotr32(x, 19U) ^ (x >> 10U);
+}
+
+static void aic_rt_sha256_transform(AicRtSha256Ctx* ctx, const unsigned char data[64]) {
+    uint32_t m[64];
+    for (size_t i = 0; i < 16; ++i) {
+        m[i] = ((uint32_t)data[i * 4] << 24)
+            | ((uint32_t)data[i * 4 + 1] << 16)
+            | ((uint32_t)data[i * 4 + 2] << 8)
+            | (uint32_t)data[i * 4 + 3];
+    }
+    for (size_t i = 16; i < 64; ++i) {
+        m[i] = aic_rt_sha256_sig1(m[i - 2]) + m[i - 7] + aic_rt_sha256_sig0(m[i - 15]) + m[i - 16];
+    }
+
+    uint32_t a = ctx->state[0];
+    uint32_t b = ctx->state[1];
+    uint32_t c = ctx->state[2];
+    uint32_t d = ctx->state[3];
+    uint32_t e = ctx->state[4];
+    uint32_t f = ctx->state[5];
+    uint32_t g = ctx->state[6];
+    uint32_t h = ctx->state[7];
+
+    for (size_t i = 0; i < 64; ++i) {
+        uint32_t t1 = h + aic_rt_sha256_ep1(e) + aic_rt_sha256_ch(e, f, g) + aic_rt_sha256_k[i] + m[i];
+        uint32_t t2 = aic_rt_sha256_ep0(a) + aic_rt_sha256_maj(a, b, c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+    ctx->state[0] += a;
+    ctx->state[1] += b;
+    ctx->state[2] += c;
+    ctx->state[3] += d;
+    ctx->state[4] += e;
+    ctx->state[5] += f;
+    ctx->state[6] += g;
+    ctx->state[7] += h;
+}
+
+static void aic_rt_sha256_init(AicRtSha256Ctx* ctx) {
+    ctx->datalen = 0;
+    ctx->bitlen = 0;
+    ctx->state[0] = 0x6a09e667U;
+    ctx->state[1] = 0xbb67ae85U;
+    ctx->state[2] = 0x3c6ef372U;
+    ctx->state[3] = 0xa54ff53aU;
+    ctx->state[4] = 0x510e527fU;
+    ctx->state[5] = 0x9b05688cU;
+    ctx->state[6] = 0x1f83d9abU;
+    ctx->state[7] = 0x5be0cd19U;
+}
+
+static void aic_rt_sha256_update(AicRtSha256Ctx* ctx, const unsigned char* data, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        ctx->data[ctx->datalen] = data[i];
+        ctx->datalen += 1;
+        if (ctx->datalen == 64) {
+            aic_rt_sha256_transform(ctx, ctx->data);
+            ctx->bitlen += 512;
+            ctx->datalen = 0;
+        }
+    }
+}
+
+static void aic_rt_sha256_final(AicRtSha256Ctx* ctx, unsigned char digest[32]) {
+    size_t i = ctx->datalen;
+    ctx->data[i++] = 0x80;
+    if (i > 56) {
+        while (i < 64) {
+            ctx->data[i++] = 0;
+        }
+        aic_rt_sha256_transform(ctx, ctx->data);
+        i = 0;
+    }
+    while (i < 56) {
+        ctx->data[i++] = 0;
+    }
+
+    ctx->bitlen += (uint64_t)ctx->datalen * 8U;
+    ctx->data[63] = (unsigned char)(ctx->bitlen & 0xFFU);
+    ctx->data[62] = (unsigned char)((ctx->bitlen >> 8) & 0xFFU);
+    ctx->data[61] = (unsigned char)((ctx->bitlen >> 16) & 0xFFU);
+    ctx->data[60] = (unsigned char)((ctx->bitlen >> 24) & 0xFFU);
+    ctx->data[59] = (unsigned char)((ctx->bitlen >> 32) & 0xFFU);
+    ctx->data[58] = (unsigned char)((ctx->bitlen >> 40) & 0xFFU);
+    ctx->data[57] = (unsigned char)((ctx->bitlen >> 48) & 0xFFU);
+    ctx->data[56] = (unsigned char)((ctx->bitlen >> 56) & 0xFFU);
+    aic_rt_sha256_transform(ctx, ctx->data);
+
+    for (i = 0; i < 4; ++i) {
+        digest[i] = (unsigned char)((ctx->state[0] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 4] = (unsigned char)((ctx->state[1] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 8] = (unsigned char)((ctx->state[2] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 12] = (unsigned char)((ctx->state[3] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 16] = (unsigned char)((ctx->state[4] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 20] = (unsigned char)((ctx->state[5] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 24] = (unsigned char)((ctx->state[6] >> (24 - i * 8)) & 0xFFU);
+        digest[i + 28] = (unsigned char)((ctx->state[7] >> (24 - i * 8)) & 0xFFU);
+    }
+}
+
+static void aic_rt_crypto_hmac_sha256_bytes(
+    const unsigned char* key,
+    size_t key_len,
+    const unsigned char* data,
+    size_t data_len,
+    unsigned char out[32]
+) {
+    unsigned char k_ipad[64];
+    unsigned char k_opad[64];
+    unsigned char key_block[32];
+    const unsigned char* use_key = key;
+    size_t use_len = key_len;
+
+    if (key_len > 64) {
+        AicRtSha256Ctx kctx;
+        aic_rt_sha256_init(&kctx);
+        aic_rt_sha256_update(&kctx, key, key_len);
+        aic_rt_sha256_final(&kctx, key_block);
+        use_key = key_block;
+        use_len = 32;
+    }
+
+    for (size_t i = 0; i < 64; ++i) {
+        k_ipad[i] = 0x36;
+        k_opad[i] = 0x5c;
+    }
+    for (size_t i = 0; i < use_len; ++i) {
+        k_ipad[i] ^= use_key[i];
+        k_opad[i] ^= use_key[i];
+    }
+
+    unsigned char inner[32];
+    AicRtSha256Ctx ictx;
+    aic_rt_sha256_init(&ictx);
+    aic_rt_sha256_update(&ictx, k_ipad, 64);
+    if (data_len > 0 && data != NULL) {
+        aic_rt_sha256_update(&ictx, data, data_len);
+    }
+    aic_rt_sha256_final(&ictx, inner);
+
+    AicRtSha256Ctx octx;
+    aic_rt_sha256_init(&octx);
+    aic_rt_sha256_update(&octx, k_opad, 64);
+    aic_rt_sha256_update(&octx, inner, 32);
+    aic_rt_sha256_final(&octx, out);
+}
+
+static int aic_rt_crypto_pbkdf2_sha256_bytes(
+    const unsigned char* password,
+    size_t password_len,
+    const unsigned char* salt,
+    size_t salt_len,
+    uint32_t iterations,
+    size_t dk_len,
+    unsigned char* out
+) {
+    if (iterations == 0 || out == NULL) {
+        return 0;
+    }
+    size_t blocks = (dk_len + 31) / 32;
+    if (blocks > 0xFFFFFFFFULL) {
+        return 0;
+    }
+    if (salt_len > SIZE_MAX - 4) {
+        return 0;
+    }
+
+    unsigned char* salt_block = (unsigned char*)malloc(salt_len + 4);
+    if (salt_block == NULL) {
+        return 0;
+    }
+    if (salt_len > 0 && salt != NULL) {
+        memcpy(salt_block, salt, salt_len);
+    }
+
+    for (size_t block = 1; block <= blocks; ++block) {
+        salt_block[salt_len] = (unsigned char)((block >> 24) & 0xFFU);
+        salt_block[salt_len + 1] = (unsigned char)((block >> 16) & 0xFFU);
+        salt_block[salt_len + 2] = (unsigned char)((block >> 8) & 0xFFU);
+        salt_block[salt_len + 3] = (unsigned char)(block & 0xFFU);
+
+        unsigned char u[32];
+        unsigned char t[32];
+        aic_rt_crypto_hmac_sha256_bytes(password, password_len, salt_block, salt_len + 4, u);
+        memcpy(t, u, 32);
+
+        for (uint32_t i = 1; i < iterations; ++i) {
+            aic_rt_crypto_hmac_sha256_bytes(password, password_len, u, 32, u);
+            for (size_t j = 0; j < 32; ++j) {
+                t[j] ^= u[j];
+            }
+        }
+
+        size_t offset = (block - 1) * 32;
+        size_t remain = dk_len - offset;
+        size_t to_copy = remain < 32 ? remain : 32;
+        memcpy(out + offset, t, to_copy);
+    }
+
+    free(salt_block);
+    return 1;
+}
+
+static int aic_rt_crypto_fill_random(unsigned char* out, size_t len) {
+    if (out == NULL && len > 0) {
+        return 0;
+    }
+    if (len == 0) {
+        return 1;
+    }
+#ifdef _WIN32
+    aic_rt_rand_ensure_seeded();
+    for (size_t i = 0; i < len; ++i) {
+        out[i] = (unsigned char)(aic_rt_rand_step() & 0xFFU);
+    }
+    return 1;
+#else
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        size_t off = 0;
+        while (off < len) {
+            ssize_t n = read(fd, out + off, len - off);
+            if (n <= 0) {
+                break;
+            }
+            off += (size_t)n;
+        }
+        close(fd);
+        if (off == len) {
+            return 1;
+        }
+    }
+    aic_rt_rand_ensure_seeded();
+    for (size_t i = 0; i < len; ++i) {
+        out[i] = (unsigned char)(aic_rt_rand_step() & 0xFFU);
+    }
+    return 1;
+#endif
+}
+
+void aic_rt_crypto_md5(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)data_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (data_len < 0 || (data_len > 0 && data_ptr == NULL)) {
+        return;
+    }
+    AicRtMd5Ctx ctx;
+    unsigned char digest[16];
+    aic_rt_md5_init(&ctx);
+    if (data_len > 0) {
+        aic_rt_md5_update(&ctx, (const unsigned char*)data_ptr, (size_t)data_len);
+    }
+    aic_rt_md5_final(&ctx, digest);
+    if (!aic_rt_crypto_write_hex(digest, sizeof(digest), out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+void aic_rt_crypto_sha256(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)data_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (data_len < 0 || (data_len > 0 && data_ptr == NULL)) {
+        return;
+    }
+    AicRtSha256Ctx ctx;
+    unsigned char digest[32];
+    aic_rt_sha256_init(&ctx);
+    if (data_len > 0) {
+        aic_rt_sha256_update(&ctx, (const unsigned char*)data_ptr, (size_t)data_len);
+    }
+    aic_rt_sha256_final(&ctx, digest);
+    if (!aic_rt_crypto_write_hex(digest, sizeof(digest), out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+void aic_rt_crypto_sha256_raw(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)data_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (data_len < 0 || (data_len > 0 && data_ptr == NULL)) {
+        return;
+    }
+    AicRtSha256Ctx ctx;
+    unsigned char digest[32];
+    aic_rt_sha256_init(&ctx);
+    if (data_len > 0) {
+        aic_rt_sha256_update(&ctx, (const unsigned char*)data_ptr, (size_t)data_len);
+    }
+    aic_rt_sha256_final(&ctx, digest);
+    if (!aic_rt_crypto_write_bytes(digest, sizeof(digest), out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+void aic_rt_crypto_hmac_sha256(
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    const char* msg_ptr,
+    long msg_len,
+    long msg_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)key_cap;
+    (void)msg_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (key_len < 0 || msg_len < 0) {
+        return;
+    }
+    if ((key_len > 0 && key_ptr == NULL) || (msg_len > 0 && msg_ptr == NULL)) {
+        return;
+    }
+    unsigned char digest[32];
+    aic_rt_crypto_hmac_sha256_bytes(
+        (const unsigned char*)key_ptr,
+        (size_t)key_len,
+        (const unsigned char*)msg_ptr,
+        (size_t)msg_len,
+        digest
+    );
+    if (!aic_rt_crypto_write_hex(digest, sizeof(digest), out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+void aic_rt_crypto_hmac_sha256_raw(
+    const char* key_ptr,
+    long key_len,
+    long key_cap,
+    const char* msg_ptr,
+    long msg_len,
+    long msg_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)key_cap;
+    (void)msg_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (key_len < 0 || msg_len < 0) {
+        return;
+    }
+    if ((key_len > 0 && key_ptr == NULL) || (msg_len > 0 && msg_ptr == NULL)) {
+        return;
+    }
+    unsigned char digest[32];
+    aic_rt_crypto_hmac_sha256_bytes(
+        (const unsigned char*)key_ptr,
+        (size_t)key_len,
+        (const unsigned char*)msg_ptr,
+        (size_t)msg_len,
+        digest
+    );
+    if (!aic_rt_crypto_write_bytes(digest, sizeof(digest), out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+long aic_rt_crypto_pbkdf2_sha256(
+    const char* password_ptr,
+    long password_len,
+    long password_cap,
+    const char* salt_ptr,
+    long salt_len,
+    long salt_cap,
+    long iterations,
+    long key_len,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)password_cap;
+    (void)salt_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_ptr == NULL || out_len == NULL) {
+        return 3;
+    }
+    if (password_len < 0 || salt_len < 0 || iterations <= 0 || key_len <= 0) {
+        return 1;
+    }
+    if ((password_len > 0 && password_ptr == NULL) || (salt_len > 0 && salt_ptr == NULL)) {
+        return 1;
+    }
+    if ((uint64_t)key_len > 0xFFFFFFFFULL * 32ULL) {
+        return 1;
+    }
+
+    size_t out_n = (size_t)key_len;
+    unsigned char* derived = (unsigned char*)malloc(out_n + 1);
+    if (derived == NULL) {
+        return 3;
+    }
+    if (!aic_rt_crypto_pbkdf2_sha256_bytes(
+            (const unsigned char*)password_ptr,
+            (size_t)password_len,
+            (const unsigned char*)salt_ptr,
+            (size_t)salt_len,
+            (uint32_t)iterations,
+            out_n,
+            derived
+        )) {
+        free(derived);
+        return 3;
+    }
+    derived[out_n] = '\0';
+    *out_ptr = (char*)derived;
+    *out_len = (long)out_n;
+    return 0;
+}
+
+void aic_rt_crypto_hex_encode(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)data_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (data_len < 0 || (data_len > 0 && data_ptr == NULL)) {
+        return;
+    }
+    if (!aic_rt_crypto_write_hex((const unsigned char*)data_ptr, (size_t)data_len, out_ptr, out_len)) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+    }
+}
+
+long aic_rt_crypto_hex_decode(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)text_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_ptr == NULL || out_len == NULL) {
+        return 3;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 1;
+    }
+    if ((text_len % 2) != 0) {
+        return 1;
+    }
+    size_t out_n = (size_t)text_len / 2;
+    unsigned char* out = (unsigned char*)malloc(out_n + 1);
+    if (out == NULL) {
+        return 3;
+    }
+    for (size_t i = 0; i < out_n; ++i) {
+        int hi = aic_rt_crypto_hex_value(text_ptr[i * 2]);
+        int lo = aic_rt_crypto_hex_value(text_ptr[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            free(out);
+            return 1;
+        }
+        out[i] = (unsigned char)((hi << 4) | lo);
+    }
+    out[out_n] = '\0';
+    *out_ptr = (char*)out;
+    *out_len = (long)out_n;
+    return 0;
+}
+
+void aic_rt_crypto_base64_encode(
+    const char* data_ptr,
+    long data_len,
+    long data_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    static const char table[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    (void)data_cap;
+    aic_rt_crypto_set_empty(out_ptr, out_len);
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (data_len < 0 || (data_len > 0 && data_ptr == NULL)) {
+        return;
+    }
+    size_t len = (size_t)data_len;
+    size_t out_n = ((len + 2) / 3) * 4;
+    if (out_n > (size_t)LONG_MAX) {
+        return;
+    }
+    char* out = (char*)malloc(out_n + 1);
+    if (out == NULL) {
+        return;
+    }
+    size_t i = 0;
+    size_t j = 0;
+    while (i < len) {
+        uint32_t octet_a = i < len ? (unsigned char)data_ptr[i++] : 0;
+        uint32_t octet_b = i < len ? (unsigned char)data_ptr[i++] : 0;
+        uint32_t octet_c = i < len ? (unsigned char)data_ptr[i++] : 0;
+        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+        out[j++] = table[(triple >> 18) & 0x3F];
+        out[j++] = table[(triple >> 12) & 0x3F];
+        out[j++] = table[(triple >> 6) & 0x3F];
+        out[j++] = table[triple & 0x3F];
+    }
+    size_t mod = len % 3;
+    if (mod > 0) {
+        out[out_n - 1] = '=';
+        if (mod == 1) {
+            out[out_n - 2] = '=';
+        }
+    }
+    out[out_n] = '\0';
+    *out_ptr = out;
+    *out_len = (long)out_n;
+}
+
+long aic_rt_crypto_base64_decode(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)text_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_ptr == NULL || out_len == NULL) {
+        return 3;
+    }
+    if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
+        return 1;
+    }
+    if ((text_len % 4) != 0) {
+        return 1;
+    }
+
+    size_t len = (size_t)text_len;
+    size_t padding = 0;
+    if (len > 0 && text_ptr[len - 1] == '=') {
+        padding += 1;
+    }
+    if (len > 1 && text_ptr[len - 2] == '=') {
+        padding += 1;
+    }
+    size_t out_n = (len / 4) * 3 - padding;
+    unsigned char* out = (unsigned char*)malloc(out_n + 1);
+    if (out == NULL) {
+        return 3;
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < len; i += 4) {
+        unsigned char c0 = (unsigned char)text_ptr[i];
+        unsigned char c1 = (unsigned char)text_ptr[i + 1];
+        unsigned char c2 = (unsigned char)text_ptr[i + 2];
+        unsigned char c3 = (unsigned char)text_ptr[i + 3];
+        int v0 = aic_rt_crypto_b64_value(c0);
+        int v1 = aic_rt_crypto_b64_value(c1);
+        int v2 = c2 == '=' ? 0 : aic_rt_crypto_b64_value(c2);
+        int v3 = c3 == '=' ? 0 : aic_rt_crypto_b64_value(c3);
+        if (v0 < 0 || v1 < 0 || (c2 != '=' && v2 < 0) || (c3 != '=' && v3 < 0)) {
+            free(out);
+            return 1;
+        }
+        if (c2 == '=' && c3 != '=') {
+            free(out);
+            return 1;
+        }
+        if ((c2 == '=' || c3 == '=') && (i + 4 != len)) {
+            free(out);
+            return 1;
+        }
+
+        uint32_t triple = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) | ((uint32_t)v2 << 6) | (uint32_t)v3;
+        out[j++] = (unsigned char)((triple >> 16) & 0xFFU);
+        if (c2 != '=') {
+            out[j++] = (unsigned char)((triple >> 8) & 0xFFU);
+        }
+        if (c3 != '=') {
+            out[j++] = (unsigned char)(triple & 0xFFU);
+        }
+    }
+
+    out[out_n] = '\0';
+    *out_ptr = (char*)out;
+    *out_len = (long)out_n;
+    return 0;
+}
+
+void aic_rt_crypto_random_bytes(long count, char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (out_ptr == NULL || out_len == NULL) {
+        return;
+    }
+    if (count <= 0) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+        return;
+    }
+    size_t out_n = (size_t)count;
+    if (out_n > (size_t)LONG_MAX) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+        return;
+    }
+    unsigned char* out = (unsigned char*)malloc(out_n + 1);
+    if (out == NULL) {
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+        return;
+    }
+    if (!aic_rt_crypto_fill_random(out, out_n)) {
+        free(out);
+        aic_rt_crypto_set_empty(out_ptr, out_len);
+        return;
+    }
+    out[out_n] = '\0';
+    *out_ptr = (char*)out;
+    *out_len = (long)out_n;
+}
+
+long aic_rt_crypto_secure_eq(
+    const char* a_ptr,
+    long a_len,
+    long a_cap,
+    const char* b_ptr,
+    long b_len,
+    long b_cap
+) {
+    (void)a_cap;
+    (void)b_cap;
+    if (a_len < 0 || b_len < 0) {
+        return 0;
+    }
+    if ((a_len > 0 && a_ptr == NULL) || (b_len > 0 && b_ptr == NULL)) {
+        return 0;
+    }
+    size_t la = (size_t)a_len;
+    size_t lb = (size_t)b_len;
+    size_t max = la > lb ? la : lb;
+    unsigned int diff = (unsigned int)(la ^ lb);
+    for (size_t i = 0; i < max; ++i) {
+        unsigned char av = i < la ? (unsigned char)a_ptr[i] : 0;
+        unsigned char bv = i < lb ? (unsigned char)b_ptr[i] : 0;
+        diff |= (unsigned int)(av ^ bv);
+    }
+    return diff == 0 ? 1 : 0;
 }
 
 static long aic_rt_fs_map_errno(int err) {
@@ -50547,6 +52324,27 @@ fn main() -> Int effects { io } {
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_regex_replace(i8*, i64, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)"
         ));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_crypto_md5(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_crypto_sha256(i8*, i64, i64, i8**, i64*)"));
+        assert!(output.llvm_ir.contains(
+            "declare i64 @aic_rt_crypto_pbkdf2_sha256(i8*, i64, i64, i8*, i64, i64, i64, i64, i8**, i64*)"
+        ));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_crypto_hex_decode(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_crypto_base64_decode(i8*, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare void @aic_rt_crypto_random_bytes(i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_crypto_secure_eq(i8*, i64, i64, i8*, i64, i64)"));
         assert!(runtime_c_source().contains(
             "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
         ));
@@ -50681,5 +52479,13 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_regex_captures("));
         assert!(runtime_c_source().contains("long aic_rt_regex_find("));
         assert!(runtime_c_source().contains("long aic_rt_regex_replace("));
+        assert!(runtime_c_source().contains("void aic_rt_crypto_md5("));
+        assert!(runtime_c_source().contains("void aic_rt_crypto_sha256("));
+        assert!(runtime_c_source().contains("void aic_rt_crypto_hmac_sha256("));
+        assert!(runtime_c_source().contains("long aic_rt_crypto_pbkdf2_sha256("));
+        assert!(runtime_c_source().contains("long aic_rt_crypto_hex_decode("));
+        assert!(runtime_c_source().contains("long aic_rt_crypto_base64_decode("));
+        assert!(runtime_c_source().contains("void aic_rt_crypto_random_bytes("));
+        assert!(runtime_c_source().contains("long aic_rt_crypto_secure_eq("));
     }
 }

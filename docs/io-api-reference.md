@@ -21,6 +21,7 @@ Covered modules:
 - `std.set`
 - `std.log`
 - `std.buffer`
+- `std.crypto`
 
 ## Effect Taxonomy
 
@@ -51,6 +52,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
 | `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
 | `BufferError` | `1=Underflow`, `2=Overflow`, `3=InvalidUtf8`, `4=InvalidInput` |
+| `CryptoError` | `1=InvalidInput`, `2=UnsupportedAlgorithm`, `3=Internal` |
 
 ## `std.io`
 
@@ -529,6 +531,41 @@ Notes:
 - `buf_read_cstring` requires null-terminated valid UTF-8; invalid payload returns `InvalidUtf8`.
 - `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
+
+## `std.crypto`
+
+```aic
+enum CryptoError {
+    InvalidInput,
+    UnsupportedAlgorithm,
+    Internal,
+}
+
+fn md5(data: String) -> String
+fn md5_bytes(data: Bytes) -> String
+fn sha256(data: String) -> String
+fn sha256_raw(data: String) -> Bytes
+
+fn hmac_sha256(key: String, message: String) -> String
+fn hmac_sha256_raw(key: Bytes, message: Bytes) -> Bytes
+fn pbkdf2_sha256(password: String, salt: Bytes, iterations: Int, key_length: Int) -> Result[Bytes, CryptoError]
+
+fn hex_encode(data: Bytes) -> String
+fn hex_decode(hex: String) -> Result[Bytes, CryptoError]
+fn base64_encode(data: Bytes) -> String
+fn base64_decode(b64: String) -> Result[Bytes, CryptoError]
+
+fn random_bytes(count: Int) -> Bytes effects { rand }
+fn secure_eq(a: Bytes, b: Bytes) -> Bool
+```
+
+Notes:
+
+- Hash/HMAC/encode/decode functions are pure and deterministic.
+- `random_bytes` is the only `std.crypto` API requiring `effects { rand }`.
+- `secure_eq` is byte-oriented and intended for secret comparisons.
+- `hex_decode`, `base64_decode`, and `pbkdf2_sha256` return typed `CryptoError` variants instead of panicking.
+- Reference flow for Postgres MD5 + SCRAM derivations: `examples/crypto/pg_scram_auth.aic`.
 
 ## Deterministic Validation Commands
 

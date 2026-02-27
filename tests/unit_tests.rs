@@ -2362,6 +2362,122 @@ fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_crypto_public_apis_delegate_to_runtime_intrinsics() {
+    let source = fs::read_to_string("std/crypto.aic").expect("read std/crypto.aic");
+
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "md5",
+        "aic_crypto_md5_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "md5_bytes",
+        "aic_crypto_md5_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "sha256",
+        "aic_crypto_sha256_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "hmac_sha256",
+        "aic_crypto_hmac_sha256_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "hex_encode",
+        "aic_crypto_hex_encode_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "base64_encode",
+        "aic_crypto_base64_encode_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/crypto.aic",
+        "secure_eq",
+        "aic_crypto_secure_eq_intrinsic",
+        2,
+    );
+
+    for (intrinsic, arity) in [
+        ("aic_crypto_md5_intrinsic", 1usize),
+        ("aic_crypto_sha256_intrinsic", 1usize),
+        ("aic_crypto_sha256_raw_intrinsic", 1usize),
+        ("aic_crypto_hmac_sha256_intrinsic", 2usize),
+        ("aic_crypto_hmac_sha256_raw_intrinsic", 2usize),
+        ("aic_crypto_pbkdf2_sha256_intrinsic", 4usize),
+        ("aic_crypto_hex_encode_intrinsic", 1usize),
+        ("aic_crypto_hex_decode_intrinsic", 1usize),
+        ("aic_crypto_base64_encode_intrinsic", 1usize),
+        ("aic_crypto_base64_decode_intrinsic", 1usize),
+        ("aic_crypto_random_bytes_intrinsic", 1usize),
+        ("aic_crypto_secure_eq_intrinsic", 2usize),
+    ] {
+        assert_intrinsic_declaration(&source, "std/crypto.aic", intrinsic, arity);
+    }
+}
+
+#[test]
+fn unit_std_crypto_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
+    let source = fs::read_to_string("std/crypto.aic").expect("read std/crypto.aic");
+
+    assert!(
+        source.contains("aic_crypto_sha256_raw_intrinsic(data)"),
+        "std/crypto.aic sha256_raw must delegate to raw intrinsic"
+    );
+    assert!(
+        source.contains("aic_crypto_hmac_sha256_raw_intrinsic(key.data, message.data)"),
+        "std/crypto.aic hmac_sha256_raw must pass Bytes.data into intrinsic boundary"
+    );
+    assert!(
+        source.contains(
+            "aic_crypto_pbkdf2_sha256_intrinsic(password, salt.data, iterations, key_length)"
+        ),
+        "std/crypto.aic pbkdf2_sha256 must pass salt Bytes.data into intrinsic boundary"
+    );
+    assert!(
+        source.contains("aic_crypto_hex_encode_intrinsic(data.data)"),
+        "std/crypto.aic hex_encode must pass Bytes.data"
+    );
+    assert!(
+        source.contains("aic_crypto_base64_encode_intrinsic(data.data)"),
+        "std/crypto.aic base64_encode must pass Bytes.data"
+    );
+    assert!(
+        source.contains("data: aic_crypto_random_bytes_intrinsic(count)"),
+        "std/crypto.aic random_bytes must bridge runtime bytes into Bytes wrapper"
+    );
+    assert!(
+        source.contains("fn random_bytes(count: Int) -> Bytes effects { rand }"),
+        "std/crypto.aic random_bytes must require rand effect"
+    );
+    assert!(
+        source.contains("aic_crypto_secure_eq_intrinsic(a.data, b.data)"),
+        "std/crypto.aic secure_eq must compare raw byte payloads"
+    );
+    assert!(
+        !source.contains("fn aic_crypto_md5_intrinsic(data: String) -> String {"),
+        "std/crypto.aic intrinsic declarations must remain declaration-only"
+    );
+}
+
+#[test]
 fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     let string_source = fs::read_to_string("std/string.aic").expect("read std/string.aic");
 
