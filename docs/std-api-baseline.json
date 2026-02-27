@@ -4072,6 +4072,106 @@
       "signature": "DateTime { year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int, offset_minutes: Int }"
     },
     {
+      "module": "std.tls",
+      "kind": "enum",
+      "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Io }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_close_intrinsic(handle: Int) -> Result[Bool, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_connect_addr_intrinsic(addr: String, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, server_name: String, has_server_name: Bool, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_connect_intrinsic(tcp_fd: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, server_name: String, has_server_name: Bool) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_send_intrinsic(handle: Int, payload: String) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "default_tls_config() -> TlsConfig"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "option_present(value: Option[String]) -> Bool"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "option_text(value: Option[String]) -> String"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_subject(stream: TlsStream) -> Result[String, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
+      "signature": "TlsConfig { verify_server: Bool, ca_cert_path: Option[String], client_cert_path: Option[String], client_key_path: Option[String], server_name: Option[String] }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
+      "signature": "TlsStream { handle: Int }"
+    },
+    {
       "module": "std.url",
       "kind": "enum",
       "signature": "UrlError { InvalidUrl, InvalidScheme, InvalidHost, InvalidPort, InvalidPath, InvalidInput, Internal }"

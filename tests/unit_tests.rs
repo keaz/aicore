@@ -2478,6 +2478,96 @@ fn unit_std_crypto_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
 }
 
 #[test]
+fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
+    let source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
+
+    assert!(
+        source.contains("let raw = aic_tls_connect_intrinsic("),
+        "std/tls.aic tls_connect must call the TLS connect intrinsic"
+    );
+    assert!(
+        source.contains("let raw = aic_tls_connect_addr_intrinsic("),
+        "std/tls.aic tls_connect_addr must call the TLS connect-addr intrinsic"
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_send",
+        "aic_tls_send_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_send_bytes",
+        "aic_tls_send_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_recv",
+        "aic_tls_recv_intrinsic",
+        3,
+    );
+    assert!(
+        source.contains("let raw = aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms);"),
+        "std/tls.aic tls_recv_bytes must call the TLS recv intrinsic"
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_close",
+        "aic_tls_close_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_peer_subject",
+        "aic_tls_peer_subject_intrinsic",
+        1,
+    );
+
+    for (intrinsic, arity) in [
+        ("aic_tls_connect_intrinsic", 10usize),
+        ("aic_tls_connect_addr_intrinsic", 11usize),
+        ("aic_tls_send_intrinsic", 2usize),
+        ("aic_tls_recv_intrinsic", 3usize),
+        ("aic_tls_close_intrinsic", 1usize),
+        ("aic_tls_peer_subject_intrinsic", 1usize),
+    ] {
+        assert_intrinsic_declaration(&source, "std/tls.aic", intrinsic, arity);
+    }
+}
+
+#[test]
+fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
+    let source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
+
+    assert!(
+        source.contains("aic_tls_send_intrinsic(stream.handle, data.data)"),
+        "std/tls.aic tls_send_bytes must pass Bytes.data into intrinsic boundary"
+    );
+    assert!(
+        source.contains("let raw = aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms);"),
+        "std/tls.aic tls_recv_bytes must bridge runtime String into Bytes wrapper"
+    );
+    assert!(
+        source.contains("Ok(data) => Ok(Bytes { data: data })"),
+        "std/tls.aic tls_recv_bytes must wrap String payload as Bytes"
+    );
+    assert!(
+        source.contains("verify_server: true"),
+        "std/tls.aic default_tls_config must verify server certificates by default"
+    );
+    assert!(
+        source.contains("ca_cert_path: None()"),
+        "std/tls.aic default_tls_config must default to system CA bundle"
+    );
+}
+
+#[test]
 fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
     let string_source = fs::read_to_string("std/string.aic").expect("read std/string.aic");
 

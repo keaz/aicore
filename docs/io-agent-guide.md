@@ -9,7 +9,7 @@ Before changing IO code:
 
 1. Confirm target APIs in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`.
 2. Confirm effect requirements for all edited functions.
-3. Confirm platform caveats for `std.proc` and `std.net`.
+3. Confirm platform caveats for `std.proc`, `std.net`, and `std.tls`.
 
 ## 2. Effect-First Authoring
 
@@ -20,6 +20,7 @@ Declare effects before writing body logic.
 - `std.env` => `effects { env }` (and `fs` for cwd/home/temp_dir)
 - `std.proc` => `effects { proc, env }` for `run/spawn/pipe/...`
 - `std.net` => `effects { net }`
+- `std.tls` => `effects { net }`
 - `std.time` => `effects { time }`
 - `std.rand` => `effects { rand }`
 
@@ -44,6 +45,7 @@ Treat error enums as control-flow boundaries, not exceptions.
   - `std.proc` and `std.net` implementations are active.
 - Windows:
   - `std.net` currently maps to `NetError::Io` (unsupported runtime path).
+  - `std.tls` currently maps to `TlsError::ProtocolError` (unsupported runtime path).
   - `std.proc` partial behavior:
     - `run`, `pipe`, `current_pid` available.
     - `spawn`, `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
@@ -53,6 +55,7 @@ Treat error enums as control-flow boundaries, not exceptions.
 
 - Close every `FileHandle` with `file_close`.
 - Close every net handle (`tcp_close`/`udp_close`) on success and error paths.
+- Close every `TlsStream` with `tls_close` on success and error paths.
 - For spawned processes, pair with `wait` or `kill` + `wait` where supported.
 - Keep temp files/dirs cleaned up in examples and tests.
 
@@ -75,6 +78,7 @@ cargo run --quiet --bin aic -- check examples/io/file_processor.aic
 cargo run --quiet --bin aic -- check examples/io/log_tee.aic
 cargo run --quiet --bin aic -- check examples/io/env_config.aic
 cargo run --quiet --bin aic -- check examples/io/subprocess_pipeline.aic
+cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 ```
 
 ## 7. Upgrade Hygiene

@@ -164,6 +164,23 @@ fn compile_and_run_with_input(source: &str, stdin_input: &str) -> (i32, String, 
     compile_and_run_with_setup_and_args_and_input(source, &[], stdin_input, |_| {})
 }
 
+fn tls_backend_enabled_for_tests() -> bool {
+    Command::new("pkg-config")
+        .arg("--exists")
+        .arg("openssl")
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn openssl_cli_available_for_tests() -> bool {
+    Command::new("openssl")
+        .arg("version")
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
     fs::write(path, source).expect("write source");
     let front = run_frontend(path).expect("frontend");
@@ -7580,4 +7597,344 @@ fn main() -> Int effects { io } capabilities { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_tls_local_server_handshake_and_certificate_paths() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if backend_enabled && !openssl_cli_available {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.env;
+import std.string;
+import std.bytes;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn cert_failure(err: TlsError) -> Bool {
+    match err {
+        CertificateInvalid => true,
+        CertificateExpired => true,
+        HostnameMismatch => true,
+        HandshakeFailed => true,
+        _ => false,
+    }
+}
+
+fn protocol_error(err: TlsError) -> Bool {
+    match err {
+        ProtocolError => true,
+        _ => false,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int effects { net } capabilities { net } {
+    let write_ok = match tls_send_bytes(
+        stream,
+        bytes.from_string("GET / HTTP/1.0\nHost: localhost\n\n"),
+    ) {
+        Ok(sent) => sent > 0,
+        Err(_) => false,
+    };
+    let recv = tls_recv_bytes(stream, 2048, 5000);
+    let response_ok = match recv {
+        Ok(payload) => string.contains(bytes.to_string_lossy(payload), "HTTP/"),
+        Err(_) => false,
+    };
+    let subject_ok = match tls_peer_subject(stream) {
+        Ok(subject) => string.contains(subject, "localhost"),
+        Err(_) => false,
+    };
+    let close_ok = match tls_close(stream) {
+        Ok(closed) => closed,
+        Err(_) => false,
+    };
+
+    let secure_ok = match tls_connect_addr(addr, secure, 5000) {
+        Ok(stream2) => match tls_close(stream2) {
+            Ok(closed) => closed,
+            Err(_) => false,
+        },
+        Err(_) => false,
+    };
+
+    let default_cert_reject = match tls_connect_addr(addr, default_tls_config(), 5000) {
+        Ok(stream3) => match tls_close(stream3) {
+            Ok(_) => false,
+            Err(_) => false,
+        },
+        Err(err) => cert_failure(err),
+    };
+
+    let score = bool_to_int(write_ok)
+        + bool_to_int(response_ok)
+        + bool_to_int(subject_ok)
+        + bool_to_int(close_ok)
+        + bool_to_int(secure_ok)
+        + bool_to_int(default_cert_reject);
+    if score == 6 { 42 } else { score }
+}
+
+fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    let ca_path = read_env_or("AIC_TLS_CA_PATH", "tls_cert.pem");
+
+    let insecure = TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    };
+
+    let secure = TlsConfig {
+        verify_server: true,
+        ca_cert_path: Some(ca_path),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    };
+
+    let result = match tls_connect_addr(addr, insecure, 5000) {
+        Err(err) => if protocol_error(err) { 43 } else { 0 },
+        Ok(stream) => score_connected(stream, addr, secure),
+    };
+    print_int(result);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls probe listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let cert_env = "tls_cert.pem".to_string();
+    let envs = [
+        ("AIC_TLS_ADDR", addr_env.as_str()),
+        ("AIC_TLS_CA_PATH", cert_env.as_str()),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            if !(backend_enabled && openssl_cli_available) {
+                return;
+            }
+
+            let cert_path = root.join("tls_cert.pem");
+            let key_path = root.join("tls_key.pem");
+            let req_status = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-sha256",
+                    "-nodes",
+                    "-days",
+                    "1",
+                    "-subj",
+                    "/CN=localhost",
+                    "-keyout",
+                    key_path.to_str().expect("key path"),
+                    "-out",
+                    cert_path.to_str().expect("cert path"),
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("generate tls cert");
+            assert!(req_status.success(), "openssl req failed");
+
+            let accept_count = "4".to_string();
+            let port_flag = port.to_string();
+            let _server = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "s_server",
+                    "-accept",
+                    port_flag.as_str(),
+                    "-cert",
+                    "tls_cert.pem",
+                    "-key",
+                    "tls_key.pem",
+                    "-www",
+                    "-naccept",
+                    accept_count.as_str(),
+                    "-quiet",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("start tls server");
+
+            let addr = format!("127.0.0.1:{port}");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if std::net::TcpStream::connect(&addr).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+    assert_eq!(code, 0, "stderr={stderr}");
+    if backend_enabled && openssl_cli_available {
+        assert_eq!(stdout, "42\n", "stderr={stderr}");
+    } else {
+        assert_eq!(stdout, "43\n", "stderr={stderr}");
+    }
+}
+
+#[test]
+fn exec_tls_invalid_handle_paths_are_typed() {
+    let src = r#"
+import std.io;
+import std.tls;
+import std.bytes;
+
+fn is_protocol(v: Result[Int, TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_protocol_string(v: Result[String, TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_protocol_bool(v: Result[Bool, TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let bad = TlsStream { handle: 9999 };
+    let send_ok = is_protocol(tls_send_bytes(bad, bytes.from_string("x")));
+    let recv_ok = match tls_recv_bytes(bad, 8, 10) {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    };
+    let close_ok = is_protocol_bool(tls_close(bad));
+    let subject_ok = is_protocol_string(tls_peer_subject(bad));
+
+    let score = bool_to_int(send_ok)
+        + bool_to_int(recv_ok)
+        + bool_to_int(close_ok)
+        + bool_to_int(subject_ok);
+    if score == 4 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_tls_httpbin_https_handshake_or_deterministic_fallback() {
+    let src = r#"
+import std.io;
+import std.tls;
+import std.bytes;
+import std.string;
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn fallback(err: TlsError) -> Bool {
+    match err {
+        ProtocolError => true,
+        Io => true,
+        _ => false,
+    }
+}
+
+fn score_https(stream: TlsStream) -> Int effects { net } capabilities { net } {
+    let wrote = match tls_send_bytes(
+        stream,
+        bytes.from_string("HEAD /anything HTTP/1.0\nHost: httpbin.org\n\n"),
+    ) {
+        Ok(sent) => sent > 0,
+        Err(_) => false,
+    };
+    let recv_ok = match tls_recv_bytes(stream, 2048, 5000) {
+        Ok(payload) => string.contains(bytes.to_string_lossy(payload), "HTTP/"),
+        Err(_) => false,
+    };
+    let close_ok = match tls_close(stream) {
+        Ok(closed) => closed,
+        Err(_) => false,
+    };
+    if wrote && recv_ok && close_ok { 42 } else { 0 }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let cfg = TlsConfig {
+        verify_server: true,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("httpbin.org"),
+    };
+    let result = match tls_connect_addr("httpbin.org:443", cfg, 5000) {
+        Ok(stream) => score_https(stream),
+        Err(err) => if fallback(err) { 43 } else { 0 },
+    };
+    print_int(result);
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert!(
+        stdout == "42\n" || stdout == "43\n",
+        "expected handshake success (42) or deterministic fallback (43), got stdout={stdout:?} stderr={stderr}"
+    );
 }

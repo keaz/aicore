@@ -468,6 +468,60 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_connect_intrinsic",
+        runtime_symbol: "aic_rt_tls_connect",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[
+                "Int", "Bool", "String", "Bool", "String", "Bool", "String", "Bool", "String",
+                "Bool",
+            ],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_connect_addr_intrinsic",
+        runtime_symbol: "aic_rt_tls_connect_addr",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[
+                "String", "Bool", "String", "Bool", "String", "Bool", "String", "Bool", "String",
+                "Bool", "Int",
+            ],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_send_intrinsic",
+        runtime_symbol: "aic_rt_tls_send",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "String"],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_recv_intrinsic",
+        runtime_symbol: "aic_rt_tls_recv",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[String, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_close_intrinsic",
+        runtime_symbol: "aic_rt_tls_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_peer_subject_intrinsic",
+        runtime_symbol: "aic_rt_tls_peer_subject",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_new_intrinsic",
         runtime_symbol: "aic_rt_buffer_new",
         signatures: &[IntrinsicSignatureShape {
@@ -1250,6 +1304,8 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
     let module_obj_path = work_dir.join("module.o");
     let runtime_obj_path = work_dir.join("runtime.o");
     let runtime_flags = runtime_compile_flags(runtime);
+    let tls_flags = runtime_tls_compile_flags();
+    let deterministic_path_flags = deterministic_source_path_flags(work_dir);
     let mut llvm_to_compile = if runtime.check_leaks {
         instrument_llvm_for_leak_tracking(llvm_ir)
     } else {
@@ -1271,6 +1327,9 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             if options.debug_info {
                 command.arg("-g");
             }
+            for flag in &deterministic_path_flags {
+                command.arg(flag);
+            }
             if wasm_target {
                 command
                     .arg(options.opt_level.clang_flag())
@@ -1285,6 +1344,10 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 for flag in &runtime_flags {
                     command.arg(flag);
                 }
+                for flag in &tls_flags.cflags {
+                    command.arg(flag);
+                }
+                command.arg(&tls_flags.define_flag);
                 command
                     .arg(options.opt_level.clang_flag())
                     .arg(&ll_path)
@@ -1299,6 +1362,9 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                     command.arg("-static");
                 }
                 append_link_options(&mut command, &options.link);
+                for flag in &tls_flags.link_flags {
+                    command.arg(flag);
+                }
                 if cfg!(not(target_os = "windows")) {
                     command.arg("-pthread").arg("-lm");
                 }
@@ -1314,6 +1380,9 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             append_target_triple(&mut command, options.target_triple.as_deref());
             if options.debug_info {
                 command.arg("-g");
+            }
+            for flag in &deterministic_path_flags {
+                command.arg(flag);
             }
             for flag in &runtime_flags {
                 command.arg(flag);
@@ -1331,6 +1400,9 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             append_target_triple(&mut clang_module, options.target_triple.as_deref());
             if options.debug_info {
                 clang_module.arg("-g");
+            }
+            for flag in &deterministic_path_flags {
+                clang_module.arg(flag);
             }
             for flag in &runtime_flags {
                 clang_module.arg(flag);
@@ -1352,9 +1424,16 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
             if options.debug_info {
                 clang_runtime.arg("-g");
             }
+            for flag in &deterministic_path_flags {
+                clang_runtime.arg(flag);
+            }
             for flag in &runtime_flags {
                 clang_runtime.arg(flag);
             }
+            for flag in &tls_flags.cflags {
+                clang_runtime.arg(flag);
+            }
+            clang_runtime.arg(&tls_flags.define_flag);
             clang_runtime
                 .arg(options.opt_level.clang_flag())
                 .arg("-c")
@@ -1436,6 +1515,65 @@ fn runtime_compile_flags(runtime: RuntimeInstrumentationOptions) -> Vec<&'static
         flags.push("-fno-omit-frame-pointer");
     }
     flags
+}
+
+fn deterministic_source_path_flags(work_dir: &Path) -> Vec<String> {
+    let prefix = work_dir.to_string_lossy();
+    vec![
+        format!("-ffile-prefix-map={prefix}=aic-build"),
+        format!("-fmacro-prefix-map={prefix}=aic-build"),
+        format!("-fdebug-prefix-map={prefix}=aic-build"),
+    ]
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeTlsCompileFlags {
+    define_flag: String,
+    cflags: Vec<String>,
+    link_flags: Vec<String>,
+}
+
+fn runtime_tls_compile_flags() -> RuntimeTlsCompileFlags {
+    match probe_pkg_config_flags("openssl") {
+        Some((cflags, link_flags)) => RuntimeTlsCompileFlags {
+            define_flag: "-DAIC_RT_TLS_OPENSSL=1".to_string(),
+            cflags,
+            link_flags,
+        },
+        None => RuntimeTlsCompileFlags {
+            define_flag: "-DAIC_RT_TLS_OPENSSL=0".to_string(),
+            cflags: Vec::new(),
+            link_flags: Vec::new(),
+        },
+    }
+}
+
+fn probe_pkg_config_flags(package: &str) -> Option<(Vec<String>, Vec<String>)> {
+    let cflags_output = Command::new("pkg-config")
+        .arg("--cflags")
+        .arg(package)
+        .output()
+        .ok()?;
+    if !cflags_output.status.success() {
+        return None;
+    }
+    let link_output = Command::new("pkg-config")
+        .arg("--libs")
+        .arg(package)
+        .output()
+        .ok()?;
+    if !link_output.status.success() {
+        return None;
+    }
+    let cflags = String::from_utf8_lossy(&cflags_output.stdout)
+        .split_whitespace()
+        .map(|part| part.to_string())
+        .collect::<Vec<_>>();
+    let link_flags = String::from_utf8_lossy(&link_output.stdout)
+        .split_whitespace()
+        .map(|part| part.to_string())
+        .collect::<Vec<_>>();
+    Some((cflags, link_flags))
 }
 
 fn instrument_llvm_for_leak_tracking(llvm_ir: &str) -> String {
@@ -2424,6 +2562,16 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_async_wait_int(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_wait_string(i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_shutdown()\n\n");
+        text.push_str(
+            "declare i64 @aic_rt_tls_connect(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64, i64*)\n",
+        );
+        text.push_str("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_async_poll_int(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)\n\n");
         text.push_str(
@@ -4574,6 +4722,9 @@ impl<'a> Generator<'a> {
             return result;
         }
         if let Some(result) = self.gen_net_builtin_call(builtin_name, args, span, fctx) {
+            return result;
+        }
+        if let Some(result) = self.gen_tls_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
         if let Some(result) = self.gen_buffer_builtin_call(builtin_name, args, span, fctx) {
@@ -17333,6 +17484,655 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_tls_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Option<Value>> {
+        let canonical = match name {
+            "aic_tls_connect_intrinsic" => "tls_connect",
+            "aic_tls_connect_addr_intrinsic" => "tls_connect_addr",
+            "aic_tls_send_intrinsic" => "tls_send",
+            "aic_tls_recv_intrinsic" => "tls_recv",
+            "aic_tls_close_intrinsic" => "tls_close",
+            "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
+            _ => return None,
+        };
+
+        match canonical {
+            "tls_connect"
+                if self.sig_matches_shape(
+                    name,
+                    &[
+                        "Int", "Bool", "String", "Bool", "String", "Bool", "String", "Bool",
+                        "String", "Bool",
+                    ],
+                    "Result[Int, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_connect_call(name, args, span, fctx))
+            }
+            "tls_connect_addr"
+                if self.sig_matches_shape(
+                    name,
+                    &[
+                        "String", "Bool", "String", "Bool", "String", "Bool", "String", "Bool",
+                        "String", "Bool", "Int",
+                    ],
+                    "Result[Int, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_connect_addr_call(name, args, span, fctx))
+            }
+            "tls_send"
+                if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, TlsError]") =>
+            {
+                Some(self.gen_tls_send_call(name, args, span, fctx))
+            }
+            "tls_recv"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[String, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_recv_call(name, args, span, fctx))
+            }
+            "tls_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, TlsError]") => {
+                Some(self.gen_tls_close_call(name, args, span, fctx))
+            }
+            "tls_peer_subject"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, TlsError]") =>
+            {
+                Some(self.gen_tls_peer_subject_call(name, args, span, fctx))
+            }
+            _ => None,
+        }
+    }
+
+    fn bool_arg_to_i64(
+        &mut self,
+        value: &Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        if value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects Bool argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let bool_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            bool_i64,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(bool_i64)
+    }
+
+    fn gen_tls_connect_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 10 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_connect_intrinsic expects ten arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let tcp_fd = self.gen_expr(&args[0], fctx)?;
+        let verify_server = self.gen_expr(&args[1], fctx)?;
+        let ca_cert_path = self.gen_expr(&args[2], fctx)?;
+        let has_ca_cert_path = self.gen_expr(&args[3], fctx)?;
+        let client_cert_path = self.gen_expr(&args[4], fctx)?;
+        let has_client_cert_path = self.gen_expr(&args[5], fctx)?;
+        let client_key_path = self.gen_expr(&args[6], fctx)?;
+        let has_client_key_path = self.gen_expr(&args[7], fctx)?;
+        let server_name = self.gen_expr(&args[8], fctx)?;
+        let has_server_name = self.gen_expr(&args[9], fctx)?;
+
+        if tcp_fd.ty != LType::Int
+            || ca_cert_path.ty != LType::String
+            || client_cert_path.ty != LType::String
+            || client_key_path.ty != LType::String
+            || server_name.ty != LType::String
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_connect_intrinsic expects (Int, Bool, String, Bool, String, Bool, String, Bool, String, Bool)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let verify_server_i64 = self.bool_arg_to_i64(
+            &verify_server,
+            "aic_tls_connect_intrinsic",
+            args[1].span,
+            fctx,
+        )?;
+        let has_ca_cert_i64 = self.bool_arg_to_i64(
+            &has_ca_cert_path,
+            "aic_tls_connect_intrinsic",
+            args[3].span,
+            fctx,
+        )?;
+        let has_client_cert_i64 = self.bool_arg_to_i64(
+            &has_client_cert_path,
+            "aic_tls_connect_intrinsic",
+            args[5].span,
+            fctx,
+        )?;
+        let has_client_key_i64 = self.bool_arg_to_i64(
+            &has_client_key_path,
+            "aic_tls_connect_intrinsic",
+            args[7].span,
+            fctx,
+        )?;
+        let has_server_name_i64 = self.bool_arg_to_i64(
+            &has_server_name,
+            "aic_tls_connect_intrinsic",
+            args[9].span,
+            fctx,
+        )?;
+
+        let (ca_ptr, ca_len, ca_cap) = self.string_parts(&ca_cert_path, args[2].span, fctx)?;
+        let (client_cert_ptr, client_cert_len, client_cert_cap) =
+            self.string_parts(&client_cert_path, args[4].span, fctx)?;
+        let (client_key_ptr, client_key_len, client_key_cap) =
+            self.string_parts(&client_key_path, args[6].span, fctx)?;
+        let (server_name_ptr, server_name_len, server_name_cap) =
+            self.string_parts(&server_name, args[8].span, fctx)?;
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_connect(i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            tcp_fd.repr.clone().unwrap_or_else(|| "0".to_string()),
+            verify_server_i64,
+            ca_ptr,
+            ca_len,
+            ca_cap,
+            has_ca_cert_i64,
+            client_cert_ptr,
+            client_cert_len,
+            client_cert_cap,
+            has_client_cert_i64,
+            client_key_ptr,
+            client_key_len,
+            client_key_cap,
+            has_client_key_i64,
+            server_name_ptr,
+            server_name_len,
+            server_name_cap,
+            has_server_name_i64,
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_tls_connect_addr_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 11 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_connect_addr_intrinsic expects eleven arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let addr = self.gen_expr(&args[0], fctx)?;
+        let verify_server = self.gen_expr(&args[1], fctx)?;
+        let ca_cert_path = self.gen_expr(&args[2], fctx)?;
+        let has_ca_cert_path = self.gen_expr(&args[3], fctx)?;
+        let client_cert_path = self.gen_expr(&args[4], fctx)?;
+        let has_client_cert_path = self.gen_expr(&args[5], fctx)?;
+        let client_key_path = self.gen_expr(&args[6], fctx)?;
+        let has_client_key_path = self.gen_expr(&args[7], fctx)?;
+        let server_name = self.gen_expr(&args[8], fctx)?;
+        let has_server_name = self.gen_expr(&args[9], fctx)?;
+        let timeout_ms = self.gen_expr(&args[10], fctx)?;
+
+        if addr.ty != LType::String
+            || ca_cert_path.ty != LType::String
+            || client_cert_path.ty != LType::String
+            || client_key_path.ty != LType::String
+            || server_name.ty != LType::String
+            || timeout_ms.ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_connect_addr_intrinsic expects (String, Bool, String, Bool, String, Bool, String, Bool, String, Bool, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let verify_server_i64 = self.bool_arg_to_i64(
+            &verify_server,
+            "aic_tls_connect_addr_intrinsic",
+            args[1].span,
+            fctx,
+        )?;
+        let has_ca_cert_i64 = self.bool_arg_to_i64(
+            &has_ca_cert_path,
+            "aic_tls_connect_addr_intrinsic",
+            args[3].span,
+            fctx,
+        )?;
+        let has_client_cert_i64 = self.bool_arg_to_i64(
+            &has_client_cert_path,
+            "aic_tls_connect_addr_intrinsic",
+            args[5].span,
+            fctx,
+        )?;
+        let has_client_key_i64 = self.bool_arg_to_i64(
+            &has_client_key_path,
+            "aic_tls_connect_addr_intrinsic",
+            args[7].span,
+            fctx,
+        )?;
+        let has_server_name_i64 = self.bool_arg_to_i64(
+            &has_server_name,
+            "aic_tls_connect_addr_intrinsic",
+            args[9].span,
+            fctx,
+        )?;
+
+        let (addr_ptr, addr_len, addr_cap) = self.string_parts(&addr, args[0].span, fctx)?;
+        let (ca_ptr, ca_len, ca_cap) = self.string_parts(&ca_cert_path, args[2].span, fctx)?;
+        let (client_cert_ptr, client_cert_len, client_cert_cap) =
+            self.string_parts(&client_cert_path, args[4].span, fctx)?;
+        let (client_key_ptr, client_key_len, client_key_cap) =
+            self.string_parts(&client_key_path, args[6].span, fctx)?;
+        let (server_name_ptr, server_name_len, server_name_cap) =
+            self.string_parts(&server_name, args[8].span, fctx)?;
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_connect_addr(i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            addr_ptr,
+            addr_len,
+            addr_cap,
+            verify_server_i64,
+            ca_ptr,
+            ca_len,
+            ca_cap,
+            has_ca_cert_i64,
+            client_cert_ptr,
+            client_cert_len,
+            client_cert_cap,
+            has_client_cert_i64,
+            client_key_ptr,
+            client_key_len,
+            client_key_cap,
+            has_client_key_i64,
+            server_name_ptr,
+            server_name_len,
+            server_name_cap,
+            has_server_name_i64,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_tls_send_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_send_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_send_intrinsic expects (Int, String)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (payload_ptr, payload_len, payload_cap) =
+            self.string_parts(&payload, args[1].span, fctx)?;
+        let out_sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_send(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            payload_ptr,
+            payload_len,
+            payload_cap,
+            out_sent_slot
+        ));
+        let out_sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_sent, out_sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_tls_recv_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_recv_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_recv_intrinsic expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_recv(i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let ok_payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_tls_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_close_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_close_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_close(i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_tls_peer_subject_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_peer_subject_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_peer_subject_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_peer_subject(i64 {}, i8** {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let ok_payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn wrap_tls_result(
+        &mut self,
+        result_ty: &LType,
+        ok_payload: Value,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(result_ty, span)
+        else {
+            return None;
+        };
+        if ok_payload.ty != ok_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "tls builtin ok payload expects '{}', found '{}'",
+                    render_type(&ok_ty),
+                    render_type(&ok_payload.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_payload = self.build_tls_error_from_code(&err_ty, err_code, span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, err_code));
+        let ok_label = self.new_label("tls_ok");
+        let err_label = self.new_label("tls_err");
+        let cont_label = self.new_label("tls_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(result_ty)),
+            llvm_type(result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(result_ty),
+            llvm_type(result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty.clone(),
+            repr: Some(reg),
+        })
+    }
+
     fn sig_matches_buffer_unit_result(&mut self, name: &str, params: &[&str]) -> bool {
         self.sig_matches_shape(name, params, "Result[(), BufferError]")
             || self.sig_matches_shape(name, params, "Result[Unit, BufferError]")
@@ -26643,6 +27443,33 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn build_tls_error_from_code(
+        &mut self,
+        err_ty: &LType,
+        err_code: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.build_error_from_code(
+            err_ty,
+            "TlsError",
+            "tls",
+            &[
+                (1, "HandshakeFailed"),
+                (2, "CertificateInvalid"),
+                (3, "CertificateExpired"),
+                (4, "HostnameMismatch"),
+                (5, "ProtocolError"),
+                (6, "ConnectionClosed"),
+                (7, "Io"),
+            ],
+            "Io",
+            err_code,
+            span,
+            fctx,
+        )
+    }
+
     fn build_buffer_error_from_code(
         &mut self,
         err_ty: &LType,
@@ -31149,6 +31976,16 @@ fn runtime_c_source() -> &'static str {
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
 #include <sys/event.h>
 #endif
+#endif
+
+#ifndef AIC_RT_TLS_OPENSSL
+#define AIC_RT_TLS_OPENSSL 0
+#endif
+
+#if AIC_RT_TLS_OPENSSL
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
 #endif
 
 typedef struct {
@@ -44082,6 +44919,160 @@ long aic_rt_net_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
     return 7;
 }
+
+long aic_rt_tls_connect(
+    long tcp_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    const char* server_name_ptr,
+    long server_name_len,
+    long server_name_cap,
+    long has_server_name,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_connect", 2);
+    (void)tcp_handle;
+    (void)verify_server;
+    (void)ca_cert_ptr;
+    (void)ca_cert_len;
+    (void)ca_cert_cap;
+    (void)has_ca_cert;
+    (void)client_cert_ptr;
+    (void)client_cert_len;
+    (void)client_cert_cap;
+    (void)has_client_cert;
+    (void)client_key_ptr;
+    (void)client_key_len;
+    (void)client_key_cap;
+    (void)has_client_key;
+    (void)server_name_ptr;
+    (void)server_name_len;
+    (void)server_name_cap;
+    (void)has_server_name;
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_connect_addr(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    const char* server_name_ptr,
+    long server_name_len,
+    long server_name_cap,
+    long has_server_name,
+    long timeout_ms,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_connect_addr", 2);
+    (void)addr_ptr;
+    (void)addr_len;
+    (void)addr_cap;
+    (void)verify_server;
+    (void)ca_cert_ptr;
+    (void)ca_cert_len;
+    (void)ca_cert_cap;
+    (void)has_ca_cert;
+    (void)client_cert_ptr;
+    (void)client_cert_len;
+    (void)client_cert_cap;
+    (void)has_client_cert;
+    (void)client_key_ptr;
+    (void)client_key_len;
+    (void)client_key_cap;
+    (void)has_client_key;
+    (void)server_name_ptr;
+    (void)server_name_len;
+    (void)server_name_cap;
+    (void)has_server_name;
+    (void)timeout_ms;
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_send(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_send", 2);
+    (void)tls_handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_recv(
+    long tls_handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_recv", 2);
+    (void)tls_handle;
+    (void)max_bytes;
+    (void)timeout_ms;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_close(long tls_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_close", 2);
+    (void)tls_handle;
+    return 5;
+}
+
+long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_subject", 2);
+    (void)tls_handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 5;
+}
 #else
 static long aic_rt_net_map_errno(int err) {
     switch (err) {
@@ -46376,6 +47367,687 @@ long aic_rt_net_dns_reverse(
     }
     freeaddrinfo(infos);
     return 0;
+}
+
+#define AIC_RT_TLS_TABLE_CAP 128
+
+typedef struct {
+    int active;
+#if AIC_RT_TLS_OPENSSL
+    SSL* ssl;
+    SSL_CTX* ctx;
+#endif
+    int fd;
+    long consumed_net_handle;
+} AicTlsSlot;
+
+static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
+#if AIC_RT_TLS_OPENSSL
+static int aic_rt_tls_initialized = 0;
+#endif
+
+static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
+    if (slot == NULL) {
+        return;
+    }
+    slot->active = 0;
+#if AIC_RT_TLS_OPENSSL
+    slot->ssl = NULL;
+    slot->ctx = NULL;
+#endif
+    slot->fd = -1;
+    slot->consumed_net_handle = 0;
+}
+
+static AicTlsSlot* aic_rt_tls_get_slot(long handle) {
+    if (handle <= 0 || handle > AIC_RT_TLS_TABLE_CAP) {
+        return NULL;
+    }
+    AicTlsSlot* slot = &aic_rt_tls_table[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static long aic_rt_tls_alloc_slot(
+#if AIC_RT_TLS_OPENSSL
+    SSL* ssl,
+    SSL_CTX* ctx,
+#endif
+    int fd,
+    long consumed_net_handle,
+    long* out_tls_handle
+) {
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    for (long i = 0; i < AIC_RT_TLS_TABLE_CAP; ++i) {
+        AicTlsSlot* slot = &aic_rt_tls_table[i];
+        if (!slot->active) {
+            slot->active = 1;
+#if AIC_RT_TLS_OPENSSL
+            slot->ssl = ssl;
+            slot->ctx = ctx;
+#endif
+            slot->fd = fd;
+            slot->consumed_net_handle = consumed_net_handle;
+            if (out_tls_handle != NULL) {
+                *out_tls_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    return 7;
+}
+
+static long aic_rt_tls_copy_optional_string(
+    const char* ptr,
+    long len,
+    long has_value,
+    char** out_value
+) {
+    if (out_value != NULL) {
+        *out_value = NULL;
+    }
+    if (has_value == 0) {
+        return 0;
+    }
+    if (len < 0 || (len > 0 && ptr == NULL)) {
+        return 5;
+    }
+    char* copy = aic_rt_fs_copy_slice(ptr, len);
+    if (copy == NULL) {
+        return 5;
+    }
+    if (out_value != NULL) {
+        *out_value = copy;
+    } else {
+        free(copy);
+    }
+    return 0;
+}
+
+static long aic_rt_tls_map_net_error(long net_error) {
+    if (net_error == 0) {
+        return 0;
+    }
+    if (net_error == 6) {
+        return 5;
+    }
+    return 7;
+}
+
+#if AIC_RT_TLS_OPENSSL
+static int aic_rt_tls_ensure_initialized(void) {
+    if (aic_rt_tls_initialized) {
+        return 1;
+    }
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    if (OPENSSL_init_ssl(0, NULL) != 1) {
+        return 0;
+    }
+#else
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+#endif
+    aic_rt_tls_initialized = 1;
+    return 1;
+}
+
+static long aic_rt_tls_map_verify_error(long verify_error) {
+    switch (verify_error) {
+        case X509_V_OK:
+            return 0;
+#ifdef X509_V_ERR_CERT_HAS_EXPIRED
+        case X509_V_ERR_CERT_HAS_EXPIRED:
+            return 3;
+#endif
+#ifdef X509_V_ERR_HOSTNAME_MISMATCH
+        case X509_V_ERR_HOSTNAME_MISMATCH:
+            return 4;
+#endif
+        default:
+            return 2;
+    }
+}
+
+static long aic_rt_tls_map_ssl_connect_error(SSL* ssl, int ssl_error, long verify_server) {
+    if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        return 6;
+    }
+    if (ssl_error == SSL_ERROR_SYSCALL) {
+        if (errno != 0) {
+            return 7;
+        }
+        return 6;
+    }
+    if (ssl_error == SSL_ERROR_SSL) {
+        if (verify_server != 0) {
+            long verify_error = (long)SSL_get_verify_result(ssl);
+            long mapped = aic_rt_tls_map_verify_error(verify_error);
+            if (mapped != 0) {
+                return mapped;
+            }
+        }
+        return 1;
+    }
+    return 1;
+}
+#endif
+
+static long aic_rt_tls_connect_core(
+    long tcp_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    const char* server_name_ptr,
+    long server_name_len,
+    long server_name_cap,
+    long has_server_name,
+    long* out_tls_handle,
+    int close_net_on_fail
+) {
+    (void)ca_cert_cap;
+    (void)client_cert_cap;
+    (void)client_key_cap;
+    (void)server_name_cap;
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    if (!(verify_server == 0 || verify_server == 1)) {
+        return 5;
+    }
+    if (!(has_ca_cert == 0 || has_ca_cert == 1) ||
+        !(has_client_cert == 0 || has_client_cert == 1) ||
+        !(has_client_key == 0 || has_client_key == 1) ||
+        !(has_server_name == 0 || has_server_name == 1)) {
+        return 5;
+    }
+    if ((has_client_cert == 1 && has_client_key == 0) ||
+        (has_client_cert == 0 && has_client_key == 1)) {
+        return 5;
+    }
+
+    AicNetSlot* net_slot = aic_rt_net_get_slot(tcp_handle);
+    if (net_slot == NULL || net_slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 5;
+    }
+    int fd = net_slot->fd;
+
+    char* ca_cert = NULL;
+    char* client_cert = NULL;
+    char* client_key = NULL;
+    char* server_name = NULL;
+
+    long copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
+    if (copy_ca != 0) {
+        return copy_ca;
+    }
+    long copy_client_cert = aic_rt_tls_copy_optional_string(
+        client_cert_ptr,
+        client_cert_len,
+        has_client_cert,
+        &client_cert
+    );
+    if (copy_client_cert != 0) {
+        free(ca_cert);
+        return copy_client_cert;
+    }
+    long copy_client_key = aic_rt_tls_copy_optional_string(
+        client_key_ptr,
+        client_key_len,
+        has_client_key,
+        &client_key
+    );
+    if (copy_client_key != 0) {
+        free(ca_cert);
+        free(client_cert);
+        return copy_client_key;
+    }
+    long copy_server_name = aic_rt_tls_copy_optional_string(
+        server_name_ptr,
+        server_name_len,
+        has_server_name,
+        &server_name
+    );
+    if (copy_server_name != 0) {
+        free(ca_cert);
+        free(client_cert);
+        free(client_key);
+        return copy_server_name;
+    }
+
+    long result = 5;
+#if AIC_RT_TLS_OPENSSL
+    if (!aic_rt_tls_ensure_initialized()) {
+        result = 7;
+        goto cleanup;
+    }
+    SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+    if (ctx == NULL) {
+        result = 7;
+        goto cleanup;
+    }
+#ifdef TLS1_2_VERSION
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+#endif
+    if (verify_server != 0) {
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+        if (has_ca_cert != 0) {
+            if (ca_cert == NULL || ca_cert[0] == '\0') {
+                SSL_CTX_free(ctx);
+                result = 5;
+                goto cleanup;
+            }
+            if (SSL_CTX_load_verify_locations(ctx, ca_cert, NULL) != 1) {
+                SSL_CTX_free(ctx);
+                result = 2;
+                goto cleanup;
+            }
+        } else if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
+            SSL_CTX_free(ctx);
+            result = 2;
+            goto cleanup;
+        }
+    } else {
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    }
+
+    if (has_client_cert != 0) {
+        if (client_cert == NULL || client_cert[0] == '\0' ||
+            client_key == NULL || client_key[0] == '\0') {
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+        if (SSL_CTX_use_certificate_file(ctx, client_cert, SSL_FILETYPE_PEM) != 1) {
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+        if (SSL_CTX_use_PrivateKey_file(ctx, client_key, SSL_FILETYPE_PEM) != 1) {
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+        if (SSL_CTX_check_private_key(ctx) != 1) {
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+    }
+
+    SSL* ssl = SSL_new(ctx);
+    if (ssl == NULL) {
+        SSL_CTX_free(ctx);
+        result = 7;
+        goto cleanup;
+    }
+    if (SSL_set_fd(ssl, fd) != 1) {
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+    if (has_server_name != 0) {
+        if (server_name == NULL || server_name[0] == '\0') {
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+        if (SSL_set_tlsext_host_name(ssl, server_name) != 1) {
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+        if (verify_server != 0) {
+            X509_VERIFY_PARAM* param = SSL_get0_param(ssl);
+            if (param == NULL || X509_VERIFY_PARAM_set1_host(param, server_name, 0) != 1) {
+                SSL_free(ssl);
+                SSL_CTX_free(ctx);
+                result = 5;
+                goto cleanup;
+            }
+        }
+#endif
+    }
+
+    int connect_rc = SSL_connect(ssl);
+    if (connect_rc != 1) {
+        int ssl_error = SSL_get_error(ssl, connect_rc);
+        result = aic_rt_tls_map_ssl_connect_error(ssl, ssl_error, verify_server);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        goto cleanup;
+    }
+
+    result = aic_rt_tls_alloc_slot(ssl, ctx, fd, tcp_handle, out_tls_handle);
+    if (result != 0) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        goto cleanup;
+    }
+
+    net_slot = aic_rt_net_get_slot(tcp_handle);
+    if (net_slot != NULL && net_slot->fd == fd && net_slot->kind == AIC_RT_NET_KIND_TCP_STREAM) {
+        aic_rt_net_reset_slot(net_slot);
+    }
+#else
+    result = 5;
+#endif
+
+cleanup:
+    if (result != 0 && close_net_on_fail && tcp_handle > 0) {
+        (void)aic_rt_net_tcp_close(tcp_handle);
+    }
+    free(ca_cert);
+    free(client_cert);
+    free(client_key);
+    free(server_name);
+    return result;
+}
+
+long aic_rt_tls_connect(
+    long tcp_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    const char* server_name_ptr,
+    long server_name_len,
+    long server_name_cap,
+    long has_server_name,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_connect", 2);
+    return aic_rt_tls_connect_core(
+        tcp_handle,
+        verify_server,
+        ca_cert_ptr,
+        ca_cert_len,
+        ca_cert_cap,
+        has_ca_cert,
+        client_cert_ptr,
+        client_cert_len,
+        client_cert_cap,
+        has_client_cert,
+        client_key_ptr,
+        client_key_len,
+        client_key_cap,
+        has_client_key,
+        server_name_ptr,
+        server_name_len,
+        server_name_cap,
+        has_server_name,
+        out_tls_handle,
+        0
+    );
+}
+
+long aic_rt_tls_connect_addr(
+    const char* addr_ptr,
+    long addr_len,
+    long addr_cap,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    const char* server_name_ptr,
+    long server_name_len,
+    long server_name_cap,
+    long has_server_name,
+    long timeout_ms,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_connect_addr", 2);
+    long tcp_handle = 0;
+    long connect_rc = aic_rt_net_tcp_connect(addr_ptr, addr_len, addr_cap, timeout_ms, &tcp_handle);
+    if (connect_rc != 0) {
+        return aic_rt_tls_map_net_error(connect_rc);
+    }
+    long tls_rc = aic_rt_tls_connect_core(
+        tcp_handle,
+        verify_server,
+        ca_cert_ptr,
+        ca_cert_len,
+        ca_cert_cap,
+        has_ca_cert,
+        client_cert_ptr,
+        client_cert_len,
+        client_cert_cap,
+        has_client_cert,
+        client_key_ptr,
+        client_key_len,
+        client_key_cap,
+        has_client_key,
+        server_name_ptr,
+        server_name_len,
+        server_name_cap,
+        has_server_name,
+        out_tls_handle,
+        1
+    );
+    return tls_rc;
+}
+
+long aic_rt_tls_send(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long* out_sent
+) {
+    (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tls_send", 2);
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (payload_len < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 5;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL || slot->fd < 0) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    size_t remaining = (size_t)payload_len;
+    const unsigned char* cursor = (const unsigned char*)payload_ptr;
+    size_t total = 0;
+    while (remaining > 0) {
+        size_t chunk = remaining > (size_t)INT_MAX ? (size_t)INT_MAX : remaining;
+        int rc = SSL_write(slot->ssl, cursor, (int)chunk);
+        if (rc > 0) {
+            total += (size_t)rc;
+            cursor += (size_t)rc;
+            remaining -= (size_t)rc;
+            continue;
+        }
+        int ssl_error = SSL_get_error(slot->ssl, rc);
+        if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+            return 6;
+        }
+        if (ssl_error == SSL_ERROR_SYSCALL && errno == 0) {
+            return 6;
+        }
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            continue;
+        }
+        return 7;
+    }
+    if (out_sent != NULL) {
+        *out_sent = (long)total;
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_tls_recv(
+    long tls_handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_recv", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (max_bytes < 0 || timeout_ms < 0) {
+        return 5;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL || slot->fd < 0) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    if (waited != 0) {
+        return aic_rt_tls_map_net_error(waited);
+    }
+
+    size_t cap = (size_t)max_bytes;
+    char* buffer = (char*)malloc(cap + 1);
+    if (buffer == NULL) {
+        return 7;
+    }
+    int chunk = cap > (size_t)INT_MAX ? INT_MAX : (int)cap;
+    int rc = SSL_read(slot->ssl, buffer, chunk);
+    if (rc > 0) {
+        buffer[(size_t)rc] = '\0';
+        if (out_ptr != NULL) {
+            *out_ptr = buffer;
+        } else {
+            free(buffer);
+        }
+        if (out_len != NULL) {
+            *out_len = (long)rc;
+        }
+        return 0;
+    }
+    free(buffer);
+    int ssl_error = SSL_get_error(slot->ssl, rc);
+    if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        return 6;
+    }
+    if (ssl_error == SSL_ERROR_SYSCALL && errno == 0) {
+        return 6;
+    }
+    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+        return 7;
+    }
+    return 7;
+#endif
+}
+
+long aic_rt_tls_close(long tls_handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_close", 2);
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+    int fd = slot->fd;
+#if AIC_RT_TLS_OPENSSL
+    SSL* ssl = slot->ssl;
+    SSL_CTX* ctx = slot->ctx;
+#endif
+    aic_rt_tls_reset_slot(slot);
+#if AIC_RT_TLS_OPENSSL
+    if (ssl != NULL) {
+        (void)SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
+    if (ctx != NULL) {
+        SSL_CTX_free(ctx);
+    }
+#endif
+    if (fd >= 0) {
+        long close_rc = aic_rt_net_close_fd(fd);
+        return aic_rt_tls_map_net_error(close_rc);
+    }
+    return 0;
+}
+
+long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_subject", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    X509* cert = SSL_get_peer_certificate(slot->ssl);
+    if (cert == NULL) {
+        return 6;
+    }
+    char* subject = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+    X509_free(cert);
+    if (subject == NULL) {
+        return 7;
+    }
+    long subject_len = (long)strlen(subject);
+    char* out = aic_rt_copy_bytes(subject, (size_t)subject_len);
+    OPENSSL_free(subject);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = subject_len;
+    }
+    return 0;
+#endif
 }
 #endif
 
@@ -52247,6 +53919,24 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_net_async_shutdown()"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_tls_connect(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_tls_close(i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_buffer_new(i64, i64*)"));
         assert!(output
             .llvm_ir
@@ -52455,6 +54145,12 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_net_async_wait_int("));
         assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
         assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
+        assert!(runtime_c_source().contains("long aic_rt_tls_connect("));
+        assert!(runtime_c_source().contains("long aic_rt_tls_connect_addr("));
+        assert!(runtime_c_source().contains("long aic_rt_tls_send("));
+        assert!(runtime_c_source().contains("long aic_rt_tls_recv("));
+        assert!(runtime_c_source().contains("long aic_rt_tls_close("));
+        assert!(runtime_c_source().contains("long aic_rt_tls_peer_subject("));
         assert!(runtime_c_source().contains("long aic_rt_async_poll_int(long op_handle"));
         assert!(runtime_c_source().contains("long aic_rt_async_poll_string(long op_handle"));
         assert!(runtime_c_source().contains("long aic_rt_url_parse("));

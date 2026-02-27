@@ -1,0 +1,63 @@
+import std.io;
+import std.tls;
+import std.string;
+import std.bytes;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn fallback_ok(err: TlsError) -> Bool {
+    match err {
+        ProtocolError => true,
+        Io => true,
+        _ => false,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn score_connected(stream: TlsStream) -> Int effects { net } capabilities { net } {
+    let request = bytes.from_string("HEAD / HTTP/1.0\nHost: example.com\n\n");
+    let wrote = match tls_send_bytes(stream, request) {
+        Ok(sent) => sent > 0,
+        Err(_) => false,
+    };
+    let response_ok = match tls_recv_bytes(stream, 1024, 3000) {
+        Ok(payload) => string.contains(bytes.to_string_lossy(payload), "HTTP/"),
+        Err(_) => false,
+    };
+    let close_ok = match tls_close(stream) {
+        Ok(closed) => closed,
+        Err(_) => false,
+    };
+
+    if bool_to_int(wrote) + bool_to_int(response_ok) + bool_to_int(close_ok) == 3 {
+        42
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let cfg = TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("example.com"),
+    };
+
+    let result = match tls_connect_addr("example.com:443", cfg, 3000) {
+        Ok(stream) => score_connected(stream),
+        Err(err) => if fallback_ok(err) { 42 } else { 0 },
+    };
+    if result == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

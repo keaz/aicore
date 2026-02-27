@@ -379,6 +379,7 @@ AICore ships with a comprehensive standard library covering IO, networking, conc
 | `std.io`         | Console IO, formatted output, file reading/writing                 |
 | `std.fs`         | Filesystem operations (read, write, copy, move, delete, walk, temp)|
 | `std.net`        | TCP/UDP networking, HTTP client                                    |
+| `std.tls`        | TLS streams, handshake, and certificate-aware secure transport      |
 | `std.http`       | HTTP request/response types                                        |
 | `std.http_server`| HTTP server primitives                                             |
 | `std.concurrent` | Channels, mutexes, task spawning, async coordination               |

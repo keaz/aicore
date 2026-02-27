@@ -192,3 +192,40 @@ Current runtime caveats to account for:
 
 - Windows `std.net`: currently returns `NetError::Io`.
 - Windows `std.proc`: `spawn/run_with/run_timeout/pipe_chain` can return `ProcError::Io`; `wait/kill/is_running` return `ProcError::UnknownProcess`.
+
+## 10. TLS Client Handshake + Typed Fallback
+
+Use `std.tls` for encrypted transport and branch on `TlsError` for deterministic behavior in environments that do not provide TLS backend support.
+
+```aic
+import std.tls;
+import std.bytes;
+
+fn tls_connected(stream: TlsStream) -> Int effects { net } {
+    let sent = tls_send_bytes(stream, bytes.from_string("HEAD / HTTP/1.0\n\n"));
+    let recv = tls_recv_bytes(stream, 256, 3000);
+    let closed = tls_close(stream);
+    let _a = sent;
+    let _b = recv;
+    let _c = closed;
+    1
+}
+
+fn tls_probe(addr: String, host: String) -> Int effects { net } {
+    let cfg = TlsConfig {
+        verify_server: false,
+        ca_cert_path: None(),
+        client_cert_path: None(),
+        client_key_path: None(),
+        server_name: Some(host),
+    };
+    match tls_connect_addr(addr, cfg, 3000) {
+        Ok(stream) => tls_connected(stream),
+        Err(ProtocolError) => 0,
+        Err(Io) => 0,
+        Err(_) => 0,
+    }
+}
+```
+
+Reference: `examples/io/tls_connect.aic`.

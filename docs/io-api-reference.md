@@ -14,6 +14,7 @@ Covered modules:
 - `std.path`
 - `std.proc`
 - `std.net`
+- `std.tls`
 - `std.time`
 - `std.signal`
 - `std.rand`
@@ -49,6 +50,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
 | `EnvError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io` |
 | `ProcError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io`, `5=UnknownProcess` |
 | `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io` |
+| `TlsError` | `1=HandshakeFailed`, `2=CertificateInvalid`, `3=CertificateExpired`, `4=HostnameMismatch`, `5=ProtocolError`, `6=ConnectionClosed`, `7=Io` |
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
 | `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
 | `BufferError` | `1=Underflow`, `2=Overflow`, `3=InvalidUtf8`, `4=InvalidInput` |
@@ -390,6 +392,50 @@ Notes:
 - Network-handle table capacity is bounded (`128` runtime slots).
 - On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
 
+## `std.tls`
+
+```aic
+enum TlsError {
+    HandshakeFailed,
+    CertificateInvalid,
+    CertificateExpired,
+    HostnameMismatch,
+    ProtocolError,
+    ConnectionClosed,
+    Io,
+}
+
+struct TlsConfig {
+    verify_server: Bool,
+    ca_cert_path: Option[String],
+    client_cert_path: Option[String],
+    client_key_path: Option[String],
+    server_name: Option[String],
+}
+
+struct TlsStream {
+    handle: Int,
+}
+
+fn default_tls_config() -> TlsConfig
+fn tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
+fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }
+fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }
+fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }
+fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
+fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
+fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError]
+```
+
+Notes:
+
+- `default_tls_config()` is secure-by-default (`verify_server: true`).
+- `tls_connect` upgrades an existing TCP connection handle after protocol negotiation (for example StartTLS/SSLRequest flows).
+- `tls_connect_addr` performs TCP connect + TLS handshake in one call.
+- `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
+- On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.
+
 ## `std.time`
 
 ```aic
@@ -572,5 +618,6 @@ Notes:
 ```bash
 cargo run --quiet --bin aic -- std-compat
 cargo run --quiet --bin aic -- check examples/io/interactive_greeter.aic
+cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 cargo run --quiet --bin aic -- explain E2001
 ```
