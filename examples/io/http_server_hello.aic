@@ -58,7 +58,7 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
         Err(_) => bytes.empty(),
     };
     let wire_text = bytes.to_string_lossy(wire);
-    let wire_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") && ends_with(wire_text, "hello") {
+    let wire_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") && string.ends_with(wire_text, "hello") {
         1
     } else {
         0

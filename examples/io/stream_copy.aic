@@ -41,7 +41,7 @@ fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
         Err(_) => 0,
     };
     let copied_text_ok = match fs.read_text("stream_copy_output.txt") {
-        Ok(text) => if len(text) == 10 && starts_with(text, "payload-42") { 1 } else { 0 },
+        Ok(text) => if len(text) == 10 && string.starts_with(text, "payload-42") { 1 } else { 0 },
         Err(_) => 0,
     };
     let file_close_ok = close_reader_ok(file_reader_stream) + close_writer_ok(file_writer_stream);
@@ -70,7 +70,7 @@ fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
         Err(_) => 0,
     };
     let recv_ok = match read_stream(reader_stream) {
-        Ok(text) => if len(text) == 4 && starts_with(text, "echo") { 1 } else { 0 },
+        Ok(text) => if len(text) == 4 && string.starts_with(text, "echo") { 1 } else { 0 },
         Err(_) => 0,
     };
     let tcp_close_ok =

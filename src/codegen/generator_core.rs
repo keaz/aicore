@@ -315,6 +315,8 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_map_entries_string_bool_key(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_map_entries_int_int_key(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_map_entries_int_bool_key(i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_bytes_byte_at(i8*, i64, i64, i64)\n");
+        text.push_str("declare void @aic_rt_bytes_from_byte_values(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_new(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_to_bytes(i64, i8**, i64*)\n");

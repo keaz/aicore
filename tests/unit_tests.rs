@@ -3544,7 +3544,7 @@ fn unit_std_config_env_prefix_and_missing_key_paths_present() {
 
     assert!(source
         .contains("fn load_env_prefix(prefix: String) -> Map[String, String] effects { env }"));
-    assert!(source.contains("starts_with(entry.key, prefix)"));
+    assert!(source.contains("string.starts_with(entry.key, prefix)"));
     assert!(source.contains("substring(entry.key, prefix_len, key_len)"));
 
     assert!(source.contains(
@@ -4033,8 +4033,8 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _grw_close = close_rwlock(_grw);
     let _n = string.len("abc");
     let _contains = string.contains("abc", "b");
-    let _starts = starts_with("abc", "a");
-    let _ends = ends_with("abc", "c");
+    let _starts = string.starts_with("abc", "a");
+    let _ends = string.ends_with("abc", "c");
     let _index = string.index_of("abc", "b");
     let _last = last_index_of("abcb", "b");
     let _sub = substring("abc", 0, 2);
@@ -6105,6 +6105,33 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
         bytes_source.contains("aic_string_bytes_to_string_lossy_intrinsic(data)"),
         "std/bytes.aic must decode lossy via intrinsic-backed string API"
     );
+    assert!(
+        bytes_source
+            .contains("intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int;"),
+        "std/bytes.aic must declare byte_at runtime intrinsic binding"
+    );
+    assert!(
+        bytes_source.contains(
+            "intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String;"
+        ),
+        "std/bytes.aic must declare from_byte_values runtime intrinsic binding"
+    );
+    assert!(
+        bytes_source.contains("aic_bytes_byte_at_intrinsic(data.data, index)"),
+        "std/bytes.aic byte_at must bridge Bytes.data into runtime intrinsic"
+    );
+    assert!(
+        bytes_source.contains("aic_string_substring_intrinsic(data.data, start, end)"),
+        "std/bytes.aic byte_slice must use string substring intrinsic on byte indices"
+    );
+    assert!(
+        bytes_source.contains("aic_bytes_from_byte_values_intrinsic(values)"),
+        "std/bytes.aic from_byte_values must bridge Vec[Int] through runtime intrinsic"
+    );
+    assert!(
+        bytes_source.contains("fn to_byte_values(data: Bytes) -> Vec[Int]"),
+        "std/bytes.aic must expose byte-vector conversion helper"
+    );
 
     assert!(
         !bytes_source.contains("fn aic_bytes_len_intrinsic(data: String) -> Int {\n    0"),
@@ -6267,6 +6294,28 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
     ] {
         assert_intrinsic_declaration(&source, "std/buffer.aic", intrinsic, arity);
     }
+
+    assert!(
+        source
+            .contains("fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]"),
+        "std/buffer.aic must expose buf_peek_u8 random-access helper"
+    );
+    assert!(
+        source.contains("fn buf_size(buf: ByteBuffer) -> Int"),
+        "std/buffer.aic must expose buf_size helper"
+    );
+    assert!(
+        source.contains("fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]"),
+        "std/buffer.aic must expose buf_slice helper"
+    );
+    assert!(
+        source.contains("let _restore = buf_seek(buf, current);"),
+        "std/buffer.aic buf_peek_u8 must restore cursor position after peeking"
+    );
+    assert!(
+        source.contains("let sliced = byte_slice(raw, start, end);"),
+        "std/buffer.aic buf_slice must compose through std.bytes byte_slice"
+    );
 }
 
 #[test]

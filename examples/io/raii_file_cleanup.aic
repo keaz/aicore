@@ -84,7 +84,7 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
 
     let content_ok = match read_text(path) {
         Ok(text) =>
-            if starts_with(text, "alpha")
+            if string.starts_with(text, "alpha")
                 && string.contains(text, "beta")
                 && string.contains(text, "gamma")
                 && string.contains(text, "delta") {

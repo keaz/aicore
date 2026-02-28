@@ -780,6 +780,22 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_bytes_byte_at_intrinsic",
+        runtime_symbol: "aic_rt_bytes_byte_at",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "Int"],
+            ret: "Int",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_bytes_from_byte_values_intrinsic",
+        runtime_symbol: "aic_rt_bytes_from_byte_values",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Vec[Int]"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_new_intrinsic",
         runtime_symbol: "aic_rt_buffer_new",
         signatures: &[IntrinsicSignatureShape {

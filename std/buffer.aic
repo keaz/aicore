@@ -149,3 +149,41 @@ fn buf_write_cstring(buf: ByteBuffer, s: String) -> Result[(), BufferError] {
 fn buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferError] {
     aic_buffer_write_string_prefixed_intrinsic(buf, s)
 }
+
+fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError] {
+    let current = buf_position(buf);
+    let seek = buf_seek(buf, position);
+    let out = match seek {
+        Err(err) => Err(err),
+        Ok(_) => buf_read_u8(buf),
+    };
+    let _restore = buf_seek(buf, current);
+    out
+}
+
+fn buf_size(buf: ByteBuffer) -> Int {
+    buf_position(buf) + buf_remaining(buf)
+}
+
+fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError] {
+    if start < 0 || length < 0 {
+        Err(InvalidInput())
+    } else {
+        let end = start + length;
+        if end < start {
+            Err(InvalidInput())
+        } else {
+            let total = buf_size(buf);
+            if start > total || end > total {
+                Err(InvalidInput())
+            } else {
+                let raw = buffer_to_bytes(buf);
+                let sliced = byte_slice(raw, start, end);
+                match sliced {
+                    Ok(data) => Ok(buffer_from_bytes(data)),
+                    Err(_) => Err(InvalidInput()),
+                }
+            }
+        }
+    }
+}

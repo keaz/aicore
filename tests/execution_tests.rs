@@ -1380,16 +1380,16 @@ fn main() -> Int effects { io } capabilities { io  } {
     };
 
     let out0 = format("plain-text", empty_args);
-    let ok0 = if len(out0) == 10 && starts_with(out0, "plain") { 1 } else { 0 };
+    let ok0 = if len(out0) == 10 && string.starts_with(out0, "plain") { 1 } else { 0 };
 
     let out1 = format("x{0}y", split("A", ","));
     let ok1 = if len(out1) == 3 && string.contains(out1, "A") { 1 } else { 0 };
 
     let out2 = format("{0}-{1}", split("left,right", ","));
-    let ok2 = if starts_with(out2, "left-") && ends_with(out2, "right") { 1 } else { 0 };
+    let ok2 = if string.starts_with(out2, "left-") && string.ends_with(out2, "right") { 1 } else { 0 };
 
     let out5 = format("{0}{1}{2}{3}{4}", split("a,b,c,d,e", ","));
-    let ok5 = if len(out5) == 5 && starts_with(out5, "ab") && ends_with(out5, "de") {
+    let ok5 = if len(out5) == 5 && string.starts_with(out5, "ab") && string.ends_with(out5, "de") {
         1
     } else {
         0
@@ -1397,14 +1397,14 @@ fn main() -> Int effects { io } capabilities { io  } {
 
     let missing = format("x{0}-{2}-z", split("left,right", ","));
     let missing_ok =
-        if starts_with(missing, "xleft-") && string.contains(missing, "{2}") && ends_with(missing, "-z") {
+        if string.starts_with(missing, "xleft-") && string.contains(missing, "{2}") && string.ends_with(missing, "-z") {
             1
         } else {
             0
         };
 
     let int_text = int_to_string(-2048);
-    let int_direct_ok = if len(int_text) == 5 && starts_with(int_text, "-") { 1 } else { 0 };
+    let int_direct_ok = if len(int_text) == 5 && string.starts_with(int_text, "-") { 1 } else { 0 };
     let int_args = split("left7right", int_to_string(7));
     let int_compose_ok = if len(format("{0}:{1}", int_args)) == 10 { 1 } else { 0 };
 
@@ -1417,7 +1417,7 @@ fn main() -> Int effects { io } capabilities { io  } {
             0
         };
     let bool_args = split("uptruedown", bool_to_string(true));
-    let bool_compose_ok = if starts_with(format("{0}|{1}", bool_args), "up|") { 1 } else { 0 };
+    let bool_compose_ok = if string.starts_with(format("{0}|{1}", bool_args), "up|") { 1 } else { 0 };
 
     let score =
         ok0 +
@@ -1454,14 +1454,14 @@ fn main() -> Int effects { io } capabilities { io  } {
 
     let basic = f"Hello, {name}";
     let basic_ok =
-        if len(basic) == 10 && starts_with(basic, "Hello,") && ends_with(basic, "Ada") {
+        if len(basic) == 10 && string.starts_with(basic, "Hello,") && string.ends_with(basic, "Ada") {
             1
         } else {
             0
         };
 
     let nested = f"sum={int_to_string(20 + 22)}";
-    let nested_ok = if len(nested) == 6 && starts_with(nested, "sum=") && ends_with(nested, "42") {
+    let nested_ok = if len(nested) == 6 && string.starts_with(nested, "sum=") && string.ends_with(nested, "42") {
         1
     } else {
         0
@@ -1469,7 +1469,7 @@ fn main() -> Int effects { io } capabilities { io  } {
 
     let escaped = f"left \{literal\} right";
     let escaped_ok =
-        if len(escaped) == 20 && starts_with(escaped, "left {") && ends_with(escaped, "} right") {
+        if len(escaped) == 20 && string.starts_with(escaped, "left {") && string.ends_with(escaped, "} right") {
             1
         } else {
             0
@@ -1478,15 +1478,15 @@ fn main() -> Int effects { io } capabilities { io  } {
     let escaped_doubled = f"left {{literal}} right";
     let escaped_doubled_ok =
         if len(escaped_doubled) == 20
-            && starts_with(escaped_doubled, "left {")
-            && ends_with(escaped_doubled, "} right") {
+            && string.starts_with(escaped_doubled, "left {")
+            && string.ends_with(escaped_doubled, "} right") {
             1
         } else {
             0
         };
 
     let mixed = $"<{name}:{int_to_string(7)}>";
-    let mixed_ok = if len(mixed) == 7 && starts_with(mixed, "<Ada:") && ends_with(mixed, "7>") {
+    let mixed_ok = if len(mixed) == 7 && string.starts_with(mixed, "<Ada:") && string.ends_with(mixed, "7>") {
         1
     } else {
         0
@@ -1549,8 +1549,8 @@ fn result_err_non_empty(v: Result[Int, String]) -> Int {
 
 fn main() -> Int effects { io } capabilities { io  } {
     let contains_ok = if string.contains("alpha beta", "pha") { 1 } else { 0 };
-    let starts_ok = if starts_with("alpha beta", "alpha") { 1 } else { 0 };
-    let ends_ok = if ends_with("alpha beta", "beta") { 1 } else { 0 };
+    let starts_ok = if string.starts_with("alpha beta", "alpha") { 1 } else { 0 };
+    let ends_ok = if string.ends_with("alpha beta", "beta") { 1 } else { 0 };
 
     let idx_first_ok = if opt_int_or(string.index_of("banana", "na"), -1) == 2 { 1 } else { 0 };
     let idx_last_ok = if opt_int_or(last_index_of("banana", "na"), -1) == 4 { 1 } else { 0 };
@@ -1756,7 +1756,7 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     };
     let invalid_lossy = bytes_to_string_lossy(load_invalid());
     let invalid_lossy_ok =
-        if len(invalid_lossy) == 6 && starts_with(invalid_lossy, "fo") && ends_with(invalid_lossy, "o") {
+        if len(invalid_lossy) == 6 && string.starts_with(invalid_lossy, "fo") && string.ends_with(invalid_lossy, "o") {
             1
         } else {
             0
@@ -1940,9 +1940,9 @@ fn main() -> Int effects { io } capabilities { io  } {
     let line_parts = split(request_line, " ");
     let parts_ok = if vec_len(line_parts) == 3 { 1 } else { 0 };
     let line_roundtrip_ok = if len(join(line_parts, " ")) == len(request_line) { 1 } else { 0 };
-    let method_ok = if starts_with(request_line, "GET ") { 1 } else { 0 };
+    let method_ok = if string.starts_with(request_line, "GET ") { 1 } else { 0 };
     let target_ok = if string.contains(request_line, "/api/users") { 1 } else { 0 };
-    let version_ok = if ends_with(request_line, "HTTP/1.1") { 1 } else { 0 };
+    let version_ok = if string.ends_with(request_line, "HTTP/1.1") { 1 } else { 0 };
 
     let header = "Content-Length: 12";
     let header_parts = split_first(header, ":");
@@ -2403,7 +2403,7 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
         Err(_) => bytes.empty(),
     };
     let payload_text = bytes.to_string_lossy(payload);
-    let payload_ok = if len(payload_text) == 6 && starts_with(payload_text, "ab") && ends_with(payload_text, "XYZ") {
+    let payload_ok = if len(payload_text) == 6 && string.starts_with(payload_text, "ab") && string.ends_with(payload_text, "XYZ") {
         1
     } else {
         0
@@ -2446,7 +2446,7 @@ fn unwrap_handle(v: Result[FileHandle, FsError]) -> FileHandle {
 fn starts(v: Result[Option[String], FsError], prefix: String) -> Int {
     match v {
         Ok(value) => match value {
-            Some(line) => if starts_with(line, prefix) { 1 } else { 0 },
+            Some(line) => if string.starts_with(line, prefix) { 1 } else { 0 },
             None => 0,
         },
         Err(_) => 0,
@@ -2709,7 +2709,7 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
 
     let content_ok = match read_text(path) {
         Ok(text) =>
-            if starts_with(text, "alpha")
+            if string.starts_with(text, "alpha")
                 && string.contains(text, "beta")
                 && string.contains(text, "gamma") {
                 1
@@ -2805,8 +2805,8 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
         Err(_) => "",
     };
     let shape_ok =
-        if starts_with(text, "BA")
-            && ends_with(text, "CD")
+        if string.starts_with(text, "BA")
+            && string.ends_with(text, "CD")
             && len(text) == 4 {
             1
         } else {
@@ -3012,11 +3012,11 @@ fn main() -> Int effects { io, env } capabilities { io, env  } {
         None => 0,
     };
     let second_ok = match arg_at(1) {
-        Some(v) => if len(v) == 5 && starts_with(v, "alpha") { 1 } else { 0 },
+        Some(v) => if len(v) == 5 && string.starts_with(v, "alpha") { 1 } else { 0 },
         None => 0,
     };
     let third_ok = match arg_at(2) {
-        Some(v) => if len(v) == 4 && starts_with(v, "beta") { 1 } else { 0 },
+        Some(v) => if len(v) == 4 && string.starts_with(v, "beta") { 1 } else { 0 },
         None => 0,
     };
     let missing_ok = match arg_at(999) {
@@ -3065,9 +3065,9 @@ fn temp_ok(v: Result[String, EnvError]) -> Int {
 fn main() -> Int effects { io, env, fs } capabilities { io, env, fs  } {
     let vars_ok = if vec_len(all_vars()) > 0 { 1 } else { 0 };
     let os = os_name();
-    let os_linux = if len(os) == 5 && starts_with(os, "linux") { 1 } else { 0 };
-    let os_macos = if len(os) == 5 && starts_with(os, "macos") { 1 } else { 0 };
-    let os_windows = if len(os) == 7 && starts_with(os, "windows") { 1 } else { 0 };
+    let os_linux = if len(os) == 5 && string.starts_with(os, "linux") { 1 } else { 0 };
+    let os_macos = if len(os) == 5 && string.starts_with(os, "macos") { 1 } else { 0 };
+    let os_windows = if len(os) == 7 && string.starts_with(os, "windows") { 1 } else { 0 };
     let os_ok = if os_linux + os_macos + os_windows == 1 { 1 } else { 0 };
     let arch_ok = if len(arch()) > 0 { 1 } else { 0 };
 
@@ -6658,7 +6658,7 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env  } {
     let wire_text = bytes.to_string_lossy(wire);
     let wire_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") &&
         string.contains(wire_text, "content-length: 2") &&
-        ends_with(wire_text, "ok") {
+        string.ends_with(wire_text, "ok") {
         1
     } else {
         0
@@ -7568,7 +7568,7 @@ fn ok_len(v: Result[String, IoError], n: Int) -> Int {
 
 fn ok_char(v: Result[String, IoError], expected: String) -> Int {
     match v {
-        Ok(text) => if len(text) == len(expected) && starts_with(text, expected) { 1 } else { 0 },
+        Ok(text) => if len(text) == len(expected) && string.starts_with(text, expected) { 1 } else { 0 },
         Err(_) => 0,
     }
 }
@@ -7727,7 +7727,7 @@ fn main() -> Int effects { io } capabilities { io  } {
     let err = stderr_writer();
 
     let read_ok = match read_stream(reader) {
-        Ok(text) => if len(text) == 5 && starts_with(text, "Alice") { 1 } else { 0 },
+        Ok(text) => if len(text) == 5 && string.starts_with(text, "Alice") { 1 } else { 0 },
         Err(_) => 0,
     };
     let eof_ok = match read_stream_optional(reader) {
@@ -7810,7 +7810,7 @@ fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
         Err(_) => 0,
     };
     let copied_text_ok = match fs.read_text("stream_output.txt") {
-        Ok(text) => if len(text) == 10 && starts_with(text, "payload-42") { 1 } else { 0 },
+        Ok(text) => if len(text) == 10 && string.starts_with(text, "payload-42") { 1 } else { 0 },
         Err(_) => 0,
     };
     let file_close_ok = close_reader_ok(file_reader_stream) + close_writer_ok(file_writer_stream);
@@ -7839,7 +7839,7 @@ fn main() -> Int effects { io, fs, net } capabilities { io, fs, net  } {
         Err(_) => 0,
     };
     let recv_ok = match read_stream(reader_stream) {
-        Ok(text) => if len(text) == 4 && starts_with(text, "echo") { 1 } else { 0 },
+        Ok(text) => if len(text) == 4 && string.starts_with(text, "echo") { 1 } else { 0 },
         Err(_) => 0,
     };
     let tcp_close_ok =
@@ -8459,6 +8459,111 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
         fs::write(root.join("blob.bin"), [0x66_u8, 0x6f_u8, 0x80_u8, 0x00_u8])
             .expect("write blob bytes");
     });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_bytes_and_buffer_random_access_helpers() {
+    let src = r#"
+import std.io;
+import std.bytes;
+import std.buffer;
+import std.vec;
+
+fn int_or(v: Result[Int, BytesError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn int_or_buf(v: Result[Int, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut values: Vec[Int] = vec.new_vec();
+    values = vec.push(values, 65);
+    values = vec.push(values, 66);
+    values = vec.push(values, 67);
+    values = vec.push(values, 255);
+
+    let payload = match bytes.from_byte_values(values) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+
+    let b0 = int_or(bytes.byte_at(payload, 0), -1);
+    let b3 = int_or(bytes.byte_at(payload, 3), -1);
+    let oob_ok = match bytes.byte_at(payload, 10) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    let slice = match bytes.byte_slice(payload, 1, 3) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let slice_ok = if bytes.compare_bytes(slice, bytes.from_string("BC")) == 0 { 1 } else { 0 };
+    let find_ff = match bytes.find_byte(payload, 255) {
+        Some(index) => index,
+        None => -1,
+    };
+    let prefix_ok = bool_to_int(bytes.starts_with(payload, bytes.from_string("AB")));
+    let suffix_ok = bool_to_int(bytes.ends_with(slice, bytes.from_string("C")));
+
+    let as_vec = bytes.to_byte_values(payload);
+    let vec_len_ok = bool_to_int(as_vec.len == 4);
+    let rebuilt = match bytes.from_byte_values(as_vec) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let vec_last = int_or(bytes.byte_at(rebuilt, 3), -1);
+
+    let buf = buffer_from_bytes(payload);
+    let peek = int_or_buf(buf_peek_u8(buf, 2), -1);
+    let pos_after_peek = buf_position(buf);
+    let size = buf_size(buf);
+    let sliced_buf = match buf_slice(buf, 1, 2) {
+        Ok(value) => value,
+        Err(_) => new_buffer(1),
+    };
+    let sliced_buf_ok =
+        if bytes.compare_bytes(buffer_to_bytes(sliced_buf), bytes.from_string("BC")) == 0 { 1 } else { 0 };
+
+    let score =
+        bool_to_int(b0 == 65) +
+        bool_to_int(b3 == 255) +
+        oob_ok +
+        slice_ok +
+        bool_to_int(find_ff == 3) +
+        prefix_ok +
+        suffix_ok +
+        vec_len_ok +
+        bool_to_int(vec_last == 255) +
+        bool_to_int(peek == 67) +
+        bool_to_int(pos_after_peek == 0) +
+        bool_to_int(size == 4) +
+        sliced_buf_ok;
+
+    if score == 13 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }

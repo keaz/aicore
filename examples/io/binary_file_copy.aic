@@ -16,7 +16,7 @@ fn main() -> Int effects { io, fs } {
         Err(_) => 0,
     };
     let verify = match read_bytes("copy.bin") {
-        Ok(bytes) => if len(bytes) == 6 && starts_with(bytes, "ab") { 1 } else { 0 },
+        Ok(bytes) => if len(bytes) == 6 && string.starts_with(bytes, "ab") { 1 } else { 0 },
         Err(_) => 0,
     };
     let removed_src = ok_bool(delete("source.bin"));

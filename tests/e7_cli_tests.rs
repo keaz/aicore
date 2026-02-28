@@ -3470,9 +3470,9 @@ fn test_mock_reader_writer_and_no_real_io() -> () effects { io, rand, time } cap
     };
 
     assert(byte_length(first) == 5);
-    assert(starts_with(first, "hello"));
+    assert(string.starts_with(first, "hello"));
     assert(byte_length(second) == 5);
-    assert(starts_with(second, "world"));
+    assert(string.starts_with(second, "world"));
     assert(eof_ok);
 
     print_str("A");

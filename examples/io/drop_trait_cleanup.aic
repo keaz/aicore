@@ -63,8 +63,8 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
         Err(_) => "",
     };
     let shape_ok =
-        if starts_with(text, "BA")
-            && ends_with(text, "CD")
+        if string.starts_with(text, "BA")
+            && string.ends_with(text, "CD")
             && len(text) == 4 {
             1
         } else {

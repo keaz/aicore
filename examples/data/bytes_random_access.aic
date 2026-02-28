@@ -1,0 +1,68 @@
+import std.io;
+import std.bytes;
+import std.buffer;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn int_or_bytes(v: Result[Int, BytesError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn int_or_buffer(v: Result[Int, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut raw: Vec[Int] = new_vec();
+    raw = push(raw, 65);
+    raw = push(raw, 66);
+    raw = push(raw, 67);
+    raw = push(raw, 255);
+
+    let payload = match bytes.from_byte_values(raw) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+
+    let b0 = int_or_bytes(bytes.byte_at(payload, 0), -1);
+    let b3 = int_or_bytes(bytes.byte_at(payload, 3), -1);
+
+    let middle = match bytes.byte_slice(payload, 1, 3) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+    let middle_ok = bool_to_int(bytes.compare_bytes(middle, bytes.from_string("BC")) == 0);
+    let find_ok = match bytes.find_byte(payload, 255) {
+        Some(i) => bool_to_int(i == 3),
+        None => 0,
+    };
+
+    let vec_view = bytes.to_byte_values(payload);
+    let vec_ok = bool_to_int(vec_len(vec_view) == 4);
+
+    let buf = buffer_from_bytes(payload);
+    let peek_ok = bool_to_int(int_or_buffer(buf_peek_u8(buf, 2), -1) == 67);
+    let pos_ok = bool_to_int(buf_position(buf) == 0);
+    let size_ok = bool_to_int(buf_size(buf) == 4);
+    let sub_ok = match buf_slice(buf, 1, 2) {
+        Ok(sub) => bool_to_int(bytes.compare_bytes(buffer_to_bytes(sub), bytes.from_string("BC")) == 0),
+        Err(_) => 0,
+    };
+
+    let score = bool_to_int(b0 == 65) + bool_to_int(b3 == 255) + middle_ok + find_ok + vec_ok + peek_ok + pos_ok + size_ok + sub_ok;
+    if score == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -17,6 +17,14 @@ Use constructors/helpers from `std.bytes`:
 - `empty() -> Bytes`
 - `from_string(s: String) -> Bytes`
 - `byte_len(data: Bytes) -> Int`
+- `byte_at(data: Bytes, index: Int) -> Result[Int, BytesError]`
+- `byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError]`
+- `find_byte(data: Bytes, value: Int) -> Option[Int]`
+- `starts_with(data: Bytes, prefix: Bytes) -> Bool`
+- `ends_with(data: Bytes, suffix: Bytes) -> Bool`
+- `compare_bytes(a: Bytes, b: Bytes) -> Int`
+- `from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError]`
+- `to_byte_values(data: Bytes) -> Vec[Int]`
 - `concat(left: Bytes, right: Bytes) -> Bytes`
 - `is_valid_utf8(data: Bytes) -> Bool`
 - `to_string(data: Bytes) -> Result[String, BytesError]`
@@ -24,6 +32,12 @@ Use constructors/helpers from `std.bytes`:
 
 `to_string` preserves strict UTF-8 semantics (`InvalidUtf8` on invalid sequences).
 `to_string_lossy` always returns text and replaces invalid sequences.
+
+Indexing/slicing semantics:
+- `byte_at` returns `Err(InvalidInput)` for out-of-bounds indexes.
+- `byte_slice` uses half-open ranges `[start, end)` and returns `Err(InvalidInput)` for invalid ranges.
+- `from_byte_values` validates every value is in `[0, 255]`.
+- `compare_bytes` is lexicographic (`-1`, `0`, `1`).
 
 ## Filesystem byte APIs
 
@@ -51,3 +65,4 @@ Like fs byte APIs, these wrappers keep `Bytes` in stdlib-facing signatures and b
 
 - `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/bytes_api_roundtrip.aic`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/net_bytes_pipeline.aic`
+- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/bytes_random_access.aic`

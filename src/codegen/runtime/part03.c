@@ -121,6 +121,70 @@ long aic_rt_string_char_at(
     return out != NULL ? 1 : 0;
 }
 
+long aic_rt_bytes_byte_at(const char* data_ptr, long data_len, long data_cap, long index) {
+    (void)data_cap;
+    if (!aic_rt_string_slice_valid(data_ptr, data_len) || index < 0 || index >= data_len) {
+        return 0;
+    }
+    return (long)(unsigned char)data_ptr[index];
+}
+
+void aic_rt_bytes_from_byte_values(
+    const char* values_ptr,
+    long values_len,
+    long values_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)values_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (values_len < 0 || (values_len > 0 && values_ptr == NULL)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t count = (size_t)values_len;
+    if (count == 0) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    const int64_t* values = (const int64_t*)values_ptr;
+    char* out = (char*)malloc(count + 1);
+    if (out == NULL) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        int64_t value = values[i];
+        if (value < 0 || value > 255) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        out[i] = (char)(unsigned char)value;
+    }
+    out[count] = '\0';
+    if (out_len != NULL) {
+        *out_len = (long)count;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+}
+
 void aic_rt_string_split(
     const char* s_ptr,
     long s_len,

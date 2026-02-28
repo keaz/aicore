@@ -638,8 +638,11 @@ fn buffer_to_bytes(buf: ByteBuffer) -> Bytes
 
 fn buf_position(buf: ByteBuffer) -> Int
 fn buf_remaining(buf: ByteBuffer) -> Int
+fn buf_size(buf: ByteBuffer) -> Int
 fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]
 fn buf_reset(buf: ByteBuffer) -> ()
+fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]
+fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]
 
 fn buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError]
@@ -672,6 +675,9 @@ Notes:
 - `buf_read_cstring` requires null-terminated valid UTF-8; invalid payload returns `InvalidUtf8`.
 - `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
+- `buf_peek_u8` reads at absolute position without changing cursor state.
+- `buf_size` returns total bytes currently stored in the buffer.
+- `buf_slice` returns a `ByteBuffer` for a validated sub-range (`start`, `length`) using byte-level slicing.
 
 ## `std.crypto`
 

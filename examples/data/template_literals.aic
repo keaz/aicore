@@ -6,14 +6,14 @@ fn main() -> Int effects { io } capabilities { io  } {
 
     let basic = f"Hello, {name}";
     let basic_ok =
-        if len(basic) == 10 && starts_with(basic, "Hello,") && ends_with(basic, "Ada") {
+        if len(basic) == 10 && string.starts_with(basic, "Hello,") && string.ends_with(basic, "Ada") {
             1
         } else {
             0
         };
 
     let nested = $"sum={int_to_string(20 + 22)}";
-    let nested_ok = if len(nested) == 6 && starts_with(nested, "sum=") && ends_with(nested, "42") {
+    let nested_ok = if len(nested) == 6 && string.starts_with(nested, "sum=") && string.ends_with(nested, "42") {
         1
     } else {
         0
@@ -21,7 +21,7 @@ fn main() -> Int effects { io } capabilities { io  } {
 
     let escaped = f"left \{literal\} right";
     let escaped_ok =
-        if len(escaped) == 20 && starts_with(escaped, "left {") && ends_with(escaped, "} right") {
+        if len(escaped) == 20 && string.starts_with(escaped, "left {") && string.ends_with(escaped, "} right") {
             1
         } else {
             0
@@ -30,8 +30,8 @@ fn main() -> Int effects { io } capabilities { io  } {
     let escaped_doubled = f"left {{literal}} right";
     let escaped_doubled_ok =
         if len(escaped_doubled) == 20
-            && starts_with(escaped_doubled, "left {")
-            && ends_with(escaped_doubled, "} right") {
+            && string.starts_with(escaped_doubled, "left {")
+            && string.ends_with(escaped_doubled, "} right") {
             1
         } else {
             0

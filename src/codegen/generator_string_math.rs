@@ -36,6 +36,8 @@ impl<'a> Generator<'a> {
             "is_valid_utf8" | "aic_string_is_valid_utf8_intrinsic" => "is_valid_utf8",
             "aic_bytes_is_valid_utf8_intrinsic" => "is_valid_utf8",
             "is_ascii" | "aic_string_is_ascii_intrinsic" => "is_ascii",
+            "aic_bytes_byte_at_intrinsic" => "bytes_byte_at",
+            "aic_bytes_from_byte_values_intrinsic" => "bytes_from_byte_values",
             "bytes_to_string_lossy" | "aic_string_bytes_to_string_lossy_intrinsic" => {
                 "bytes_to_string_lossy"
             }
@@ -200,6 +202,12 @@ impl<'a> Generator<'a> {
                     span,
                     fctx,
                 ))
+            }
+            "bytes_byte_at" if self.sig_matches_shape(name, &["String", "Int"], "Int") => {
+                Some(self.gen_bytes_byte_at_call(args, span, fctx))
+            }
+            "bytes_from_byte_values" if self.sig_matches_shape(name, &["Vec[Int]"], "String") => {
+                Some(self.gen_bytes_from_byte_values_call(args, span, fctx))
             }
             "join" if self.sig_matches_shape(name, &["Vec[String]", "String"], "String") => {
                 Some(self.gen_string_join_call(args, span, fctx))
@@ -525,6 +533,97 @@ impl<'a> Generator<'a> {
             chars_ptr, chars_len, chars_cap, out_ptr_slot, out_len_slot
         ));
 
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
+    pub(super) fn gen_bytes_byte_at_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_bytes_byte_at_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let data = self.gen_expr(&args[0], fctx)?;
+        let index = self.gen_expr(&args[1], fctx)?;
+        if data.ty != LType::String || index.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_bytes_byte_at_intrinsic expects (String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (data_ptr, data_len, data_cap) = self.string_parts(&data, args[0].span, fctx)?;
+        let out = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_bytes_byte_at(i8* {}, i64 {}, i64 {}, i64 {})",
+            out,
+            data_ptr,
+            data_len,
+            data_cap,
+            index.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        Some(Value {
+            ty: LType::Int,
+            repr: Some(out),
+        })
+    }
+
+    pub(super) fn gen_bytes_from_byte_values_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_bytes_from_byte_values_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let values = self.gen_expr(&args[0], fctx)?;
+        let (elem_ty, _elem_repr, _elem_kind) = self.vec_element_info(
+            &values.ty,
+            "aic_bytes_from_byte_values_intrinsic",
+            args[0].span,
+        )?;
+        if elem_ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_bytes_from_byte_values_intrinsic expects Vec[Int]",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (values_ptr_int, values_len, values_cap) =
+            self.vec_parts(&values, args[0].span, fctx)?;
+        let values_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = inttoptr i64 {} to i8*",
+            values_ptr, values_ptr_int
+        ));
+
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_bytes_from_byte_values(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            values_ptr, values_len, values_cap, out_ptr_slot, out_len_slot
+        ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }
 

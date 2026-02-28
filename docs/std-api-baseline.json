@@ -144,6 +144,11 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_position(buf: ByteBuffer) -> Int"
     },
     {
@@ -210,6 +215,16 @@
       "module": "std.buffer",
       "kind": "fn",
       "signature": "buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_size(buf: ByteBuffer) -> Int"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -289,7 +304,17 @@
     {
       "module": "std.bytes",
       "kind": "fn",
+      "signature": "aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
       "signature": "aic_bytes_concat_intrinsic(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String"
     },
     {
       "module": "std.bytes",
@@ -309,7 +334,22 @@
     {
       "module": "std.bytes",
       "kind": "fn",
+      "signature": "byte_at(data: Bytes, index: Int) -> Result[Int, BytesError]"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
       "signature": "byte_len(data: Bytes) -> Int"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError]"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "compare_bytes(a: Bytes, b: Bytes) -> Int"
     },
     {
       "module": "std.bytes",
@@ -320,6 +360,21 @@
       "module": "std.bytes",
       "kind": "fn",
       "signature": "empty() -> Bytes"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "ends_with(data: Bytes, suffix: Bytes) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "find_byte(data: Bytes, value: Int) -> Option[Int]"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError]"
     },
     {
       "module": "std.bytes",
@@ -335,6 +390,16 @@
       "module": "std.bytes",
       "kind": "fn",
       "signature": "is_valid_utf8(data: Bytes) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "starts_with(data: Bytes, prefix: Bytes) -> Bool"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "to_byte_values(data: Bytes) -> Vec[Int]"
     },
     {
       "module": "std.bytes",
@@ -439,6 +504,76 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_arc_clone_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_arc_get_intrinsic(handle: Int) -> Result[String, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_arc_new_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_arc_strong_count_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_add_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_bool_intrinsic(initial: Bool) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_cas_intrinsic(handle: Int, expected: Int, desired: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_int_intrinsic(initial: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_load_bool_intrinsic(handle: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_load_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_store_bool_intrinsic(handle: Int, value: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_store_intrinsic(handle: Int, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_sub_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_atomic_swap_bool_intrinsic(handle: Int, desired: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_cancel_intrinsic(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -514,6 +649,31 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_rwlock_close_intrinsic(rwlock: IntRwLock) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_rwlock_int_intrinsic(initial: Int) -> Result[IntRwLock, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_rwlock_read_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_rwlock_write_lock_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_rwlock_write_unlock_intrinsic(rwlock: IntRwLock, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_scope_cancel_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -574,12 +734,97 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_tl_get_intrinsic[T](handle: Int) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_tl_new_intrinsic[T](init: Fn[T]) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_tl_set_intrinsic[T](handle: Int, value: T) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_try_recv_int_intrinsic(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "aic_conc_try_send_int_intrinsic(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "arc_new[T](value: T) -> Arc[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_bool(initial: Bool) -> AtomicBool effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_int(initial: Int) -> AtomicInt effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_load(a: AtomicInt) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -639,12 +884,42 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "decode_mutex_locked_payload[T](m: Mutex[T], payload_id: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "decode_payload_for_mutex[T](payload_id: Int, hint: Mutex[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "decode_payload_for_rwlock[T](payload_id: Int, hint: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "decode_rwlock_read_payload[T](rw: RwLock[T], payload_id: Int) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "decode_rwlock_write_payload[T](rw: RwLock[T], payload_id: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -655,6 +930,16 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "default_blocking_timeout_ms() -> Int"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "guard_value[T](g: MutexGuard[T]) -> T"
     },
     {
       "module": "std.concurrent",
@@ -684,7 +969,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "lock_timeout[T](m: Mutex[T], ms: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -699,12 +994,47 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "mutex_decode_error[T](handle: Int, payload_id: Int, err: ConcurrencyError) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "new_mutex[T](value: T) -> Mutex[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "new_rwlock[T](value: T) -> RwLock[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "none_from_arc[T](hint: Arc[T]) -> Option[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "none_from_mutex[T](hint: Mutex[T]) -> Option[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "none_from_receiver[T](hint: Receiver[T]) -> Option[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "none_from_rwlock[T](hint: RwLock[T]) -> Option[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -720,6 +1050,11 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "rwlock_decode_error[T](handle: Int, payload_id: Int, err: ConcurrencyError) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -809,7 +1144,27 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "thread_local[T](init: Fn[T]) -> ThreadLocal[T] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "tl_get[T](tl: ThreadLocal[T]) -> T effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "tl_set[T](tl: ThreadLocal[T], value: T) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -839,7 +1194,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "unlock_guard[T](g: MutexGuard[T]) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "Arc[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "AtomicBool { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "AtomicInt { handle: Int }"
     },
     {
       "module": "std.concurrent",
@@ -859,12 +1239,32 @@
     {
       "module": "std.concurrent",
       "kind": "struct",
+      "signature": "IntRwLock { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
       "signature": "IntTaskSelection { task_index: Int, value: Int }"
     },
     {
       "module": "std.concurrent",
       "kind": "struct",
+      "signature": "MutexGuard[T] { handle: Int, guard_kind: Int, value: T }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "Mutex[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
       "signature": "Receiver[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "RwLock[T] { handle: Int }"
     },
     {
       "module": "std.concurrent",
@@ -880,6 +1280,21 @@
       "module": "std.concurrent",
       "kind": "struct",
       "signature": "Task[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "ThreadLocal[T] { handle: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "trait",
+      "signature": "Send[T];"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "trait",
+      "signature": "Sync[T];"
     },
     {
       "module": "std.config",
@@ -3205,6 +3620,281 @@
       "module": "std.path",
       "kind": "fn",
       "signature": "join(left: String, right: String) -> String"
+    },
+    {
+      "module": "std.pool",
+      "kind": "enum",
+      "signature": "PoolError { MaxSizeReached, Timeout, ConnectionFailed, Closed, HealthCheckFailed }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "enum",
+      "signature": "PoolRequest[T] { Acquire(AcquireReq[T]), Release(ReleaseReq[T]), Discard(ReleaseReq[T]), Stats(StatsReq), Close(CloseReq) }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "acquire_result_err[T](err: PoolError) -> Result[PooledConn[T], PoolError]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "acquire_result_ok[T](conn: PooledConn[T]) -> Result[PooledConn[T], PoolError]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "acquire_result_timeout[T]() -> Result[PooledConn[T], PoolError]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "clamp_non_negative(value: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "close_pool[T](pool: Pool[T]) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "conn_lease(conn_handle: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "conn_request_handle(conn_handle: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "default_pool_backoff_ms() -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "discard[T](conn: PooledConn[T]) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "encode_conn_handle(request_handle: Int, lease: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "encode_pool_handle(request_handle: Int, manager_handle: Int, acquire_timeout_ms: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "find_entry_index[T](entries: Vec[PoolEntry[T]], lease: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "id_base() -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "new_pool[T](config: PoolConfig, create: Fn[Result[T, PoolError]], health_check: Fn[T, Bool], destroy: Fn[T, ()]) -> Result[Pool[T], PoolError] effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "normalized_config(config: PoolConfig) -> PoolConfig"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "normalized_timeout_ms(value: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_acquire_timeout_ms(pool_handle: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_closed_error() -> PoolError"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_entry_tick[T](entry: PoolEntry[T], delta_ms: Int, is_idle: Bool) -> PoolEntry[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_handle_request[T](request_handle: Int, state: PoolState[T], req: PoolRequest[T], config: PoolConfig, create: Fn[Result[T, PoolError]], destroy: Fn[T, ()]) -> RequestOut[T] effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_manager_handle(pool_handle: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_manager_loop[T](request_handle: Int, req_rx: Receiver[PoolRequest[T]], guard: Mutex[Int], config: PoolConfig, create: Fn[Result[T, PoolError]], health_check: Fn[T, Bool], destroy: Fn[T, ()]) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_request_handle(pool_handle: Int) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_acquire[T](request_handle: Int, state: PoolState[T], config: PoolConfig, create: Fn[Result[T, PoolError]]) -> Tuple[PoolState[T], Result[PooledConn[T], PoolError]]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_close_all[T](state: PoolState[T], destroy: Fn[T, ()]) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_discard[T](state: PoolState[T], lease: Int, value: T, destroy: Fn[T, ()]) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_ensure_min_size[T](state: PoolState[T], config: PoolConfig, create: Fn[Result[T, PoolError]]) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_maintain_idle[T](state: PoolState[T], config: PoolConfig, health_check: Fn[T, Bool], destroy: Fn[T, ()]) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_new[T]() -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_release[T](state: PoolState[T], lease: Int, value: T, destroy: Fn[T, ()]) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_stats[T](state: PoolState[T]) -> PoolStats"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_state_total[T](state: PoolState[T]) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pool_timeout_error() -> PoolError"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "pop_idle_entry[T](state: PoolState[T]) -> Tuple[PoolState[T], Option[PoolEntry[T]]]"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "release[T](conn: PooledConn[T]) -> () effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "request_capacity(config: PoolConfig) -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "should_reap_idle_entry[T](entry: PoolEntry[T], config: PoolConfig) -> Bool"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "timeout_field_base() -> Int"
+    },
+    {
+      "module": "std.pool",
+      "kind": "fn",
+      "signature": "wait_backoff_tick() -> () effects { concurrency }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "AcquireReq[T] { reply: Sender[Result[PooledConn[T], PoolError]] }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "CloseReq { reply: Sender[Bool] }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "PoolConfig { min_size: Int, max_size: Int, acquire_timeout_ms: Int, idle_timeout_ms: Int, max_lifetime_ms: Int, health_check_ms: Int }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "PoolEntry[T] { lease: Int, value: T, created_ms: Int, idle_ms: Int, health_ms: Int }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "PoolState[T] { next_lease: Int, idle: Vec[PoolEntry[T]], in_use: Vec[PoolEntry[T]], closed: Bool, created: Int, destroyed: Int }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "PoolStats { total: Int, idle: Int, in_use: Int, created: Int, destroyed: Int }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "Pool[T] { handle: Int }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "PooledConn[T] { handle: Int, value: T }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "ReleaseReq[T] { lease: Int, value: T }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "RequestOut[T] { state: PoolState[T], close_loop: Bool }"
+    },
+    {
+      "module": "std.pool",
+      "kind": "struct",
+      "signature": "StatsReq { reply: Sender[PoolStats] }"
     },
     {
       "module": "std.proc",

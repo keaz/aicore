@@ -92,7 +92,7 @@ fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
     let prefix_len = len(prefix);
 
     for entry in all_vars() {
-        if starts_with(entry.key, prefix) {
+        if string.starts_with(entry.key, prefix) {
             let key_len = len(entry.key);
             if key_len > prefix_len {
                 let key = substring(entry.key, prefix_len, key_len);
