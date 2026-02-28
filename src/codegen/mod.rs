@@ -1157,6 +1157,7 @@ enum LType {
     Unit,
     String,
     Fn(FnLayoutType),
+    DynTrait(String),
     Struct(StructLayoutType),
     Enum(EnumLayoutType),
     Async(Box<LType>),
@@ -1191,6 +1192,20 @@ struct EnumLayoutType {
 struct EnumVariantType {
     name: String,
     payload: Option<LType>,
+}
+
+#[derive(Debug, Clone)]
+struct DynTraitMethodInfo {
+    name: String,
+    params: Vec<LType>,
+    ret: LType,
+}
+
+#[derive(Debug, Clone)]
+struct DynTraitInfo {
+    methods: Vec<DynTraitMethodInfo>,
+    method_index: BTreeMap<String, usize>,
+    impl_methods: BTreeMap<String, BTreeMap<String, ir::SymbolId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -2593,6 +2608,9 @@ struct Generator<'a> {
     deferred_fn_defs: Vec<Vec<String>>,
     fn_value_adapters: BTreeMap<String, String>,
     recursive_call_targets: BTreeMap<String, BTreeSet<String>>,
+    dyn_traits: BTreeMap<String, DynTraitInfo>,
+    dyn_vtable_globals: BTreeMap<String, String>,
+    generated_dyn_wrappers: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -3168,6 +3186,7 @@ fn llvm_type(ty: &LType) -> String {
         LType::Unit => "void".to_string(),
         LType::String => "{ i8*, i64, i64 }".to_string(),
         LType::Fn(_) => "{ i8*, i8* }".to_string(),
+        LType::DynTrait(_) => "{ i8*, i8* }".to_string(),
         LType::Async(inner) => {
             if matches!(&**inner, LType::Unit) {
                 "{ i1 }".to_string()
@@ -3216,6 +3235,7 @@ fn default_value(ty: &LType) -> String {
         LType::Unit => String::new(),
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
         LType::Fn(_) => "{ i8* null, i8* null }".to_string(),
+        LType::DynTrait(_) => "{ i8* null, i8* null }".to_string(),
         LType::Async(inner) => {
             if matches!(&**inner, LType::Unit) {
                 "{ i1 0 }".to_string()
@@ -3304,6 +3324,7 @@ fn render_type(ty: &LType) -> String {
         LType::Unit => "()".to_string(),
         LType::String => "String".to_string(),
         LType::Fn(layout) => layout.repr.clone(),
+        LType::DynTrait(trait_name) => format!("dyn {}", trait_name),
         LType::Struct(layout) => layout.repr.clone(),
         LType::Enum(layout) => layout.repr.clone(),
         LType::Async(inner) => format!("Async[{}]", render_type(inner)),
@@ -3321,6 +3342,21 @@ fn render_applied_type_from_parts(base: &str, args: &[String]) -> String {
     } else {
         format!("{base}[{}]", args.join(", "))
     }
+}
+
+fn dyn_wrapper_function_type(method: &DynTraitMethodInfo) -> String {
+    let mut params = vec!["i8*".to_string()];
+    params.extend(method.params.iter().map(llvm_type));
+    format!("{} ({})", llvm_type(&method.ret), params.join(", "))
+}
+
+fn type_uses_self_repr(ty: &str) -> bool {
+    if ty.trim() == "Self" {
+        return true;
+    }
+    extract_generic_args(ty)
+        .map(|args| args.iter().any(|arg| type_uses_self_repr(arg)))
+        .unwrap_or(false)
 }
 
 fn method_base_name(name: &str) -> &str {

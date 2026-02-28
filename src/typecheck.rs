@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, Visibility};
 use crate::diagnostics::{Diagnostic, DiagnosticSpan, SuggestedFix};
 use crate::ir;
-use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo};
+use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo};
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
@@ -5447,6 +5447,21 @@ impl<'a> Checker<'a> {
                 .unwrap_or(normalized),
             _ => normalized,
         };
+
+        if let Some(dyn_trait) = parse_dyn_trait_name(&receiver_ty) {
+            return self.check_dyn_trait_method_call(
+                &dyn_trait,
+                field,
+                args,
+                arg_names,
+                call_expr,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                expected_ty,
+            );
+        }
         let assoc_name = format!("{}::{}", base_type_name(&receiver_ty), field);
 
         if Self::has_named_call_args(arg_names) {
@@ -5663,6 +5678,356 @@ impl<'a> Checker<'a> {
             .with_help("define an inherent method or add a trait bound that declares this method"),
         );
         "<?>".to_string()
+    }
+
+    fn lookup_trait_info(&self, trait_name: &str) -> Option<(String, TraitInfo)> {
+        if let Some(info) = self.resolution.traits.get(trait_name) {
+            return Some((trait_name.to_string(), info.clone()));
+        }
+        let short = Self::unqualified_name(trait_name);
+        if let Some(info) = self.resolution.traits.get(short) {
+            return Some((short.to_string(), info.clone()));
+        }
+        if short != trait_name {
+            let matches = self
+                .resolution
+                .traits
+                .iter()
+                .filter(|(name, _)| Self::unqualified_name(name) == short)
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                let (name, info) = matches[0];
+                return Some((name.clone(), info.clone()));
+            }
+        }
+        None
+    }
+
+    fn validate_dyn_trait_object_safety(
+        &mut self,
+        trait_name: &str,
+        span: crate::span::Span,
+    ) -> bool {
+        let Some((resolved_trait_name, trait_info)) = self.lookup_trait_info(trait_name) else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1212",
+                    format!("unknown trait '{}' in dyn type", trait_name),
+                    self.file,
+                    span,
+                )
+                .with_help("declare the trait or import the correct module"),
+            );
+            return false;
+        };
+
+        let mut ok = true;
+        if !trait_info.generics.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1214",
+                    format!(
+                        "trait '{}' is not object-safe for dyn usage: trait generics are not supported",
+                        resolved_trait_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("use a non-generic trait for dyn dispatch"),
+            );
+            ok = false;
+        }
+
+        for (method_name, method_sig) in &trait_info.methods {
+            if !method_sig.generics.is_empty() {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1214",
+                        format!(
+                            "trait '{}.{}' is not object-safe: generic methods are not supported for dyn dispatch",
+                            resolved_trait_name, method_name
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("remove method generics for dyn-compatible trait methods"),
+                );
+                ok = false;
+            }
+
+            let param_types = method_sig
+                .param_types
+                .iter()
+                .map(|ty| {
+                    self.types
+                        .get(ty)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string())
+                })
+                .collect::<Vec<_>>();
+            if param_types.is_empty() || self.normalize_type(&param_types[0]) != "Self" {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1214",
+                        format!(
+                            "trait '{}.{}' is not object-safe: first parameter must be receiver `Self`",
+                            resolved_trait_name, method_name
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("use `fn method(self: Self, ...)` in dyn-compatible traits"),
+                );
+                ok = false;
+            }
+
+            for param_ty in param_types.iter().skip(1) {
+                if type_uses_self(param_ty) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1214",
+                            format!(
+                                "trait '{}.{}' is not object-safe: `Self` may only appear in receiver position",
+                                resolved_trait_name, method_name
+                            ),
+                            self.file,
+                            span,
+                        )
+                        .with_help("remove `Self` from non-receiver parameters"),
+                    );
+                    ok = false;
+                }
+            }
+
+            let ret_ty = self
+                .types
+                .get(&method_sig.ret_type)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            if type_uses_self(&ret_ty) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1214",
+                        format!(
+                            "trait '{}.{}' is not object-safe: `Self` may not appear in return type",
+                            resolved_trait_name, method_name
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("return concrete or generic-independent types for dyn dispatch"),
+                );
+                ok = false;
+            }
+        }
+
+        ok
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_dyn_trait_method_call(
+        &mut self,
+        trait_name: &str,
+        field: &str,
+        args: &[ir::Expr],
+        arg_names: &[Option<String>],
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        _expected_ty: Option<&str>,
+    ) -> String {
+        if Self::has_named_call_args(arg_names) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1213",
+                    format!(
+                        "named arguments are not currently supported for method call dyn {}.{}",
+                        trait_name, field
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("use positional arguments for method calls"),
+            );
+        }
+
+        let Some((resolved_trait_name, trait_info)) = self.lookup_trait_info(trait_name) else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1228",
+                    format!(
+                        "unknown dyn trait '{}' for receiver method '{}'",
+                        trait_name, field
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("declare the trait or import the correct module"),
+            );
+            return "<?>".to_string();
+        };
+        if !self.validate_dyn_trait_object_safety(&resolved_trait_name, call_expr.span) {
+            return "<?>".to_string();
+        }
+
+        let method_name = method_name_key(field);
+        let Some(method_sig) = trait_info.methods.get(method_name).cloned() else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1228",
+                    format!(
+                        "unknown method 'dyn {}.{}'",
+                        resolved_trait_name, method_name
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("call a method declared on this trait"),
+            );
+            return "<?>".to_string();
+        };
+
+        let method_params = method_sig
+            .param_types
+            .iter()
+            .map(|ty| {
+                self.types
+                    .get(ty)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string())
+            })
+            .collect::<Vec<_>>();
+        if method_params.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!(
+                    "method 'dyn {}.{}' has invalid trait signature: receiver parameter missing",
+                    resolved_trait_name, method_name
+                ),
+                self.file,
+                call_expr.span,
+            ));
+            return "<?>".to_string();
+        }
+
+        if args.len() + 1 != method_params.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!(
+                    "method 'dyn {}.{}' expects {} args, got {}",
+                    resolved_trait_name,
+                    method_name,
+                    method_params.len() - 1,
+                    args.len()
+                ),
+                self.file,
+                call_expr.span,
+            ));
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            let expected = method_params.get(idx + 1).map(String::as_str);
+            let found = self.check_expr_with_expected(
+                arg,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                expected,
+            );
+            if let Some(expected) = expected {
+                if !self.types_compatible(expected, &found) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1214",
+                        format!(
+                            "argument {} to 'dyn {}.{}' expected '{}', found '{}'",
+                            idx + 1,
+                            resolved_trait_name,
+                            method_name,
+                            expected,
+                            found
+                        ),
+                        self.file,
+                        arg.span,
+                    ));
+                }
+            }
+        }
+
+        if !method_sig.effects.is_empty() {
+            if contract_mode {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2002",
+                        "contracts must be pure; effectful call found",
+                        self.file,
+                        call_expr.span,
+                    )
+                    .with_help("remove IO/time/rand/net/fs calls from requires/ensures/invariant"),
+                );
+            }
+            for effect in &method_sig.effects {
+                ctx.effects_used.insert(effect.clone());
+            }
+            if !method_sig.effects.is_subset(allowed_effects) {
+                let missing = method_sig
+                    .effects
+                    .difference(allowed_effects)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E2001",
+                        format!(
+                            "calling 'dyn {}.{}' requires undeclared effects: {}",
+                            resolved_trait_name,
+                            method_name,
+                            missing.join(", ")
+                        ),
+                        self.file,
+                        call_expr.span,
+                    )
+                    .with_help(format!(
+                        "add `effects {{ {} }}` on the enclosing function",
+                        missing.join(", ")
+                    )),
+                );
+            }
+        }
+
+        if method_sig.is_unsafe && !(self.current_function_is_unsafe || self.unsafe_depth > 0) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2122",
+                    format!(
+                        "call to unsafe method 'dyn {}.{}' requires an explicit unsafe boundary",
+                        resolved_trait_name, method_name
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("wrap this call in `unsafe { ... }` or use an `unsafe fn` wrapper"),
+            );
+        }
+
+        let ret_raw = self
+            .types
+            .get(&method_sig.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        let mut bindings = BTreeMap::new();
+        bindings.insert(
+            "Self".to_string(),
+            format!("dyn {}", resolved_trait_name.clone()),
+        );
+        let generic_params = method_sig.generics.iter().cloned().collect::<BTreeSet<_>>();
+        let mut ret = substitute_type_vars(&ret_raw, &bindings, &generic_params);
+        if method_sig.is_async {
+            ret = format!("Async[{ret}]");
+        }
+        ret
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -5932,6 +6297,10 @@ impl<'a> Checker<'a> {
     }
 
     fn check_generic_arity(&mut self, ty: &str, span: crate::span::Span) {
+        if let Some(dyn_trait) = parse_dyn_trait_name(ty) {
+            let _ = self.validate_dyn_trait_object_safety(&dyn_trait, span);
+            return;
+        }
         let base = base_type_name(ty).to_string();
         if base == "Fn" {
             let provided = extract_generic_args(ty).map(|a| a.len()).unwrap_or(0);
@@ -7127,24 +7496,39 @@ impl<'a> Checker<'a> {
         name.rsplit('.').next().unwrap_or(name)
     }
 
-    fn trait_is_implemented_for(&self, bound_trait: &str, bound_ty: &str) -> bool {
-        if self
-            .resolution
-            .trait_impls
-            .get(bound_trait)
-            .map(|impls| impls.contains(bound_ty))
-            .unwrap_or(false)
-        {
-            return true;
+    fn canonical_trait_impl_type(ty: &str) -> String {
+        let trimmed = ty.trim();
+        if let Some(trait_name) = parse_dyn_trait_name(trimmed) {
+            return format!("dyn {}", Self::unqualified_name(&trait_name));
         }
-        let short_trait = Self::unqualified_name(bound_trait);
-        short_trait != bound_trait
-            && self
-                .resolution
-                .trait_impls
-                .get(short_trait)
-                .map(|impls| impls.contains(bound_ty))
-                .unwrap_or(false)
+        if let Some(args) = extract_generic_args(trimmed) {
+            let base = Self::unqualified_name(base_type_name(trimmed));
+            let canonical_args = args
+                .iter()
+                .map(|arg| Self::canonical_trait_impl_type(arg))
+                .collect::<Vec<_>>();
+            return format!("{base}[{}]", canonical_args.join(", "));
+        }
+        Self::unqualified_name(trimmed).to_string()
+    }
+
+    fn trait_is_implemented_for(&self, bound_trait: &str, bound_ty: &str) -> bool {
+        let target_trait = Self::unqualified_name(bound_trait);
+        let bound_ty_norm = self.normalize_type(bound_ty);
+        let bound_ty_key = Self::canonical_trait_impl_type(&bound_ty_norm);
+        self.resolution
+            .trait_impls
+            .iter()
+            .any(|(trait_name, impls)| {
+                if Self::unqualified_name(trait_name) != target_trait {
+                    return false;
+                }
+                impls.iter().any(|implemented_ty| {
+                    let implemented_norm = self.normalize_type(implemented_ty);
+                    let implemented_key = Self::canonical_trait_impl_type(&implemented_norm);
+                    implemented_key == bound_ty_key
+                })
+            })
     }
 
     fn enforce_std_concurrency_send_bounds(
@@ -7409,7 +7793,49 @@ impl<'a> Checker<'a> {
     fn types_compatible(&self, expected: &str, found: &str) -> bool {
         let expected_norm = self.normalize_type(expected);
         let found_norm = self.normalize_type(found);
-        type_compatible(&expected_norm, &found_norm)
+        self.types_compatible_with_dyn(&expected_norm, &found_norm)
+    }
+
+    fn types_compatible_with_dyn(&self, expected: &str, found: &str) -> bool {
+        if expected == found
+            || expected == "<?>"
+            || found == "<?>"
+            || (expected.starts_with("Option[")
+                && found.starts_with("Option[")
+                && (expected.contains("<?>") || found.contains("<?>")))
+            || (expected.starts_with("Result[")
+                && found.starts_with("Result[")
+                && (expected.contains("<?>") || found.contains("<?>")))
+            || (expected.starts_with("Async[")
+                && found.starts_with("Async[")
+                && (expected.contains("<?>") || found.contains("<?>")))
+        {
+            return true;
+        }
+
+        if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
+            if let Some(found_dyn_trait) = parse_dyn_trait_name(found) {
+                let expected_name = Self::unqualified_name(&expected_dyn_trait);
+                let found_name = Self::unqualified_name(&found_dyn_trait);
+                return expected_name == found_name;
+            }
+            return self.trait_is_implemented_for(&expected_dyn_trait, found);
+        }
+
+        let expected_args = extract_generic_args(expected).unwrap_or_default();
+        let found_args = extract_generic_args(found).unwrap_or_default();
+        if expected_args.is_empty() || found_args.is_empty() {
+            return false;
+        }
+        if base_type_name(expected) != base_type_name(found)
+            || expected_args.len() != found_args.len()
+        {
+            return false;
+        }
+        expected_args
+            .iter()
+            .zip(found_args.iter())
+            .all(|(exp, got)| self.types_compatible_with_dyn(exp, got))
     }
 
     fn merge_compatible_types(&self, left: &str, right: &str) -> String {
@@ -7447,6 +7873,24 @@ fn type_compatible(expected: &str, found: &str) -> bool {
             && found.starts_with("Async[")
             && (expected.contains("<?>") || found.contains("<?>")))
     {
+        return true;
+    }
+
+    if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
+        if let Some(found_dyn_trait) = parse_dyn_trait_name(found) {
+            let expected_name = expected_dyn_trait
+                .rsplit('.')
+                .next()
+                .unwrap_or(&expected_dyn_trait);
+            let found_name = found_dyn_trait
+                .rsplit('.')
+                .next()
+                .unwrap_or(&found_dyn_trait);
+            return expected_name == found_name;
+        }
+        // Generic inference uses this helper before full trait-impl checks.
+        // Accept concrete candidates here and let semantic compatibility checks
+        // validate actual trait implementation later.
         return true;
     }
 
@@ -7860,6 +8304,20 @@ fn infer_generic_bindings(
 ) -> bool {
     if generic_params.contains(expected) {
         if let Some(bound) = bindings.get(expected).cloned() {
+            if let Some(bound_dyn_trait) = parse_dyn_trait_name(&bound) {
+                if let Some(found_dyn_trait) = parse_dyn_trait_name(found) {
+                    let bound_name = bound_dyn_trait
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(&bound_dyn_trait);
+                    let found_name = found_dyn_trait
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(&found_dyn_trait);
+                    return bound_name == found_name;
+                }
+                return true;
+            }
             if contains_unresolved_type(&bound) && !contains_unresolved_type(found) {
                 bindings.insert(expected.to_string(), found.to_string());
                 return true;
@@ -8030,6 +8488,30 @@ fn merge_types(a: &str, b: &str) -> String {
 
 fn base_type_name(ty: &str) -> &str {
     ty.split('[').next().unwrap_or(ty)
+}
+
+fn method_name_key(name: &str) -> &str {
+    name.rsplit("::").next().unwrap_or(name)
+}
+
+fn parse_dyn_trait_name(ty: &str) -> Option<String> {
+    let trimmed = ty.trim();
+    let rest = trimmed.strip_prefix("dyn ")?;
+    let trait_name = rest.trim();
+    if trait_name.is_empty() {
+        None
+    } else {
+        Some(trait_name.to_string())
+    }
+}
+
+fn type_uses_self(ty: &str) -> bool {
+    if ty == "Self" {
+        return true;
+    }
+    extract_generic_args(ty)
+        .map(|args| args.iter().any(|arg| type_uses_self(arg)))
+        .unwrap_or(false)
 }
 
 fn binding_root(target: &str) -> &str {

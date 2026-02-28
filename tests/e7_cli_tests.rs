@@ -3835,6 +3835,7 @@ fn prod_t3_t7_t9_examples_are_ci_wired_and_run_with_expected_outputs() {
         ("examples/io/drop_trait_cleanup.aic", "42\n"),
         ("examples/core/tuple_types.aic", "42\n"),
         ("examples/core/borrow_checker_completeness.aic", "2\n"),
+        ("examples/core/dyn_trait_objects.aic", "51\n"),
     ] {
         assert!(root.join(rel).is_file(), "missing example: {rel}");
         assert!(

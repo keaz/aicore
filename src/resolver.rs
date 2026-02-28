@@ -496,14 +496,14 @@ pub fn resolve_with_item_modules(
                 };
                 let trait_arity = trait_info.generics.len();
 
-                if impl_def.trait_args.len() != trait_arity {
+                let impl_arg_count = impl_def.trait_args.len();
+                let allow_non_generic_trait_target = trait_arity == 0 && impl_arg_count == 1;
+                if impl_arg_count != trait_arity && !allow_non_generic_trait_target {
                     diagnostics.push(Diagnostic::error(
                         "E1104",
                         format!(
                             "impl for trait '{}' expects {} type arguments, found {}",
-                            impl_def.trait_name,
-                            trait_arity,
-                            impl_def.trait_args.len()
+                            impl_def.trait_name, trait_arity, impl_arg_count
                         ),
                         file,
                         impl_def.span,

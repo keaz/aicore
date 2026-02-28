@@ -275,6 +275,7 @@ impl Builder {
             });
             let target_name = match &target.kind {
                 ast::TypeKind::Named { name, .. } => name.clone(),
+                ast::TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
                 ast::TypeKind::Unit => def.trait_name.clone(),
                 ast::TypeKind::Hole => "<?>".to_string(),
             };
@@ -303,6 +304,7 @@ impl Builder {
         });
         let target_name = match &target.kind {
             ast::TypeKind::Named { name, .. } => name.clone(),
+            ast::TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
             ast::TypeKind::Unit => "()".to_string(),
             ast::TypeKind::Hole => "<?>".to_string(),
         };
@@ -673,6 +675,7 @@ fn type_repr(ty: &ast::TypeExpr) -> String {
                 format!("{name}[{args}]")
             }
         }
+        ast::TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
         ast::TypeKind::Hole => "<?>".to_string(),
     }
 }
@@ -681,6 +684,7 @@ fn substitute_self_type(ty: &ast::TypeExpr, target: &ast::TypeExpr) -> ast::Type
     match &ty.kind {
         ast::TypeKind::Unit => ty.clone(),
         ast::TypeKind::Hole => ty.clone(),
+        ast::TypeKind::DynTrait { .. } => ty.clone(),
         ast::TypeKind::Named { name, args } if name == "Self" && args.is_empty() => {
             let mut replaced = target.clone();
             replaced.span = ty.span;

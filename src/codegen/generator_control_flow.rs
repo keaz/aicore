@@ -539,22 +539,38 @@ impl<'a> Generator<'a> {
             let (slot_ty, slot_repr) = if let Some(payload_ty) = &variant.payload {
                 if idx == variant_index {
                     if let Some(payload) = payload_value.as_ref() {
-                        if payload.ty == *payload_ty {
-                            (
-                                llvm_type(payload_ty),
-                                payload
-                                    .repr
-                                    .clone()
-                                    .unwrap_or_else(|| default_value(payload_ty)),
-                            )
+                        if let Some(payload) =
+                            self.coerce_value_to_expected(payload.clone(), payload_ty, span, fctx)
+                        {
+                            if self.types_compatible_for_codegen(payload_ty, &payload.ty, span) {
+                                (
+                                    llvm_type(payload_ty),
+                                    payload
+                                        .repr
+                                        .clone()
+                                        .unwrap_or_else(|| default_value(payload_ty)),
+                                )
+                            } else {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E5009",
+                                    format!(
+                                        "variant '{}' payload expects '{}', found '{}'",
+                                        name,
+                                        render_type(payload_ty),
+                                        render_type(&payload.ty)
+                                    ),
+                                    self.file,
+                                    span,
+                                ));
+                                (llvm_type(payload_ty), default_value(payload_ty))
+                            }
                         } else {
                             self.diagnostics.push(Diagnostic::error(
                                 "E5009",
                                 format!(
-                                    "variant '{}' payload expects '{}', found '{}'",
+                                    "variant '{}' payload could not be coerced to '{}'",
                                     name,
-                                    render_type(payload_ty),
-                                    render_type(&payload.ty)
+                                    render_type(payload_ty)
                                 ),
                                 self.file,
                                 span,
@@ -2928,6 +2944,19 @@ impl<'a> Generator<'a> {
             "String" => return Some(LType::String),
             "()" => return Some(LType::Unit),
             _ => {}
+        }
+
+        if let Some(trait_name) = repr.strip_prefix("dyn ").map(str::trim) {
+            if trait_name.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5019",
+                    "dyn type must name a trait",
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            return Some(LType::DynTrait(trait_name.to_string()));
         }
 
         let base = base_type_name(repr);

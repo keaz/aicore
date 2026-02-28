@@ -1723,10 +1723,13 @@ impl<'a> Generator<'a> {
             return None;
         }
         let vec_value = self.gen_expr(&args[0], fctx)?;
-        let value = self.gen_expr(&args[1], fctx)?;
         let (elem_ty, elem_repr, _elem_kind) =
             self.vec_element_info(&vec_value.ty, "push", args[0].span)?;
-        if value.ty != elem_ty {
+        let value = self.gen_expr_with_expected(&args[1], Some(&elem_ty), fctx)?;
+        let Some(value) = self.coerce_value_to_expected(value, &elem_ty, args[1].span, fctx) else {
+            return None;
+        };
+        if !self.types_compatible_for_codegen(&elem_ty, &value.ty, args[1].span) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(
@@ -1797,7 +1800,6 @@ impl<'a> Generator<'a> {
         }
         let vec_value = self.gen_expr(&args[0], fctx)?;
         let index = self.gen_expr(&args[1], fctx)?;
-        let value = self.gen_expr(&args[2], fctx)?;
         if index.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
@@ -1809,7 +1811,11 @@ impl<'a> Generator<'a> {
         }
         let (elem_ty, elem_repr, _elem_kind) =
             self.vec_element_info(&vec_value.ty, "set", args[0].span)?;
-        if value.ty != elem_ty {
+        let value = self.gen_expr_with_expected(&args[2], Some(&elem_ty), fctx)?;
+        let Some(value) = self.coerce_value_to_expected(value, &elem_ty, args[2].span, fctx) else {
+            return None;
+        };
+        if !self.types_compatible_for_codegen(&elem_ty, &value.ty, args[2].span) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(
@@ -1856,7 +1862,6 @@ impl<'a> Generator<'a> {
         }
         let vec_value = self.gen_expr(&args[0], fctx)?;
         let index = self.gen_expr(&args[1], fctx)?;
-        let value = self.gen_expr(&args[2], fctx)?;
         if index.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
@@ -1868,7 +1873,11 @@ impl<'a> Generator<'a> {
         }
         let (elem_ty, elem_repr, _elem_kind) =
             self.vec_element_info(&vec_value.ty, "insert", args[0].span)?;
-        if value.ty != elem_ty {
+        let value = self.gen_expr_with_expected(&args[2], Some(&elem_ty), fctx)?;
+        let Some(value) = self.coerce_value_to_expected(value, &elem_ty, args[2].span, fctx) else {
+            return None;
+        };
+        if !self.types_compatible_for_codegen(&elem_ty, &value.ty, args[2].span) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
                 format!(

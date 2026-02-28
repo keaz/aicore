@@ -3741,6 +3741,7 @@ fn render_generic_params(generics: &[ast::GenericParam], open: &str, close: &str
 fn render_type_expr(ty: &ast::TypeExpr) -> String {
     match &ty.kind {
         ast::TypeKind::Unit => "Unit".to_string(),
+        ast::TypeKind::DynTrait { trait_name } => format!("dyn {}", trait_name),
         ast::TypeKind::Named { name, args } => {
             if args.is_empty() {
                 name.clone()

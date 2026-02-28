@@ -2863,6 +2863,9 @@ fn eval_repl_statement(
 fn repl_type_expr_name(ty: &aicore::ast::TypeExpr) -> Result<&'static str, String> {
     match &ty.kind {
         aicore::ast::TypeKind::Unit => Ok("Unit"),
+        aicore::ast::TypeKind::DynTrait { trait_name } => Err(format!(
+            "dyn trait annotation `dyn {trait_name}` is not supported in repl"
+        )),
         aicore::ast::TypeKind::Named { name, args } => {
             if !args.is_empty() {
                 return Err("generic type annotations are not supported in repl".to_string());

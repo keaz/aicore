@@ -318,6 +318,7 @@ fn render_generics(generics: &[ast::GenericParam]) -> String {
 fn render_type(ty: &ast::TypeExpr) -> String {
     match &ty.kind {
         ast::TypeKind::Unit => "()".to_string(),
+        ast::TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
         ast::TypeKind::Named { name, args } => {
             if args.is_empty() {
                 name.clone()

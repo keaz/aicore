@@ -417,6 +417,76 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_dyn_trait_object_safety_rejects_trait_generics() {
+    let src = r#"
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter { value: Int }
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value
+    }
+}
+
+fn main() -> Int {
+    let _h: dyn Score = Meter { value: 1 };
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| {
+            d.code == "E1214"
+                && d.message.contains("object-safe")
+                && d.message.contains("trait generics")
+        }),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_dyn_trait_object_safety_rejects_self_in_return_type() {
+    let src = r#"
+trait Cloneable {
+    fn clone(self: Self) -> Self;
+}
+
+struct Item { value: Int }
+
+impl Cloneable[Item] {
+    fn clone(self: Item) -> Item {
+        self
+    }
+}
+
+fn main() -> Int {
+    let _h: dyn Cloneable = Item { value: 1 };
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| {
+            d.code == "E1214"
+                && d.message.contains("object-safe")
+                && d.message.contains("return type")
+        }),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_trait_method_impl_missing_required_method_reports_diagnostic() {
     let src = r#"
 trait Score[T] {

@@ -282,6 +282,7 @@ fn render_type(ty: &ast::TypeExpr) -> String {
     match &ty.kind {
         TypeKind::Unit => "()".to_string(),
         TypeKind::Hole => "_".to_string(),
+        TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
         TypeKind::Named { name, args } => {
             if args.is_empty() {
                 name.clone()

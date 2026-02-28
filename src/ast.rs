@@ -207,6 +207,7 @@ pub struct TypeExpr {
 pub enum TypeKind {
     Unit,
     Named { name: String, args: Vec<TypeExpr> },
+    DynTrait { trait_name: String },
     Hole,
 }
 

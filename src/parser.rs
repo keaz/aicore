@@ -754,7 +754,7 @@ impl<'a> Parser<'a> {
             )?;
             let (head_name, head_args) = match &head_ty.kind {
                 TypeKind::Named { name, args } => (name.clone(), args.clone()),
-                TypeKind::Unit | TypeKind::Hole => {
+                TypeKind::DynTrait { .. } | TypeKind::Unit | TypeKind::Hole => {
                     self.diagnostics.push(Diagnostic::error(
                         "E1087",
                         "impl target must be a named type",
@@ -788,7 +788,7 @@ impl<'a> Parser<'a> {
 
         let (trait_name, trait_args) = match head_ty.kind {
             TypeKind::Named { name, args } => (name, args),
-            TypeKind::Unit | TypeKind::Hole => {
+            TypeKind::DynTrait { .. } | TypeKind::Unit | TypeKind::Hole => {
                 self.diagnostics.push(Diagnostic::error(
                     "E1055",
                     "expected trait name after impl",
@@ -1290,6 +1290,27 @@ impl<'a> Parser<'a> {
             let end = self.previous_span().end;
             return Some(TypeExpr {
                 kind: first.kind,
+                span: Span::new(start, end),
+            });
+        }
+
+        if self.at_kind(|k| matches!(k, TokenKind::KwDyn)) {
+            self.bump();
+            let (name, first_span) =
+                self.expect_ident("E1026", "expected trait name after 'dyn'")?;
+            let mut full_name = name;
+            let mut end = first_span.end;
+            while self.at_kind(|k| matches!(k, TokenKind::ColonColon)) {
+                self.bump();
+                let (seg, seg_span) = self.expect_ident("E1027", "expected path segment")?;
+                full_name.push_str("::");
+                full_name.push_str(&seg);
+                end = seg_span.end;
+            }
+            return Some(TypeExpr {
+                kind: TypeKind::DynTrait {
+                    trait_name: full_name,
+                },
                 span: Span::new(start, end),
             });
         }

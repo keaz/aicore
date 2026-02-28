@@ -7,9 +7,10 @@ This page describes the surface type grammar and the type relations enforced in 
 ## Grammar
 
 ```ebnf
-type           = unit_type | named_type | fn_type ;
+type           = unit_type | named_type | dyn_type | fn_type ;
 unit_type      = "(" ")" ;
 named_type     = type_name type_args? ;
+dyn_type       = "dyn" type_name ;
 type_name      = ident ("::" ident)* ;
 type_args      = "[" type ("," type)* ","? "]" ;
 
@@ -27,6 +28,7 @@ type_list      = type ("," type)* ","? ;
 - Borrow expressions synthesize wrapper types:
   - `&x` has type `Ref[T]`
   - `&mut x` has type `RefMut[T]`
+- `dyn Trait` is supported for runtime-dispatch trait objects. See [Dyn Trait Objects](./dyn-trait-objects.md) for object-safety and runtime details.
 - `async fn` calls produce `Async[T]`; only `await` can unwrap the `T`.
 - Postfix `?` requires `Result[T, E]` and preserves `T` while checking `E` compatibility with the enclosing function return type.
 - Type inference is local and deterministic. When inference cannot resolve a concrete type, the checker reports an error and uses unresolved internal marker `<?>` for continued analysis.

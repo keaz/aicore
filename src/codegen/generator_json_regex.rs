@@ -1533,6 +1533,15 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
+            LType::DynTrait(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON encoding of dyn trait values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
+            }
             LType::Async(_) => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5036",
@@ -1823,6 +1832,15 @@ impl<'a> Generator<'a> {
                 self.diagnostics.push(Diagnostic::error(
                     "E5036",
                     "JSON decoding into function values is not supported",
+                    self.file,
+                    span,
+                ));
+                None
+            }
+            LType::DynTrait(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5036",
+                    "JSON decoding into dyn trait values is not supported",
                     self.file,
                     span,
                 ));
@@ -2167,6 +2185,10 @@ impl<'a> Generator<'a> {
             LType::Fn(layout) => Some(format!(
                 "{{\"kind\":\"function\",\"name\":\"{}\"}}",
                 json_escape_string(&layout.repr)
+            )),
+            LType::DynTrait(trait_name) => Some(format!(
+                "{{\"kind\":\"dyn_trait\",\"name\":\"{}\"}}",
+                json_escape_string(trait_name)
             )),
             LType::Async(inner) => {
                 let inner_schema = self.json_schema_for_type(inner, stack, span)?;

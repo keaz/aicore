@@ -1,0 +1,48 @@
+import std.io;
+import std.vec;
+
+trait Handler {
+    fn value(self: Self) -> Int;
+}
+
+struct PlusOne {
+    base: Int,
+}
+
+struct PlusTwo {
+    base: Int,
+}
+
+impl Handler[PlusOne] {
+    fn value(self: PlusOne) -> Int {
+        self.base + 1
+    }
+}
+
+impl Handler[PlusTwo] {
+    fn value(self: PlusTwo) -> Int {
+        self.base + 2
+    }
+}
+
+fn score_opt(v: Option[dyn Handler]) -> Int {
+    match v {
+        Some(h) => h.value(),
+        None => 0,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut handlers: Vec[dyn Handler] = vec.new_vec();
+    handlers = vec.push(handlers, PlusOne { base: 40 });
+    handlers = vec.push(handlers, PlusTwo { base: 40 });
+
+    let first = match vec.get(handlers, 0) {
+        Some(h) => h.value(),
+        None => 0,
+    };
+
+    let bonus = score_opt(Some(PlusTwo { base: 8 }));
+    print_int(first + bonus);
+    0
+}

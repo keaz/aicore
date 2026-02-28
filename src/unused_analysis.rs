@@ -398,6 +398,11 @@ impl<'a> Analyzer<'a> {
 
     fn visit_type_expr(&mut self, ty: &ast::TypeExpr) {
         match &ty.kind {
+            ast::TypeKind::DynTrait { trait_name } => {
+                if let Some(module_ref) = module_prefix(trait_name) {
+                    self.record_module_reference(module_ref);
+                }
+            }
             ast::TypeKind::Named { name, args } => {
                 if let Some(module_ref) = module_prefix(name) {
                     self.record_module_reference(module_ref);

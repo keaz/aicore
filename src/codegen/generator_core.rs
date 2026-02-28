@@ -49,6 +49,9 @@ impl<'a> Generator<'a> {
             deferred_fn_defs: Vec::new(),
             fn_value_adapters: BTreeMap::new(),
             recursive_call_targets,
+            dyn_traits: BTreeMap::new(),
+            dyn_vtable_globals: BTreeMap::new(),
+            generated_dyn_wrappers: BTreeSet::new(),
         }
     }
 
@@ -1262,6 +1265,23 @@ impl<'a> Generator<'a> {
                     let Some(expected) = expected else {
                         continue;
                     };
+                    let Some(value) = self.coerce_value_to_expected(value, &expected, *span, fctx)
+                    else {
+                        continue;
+                    };
+                    if value.ty != expected {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5007",
+                            format!(
+                                "let codegen type mismatch for '{}': expected '{}', found '{}'",
+                                name,
+                                render_type(&expected),
+                                render_type(&value.ty)
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                    }
                     let mut skip_resource_cleanup = false;
                     if self.type_needs_explicit_drop(&expected) {
                         if let ir::ExprKind::Var(source) = &expr.kind {
@@ -1321,6 +1341,10 @@ impl<'a> Generator<'a> {
                     let Some(value) = self.gen_expr(expr, fctx) else {
                         continue;
                     };
+                    let Some(value) = self.coerce_value_to_expected(value, &local.ty, *span, fctx)
+                    else {
+                        continue;
+                    };
                     if value.ty != local.ty {
                         self.diagnostics.push(Diagnostic::error(
                             "E5007",
@@ -1360,6 +1384,15 @@ impl<'a> Generator<'a> {
                         {
                             self.emit_scope_drops_to_depth(0, fctx);
                             if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                                let Some(value) = self.coerce_value_to_expected(
+                                    value,
+                                    &async_inner,
+                                    expr.span,
+                                    fctx,
+                                ) else {
+                                    fctx.terminated = true;
+                                    continue;
+                                };
                                 let async_value =
                                     self.build_ready_async_value(value, &async_inner, fctx);
                                 let repr = async_value
@@ -1371,9 +1404,15 @@ impl<'a> Generator<'a> {
                                     repr
                                 ));
                             } else {
-                                let repr = value.repr.unwrap_or_else(|| default_value(&value.ty));
+                                let Some(value) = self
+                                    .coerce_value_to_expected(value, &ret_hint, expr.span, fctx)
+                                else {
+                                    fctx.terminated = true;
+                                    continue;
+                                };
+                                let repr = coerce_repr(&value, &ret_hint);
                                 fctx.lines
-                                    .push(format!("  ret {} {}", llvm_type(&value.ty), repr));
+                                    .push(format!("  ret {} {}", llvm_type(&ret_hint), repr));
                             }
                             fctx.terminated = true;
                         }
@@ -2137,7 +2176,14 @@ impl<'a> Generator<'a> {
                 fctx.terminated = true;
                 return true;
             };
-            let value_repr = value.repr.unwrap_or_else(|| default_value(&value.ty));
+            let Some(value) = self.coerce_value_to_expected(value, expected_ty, arg.span, fctx)
+            else {
+                return false;
+            };
+            let value_repr = value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(expected_ty));
             call_args.push(format!("{} {}", llvm_type(expected_ty), value_repr));
         }
 
@@ -2852,25 +2898,48 @@ impl<'a> Generator<'a> {
             return result;
         }
 
+        let sig_hint = self.fn_sigs.get(name).cloned();
         let mut values = Vec::new();
-        for expr in args {
-            values.push(self.gen_expr(expr, fctx)?);
+        for (idx, expr) in args.iter().enumerate() {
+            let expected_hint = sig_hint.as_ref().and_then(|sig| sig.params.get(idx));
+            let value = if let Some(expected_hint) = expected_hint {
+                self.gen_expr_with_expected(expr, Some(expected_hint), fctx)?
+            } else {
+                self.gen_expr(expr, fctx)?
+            };
+            values.push(value);
         }
         if let Some(instance) = self.resolve_generic_instance(name, &values, expected_ty, span) {
-            let rendered_args = values
-                .iter()
-                .zip(instance.params.iter())
-                .map(|(value, expected)| {
-                    format!(
-                        "{} {}",
-                        llvm_type(expected),
-                        value
-                            .repr
-                            .clone()
-                            .unwrap_or_else(|| default_value(expected))
-                    )
-                })
-                .collect::<Vec<_>>();
+            let mut rendered_args = Vec::with_capacity(values.len());
+            for (idx, (value, expected)) in values.iter().zip(instance.params.iter()).enumerate() {
+                let Some(coerced) =
+                    self.coerce_value_to_expected(value.clone(), expected, args[idx].span, fctx)
+                else {
+                    return None;
+                };
+                if !self.types_compatible_for_codegen(expected, &coerced.ty, args[idx].span) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5014",
+                        format!(
+                            "argument type mismatch for call to '{}': expected '{}', found '{}'",
+                            name,
+                            render_type(expected),
+                            render_type(&coerced.ty)
+                        ),
+                        self.file,
+                        args[idx].span,
+                    ));
+                    return None;
+                }
+                rendered_args.push(format!(
+                    "{} {}",
+                    llvm_type(expected),
+                    coerced
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(expected))
+                ));
+            }
 
             let llvm_name = mangle(&instance.mangled);
             if instance.ret == LType::Unit {
@@ -2948,7 +3017,12 @@ impl<'a> Generator<'a> {
         let mut rendered_args = Vec::new();
         for (idx, value) in values.iter().enumerate() {
             let expected = &sig.params[idx];
-            if value.ty != *expected {
+            let Some(coerced) =
+                self.coerce_value_to_expected(value.clone(), expected, args[idx].span, fctx)
+            else {
+                return None;
+            };
+            if !self.types_compatible_for_codegen(expected, &coerced.ty, args[idx].span) {
                 self.diagnostics.push(Diagnostic::error(
                     "E5014",
                     format!("argument type mismatch for call to '{}'", name),
@@ -2960,7 +3034,7 @@ impl<'a> Generator<'a> {
             rendered_args.push(format!(
                 "{} {}",
                 llvm_type(expected),
-                value
+                coerced
                     .repr
                     .clone()
                     .unwrap_or_else(|| default_value(expected))
@@ -3034,6 +3108,10 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let receiver = self.gen_expr(base, fctx)?;
+        if let LType::DynTrait(trait_name) = &receiver.ty {
+            let trait_name = trait_name.clone();
+            return self.gen_dyn_trait_method_call(receiver, &trait_name, field, args, span, fctx);
+        }
         let receiver_type_name = self.method_receiver_type_name(&receiver, base.span)?;
 
         let associated = format!("{receiver_type_name}::{field}");
@@ -3084,6 +3162,7 @@ impl<'a> Generator<'a> {
             LType::Bool => Some("Bool".to_string()),
             LType::String => Some("String".to_string()),
             LType::Unit => Some("()".to_string()),
+            LType::DynTrait(trait_name) => Some(format!("dyn {}", trait_name)),
             other => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5012",
@@ -3094,6 +3173,680 @@ impl<'a> Generator<'a> {
                 None
             }
         }
+    }
+
+    pub(super) fn types_compatible_for_codegen(
+        &mut self,
+        expected: &LType,
+        found: &LType,
+        span: crate::span::Span,
+    ) -> bool {
+        if expected == found {
+            return true;
+        }
+
+        match (expected, found) {
+            (LType::DynTrait(expected_trait), LType::DynTrait(found_trait)) => {
+                expected_trait == found_trait
+            }
+            (LType::DynTrait(expected_trait), concrete) => {
+                let concrete_repr = render_type(concrete);
+                self.ensure_dyn_trait_info(expected_trait, span)
+                    .map(|info| info.impl_methods.contains_key(&concrete_repr))
+                    .unwrap_or(false)
+            }
+            (LType::Async(expected_inner), LType::Async(found_inner)) => {
+                self.types_compatible_for_codegen(expected_inner, found_inner, span)
+            }
+            (LType::Enum(expected_layout), LType::Enum(found_layout)) => {
+                if expected_layout.repr != found_layout.repr
+                    || expected_layout.variants.len() != found_layout.variants.len()
+                {
+                    return false;
+                }
+                expected_layout
+                    .variants
+                    .iter()
+                    .zip(found_layout.variants.iter())
+                    .all(|(exp, got)| match (&exp.payload, &got.payload) {
+                        (Some(exp_payload), Some(got_payload)) => {
+                            self.types_compatible_for_codegen(exp_payload, got_payload, span)
+                        }
+                        (None, None) => true,
+                        _ => false,
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn coerce_value_to_expected(
+        &mut self,
+        value: Value,
+        expected: &LType,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if value.ty == *expected {
+            return Some(value);
+        }
+        match expected {
+            LType::DynTrait(trait_name) => {
+                self.coerce_value_to_dyn_trait(value, trait_name, span, fctx)
+            }
+            _ => Some(value),
+        }
+    }
+
+    fn coerce_value_to_dyn_trait(
+        &mut self,
+        value: Value,
+        trait_name: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if let LType::DynTrait(found_trait) = &value.ty {
+            if found_trait == trait_name {
+                return Some(value);
+            }
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5014",
+                    format!(
+                        "cannot coerce dyn '{}' to dyn '{}'",
+                        found_trait, trait_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("coerce from a concrete type that implements the target trait"),
+            );
+            return None;
+        }
+        if value.ty == LType::Unit {
+            self.diagnostics.push(Diagnostic::error(
+                "E5014",
+                "cannot coerce unit value to dyn trait object",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let concrete_ty = value.ty.clone();
+        let (vtable_global, trait_info) =
+            self.ensure_dyn_vtable_for_concrete(trait_name, &concrete_ty, span)?;
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+        let size = self.vec_elem_size(&concrete_ty, fctx);
+        let data_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i8* @malloc(i64 {})", data_ptr, size));
+        let typed_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            typed_ptr,
+            data_ptr,
+            llvm_type(&concrete_ty)
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&concrete_ty),
+            value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&concrete_ty)),
+            llvm_type(&concrete_ty),
+            typed_ptr
+        ));
+
+        let vtable_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast [{} x i8*]* @{} to i8*",
+            vtable_ptr,
+            trait_info.methods.len(),
+            vtable_global
+        ));
+
+        let dyn_ty = LType::DynTrait(trait_name.to_string());
+        let with_data = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i8* {}, 0",
+            with_data,
+            llvm_type(&dyn_ty),
+            data_ptr
+        ));
+        let with_vtable = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i8* {}, 1",
+            with_vtable,
+            llvm_type(&dyn_ty),
+            with_data,
+            vtable_ptr
+        ));
+
+        Some(Value {
+            ty: dyn_ty,
+            repr: Some(with_vtable),
+        })
+    }
+
+    fn ensure_dyn_trait_info(
+        &mut self,
+        trait_name: &str,
+        span: crate::span::Span,
+    ) -> Option<DynTraitInfo> {
+        if let Some(info) = self.dyn_traits.get(trait_name).cloned() {
+            return Some(info);
+        }
+
+        let short_name = method_base_name(trait_name).to_string();
+        let trait_def = self.program.items.iter().find_map(|item| match item {
+            ir::Item::Trait(def) if def.name == trait_name || def.name == short_name => Some(def),
+            _ => None,
+        })?;
+
+        let resolved_trait_name = trait_def.name.clone();
+        let mut methods = Vec::new();
+        let mut method_index = BTreeMap::new();
+        for method in &trait_def.methods {
+            if !method.generics.is_empty() {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E5019",
+                        format!(
+                            "dyn trait '{}' method '{}' cannot be generic",
+                            resolved_trait_name,
+                            method_base_name(&method.name)
+                        ),
+                        self.file,
+                        method.span,
+                    )
+                    .with_help("remove method generics for dyn dispatch"),
+                );
+                return None;
+            }
+            if method.params.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5019",
+                    format!(
+                        "dyn trait '{}' method '{}' is missing receiver parameter",
+                        resolved_trait_name,
+                        method_base_name(&method.name)
+                    ),
+                    self.file,
+                    method.span,
+                ));
+                return None;
+            }
+
+            let receiver_repr = self
+                .type_map
+                .get(&method.params[0].ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            if receiver_repr.trim() != "Self" {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E5019",
+                        format!(
+                            "dyn trait '{}' method '{}' is not object-safe: first parameter must be Self",
+                            resolved_trait_name,
+                            method_base_name(&method.name)
+                        ),
+                        self.file,
+                        method.span,
+                    )
+                    .with_help("use `self: Self` as the first parameter"),
+                );
+                return None;
+            }
+
+            let mut param_tys = Vec::new();
+            for param in method.params.iter().skip(1) {
+                let raw = self
+                    .type_map
+                    .get(&param.ty)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                if type_uses_self_repr(&raw) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E5019",
+                            format!(
+                                "dyn trait '{}' method '{}' is not object-safe: Self appears outside receiver",
+                                resolved_trait_name,
+                                method_base_name(&method.name)
+                            ),
+                            self.file,
+                            method.span,
+                        )
+                        .with_help("remove `Self` from non-receiver parameters"),
+                    );
+                    return None;
+                }
+                param_tys.push(self.type_from_id(param.ty, param.span)?);
+            }
+
+            let ret_raw = self
+                .type_map
+                .get(&method.ret_type)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            if type_uses_self_repr(&ret_raw) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E5019",
+                        format!(
+                            "dyn trait '{}' method '{}' is not object-safe: Self appears in return type",
+                            resolved_trait_name,
+                            method_base_name(&method.name)
+                        ),
+                        self.file,
+                        method.span,
+                    )
+                    .with_help("use concrete return types for dyn dispatch"),
+                );
+                return None;
+            }
+            let mut ret = self.type_from_id(method.ret_type, method.span)?;
+            if method.is_async {
+                ret = LType::Async(Box::new(ret));
+            }
+
+            let name = method_base_name(&method.name).to_string();
+            if method_index.contains_key(&name) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5019",
+                    format!(
+                        "duplicate dyn trait method '{}' in trait '{}'",
+                        name, resolved_trait_name
+                    ),
+                    self.file,
+                    method.span,
+                ));
+                return None;
+            }
+            method_index.insert(name.clone(), methods.len());
+            methods.push(DynTraitMethodInfo {
+                name,
+                params: param_tys,
+                ret,
+            });
+        }
+
+        let mut impl_methods: BTreeMap<String, BTreeMap<String, ir::SymbolId>> = BTreeMap::new();
+        for item in &self.program.items {
+            let ir::Item::Impl(impl_def) = item else {
+                continue;
+            };
+            if impl_def.is_inherent {
+                continue;
+            }
+            if impl_def.trait_name != resolved_trait_name && impl_def.trait_name != short_name {
+                continue;
+            }
+            let target = if let Some(target) = impl_def.target {
+                Some(target)
+            } else if trait_def.generics.is_empty() {
+                impl_def.trait_args.first().copied()
+            } else {
+                None
+            };
+            let Some(target) = target else {
+                continue;
+            };
+            let target_raw = self
+                .type_map
+                .get(&target)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            let Some(target_repr) = self.normalize_type_repr(&target_raw, span) else {
+                continue;
+            };
+            let mut methods_for_impl = BTreeMap::new();
+            for method in &impl_def.methods {
+                methods_for_impl.insert(method_base_name(&method.name).to_string(), method.symbol);
+            }
+            impl_methods.insert(target_repr, methods_for_impl);
+        }
+
+        let info = DynTraitInfo {
+            methods,
+            method_index,
+            impl_methods,
+        };
+        self.dyn_traits
+            .insert(resolved_trait_name.clone(), info.clone());
+        if trait_name != resolved_trait_name {
+            self.dyn_traits.insert(trait_name.to_string(), info.clone());
+        }
+        Some(info)
+    }
+
+    fn emit_dyn_wrapper_if_needed(
+        &mut self,
+        wrapper_llvm_name: &str,
+        impl_llvm_name: &str,
+        concrete_ty: &LType,
+        method: &DynTraitMethodInfo,
+    ) {
+        if !self
+            .generated_dyn_wrappers
+            .insert(wrapper_llvm_name.to_string())
+        {
+            return;
+        }
+
+        let ret_llvm = llvm_type(&method.ret);
+        let mut param_defs = vec!["i8* %arg0".to_string()];
+        param_defs.extend(
+            method
+                .params
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx + 1)),
+        );
+
+        let mut lines = vec![format!(
+            "define {} @{}({}) {{",
+            ret_llvm,
+            wrapper_llvm_name,
+            param_defs.join(", ")
+        )];
+        lines.push("entry:".to_string());
+
+        let concrete_llvm = llvm_type(concrete_ty);
+        let self_ptr = self.new_temp();
+        lines.push(format!(
+            "  {} = bitcast i8* %arg0 to {}*",
+            self_ptr, concrete_llvm
+        ));
+        let self_val = self.new_temp();
+        lines.push(format!(
+            "  {} = load {}, {}* {}",
+            self_val, concrete_llvm, concrete_llvm, self_ptr
+        ));
+
+        let mut call_args = vec![format!("{} {}", concrete_llvm, self_val)];
+        call_args.extend(
+            method
+                .params
+                .iter()
+                .enumerate()
+                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx + 1)),
+        );
+
+        if method.ret == LType::Unit {
+            lines.push(format!(
+                "  call void @{}({})",
+                impl_llvm_name,
+                call_args.join(", ")
+            ));
+            lines.push("  ret void".to_string());
+        } else {
+            let out = self.new_temp();
+            lines.push(format!(
+                "  {} = call {} @{}({})",
+                out,
+                ret_llvm,
+                impl_llvm_name,
+                call_args.join(", ")
+            ));
+            lines.push(format!("  ret {} {}", ret_llvm, out));
+        }
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+    }
+
+    fn ensure_dyn_vtable_for_concrete(
+        &mut self,
+        trait_name: &str,
+        concrete_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<(String, DynTraitInfo)> {
+        let concrete_repr = render_type(concrete_ty);
+        let dyn_info = self.ensure_dyn_trait_info(trait_name, span)?;
+        let vtable_key = format!("{}|{}", trait_name, concrete_repr);
+        if let Some(global) = self.dyn_vtable_globals.get(&vtable_key).cloned() {
+            return Some((global, dyn_info));
+        }
+
+        let Some(impl_methods) = dyn_info.impl_methods.get(&concrete_repr) else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5014",
+                    format!(
+                        "type '{}' does not implement dyn trait '{}'",
+                        concrete_repr, trait_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("add a matching trait impl before coercing to dyn"),
+            );
+            return None;
+        };
+
+        let mut entry_exprs = Vec::new();
+        for method in &dyn_info.methods {
+            let Some(symbol) = impl_methods.get(&method.name) else {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E5014",
+                        format!(
+                            "impl for '{}' is missing method '{}' required by dyn trait '{}'",
+                            concrete_repr, method.name, trait_name
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("implement all trait methods for dyn dispatch"),
+                );
+                return None;
+            };
+            let Some(impl_llvm_name) = self.fn_llvm_names.get(symbol).cloned() else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    "internal codegen error: missing LLVM name for dyn impl method",
+                    self.file,
+                    span,
+                ));
+                return None;
+            };
+
+            let wrapper_llvm_name = format!(
+                "aic_dynwrap_{}_{}_{}",
+                mangle_generic_component(trait_name),
+                mangle_generic_component(&method.name),
+                mangle_generic_component(&concrete_repr)
+            );
+            self.emit_dyn_wrapper_if_needed(
+                &wrapper_llvm_name,
+                &impl_llvm_name,
+                concrete_ty,
+                method,
+            );
+
+            let wrapper_fn_ty = dyn_wrapper_function_type(method);
+            entry_exprs.push(format!(
+                "i8* bitcast ({}* @{} to i8*)",
+                wrapper_fn_ty, wrapper_llvm_name
+            ));
+        }
+
+        let global_name = format!(
+            "aic_dyn_vtable_{}_{}",
+            mangle_generic_component(trait_name),
+            mangle_generic_component(&concrete_repr)
+        );
+        self.globals.push(format!(
+            "@{} = private unnamed_addr constant [{} x i8*] [{}]",
+            global_name,
+            entry_exprs.len(),
+            entry_exprs.join(", ")
+        ));
+        self.dyn_vtable_globals
+            .insert(vtable_key, global_name.clone());
+        Some((global_name, dyn_info))
+    }
+
+    fn gen_dyn_trait_method_call(
+        &mut self,
+        receiver: Value,
+        trait_name: &str,
+        field: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let dyn_info = self.ensure_dyn_trait_info(trait_name, span)?;
+        let method_name = method_base_name(field);
+        let Some(method_idx) = dyn_info.method_index.get(method_name).copied() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown dyn trait method '{}.{}'", trait_name, method_name),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let method = dyn_info.methods.get(method_idx).cloned()?;
+
+        if args.len() != method.params.len() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5013",
+                format!(
+                    "method '{}' expects {} args, got {}",
+                    method_name,
+                    method.params.len(),
+                    args.len()
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let mut call_args = Vec::new();
+        for (arg, expected_ty) in args.iter().zip(method.params.iter()) {
+            let value = self.gen_expr_with_expected(arg, Some(expected_ty), fctx)?;
+            let value = self.coerce_value_to_expected(value, expected_ty, arg.span, fctx)?;
+            if value.ty != *expected_ty {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5014",
+                    format!(
+                        "dyn method argument type mismatch: expected '{}', found '{}'",
+                        render_type(expected_ty),
+                        render_type(&value.ty)
+                    ),
+                    self.file,
+                    arg.span,
+                ));
+                return None;
+            }
+            call_args.push(value);
+        }
+
+        let obj_slot = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = alloca {}",
+            obj_slot,
+            llvm_type(&receiver.ty)
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&receiver.ty),
+            receiver
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&receiver.ty)),
+            llvm_type(&receiver.ty),
+            obj_slot
+        ));
+
+        let data_ptr_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr {}, {}* {}, i32 0, i32 0",
+            data_ptr_ptr,
+            llvm_type(&receiver.ty),
+            llvm_type(&receiver.ty),
+            obj_slot
+        ));
+        let data_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", data_ptr, data_ptr_ptr));
+
+        let vtable_ptr_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr {}, {}* {}, i32 0, i32 1",
+            vtable_ptr_ptr,
+            llvm_type(&receiver.ty),
+            llvm_type(&receiver.ty),
+            obj_slot
+        ));
+        let vtable_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            vtable_ptr, vtable_ptr_ptr
+        ));
+
+        let entries_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to i8**",
+            entries_ptr, vtable_ptr
+        ));
+        let entry_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr i8*, i8** {}, i64 {}",
+            entry_ptr, entries_ptr, method_idx
+        ));
+        let fn_i8 = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", fn_i8, entry_ptr));
+
+        let dyn_fn_ty = dyn_wrapper_function_type(&method);
+        let fn_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            fn_ptr, fn_i8, dyn_fn_ty
+        ));
+
+        let mut rendered_args = vec![format!("i8* {}", data_ptr)];
+        rendered_args.extend(call_args.iter().zip(method.params.iter()).map(|(arg, ty)| {
+            format!(
+                "{} {}",
+                llvm_type(ty),
+                arg.repr.clone().unwrap_or_else(|| default_value(ty))
+            )
+        }));
+
+        if method.ret == LType::Unit {
+            fctx.lines.push(format!(
+                "  call {} {}({})",
+                dyn_fn_ty,
+                fn_ptr,
+                rendered_args.join(", ")
+            ));
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        let out = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call {} {}({})",
+            out,
+            llvm_type(&method.ret),
+            fn_ptr,
+            rendered_args.join(", ")
+        ));
+        Some(Value {
+            ty: method.ret,
+            repr: Some(out),
+        })
     }
 
     pub(super) fn gen_for_into_iter_call(
@@ -3187,20 +3940,36 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if let Some(instance) = self.resolve_generic_instance(name, &values, None, span) {
-            let rendered_args = values
-                .iter()
-                .zip(instance.params.iter())
-                .map(|(value, expected)| {
-                    format!(
-                        "{} {}",
-                        llvm_type(expected),
-                        value
-                            .repr
-                            .clone()
-                            .unwrap_or_else(|| default_value(expected))
-                    )
-                })
-                .collect::<Vec<_>>();
+            let mut rendered_args = Vec::with_capacity(values.len());
+            for (value, expected) in values.iter().zip(instance.params.iter()) {
+                let Some(coerced) =
+                    self.coerce_value_to_expected(value.clone(), expected, span, fctx)
+                else {
+                    return None;
+                };
+                if !self.types_compatible_for_codegen(expected, &coerced.ty, span) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5014",
+                        format!(
+                            "argument type mismatch for call to '{}': expected '{}', found '{}'",
+                            name,
+                            render_type(expected),
+                            render_type(&coerced.ty)
+                        ),
+                        self.file,
+                        span,
+                    ));
+                    return None;
+                }
+                rendered_args.push(format!(
+                    "{} {}",
+                    llvm_type(expected),
+                    coerced
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(expected))
+                ));
+            }
 
             let llvm_name = mangle(&instance.mangled);
             if instance.ret == LType::Unit {
@@ -3257,10 +4026,19 @@ impl<'a> Generator<'a> {
         let mut rendered_args = Vec::new();
         for (idx, value) in values.iter().enumerate() {
             let expected = &sig.params[idx];
-            if value.ty != *expected {
+            let Some(coerced) = self.coerce_value_to_expected(value.clone(), expected, span, fctx)
+            else {
+                return None;
+            };
+            if !self.types_compatible_for_codegen(expected, &coerced.ty, span) {
                 self.diagnostics.push(Diagnostic::error(
                     "E5014",
-                    format!("argument type mismatch for call to '{}'", name),
+                    format!(
+                        "argument type mismatch for call to '{}': expected '{}', found '{}'",
+                        name,
+                        render_type(expected),
+                        render_type(&coerced.ty)
+                    ),
                     self.file,
                     span,
                 ));
@@ -3269,7 +4047,7 @@ impl<'a> Generator<'a> {
             rendered_args.push(format!(
                 "{} {}",
                 llvm_type(expected),
-                value
+                coerced
                     .repr
                     .clone()
                     .unwrap_or_else(|| default_value(expected))
@@ -3510,12 +4288,10 @@ impl<'a> Generator<'a> {
             };
             params.push(ty);
         }
-        if params
-            .iter()
-            .zip(values.iter())
-            .any(|(expected, actual)| *expected != actual.ty)
-        {
-            return;
+        for (expected, actual) in params.iter().zip(values.iter()) {
+            if !self.types_compatible_for_codegen(expected, &actual.ty, span) {
+                return;
+            }
         }
 
         let ret_raw = self

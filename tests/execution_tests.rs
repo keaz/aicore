@@ -806,6 +806,85 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_dyn_trait_direct_dispatch_vtable_call() {
+    let src = r#"
+import std.io;
+
+trait Handler {
+    fn value(self: Self) -> Int;
+}
+
+struct PlusOne { base: Int }
+
+impl Handler[PlusOne] {
+    fn value(self: PlusOne) -> Int {
+        self.base + 1
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let h: dyn Handler = PlusOne { base: 41 };
+    print_int(h.value());
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_dyn_trait_vec_and_option_dispatch() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+trait Handler {
+    fn value(self: Self) -> Int;
+}
+
+struct PlusOne { base: Int }
+struct PlusTwo { base: Int }
+
+impl Handler[PlusOne] {
+    fn value(self: PlusOne) -> Int {
+        self.base + 1
+    }
+}
+
+impl Handler[PlusTwo] {
+    fn value(self: PlusTwo) -> Int {
+        self.base + 2
+    }
+}
+
+fn score_opt(v: Option[dyn Handler]) -> Int {
+    match v {
+        Some(h) => h.value(),
+        None => 0,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut hs: Vec[dyn Handler] = vec.new_vec();
+    hs = vec.push(hs, PlusOne { base: 40 });
+    hs = vec.push(hs, PlusTwo { base: 40 });
+
+    let a = match vec.get(hs, 0) {
+        Some(h) => h.value(),
+        None => 0,
+    };
+    let b = score_opt(Some(PlusTwo { base: 8 }));
+    print_int(a + b);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "51\n");
+}
+
+#[test]
 fn exec_borrow_checker_reinitialize_after_move() {
     let src = r#"
 import std.io;
