@@ -16,6 +16,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Typed channel selection: `select2` and `select_any`
 - Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
 - Generic synchronization: `Mutex[T]`, `MutexGuard[T]`, `RwLock[T]`
+- Shared ownership: `Arc[T]` with atomic reference counting
 - Legacy synchronization compatibility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 - Compile-time thread-safety checks: marker traits `Send[T]` / `Sync[T]` with `Send` enforcement on cross-thread payload APIs
 
@@ -57,6 +58,7 @@ struct IntTaskSelection { task_index: Int, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
 struct IntMutex { handle: Int }
+struct Arc[T] { handle: Int }
 struct Mutex[T] { handle: Int }
 struct MutexGuard[T] { handle: Int, guard_kind: Int, value: T }
 struct RwLock[T] { handle: Int }
@@ -113,6 +115,11 @@ fn lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] e
 fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency }
 
+fn arc_new[T](value: T) -> Arc[T] effects { concurrency }
+fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency }
+fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }
+fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }
+
 fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency }
 fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
 fn try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
@@ -125,6 +132,35 @@ fn new_rwlock[T](value: T) -> RwLock[T] effects { concurrency }
 fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency }
 fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
 fn close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
+```
+
+## Arc Usage Pattern
+
+Idiomatic shared mutable state uses `Arc[Mutex[T]]`:
+
+```aic
+import std.concurrent;
+import std.map;
+
+let base: Map[String, Int] = map.new_map();
+let seeded = map.insert(base, "count", 0);
+let shared: Arc[Mutex[Map[String, Int]]] = arc_new(new_mutex(seeded));
+
+let worker_shared: Arc[Mutex[Map[String, Int]]] = arc_clone(shared);
+let _task: Task[Int] = spawn_named("worker", || -> Int {
+    match arc_get(worker_shared) {
+        Ok(mutex) => match lock(mutex) {
+            Ok(g) => {
+                let current = match map.get(g.value, "count") { Some(v) => v, None => 0 };
+                let next = map.insert(g.value, "count", current + 1);
+                unlock_guard(guard_set(g, next));
+                1
+            },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+});
 ```
 
 ## Migration Strategy (Legacy -> Generic)
@@ -221,6 +257,12 @@ Sunset policy:
   - `Mutex[T]` stores typed payloads via concurrency payload slots and exposes updates through `MutexGuard[T]`.
   - `RwLock[T]` supports concurrent read access and exclusive write access.
   - Read paths clone payload handles to keep read operations non-destructive.
+- Arc shared ownership:
+  - `arc_new` encodes payloads and stores them behind shared handles.
+  - `arc_clone` increments Arc refcount with sequentially-consistent atomics (`fetch_add`).
+  - `arc_release` is runtime-managed and decrements refcount with sequentially-consistent atomics (`fetch_sub`).
+  - Arc payload storage is freed automatically when strong count reaches `0`.
+  - `Arc[T]` is treated as a thread-safe wrapper and supports `Arc[Mutex[T]]` for shared mutable state.
 
 ## Error-Code Mapping
 
@@ -279,6 +321,11 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_payload_store`
 - `aic_rt_conc_payload_take`
 - `aic_rt_conc_payload_drop`
+- `aic_rt_conc_arc_new`
+- `aic_rt_conc_arc_clone`
+- `aic_rt_conc_arc_get`
+- `aic_rt_conc_arc_strong_count`
+- `aic_rt_conc_arc_release`
 - `aic_rt_async_poll_int`
 - `aic_rt_async_poll_string`
 
@@ -287,13 +334,14 @@ Codegen lowers to these runtime symbols:
 - Linux/macOS:
   - Full channel/task/mutex runtime behavior is implemented.
 - Windows:
-  - Existing concurrency APIs (including generic spawn/join/scoped APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
+  - Existing concurrency APIs (including generic spawn/join/scoped APIs and Arc APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
   - Channel try/select APIs return deterministic `ChannelError::Closed`.
 
 ## Example
 
 - `examples/io/worker_pool.aic`
 - `examples/io/mutex_rwlock_shared_state.aic`
+- `examples/io/arc_mutex_shared_ownership.aic`
 - `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`

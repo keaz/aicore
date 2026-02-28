@@ -4486,6 +4486,153 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_arc_shares_config_across_threads() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+struct Config {
+    port: Int,
+    host: String,
+}
+
+fn read_port(shared: Arc[Config]) -> Int effects { concurrency } capabilities { concurrency } {
+    match arc_get(shared) {
+        Ok(cfg) => cfg.port,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let shared: Arc[Config] = arc_new(Config {
+        port: 8080,
+        host: "localhost",
+    });
+
+    let c1: Arc[Config] = arc_clone(shared);
+    let c2: Arc[Config] = arc_clone(shared);
+    let t1: Task[Int] = spawn_named("config-read-1", || -> Int { read_port(c1) });
+    let t2: Task[Int] = spawn_named("config-read-2", || -> Int { read_port(c2) });
+
+    let joined_ok = match join_value(t1) {
+        Ok(v1) => match join_value(t2) {
+            Ok(v2) => if v1 == 8080 && v2 == 8080 { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let main_ok = match arc_get(shared) {
+        Ok(cfg) => if cfg.port == 8080 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if joined_ok == 1 && main_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_arc_mutex_map_and_refcount_lifecycle() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.map;
+
+fn increment_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let current = match map.get(g.value, "count") {
+        Some(v) => v,
+        None => 0,
+    };
+    let next = map.insert(g.value, "count", current + 1);
+    let updated = guard_set(g, next);
+    unlock_guard(updated);
+    1
+}
+
+fn increment_once(shared: Arc[Mutex[Map[String, Int]]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    match arc_get(shared) {
+        Ok(mutex) => match lock(mutex) {
+            Ok(g) => increment_guard(g),
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn read_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let out = match map.get(g.value, "count") {
+        Some(v) => v,
+        None => 0,
+    };
+    unlock_guard(g);
+    out
+}
+
+fn read_count(shared: Arc[Mutex[Map[String, Int]]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    match arc_get(shared) {
+        Ok(mutex) => match lock(mutex) {
+            Ok(g) => read_guard(g),
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn make_and_drop_clone(shared: Arc[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    let cloned: Arc[Int] = arc_clone(shared);
+    let count = arc_strong_count(shared);
+    if cloned.handle > 0 && count == 2 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let base_map: Map[String, Int] = map.new_map();
+    let seeded = map.insert(base_map, "count", 0);
+    let shared: Arc[Mutex[Map[String, Int]]] = arc_new(new_mutex(seeded));
+
+    let c1: Arc[Mutex[Map[String, Int]]] = arc_clone(shared);
+    let c2: Arc[Mutex[Map[String, Int]]] = arc_clone(shared);
+    let t1: Task[Int] = spawn_named("inc-1", || -> Int { increment_once(c1) });
+    let t2: Task[Int] = spawn_named("inc-2", || -> Int { increment_once(c2) });
+
+    let joined = match join_value(t1) {
+        Ok(v1) => match join_value(t2) {
+            Ok(v2) => v1 + v2,
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+    let final_count = read_count(shared);
+
+    let ref_shared: Arc[Int] = arc_new(9);
+    let before = arc_strong_count(ref_shared);
+    let inside = make_and_drop_clone(ref_shared);
+    let after = arc_strong_count(ref_shared);
+
+    if joined == 2 && final_count == 2 && before == 1 && inside == 1 && after == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_spawn_join_generic_closure_capture_is_stable() {
     let src = r#"
 import std.concurrent;

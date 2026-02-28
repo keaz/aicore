@@ -54,6 +54,10 @@ struct IntMutex {
     handle: Int,
 }
 
+struct Arc[T] {
+    handle: Int,
+}
+
 struct Mutex[T] {
     handle: Int,
 }
@@ -118,6 +122,10 @@ intrinsic fn aic_conc_rwlock_close_intrinsic(rwlock: IntRwLock) -> Result[Bool, 
 intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_payload_drop_intrinsic(payload_id: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_arc_new_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_arc_clone_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_arc_get_intrinsic(handle: Int) -> Result[String, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_arc_strong_count_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
 
 fn default_blocking_timeout_ms() -> Int {
     2147483647
@@ -205,6 +213,11 @@ fn none_from_mutex[T](hint: Mutex[T]) -> Option[T] {
 }
 
 fn none_from_rwlock[T](hint: RwLock[T]) -> Option[T] {
+    let _hint = hint;
+    None()
+}
+
+fn none_from_arc[T](hint: Arc[T]) -> Option[T] {
     let _hint = hint;
     None()
 }
@@ -637,6 +650,43 @@ fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T
 
 fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_close_channel_intrinsic(ch)
+}
+
+fn arc_new[T](value: T) -> Arc[T] effects { concurrency } {
+    match json_encode_payload(value) {
+        Ok(payload) => match aic_conc_arc_new_intrinsic(payload) {
+            Ok(handle) => Arc { handle: handle },
+            Err(_) => Arc { handle: 0 },
+        },
+        Err(_) => Arc { handle: 0 },
+    }
+}
+
+fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency } {
+    match aic_conc_arc_clone_intrinsic(a.handle) {
+        Ok(handle) => Arc { handle: handle },
+        Err(_) => Arc { handle: 0 },
+    }
+}
+
+fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
+    match aic_conc_arc_get_intrinsic(a.handle) {
+        Ok(payload) => match aic_json_parse_intrinsic(payload) {
+            Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, none_from_arc(a)) {
+                Ok(value) => Ok(value),
+                Err(_) => Err(Closed()),
+            },
+            Err(_) => Err(Closed()),
+        },
+        Err(err) => Err(err),
+    }
+}
+
+fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency } {
+    match aic_conc_arc_strong_count_intrinsic(a.handle) {
+        Ok(count) => count,
+        Err(_) => 0,
+    }
 }
 
 fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency } {
