@@ -4211,6 +4211,80 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_std_concurrency_spawn_rejects_non_send_payload() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.concurrent;
+import std.fs;
+
+struct Payload {
+    file: FileHandle,
+}
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let payload = Payload { file: FileHandle { handle: 1 } };
+    let _task: Task[Payload] = spawn(|| -> Payload { payload });
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "E1258" && d.message.contains("Send"))
+        .expect("missing Send-bound diagnostic");
+    assert!(
+        diag.help.iter().any(|hint| {
+            hint.contains("Payload.file")
+                || hint.contains("runtime handle")
+                || hint.contains("not Send")
+        }),
+        "help={:?}, diag={diag:#?}",
+        diag.help
+    );
+}
+
+#[test]
+fn unit_std_concurrency_send_rejects_non_send_payload() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.concurrent;
+import std.fs;
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let pair: (Sender[FileHandle], Receiver[FileHandle]) = buffered_channel(1);
+    let tx = pair.0;
+    let _sent = send(tx, FileHandle { handle: 2 });
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1258" && d.message.contains("Send")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_std_env_cwd_requires_fs_effect() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();

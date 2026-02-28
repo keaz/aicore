@@ -3933,31 +3933,48 @@ impl<'a> Checker<'a> {
                             continue;
                         }
                         for bound_trait in bounds {
-                            let implemented = self
-                                .resolution
-                                .trait_impls
-                                .get(bound_trait)
-                                .map(|impls| impls.contains(bound_ty))
-                                .unwrap_or(false);
+                            let marker_failure =
+                                self.marker_trait_failure_reason(bound_trait, bound_ty);
+                            let implemented = if Self::is_auto_marker_trait(bound_trait) {
+                                marker_failure.is_none()
+                            } else {
+                                self.trait_is_implemented_for(bound_trait, bound_ty)
+                            };
                             if !implemented {
-                                self.diagnostics.push(
-                                    Diagnostic::error(
-                                        "E1258",
-                                        format!(
-                                            "type '{}' does not satisfy trait bound '{}: {}'",
-                                            bound_ty, generic_name, bound_trait
-                                        ),
-                                        self.file,
-                                        expr.span,
-                                    )
-                                    .with_help(format!(
+                                let mut diag = Diagnostic::error(
+                                    "E1258",
+                                    format!(
+                                        "type '{}' does not satisfy trait bound '{}: {}'",
+                                        bound_ty, generic_name, bound_trait
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                );
+                                if Self::is_auto_marker_trait(bound_trait) {
+                                    let reason = marker_failure.unwrap_or_else(|| {
+                                        format!("type '{}' is not {}", bound_ty, bound_trait)
+                                    });
+                                    diag = diag.with_help(format!(
+                                        "{}; use a {}-safe type or move only {} values across concurrency boundaries",
+                                        reason, bound_trait, bound_trait
+                                    ));
+                                } else {
+                                    diag = diag.with_help(format!(
                                         "add `impl {}[{}];` or use a type that implements '{}'",
                                         bound_trait, bound_ty, bound_trait
-                                    )),
-                                );
+                                    ));
+                                }
+                                self.diagnostics.push(diag);
                             }
                         }
                     }
+                    self.enforce_std_concurrency_send_bounds(
+                        resolved_module.as_deref(),
+                        &resolved_name,
+                        &sig,
+                        &generic_bindings,
+                        expr.span,
+                    );
 
                     let instantiated_params = sig
                         .params
@@ -6657,13 +6674,257 @@ impl<'a> Checker<'a> {
     fn find_enum(&self, ty: &str) -> Option<&EnumInfo> {
         let normalized = self.normalize_type(ty);
         let base = base_type_name(&normalized);
-        self.resolution.enums.get(base)
+        if let Some(info) = self.resolution.enums.get(base) {
+            return Some(info);
+        }
+        self.resolution.enums.get(Self::unqualified_name(base))
     }
 
     fn find_struct(&self, ty: &str) -> Option<&StructInfo> {
         let normalized = self.normalize_type(ty);
         let base = base_type_name(&normalized);
-        self.resolution.structs.get(base)
+        if let Some(info) = self.resolution.structs.get(base) {
+            return Some(info);
+        }
+        self.resolution.structs.get(Self::unqualified_name(base))
+    }
+
+    fn is_auto_marker_trait(bound_trait: &str) -> bool {
+        matches!(Self::unqualified_name(bound_trait), "Send" | "Sync")
+    }
+
+    fn unqualified_name(name: &str) -> &str {
+        name.rsplit('.').next().unwrap_or(name)
+    }
+
+    fn trait_is_implemented_for(&self, bound_trait: &str, bound_ty: &str) -> bool {
+        if self
+            .resolution
+            .trait_impls
+            .get(bound_trait)
+            .map(|impls| impls.contains(bound_ty))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        let short_trait = Self::unqualified_name(bound_trait);
+        short_trait != bound_trait
+            && self
+                .resolution
+                .trait_impls
+                .get(short_trait)
+                .map(|impls| impls.contains(bound_ty))
+                .unwrap_or(false)
+    }
+
+    fn enforce_std_concurrency_send_bounds(
+        &mut self,
+        resolved_module: Option<&str>,
+        resolved_name: &str,
+        sig: &FnSig,
+        generic_bindings: &BTreeMap<String, String>,
+        span: crate::span::Span,
+    ) {
+        if resolved_module != Some("std.concurrent") {
+            return;
+        }
+        if !matches!(
+            resolved_name,
+            "send" | "try_send" | "spawn" | "spawn_named" | "scope_spawn"
+        ) {
+            return;
+        }
+
+        let Some(generic_name) = sig.generic_params.first() else {
+            return;
+        };
+        let Some(bound_ty) = generic_bindings.get(generic_name) else {
+            return;
+        };
+        if contains_unresolved_type(bound_ty) || contains_symbolic_generic_type(bound_ty) {
+            return;
+        }
+        if sig
+            .generic_bounds
+            .get(generic_name)
+            .map(|bounds| {
+                bounds.iter().any(|bound_trait| {
+                    Self::is_auto_marker_trait(bound_trait)
+                        && Self::unqualified_name(bound_trait) == "Send"
+                })
+            })
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        let Some(reason) = self.marker_trait_failure_reason("Send", bound_ty) else {
+            return;
+        };
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1258",
+                format!(
+                    "type '{}' does not satisfy trait bound '{}: Send'",
+                    bound_ty, generic_name
+                ),
+                self.file,
+                span,
+            )
+            .with_help(format!(
+                "{}; use a Send-safe type or move only Send values across concurrency boundaries",
+                reason
+            )),
+        );
+    }
+
+    fn marker_trait_failure_reason(&self, bound_trait: &str, ty: &str) -> Option<String> {
+        if !Self::is_auto_marker_trait(bound_trait) {
+            return None;
+        }
+        let mut visiting = BTreeSet::new();
+        self.marker_trait_failure_reason_inner(bound_trait, ty, &mut visiting)
+    }
+
+    fn marker_trait_failure_reason_inner(
+        &self,
+        bound_trait: &str,
+        ty: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> Option<String> {
+        let normalized = self.normalize_type(ty);
+        if contains_unresolved_type(&normalized) || contains_symbolic_generic_type(&normalized) {
+            return None;
+        }
+
+        let visit_key = format!("{bound_trait}:{normalized}");
+        if !visiting.insert(visit_key.clone()) {
+            return None;
+        }
+
+        let outcome = (|| {
+            let base = base_type_name(&normalized);
+            let base_name = Self::unqualified_name(base);
+            let marker_name = Self::unqualified_name(bound_trait);
+
+            if matches!(
+                base_name,
+                "Int" | "Float" | "Bool" | "Char" | "String" | "()"
+            ) {
+                return None;
+            }
+
+            if matches!(
+                base_name,
+                "Mutex"
+                    | "RwLock"
+                    | "Arc"
+                    | "Sender"
+                    | "Receiver"
+                    | "Task"
+                    | "Scope"
+                    | "IntChannel"
+                    | "IntMutex"
+                    | "IntRwLock"
+            ) {
+                // Synchronization primitives are explicitly thread-safe wrappers.
+                return None;
+            }
+
+            if matches!(base_name, "Fn" | "Async") {
+                return Some(format!("type '{}' is not {}", normalized, marker_name));
+            }
+
+            if matches!(
+                base_name,
+                "FileHandle"
+                    | "TcpReader"
+                    | "TcpListener"
+                    | "TcpConnection"
+                    | "ProcessHandle"
+                    | "AsyncIntOp"
+                    | "AsyncStringOp"
+                    | "ByteBuffer"
+            ) {
+                return Some(format!(
+                    "type '{}' is a runtime handle and is not {}",
+                    normalized, marker_name
+                ));
+            }
+
+            if let Some(args) = extract_generic_args(&normalized) {
+                if !matches!(base_name, "Mutex" | "RwLock" | "Arc") {
+                    for (idx, arg) in args.iter().enumerate() {
+                        if let Some(reason) =
+                            self.marker_trait_failure_reason_inner(bound_trait, arg, visiting)
+                        {
+                            return Some(format!(
+                                "type argument {} ('{}') of '{}' is not {}: {}",
+                                idx + 1,
+                                arg,
+                                normalized,
+                                marker_name,
+                                reason
+                            ));
+                        }
+                    }
+                }
+            }
+
+            if let Some(info) = self.find_struct(&normalized) {
+                let bindings =
+                    bindings_from_applied_type(&normalized, &info.generics).unwrap_or_default();
+                let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                for (field_name, field_ty_id) in &info.fields {
+                    let raw_field_ty = self
+                        .types
+                        .get(field_ty_id)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string());
+                    let field_ty = substitute_type_vars(&raw_field_ty, &bindings, &generic_set);
+                    if let Some(reason) =
+                        self.marker_trait_failure_reason_inner(bound_trait, &field_ty, visiting)
+                    {
+                        return Some(format!(
+                            "field '{}.{}' has non-{} type '{}': {}",
+                            base_name, field_name, marker_name, field_ty, reason
+                        ));
+                    }
+                }
+                return None;
+            }
+
+            if let Some(info) = self.find_enum(&normalized) {
+                let bindings =
+                    bindings_from_applied_type(&normalized, &info.generics).unwrap_or_default();
+                let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                for (variant_name, payload_id) in &info.variants {
+                    let Some(payload_id) = payload_id else {
+                        continue;
+                    };
+                    let raw_payload_ty = self
+                        .types
+                        .get(payload_id)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string());
+                    let payload_ty = substitute_type_vars(&raw_payload_ty, &bindings, &generic_set);
+                    if let Some(reason) =
+                        self.marker_trait_failure_reason_inner(bound_trait, &payload_ty, visiting)
+                    {
+                        return Some(format!(
+                            "variant '{}.{}' has non-{} payload type '{}': {}",
+                            base_name, variant_name, marker_name, payload_ty, reason
+                        ));
+                    }
+                }
+                return None;
+            }
+
+            None
+        })();
+
+        visiting.remove(&visit_key);
+        outcome
     }
 
     fn normalize_type(&self, ty: &str) -> String {
@@ -8194,6 +8455,97 @@ fn main(x: Bool, y: Bool) -> Int {
                 .any(|hint| hint.contains("&&") || hint.contains("||")),
             "help={:?}, diag={diag:#?}",
             diag.help
+        );
+    }
+
+    #[test]
+    fn spawn_requires_send_bound_for_payload_type() {
+        let src = r#"
+trait Send[T];
+
+struct Task[T] {
+    handle: Int,
+}
+
+struct FileHandle {
+    handle: Int,
+}
+
+struct Payload {
+    file: FileHandle,
+}
+
+fn spawn[T: Send](f: Fn() -> T) -> Task[T] {
+    let _unused = f;
+    Task { handle: 0 }
+}
+
+fn main() -> Int {
+    let payload = Payload { file: FileHandle { handle: 7 } };
+    let _task: Task[Payload] = spawn(|| -> Payload { payload });
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E1258" && d.message.contains("Send"))
+            .expect("missing Send-bound diagnostic");
+        assert!(
+            diag.help.iter().any(|hint| {
+                hint.contains("Payload.file")
+                    || hint.contains("runtime handle")
+                    || hint.contains("not Send")
+            }),
+            "help={:?}, diag={diag:#?}",
+            diag.help
+        );
+    }
+
+    #[test]
+    fn channel_send_requires_send_bound_for_payload_type() {
+        let src = r#"
+trait Send[T];
+
+struct Sender[T] {
+    handle: Int,
+}
+
+struct FileHandle {
+    handle: Int,
+}
+
+fn send[T: Send](tx: Sender[T], value: T) -> Int {
+    let _tx = tx;
+    let _value = value;
+    1
+}
+
+fn main() -> Int {
+    let tx: Sender[FileHandle] = Sender { handle: 1 };
+    let file = FileHandle { handle: 2 };
+    let _sent = send(tx, file);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1258" && d.message.contains("Send")),
+            "diags={:#?}",
+            out.diagnostics
         );
     }
 }

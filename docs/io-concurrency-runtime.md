@@ -17,6 +17,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
 - Generic synchronization: `Mutex[T]`, `MutexGuard[T]`, `RwLock[T]`
 - Legacy synchronization compatibility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
+- Compile-time thread-safety checks: marker traits `Send[T]` / `Sync[T]` with `Send` enforcement on cross-thread payload APIs
 
 All APIs are `effects { concurrency }`.
 
@@ -44,6 +45,9 @@ enum ChannelError {
     Timeout,
 }
 
+trait Send[T];
+trait Sync[T];
+
 struct Task[T] { handle: Int }
 struct Scope { handle: Int }
 struct Sender[T] { handle: Int }
@@ -60,6 +64,9 @@ struct IntRwLock { handle: Int }
 ```
 
 ## API
+
+Typechecker compatibility rule: `std.concurrent.spawn`, `spawn_named`, `scope_spawn`, `send`, and `try_send`
+enforce that payload type `T` is `Send` at compile time, while keeping stable public signatures.
 
 ```aic
 fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency }

@@ -22,6 +22,9 @@ enum ChannelError {
     Timeout,
 }
 
+trait Send[T];
+trait Sync[T];
+
 struct Task[T] {
     handle: Int,
 }
