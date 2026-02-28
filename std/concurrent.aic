@@ -66,6 +66,10 @@ struct AtomicBool {
     handle: Int,
 }
 
+struct ThreadLocal[T] {
+    handle: Int,
+}
+
 struct Mutex[T] {
     handle: Int,
 }
@@ -144,6 +148,9 @@ intrinsic fn aic_conc_atomic_bool_intrinsic(initial: Bool) -> Result[Int, Concur
 intrinsic fn aic_conc_atomic_load_bool_intrinsic(handle: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_atomic_store_bool_intrinsic(handle: Int, value: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_atomic_swap_bool_intrinsic(handle: Int, desired: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_tl_new_intrinsic[T](init: Fn() -> T) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_tl_get_intrinsic[T](handle: Int) -> Result[T, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_tl_set_intrinsic[T](handle: Int, value: T) -> Result[Bool, ConcurrencyError] effects { concurrency };
 
 fn default_blocking_timeout_ms() -> Int {
     2147483647
@@ -769,6 +776,26 @@ fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency 
         Ok(value) => value,
         Err(_) => false,
     }
+}
+
+fn thread_local[T](init: Fn() -> T) -> ThreadLocal[T] effects { concurrency } {
+    let created: Result[Int, ConcurrencyError] = aic_conc_tl_new_intrinsic(init);
+    match created {
+        Ok(handle) => ThreadLocal { handle: handle },
+        Err(_) => ThreadLocal { handle: 0 },
+    }
+}
+
+fn tl_get[T](tl: ThreadLocal[T]) -> T effects { concurrency } {
+    let fetched: Result[T, ConcurrencyError] = aic_conc_tl_get_intrinsic(tl.handle);
+    match fetched {
+        Ok(value) => value,
+        Err(_) => tl_get(tl),
+    }
+}
+
+fn tl_set[T](tl: ThreadLocal[T], value: T) -> () effects { concurrency } {
+    let _out: Result[Bool, ConcurrencyError] = aic_conc_tl_set_intrinsic(tl.handle, value);
 }
 
 fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency } {

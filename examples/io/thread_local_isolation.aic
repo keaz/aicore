@@ -1,0 +1,38 @@
+import std.concurrent;
+import std.io;
+
+fn worker(tl: ThreadLocal[Int], value: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let _initial = tl_get(tl);
+    tl_set(tl, value);
+    tl_get(tl)
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let init_runs = atomic_int(0);
+    let tl = thread_local(|| -> Int {
+        let _old = atomic_add(init_runs, 1);
+        5
+    });
+
+    let t1: Task[Int] = spawn_named("tl-example-1", || -> Int { worker(tl, 11) });
+    let t2: Task[Int] = spawn_named("tl-example-2", || -> Int { worker(tl, 22) });
+
+    let main_first = tl_get(tl);
+    let main_second = tl_get(tl);
+    let v1 = match join_value(t1) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let v2 = match join_value(t2) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let runs = atomic_load(init_runs);
+
+    if v1 == 11 && v2 == 22 && main_first == 5 && main_second == 5 && runs == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

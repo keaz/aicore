@@ -4738,6 +4738,99 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_thread_local_isolates_values_between_threads() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn worker_set_get(tl: ThreadLocal[Int], value: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let before = tl_get(tl);
+    tl_set(tl, value);
+    let after = tl_get(tl);
+    before * 100 + after
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let tl = thread_local(|| -> Int { 7 });
+
+    let t1: Task[Int] = spawn_named("tl-1", || -> Int { worker_set_get(tl, 11) });
+    let t2: Task[Int] = spawn_named("tl-2", || -> Int { worker_set_get(tl, 22) });
+
+    let main_before = tl_get(tl);
+    let r1 = match join_value(t1) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let r2 = match join_value(t2) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let main_after = tl_get(tl);
+
+    if r1 == 711 && r2 == 722 && main_before == 7 && main_after == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_thread_local_init_is_lazy_per_thread() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn read_twice(tl: ThreadLocal[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    let first = tl_get(tl);
+    let second = tl_get(tl);
+    if first == 100 && second == 100 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let init_runs = atomic_int(0);
+    let tl = thread_local(|| -> Int {
+        let _old = atomic_add(init_runs, 1);
+        100
+    });
+
+    let before = atomic_load(init_runs);
+    let t1: Task[Int] = spawn_named("tl-lazy-1", || -> Int { read_twice(tl) });
+    let t2: Task[Int] = spawn_named("tl-lazy-2", || -> Int { read_twice(tl) });
+
+    let main_first = tl_get(tl);
+    let main_second = tl_get(tl);
+    let j1 = match join_value(t1) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let j2 = match join_value(t2) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let after = atomic_load(init_runs);
+
+    if before == 0 && main_first == 100 && main_second == 100 && j1 == 1 && j2 == 1 && after == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_spawn_join_generic_closure_capture_is_stable() {
     let src = r#"
 import std.concurrent;

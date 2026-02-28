@@ -414,6 +414,30 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_tl_new_intrinsic",
+        runtime_symbol: "aic_rt_conc_tl_new",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Fn[T]"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_tl_get_intrinsic",
+        runtime_symbol: "aic_rt_conc_tl_get",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[T, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_tl_set_intrinsic",
+        runtime_symbol: "aic_rt_conc_tl_set",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "T"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_proc_spawn_intrinsic",
         runtime_symbol: "aic_rt_proc_spawn",
         signatures: &[IntrinsicSignatureShape {
@@ -2640,6 +2664,9 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_conc_atomic_bool_store(i64, i64)\n");
         text.push_str("declare i64 @aic_rt_conc_atomic_bool_swap(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_atomic_bool_close(i64)\n\n");
+        text.push_str("declare i64 @aic_rt_conc_tl_new(i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_tl_get(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_tl_set(i64, i8*, i64)\n\n");
         text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
@@ -5028,7 +5055,9 @@ impl<'a> Generator<'a> {
         if let Some(result) = self.gen_rand_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
-        if let Some(result) = self.gen_concurrency_builtin_call(builtin_name, args, span, fctx) {
+        if let Some(result) =
+            self.gen_concurrency_builtin_call(builtin_name, args, span, expected_ty, fctx)
+        {
             return result;
         }
         if let Some(result) = self.gen_fs_builtin_call(builtin_name, args, span, fctx) {
@@ -8299,6 +8328,7 @@ impl<'a> Generator<'a> {
         name: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
+        expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
         let canonical = match name {
@@ -8352,6 +8382,9 @@ impl<'a> Generator<'a> {
             "aic_conc_atomic_load_bool_intrinsic" => "atomic_load_bool",
             "aic_conc_atomic_store_bool_intrinsic" => "atomic_store_bool",
             "aic_conc_atomic_swap_bool_intrinsic" => "atomic_swap_bool",
+            "aic_conc_tl_new_intrinsic" => "thread_local_new",
+            "aic_conc_tl_get_intrinsic" => "thread_local_get",
+            "aic_conc_tl_set_intrinsic" => "thread_local_set",
             _ => return None,
         };
 
@@ -8689,6 +8722,19 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_concurrency_atomic_bool_swap_call(name, args, span, fctx))
+            }
+            "thread_local_new" => {
+                Some(self.gen_concurrency_thread_local_new_call(name, args, span, fctx))
+            }
+            "thread_local_get" => Some(self.gen_concurrency_thread_local_get_call(
+                name,
+                args,
+                span,
+                expected_ty,
+                fctx,
+            )),
+            "thread_local_set" => {
+                Some(self.gen_concurrency_thread_local_set_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -10907,7 +10953,7 @@ impl<'a> Generator<'a> {
 
     fn gen_concurrency_arc_new_call(
         &mut self,
-        name: &str,
+        _name: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -10944,7 +10990,7 @@ impl<'a> Generator<'a> {
         let handle = self.new_temp();
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
-        let result_ty = self.concurrency_result_ty(name, span)?;
+        let result_ty = self.parse_type_repr("Result[Int, ConcurrencyError]", span)?;
         let ok_payload = Value {
             ty: LType::Int,
             repr: Some(handle),
@@ -11609,6 +11655,333 @@ impl<'a> Generator<'a> {
         let ok_payload = Value {
             ty: LType::Bool,
             repr: Some(out_old),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_thread_local_new_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_tl_new_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let init_fn = self.gen_expr(&args[0], fctx)?;
+        let LType::Fn(fn_layout) = init_fn.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_tl_new_intrinsic expects Fn() -> T",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if !fn_layout.params.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_tl_new_intrinsic expects Fn() -> T",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+
+        let fn_pair_ty = llvm_type(&LType::Fn(fn_layout.clone()));
+        let fn_repr = init_fn
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&init_fn.ty));
+        let pair_tmp = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", pair_tmp, fn_pair_ty));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, fn_repr, fn_pair_ty, pair_tmp
+        ));
+        let pair_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            pair_size_ptr, fn_pair_ty, fn_pair_ty
+        ));
+        let pair_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            pair_size, fn_pair_ty, pair_size_ptr
+        ));
+        let pair_heap = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            pair_heap, pair_size
+        ));
+        let pair_heap_typed = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            pair_heap_typed, pair_heap, fn_pair_ty
+        ));
+        let pair_loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            pair_loaded, fn_pair_ty, fn_pair_ty, pair_tmp
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            fn_pair_ty, pair_loaded, fn_pair_ty, pair_heap_typed
+        ));
+
+        let helper_name = format!("__aic_tl_init_entry_{}", self.closure_counter);
+        self.closure_counter += 1;
+        self.emit_concurrency_spawn_entry_helper(&helper_name, &fn_layout);
+
+        let entry_fn_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i64 (i8*)* @{} to i64",
+            entry_fn_raw, helper_name
+        ));
+        let entry_env_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint i8* {} to i64",
+            entry_env_raw, pair_heap
+        ));
+        let init_ret_ty = fn_layout.ret.as_ref().clone();
+        let init_ret_llvm = llvm_type(&init_ret_ty);
+        let init_ret_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            init_ret_size_ptr, init_ret_llvm, init_ret_llvm
+        ));
+        let init_ret_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            init_ret_size, init_ret_llvm, init_ret_size_ptr
+        ));
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_tl_new(i64 {}, i64 {}, i64 {}, i64* {})",
+            err, entry_fn_raw, entry_env_raw, init_ret_size, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.parse_type_repr("Result[Int, ConcurrencyError]", span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_thread_local_get_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_tl_get_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_tl_get_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_value_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_value_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_tl_get(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_value_slot
+        ));
+        let result_ty = if let Some(expected) = expected_ty {
+            expected.clone()
+        } else if let Some(sig) = self.fn_sigs.get(name) {
+            sig.ret.clone()
+        } else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+
+        let ok_payload = if ok_ty == LType::Unit {
+            Value {
+                ty: LType::Unit,
+                repr: None,
+            }
+        } else {
+            let out_value = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load i64, i64* {}",
+                out_value, out_value_slot
+            ));
+            let ok_llvm = llvm_type(&ok_ty);
+            let ok_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", ok_stack, ok_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm,
+                default_value(&ok_ty),
+                ok_llvm,
+                ok_stack
+            ));
+
+            let has_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp ne i64 {}, 0", has_ptr, out_value));
+            let load_label = self.new_label("conc_tl_get_load");
+            let cont_label = self.new_label("conc_tl_get_cont");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                has_ptr, load_label, cont_label
+            ));
+            fctx.lines.push(format!("{}:", load_label));
+            let raw_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = inttoptr i64 {} to i8*", raw_ptr, out_value));
+            let typed_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* {} to {}*",
+                typed_ptr, raw_ptr, ok_llvm
+            ));
+            let loaded = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded, ok_llvm, ok_llvm, typed_ptr
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm, loaded, ok_llvm, ok_stack
+            ));
+            fctx.lines.push(format!("  br label %{}", cont_label));
+            fctx.lines.push(format!("{}:", cont_label));
+            let final_ok = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                final_ok, ok_llvm, ok_llvm, ok_stack
+            ));
+            Value {
+                ty: ok_ty,
+                repr: Some(final_ok),
+            }
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_thread_local_set_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_tl_set_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_tl_set_intrinsic expects (Int, T)",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, size) = if value.ty == LType::Unit {
+            ("null".to_string(), "0".to_string())
+        } else {
+            let value_llvm = llvm_type(&value.ty);
+            let value_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", value_stack, value_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                value_llvm,
+                value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&value.ty)),
+                value_llvm,
+                value_stack
+            ));
+            let ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast {}* {} to i8*",
+                ptr, value_llvm, value_stack
+            ));
+            let size_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* null, i32 1",
+                size_ptr, value_llvm, value_llvm
+            ));
+            let size = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = ptrtoint {}* {} to i64",
+                size, value_llvm, size_ptr
+            ));
+            (ptr, size)
+        };
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_tl_set(i64 {}, i8* {}, i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            ptr,
+            size
+        ));
+        let result_ty = self.parse_type_repr("Result[Bool, ConcurrencyError]", span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
         };
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -33511,6 +33884,9 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("conc", "atomic_load_bool") => Some("aic_conc_atomic_load_bool_intrinsic"),
         ("conc", "atomic_store_bool") => Some("aic_conc_atomic_store_bool_intrinsic"),
         ("conc", "atomic_swap_bool") => Some("aic_conc_atomic_swap_bool_intrinsic"),
+        ("conc", "thread_local") => Some("aic_conc_tl_new_intrinsic"),
+        ("conc", "tl_get") => Some("aic_conc_tl_get_intrinsic"),
+        ("conc", "tl_set") => Some("aic_conc_tl_set_intrinsic"),
         ("fs", "exists") => Some("aic_fs_exists_intrinsic"),
         ("fs", "read_text") => Some("aic_fs_read_text_intrinsic"),
         ("fs", "write_text") => Some("aic_fs_write_text_intrinsic"),
@@ -45874,6 +46250,31 @@ long aic_rt_conc_atomic_bool_close(long handle) {
     (void)handle;
     return 7;
 }
+
+long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* out_handle) {
+    (void)entry_fn;
+    (void)entry_env;
+    (void)value_size;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
+    (void)handle;
+    if (out_value_raw != NULL) {
+        *out_value_raw = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size) {
+    (void)handle;
+    (void)value_ptr;
+    (void)value_size;
+    return 7;
+}
 #else
 #define AIC_RT_CONC_TASK_CAP 128
 #define AIC_RT_CONC_CHANNEL_CAP 128
@@ -45884,6 +46285,7 @@ long aic_rt_conc_atomic_bool_close(long handle) {
 #define AIC_RT_CONC_ARC_CAP 4096
 #define AIC_RT_CONC_ATOMIC_INT_CAP 4096
 #define AIC_RT_CONC_ATOMIC_BOOL_CAP 4096
+#define AIC_RT_CONC_TL_CAP 4096
 
 typedef long (*AicConcEntryFn)(void*);
 
@@ -45965,6 +46367,18 @@ typedef struct {
     atomic_int value;
 } AicConcAtomicBoolSlot;
 
+typedef struct {
+    atomic_int active;
+    long value_size;
+    AicConcEntryFn init_fn;
+    void* init_env;
+    pthread_key_t key;
+} AicConcThreadLocalSlot;
+
+typedef struct {
+    unsigned char* bytes;
+} AicConcThreadLocalValue;
+
 static AicConcTaskSlot aic_rt_conc_tasks[AIC_RT_CONC_TASK_CAP];
 static AicConcChannelSlot aic_rt_conc_channels[AIC_RT_CONC_CHANNEL_CAP];
 static AicConcMutexSlot aic_rt_conc_mutexes[AIC_RT_CONC_MUTEX_CAP];
@@ -45974,6 +46388,7 @@ static AicConcPayloadSlot aic_rt_conc_payloads[AIC_RT_CONC_PAYLOAD_CAP];
 static AicConcArcSlot aic_rt_conc_arcs[AIC_RT_CONC_ARC_CAP];
 static AicConcAtomicIntSlot aic_rt_conc_atomic_ints[AIC_RT_CONC_ATOMIC_INT_CAP];
 static AicConcAtomicBoolSlot aic_rt_conc_atomic_bools[AIC_RT_CONC_ATOMIC_BOOL_CAP];
+static AicConcThreadLocalSlot aic_rt_conc_tls[AIC_RT_CONC_TL_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -46174,6 +46589,90 @@ static AicConcAtomicBoolSlot* aic_rt_conc_get_atomic_bool(long handle) {
         return NULL;
     }
     return slot;
+}
+
+static AicConcThreadLocalSlot* aic_rt_conc_get_tl(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_TL_CAP) {
+        return NULL;
+    }
+    AicConcThreadLocalSlot* slot = &aic_rt_conc_tls[handle - 1];
+    if (!atomic_load_explicit(&slot->active, memory_order_seq_cst)) {
+        return NULL;
+    }
+    return slot;
+}
+
+static void aic_rt_conc_tl_value_destroy(void* raw_value) {
+    AicConcThreadLocalValue* value = (AicConcThreadLocalValue*)raw_value;
+    if (value == NULL) {
+        return;
+    }
+    free(value->bytes);
+    value->bytes = NULL;
+    free(value);
+}
+
+static long aic_rt_conc_tl_set_current(
+    AicConcThreadLocalSlot* slot,
+    const unsigned char* value_ptr,
+    long value_size
+) {
+    if (slot == NULL || value_size < 0 || value_size != slot->value_size) {
+        return 4;
+    }
+    if (value_size > 0 && value_ptr == NULL) {
+        return 4;
+    }
+
+    AicConcThreadLocalValue* next =
+        (AicConcThreadLocalValue*)malloc(sizeof(AicConcThreadLocalValue));
+    if (next == NULL) {
+        return 7;
+    }
+    next->bytes = NULL;
+    if (value_size > 0) {
+        size_t size = (size_t)value_size;
+        unsigned char* copy = (unsigned char*)malloc(size);
+        if (copy == NULL) {
+            free(next);
+            return 7;
+        }
+        memcpy(copy, value_ptr, size);
+        next->bytes = copy;
+    }
+
+    AicConcThreadLocalValue* previous =
+        (AicConcThreadLocalValue*)pthread_getspecific(slot->key);
+    int set_rc = pthread_setspecific(slot->key, next);
+    if (set_rc != 0) {
+        free(next->bytes);
+        free(next);
+        return aic_rt_conc_map_errno(set_rc);
+    }
+    if (previous != NULL) {
+        aic_rt_conc_tl_value_destroy(previous);
+    }
+    return 0;
+}
+
+static long aic_rt_conc_tl_init_current(AicConcThreadLocalSlot* slot) {
+    if (slot == NULL || slot->init_fn == NULL) {
+        return 4;
+    }
+    long init_raw = slot->init_fn(slot->init_env);
+    if (slot->value_size == 0) {
+        if (init_raw != 0) {
+            free((void*)(intptr_t)init_raw);
+        }
+        return aic_rt_conc_tl_set_current(slot, NULL, 0);
+    }
+    if (init_raw == 0) {
+        return 7;
+    }
+    unsigned char* init_value = (unsigned char*)(intptr_t)init_raw;
+    long rc = aic_rt_conc_tl_set_current(slot, init_value, slot->value_size);
+    free(init_value);
+    return rc;
 }
 
 static long aic_rt_conc_payload_clone_internal(long payload_id, long* out_payload_id) {
@@ -48064,6 +48563,90 @@ long aic_rt_conc_atomic_bool_close(long handle) {
     }
     atomic_store_explicit(&slot->value, 0, memory_order_seq_cst);
     return 0;
+}
+
+long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (entry_fn == 0 || value_size < 0) {
+        return 4;
+    }
+
+    for (long i = 0; i < AIC_RT_CONC_TL_CAP; ++i) {
+        AicConcThreadLocalSlot* slot = &aic_rt_conc_tls[i];
+        int expected = 0;
+        if (!atomic_compare_exchange_strong_explicit(
+                &slot->active,
+                &expected,
+                1,
+                memory_order_seq_cst,
+                memory_order_seq_cst
+            )) {
+            continue;
+        }
+
+        slot->value_size = value_size;
+        slot->init_fn = (AicConcEntryFn)(intptr_t)entry_fn;
+        slot->init_env = (void*)(intptr_t)entry_env;
+        int key_rc = pthread_key_create(&slot->key, aic_rt_conc_tl_value_destroy);
+        if (key_rc != 0) {
+            slot->value_size = 0;
+            slot->init_fn = NULL;
+            slot->init_env = NULL;
+            atomic_store_explicit(&slot->active, 0, memory_order_seq_cst);
+            return aic_rt_conc_map_errno(key_rc);
+        }
+
+        if (out_handle != NULL) {
+            *out_handle = i + 1;
+        }
+        return 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
+    if (out_value_raw != NULL) {
+        *out_value_raw = 0;
+    }
+
+    AicConcThreadLocalSlot* slot = aic_rt_conc_get_tl(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    AicConcThreadLocalValue* value =
+        (AicConcThreadLocalValue*)pthread_getspecific(slot->key);
+    if (value == NULL) {
+        long init_rc = aic_rt_conc_tl_init_current(slot);
+        if (init_rc != 0) {
+            return init_rc;
+        }
+        value = (AicConcThreadLocalValue*)pthread_getspecific(slot->key);
+        if (value == NULL) {
+            return 7;
+        }
+    }
+    if (slot->value_size > 0 && value->bytes == NULL) {
+        return 7;
+    }
+    if (out_value_raw != NULL) {
+        if (slot->value_size > 0) {
+            *out_value_raw = (long)(intptr_t)value->bytes;
+        } else {
+            *out_value_raw = 0;
+        }
+    }
+    return 0;
+}
+
+long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size) {
+    AicConcThreadLocalSlot* slot = aic_rt_conc_get_tl(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    return aic_rt_conc_tl_set_current(slot, (const unsigned char*)value_ptr, value_size);
 }
 #endif
 
@@ -57378,6 +57961,15 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_conc_atomic_bool_swap(i64, i64, i64*)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_conc_tl_new(i64, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_tl_get(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_tl_set(i64, i8*, i64)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)"));
         assert!(output
             .llvm_ir
@@ -57660,6 +58252,13 @@ fn main() -> Int effects { io } {
             .contains("long aic_rt_conc_atomic_bool_store(long handle, long value)"));
         assert!(runtime_c_source().contains(
             "long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old)"
+        ));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* out_handle)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_tl_get(long handle, long* out_value_raw)"));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size)"
         ));
         assert!(runtime_c_source().contains("#include <stdatomic.h>"));
         assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->ref_count"));

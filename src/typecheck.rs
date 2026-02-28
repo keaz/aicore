@@ -6821,6 +6821,7 @@ impl<'a> Checker<'a> {
                     | "Arc"
                     | "AtomicInt"
                     | "AtomicBool"
+                    | "ThreadLocal"
                     | "Sender"
                     | "Receiver"
                     | "Task"
@@ -6855,7 +6856,7 @@ impl<'a> Checker<'a> {
             }
 
             if let Some(args) = extract_generic_args(&normalized) {
-                if !matches!(base_name, "Mutex" | "RwLock" | "Arc") {
+                if !matches!(base_name, "Mutex" | "RwLock" | "Arc" | "ThreadLocal") {
                     for (idx, arg) in args.iter().enumerate() {
                         if let Some(reason) =
                             self.marker_trait_failure_reason_inner(bound_trait, arg, visiting)

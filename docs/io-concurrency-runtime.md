@@ -18,6 +18,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Generic synchronization: `Mutex[T]`, `MutexGuard[T]`, `RwLock[T]`
 - Shared ownership: `Arc[T]` with atomic reference counting
 - Lock-free primitives: `AtomicInt`, `AtomicBool` with sequentially-consistent operations
+- Per-thread state: `ThreadLocal[T]` with lazy initialization per thread
 - Legacy synchronization compatibility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 - Compile-time thread-safety checks: marker traits `Send[T]` / `Sync[T]` with `Send` enforcement on cross-thread payload APIs
 
@@ -62,6 +63,7 @@ struct IntMutex { handle: Int }
 struct Arc[T] { handle: Int }
 struct AtomicInt { handle: Int }
 struct AtomicBool { handle: Int }
+struct ThreadLocal[T] { handle: Int }
 struct Mutex[T] { handle: Int }
 struct MutexGuard[T] { handle: Int, guard_kind: Int, value: T }
 struct RwLock[T] { handle: Int }
@@ -132,6 +134,9 @@ fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency }
 fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency }
 fn atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency }
 fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency }
+fn thread_local[T](init: Fn() -> T) -> ThreadLocal[T] effects { concurrency }
+fn tl_get[T](tl: ThreadLocal[T]) -> T effects { concurrency }
+fn tl_set[T](tl: ThreadLocal[T], value: T) -> () effects { concurrency }
 
 fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency }
 fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
@@ -200,6 +205,32 @@ while i < 10 {
 };
 // counter == 10000 after joins
 ```
+
+## Thread-Local Usage Pattern
+
+Use `ThreadLocal[T]` when each thread should own an independent copy of state without lock contention:
+
+```aic
+import std.concurrent;
+
+let init_runs = atomic_int(0);
+let tl = thread_local(|| -> Int {
+    let _old = atomic_add(init_runs, 1);
+    5
+});
+
+let _task: Task[Int] = spawn(|| -> Int {
+    tl_set(tl, 11);
+    tl_get(tl) // 11 in this worker thread
+});
+
+let main_value = tl_get(tl); // 5 in main thread
+```
+
+Key guarantees:
+- Values are isolated per thread.
+- Initialization is lazy: the `init` closure runs on first `tl_get` per thread.
+- `tl_get`/`tl_set` avoid cross-thread locking because each thread owns its local value.
 
 ## Migration Strategy (Legacy -> Generic)
 
@@ -306,6 +337,10 @@ Sunset policy:
   - `atomic_cas` lowers to compare-and-swap (`compare_exchange`) with sequential consistency.
   - `atomic_*_bool` operations map to sequentially-consistent load/store/swap on bool slots.
   - Atomic handle allocation uses lock-free slot activation (`compare_exchange` on active flags).
+- Thread-local storage:
+  - `thread_local(init)` registers an init closure and value layout for per-thread storage.
+  - `tl_get` lazily initializes the current thread value on first access, then returns that thread's copy.
+  - `tl_set` updates only the current thread's value and does not affect other threads.
 
 ## Error-Code Mapping
 
@@ -379,6 +414,9 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_atomic_bool_load`
 - `aic_rt_conc_atomic_bool_store`
 - `aic_rt_conc_atomic_bool_swap`
+- `aic_rt_conc_tl_new`
+- `aic_rt_conc_tl_get`
+- `aic_rt_conc_tl_set`
 - `aic_rt_async_poll_int`
 - `aic_rt_async_poll_string`
 
@@ -390,12 +428,57 @@ Codegen lowers to these runtime symbols:
   - Existing concurrency APIs (including generic spawn/join/scoped APIs, Arc APIs, and atomic APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
   - Channel try/select APIs return deterministic `ChannelError::Closed`.
 
+## Pattern Examples
+
+Use these curated examples as the migration and implementation baseline for agents:
+
+- Producer-consumer:
+  - `examples/io/worker_pool.aic`
+  - `examples/io/generic_channel_types.aic`
+- Shared state:
+  - `examples/io/mutex_rwlock_shared_state.aic`
+  - `examples/io/arc_mutex_shared_ownership.aic`
+  - `examples/io/thread_local_isolation.aic`
+- Cancellation and select:
+  - `examples/io/structured_concurrency.aic`
+  - `examples/io/select_multi_channel.aic`
+- Migration from legacy Int-only channel APIs:
+  - `examples/io/channel_migration_compat.aic`
+- Misuse diagnostics (expected to fail under `aic check`):
+  - `examples/verify/generic_channel_protocol_invalid.aic` (resource protocol misuse; `E2006`)
+
+CI integration:
+- `scripts/ci/examples.sh check` validates positive examples plus negative diagnostics.
+- `scripts/ci/examples.sh run` validates executable behavior for runnable examples.
+- `tests/e8_concurrency_stress_tests.rs` provides deterministic stress/replay coverage for concurrency runtime behavior.
+
+## Agent Troubleshooting
+
+Common agent-facing failures and fixes:
+
+- `E1258` (`Send` bound failure):
+  - Cause: sending/spawning non-`Send` payloads (for example runtime handles) across threads.
+  - Fix: move only `Send` values across thread boundaries; wrap shared mutable state as `Arc[Mutex[T]]` or pass serializable data.
+- `E2006` (resource protocol violation):
+  - Cause: illegal operation order (for example using a closed channel handle).
+  - Fix: enforce lifecycle protocol in control flow; prefer wrappers that encode close/join ordering.
+- `Err(Timeout)` on blocking channel/lock operations:
+  - Cause: insufficient capacity, missing consumer, or lock contention beyond timeout budget.
+  - Fix: increase channel capacity, ensure consumer/task liveness, or use non-blocking `try_*` APIs with retry policy.
+- `Err(Closed)` during send/recv/select:
+  - Cause: peer closed channel or selected handle already terminated.
+  - Fix: treat `Closed` as terminal and unwind producer/consumer loops cleanly.
+- `Err(NotFound)` for handles:
+  - Cause: invalid or stale runtime handle (often from fallback/default handle values after creation failure).
+  - Fix: guard creation results and avoid using wrappers when underlying runtime creation failed.
+
 ## Example
 
 - `examples/io/worker_pool.aic`
 - `examples/io/mutex_rwlock_shared_state.aic`
 - `examples/io/arc_mutex_shared_ownership.aic`
 - `examples/io/atomic_counter_vs_mutex.aic`
+- `examples/io/thread_local_isolation.aic`
 - `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`
