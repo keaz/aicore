@@ -1,0 +1,42 @@
+import std.io;
+import std.env;
+import std.map;
+import std.string;
+
+fn stress_headers(limit: Int, value: String) -> Int effects { env } capabilities { env } {
+    let key = "x-request-id";
+    let mut headers: Map[String, String] = map.new_map();
+    headers = map.insert(headers, key, value);
+
+    let mut i = 0;
+    while i < limit {
+        headers = map.insert(headers, key, value);
+        i = i + 1;
+    };
+
+    match map.get(headers, key) {
+        Some(v) => len(v),
+        None => 0,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let limit = match env.get("AIC_SSO_BENCH_ITERS") {
+        Ok(raw) => match parse_int(raw) {
+            Ok(value) => if value > 0 { value } else { 5000 },
+            Err(_) => 5000,
+        },
+        Err(_) => 5000,
+    };
+    let short_value = "sssssssssssssssssssssss";
+    let long_value = "llllllllllllllllllllllll";
+    let short_len = stress_headers(limit, short_value);
+    let long_len = stress_headers(limit, long_value);
+
+    if short_len == 23 && long_len == 24 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

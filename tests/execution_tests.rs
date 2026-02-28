@@ -3179,6 +3179,67 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
 }
 
 #[test]
+fn exec_map_string_sso_boundary_behavior_matches_with_and_without_sso() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.string;
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let short_key = "sssssssssssssssssssssss";
+    let long_key = "llllllllllllllllllllllll";
+    let short_value = "vvvvvvvvvvvvvvvvvvvvvvv";
+    let long_value = "wwwwwwwwwwwwwwwwwwwwwwww";
+
+    let mut m: Map[String, String] = map.new_map();
+    m = map.insert(m, short_key, short_value);
+    m = map.insert(m, long_key, long_value);
+
+    let mut i = 0;
+    while i < 200 {
+        m = map.insert(m, short_key, short_value);
+        m = map.insert(m, long_key, long_value);
+        i = i + 1;
+    };
+
+    let short_len = match map.get(m, short_key) {
+        Some(v) => len(v),
+        None => 0,
+    };
+    let long_len = match map.get(m, long_key) {
+        Some(v) => len(v),
+        None => 0,
+    };
+    let removed = map.remove(m, short_key);
+    let removed_ok = if map.contains_key(removed, short_key) { 0 } else { 1 };
+    let long_ok = if map.contains_key(removed, long_key) { 1 } else { 0 };
+    let size_ok = if map.size(removed) == 1 { 1 } else { 0 };
+
+    if short_len == 23 && long_len == 24 && removed_ok + long_ok + size_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    let (code_on, stdout_on, stderr_on) = compile_and_run(src);
+    assert_eq!(code_on, 0, "stderr={stderr_on}");
+    assert_eq!(stdout_on, "42\n");
+
+    let (code_off, stdout_off, stderr_off) = compile_and_run_with_setup_and_args_and_input_and_env(
+        src,
+        &[],
+        "",
+        &[("AIC_RT_DISABLE_MAP_SSO", "1")],
+        |_| {},
+    );
+    assert_eq!(code_off, 0, "stderr={stderr_off}");
+    assert_eq!(stdout_off, "42\n");
+}
+
+#[test]
 fn exec_map_string_int_ops_are_deterministic() {
     let src = r#"
 import std.io;

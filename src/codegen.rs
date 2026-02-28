@@ -34864,13 +34864,19 @@ typedef struct {
     long cap;
 } AicVec;
 
+#define AIC_RT_SSO_INLINE_MAX 23
+
 typedef struct {
     char* key_ptr;
     long key_len;
+    unsigned char key_inline;
+    char key_inline_buf[AIC_RT_SSO_INLINE_MAX + 1];
     long key_int;
     unsigned char key_bool;
     char* str_value_ptr;
     long str_value_len;
+    unsigned char str_value_inline;
+    char str_value_inline_buf[AIC_RT_SSO_INLINE_MAX + 1];
     long int_value;
 } AicMapEntryStorage;
 
@@ -41181,6 +41187,84 @@ static int aic_rt_map_valid_slice(const char* ptr, long len) {
     return len >= 0 && (len == 0 || ptr != NULL);
 }
 
+static const char* aic_rt_map_storage_ptr(
+    const char* heap_ptr,
+    unsigned char is_inline,
+    const char inline_buf[AIC_RT_SSO_INLINE_MAX + 1]
+) {
+    if (is_inline) {
+        return inline_buf;
+    }
+    return heap_ptr;
+}
+
+static int aic_rt_map_sso_enabled(void) {
+    const char* disable = getenv("AIC_RT_DISABLE_MAP_SSO");
+    if (disable == NULL || disable[0] == '\0') {
+        return 1;
+    }
+    if (strcmp(disable, "0") == 0 ||
+        strcmp(disable, "false") == 0 ||
+        strcmp(disable, "FALSE") == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static void aic_rt_map_string_storage_free(
+    char** io_ptr,
+    long* io_len,
+    unsigned char* io_inline,
+    char io_inline_buf[AIC_RT_SSO_INLINE_MAX + 1]
+) {
+    if (io_ptr == NULL || io_len == NULL || io_inline == NULL || io_inline_buf == NULL) {
+        return;
+    }
+    free(*io_ptr);
+    *io_ptr = NULL;
+    *io_len = 0;
+    *io_inline = 0;
+    io_inline_buf[0] = '\0';
+}
+
+static int aic_rt_map_string_storage_replace(
+    char** io_ptr,
+    long* io_len,
+    unsigned char* io_inline,
+    char io_inline_buf[AIC_RT_SSO_INLINE_MAX + 1],
+    const char* src_ptr,
+    long src_len
+) {
+    if (io_ptr == NULL || io_len == NULL || io_inline == NULL || io_inline_buf == NULL) {
+        return 0;
+    }
+    if (!aic_rt_map_valid_slice(src_ptr, src_len)) {
+        return 0;
+    }
+    size_t n = (size_t)src_len;
+    if (aic_rt_map_sso_enabled() && n <= AIC_RT_SSO_INLINE_MAX) {
+        free(*io_ptr);
+        if (n > 0) {
+            memcpy(io_inline_buf, src_ptr, n);
+        }
+        io_inline_buf[n] = '\0';
+        *io_ptr = NULL;
+        *io_len = src_len;
+        *io_inline = 1;
+        return 1;
+    }
+    char* owned = aic_rt_copy_bytes(src_ptr, n);
+    if (owned == NULL) {
+        return 0;
+    }
+    free(*io_ptr);
+    *io_ptr = owned;
+    *io_len = src_len;
+    *io_inline = 0;
+    io_inline_buf[0] = '\0';
+    return 1;
+}
+
 static int aic_rt_map_bool_from_long(long key_value, unsigned char* out_bool) {
     if (out_bool != NULL) {
         *out_bool = 0;
@@ -41225,6 +41309,24 @@ static int aic_rt_map_key_compare_raw(
     return 0;
 }
 
+static const char* aic_rt_map_entry_key_ptr(const AicMapEntryStorage* entry) {
+    if (entry == NULL) {
+        return NULL;
+    }
+    return aic_rt_map_storage_ptr(entry->key_ptr, entry->key_inline, entry->key_inline_buf);
+}
+
+static const char* aic_rt_map_entry_str_value_ptr(const AicMapEntryStorage* entry) {
+    if (entry == NULL) {
+        return NULL;
+    }
+    return aic_rt_map_storage_ptr(
+        entry->str_value_ptr,
+        entry->str_value_inline,
+        entry->str_value_inline_buf
+    );
+}
+
 static int aic_rt_map_key_compare_entries(
     const AicMapSlot* slot,
     const AicMapEntryStorage* left,
@@ -41234,10 +41336,15 @@ static int aic_rt_map_key_compare_entries(
         return 0;
     }
     if (slot->key_kind == 1) {
+        const char* left_key = aic_rt_map_entry_key_ptr(left);
+        const char* right_key = aic_rt_map_entry_key_ptr(right);
+        if ((left->key_len > 0 && left_key == NULL) || (right->key_len > 0 && right_key == NULL)) {
+            return 0;
+        }
         return aic_rt_map_key_compare_raw(
-            left->key_ptr,
+            left_key,
             left->key_len,
-            right->key_ptr,
+            right_key,
             right->key_len
         );
     }
@@ -41266,14 +41373,20 @@ static void aic_rt_map_free_entry(AicMapEntryStorage* entry) {
     if (entry == NULL) {
         return;
     }
-    free(entry->key_ptr);
-    free(entry->str_value_ptr);
-    entry->key_ptr = NULL;
-    entry->key_len = 0;
+    aic_rt_map_string_storage_free(
+        &entry->key_ptr,
+        &entry->key_len,
+        &entry->key_inline,
+        entry->key_inline_buf
+    );
     entry->key_int = 0;
     entry->key_bool = 0;
-    entry->str_value_ptr = NULL;
-    entry->str_value_len = 0;
+    aic_rt_map_string_storage_free(
+        &entry->str_value_ptr,
+        &entry->str_value_len,
+        &entry->str_value_inline,
+        entry->str_value_inline_buf
+    );
     entry->int_value = 0;
 }
 
@@ -41319,8 +41432,11 @@ static long aic_rt_map_find_string_index(const AicMapSlot* slot, const char* key
         if (entry->key_len != key_len) {
             continue;
         }
-        if (key_len == 0 ||
-            memcmp(entry->key_ptr, key_ptr, (size_t)key_len) == 0) {
+        const char* entry_key = aic_rt_map_entry_key_ptr(entry);
+        if ((key_len > 0 && entry_key == NULL)) {
+            continue;
+        }
+        if (key_len == 0 || memcmp(entry_key, key_ptr, (size_t)key_len) == 0) {
             return (long)i;
         }
     }
@@ -41481,40 +41597,57 @@ long aic_rt_map_insert_string(
     }
 
     long found = aic_rt_map_find_string_index(slot, key_ptr, key_len);
-    char* key_owned = NULL;
-    if (found < 0) {
-        key_owned = aic_rt_copy_bytes(key_ptr, (size_t)key_len);
-        if (key_owned == NULL) {
-            return 1;
-        }
-    }
-    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)value_len);
-    if (value_owned == NULL) {
-        free(key_owned);
-        return 1;
-    }
-
     if (found >= 0) {
         AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-        free(entry->str_value_ptr);
-        entry->str_value_ptr = value_owned;
-        entry->str_value_len = value_len;
-        return 0;
+        return aic_rt_map_string_storage_replace(
+                   &entry->str_value_ptr,
+                   &entry->str_value_len,
+                   &entry->str_value_inline,
+                   entry->str_value_inline_buf,
+                   value_ptr,
+                   value_len
+               )
+                   ? 0
+                   : 1;
     }
 
     if (aic_rt_map_ensure_capacity(slot, slot->len + 1) != 0) {
-        free(key_owned);
-        free(value_owned);
         return 1;
     }
     AicMapEntryStorage* entry = &slot->entries[slot->len];
-    entry->key_ptr = key_owned;
-    entry->key_len = key_len;
+    entry->key_ptr = NULL;
+    entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = 0;
     entry->key_bool = 0;
-    entry->str_value_ptr = value_owned;
-    entry->str_value_len = value_len;
+    entry->str_value_ptr = NULL;
+    entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = 0;
+    if (!aic_rt_map_string_storage_replace(
+            &entry->key_ptr,
+            &entry->key_len,
+            &entry->key_inline,
+            entry->key_inline_buf,
+            key_ptr,
+            key_len
+        )) {
+        aic_rt_map_free_entry(entry);
+        return 1;
+    }
+    if (!aic_rt_map_string_storage_replace(
+            &entry->str_value_ptr,
+            &entry->str_value_len,
+            &entry->str_value_inline,
+            entry->str_value_inline_buf,
+            value_ptr,
+            value_len
+        )) {
+        aic_rt_map_free_entry(entry);
+        return 1;
+    }
     slot->len += 1;
     return 0;
 }
@@ -41536,30 +41669,46 @@ long aic_rt_map_insert_string_int_key(
     }
 
     long found = aic_rt_map_find_int_index(slot, key_value);
-    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)value_len);
-    if (value_owned == NULL) {
-        return 1;
-    }
     if (found >= 0) {
         AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-        free(entry->str_value_ptr);
-        entry->str_value_ptr = value_owned;
-        entry->str_value_len = value_len;
-        return 0;
+        return aic_rt_map_string_storage_replace(
+                   &entry->str_value_ptr,
+                   &entry->str_value_len,
+                   &entry->str_value_inline,
+                   entry->str_value_inline_buf,
+                   value_ptr,
+                   value_len
+               )
+                   ? 0
+                   : 1;
     }
 
     if (aic_rt_map_ensure_capacity(slot, slot->len + 1) != 0) {
-        free(value_owned);
         return 1;
     }
     AicMapEntryStorage* entry = &slot->entries[slot->len];
     entry->key_ptr = NULL;
     entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = key_value;
     entry->key_bool = 0;
-    entry->str_value_ptr = value_owned;
-    entry->str_value_len = value_len;
+    entry->str_value_ptr = NULL;
+    entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = 0;
+    if (!aic_rt_map_string_storage_replace(
+            &entry->str_value_ptr,
+            &entry->str_value_len,
+            &entry->str_value_inline,
+            entry->str_value_inline_buf,
+            value_ptr,
+            value_len
+        )) {
+        aic_rt_map_free_entry(entry);
+        return 1;
+    }
     slot->len += 1;
     return 0;
 }
@@ -41585,30 +41734,46 @@ long aic_rt_map_insert_string_bool_key(
     }
 
     long found = aic_rt_map_find_bool_index(slot, bool_key);
-    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)value_len);
-    if (value_owned == NULL) {
-        return 1;
-    }
     if (found >= 0) {
         AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-        free(entry->str_value_ptr);
-        entry->str_value_ptr = value_owned;
-        entry->str_value_len = value_len;
-        return 0;
+        return aic_rt_map_string_storage_replace(
+                   &entry->str_value_ptr,
+                   &entry->str_value_len,
+                   &entry->str_value_inline,
+                   entry->str_value_inline_buf,
+                   value_ptr,
+                   value_len
+               )
+                   ? 0
+                   : 1;
     }
 
     if (aic_rt_map_ensure_capacity(slot, slot->len + 1) != 0) {
-        free(value_owned);
         return 1;
     }
     AicMapEntryStorage* entry = &slot->entries[slot->len];
     entry->key_ptr = NULL;
     entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = 0;
     entry->key_bool = bool_key;
-    entry->str_value_ptr = value_owned;
-    entry->str_value_len = value_len;
+    entry->str_value_ptr = NULL;
+    entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = 0;
+    if (!aic_rt_map_string_storage_replace(
+            &entry->str_value_ptr,
+            &entry->str_value_len,
+            &entry->str_value_inline,
+            entry->str_value_inline_buf,
+            value_ptr,
+            value_len
+        )) {
+        aic_rt_map_free_entry(entry);
+        return 1;
+    }
     slot->len += 1;
     return 0;
 }
@@ -41639,18 +41804,29 @@ long aic_rt_map_insert_int(
     if (aic_rt_map_ensure_capacity(slot, slot->len + 1) != 0) {
         return 1;
     }
-    char* key_owned = aic_rt_copy_bytes(key_ptr, (size_t)key_len);
-    if (key_owned == NULL) {
-        return 1;
-    }
     AicMapEntryStorage* entry = &slot->entries[slot->len];
-    entry->key_ptr = key_owned;
-    entry->key_len = key_len;
+    entry->key_ptr = NULL;
+    entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = 0;
     entry->key_bool = 0;
     entry->str_value_ptr = NULL;
     entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = value;
+    if (!aic_rt_map_string_storage_replace(
+            &entry->key_ptr,
+            &entry->key_len,
+            &entry->key_inline,
+            entry->key_inline_buf,
+            key_ptr,
+            key_len
+        )) {
+        aic_rt_map_free_entry(entry);
+        return 1;
+    }
     slot->len += 1;
     return 0;
 }
@@ -41674,10 +41850,14 @@ long aic_rt_map_insert_int_int_key(long handle, long key_value, long value) {
     AicMapEntryStorage* entry = &slot->entries[slot->len];
     entry->key_ptr = NULL;
     entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = key_value;
     entry->key_bool = 0;
     entry->str_value_ptr = NULL;
     entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = value;
     slot->len += 1;
     return 0;
@@ -41706,10 +41886,14 @@ long aic_rt_map_insert_int_bool_key(long handle, long key_value, long value) {
     AicMapEntryStorage* entry = &slot->entries[slot->len];
     entry->key_ptr = NULL;
     entry->key_len = 0;
+    entry->key_inline = 0;
+    entry->key_inline_buf[0] = '\0';
     entry->key_int = 0;
     entry->key_bool = bool_key;
     entry->str_value_ptr = NULL;
     entry->str_value_len = 0;
+    entry->str_value_inline = 0;
+    entry->str_value_inline_buf[0] = '\0';
     entry->int_value = value;
     slot->len += 1;
     return 0;
@@ -41742,7 +41926,11 @@ long aic_rt_map_get_string(
         return 0;
     }
     AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-    char* value_owned = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+    const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+    if (entry->str_value_len > 0 && value_ptr == NULL) {
+        return 0;
+    }
+    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
     if (value_owned == NULL) {
         return 0;
     }
@@ -41778,7 +41966,11 @@ long aic_rt_map_get_string_int_key(
         return 0;
     }
     AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-    char* value_owned = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+    const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+    if (entry->str_value_len > 0 && value_ptr == NULL) {
+        return 0;
+    }
+    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
     if (value_owned == NULL) {
         return 0;
     }
@@ -41818,7 +42010,11 @@ long aic_rt_map_get_string_bool_key(
         return 0;
     }
     AicMapEntryStorage* entry = &slot->entries[(size_t)found];
-    char* value_owned = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+    const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+    if (entry->str_value_len > 0 && value_ptr == NULL) {
+        return 0;
+    }
+    char* value_owned = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
     if (value_owned == NULL) {
         return 0;
     }
@@ -42047,7 +42243,13 @@ long aic_rt_map_keys(long handle, char** out_ptr, long* out_count) {
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* key_copy = aic_rt_copy_bytes(entry->key_ptr, (size_t)entry->key_len);
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        if (entry->key_len > 0 && key_ptr == NULL) {
+            free(order);
+            aic_rt_string_free_parts(keys, i);
+            return 1;
+        }
+        char* key_copy = aic_rt_copy_bytes(key_ptr, (size_t)entry->key_len);
         if (key_copy == NULL) {
             free(order);
             aic_rt_string_free_parts(keys, i);
@@ -42171,7 +42373,13 @@ long aic_rt_map_values_string(long handle, char** out_ptr, long* out_count) {
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* value_copy = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if (entry->str_value_len > 0 && value_ptr == NULL) {
+            free(order);
+            aic_rt_string_free_parts(values, i);
+            return 1;
+        }
+        char* value_copy = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
         if (value_copy == NULL) {
             free(order);
             aic_rt_string_free_parts(values, i);
@@ -42294,8 +42502,16 @@ long aic_rt_map_entries_string(long handle, char** out_ptr, long* out_count) {
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* key_copy = aic_rt_copy_bytes(entry->key_ptr, (size_t)entry->key_len);
-        char* value_copy = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if ((entry->key_len > 0 && key_ptr == NULL) ||
+            (entry->str_value_len > 0 && value_ptr == NULL)) {
+            free(order);
+            aic_rt_map_free_string_entries(entries, i);
+            return 1;
+        }
+        char* key_copy = aic_rt_copy_bytes(key_ptr, (size_t)entry->key_len);
+        char* value_copy = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
         if (key_copy == NULL || value_copy == NULL) {
             free(key_copy);
             free(value_copy);
@@ -42351,7 +42567,13 @@ long aic_rt_map_entries_int(long handle, char** out_ptr, long* out_count) {
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* key_copy = aic_rt_copy_bytes(entry->key_ptr, (size_t)entry->key_len);
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        if (entry->key_len > 0 && key_ptr == NULL) {
+            free(order);
+            aic_rt_map_free_int_entries(entries, i);
+            return 1;
+        }
+        char* key_copy = aic_rt_copy_bytes(key_ptr, (size_t)entry->key_len);
         if (key_copy == NULL) {
             free(order);
             aic_rt_map_free_int_entries(entries, i);
@@ -42404,7 +42626,13 @@ long aic_rt_map_entries_string_int_key(long handle, char** out_ptr, long* out_co
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* value_copy = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if (entry->str_value_len > 0 && value_ptr == NULL) {
+            free(order);
+            aic_rt_map_free_string_int_key_entries(entries, i);
+            return 1;
+        }
+        char* value_copy = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
         if (value_copy == NULL) {
             free(order);
             aic_rt_map_free_string_int_key_entries(entries, i);
@@ -42457,7 +42685,13 @@ long aic_rt_map_entries_string_bool_key(long handle, char** out_ptr, long* out_c
     }
     for (size_t i = 0; i < slot->len; ++i) {
         AicMapEntryStorage* entry = &slot->entries[order[i]];
-        char* value_copy = aic_rt_copy_bytes(entry->str_value_ptr, (size_t)entry->str_value_len);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if (entry->str_value_len > 0 && value_ptr == NULL) {
+            free(order);
+            aic_rt_map_free_string_bool_key_entries(entries, i);
+            return 1;
+        }
+        char* value_copy = aic_rt_copy_bytes(value_ptr, (size_t)entry->str_value_len);
         if (value_copy == NULL) {
             free(order);
             aic_rt_map_free_string_bool_key_entries(entries, i);
@@ -56062,17 +56296,20 @@ long aic_rt_http_server_write_response(
     size_t headers_bytes = 0;
     for (size_t i = 0; i < headers_slot->len; ++i) {
         AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
-        if (entry->key_ptr == NULL || entry->str_value_ptr == NULL) {
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if ((entry->key_len > 0 && key_ptr == NULL) ||
+            (entry->str_value_len > 0 && value_ptr == NULL)) {
             continue;
         }
-        if (aic_rt_ascii_eq_lit_ci(entry->key_ptr, (size_t)entry->key_len, "content-length")) {
+        if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
             continue;
         }
         long valid = aic_rt_http_validate_header(
-            entry->key_ptr,
+            key_ptr,
             entry->key_len,
             entry->key_len,
-            entry->str_value_ptr,
+            value_ptr,
             entry->str_value_len,
             entry->str_value_len
         );
@@ -56131,17 +56368,20 @@ long aic_rt_http_server_write_response(
 
     for (size_t i = 0; i < headers_slot->len; ++i) {
         AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
-        if (entry->key_ptr == NULL || entry->str_value_ptr == NULL) {
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if ((entry->key_len > 0 && key_ptr == NULL) ||
+            (entry->str_value_len > 0 && value_ptr == NULL)) {
             continue;
         }
-        if (aic_rt_ascii_eq_lit_ci(entry->key_ptr, (size_t)entry->key_len, "content-length")) {
+        if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
             continue;
         }
-        memcpy(wire + pos, entry->key_ptr, (size_t)entry->key_len);
+        memcpy(wire + pos, key_ptr, (size_t)entry->key_len);
         pos += (size_t)entry->key_len;
         wire[pos++] = ':';
         wire[pos++] = ' ';
-        memcpy(wire + pos, entry->str_value_ptr, (size_t)entry->str_value_len);
+        memcpy(wire + pos, value_ptr, (size_t)entry->str_value_len);
         pos += (size_t)entry->str_value_len;
         wire[pos++] = '\r';
         wire[pos++] = '\n';
@@ -58564,6 +58804,10 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_map_values_int("));
         assert!(runtime_c_source().contains("long aic_rt_map_entries_string("));
         assert!(runtime_c_source().contains("long aic_rt_map_entries_int("));
+        assert!(runtime_c_source().contains("#define AIC_RT_SSO_INLINE_MAX 23"));
+        assert!(runtime_c_source().contains("char key_inline_buf[AIC_RT_SSO_INLINE_MAX + 1];"));
+        assert!(runtime_c_source().contains("static int aic_rt_map_string_storage_replace("));
+        assert!(runtime_c_source().contains("AIC_RT_DISABLE_MAP_SSO"));
         assert!(
             runtime_c_source().contains("long aic_rt_buffer_new(long capacity, long* out_handle)")
         );

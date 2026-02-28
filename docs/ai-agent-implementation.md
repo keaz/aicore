@@ -104,6 +104,11 @@ In `src/codegen.rs`:
 ### Runtime ABI and debug mapping
 
 - `String` lowered as `{ i8*, i64, i64 }` (ptr-len-cap)
+- Runtime map entry storage applies small-string optimization (SSO) for map string fields:
+  - inline threshold: `<= 23` bytes
+  - larger strings remain heap-backed
+  - rollout scope is runtime map storage (`AicMapEntryStorage`) without language-level API changes
+  - benchmark toggle: `AIC_RT_DISABLE_MAP_SSO=1` forces heap-only storage path
 - runtime panic ABI: `aic_rt_panic(ptr, len, cap, line, column)`
 - `aic build --debug-info` emits debug metadata and source-mapped panic locations
 - `aic build --opt-level <LEVEL>` accepts `0..3` (`O0..O3`)

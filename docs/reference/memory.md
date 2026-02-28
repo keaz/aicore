@@ -146,6 +146,16 @@ fn demo() -> Int {
   - [`docs/runtime-performance/tail-call-optimization.md`](../runtime-performance/tail-call-optimization.md)
   - `examples/core/tail_call_optimization.aic`
 
+## Small String Optimization (Map Runtime Storage)
+
+- Runtime map storage in the C runtime applies small-string optimization (SSO) for map string fields.
+- Strings with byte length `<= 23` are stored inline (no per-value heap allocation for stored map entry strings).
+- Strings with byte length `>= 24` remain heap-backed.
+- API behavior is unchanged; this is a runtime storage optimization.
+- Detailed guide and benchmark workflow:
+  - [`docs/runtime-performance/small-string-optimization.md`](../runtime-performance/small-string-optimization.md)
+  - `examples/core/sso_map_workload.aic`
+
 ## Diagnostic mapping
 
 - `E1263`: conflicting mutable borrow
