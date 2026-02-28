@@ -1553,6 +1553,8 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
         ir::PatternKind::Var(v) => ir::PatternKind::Var(v.clone()),
         ir::PatternKind::Int(v) => ir::PatternKind::Int(*v),
         ir::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
+        ir::PatternKind::Char(v) => ir::PatternKind::Char(*v),
+        ir::PatternKind::String(v) => ir::PatternKind::String(v.clone()),
         ir::PatternKind::Unit => ir::PatternKind::Unit,
         ir::PatternKind::Or { patterns } => ir::PatternKind::Or {
             patterns: patterns.iter().map(|p| clone_pattern(p, alloc)).collect(),
@@ -1560,6 +1562,21 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
         ir::PatternKind::Variant { name, args } => ir::PatternKind::Variant {
             name: name.clone(),
             args: args.iter().map(|a| clone_pattern(a, alloc)).collect(),
+        },
+        ir::PatternKind::Struct {
+            name,
+            fields,
+            has_rest,
+        } => ir::PatternKind::Struct {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|field| ir::StructPatternField {
+                    name: field.name.clone(),
+                    pattern: clone_pattern(&field.pattern, alloc),
+                })
+                .collect(),
+            has_rest: *has_rest,
         },
     };
     ir::Pattern {

@@ -378,9 +378,19 @@ impl<'a> Analyzer<'a> {
                     self.visit_pattern(arg);
                 }
             }
+            ast::PatternKind::Struct { name, fields, .. } => {
+                if let Some(module_ref) = module_prefix(name) {
+                    self.record_module_reference(module_ref);
+                }
+                for field in fields {
+                    self.visit_pattern(&field.pattern);
+                }
+            }
             ast::PatternKind::Wildcard
             | ast::PatternKind::Var(_)
             | ast::PatternKind::Int(_)
+            | ast::PatternKind::Char(_)
+            | ast::PatternKind::String(_)
             | ast::PatternKind::Bool(_)
             | ast::PatternKind::Unit => {}
         }
@@ -837,8 +847,15 @@ fn collect_pattern_vars(pattern: &ast::Pattern, out: &mut Vec<(String, Span)>) {
                 collect_pattern_vars(arg, out);
             }
         }
+        ast::PatternKind::Struct { fields, .. } => {
+            for field in fields {
+                collect_pattern_vars(&field.pattern, out);
+            }
+        }
         ast::PatternKind::Wildcard
         | ast::PatternKind::Int(_)
+        | ast::PatternKind::Char(_)
+        | ast::PatternKind::String(_)
         | ast::PatternKind::Bool(_)
         | ast::PatternKind::Unit => {}
     }

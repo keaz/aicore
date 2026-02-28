@@ -1016,6 +1016,12 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
         ir::PatternKind::Wildcard => out.push('_'),
         ir::PatternKind::Var(v) => out.push_str(v),
         ir::PatternKind::Int(v) => out.push_str(&v.to_string()),
+        ir::PatternKind::Char(v) => out.push_str(&format!("{:?}", v)),
+        ir::PatternKind::String(v) => {
+            out.push('"');
+            out.push_str(&v.replace('\\', "\\\\").replace('"', "\\\""));
+            out.push('"');
+        }
         ir::PatternKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
         ir::PatternKind::Unit => out.push_str("()"),
         ir::PatternKind::Or { patterns } => {
@@ -1052,6 +1058,34 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
                     out.push(')');
                 }
             }
+        }
+        ir::PatternKind::Struct {
+            name,
+            fields,
+            has_rest,
+        } => {
+            out.push_str(name);
+            out.push_str(" { ");
+            for (idx, field) in fields.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                if matches!(&field.pattern.kind, ir::PatternKind::Var(binding) if binding == &field.name)
+                {
+                    out.push_str(&field.name);
+                } else {
+                    out.push_str(&field.name);
+                    out.push_str(": ");
+                    format_pattern(out, &field.pattern);
+                }
+            }
+            if *has_rest {
+                if !fields.is_empty() {
+                    out.push_str(", ");
+                }
+                out.push_str("..");
+            }
+            out.push_str(" }");
         }
     }
 }

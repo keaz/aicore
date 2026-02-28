@@ -144,20 +144,56 @@ or_pattern     = pattern_atom ("|" pattern_atom)* ;
 pattern_atom   = "_"
                | ident_pattern
                | int
+               | char
+               | string
                | bool
                | unit_pattern
+               | struct_pattern
                | variant_pattern ;
 
 unit_pattern   = "(" ")" ;
 ident_pattern  = ident ;
+struct_pattern = ident "{" struct_field_pattern ("," struct_field_pattern)* ("," "..")? "}"
+               | ident "{" ".." "}" ;
+struct_field_pattern = ident | ident ":" pattern ;
 variant_pattern = ident ("(" pattern ("," pattern)* ","? ")")? ;
 ```
 
 Pattern disambiguation:
 - bare uppercase identifier is treated as a zero-arg variant pattern
 - bare lowercase identifier is treated as a variable binding pattern
+- string (`"GET"`) and char (`'a'`) literals are valid match patterns
+- struct destructuring supports shorthand (`User { age }`), explicit binding (`age: years`), and rest (`..`)
 - `|` inside patterns is pattern-or; logical-or in expressions remains `||`
 - match guards (`if <expr>`) are checked as `Bool` expressions
+
+Exhaustiveness and diagnostics:
+- `Option`, `Result`, and user enums are exhaustiveness-checked.
+- Missing-variant diagnostics use the form `non-exhaustive match: missing variant \`Err\``.
+- Diagnostics include an autofix snippet with missing arms (for example `Err(_) => todo(),`).
+
+Example:
+```aic
+struct User {
+    name: String,
+    age: Int,
+}
+
+fn route(method: String, user: User, c: Char) -> Int {
+    let status = match method {
+        "GET" => 200,
+        "POST" => 201,
+        _ => 405,
+    };
+    let age = match user {
+        User { age, .. } => age,
+    };
+    match c {
+        'a' => status + age,
+        _ => status,
+    }
+}
+```
 
 
 Template literals:

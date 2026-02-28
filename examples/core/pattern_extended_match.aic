@@ -1,0 +1,31 @@
+struct User {
+    name: String,
+    age: Int,
+}
+
+fn classify_method(method: String) -> Int {
+    match method {
+        "GET" => 1,
+        "POST" => 2,
+        _ => 0,
+    }
+}
+
+fn classify_user(user: User, first: Char) -> Int {
+    let base = match user {
+        User { age, .. } => age,
+    };
+    match first {
+        'a' => base,
+        'b' => base + 10,
+        _ => base + 100,
+    }
+}
+
+fn main() -> Int {
+    let user = User {
+        name: "Ada",
+        age: 33,
+    };
+    classify_method("GET") + classify_user(user, 'a')
+}

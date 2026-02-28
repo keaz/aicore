@@ -384,14 +384,32 @@ pub struct Pattern {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructPatternField {
+    pub name: String,
+    pub pattern: Pattern,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PatternKind {
     Wildcard,
     Var(String),
     Int(i64),
     Bool(bool),
+    Char(char),
+    String(String),
     Unit,
-    Or { patterns: Vec<Pattern> },
-    Variant { name: String, args: Vec<Pattern> },
+    Or {
+        patterns: Vec<Pattern>,
+    },
+    Variant {
+        name: String,
+        args: Vec<Pattern>,
+    },
+    Struct {
+        name: String,
+        fields: Vec<StructPatternField>,
+        has_rest: bool,
+    },
 }
 
 impl Expr {

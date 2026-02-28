@@ -568,6 +568,10 @@ fn render_pattern(pattern: &Pattern) -> String {
         PatternKind::Wildcard => "_".to_string(),
         PatternKind::Var(name) => name.clone(),
         PatternKind::Int(value) => value.to_string(),
+        PatternKind::Char(value) => format!("{value:?}"),
+        PatternKind::String(value) => {
+            format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+        }
         PatternKind::Bool(value) => value.to_string(),
         PatternKind::Unit => "()".to_string(),
         PatternKind::Or { patterns } => patterns
@@ -588,6 +592,27 @@ fn render_pattern(pattern: &Pattern) -> String {
                         .join(", ")
                 )
             }
+        }
+        PatternKind::Struct {
+            name,
+            fields,
+            has_rest,
+        } => {
+            let mut parts = fields
+                .iter()
+                .map(|field| {
+                    if matches!(&field.pattern.kind, PatternKind::Var(binding) if binding == &field.name)
+                    {
+                        field.name.clone()
+                    } else {
+                        format!("{}: {}", field.name, render_pattern(&field.pattern))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if *has_rest {
+                parts.push("..".to_string());
+            }
+            format!("{name} {{ {} }}", parts.join(", "))
         }
     }
 }

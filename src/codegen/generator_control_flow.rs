@@ -1884,6 +1884,31 @@ impl<'a> Generator<'a> {
                     .push(format!("  {} = icmp eq i64 {}, {}", reg, repr, v));
                 Some(reg)
             }
+            ir::PatternKind::Char(v) => {
+                if value.ty != LType::Char {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E5017",
+                        "tuple match char pattern expects Char value",
+                        self.file,
+                        pattern.span,
+                    ));
+                    return Some("0".to_string());
+                }
+                let reg = self.new_temp();
+                let repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                fctx.lines
+                    .push(format!("  {} = icmp eq i32 {}, {}", reg, repr, *v as u32));
+                Some(reg)
+            }
+            ir::PatternKind::String(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "tuple match codegen does not support String literal patterns yet",
+                    self.file,
+                    pattern.span,
+                ));
+                Some("0".to_string())
+            }
             ir::PatternKind::Bool(v) => {
                 if value.ty != LType::Bool {
                     self.diagnostics.push(Diagnostic::error(
@@ -1985,6 +2010,15 @@ impl<'a> Generator<'a> {
                 ));
                 Some("0".to_string())
             }
+            ir::PatternKind::Struct { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "tuple match codegen does not support struct destructuring patterns yet",
+                    self.file,
+                    pattern.span,
+                ));
+                Some("0".to_string())
+            }
         }
     }
 
@@ -1997,6 +2031,8 @@ impl<'a> Generator<'a> {
         match &pattern.kind {
             ir::PatternKind::Wildcard
             | ir::PatternKind::Int(_)
+            | ir::PatternKind::Char(_)
+            | ir::PatternKind::String(_)
             | ir::PatternKind::Bool(_)
             | ir::PatternKind::Unit => Some(()),
             ir::PatternKind::Var(binding) => {
@@ -2077,6 +2113,15 @@ impl<'a> Generator<'a> {
                 self.diagnostics.push(Diagnostic::error(
                     "E5017",
                     "tuple match binding does not support non-tuple variant patterns",
+                    self.file,
+                    pattern.span,
+                ));
+                None
+            }
+            ir::PatternKind::Struct { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "tuple match binding does not support struct destructuring patterns yet",
                     self.file,
                     pattern.span,
                 ));

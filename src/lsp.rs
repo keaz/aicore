@@ -1703,6 +1703,12 @@ fn collect_pattern_semantic_tokens(
                 collect_pattern_semantic_tokens(tokens, source, arg);
             }
         }
+        ast::PatternKind::Struct { name, fields, .. } => {
+            push_named_semantic_token(tokens, source, name, pattern.span, TOKEN_STRUCT, 0);
+            for field in fields {
+                collect_pattern_semantic_tokens(tokens, source, &field.pattern);
+            }
+        }
         ast::PatternKind::Var(name) => {
             push_named_semantic_token(
                 tokens,
@@ -1715,6 +1721,8 @@ fn collect_pattern_semantic_tokens(
         }
         ast::PatternKind::Wildcard
         | ast::PatternKind::Int(_)
+        | ast::PatternKind::Char(_)
+        | ast::PatternKind::String(_)
         | ast::PatternKind::Bool(_)
         | ast::PatternKind::Unit => {}
     }

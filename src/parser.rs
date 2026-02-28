@@ -3318,6 +3318,20 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
+            TokenKind::Char(value) => {
+                self.bump();
+                Some(Pattern {
+                    kind: PatternKind::Char(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::String(value) => {
+                self.bump();
+                Some(Pattern {
+                    kind: PatternKind::String(value),
+                    span: token.span,
+                })
+            }
             TokenKind::KwTrue => {
                 self.bump();
                 Some(Pattern {
@@ -3379,7 +3393,55 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.bump();
-                if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+                if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                    let start = token.span.start;
+                    self.bump();
+                    let mut fields = Vec::new();
+                    let mut has_rest = false;
+                    while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+                        if self.at_kind(|k| matches!(k, TokenKind::DotDot)) {
+                            has_rest = true;
+                            self.bump();
+                            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                                self.bump();
+                            }
+                            break;
+                        }
+                        let (field_name, field_span) =
+                            self.expect_ident("E1049", "expected struct pattern field")?;
+                        let pattern = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
+                            self.bump();
+                            self.parse_pattern()?
+                        } else {
+                            Pattern {
+                                kind: PatternKind::Var(field_name.clone()),
+                                span: field_span,
+                            }
+                        };
+                        fields.push(StructPatternField {
+                            name: field_name,
+                            pattern,
+                        });
+                        if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    let close = self.expect(
+                        |k| matches!(k, TokenKind::RBrace),
+                        "E1047",
+                        "expected '}' after struct pattern",
+                    )?;
+                    Some(Pattern {
+                        kind: PatternKind::Struct {
+                            name,
+                            fields,
+                            has_rest,
+                        },
+                        span: Span::new(start, close.end),
+                    })
+                } else if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
                     let start = token.span.start;
                     self.bump();
                     let mut args = Vec::new();
@@ -3650,6 +3712,76 @@ fn f(x: Option[Int], ready: Bool) -> Int {
         assert_eq!(arms.len(), 2);
         assert!(arms[0].guard.is_some());
         assert!(matches!(arms[0].pattern.kind, PatternKind::Or { .. }));
+    }
+
+    #[test]
+    fn parses_extended_match_patterns() {
+        let src = r#"
+struct User {
+    name: String,
+    age: Int,
+}
+
+fn f(method: String, c: Char, u: User) -> Int {
+    let m = match method {
+        "GET" => 1,
+        "POST" => 2,
+        _ => 0,
+    };
+    let n = match c {
+        'a' => 10,
+        _ => 20,
+    };
+    match u {
+        User { name, age: years, .. } => m + n + years,
+    }
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[1] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+
+        let first_match = match &f.body.stmts[0] {
+            Stmt::Let { expr, .. } => expr,
+            _ => panic!("expected first let"),
+        };
+        let ExprKind::Match { arms, .. } = &first_match.kind else {
+            panic!("expected match expression for first let");
+        };
+        assert!(matches!(arms[0].pattern.kind, PatternKind::String(ref v) if v == "GET"));
+
+        let second_match = match &f.body.stmts[1] {
+            Stmt::Let { expr, .. } => expr,
+            _ => panic!("expected second let"),
+        };
+        let ExprKind::Match { arms, .. } = &second_match.kind else {
+            panic!("expected match expression for second let");
+        };
+        assert!(matches!(arms[0].pattern.kind, PatternKind::Char('a')));
+
+        let tail = f.body.tail.as_ref().expect("tail expression");
+        let ExprKind::Match { arms, .. } = &tail.kind else {
+            panic!("expected tail match expression");
+        };
+        let PatternKind::Struct {
+            name,
+            fields,
+            has_rest,
+        } = &arms[0].pattern.kind
+        else {
+            panic!("expected struct pattern");
+        };
+        assert_eq!(name, "User");
+        assert!(*has_rest);
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "name");
+        assert!(matches!(fields[0].pattern.kind, PatternKind::Var(ref v) if v == "name"));
+        assert_eq!(fields[1].name, "age");
+        assert!(matches!(fields[1].pattern.kind, PatternKind::Var(ref v) if v == "years"));
     }
 
     #[test]

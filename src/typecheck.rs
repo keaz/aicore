@@ -5951,6 +5951,32 @@ impl<'a> Checker<'a> {
                     ));
                 }
             }
+            ir::PatternKind::Char(_v) => {
+                if normalized_scrutinee_ty != "Char" {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "char pattern requires Char scrutinee, found '{}'",
+                            scrutinee_ty
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                }
+            }
+            ir::PatternKind::String(_v) => {
+                if normalized_scrutinee_ty != "String" {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "string pattern requires String scrutinee, found '{}'",
+                            scrutinee_ty
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                }
+            }
             ir::PatternKind::Unit => {
                 if normalized_scrutinee_ty != "()" {
                     self.diagnostics.push(Diagnostic::error(
@@ -6068,6 +6094,156 @@ impl<'a> Checker<'a> {
                             );
                         }
                         locals.insert(name, ty);
+                    }
+                }
+            }
+            ir::PatternKind::Struct {
+                name,
+                fields,
+                has_rest,
+            } => {
+                let Some(struct_info) = self.find_struct(&normalized_scrutinee_ty).cloned() else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "struct pattern '{}' not valid for type '{}'",
+                            name, scrutinee_ty
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                    for field in fields {
+                        self.check_pattern(&field.pattern, "<?>", locals, bound_names);
+                    }
+                    return;
+                };
+
+                let scrutinee_name = base_type_name(&normalized_scrutinee_ty);
+                if name != scrutinee_name
+                    && Self::unqualified_name(name) != Self::unqualified_name(scrutinee_name)
+                {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "struct pattern '{}' does not match scrutinee type '{}'",
+                            name, scrutinee_ty
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                }
+
+                let struct_bindings =
+                    bindings_from_applied_type(&normalized_scrutinee_ty, &struct_info.generics);
+                if struct_bindings.is_none() && !struct_info.generics.is_empty() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1250",
+                            format!(
+                                "generic arity mismatch for struct '{}': expected {} arguments",
+                                base_type_name(scrutinee_ty),
+                                struct_info.generics.len()
+                            ),
+                            self.file,
+                            pattern.span,
+                        )
+                        .with_help("fix the generic arguments on the scrutinee type"),
+                    );
+                }
+                let struct_bindings = struct_bindings.unwrap_or_default();
+                let struct_generic_set = struct_info
+                    .generics
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+
+                let mut seen_fields = BTreeSet::new();
+                for field in fields {
+                    if !seen_fields.insert(field.name.clone()) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1245",
+                            format!(
+                                "duplicate field '{}' in struct pattern '{}'",
+                                field.name, name
+                            ),
+                            self.file,
+                            field.pattern.span,
+                        ));
+                        continue;
+                    }
+
+                    let Some(field_ty_id) = struct_info.fields.get(&field.name) else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1245",
+                            format!("unknown field '{}.{}' in struct pattern", name, field.name),
+                            self.file,
+                            field.pattern.span,
+                        ));
+                        self.check_pattern(&field.pattern, "<?>", locals, bound_names);
+                        continue;
+                    };
+
+                    let field_visibility = struct_info
+                        .field_visibility
+                        .get(&field.name)
+                        .copied()
+                        .unwrap_or(Visibility::Public);
+                    if !self.field_is_accessible_from_current(&struct_info.module, field_visibility)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1245",
+                                format!(
+                                    "field '{}.{}' is not visible in this module",
+                                    name, field.name
+                                ),
+                                self.file,
+                                field.pattern.span,
+                            )
+                            .with_help("destructure only fields visible from this module"),
+                        );
+                        continue;
+                    }
+
+                    let field_raw = self
+                        .types
+                        .get(field_ty_id)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string());
+                    let field_ty =
+                        substitute_type_vars(&field_raw, &struct_bindings, &struct_generic_set);
+                    self.check_pattern(&field.pattern, &field_ty, locals, bound_names);
+                }
+
+                if !*has_rest {
+                    let missing = struct_info
+                        .fields
+                        .keys()
+                        .filter(|field_name| !seen_fields.contains(*field_name))
+                        .filter(|field_name| {
+                            let visibility = struct_info
+                                .field_visibility
+                                .get(*field_name)
+                                .copied()
+                                .unwrap_or(Visibility::Public);
+                            self.field_is_accessible_from_current(&struct_info.module, visibility)
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    if !missing.is_empty() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1245",
+                                format!(
+                                    "non-exhaustive struct pattern '{}'; missing fields: {}",
+                                    name,
+                                    missing.join(", ")
+                                ),
+                                self.file,
+                                pattern.span,
+                            )
+                            .with_help("add missing fields or use `..` to ignore remaining fields"),
+                        );
                     }
                 }
             }
@@ -6292,6 +6468,16 @@ impl<'a> Checker<'a> {
                     seen.insert(format!("int:{v}"));
                 }
             }
+            ir::PatternKind::Char(v) => {
+                if normalized_scrutinee_ty == "Char" {
+                    seen.insert(format!("char:{}", *v as u32));
+                }
+            }
+            ir::PatternKind::String(v) => {
+                if normalized_scrutinee_ty == "String" {
+                    seen.insert(format!("string:{v:?}"));
+                }
+            }
             ir::PatternKind::Bool(v) => {
                 if normalized_scrutinee_ty == "Bool" {
                     seen.insert(if *v { "true" } else { "false" }.to_string());
@@ -6307,6 +6493,7 @@ impl<'a> Checker<'a> {
                     self.record_pattern_coverage(part, scrutinee_ty, seen, wildcard_seen);
                 }
             }
+            ir::PatternKind::Struct { .. } => {}
             ir::PatternKind::Variant { name, .. } => {
                 if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
                     && name == TUPLE_INTERNAL_NAME
@@ -6371,24 +6558,23 @@ impl<'a> Checker<'a> {
         if normalized_scrutinee_ty.starts_with("Option[") {
             let mut missing = Vec::new();
             if !seen.contains("None") {
-                missing.push("None");
+                missing.push("None".to_string());
             }
             if !seen.contains("Some") {
-                missing.push("Some");
+                missing.push("Some".to_string());
             }
             if !missing.is_empty() {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1247",
-                        format!(
-                            "non-exhaustive Option match; missing: {}",
-                            missing.join(", ")
-                        ),
-                        self.file,
-                        span,
-                    )
-                    .with_help("add both `None` and `Some(...)` arms, or `_` wildcard"),
-                );
+                let mut diagnostic = Diagnostic::error(
+                    "E1247",
+                    Self::format_missing_variant_message(&missing),
+                    self.file,
+                    span,
+                )
+                .with_help("add missing variant arms or `_` wildcard");
+                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
+                    diagnostic = diagnostic.with_fix(fix);
+                }
+                self.diagnostics.push(diagnostic);
             }
             return;
         }
@@ -6396,24 +6582,23 @@ impl<'a> Checker<'a> {
         if normalized_scrutinee_ty.starts_with("Result[") {
             let mut missing = Vec::new();
             if !seen.contains("Ok") {
-                missing.push("Ok");
+                missing.push("Ok".to_string());
             }
             if !seen.contains("Err") {
-                missing.push("Err");
+                missing.push("Err".to_string());
             }
             if !missing.is_empty() {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1248",
-                        format!(
-                            "non-exhaustive Result match; missing: {}",
-                            missing.join(", ")
-                        ),
-                        self.file,
-                        span,
-                    )
-                    .with_help("add both `Ok(...)` and `Err(...)` arms, or `_` wildcard"),
-                );
+                let mut diagnostic = Diagnostic::error(
+                    "E1248",
+                    Self::format_missing_variant_message(&missing),
+                    self.file,
+                    span,
+                )
+                .with_help("add missing variant arms or `_` wildcard");
+                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
+                    diagnostic = diagnostic.with_fix(fix);
+                }
+                self.diagnostics.push(diagnostic);
             }
             return;
         }
@@ -6426,19 +6611,17 @@ impl<'a> Checker<'a> {
                 .cloned()
                 .collect::<Vec<_>>();
             if !missing.is_empty() {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1249",
-                        format!(
-                            "non-exhaustive match for enum '{}'; missing: {}",
-                            scrutinee_ty,
-                            missing.join(", ")
-                        ),
-                        self.file,
-                        span,
-                    )
-                    .with_help("add missing variant arms or `_` wildcard"),
-                );
+                let mut diagnostic = Diagnostic::error(
+                    "E1249",
+                    Self::format_missing_variant_message(&missing),
+                    self.file,
+                    span,
+                )
+                .with_help("add missing variant arms or `_` wildcard");
+                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
+                    diagnostic = diagnostic.with_fix(fix);
+                }
+                self.diagnostics.push(diagnostic);
             }
         }
     }
@@ -6460,11 +6643,14 @@ impl<'a> Checker<'a> {
                 self.coverage_is_complete(scrutinee_ty, seen, wildcard_seen)
             }
             ir::PatternKind::Int(v) => seen.contains(&format!("int:{v}")),
+            ir::PatternKind::Char(v) => seen.contains(&format!("char:{}", *v as u32)),
+            ir::PatternKind::String(v) => seen.contains(&format!("string:{v:?}")),
             ir::PatternKind::Bool(v) => seen.contains(if *v { "true" } else { "false" }),
             ir::PatternKind::Unit => seen.contains("()"),
             ir::PatternKind::Or { patterns } => patterns
                 .iter()
                 .all(|p| self.arm_is_redundant(p, scrutinee_ty, seen, wildcard_seen)),
+            ir::PatternKind::Struct { .. } => false,
             ir::PatternKind::Variant { name, .. } => {
                 if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
                     && name == TUPLE_INTERNAL_NAME
@@ -6508,6 +6694,63 @@ impl<'a> Checker<'a> {
             return enum_info.variants.keys().all(|name| seen.contains(name));
         }
         false
+    }
+
+    fn format_missing_variant_message(missing: &[String]) -> String {
+        if missing.len() == 1 {
+            return format!("non-exhaustive match: missing variant `{}`", missing[0]);
+        }
+        let rendered = missing
+            .iter()
+            .map(|variant| format!("`{variant}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("non-exhaustive match: missing variants {rendered}")
+    }
+
+    fn missing_variants_fix(&self, scrutinee_ty: &str, missing: &[String]) -> Option<SuggestedFix> {
+        let arms = missing
+            .iter()
+            .filter_map(|variant| self.missing_variant_arm(scrutinee_ty, variant))
+            .collect::<Vec<_>>();
+        if arms.is_empty() {
+            return None;
+        }
+        let message = if arms.len() == 1 {
+            "insert missing match arm".to_string()
+        } else {
+            "insert missing match arms".to_string()
+        };
+        Some(SuggestedFix {
+            message,
+            replacement: Some(arms.join("\n")),
+            start: None,
+            end: None,
+        })
+    }
+
+    fn missing_variant_arm(&self, scrutinee_ty: &str, variant: &str) -> Option<String> {
+        if scrutinee_ty.starts_with("Option[") {
+            return Some(match variant {
+                "None" => "None => todo(),".to_string(),
+                "Some" => "Some(_) => todo(),".to_string(),
+                _ => return None,
+            });
+        }
+        if scrutinee_ty.starts_with("Result[") {
+            return Some(match variant {
+                "Ok" => "Ok(_) => todo(),".to_string(),
+                "Err" => "Err(_) => todo(),".to_string(),
+                _ => return None,
+            });
+        }
+        let enum_info = self.find_enum(scrutinee_ty)?;
+        let payload = enum_info.variants.get(variant)?;
+        if payload.is_some() {
+            Some(format!("{variant}(_) => todo(),"))
+        } else {
+            Some(format!("{variant} => todo(),"))
+        }
     }
 
     fn check_no_null_boundary(&mut self) {
@@ -7628,6 +7871,78 @@ fn f(x: Option[Int]) -> Int {
         assert!(d2.is_empty());
         let out = check(&ir, &res, "test.aic");
         assert!(out.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn string_and_struct_patterns_typecheck() {
+        let src = r#"
+struct User {
+    name: String,
+    age: Int,
+}
+
+fn f(method: String, user: User) -> Int {
+    let status = match method {
+        "GET" => 1,
+        "POST" => 2,
+        _ => 0,
+    };
+    let age = match user {
+        User { age: years, .. } => years,
+    };
+    status + age
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            !out.diagnostics
+                .iter()
+                .any(|d| matches!(d.severity, Severity::Error)),
+            "typecheck diagnostics={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn result_match_reports_missing_variant_with_fix() {
+        let src = r#"
+fn f(x: Result[Int, Int]) -> Int {
+    match x {
+        Ok(v) => v,
+    }
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let diag = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "E1248")
+            .expect("missing non-exhaustive Result diagnostic");
+        assert!(
+            diag.message.contains("missing variant `Err`"),
+            "message={}",
+            diag.message
+        );
+        let replacement = diag
+            .suggested_fixes
+            .first()
+            .and_then(|fix| fix.replacement.as_ref())
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            replacement.contains("Err(_) => todo(),"),
+            "replacement={replacement}"
+        );
     }
 
     #[test]

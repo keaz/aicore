@@ -148,6 +148,7 @@ check_pass=(
   "examples/core/cross_compile_targets.aic"
   "examples/core/pattern_or.aic"
   "examples/core/pattern_guard_check.aic"
+  "examples/core/pattern_extended_match.aic"
   "examples/verify/capability_protocol_ok.aic"
   "examples/verify/fs_protocol_ok.aic"
   "examples/verify/file_protocol.aic"

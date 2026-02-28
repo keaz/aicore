@@ -605,6 +605,8 @@ impl Builder {
             ast::PatternKind::Var(v) => ir::PatternKind::Var(v.clone()),
             ast::PatternKind::Int(v) => ir::PatternKind::Int(*v),
             ast::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
+            ast::PatternKind::Char(v) => ir::PatternKind::Char(*v),
+            ast::PatternKind::String(v) => ir::PatternKind::String(v.clone()),
             ast::PatternKind::Unit => ir::PatternKind::Unit,
             ast::PatternKind::Or { patterns } => ir::PatternKind::Or {
                 patterns: patterns.iter().map(|a| self.lower_pattern(a)).collect(),
@@ -612,6 +614,21 @@ impl Builder {
             ast::PatternKind::Variant { name, args } => ir::PatternKind::Variant {
                 name: name.clone(),
                 args: args.iter().map(|a| self.lower_pattern(a)).collect(),
+            },
+            ast::PatternKind::Struct {
+                name,
+                fields,
+                has_rest,
+            } => ir::PatternKind::Struct {
+                name: name.clone(),
+                fields: fields
+                    .iter()
+                    .map(|field| ir::StructPatternField {
+                        name: field.name.clone(),
+                        pattern: self.lower_pattern(&field.pattern),
+                    })
+                    .collect(),
+                has_rest: *has_rest,
             },
         };
         ir::Pattern {
