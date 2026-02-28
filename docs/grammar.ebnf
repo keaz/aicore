@@ -102,7 +102,7 @@ unit_lit       = "(" ")" ;
 template_string = ("f" | "$") "\"" template_item* "\"" ;
 template_item   = template_interp | template_escaped_brace | string_char ;
 template_interp = "{" expr "}" ;
-template_escaped_brace = "\\{" | "\\}" ;
+template_escaped_brace = "{{" | "}}" | "\\{" | "\\}" ;
 
 
 if_expr        = "if" expr block "else" (block | if_expr) ;

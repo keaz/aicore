@@ -1475,13 +1475,23 @@ fn main() -> Int effects { io } capabilities { io  } {
             0
         };
 
+    let escaped_doubled = f"left {{literal}} right";
+    let escaped_doubled_ok =
+        if len(escaped_doubled) == 20
+            && starts_with(escaped_doubled, "left {")
+            && ends_with(escaped_doubled, "} right") {
+            1
+        } else {
+            0
+        };
+
     let mixed = $"<{name}:{int_to_string(7)}>";
     let mixed_ok = if len(mixed) == 7 && starts_with(mixed, "<Ada:") && ends_with(mixed, "7>") {
         1
     } else {
         0
     };
-    if basic_ok + nested_ok + escaped_ok + mixed_ok == 4 {
+    if basic_ok + nested_ok + escaped_ok + escaped_doubled_ok + mixed_ok == 5 {
         print_int(42);
     } else {
         print_int(0);

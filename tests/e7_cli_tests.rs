@@ -3791,3 +3791,35 @@ fn intrinsic_declaration_examples_are_ci_wired_and_checkable() {
         String::from_utf8_lossy(&bad.stderr)
     );
 }
+
+#[test]
+fn template_literal_example_supports_double_braces_and_is_ci_wired() {
+    let root = repo_root();
+    let examples_ci = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+    let rel = "examples/data/template_literals.aic";
+    assert!(root.join(rel).is_file(), "missing template literal example");
+    assert!(
+        examples_ci.contains(&format!("\"{rel}\"")),
+        "examples.sh missing template literal example wiring"
+    );
+
+    let check = run_aic(&["check", rel]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let run = run_aic(&["run", rel]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}

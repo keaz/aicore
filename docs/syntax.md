@@ -11,7 +11,7 @@ Version: `mvp-grammar-v7`
 - `int`: decimal integer literal (`0`, `1`, `42`, ...)
 - `float`: decimal/scientific literal (`3.14`, `0.5`, `1e10`, `2.5e-3`)
 - `string`: double-quoted UTF-8 string with escape support
-- `template_string`: prefixed string literal (`f"..."` or `$"..."`) with `{expr}` interpolation; use `\{` and `\}` for literal braces
+- `template_string`: prefixed string literal (`f"..."` or `$"..."`) with `{expr}` interpolation; use `{{` / `}}` (or `\{` / `\}`) for literal braces
 - `char`: single-quoted Unicode scalar literal with escape support (examples: `'a'`, `'😀'`; escapes like backslash-n and unicode codepoint escapes)
 - `bool`: `true | false`
 - punctuation: `(` `)` `{` `}` `[` `]` `,` `;` `:` `.` `=>` `->`
@@ -122,7 +122,7 @@ unit_lit       = "(" ")" ;
 template_string = ("f" | "$") "\"" template_item* "\"" ;
 template_item   = template_interp | template_escaped_brace | string_char ;
 template_interp = "{" expr "}" ;
-template_escaped_brace = "\\{" | "\\}" ;
+template_escaped_brace = "{{" | "}}" | "\\{" | "\\}" ;
 
 if_expr        = "if" expr block "else" (block | if_expr) ;
 match_expr     = "match" expr "{" match_arms? "}" ;
@@ -163,7 +163,7 @@ Pattern disambiguation:
 Template literals:
 - Supported prefixes are `f"..."` and `$"..."`.
 - Interpolation segments use `{expr}` and are lowered to `aic_string_format_intrinsic(template, args)`.
-- Literal braces must be escaped as `\{` and `\}`.
+- Literal braces can be written as `{{` and `}}` (or escaped as `\{` and `\}`).
 - Interpolated values must type-check as `String`; use explicit conversion helpers like `int_to_string(...)` when needed.
 
 Visibility and access control:

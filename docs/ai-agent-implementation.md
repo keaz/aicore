@@ -981,7 +981,7 @@ Verifier-focused examples:
 
 - Lexer accepts prefixed template strings: `f"..."` and `$"..."`.
 - Parser supports interpolation segments with nested expressions: `{expr}`.
-- Escaped braces are supported: `\{` and `\}`.
+- Escaped braces are supported via either `{{`/`}}` or `\{`/`\}`.
 - Templates are lowered to `aic_string_format_intrinsic(template, args)` with compiler-synthesized `Vec[String]` argument assembly.
 - Typechecking enforces interpolated values are `String`; callers must use explicit conversions such as `int_to_string(...)` for non-string values.
 - Reference example: `examples/data/template_literals.aic` (wired into `scripts/ci/examples.sh` check/run sets).

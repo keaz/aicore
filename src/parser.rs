@@ -2518,6 +2518,12 @@ impl<'a> Parser<'a> {
                     }
                 }
                 '{' => {
+                    if cursor + 1 < raw.len() && raw.as_bytes()[cursor + 1] == b'{' {
+                        literal.push('{');
+                        cursor += 2;
+                        continue;
+                    }
+
                     template.push_str(&literal);
                     literal.clear();
 
@@ -2606,9 +2612,15 @@ impl<'a> Parser<'a> {
                     cursor = expr_end + 1;
                 }
                 '}' => {
+                    if cursor + 1 < raw.len() && raw.as_bytes()[cursor + 1] == b'}' {
+                        literal.push('}');
+                        cursor += 2;
+                        continue;
+                    }
+
                     self.diagnostics.push(Diagnostic::error(
                         "E1001",
-                        "unescaped '}' in template string; use '\\}' for a literal brace",
+                        "unescaped '}' in template string; use '\\}' or '}}' for a literal brace",
                         self.file,
                         Span::new(content_offset + cursor, content_offset + cursor + 1),
                     ));
@@ -4252,6 +4264,27 @@ fn main() -> String {
         let src = r#"
 fn main() -> String {
     f"left \{mid\} right"
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let function = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let tail = function.body.tail.as_ref().expect("tail expression");
+        assert!(matches!(
+            &tail.kind,
+            ExprKind::String(value) if value == "left {mid} right"
+        ));
+    }
+
+    #[test]
+    fn parses_template_literal_double_braces_without_interpolation() {
+        let src = r#"
+fn main() -> String {
+    f"left {{mid}} right"
 }
 "#;
         let (program, diagnostics) = parse(src, "test.aic");
