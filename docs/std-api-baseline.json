@@ -4928,6 +4928,16 @@
     },
     {
       "module": "std.tls",
+      "kind": "enum",
+      "signature": "TlsVersion { Tls12, Tls13 }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_accept_intrinsic(listener_handle: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_close_intrinsic(handle: Int) -> Result[Bool, TlsError] effects { net }"
     },
@@ -4944,7 +4954,7 @@
     {
       "module": "std.tls",
       "kind": "fn",
-      "signature": "aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError]"
+      "signature": "aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -4955,6 +4965,11 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_send_intrinsic(handle: Int, payload: String) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_version_intrinsic(handle: Int) -> Result[Int, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -4974,12 +4989,22 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
-      "signature": "tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+      "signature": "tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -4989,7 +5014,17 @@
     {
       "module": "std.tls",
       "kind": "fn",
-      "signature": "tls_peer_subject(stream: TlsStream) -> Result[String, TlsError]"
+      "signature": "tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -5010,6 +5045,21 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_subject_cn_value(text: String, start: Int) -> Result[String, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }"
     },
     {
       "module": "std.tls",

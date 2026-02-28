@@ -78,6 +78,7 @@ Current baseline snapshot (`schema_version: 1`) covers these modules:
 | `std.retry` |
 | `std.router` |
 | `std.string` |
+| `std.tls` |
 | `std.time` |
 | `std.url` |
 | `std.vec` |
@@ -155,6 +156,7 @@ fn main() -> Result[String, FsError] effects { fs } {
 ## Related docs
 
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/data-bytes.md`
+- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api/tls.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api/machine-readable.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-compatibility.md`
 - `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`

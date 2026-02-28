@@ -1235,6 +1235,46 @@ long aic_rt_tls_connect_addr(
     return 5;
 }
 
+long aic_rt_tls_accept(
+    long listener_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    long timeout_ms,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_accept", 2);
+    (void)listener_handle;
+    (void)verify_server;
+    (void)ca_cert_ptr;
+    (void)ca_cert_len;
+    (void)ca_cert_cap;
+    (void)has_ca_cert;
+    (void)client_cert_ptr;
+    (void)client_cert_len;
+    (void)client_cert_cap;
+    (void)has_client_cert;
+    (void)client_key_ptr;
+    (void)client_key_len;
+    (void)client_key_cap;
+    (void)has_client_key;
+    (void)timeout_ms;
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    return 5;
+}
+
 long aic_rt_tls_send(
     long tls_handle,
     const char* payload_ptr,
@@ -1287,6 +1327,15 @@ long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
     }
     if (out_len != NULL) {
         *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_version(long tls_handle, long* out_version) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_version", 2);
+    (void)tls_handle;
+    if (out_version != NULL) {
+        *out_version = 0;
     }
     return 5;
 }
@@ -3731,7 +3780,7 @@ static long aic_rt_tls_map_verify_error(long verify_error) {
     }
 }
 
-static long aic_rt_tls_map_ssl_connect_error(SSL* ssl, int ssl_error, long verify_server) {
+static long aic_rt_tls_map_ssl_handshake_error(SSL* ssl, int ssl_error, long verify_server) {
     if (ssl_error == SSL_ERROR_ZERO_RETURN) {
         return 6;
     }
@@ -3955,7 +4004,7 @@ static long aic_rt_tls_connect_core(
     int connect_rc = SSL_connect(ssl);
     if (connect_rc != 1) {
         int ssl_error = SSL_get_error(ssl, connect_rc);
-        result = aic_rt_tls_map_ssl_connect_error(ssl, ssl_error, verify_server);
+        result = aic_rt_tls_map_ssl_handshake_error(ssl, ssl_error, verify_server);
         SSL_free(ssl);
         SSL_CTX_free(ctx);
         goto cleanup;
@@ -3985,6 +4034,179 @@ cleanup:
     free(client_cert);
     free(client_key);
     free(server_name);
+    return result;
+}
+
+static long aic_rt_tls_accept_core(
+    long tcp_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    long* out_tls_handle,
+    int close_net_on_fail
+) {
+    (void)ca_cert_cap;
+    (void)client_cert_cap;
+    (void)client_key_cap;
+    if (out_tls_handle != NULL) {
+        *out_tls_handle = 0;
+    }
+    if (!(verify_server == 0 || verify_server == 1)) {
+        return 5;
+    }
+    if (!(has_ca_cert == 0 || has_ca_cert == 1) ||
+        !(has_client_cert == 0 || has_client_cert == 1) ||
+        !(has_client_key == 0 || has_client_key == 1)) {
+        return 5;
+    }
+    if (has_client_cert == 0 || has_client_key == 0) {
+        return 5;
+    }
+
+    AicNetSlot* net_slot = aic_rt_net_get_slot(tcp_handle);
+    if (net_slot == NULL || net_slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 5;
+    }
+    int fd = net_slot->fd;
+
+    char* ca_cert = NULL;
+    char* client_cert = NULL;
+    char* client_key = NULL;
+
+    long copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
+    if (copy_ca != 0) {
+        return copy_ca;
+    }
+    long copy_client_cert = aic_rt_tls_copy_optional_string(
+        client_cert_ptr,
+        client_cert_len,
+        has_client_cert,
+        &client_cert
+    );
+    if (copy_client_cert != 0) {
+        free(ca_cert);
+        return copy_client_cert;
+    }
+    long copy_client_key = aic_rt_tls_copy_optional_string(
+        client_key_ptr,
+        client_key_len,
+        has_client_key,
+        &client_key
+    );
+    if (copy_client_key != 0) {
+        free(ca_cert);
+        free(client_cert);
+        return copy_client_key;
+    }
+
+    long result = 5;
+#if AIC_RT_TLS_OPENSSL
+    if (!aic_rt_tls_ensure_initialized()) {
+        result = 7;
+        goto cleanup;
+    }
+    SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
+    if (ctx == NULL) {
+        result = 7;
+        goto cleanup;
+    }
+#ifdef TLS1_2_VERSION
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+#endif
+
+    if (client_cert == NULL || client_cert[0] == '\0' ||
+        client_key == NULL || client_key[0] == '\0') {
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+    if (SSL_CTX_use_certificate_file(ctx, client_cert, SSL_FILETYPE_PEM) != 1) {
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+    if (SSL_CTX_use_PrivateKey_file(ctx, client_key, SSL_FILETYPE_PEM) != 1) {
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+    if (SSL_CTX_check_private_key(ctx) != 1) {
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+
+    if (verify_server != 0) {
+        if (has_ca_cert == 0 || ca_cert == NULL || ca_cert[0] == '\0') {
+            SSL_CTX_free(ctx);
+            result = 5;
+            goto cleanup;
+        }
+        if (SSL_CTX_load_verify_locations(ctx, ca_cert, NULL) != 1) {
+            SSL_CTX_free(ctx);
+            result = 2;
+            goto cleanup;
+        }
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+    } else {
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    }
+
+    SSL* ssl = SSL_new(ctx);
+    if (ssl == NULL) {
+        SSL_CTX_free(ctx);
+        result = 7;
+        goto cleanup;
+    }
+    if (SSL_set_fd(ssl, fd) != 1) {
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        result = 5;
+        goto cleanup;
+    }
+
+    int accept_rc = SSL_accept(ssl);
+    if (accept_rc != 1) {
+        int ssl_error = SSL_get_error(ssl, accept_rc);
+        result = aic_rt_tls_map_ssl_handshake_error(ssl, ssl_error, verify_server);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        goto cleanup;
+    }
+
+    result = aic_rt_tls_alloc_slot(ssl, ctx, fd, tcp_handle, out_tls_handle);
+    if (result != 0) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        goto cleanup;
+    }
+
+    net_slot = aic_rt_net_get_slot(tcp_handle);
+    if (net_slot != NULL && net_slot->fd == fd && net_slot->kind == AIC_RT_NET_KIND_TCP_STREAM) {
+        aic_rt_net_reset_slot(net_slot);
+    }
+#else
+    result = 5;
+#endif
+
+cleanup:
+    if (result != 0 && close_net_on_fail && tcp_handle > 0) {
+        (void)aic_rt_net_tcp_close(tcp_handle);
+    }
+    free(ca_cert);
+    free(client_cert);
+    free(client_key);
     return result;
 }
 
@@ -4083,6 +4305,51 @@ long aic_rt_tls_connect_addr(
         server_name_len,
         server_name_cap,
         has_server_name,
+        out_tls_handle,
+        1
+    );
+    return tls_rc;
+}
+
+long aic_rt_tls_accept(
+    long listener_handle,
+    long verify_server,
+    const char* ca_cert_ptr,
+    long ca_cert_len,
+    long ca_cert_cap,
+    long has_ca_cert,
+    const char* client_cert_ptr,
+    long client_cert_len,
+    long client_cert_cap,
+    long has_client_cert,
+    const char* client_key_ptr,
+    long client_key_len,
+    long client_key_cap,
+    long has_client_key,
+    long timeout_ms,
+    long* out_tls_handle
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_accept", 2);
+    long tcp_handle = 0;
+    long accept_rc = aic_rt_net_tcp_accept(listener_handle, timeout_ms, &tcp_handle);
+    if (accept_rc != 0) {
+        return aic_rt_tls_map_net_error(accept_rc);
+    }
+    long tls_rc = aic_rt_tls_accept_core(
+        tcp_handle,
+        verify_server,
+        ca_cert_ptr,
+        ca_cert_len,
+        ca_cert_cap,
+        has_ca_cert,
+        client_cert_ptr,
+        client_cert_len,
+        client_cert_cap,
+        has_client_cert,
+        client_key_ptr,
+        client_key_len,
+        client_key_cap,
+        has_client_key,
         out_tls_handle,
         1
     );
@@ -4272,6 +4539,39 @@ long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
         *out_len = subject_len;
     }
     return 0;
+#endif
+}
+
+long aic_rt_tls_version(long tls_handle, long* out_version) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_version", 2);
+    if (out_version != NULL) {
+        *out_version = 0;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    int version = SSL_version(slot->ssl);
+#ifdef TLS1_3_VERSION
+    if (version == TLS1_3_VERSION) {
+        if (out_version != NULL) {
+            *out_version = 13;
+        }
+        return 0;
+    }
+#endif
+#ifdef TLS1_2_VERSION
+    if (version == TLS1_2_VERSION) {
+        if (out_version != NULL) {
+            *out_version = 12;
+        }
+        return 0;
+    }
+#endif
+    return 5;
 #endif
 }
 #endif

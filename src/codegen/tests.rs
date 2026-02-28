@@ -863,12 +863,14 @@ fn map_set_tcp_reader_drop_is_emitted_and_lifo() {
 import std.map;
 import std.set;
 import std.io;
+import std.tls;
 
 fn main() -> Int {
 let map: Map[Int, Int] = Map { handle: 11 };
 let set: Set[Int] = Set { items: Map { handle: 22 } };
 let reader = TcpReader { handle: 33, max_bytes: 64, timeout_ms: 10 };
-if map.handle + set.items.handle + reader.handle == 66 { 0 } else { 1 }
+let tls = TlsStream { handle: 44 };
+if map.handle + set.items.handle + reader.handle + tls.handle == 110 { 0 } else { 1 }
 }
 "#,
     )
@@ -888,6 +890,9 @@ if map.handle + set.items.handle + reader.handle == 66 { 0 } else { 1 }
         .find(|block| block.starts_with("i64 @aic_main("))
         .expect("aic_main block");
 
+    let tls_close = main_block
+        .find("@aic_rt_tls_close(")
+        .expect("tls close call in main");
     let tcp_close = main_block
         .find("@aic_rt_net_tcp_close(")
         .expect("tcp close call in main");
@@ -902,8 +907,16 @@ if map.handle + set.items.handle + reader.handle == 66 { 0 } else { 1 }
         output.llvm_ir
     );
     assert!(
-        tcp_close < map_close_positions[0] && map_close_positions[0] < map_close_positions[1],
-        "expected LIFO drop order reader -> set.items -> map\nllvm={}",
+        tls_close < tcp_close
+            && tcp_close < map_close_positions[0]
+            && map_close_positions[0] < map_close_positions[1],
+        "expected LIFO drop order tls -> reader -> set.items -> map\nllvm={}",
+        output.llvm_ir
+    );
+    assert_eq!(
+        main_block.matches("@aic_rt_tls_close(").count(),
+        1,
+        "expected one tls close in main\nllvm={}",
         output.llvm_ir
     );
     assert_eq!(
@@ -1726,6 +1739,9 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_tls_accept(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
@@ -1736,6 +1752,9 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_version(i64, i64*)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_buffer_new(i64, i64*)"));
@@ -1995,10 +2014,12 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect("));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect_addr("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_accept("));
     assert!(runtime_c_source().contains("long aic_rt_tls_send("));
     assert!(runtime_c_source().contains("long aic_rt_tls_recv("));
     assert!(runtime_c_source().contains("long aic_rt_tls_close("));
     assert!(runtime_c_source().contains("long aic_rt_tls_peer_subject("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_version("));
     assert!(runtime_c_source().contains("long aic_rt_async_poll_int(long op_handle"));
     assert!(runtime_c_source().contains("long aic_rt_async_poll_string(long op_handle"));
     assert!(runtime_c_source().contains("long aic_rt_url_parse("));

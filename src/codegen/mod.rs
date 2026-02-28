@@ -748,6 +748,16 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_accept_intrinsic",
+        runtime_symbol: "aic_rt_tls_accept",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[
+                "Int", "Bool", "String", "Bool", "String", "Bool", "String", "Bool", "Int",
+            ],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_tls_send_intrinsic",
         runtime_symbol: "aic_rt_tls_send",
         signatures: &[IntrinsicSignatureShape {
@@ -777,6 +787,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         signatures: &[IntrinsicSignatureShape {
             params: &["Int"],
             ret: "Result[String, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_version_intrinsic",
+        runtime_symbol: "aic_rt_tls_version",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, TlsError]",
         }],
     },
     IntrinsicBindingExpectation {
@@ -2622,6 +2640,7 @@ enum ResourceDropAction {
     MapClose,
     SetCloseInnerMap,
     NetTcpClose,
+    NetTlsClose,
     ConcurrencyCloseChannel,
     ConcurrencyCloseMutex,
     ConcurrencyCloseRwLock,
@@ -3254,6 +3273,7 @@ fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
         "Map" => Some(ResourceDropAction::MapClose),
         "Set" => Some(ResourceDropAction::SetCloseInnerMap),
         "TcpReader" => Some(ResourceDropAction::NetTcpClose),
+        "TlsStream" => Some(ResourceDropAction::NetTlsClose),
         "IntChannel" => Some(ResourceDropAction::ConcurrencyCloseChannel),
         "IntMutex" => Some(ResourceDropAction::ConcurrencyCloseMutex),
         "IntRwLock" => Some(ResourceDropAction::ConcurrencyCloseRwLock),
@@ -3267,6 +3287,7 @@ fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
         ResourceDropAction::FsFileClose => "aic_rt_fs_file_close",
         ResourceDropAction::MapClose | ResourceDropAction::SetCloseInnerMap => "aic_rt_map_close",
         ResourceDropAction::NetTcpClose => "aic_rt_net_tcp_close",
+        ResourceDropAction::NetTlsClose => "aic_rt_tls_close",
         ResourceDropAction::ConcurrencyCloseChannel => "aic_rt_conc_close_channel",
         ResourceDropAction::ConcurrencyCloseMutex => "aic_rt_conc_mutex_close",
         ResourceDropAction::ConcurrencyCloseRwLock => "aic_rt_conc_rwlock_close",

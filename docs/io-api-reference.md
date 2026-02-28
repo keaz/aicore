@@ -417,16 +417,27 @@ struct TlsStream {
     handle: Int,
 }
 
+enum TlsVersion {
+    Tls12,
+    Tls13,
+}
+
 fn default_tls_config() -> TlsConfig
 fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig
-fn tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
+fn tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
+fn tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
+fn tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
 fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }
+fn tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net }
+fn tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }
 fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
-fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError]
+fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }
 ```
 
 Notes:
@@ -435,9 +446,13 @@ Notes:
 - `unsafe_insecure_tls_config(...)` is the explicit unsafe override path (`verify_server: false`).
 - Unsafe override emits runtime audit warning tag: `AIC_TLS_POLICY_UNSAFE`.
 - Machine-readable policy contract: `docs/security-ops/tls-policy.v1.json`.
-- `tls_connect` upgrades an existing TCP connection handle after protocol negotiation (for example StartTLS/SSLRequest flows).
+- `tls_connect_with_config` upgrades an existing TCP connection handle using `config.server_name` when provided.
+- `tls_connect` / `tls_upgrade` are explicit hostname-aware wrappers for StartTLS-style upgrades over existing TCP handles.
 - `tls_connect_addr` performs TCP connect + TLS handshake in one call.
+- `tls_accept` / `tls_accept_timeout` provide server-side TLS wrapping over listener handles.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
+- `tls_version` reports negotiated protocol (`Tls12` or `Tls13`).
+- `tls_peer_cn` extracts the peer certificate common name from the subject string.
 - Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.
 - Replay contract: `docs/security-ops/postgres-tls-scram-replay.v1.json`.
 - On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.

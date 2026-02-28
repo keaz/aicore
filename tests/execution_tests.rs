@@ -9074,6 +9074,7 @@ import std.tls;
 import std.env;
 import std.string;
 import std.bytes;
+import std.net;
 
 fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
@@ -9124,6 +9125,17 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
         Ok(subject) => string.contains(subject, "localhost"),
         Err(_) => false,
     };
+    let cn_ok = match tls_peer_cn(stream) {
+        Ok(cn) => string.contains(cn, "localhost"),
+        Err(_) => false,
+    };
+    let version_ok = match tls_version(stream) {
+        Ok(v) => match v {
+            Tls12 => true,
+            Tls13 => true,
+        },
+        Err(_) => false,
+    };
     let close_ok = match tls_close(stream) {
         Ok(closed) => closed,
         Err(_) => false,
@@ -9145,13 +9157,39 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
         Err(err) => cert_failure(err),
     };
 
+    let wrapped_ok = match tcp_connect(addr, 5000) {
+        Ok(handle) => match tls_connect(handle, "localhost", secure) {
+            Ok(stream4) => match tls_close(stream4) {
+                Ok(closed) => closed,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        },
+        Err(_) => false,
+    };
+
+    let upgraded_ok = match tcp_connect(addr, 5000) {
+        Ok(handle) => match tls_upgrade(handle, "localhost", secure) {
+            Ok(stream5) => match tls_close(stream5) {
+                Ok(closed) => closed,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        },
+        Err(_) => false,
+    };
+
     let score = bool_to_int(write_ok)
         + bool_to_int(response_ok)
         + bool_to_int(subject_ok)
+        + bool_to_int(cn_ok)
+        + bool_to_int(version_ok)
         + bool_to_int(close_ok)
         + bool_to_int(secure_ok)
-        + bool_to_int(default_cert_reject);
-    if score == 6 { 42 } else { score }
+        + bool_to_int(default_cert_reject)
+        + bool_to_int(wrapped_ok)
+        + bool_to_int(upgraded_ok);
+    if score == 10 { 42 } else { score }
 }
 
 fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
@@ -9225,7 +9263,7 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
                 .expect("generate tls cert");
             assert!(req_status.success(), "openssl req failed");
 
-            let accept_count = "4".to_string();
+            let accept_count = "8".to_string();
             let port_flag = port.to_string();
             let _server = Command::new("openssl")
                 .current_dir(root)
@@ -9281,6 +9319,16 @@ fn is_protocol(v: Result[Int, TlsError]) -> Bool {
     }
 }
 
+fn is_protocol_version(v: Result[TlsVersion, TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn is_protocol_string(v: Result[String, TlsError]) -> Bool {
     match v {
         Err(err) => match err {
@@ -9315,14 +9363,26 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         },
         _ => false,
     };
-    let close_ok = is_protocol_bool(tls_close(bad));
     let subject_ok = is_protocol_string(tls_peer_subject(bad));
+    let cn_ok = is_protocol_string(tls_peer_cn(bad));
+    let version_ok = is_protocol_version(tls_version(bad));
+    let close_ok = is_protocol_bool(tls_close(bad));
+    let accept_ok = match tls_accept(9999, default_tls_config()) {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    };
 
     let score = bool_to_int(send_ok)
         + bool_to_int(recv_ok)
         + bool_to_int(close_ok)
-        + bool_to_int(subject_ok);
-    if score == 4 {
+        + bool_to_int(subject_ok)
+        + bool_to_int(cn_ok)
+        + bool_to_int(version_ok)
+        + bool_to_int(accept_ok);
+    if score == 7 {
         print_int(42);
     } else {
         print_int(score);

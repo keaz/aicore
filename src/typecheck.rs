@@ -176,6 +176,7 @@ enum ResourceKind {
     FileHandle,
     TcpHandle,
     UdpHandle,
+    TlsStream,
     ProcessHandle,
     AsyncIntOp,
     AsyncStringOp,
@@ -193,6 +194,7 @@ impl ResourceKind {
             Self::FileHandle => "FileHandle",
             Self::TcpHandle => "TcpHandle",
             Self::UdpHandle => "UdpHandle",
+            Self::TlsStream => "TlsStream",
             Self::ProcessHandle => "ProcessHandle",
             Self::AsyncIntOp => "AsyncIntOp",
             Self::AsyncStringOp => "AsyncStringOp",
@@ -7515,6 +7517,62 @@ fn resource_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
             first_param_base_type: "Int",
             required_effect: "net",
         }),
+        "tls_send" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_send",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_send_bytes" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_send_bytes",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_recv" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_recv",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_recv_bytes" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_recv_bytes",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_version" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_version",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_peer_subject" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_peer_subject",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_peer_cn" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_peer_cn",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_close" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: true,
+            api: "tls_close",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
         "udp_send_to" => Some(ResourceProtocolOp {
             kind: ResourceKind::UdpHandle,
             terminal: false,
@@ -8313,9 +8371,13 @@ fn main() -> Int effects { fs } capabilities { fs } {
     fn resource_protocol_reports_net_and_proc_terminal_reuse() {
         let src = r#"
 enum NetError { Closed }
+enum TlsError { Closed }
 enum ProcError { Done }
+struct TlsStream { handle: Int }
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net } capabilities { net } { Ok(0) }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net } capabilities { net } { Ok(true) }
+fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net } capabilities { net } { Ok(0) }
+fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net } capabilities { net } { Ok(true) }
 fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } capabilities { proc } { Ok(0) }
 fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc } capabilities { proc } { Ok(true) }
 
@@ -8323,6 +8385,9 @@ fn main() -> Int effects { net, proc } capabilities { net, proc } {
     let sock = 7;
     let _closed = tcp_close(sock);
     let _recv = tcp_recv(sock, 1, 1);
+    let tls = TlsStream { handle: 5 };
+    let _tls_closed = tls_close(tls);
+    let _tls_send = tls_send(tls, "x");
 
     let child = 9;
     let _waited = wait(child);
@@ -8348,6 +8413,11 @@ fn main() -> Int effects { net, proc } capabilities { net, proc } {
         );
         assert!(
             e2006.iter().any(|diag| diag.message.contains("is_running")),
+            "diagnostics={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            e2006.iter().any(|diag| diag.message.contains("tls_send")),
             "diagnostics={:#?}",
             out.diagnostics
         );

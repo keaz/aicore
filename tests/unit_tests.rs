@@ -2501,12 +2501,28 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
 
     assert!(
+        source.contains("fn tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig)"),
+        "std/tls.aic must expose hostname-aware tls_connect wrapper"
+    );
+    assert!(
+        source.contains("fn tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig)"),
+        "std/tls.aic must expose explicit tls_upgrade helper"
+    );
+    assert!(
+        source.contains("fn tls_connect_with_config(tcp_fd: Int, config: TlsConfig)"),
+        "std/tls.aic must preserve direct config-based TLS wrap helper"
+    );
+    assert!(
         source.contains("let raw = aic_tls_connect_intrinsic("),
-        "std/tls.aic tls_connect must call the TLS connect intrinsic"
+        "std/tls.aic connect helper must call the TLS connect intrinsic"
     );
     assert!(
         source.contains("let raw = aic_tls_connect_addr_intrinsic("),
         "std/tls.aic tls_connect_addr must call the TLS connect-addr intrinsic"
+    );
+    assert!(
+        source.contains("let raw = aic_tls_accept_intrinsic("),
+        "std/tls.aic tls_accept_timeout must call the TLS accept intrinsic"
     );
     assert_delegate_call(
         &source,
@@ -2547,14 +2563,24 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         "aic_tls_peer_subject_intrinsic",
         1,
     );
+    assert!(
+        source.contains("let raw = aic_tls_version_intrinsic(stream.handle);"),
+        "std/tls.aic tls_version must call the TLS version intrinsic"
+    );
+    assert!(
+        source.contains("fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError]"),
+        "std/tls.aic must expose tls_peer_cn helper"
+    );
 
     for (intrinsic, arity) in [
         ("aic_tls_connect_intrinsic", 10usize),
         ("aic_tls_connect_addr_intrinsic", 11usize),
+        ("aic_tls_accept_intrinsic", 9usize),
         ("aic_tls_send_intrinsic", 2usize),
         ("aic_tls_recv_intrinsic", 3usize),
         ("aic_tls_close_intrinsic", 1usize),
         ("aic_tls_peer_subject_intrinsic", 1usize),
+        ("aic_tls_version_intrinsic", 1usize),
     ] {
         assert_intrinsic_declaration(&source, "std/tls.aic", intrinsic, arity);
     }

@@ -220,10 +220,12 @@ impl<'a> Generator<'a> {
         let canonical = match name {
             "aic_tls_connect_intrinsic" => "tls_connect",
             "aic_tls_connect_addr_intrinsic" => "tls_connect_addr",
+            "aic_tls_accept_intrinsic" => "tls_accept",
             "aic_tls_send_intrinsic" => "tls_send",
             "aic_tls_recv_intrinsic" => "tls_recv",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
+            "aic_tls_version_intrinsic" => "tls_version",
             _ => return None,
         };
 
@@ -252,6 +254,17 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_tls_connect_addr_call(name, args, span, fctx))
             }
+            "tls_accept"
+                if self.sig_matches_shape(
+                    name,
+                    &[
+                        "Int", "Bool", "String", "Bool", "String", "Bool", "String", "Bool", "Int",
+                    ],
+                    "Result[Int, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_accept_call(name, args, span, fctx))
+            }
             "tls_send"
                 if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, TlsError]") =>
             {
@@ -273,6 +286,9 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["Int"], "Result[String, TlsError]") =>
             {
                 Some(self.gen_tls_peer_subject_call(name, args, span, fctx))
+            }
+            "tls_version" if self.sig_matches_shape(name, &["Int"], "Result[Int, TlsError]") => {
+                Some(self.gen_tls_version_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -561,6 +577,120 @@ impl<'a> Generator<'a> {
         self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
+    pub(super) fn gen_tls_accept_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 9 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_accept_intrinsic expects nine arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let listener_handle = self.gen_expr(&args[0], fctx)?;
+        let verify_server = self.gen_expr(&args[1], fctx)?;
+        let ca_cert_path = self.gen_expr(&args[2], fctx)?;
+        let has_ca_cert_path = self.gen_expr(&args[3], fctx)?;
+        let client_cert_path = self.gen_expr(&args[4], fctx)?;
+        let has_client_cert_path = self.gen_expr(&args[5], fctx)?;
+        let client_key_path = self.gen_expr(&args[6], fctx)?;
+        let has_client_key_path = self.gen_expr(&args[7], fctx)?;
+        let timeout_ms = self.gen_expr(&args[8], fctx)?;
+
+        if listener_handle.ty != LType::Int
+            || ca_cert_path.ty != LType::String
+            || client_cert_path.ty != LType::String
+            || client_key_path.ty != LType::String
+            || timeout_ms.ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_accept_intrinsic expects (Int, Bool, String, Bool, String, Bool, String, Bool, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let verify_server_i64 = self.bool_arg_to_i64(
+            &verify_server,
+            "aic_tls_accept_intrinsic",
+            args[1].span,
+            fctx,
+        )?;
+        let has_ca_cert_i64 = self.bool_arg_to_i64(
+            &has_ca_cert_path,
+            "aic_tls_accept_intrinsic",
+            args[3].span,
+            fctx,
+        )?;
+        let has_client_cert_i64 = self.bool_arg_to_i64(
+            &has_client_cert_path,
+            "aic_tls_accept_intrinsic",
+            args[5].span,
+            fctx,
+        )?;
+        let has_client_key_i64 = self.bool_arg_to_i64(
+            &has_client_key_path,
+            "aic_tls_accept_intrinsic",
+            args[7].span,
+            fctx,
+        )?;
+
+        let (ca_ptr, ca_len, ca_cap) = self.string_parts(&ca_cert_path, args[2].span, fctx)?;
+        let (client_cert_ptr, client_cert_len, client_cert_cap) =
+            self.string_parts(&client_cert_path, args[4].span, fctx)?;
+        let (client_key_ptr, client_key_len, client_key_cap) =
+            self.string_parts(&client_key_path, args[6].span, fctx)?;
+
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_accept(i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            listener_handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            verify_server_i64,
+            ca_ptr,
+            ca_len,
+            ca_cap,
+            has_ca_cert_i64,
+            client_cert_ptr,
+            client_cert_len,
+            client_cert_cap,
+            has_client_cert_i64,
+            client_key_ptr,
+            client_key_len,
+            client_key_cap,
+            has_client_key_i64,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     pub(super) fn gen_tls_send_call(
         &mut self,
         name: &str,
@@ -763,6 +893,63 @@ impl<'a> Generator<'a> {
             out_len_slot
         ));
         let ok_payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_version_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_version_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_version_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_version_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_version_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_version(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_version_slot
+        ));
+        let out_version = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_version, out_version_slot
+        ));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_version),
+        };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",

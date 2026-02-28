@@ -417,10 +417,14 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64, i64*)\n",
         );
+        text.push_str(
+            "declare i64 @aic_rt_tls_accept(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64*)\n",
+        );
         text.push_str("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
         text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_tls_version(i64, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_async_poll_int(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)\n\n");
         text.push_str(

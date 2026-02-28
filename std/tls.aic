@@ -3,6 +3,7 @@ module std.tls;
 import std.bytes;
 import std.option;
 import std.result;
+import std.string;
 
 enum TlsError {
     HandshakeFailed,
@@ -12,6 +13,11 @@ enum TlsError {
     ProtocolError,
     ConnectionClosed,
     Io,
+}
+
+enum TlsVersion {
+    Tls12,
+    Tls13,
 }
 
 struct TlsConfig {
@@ -51,10 +57,22 @@ intrinsic fn aic_tls_connect_addr_intrinsic(
     has_server_name: Bool,
     timeout_ms: Int,
 ) -> Result[Int, TlsError] effects { net };
+intrinsic fn aic_tls_accept_intrinsic(
+    listener_handle: Int,
+    verify_server: Bool,
+    ca_cert_path: String,
+    has_ca_cert_path: Bool,
+    client_cert_path: String,
+    has_client_cert_path: Bool,
+    client_key_path: String,
+    has_client_key_path: Bool,
+    timeout_ms: Int,
+) -> Result[Int, TlsError] effects { net };
 intrinsic fn aic_tls_send_intrinsic(handle: Int, payload: String) -> Result[Int, TlsError] effects { net };
 intrinsic fn aic_tls_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net };
 intrinsic fn aic_tls_close_intrinsic(handle: Int) -> Result[Bool, TlsError] effects { net };
-intrinsic fn aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError];
+intrinsic fn aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError] effects { net };
+intrinsic fn aic_tls_version_intrinsic(handle: Int) -> Result[Int, TlsError] effects { net };
 
 fn default_tls_config() -> TlsConfig {
     TlsConfig {
@@ -90,7 +108,7 @@ fn option_present(value: Option[String]) -> Bool {
     }
 }
 
-fn tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
+fn tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
     let raw = aic_tls_connect_intrinsic(
         tcp_fd,
         config.verify_server,
@@ -107,6 +125,21 @@ fn tls_connect(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] ef
         Ok(handle) => Ok(TlsStream { handle: handle }),
         Err(err) => Err(err),
     }
+}
+
+fn tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
+    let applied = TlsConfig {
+        verify_server: config.verify_server,
+        ca_cert_path: config.ca_cert_path,
+        client_cert_path: config.client_cert_path,
+        client_key_path: config.client_key_path,
+        server_name: Some(hostname),
+    };
+    tls_connect_with_config(tcp_fd, applied)
+}
+
+fn tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
+    tls_connect(tcp_fd, hostname, config)
 }
 
 fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net } {
@@ -127,6 +160,28 @@ fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[
         Ok(handle) => Ok(TlsStream { handle: handle }),
         Err(err) => Err(err),
     }
+}
+
+fn tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net } {
+    let raw = aic_tls_accept_intrinsic(
+        listener_handle,
+        config.verify_server,
+        option_text(config.ca_cert_path),
+        option_present(config.ca_cert_path),
+        option_text(config.client_cert_path),
+        option_present(config.client_cert_path),
+        option_text(config.client_key_path),
+        option_present(config.client_key_path),
+        timeout_ms,
+    );
+    match raw {
+        Ok(handle) => Ok(TlsStream { handle: handle }),
+        Err(err) => Err(err),
+    }
+}
+
+fn tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
+    tls_accept_timeout(listener_handle, config, 30000)
 }
 
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net } {
@@ -153,6 +208,47 @@ fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net } {
     aic_tls_close_intrinsic(stream.handle)
 }
 
-fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] {
+fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net } {
     aic_tls_peer_subject_intrinsic(stream.handle)
+}
+
+fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net } {
+    let raw = aic_tls_version_intrinsic(stream.handle);
+    match raw {
+        Ok(value) => if value == 13 {
+            Ok(Tls13())
+        } else {
+            if value == 12 {
+                Ok(Tls12())
+            } else {
+                Err(ProtocolError())
+            }
+        },
+        Err(err) => Err(err),
+    }
+}
+
+fn tls_subject_cn_value(text: String, start: Int) -> Result[String, TlsError] {
+    let offset = start + 3;
+    let tail = aic_string_substring_intrinsic(text, offset, aic_string_len_intrinsic(text));
+    let cn = match aic_string_index_of_intrinsic(tail, "/") {
+        Some(idx) => aic_string_substring_intrinsic(tail, 0, idx),
+        None => tail,
+    };
+    if aic_string_len_intrinsic(cn) > 0 {
+        Ok(cn)
+    } else {
+        Err(ProtocolError())
+    }
+}
+
+fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net } {
+    let subject = tls_peer_subject(stream);
+    match subject {
+        Err(err) => Err(err),
+        Ok(text) => match aic_string_index_of_intrinsic(text, "CN=") {
+            None => Err(ProtocolError()),
+            Some(start) => tls_subject_cn_value(text, start),
+        },
+    }
 }
