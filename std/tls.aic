@@ -1,3 +1,9 @@
+/// The `std.tls` module provides standard-library `tls` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.tls;
+/// ```
 module std.tls;
 
 import std.bytes;
@@ -5,21 +11,48 @@ import std.option;
 import std.result;
 import std.string;
 
+/// `TlsError` is a `enum` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsError` through `std.tls` APIs.
+/// ```
 enum TlsError {
+    /// `HandshakeFailed` enum variant.
     HandshakeFailed,
+    /// `CertificateInvalid` enum variant.
     CertificateInvalid,
+    /// `CertificateExpired` enum variant.
     CertificateExpired,
+    /// `HostnameMismatch` enum variant.
     HostnameMismatch,
+    /// `ProtocolError` enum variant.
     ProtocolError,
+    /// `ConnectionClosed` enum variant.
     ConnectionClosed,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `TlsVersion` is a `enum` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsVersion` through `std.tls` APIs.
+/// ```
 enum TlsVersion {
+    /// `Tls12` enum variant.
     Tls12,
+    /// `Tls13` enum variant.
     Tls13,
 }
 
+/// `TlsConfig` is a `struct` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsConfig` through `std.tls` APIs.
+/// ```
 struct TlsConfig {
     verify_server: Bool,
     ca_cert_path: Option[String],
@@ -28,10 +61,28 @@ struct TlsConfig {
     server_name: Option[String],
 }
 
+/// `TlsStream` is a `struct` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsStream` through `std.tls` APIs.
+/// ```
 struct TlsStream {
     handle: Int,
 }
 
+/// `aic_tls_connect_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_connect_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_connect_intrinsic(
     tcp_fd: Int,
     verify_server: Bool,
@@ -44,6 +95,18 @@ intrinsic fn aic_tls_connect_intrinsic(
     server_name: String,
     has_server_name: Bool,
 ) -> Result[Int, TlsError] effects { net };
+/// `aic_tls_connect_addr_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_connect_addr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_connect_addr_intrinsic(
     addr: String,
     verify_server: Bool,
@@ -57,6 +120,18 @@ intrinsic fn aic_tls_connect_addr_intrinsic(
     has_server_name: Bool,
     timeout_ms: Int,
 ) -> Result[Int, TlsError] effects { net };
+/// `aic_tls_accept_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_accept_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_accept_intrinsic(
     listener_handle: Int,
     verify_server: Bool,
@@ -68,12 +143,84 @@ intrinsic fn aic_tls_accept_intrinsic(
     has_client_key_path: Bool,
     timeout_ms: Int,
 ) -> Result[Int, TlsError] effects { net };
+/// `aic_tls_send_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_send_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_send_intrinsic(handle: Int, payload: String) -> Result[Int, TlsError] effects { net };
+/// `aic_tls_recv_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_recv_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_close_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_close_intrinsic(handle: Int) -> Result[Bool, TlsError] effects { net };
+/// `aic_tls_peer_subject_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_peer_subject_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_version_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_version_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_version_intrinsic(handle: Int) -> Result[Int, TlsError] effects { net };
 
+/// `default_tls_config` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `default_tls_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn default_tls_config() -> TlsConfig {
     TlsConfig {
         verify_server: true,
@@ -84,6 +231,18 @@ fn default_tls_config() -> TlsConfig {
     }
 }
 
+/// `unsafe_insecure_tls_config` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `unsafe_insecure_tls_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig {
     TlsConfig {
         verify_server: false,
@@ -94,6 +253,18 @@ fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig {
     }
 }
 
+/// `option_text` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `option_text` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn option_text(value: Option[String]) -> String {
     match value {
         Some(text) => text,
@@ -101,6 +272,18 @@ fn option_text(value: Option[String]) -> String {
     }
 }
 
+/// `option_present` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `option_present` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn option_present(value: Option[String]) -> Bool {
     match value {
         Some(_) => true,
@@ -108,6 +291,18 @@ fn option_present(value: Option[String]) -> Bool {
     }
 }
 
+/// `tls_connect_with_config` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_connect_with_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
     let raw = aic_tls_connect_intrinsic(
         tcp_fd,
@@ -127,6 +322,18 @@ fn tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, 
     }
 }
 
+/// `tls_connect` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_connect` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
     let applied = TlsConfig {
         verify_server: config.verify_server,
@@ -138,10 +345,34 @@ fn tls_connect(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsSt
     tls_connect_with_config(tcp_fd, applied)
 }
 
+/// `tls_upgrade` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_upgrade` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
     tls_connect(tcp_fd, hostname, config)
 }
 
+/// `tls_connect_addr` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_connect_addr` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net } {
     let raw = aic_tls_connect_addr_intrinsic(
         addr,
@@ -162,6 +393,18 @@ fn tls_connect_addr(addr: String, config: TlsConfig, timeout_ms: Int) -> Result[
     }
 }
 
+/// `tls_accept_timeout` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_accept_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) -> Result[TlsStream, TlsError] effects { net } {
     let raw = aic_tls_accept_intrinsic(
         listener_handle,
@@ -180,22 +423,82 @@ fn tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) 
     }
 }
 
+/// `tls_accept` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_accept` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net } {
     tls_accept_timeout(listener_handle, config, 30000)
 }
 
+/// `tls_send` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net } {
     aic_tls_send_intrinsic(stream.handle, payload)
 }
 
+/// `tls_send_bytes` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_send_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net } {
     aic_tls_send_intrinsic(stream.handle, data.data)
 }
 
+/// `tls_recv` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net } {
     aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms)
 }
 
+/// `tls_recv_bytes` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net } {
     let raw = aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms);
     match raw {
@@ -204,14 +507,50 @@ fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
     }
 }
 
+/// `tls_close` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net } {
     aic_tls_close_intrinsic(stream.handle)
 }
 
+/// `tls_peer_subject` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_peer_subject` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net } {
     aic_tls_peer_subject_intrinsic(stream.handle)
 }
 
+/// `tls_version` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_version` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net } {
     let raw = aic_tls_version_intrinsic(stream.handle);
     match raw {
@@ -228,6 +567,18 @@ fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net 
     }
 }
 
+/// `tls_subject_cn_value` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_subject_cn_value` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_subject_cn_value(text: String, start: Int) -> Result[String, TlsError] {
     let offset = start + 3;
     let tail = aic_string_substring_intrinsic(text, offset, aic_string_len_intrinsic(text));
@@ -242,6 +593,18 @@ fn tls_subject_cn_value(text: String, start: Int) -> Result[String, TlsError] {
     }
 }
 
+/// `tls_peer_cn` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_peer_cn` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net } {
     let subject = tls_peer_subject(stream);
     match subject {

@@ -1,9 +1,21 @@
+/// The `std.secure_errors` module provides standard-library `secure errors` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.secure_errors;
+/// ```
 module std.secure_errors;
 
 import std.buffer;
 import std.crypto;
 import std.tls;
 
+/// `SecureErrorInfo` is a `struct` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Use `SecureErrorInfo` through `std.secure_errors` APIs.
+/// ```
 struct SecureErrorInfo {
     module_name: String,
     code: String,
@@ -11,14 +23,37 @@ struct SecureErrorInfo {
     retryable: Bool,
 }
 
+/// `PoolErrorContract` is a `enum` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolErrorContract` through `std.secure_errors` APIs.
+/// ```
 enum PoolErrorContract {
+    /// `MaxSizeReached` enum variant.
     MaxSizeReached,
+    /// `Timeout` enum variant.
     Timeout,
+    /// `ConnectionFailed` enum variant.
     ConnectionFailed,
+    /// `Closed` enum variant.
     Closed,
+    /// `HealthCheckFailed` enum variant.
     HealthCheckFailed,
 }
 
+/// `secure_error_info` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.secure_errors` and call `secure_error_info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn secure_error_info(module_name: String, code: String, category: String, retryable: Bool) -> SecureErrorInfo {
     SecureErrorInfo {
         module_name: module_name,
@@ -28,6 +63,18 @@ fn secure_error_info(module_name: String, code: String, category: String, retrya
     }
 }
 
+/// `buffer_error_info` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.secure_errors` and call `buffer_error_info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn buffer_error_info(err: BufferError) -> SecureErrorInfo {
     match err {
         Underflow => secure_error_info("buffer", "BUF_UNDERFLOW", "protocol", false),
@@ -37,6 +84,18 @@ fn buffer_error_info(err: BufferError) -> SecureErrorInfo {
     }
 }
 
+/// `crypto_error_info` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.secure_errors` and call `crypto_error_info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn crypto_error_info(err: CryptoError) -> SecureErrorInfo {
     match err {
         InvalidInput => secure_error_info("crypto", "CRYPTO_INVALID_INPUT", "input", false),
@@ -50,6 +109,18 @@ fn crypto_error_info(err: CryptoError) -> SecureErrorInfo {
     }
 }
 
+/// `tls_error_info` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.secure_errors` and call `tls_error_info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tls_error_info(err: TlsError) -> SecureErrorInfo {
     match err {
         HandshakeFailed => secure_error_info("tls", "TLS_HANDSHAKE_FAILED", "security", true),
@@ -62,6 +133,18 @@ fn tls_error_info(err: TlsError) -> SecureErrorInfo {
     }
 }
 
+/// `pool_error_info` in `std.secure_errors`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.secure_errors` and call `pool_error_info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_error_info(err: PoolErrorContract) -> SecureErrorInfo {
     match err {
         MaxSizeReached => secure_error_info("pool", "POOL_MAX_SIZE_REACHED", "capacity", true),

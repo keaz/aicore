@@ -1,34 +1,100 @@
+/// The `std.map` module provides standard-library `map` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.map;
+/// ```
 module std.map;
 
 import std.option;
 import std.vec;
 
+/// `Map` is a `struct` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Map` through `std.map` APIs.
+/// ```
 struct Map[K, V] {
     handle: Int,
 }
 
+/// `MapEntry` is a `struct` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Use `MapEntry` through `std.map` APIs.
+/// ```
 struct MapEntry[K, V] {
     key: K,
     value: V,
 }
 
+/// `aic_map_new_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_new_intrinsic[K, V]() -> Map[K, V] {
     Map {
         handle: 0,
     }
 }
 
+/// `aic_map_close_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_close_intrinsic[K, V](m: Map[K, V]) -> () {
     let _m = m;
     ()
 }
 
+/// `aic_map_insert_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_insert_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
     let _key = key;
     let _value = value;
     m
 }
 
+/// `aic_map_get_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_get_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V] {
     let _m = m;
     let _key = key;
@@ -36,22 +102,70 @@ fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V] {
     out
 }
 
+/// `aic_map_contains_key_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_contains_key_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool {
     let _m = m;
     let _key = key;
     false
 }
 
+/// `aic_map_remove_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_remove_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V] {
     let _key = key;
     m
 }
 
+/// `aic_map_size_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_size_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int {
     let _m = m;
     0
 }
 
+/// `aic_map_keys_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_keys_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K] {
     let _m = m;
     let out: Vec[K] = Vec {
@@ -62,6 +176,18 @@ fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K] {
     out
 }
 
+/// `aic_map_values_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_values_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V] {
     let _m = m;
     let out: Vec[V] = Vec {
@@ -72,6 +198,18 @@ fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V] {
     out
 }
 
+/// `aic_map_entries_intrinsic` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `aic_map_entries_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
     let _m = m;
     let out: Vec[MapEntry[K, V]] = Vec {
@@ -82,30 +220,114 @@ fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
     out
 }
 
+/// `new_map` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `new_map` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_map[K, V]() -> Map[K, V] {
     aic_map_new_intrinsic()
 }
 
+/// `close_map` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `close_map` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_map[K, V](m: Map[K, V]) -> () {
     aic_map_close_intrinsic(m)
 }
 
+/// `insert` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `insert` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn insert[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
     aic_map_insert_intrinsic(m, key, value)
 }
 
+/// `get` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `get` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn get[K, V](m: Map[K, V], key: K) -> Option[V] {
     aic_map_get_intrinsic(m, key)
 }
 
+/// `contains_key` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `contains_key` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn contains_key[K, V](m: Map[K, V], key: K) -> Bool {
     aic_map_contains_key_intrinsic(m, key)
 }
 
+/// `remove` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `remove` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn remove[K, V](m: Map[K, V], key: K) -> Map[K, V] {
     aic_map_remove_intrinsic(m, key)
 }
 
+/// `size` in `std.map`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.map` and call `size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn size[K, V](m: Map[K, V]) -> Int {
     aic_map_size_intrinsic(m)
 }

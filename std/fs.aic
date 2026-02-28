@@ -1,3 +1,9 @@
+/// The `std.fs` module provides standard-library `fs` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.fs;
+/// ```
 module std.fs;
 
 import std.bytes;
@@ -5,60 +11,179 @@ import std.option;
 import std.result;
 import std.vec;
 
+/// `FsError` is a `enum` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Use `FsError` through `std.fs` APIs.
+/// ```
 enum FsError {
+    /// `NotFound` enum variant.
     NotFound,
+    /// `PermissionDenied` enum variant.
     PermissionDenied,
+    /// `AlreadyExists` enum variant.
     AlreadyExists,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `FsMetadata` is a `struct` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Use `FsMetadata` through `std.fs` APIs.
+/// ```
 struct FsMetadata {
     is_file: Bool,
     is_dir: Bool,
     size: Int,
 }
 
+/// `FileHandle` is a `struct` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Use `FileHandle` through `std.fs` APIs.
+/// ```
 struct FileHandle {
     handle: Int,
 }
 
 // Internal compiler/runtime intrinsics lowered by the LLVM backend.
 // Public APIs below delegate to these entrypoints.
+/// `aic_fs_exists_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_exists_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs } {
     false
 }
 
+/// `aic_fs_read_text_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_read_text_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
+/// `aic_fs_write_text_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_write_text_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_append_text_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_append_text_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_copy_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_copy_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_move_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_move_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_delete_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_delete_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_metadata_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_metadata_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs } {
     let out: Result[FsMetadata, FsError] = Ok(FsMetadata {
         is_file: false,
@@ -68,6 +193,18 @@ fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effect
     out
 }
 
+/// `aic_fs_walk_dir_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_walk_dir_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
     let out: Result[Vec[String], FsError] = Ok(Vec {
         ptr: 0,
@@ -77,76 +214,256 @@ fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effec
     out
 }
 
+/// `aic_fs_temp_file_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_temp_file_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
+/// `aic_fs_temp_dir_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_temp_dir_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
+/// `aic_fs_read_bytes_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_read_bytes_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Err(Io());
     out
 }
 
+/// `aic_fs_write_bytes_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_write_bytes_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Err(Io());
     out
 }
 
+/// `aic_fs_append_bytes_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_append_bytes_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Err(Io());
     out
 }
 
+/// `aic_fs_open_read_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_open_read_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
     let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
     out
 }
 
+/// `aic_fs_open_write_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_open_write_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
     let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
     out
 }
 
+/// `aic_fs_open_append_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_open_append_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
     let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
     out
 }
 
+/// `aic_fs_file_read_line_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_file_read_line_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], FsError] effects { fs } {
     let out: Result[Option[String], FsError] = Ok(None());
     out
 }
 
+/// `aic_fs_file_write_str_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_file_write_str_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_file_close_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_file_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_mkdir_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_mkdir_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_mkdir_all_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_mkdir_all_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_rmdir_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_rmdir_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_list_dir_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_list_dir_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
     let out: Result[Vec[String], FsError] = Ok(Vec {
         ptr: 0,
@@ -156,65 +473,245 @@ fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effec
     out
 }
 
+/// `aic_fs_create_symlink_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_create_symlink_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `aic_fs_read_symlink_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_read_symlink_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
     let out: Result[String, FsError] = Ok("");
     out
 }
 
+/// `aic_fs_set_readonly_intrinsic` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `aic_fs_set_readonly_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs } {
     let out: Result[Bool, FsError] = Ok(true);
     out
 }
 
+/// `exists` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `exists` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn exists(path: String) -> Bool effects { fs } {
     aic_fs_exists_intrinsic(path)
 }
 
+/// `read_text` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `read_text` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_text(path: String) -> Result[String, FsError] effects { fs } {
     aic_fs_read_text_intrinsic(path)
 }
 
+/// `write_text` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `write_text` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_write_text_intrinsic(path, content)
 }
 
+/// `append_text` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `append_text` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn append_text(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_append_text_intrinsic(path, content)
 }
 
+/// `copy` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `copy` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_copy_intrinsic(from_path, to_path)
 }
 
+/// `move` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `move` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn move(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_move_intrinsic(from_path, to_path)
 }
 
+/// `delete` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `delete` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn delete(path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_delete_intrinsic(path)
 }
 
+/// `metadata` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `metadata` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn metadata(path: String) -> Result[FsMetadata, FsError] effects { fs } {
     aic_fs_metadata_intrinsic(path)
 }
 
+/// `walk_dir` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `walk_dir` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn walk_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
     aic_fs_walk_dir_intrinsic(path)
 }
 
+/// `temp_file` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `temp_file` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn temp_file(prefix: String) -> Result[String, FsError] effects { fs } {
     aic_fs_temp_file_intrinsic(prefix)
 }
 
+/// `temp_dir` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `temp_dir` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs } {
     aic_fs_temp_dir_intrinsic(prefix)
 }
 
+/// `read_bytes` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `read_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_bytes(path: String) -> Result[Bytes, FsError] effects { fs } {
     let raw = aic_fs_read_bytes_intrinsic(path);
     match raw {
@@ -223,50 +720,194 @@ fn read_bytes(path: String) -> Result[Bytes, FsError] effects { fs } {
     }
 }
 
+/// `write_bytes` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `write_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs } {
     aic_fs_write_bytes_intrinsic(path, content.data)
 }
 
+/// `append_bytes` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `append_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn append_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs } {
     aic_fs_append_bytes_intrinsic(path, content.data)
 }
 
+/// `open_read` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `open_read` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn open_read(path: String) -> Result[FileHandle, FsError] effects { fs } {
     aic_fs_open_read_intrinsic(path)
 }
 
+/// `open_write` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `open_write` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn open_write(path: String) -> Result[FileHandle, FsError] effects { fs } {
     aic_fs_open_write_intrinsic(path)
 }
 
+/// `open_append` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `open_append` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn open_append(path: String) -> Result[FileHandle, FsError] effects { fs } {
     aic_fs_open_append_intrinsic(path)
 }
 
+/// `file_read_line` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `file_read_line` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_read_line(file: FileHandle) -> Result[Option[String], FsError] effects { fs } {
     aic_fs_file_read_line_intrinsic(file)
 }
 
+/// `file_write_str` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `file_write_str` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_write_str(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_file_write_str_intrinsic(file, content)
 }
 
+/// `file_close` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `file_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_close(file: FileHandle) -> Result[Bool, FsError] effects { fs } {
     aic_fs_file_close_intrinsic(file)
 }
 
+/// `mkdir` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `mkdir` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn mkdir(path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_mkdir_intrinsic(path)
 }
 
+/// `mkdir_all` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `mkdir_all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn mkdir_all(path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_mkdir_all_intrinsic(path)
 }
 
+/// `rmdir` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `rmdir` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn rmdir(path: String) -> Result[Bool, FsError] effects { fs } {
     aic_fs_rmdir_intrinsic(path)
 }
 
+/// `list_dir` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `list_dir` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn list_dir(path: String) -> Result[Vec[String], FsError] effects { fs } {
     aic_fs_list_dir_intrinsic(path)
 }
@@ -282,6 +923,18 @@ fn read_symlink(path: String) -> Result[String, FsError] effects { fs } {
     aic_fs_read_symlink_intrinsic(path)
 }
 
+/// `set_readonly` in `std.fs`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.fs` and call `set_readonly` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn set_readonly(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs } {
     aic_fs_set_readonly_intrinsic(path, readonly)
 }

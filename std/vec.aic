@@ -1,31 +1,91 @@
+/// The `std.vec` module provides standard-library `vec` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.vec;
+/// ```
 module std.vec;
 
 import std.option;
 
+/// `Vec` is a `struct` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Vec` through `std.vec` APIs.
+/// ```
 struct Vec[T] {
     ptr: Int,
     len: Int,
     cap: Int,
 }
 
+/// `ZipPair` is a `struct` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ZipPair` through `std.vec` APIs.
+/// ```
 struct ZipPair[T, U] {
     left: T,
     right: U,
 }
 
+/// `IndexedValue` is a `struct` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IndexedValue` through `std.vec` APIs.
+/// ```
 struct IndexedValue[T] {
     index: Int,
     value: T,
 }
 
+/// `vec_len` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `vec_len` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn vec_len[T](v: Vec[T]) -> Int {
     v.len
 }
 
+/// `vec_cap` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `vec_cap` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn vec_cap[T](v: Vec[T]) -> Int {
     v.cap
 }
 
+/// `aic_vec_new_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_new_intrinsic[T]() -> Vec[T] {
     Vec {
         ptr: 0,
@@ -34,6 +94,18 @@ fn aic_vec_new_intrinsic[T]() -> Vec[T] {
     }
 }
 
+/// `aic_vec_new_with_capacity_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_new_with_capacity_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_new_with_capacity_intrinsic[T](capacity: Int) -> Vec[T] {
     let _capacity = capacity;
     Vec {
@@ -43,6 +115,18 @@ fn aic_vec_new_with_capacity_intrinsic[T](capacity: Int) -> Vec[T] {
     }
 }
 
+/// `aic_vec_of_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_of_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_of_intrinsic[T](value: T) -> Vec[T] {
     let _value = value;
     Vec {
@@ -52,6 +136,18 @@ fn aic_vec_of_intrinsic[T](value: T) -> Vec[T] {
     }
 }
 
+/// `aic_vec_get_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_get_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_get_intrinsic[T](v: Vec[T], index: Int) -> Option[T] {
     let _v = v;
     let _index = index;
@@ -59,50 +155,158 @@ fn aic_vec_get_intrinsic[T](v: Vec[T], index: Int) -> Option[T] {
     out
 }
 
+/// `aic_vec_first_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_first_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_first_intrinsic[T](v: Vec[T]) -> Option[T] {
     let _v = v;
     let out: Option[T] = None();
     out
 }
 
+/// `aic_vec_last_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_last_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_last_intrinsic[T](v: Vec[T]) -> Option[T] {
     let _v = v;
     let out: Option[T] = None();
     out
 }
 
+/// `aic_vec_push_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_push_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_push_intrinsic[T](v: Vec[T], value: T) -> Vec[T] {
     let _value = value;
     v
 }
 
+/// `aic_vec_pop_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_pop_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_pop_intrinsic[T](v: Vec[T]) -> Vec[T] {
     v
 }
 
+/// `aic_vec_set_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_set_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_set_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
     let _index = index;
     let _value = value;
     v
 }
 
+/// `aic_vec_insert_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_insert_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_insert_intrinsic[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
     let _index = index;
     let _value = value;
     v
 }
 
+/// `aic_vec_remove_at_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_remove_at_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_remove_at_intrinsic[T](v: Vec[T], index: Int) -> Vec[T] {
     let _index = index;
     v
 }
 
+/// `aic_vec_contains_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_contains_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_contains_intrinsic[T](v: Vec[T], value: T) -> Bool {
     let _v = v;
     let _value = value;
     false
 }
 
+/// `aic_vec_index_of_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_index_of_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_index_of_intrinsic[T](v: Vec[T], value: T) -> Option[Int] {
     let _v = v;
     let _value = value;
@@ -110,110 +314,422 @@ fn aic_vec_index_of_intrinsic[T](v: Vec[T], value: T) -> Option[Int] {
     out
 }
 
+/// `aic_vec_reverse_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_reverse_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_reverse_intrinsic[T](v: Vec[T]) -> Vec[T] {
     v
 }
 
+/// `aic_vec_slice_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_slice_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_slice_intrinsic[T](v: Vec[T], start: Int, end: Int) -> Vec[T] {
     let _start = start;
     let _end = end;
     v
 }
 
+/// `aic_vec_append_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_append_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_append_intrinsic[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
     let _right = right;
     left
 }
 
+/// `aic_vec_clear_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_clear_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_clear_intrinsic[T](v: Vec[T]) -> Vec[T] {
     v
 }
 
+/// `aic_vec_reserve_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_reserve_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_reserve_intrinsic[T](v: Vec[T], additional: Int) -> Vec[T] {
     let _additional = additional;
     v
 }
 
+/// `aic_vec_shrink_to_fit_intrinsic` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `aic_vec_shrink_to_fit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_vec_shrink_to_fit_intrinsic[T](v: Vec[T]) -> Vec[T] {
     v
 }
 
+/// `new_vec` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `new_vec` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_vec[T]() -> Vec[T] {
     aic_vec_new_intrinsic()
 }
 
+/// `new_vec_with_capacity` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `new_vec_with_capacity` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_vec_with_capacity[T](capacity: Int) -> Vec[T] {
     aic_vec_new_with_capacity_intrinsic(capacity)
 }
 
+/// `vec_of` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `vec_of` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn vec_of[T](value: T) -> Vec[T] {
     aic_vec_of_intrinsic(value)
 }
 
+/// `get` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `get` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn get[T](v: Vec[T], index: Int) -> Option[T] {
     aic_vec_get_intrinsic(v, index)
 }
 
+/// `first` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `first` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn first[T](v: Vec[T]) -> Option[T] {
     aic_vec_first_intrinsic(v)
 }
 
+/// `last` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `last` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn last[T](v: Vec[T]) -> Option[T] {
     aic_vec_last_intrinsic(v)
 }
 
+/// `push` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `push` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn push[T](v: Vec[T], value: T) -> Vec[T] {
     aic_vec_push_intrinsic(v, value)
 }
 
+/// `pop` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `pop` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pop[T](v: Vec[T]) -> Vec[T] {
     aic_vec_pop_intrinsic(v)
 }
 
+/// `set` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `set` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn set[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
     aic_vec_set_intrinsic(v, index, value)
 }
 
+/// `insert` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `insert` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn insert[T](v: Vec[T], index: Int, value: T) -> Vec[T] {
     aic_vec_insert_intrinsic(v, index, value)
 }
 
+/// `remove_at` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `remove_at` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn remove_at[T](v: Vec[T], index: Int) -> Vec[T] {
     aic_vec_remove_at_intrinsic(v, index)
 }
 
+/// `contains` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `contains` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn contains[T](v: Vec[T], value: T) -> Bool {
     aic_vec_contains_intrinsic(v, value)
 }
 
+/// `index_of` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `index_of` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn index_of[T](v: Vec[T], value: T) -> Option[Int] {
     aic_vec_index_of_intrinsic(v, value)
 }
 
+/// `is_empty` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `is_empty` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_empty[T](v: Vec[T]) -> Bool {
     vec_len(v) == 0
 }
 
+/// `reverse` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `reverse` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn reverse[T](v: Vec[T]) -> Vec[T] {
     aic_vec_reverse_intrinsic(v)
 }
 
+/// `slice` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `slice` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn slice[T](v: Vec[T], start: Int, end: Int) -> Vec[T] {
     aic_vec_slice_intrinsic(v, start, end)
 }
 
+/// `append` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `append` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn append[T](left: Vec[T], right: Vec[T]) -> Vec[T] {
     aic_vec_append_intrinsic(left, right)
 }
 
+/// `clear` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `clear` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn clear[T](v: Vec[T]) -> Vec[T] {
     aic_vec_clear_intrinsic(v)
 }
 
+/// `reserve` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `reserve` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn reserve[T](v: Vec[T], additional: Int) -> Vec[T] {
     aic_vec_reserve_intrinsic(v, additional)
 }
 
+/// `shrink_to_fit` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `shrink_to_fit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn shrink_to_fit[T](v: Vec[T]) -> Vec[T] {
     aic_vec_shrink_to_fit_intrinsic(v)
 }
@@ -229,6 +745,18 @@ fn range(start: Int, end: Int) -> Vec[Int] {
     out
 }
 
+/// `map_vec` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `map_vec` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn map_vec[T, U](v: Vec[T], mapper: Fn(T) -> U) -> Vec[U] {
     let mut out: Vec[U] = new_vec();
     let mut i = 0;
@@ -242,6 +770,18 @@ fn map_vec[T, U](v: Vec[T], mapper: Fn(T) -> U) -> Vec[U] {
     out
 }
 
+/// `filter_vec` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `filter_vec` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn filter_vec[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Vec[T] {
     let mut out: Vec[T] = new_vec();
     let mut i = 0;
@@ -255,6 +795,18 @@ fn filter_vec[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Vec[T] {
     out
 }
 
+/// `fold_vec` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `fold_vec` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn fold_vec[T, S](v: Vec[T], init: S, reducer: Fn(S, T) -> S) -> S {
     let mut acc = init;
     let mut i = 0;
@@ -300,6 +852,18 @@ fn sort[T](v: Vec[T], less: Fn(T, T) -> Bool) -> Vec[T] {
     out
 }
 
+/// `find` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `find` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Option[T] {
     let mut out: Option[T] = None();
     let mut done = false;
@@ -319,6 +883,18 @@ fn find[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Option[T] {
     out
 }
 
+/// `any` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `any` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn any[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
     let mut out = false;
     let mut i = 0;
@@ -332,6 +908,18 @@ fn any[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
     out
 }
 
+/// `all` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn all[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
     let mut out = true;
     let mut i = 0;
@@ -345,6 +933,18 @@ fn all[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Bool {
     out
 }
 
+/// `count` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `count` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn count[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Int {
     let mut total = 0;
     let mut i = 0;
@@ -358,6 +958,18 @@ fn count[T](v: Vec[T], predicate: Fn(T) -> Bool) -> Int {
     total
 }
 
+/// `zip` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `zip` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn zip[T, U](left: Vec[T], right: Vec[U]) -> Vec[ZipPair[T, U]] {
     let mut out: Vec[ZipPair[T, U]] = new_vec();
     let limit = if left.len < right.len { left.len } else { right.len };
@@ -378,6 +990,18 @@ fn zip[T, U](left: Vec[T], right: Vec[U]) -> Vec[ZipPair[T, U]] {
     out
 }
 
+/// `enumerate` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `enumerate` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn enumerate[T](v: Vec[T]) -> Vec[IndexedValue[T]] {
     let mut out: Vec[IndexedValue[T]] = new_vec();
     let mut i = 0;

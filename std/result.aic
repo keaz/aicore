@@ -1,11 +1,37 @@
+/// The `std.result` module provides standard-library `result` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.result;
+/// ```
 module std.result;
 
+/// `Result` is a `enum` in `std.result`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Result` through `std.result` APIs.
+/// ```
 enum Result[T, E] {
+    /// `Ok` enum variant.
     Ok(T),
+    /// `Err` enum variant.
     Err(E),
 }
 
 impl Result {
+    /// `unwrap_or` in `std.result`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.result` and call `unwrap_or` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn unwrap_or[T, E](self: Result[T, E], fallback: T) -> T {
         match self {
             Ok(value) => value,
@@ -13,6 +39,18 @@ impl Result {
         }
     }
 
+    /// `map` in `std.result`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.result` and call `map` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn map[T, U, E](self: Result[T, E], mapper: Fn(T) -> U) -> Result[U, E] {
         match self {
             Ok(value) => Ok(mapper(value)),
@@ -20,6 +58,18 @@ impl Result {
         }
     }
 
+    /// `and_then` in `std.result`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.result` and call `and_then` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn and_then[T, U, E](self: Result[T, E], mapper: Fn(T) -> Result[U, E]) -> Result[U, E] {
         match self {
             Ok(value) => mapper(value),

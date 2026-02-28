@@ -1,22 +1,51 @@
+/// The `std.proc` module provides standard-library `proc` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.proc;
+/// ```
 module std.proc;
 
 import std.result;
 import std.vec;
 
+/// `ProcError` is a `enum` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ProcError` through `std.proc` APIs.
+/// ```
 enum ProcError {
+    /// `NotFound` enum variant.
     NotFound,
+    /// `PermissionDenied` enum variant.
     PermissionDenied,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
+    /// `UnknownProcess` enum variant.
     UnknownProcess,
 }
 
+/// `ProcOutput` is a `struct` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ProcOutput` through `std.proc` APIs.
+/// ```
 struct ProcOutput {
     status: Int,
     stdout: String,
     stderr: String,
 }
 
+/// `RunOptions` is a `struct` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RunOptions` through `std.proc` APIs.
+/// ```
 struct RunOptions {
     stdin: String,
     cwd: String,
@@ -24,53 +53,293 @@ struct RunOptions {
     timeout_ms: Int,
 }
 
+/// `aic_proc_spawn_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_spawn_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_spawn_intrinsic(command: String) -> Result[Int, ProcError] effects { proc, env };
+/// `aic_proc_wait_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_wait_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_wait_intrinsic(handle: Int) -> Result[Int, ProcError] effects { proc };
+/// `aic_proc_kill_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_kill_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_kill_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc };
+/// `aic_proc_run_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_run_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_run_intrinsic(command: String) -> Result[ProcOutput, ProcError] effects { proc, env };
+/// `aic_proc_pipe_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_pipe_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_pipe_intrinsic(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env };
+/// `aic_proc_run_with_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_run_with_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_run_with_intrinsic(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env };
+/// `aic_proc_is_running_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_is_running_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_is_running_intrinsic(handle: Int) -> Result[Bool, ProcError] effects { proc };
+/// `aic_proc_current_pid_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_current_pid_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc };
+/// `aic_proc_run_timeout_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_run_timeout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_run_timeout_intrinsic(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env };
+/// `aic_proc_pipe_chain_intrinsic` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `aic_proc_pipe_chain_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_proc_pipe_chain_intrinsic(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env };
 
+/// `spawn` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `spawn` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
     aic_proc_spawn_intrinsic(command)
 }
 
+/// `wait` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `wait` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } {
     aic_proc_wait_intrinsic(handle)
 }
 
+/// `kill` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `kill` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc } {
     aic_proc_kill_intrinsic(handle)
 }
 
+/// `run` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `run` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
     aic_proc_run_intrinsic(command)
 }
 
+/// `pipe` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `pipe` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
     aic_proc_pipe_intrinsic(left, right)
 }
 
+/// `run_with` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `run_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env } {
     aic_proc_run_with_intrinsic(command, options)
 }
 
+/// `is_running` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `is_running` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc } {
     aic_proc_is_running_intrinsic(handle)
 }
 
+/// `current_pid` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `current_pid` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn current_pid() -> Result[Int, ProcError] effects { proc } {
     aic_proc_current_pid_intrinsic()
 }
 
+/// `run_timeout` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `run_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env } {
     aic_proc_run_timeout_intrinsic(command, timeout_ms)
 }
 
+/// `pipe_chain` in `std.proc`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.proc` and call `pipe_chain` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env } {
     aic_proc_pipe_chain_intrinsic(stages)
 }

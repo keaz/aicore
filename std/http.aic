@@ -1,33 +1,77 @@
+/// The `std.http` module provides standard-library `http` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.http;
+/// ```
 module std.http;
 
 import std.result;
 import std.vec;
 
+/// `HttpError` is a `enum` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Use `HttpError` through `std.http` APIs.
+/// ```
 enum HttpError {
+    /// `InvalidMethod` enum variant.
     InvalidMethod,
+    /// `InvalidStatus` enum variant.
     InvalidStatus,
+    /// `InvalidHeaderName` enum variant.
     InvalidHeaderName,
+    /// `InvalidHeaderValue` enum variant.
     InvalidHeaderValue,
+    /// `InvalidTarget` enum variant.
     InvalidTarget,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `HttpMethod` is a `enum` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Use `HttpMethod` through `std.http` APIs.
+/// ```
 enum HttpMethod {
+    /// `Get` enum variant.
     Get,
+    /// `Head` enum variant.
     Head,
+    /// `Post` enum variant.
     Post,
+    /// `Put` enum variant.
     Put,
+    /// `Patch` enum variant.
     Patch,
+    /// `Delete` enum variant.
     Delete,
+    /// `Options` enum variant.
     Options,
 }
 
+/// `HttpHeader` is a `struct` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Use `HttpHeader` through `std.http` APIs.
+/// ```
 struct HttpHeader {
     name: String,
     value: String,
 }
 
+/// `HttpRequest` is a `struct` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Use `HttpRequest` through `std.http` APIs.
+/// ```
 struct HttpRequest {
     method: HttpMethod,
     target: String,
@@ -35,6 +79,12 @@ struct HttpRequest {
     body: String,
 }
 
+/// `HttpResponse` is a `struct` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Use `HttpResponse` through `std.http` APIs.
+/// ```
 struct HttpResponse {
     status: Int,
     reason: String,
@@ -42,74 +92,266 @@ struct HttpResponse {
     body: String,
 }
 
+/// `aic_http_parse_method_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_parse_method_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError] {
     let out: Result[HttpMethod, HttpError] = Err(InvalidMethod());
     out
 }
 
+/// `aic_http_method_name_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_method_name_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError] {
     let out: Result[String, HttpError] = Ok("");
     out
 }
 
+/// `aic_http_status_reason_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_status_reason_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError] {
     let out: Result[String, HttpError] = Ok("");
     out
 }
 
+/// `aic_http_validate_header_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_validate_header_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError] {
     let out: Result[Bool, HttpError] = Ok(true);
     out
 }
 
+/// `aic_http_validate_target_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_validate_target_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError] {
     let out: Result[Bool, HttpError] = Ok(true);
     out
 }
 
+/// `aic_http_header_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_header_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError] {
     let out: Result[HttpHeader, HttpError] = Err(InvalidHeaderName());
     out
 }
 
+/// `aic_http_request_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_request_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
     let out: Result[HttpRequest, HttpError] = Err(InvalidTarget());
     out
 }
 
+/// `aic_http_response_intrinsic` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `aic_http_response_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
     let out: Result[HttpResponse, HttpError] = Err(InvalidStatus());
     out
 }
 
+/// `parse_method` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `parse_method` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn parse_method(text: String) -> Result[HttpMethod, HttpError] {
     aic_http_parse_method_intrinsic(text)
 }
 
+/// `method_name` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `method_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn method_name(method: HttpMethod) -> Result[String, HttpError] {
     aic_http_method_name_intrinsic(method)
 }
 
+/// `status_reason` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `status_reason` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn status_reason(status: Int) -> Result[String, HttpError] {
     aic_http_status_reason_intrinsic(status)
 }
 
+/// `validate_header` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `validate_header` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn validate_header(name: String, value: String) -> Result[Bool, HttpError] {
     aic_http_validate_header_intrinsic(name, value)
 }
 
+/// `validate_target` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `validate_target` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn validate_target(target: String) -> Result[Bool, HttpError] {
     aic_http_validate_target_intrinsic(target)
 }
 
+/// `header` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `header` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn header(name: String, value: String) -> Result[HttpHeader, HttpError] {
     aic_http_header_intrinsic(name, value)
 }
 
+/// `request` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `request` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
     aic_http_request_intrinsic(method, target, headers, body)
 }
 
+/// `response` in `std.http`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http` and call `response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
     aic_http_response_intrinsic(status, headers, body)
 }

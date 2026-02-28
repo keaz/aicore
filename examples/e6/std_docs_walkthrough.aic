@@ -1,0 +1,12 @@
+module example.std_docs_walkthrough;
+
+import std.io;
+import std.string;
+import std.time;
+
+fn main() -> Int effects { io, time } capabilities { io, time } {
+    let now = now_ms();
+    let text = string.int_to_string(now);
+    print_str(text);
+    0
+}

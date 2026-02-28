@@ -1,3 +1,9 @@
+/// The `std.config` module provides standard-library `config` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.config;
+/// ```
 module std.config;
 
 import std.env;
@@ -7,46 +13,143 @@ import std.map;
 import std.result;
 import std.string;
 
+/// `ConfigError` is a `enum` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ConfigError` through `std.config` APIs.
+/// ```
 enum ConfigError {
+    /// `FileNotFound` enum variant.
     FileNotFound,
+    /// `PermissionDenied` enum variant.
     PermissionDenied,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
+    /// `InvalidJson` enum variant.
     InvalidJson,
+    /// `InvalidValue` enum variant.
     InvalidValue,
+    /// `MissingKey` enum variant.
     MissingKey,
 }
 
+/// `cfg_file_not_found` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_file_not_found` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_file_not_found() -> ConfigError {
     let out: ConfigError = FileNotFound();
     out
 }
 
+/// `cfg_permission_denied` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_permission_denied` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_permission_denied() -> ConfigError {
     let out: ConfigError = PermissionDenied();
     out
 }
 
+/// `cfg_invalid_input` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_invalid_input` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_invalid_input() -> ConfigError {
     let out: ConfigError = InvalidInput();
     out
 }
 
+/// `cfg_io` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_io` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_io() -> ConfigError {
     let out: ConfigError = Io();
     out
 }
 
+/// `cfg_invalid_json` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_invalid_json` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_invalid_json() -> ConfigError {
     let out: ConfigError = InvalidJson();
     out
 }
 
+/// `cfg_invalid_value` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `cfg_invalid_value` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cfg_invalid_value() -> ConfigError {
     let out: ConfigError = InvalidValue();
     out
 }
 
+/// `map_fs_error` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `map_fs_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn map_fs_error(err: FsError) -> ConfigError {
     match err {
         NotFound => cfg_file_not_found(),
@@ -57,6 +160,18 @@ fn map_fs_error(err: FsError) -> ConfigError {
     }
 }
 
+/// `map_json_error` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `map_json_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn map_json_error(err: JsonError) -> ConfigError {
     match err {
         InvalidJson => cfg_invalid_json(),
@@ -69,6 +184,18 @@ fn map_json_error(err: JsonError) -> ConfigError {
     }
 }
 
+/// `decode_json_map` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `decode_json_map` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_json_map(parsed: JsonValue) -> Result[Map[String, String], ConfigError] {
     let marker: Option[Map[String, String]] = None();
     match decode_with(parsed, marker) {
@@ -77,6 +204,18 @@ fn decode_json_map(parsed: JsonValue) -> Result[Map[String, String], ConfigError
     }
 }
 
+/// `load_json` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `load_json` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs } {
     match read_text(path) {
         Ok(text) => match parse(text) {
@@ -87,6 +226,18 @@ fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects {
     }
 }
 
+/// `load_env_prefix` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `load_env_prefix` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
     let mut config: Map[String, String] = new_map();
     let prefix_len = len(prefix);
@@ -108,6 +259,18 @@ fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
     config
 }
 
+/// `get_or_default` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `get_or_default` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String {
     match get(config, key) {
         Some(value) => value,
@@ -115,6 +278,18 @@ fn get_or_default(config: Map[String, String], key: String, fallback: String) ->
     }
 }
 
+/// `require` in `std.config`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.config` and call `require` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn require(config: Map[String, String], key: String) -> Result[String, ConfigError] {
     match get(config, key) {
         Some(value) => Ok(value),

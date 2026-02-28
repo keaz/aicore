@@ -1,18 +1,42 @@
+/// The `std.time` module provides standard-library `time` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.time;
+/// ```
 module std.time;
 
 import std.result;
 import std.string;
 import std.vec;
 
+/// `TimeError` is a `enum` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TimeError` through `std.time` APIs.
+/// ```
 enum TimeError {
+    /// `InvalidFormat` enum variant.
     InvalidFormat,
+    /// `InvalidDate` enum variant.
     InvalidDate,
+    /// `InvalidTime` enum variant.
     InvalidTime,
+    /// `InvalidOffset` enum variant.
     InvalidOffset,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `DateTime` is a `struct` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Use `DateTime` through `std.time` APIs.
+/// ```
 struct DateTime {
     year: Int,
     month: Int,
@@ -24,42 +48,150 @@ struct DateTime {
     offset_minutes: Int,
 }
 
+/// `aic_time_now_ms_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_now_ms_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_now_ms_intrinsic() -> Int effects { time } {
     0
 }
 
+/// `aic_time_monotonic_ms_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_monotonic_ms_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
     0
 }
 
+/// `aic_time_sleep_ms_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_sleep_ms_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
     ()
 }
 
+/// `aic_time_parse_rfc3339_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_parse_rfc3339_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
     let out: Result[DateTime, TimeError] = Err(InvalidFormat());
     out
 }
 
+/// `aic_time_parse_iso8601_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_parse_iso8601_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
     let out: Result[DateTime, TimeError] = Err(InvalidFormat());
     out
 }
 
+/// `aic_time_format_rfc3339_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_format_rfc3339_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
     let out: Result[String, TimeError] = Ok("");
     out
 }
 
+/// `aic_time_format_iso8601_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_format_iso8601_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
     let out: Result[String, TimeError] = Ok("");
     out
 }
 
+/// `aic_time_string_replace_intrinsic` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `aic_time_string_replace_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_time_string_replace_intrinsic(s: String, from: String, to: String) -> String {
     ""
 }
 
+/// `str_replace` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `str_replace` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn str_replace(s: String, from: String, to: String) -> String {
     aic_time_string_replace_intrinsic(s, from, to)
 }
@@ -135,6 +267,18 @@ fn sleep_until(deadline_ms: Int) -> () effects { time } {
     ()
 }
 
+/// `abs_int` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `abs_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn abs_int(value: Int) -> Int {
     if value < 0 {
         0 - value
@@ -143,17 +287,53 @@ fn abs_int(value: Int) -> Int {
     }
 }
 
+/// `concat2` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `concat2` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn concat2(left: String, right: String) -> String {
     let parts = append(vec_of(left), vec_of(right));
     format("{0}{1}", parts)
 }
 
+/// `concat3` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `concat3` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn concat3(first: String, second: String, third: String) -> String {
     let first_two = append(vec_of(first), vec_of(second));
     let parts = append(first_two, vec_of(third));
     format("{0}{1}{2}", parts)
 }
 
+/// `pad_unsigned` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `pad_unsigned` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pad_unsigned(value: Int, width: Int) -> String {
     let digits = int_to_string(value);
     let padding = width - byte_length(digits);
@@ -164,6 +344,18 @@ fn pad_unsigned(value: Int, width: Int) -> String {
     }
 }
 
+/// `pad_year` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `pad_year` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pad_year(value: Int) -> String {
     if value < 0 {
         concat2("-", pad_unsigned(abs_int(value), 4))
@@ -172,6 +364,18 @@ fn pad_year(value: Int) -> String {
     }
 }
 
+/// `days_in_year` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `days_in_year` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn days_in_year(year: Int) -> Int {
     if is_leap_year(year) {
         366
@@ -180,6 +384,18 @@ fn days_in_year(year: Int) -> Int {
     }
 }
 
+/// `days_in_month` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `days_in_month` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn days_in_month(year: Int, month: Int) -> Int {
     if month == 1 {
         31
@@ -232,6 +448,18 @@ fn days_in_month(year: Int, month: Int) -> Int {
     }
 }
 
+/// `valid_datetime` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `valid_datetime` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn valid_datetime(value: DateTime) -> Bool {
     let month_ok = value.month >= 1 && value.month <= 12;
     let max_day = days_in_month(value.year, value.month);
@@ -244,6 +472,18 @@ fn valid_datetime(value: DateTime) -> Bool {
     month_ok && day_ok && hour_ok && minute_ok && second_ok && millisecond_ok && offset_ok
 }
 
+/// `floor_div` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `floor_div` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn floor_div(value: Int, divisor: Int) -> Int {
     let quotient = value / divisor;
     let remainder = value % divisor;
@@ -262,10 +502,34 @@ fn floor_div(value: Int, divisor: Int) -> Int {
     }
 }
 
+/// `floor_mod` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `floor_mod` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn floor_mod(value: Int, divisor: Int) -> Int {
     value - floor_div(value, divisor) * divisor
 }
 
+/// `to_epoch_days` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `to_epoch_days` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_epoch_days(year: Int, month: Int, day: Int) -> Int {
     let mut days = 0;
     let mut cursor_year = 1970;
@@ -289,6 +553,18 @@ fn to_epoch_days(year: Int, month: Int, day: Int) -> Int {
     days + (day - 1)
 }
 
+/// `date_from_epoch_days` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `date_from_epoch_days` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn date_from_epoch_days(epoch_days: Int) -> DateTime {
     let mut remaining = epoch_days;
     let mut year = 1970;
@@ -323,6 +599,18 @@ fn date_from_epoch_days(epoch_days: Int) -> DateTime {
     }
 }
 
+/// `to_utc_millis` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `to_utc_millis` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_utc_millis(value: DateTime) -> Int {
     let day_ms = to_epoch_days(value.year, value.month, value.day) * 86400000;
     let clock_ms = value.hour * 3600000 +
@@ -332,6 +620,18 @@ fn to_utc_millis(value: DateTime) -> Int {
     day_ms + clock_ms - value.offset_minutes * 60000
 }
 
+/// `from_utc_millis` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `from_utc_millis` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_utc_millis(utc_ms: Int, offset_minutes: Int) -> DateTime {
     let local_ms = utc_ms + offset_minutes * 60000;
     let epoch_days = floor_div(local_ms, 86400000);
@@ -399,6 +699,18 @@ fn is_leap_year(year: Int) -> Bool {
     }
 }
 
+/// `format_offset` in `std.time`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.time` and call `format_offset` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn format_offset(offset_minutes: Int) -> String {
     let sign = if offset_minutes < 0 { "-" } else { "+" };
     let offset_abs = abs_int(offset_minutes);

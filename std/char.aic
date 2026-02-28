@@ -1,29 +1,107 @@
+/// The `std.char` module provides standard-library `char` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.char;
+/// ```
 module std.char;
 
 import std.option;
 import std.vec;
 
+/// `aic_char_is_digit_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_is_digit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_is_digit_intrinsic(c: Char) -> Bool {
     false
 }
 
+/// `aic_char_is_alpha_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_is_alpha_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_is_alpha_intrinsic(c: Char) -> Bool {
     false
 }
 
+/// `aic_char_is_whitespace_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_is_whitespace_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_is_whitespace_intrinsic(c: Char) -> Bool {
     false
 }
 
+/// `aic_char_to_int_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_to_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_to_int_intrinsic(c: Char) -> Int {
     0
 }
 
+/// `aic_char_int_to_char_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_int_to_char_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_int_to_char_intrinsic(n: Int) -> Option[Char] {
     let out: Option[Char] = None();
     out
 }
 
+/// `aic_char_chars_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_chars_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_chars_intrinsic(s: String) -> Vec[Char] {
     let out: Vec[Char] = Vec {
         ptr: 0,
@@ -33,34 +111,130 @@ fn aic_char_chars_intrinsic(s: String) -> Vec[Char] {
     out
 }
 
+/// `aic_char_from_chars_intrinsic` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `aic_char_from_chars_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_char_from_chars_intrinsic(cs: Vec[Char]) -> String {
     ""
 }
 
+/// `is_digit` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `is_digit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_digit(c: Char) -> Bool {
     aic_char_is_digit_intrinsic(c)
 }
 
+/// `is_alpha` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `is_alpha` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_alpha(c: Char) -> Bool {
     aic_char_is_alpha_intrinsic(c)
 }
 
+/// `is_whitespace` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `is_whitespace` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_whitespace(c: Char) -> Bool {
     aic_char_is_whitespace_intrinsic(c)
 }
 
+/// `char_to_int` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `char_to_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn char_to_int(c: Char) -> Int {
     aic_char_to_int_intrinsic(c)
 }
 
+/// `int_to_char` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `int_to_char` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn int_to_char(n: Int) -> Option[Char] {
     aic_char_int_to_char_intrinsic(n)
 }
 
+/// `chars` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `chars` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn chars(s: String) -> Vec[Char] {
     aic_char_chars_intrinsic(s)
 }
 
+/// `from_chars` in `std.char`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.char` and call `from_chars` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_chars(cs: Vec[Char]) -> String {
     aic_char_from_chars_intrinsic(cs)
 }

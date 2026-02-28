@@ -1,19 +1,52 @@
+/// The `std.string` module provides standard-library `string` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.string;
+/// ```
 module std.string;
 
 import std.option;
 import std.result;
 import std.vec;
 
+/// `Bytes` is a `struct` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Bytes` through `std.string` APIs.
+/// ```
 struct Bytes {
     data: String,
 }
 
+/// `EncodingError` is a `enum` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Use `EncodingError` through `std.string` APIs.
+/// ```
 enum EncodingError {
+    /// `InvalidSequence` enum variant.
     InvalidSequence,
+    /// `UnsupportedEncoding` enum variant.
     UnsupportedEncoding,
+    /// `BufferTooSmall` enum variant.
     BufferTooSmall,
 }
 
+/// `aic_string_len_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_len_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_len_intrinsic(s: String) -> Int {
     0
 }
@@ -28,37 +61,133 @@ fn is_empty(s: String) -> Bool {
     aic_string_len_intrinsic(s) == 0
 }
 
+/// `aic_string_contains_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_contains_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool {
     false
 }
 
+/// `aic_string_starts_with_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_starts_with_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool {
     false
 }
 
+/// `aic_string_ends_with_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_ends_with_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool {
     false
 }
 
+/// `aic_string_index_of_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_index_of_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
     let out: Option[Int] = None();
     out
 }
 
+/// `aic_string_last_index_of_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_last_index_of_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
     let out: Option[Int] = None();
     out
 }
 
+/// `aic_string_substring_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_substring_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String {
     ""
 }
 
+/// `aic_string_char_at_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_char_at_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String] {
     let out: Option[String] = None();
     out
 }
 
+/// `aic_string_split_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_split_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String] {
     let out: Vec[String] = Vec {
         ptr: 0,
@@ -68,85 +197,325 @@ fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String] {
     out
 }
 
+/// `aic_string_split_first_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_split_first_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[String]] {
     let out: Option[Vec[String]] = None();
     out
 }
 
+/// `aic_string_trim_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_trim_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_trim_intrinsic(s: String) -> String {
     ""
 }
 
+/// `aic_string_trim_start_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_trim_start_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_trim_start_intrinsic(s: String) -> String {
     ""
 }
 
+/// `aic_string_trim_end_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_trim_end_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_trim_end_intrinsic(s: String) -> String {
     ""
 }
 
+/// `aic_string_to_upper_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_to_upper_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_to_upper_intrinsic(s: String) -> String {
     ""
 }
 
+/// `aic_string_to_lower_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_to_lower_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_to_lower_intrinsic(s: String) -> String {
     ""
 }
 
+/// `aic_string_replace_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_replace_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_replace_intrinsic(s: String, from: String, to: String) -> String {
     ""
 }
 
+/// `aic_string_repeat_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_repeat_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_repeat_intrinsic(s: String, count: Int) -> String {
     ""
 }
 
+/// `aic_string_parse_int_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_parse_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_parse_int_intrinsic(s: String) -> Result[Int, String] {
     let out: Result[Int, String] = Err("invalid integer: empty");
     out
 }
 
+/// `aic_string_parse_float_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_parse_float_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_parse_float_intrinsic(s: String) -> Result[Float, String] {
     let out: Result[Float, String] = Err("invalid float: empty");
     out
 }
 
+/// `aic_string_int_to_string_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_int_to_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_int_to_string_intrinsic(n: Int) -> String {
     "0"
 }
 
+/// `aic_string_float_to_string_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_float_to_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_float_to_string_intrinsic(v: Float) -> String {
     "0.0"
 }
 
+/// `aic_string_bool_to_string_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_bool_to_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_bool_to_string_intrinsic(b: Bool) -> String {
     if b { "true" } else { "false" }
 }
 
+/// `aic_string_is_valid_utf8_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_is_valid_utf8_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_is_valid_utf8_intrinsic(data: String) -> Bool {
     false
 }
 
+/// `aic_string_is_ascii_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_is_ascii_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_is_ascii_intrinsic(s: String) -> Bool {
     false
 }
 
+/// `aic_string_bytes_to_string_lossy_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_bytes_to_string_lossy_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String {
     ""
 }
 
+/// `aic_string_join_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_join_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
     ""
 }
 
+/// `aic_string_format_intrinsic` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `aic_string_format_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_string_format_intrinsic(template: String, args: Vec[String]) -> String {
     ""
 }
 
+/// `string_to_bytes` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `string_to_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn string_to_bytes(s: String) -> Bytes {
     Bytes { data: s }
 }
 
+/// `bytes_to_string` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `bytes_to_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn bytes_to_string(data: Bytes) -> Result[String, EncodingError] {
     if aic_string_is_valid_utf8_intrinsic(data.data) {
         let out: Result[String, EncodingError] = Ok(data.data);
@@ -157,110 +526,434 @@ fn bytes_to_string(data: Bytes) -> Result[String, EncodingError] {
     }
 }
 
+/// `bytes_to_string_lossy` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `bytes_to_string_lossy` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn bytes_to_string_lossy(data: Bytes) -> String {
     aic_string_bytes_to_string_lossy_intrinsic(data.data)
 }
 
+/// `is_valid_utf8` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `is_valid_utf8` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_valid_utf8(data: Bytes) -> Bool {
     aic_string_is_valid_utf8_intrinsic(data.data)
 }
 
+/// `byte_length` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `byte_length` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn byte_length(s: String) -> Int {
     aic_string_len_intrinsic(s)
 }
 
+/// `is_ascii` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `is_ascii` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_ascii(s: String) -> Bool {
     aic_string_is_ascii_intrinsic(s)
 }
 
+/// `contains` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `contains` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn contains(haystack: String, needle: String) -> Bool {
     aic_string_contains_intrinsic(haystack, needle)
 }
 
+/// `starts_with` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `starts_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn starts_with(s: String, prefix: String) -> Bool {
     aic_string_starts_with_intrinsic(s, prefix)
 }
 
+/// `ends_with` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `ends_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn ends_with(s: String, suffix: String) -> Bool {
     aic_string_ends_with_intrinsic(s, suffix)
 }
 
+/// `index_of` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `index_of` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn index_of(s: String, needle: String) -> Option[Int] {
     aic_string_index_of_intrinsic(s, needle)
 }
 
+/// `last_index_of` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `last_index_of` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn last_index_of(s: String, needle: String) -> Option[Int] {
     aic_string_last_index_of_intrinsic(s, needle)
 }
 
+/// `substring` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `substring` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn substring(s: String, start: Int, end: Int) -> String {
     aic_string_substring_intrinsic(s, start, end)
 }
 
+/// `char_at` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `char_at` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn char_at(s: String, index: Int) -> Option[String] {
     aic_string_char_at_intrinsic(s, index)
 }
 
+/// `split` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `split` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn split(s: String, delimiter: String) -> Vec[String] {
     aic_string_split_intrinsic(s, delimiter)
 }
 
+/// `split_first` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `split_first` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn split_first(s: String, delimiter: String) -> Option[Vec[String]] {
     aic_string_split_first_intrinsic(s, delimiter)
 }
 
+/// `trim` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `trim` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn trim(s: String) -> String {
     aic_string_trim_intrinsic(s)
 }
 
+/// `trim_start` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `trim_start` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn trim_start(s: String) -> String {
     aic_string_trim_start_intrinsic(s)
 }
 
+/// `trim_end` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `trim_end` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn trim_end(s: String) -> String {
     aic_string_trim_end_intrinsic(s)
 }
 
+/// `to_upper` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `to_upper` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_upper(s: String) -> String {
     aic_string_to_upper_intrinsic(s)
 }
 
+/// `to_lower` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `to_lower` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_lower(s: String) -> String {
     aic_string_to_lower_intrinsic(s)
 }
 
+/// `replace` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `replace` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn replace(s: String, from: String, to: String) -> String {
     aic_string_replace_intrinsic(s, from, to)
 }
 
+/// `repeat` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `repeat` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn repeat(s: String, count: Int) -> String {
     aic_string_repeat_intrinsic(s, count)
 }
 
+/// `parse_int` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `parse_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn parse_int(s: String) -> Result[Int, String] {
     aic_string_parse_int_intrinsic(s)
 }
 
+/// `parse_float` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `parse_float` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn parse_float(s: String) -> Result[Float, String] {
     aic_string_parse_float_intrinsic(s)
 }
 
+/// `int_to_string` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `int_to_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn int_to_string(n: Int) -> String {
     aic_string_int_to_string_intrinsic(n)
 }
 
+/// `float_to_string` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `float_to_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn float_to_string(v: Float) -> String {
     aic_string_float_to_string_intrinsic(v)
 }
 
+/// `bool_to_string` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `bool_to_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn bool_to_string(b: Bool) -> String {
     aic_string_bool_to_string_intrinsic(b)
 }
 
+/// `join` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `join` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn join(parts: Vec[String], separator: String) -> String {
     aic_string_join_intrinsic(parts, separator)
 }
 
+/// `format` in `std.string`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.string` and call `format` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn format(template: String, args: Vec[String]) -> String {
     aic_string_format_intrinsic(template, args)
 }

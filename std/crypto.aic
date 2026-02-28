@@ -1,55 +1,298 @@
+/// The `std.crypto` module provides standard-library `crypto` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.crypto;
+/// ```
 module std.crypto;
 
 import std.bytes;
 import std.result;
 
+/// `CryptoError` is a `enum` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Use `CryptoError` through `std.crypto` APIs.
+/// ```
 enum CryptoError {
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `UnsupportedAlgorithm` enum variant.
     UnsupportedAlgorithm,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `aic_crypto_md5_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_md5_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_md5_intrinsic(data: String) -> String;
+/// `aic_crypto_sha256_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_sha256_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_sha256_intrinsic(data: String) -> String;
+/// `aic_crypto_sha256_raw_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_sha256_raw_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_sha256_raw_intrinsic(data: String) -> String;
+/// `aic_crypto_hmac_sha256_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_hmac_sha256_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_hmac_sha256_intrinsic(key: String, message: String) -> String;
+/// `aic_crypto_hmac_sha256_raw_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_hmac_sha256_raw_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_hmac_sha256_raw_intrinsic(key: String, message: String) -> String;
+/// `aic_crypto_pbkdf2_sha256_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_pbkdf2_sha256_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_pbkdf2_sha256_intrinsic(password: String, salt: String, iterations: Int, key_length: Int) -> Result[String, CryptoError];
+/// `aic_crypto_hex_encode_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_hex_encode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_hex_encode_intrinsic(data: String) -> String;
+/// `aic_crypto_hex_decode_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_hex_decode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_hex_decode_intrinsic(hex: String) -> Result[String, CryptoError];
+/// `aic_crypto_base64_encode_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_base64_encode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_base64_encode_intrinsic(data: String) -> String;
+/// `aic_crypto_base64_decode_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_base64_decode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_base64_decode_intrinsic(b64: String) -> Result[String, CryptoError];
+/// `aic_crypto_random_bytes_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_random_bytes_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_random_bytes_intrinsic(count: Int) -> String effects { rand };
+/// `aic_crypto_secure_eq_intrinsic` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `aic_crypto_secure_eq_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_crypto_secure_eq_intrinsic(a: String, b: String) -> Bool;
 
+/// `md5` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `md5` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn md5(data: String) -> String {
     aic_crypto_md5_intrinsic(data)
 }
 
+/// `md5_bytes` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `md5_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn md5_bytes(data: Bytes) -> String {
     aic_crypto_md5_intrinsic(data.data)
 }
 
+/// `sha256` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `sha256` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn sha256(data: String) -> String {
     aic_crypto_sha256_intrinsic(data)
 }
 
+/// `sha256_raw` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `sha256_raw` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn sha256_raw(data: String) -> Bytes {
     Bytes {
         data: aic_crypto_sha256_raw_intrinsic(data),
     }
 }
 
+/// `hmac_sha256` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `hmac_sha256` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn hmac_sha256(key: String, message: String) -> String {
     aic_crypto_hmac_sha256_intrinsic(key, message)
 }
 
+/// `hmac_sha256_raw` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `hmac_sha256_raw` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn hmac_sha256_raw(key: Bytes, message: Bytes) -> Bytes {
     Bytes {
         data: aic_crypto_hmac_sha256_raw_intrinsic(key.data, message.data),
     }
 }
 
+/// `pbkdf2_sha256` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `pbkdf2_sha256` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pbkdf2_sha256(password: String, salt: Bytes, iterations: Int, key_length: Int) -> Result[Bytes, CryptoError] {
     let raw = aic_crypto_pbkdf2_sha256_intrinsic(password, salt.data, iterations, key_length);
     match raw {
@@ -58,10 +301,34 @@ fn pbkdf2_sha256(password: String, salt: Bytes, iterations: Int, key_length: Int
     }
 }
 
+/// `hex_encode` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `hex_encode` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn hex_encode(data: Bytes) -> String {
     aic_crypto_hex_encode_intrinsic(data.data)
 }
 
+/// `hex_decode` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `hex_decode` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn hex_decode(hex: String) -> Result[Bytes, CryptoError] {
     let raw = aic_crypto_hex_decode_intrinsic(hex);
     match raw {
@@ -70,10 +337,34 @@ fn hex_decode(hex: String) -> Result[Bytes, CryptoError] {
     }
 }
 
+/// `base64_encode` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `base64_encode` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn base64_encode(data: Bytes) -> String {
     aic_crypto_base64_encode_intrinsic(data.data)
 }
 
+/// `base64_decode` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `base64_decode` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn base64_decode(b64: String) -> Result[Bytes, CryptoError] {
     let raw = aic_crypto_base64_decode_intrinsic(b64);
     match raw {
@@ -82,12 +373,36 @@ fn base64_decode(b64: String) -> Result[Bytes, CryptoError] {
     }
 }
 
+/// `random_bytes` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `random_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn random_bytes(count: Int) -> Bytes effects { rand } {
     Bytes {
         data: aic_crypto_random_bytes_intrinsic(count),
     }
 }
 
+/// `secure_eq` in `std.crypto`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.crypto` and call `secure_eq` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn secure_eq(a: Bytes, b: Bytes) -> Bool {
     aic_crypto_secure_eq_intrinsic(a.data, b.data)
 }

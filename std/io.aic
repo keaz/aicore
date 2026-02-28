@@ -1,3 +1,9 @@
+/// The `std.io` module provides standard-library `io` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.io;
+/// ```
 module std.io;
 
 import std.result;
@@ -9,126 +15,384 @@ import std.env;
 import std.string;
 import std.vec;
 
+/// `IoError` is a `enum` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IoError` through `std.io` APIs.
+/// ```
 enum IoError {
+    /// `EndOfInput` enum variant.
     EndOfInput,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `IoErrorContext` is a `struct` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IoErrorContext` through `std.io` APIs.
+/// ```
 struct IoErrorContext {
     error: IoError,
     context: String,
     chain: String,
 }
 
+/// `TcpReader` is a `struct` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TcpReader` through `std.io` APIs.
+/// ```
 struct TcpReader {
     handle: Int,
     max_bytes: Int,
     timeout_ms: Int,
 }
 
+/// `Reader` is a `enum` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Reader` through `std.io` APIs.
+/// ```
 enum Reader {
+    /// `ReadStdin` enum variant.
     ReadStdin,
+    /// `ReadFile` enum variant.
     ReadFile(FileHandle),
+    /// `ReadTcp` enum variant.
     ReadTcp(TcpReader),
 }
 
+/// `Writer` is a `enum` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Writer` through `std.io` APIs.
+/// ```
 enum Writer {
+    /// `WriteStdout` enum variant.
     WriteStdout,
+    /// `WriteStderr` enum variant.
     WriteStderr,
+    /// `WriteFile` enum variant.
     WriteFile(FileHandle),
+    /// `WriteTcp` enum variant.
     WriteTcp(Int),
 }
 
+/// `MockReader` is a `struct` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `MockReader` through `std.io` APIs.
+/// ```
 struct MockReader {
     lines: String,
 }
 
+/// `MockWriter` is a `enum` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Use `MockWriter` through `std.io` APIs.
+/// ```
 enum MockWriter {
+    /// `MockStdout` enum variant.
     MockStdout,
+    /// `MockStderr` enum variant.
     MockStderr,
 }
 
+/// `io_end_of_input` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_end_of_input` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_end_of_input() -> IoError {
     let out: IoError = EndOfInput();
     out
 }
 
+/// `io_invalid_input` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_invalid_input` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_invalid_input() -> IoError {
     let out: IoError = InvalidInput();
     out
 }
 
+/// `io_other` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_other` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_other() -> IoError {
     let out: IoError = Io();
     out
 }
 
+/// `io_err_string_result` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_string_result` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_string_result() -> Result[String, IoError] {
     let out: Result[String, IoError] = Err(io_other());
     out
 }
 
+/// `io_err_reader_result` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_reader_result` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_reader_result() -> Result[Reader, IoError] {
     let out: Result[Reader, IoError] = Err(io_other());
     out
 }
 
+/// `io_err_writer_result` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_writer_result` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_writer_result() -> Result[Writer, IoError] {
     let out: Result[Writer, IoError] = Err(io_other());
     out
 }
 
+/// `io_err_int_result` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_int_result` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_int_result() -> Result[Int, IoError] {
     let out: Result[Int, IoError] = Err(io_other());
     out
 }
 
+/// `io_err_int_result_with` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_int_result_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_int_result_with(err: IoError) -> Result[Int, IoError] {
     let out: Result[Int, IoError] = Err(err);
     out
 }
 
+/// `io_ok_int_zero` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_int_zero` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_int_zero() -> Result[Int, IoError] {
     let out: Result[Int, IoError] = Ok(0);
     out
 }
 
+/// `io_ok_int_one` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_int_one` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_int_one() -> Result[Int, IoError] {
     let out: Result[Int, IoError] = Ok(1);
     out
 }
 
+/// `io_ok_int` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_int(value: Int) -> Result[Int, IoError] {
     let out: Result[Int, IoError] = Ok(value);
     out
 }
 
+/// `io_ok_bool_true` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_bool_true` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_bool_true() -> Result[Bool, IoError] {
     let out: Result[Bool, IoError] = Ok(true);
     out
 }
 
+/// `io_ok_bool_false` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_bool_false` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_bool_false() -> Result[Bool, IoError] {
     let out: Result[Bool, IoError] = Ok(false);
     out
 }
 
+/// `io_ok_none_string` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_none_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_none_string() -> Result[Option[String], IoError] {
     let out: Result[Option[String], IoError] = Ok(None());
     out
 }
 
+/// `io_ok_some_string` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_ok_some_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_ok_some_string(value: String) -> Result[Option[String], IoError] {
     let out: Result[Option[String], IoError] = Ok(Some(value));
     out
 }
 
+/// `io_err_option_string` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_err_option_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_err_option_string(err: IoError) -> Result[Option[String], IoError] {
     let out: Result[Option[String], IoError] = Err(err);
     out
 }
 
+/// `io_is_end_of_input` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_is_end_of_input` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_is_end_of_input(err: IoError) -> Bool {
     match err {
         EndOfInput => true,
@@ -137,106 +401,382 @@ fn io_is_end_of_input(err: IoError) -> Bool {
 }
 
 
+/// `aic_io_print_int_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_print_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_print_int_intrinsic(x: Int) -> () effects { io } {
     ()
 }
 
+/// `aic_io_print_str_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_print_str_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_print_str_intrinsic(x: String) -> () effects { io } {
     ()
 }
 
+/// `aic_io_print_float_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_print_float_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_print_float_intrinsic(x: Float) -> () effects { io } {
     ()
 }
 
+/// `aic_io_panic_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_panic_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_panic_intrinsic(message: String) -> () effects { io } {
     ()
 }
 
+/// `aic_io_read_line_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_read_line_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io } {
     let out: Result[String, IoError] = Err(EndOfInput());
     out
 }
 
+/// `aic_io_read_int_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_read_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io } {
     let out: Result[Int, IoError] = Err(InvalidInput());
     out
 }
 
+/// `aic_io_read_char_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_read_char_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io } {
     let out: Result[String, IoError] = Err(EndOfInput());
     out
 }
 
+/// `aic_io_prompt_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_prompt_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects { io } {
     let out: Result[String, IoError] = Err(EndOfInput());
     out
 }
 
+/// `aic_io_eprint_str_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_eprint_str_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_eprint_str_intrinsic(x: String) -> () effects { io } {
     ()
 }
 
+/// `aic_io_eprint_int_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_eprint_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_eprint_int_intrinsic(x: Int) -> () effects { io } {
     ()
 }
 
+/// `aic_io_println_str_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_println_str_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_println_str_intrinsic(x: String) -> () effects { io } {
     ()
 }
 
+/// `aic_io_println_int_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_println_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_println_int_intrinsic(x: Int) -> () effects { io } {
     ()
 }
 
+/// `aic_io_print_bool_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_print_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_print_bool_intrinsic(x: Bool) -> () effects { io } {
     ()
 }
 
+/// `aic_io_println_bool_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_println_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_println_bool_intrinsic(x: Bool) -> () effects { io } {
     ()
 }
 
+/// `aic_io_flush_stdout_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_flush_stdout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_flush_stdout_intrinsic() -> () effects { io } {
     ()
 }
 
+/// `aic_io_flush_stderr_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_flush_stderr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_flush_stderr_intrinsic() -> () effects { io } {
     ()
 }
 
+/// `aic_io_write_stdout_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_write_stdout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
     let _content = content;
     io_err_int_result()
 }
 
+/// `aic_io_write_stderr_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_write_stderr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
     let _content = content;
     io_err_int_result()
 }
 
+/// `aic_io_file_read_line_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_file_read_line_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], IoError] effects { io } {
     let _file = file;
     io_err_option_string(io_other())
 }
 
+/// `aic_io_file_write_str_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_file_write_str_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Int, IoError] effects { io } {
     let _file = file;
     let _content = content;
     io_err_int_result()
 }
 
+/// `aic_io_file_close_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_file_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effects { io } {
     let _file = file;
     io_ok_bool_true()
 }
 
+/// `aic_io_tcp_send_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_tcp_send_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoError] effects { io } {
     let _handle = handle;
     let _content = content;
     io_err_int_result()
 }
 
+/// `aic_io_tcp_recv_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_tcp_recv_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, IoError] effects { io } {
     let _handle = handle;
     let _max_bytes = max_bytes;
@@ -244,24 +784,84 @@ fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Re
     io_err_string_result()
 }
 
+/// `aic_io_tcp_close_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_tcp_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io } {
     let _handle = handle;
     io_ok_bool_true()
 }
 
+/// `aic_io_mock_reader_install_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_mock_reader_install_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool, IoError] effects { io } {
     let _serialized_lines = serialized_lines;
     io_ok_bool_false()
 }
 
+/// `aic_io_mock_writer_take_stdout_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_mock_writer_take_stdout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects { io } {
     io_err_string_result()
 }
 
+/// `aic_io_mock_writer_take_stderr_intrinsic` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `aic_io_mock_writer_take_stderr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_io_mock_writer_take_stderr_intrinsic() -> Result[String, IoError] effects { io } {
     io_err_string_result()
 }
 
+/// `from_fs_error` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_fs_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_fs_error(err: FsError) -> IoError {
     match err {
         NotFound => io_end_of_input(),
@@ -270,6 +870,18 @@ fn from_fs_error(err: FsError) -> IoError {
     }
 }
 
+/// `from_net_error` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_net_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_net_error(err: NetError) -> IoError {
     match err {
         Timeout => io_end_of_input(),
@@ -278,6 +890,18 @@ fn from_net_error(err: NetError) -> IoError {
     }
 }
 
+/// `from_proc_error` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_proc_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_proc_error(err: ProcError) -> IoError {
     match err {
         UnknownProcess => io_end_of_input(),
@@ -286,6 +910,18 @@ fn from_proc_error(err: ProcError) -> IoError {
     }
 }
 
+/// `from_env_error` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_env_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_env_error(err: EnvError) -> IoError {
     match err {
         NotFound => io_end_of_input(),
@@ -294,6 +930,18 @@ fn from_env_error(err: EnvError) -> IoError {
     }
 }
 
+/// `io_error_name` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_error_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_error_name(err: IoError) -> String {
     match err {
         EndOfInput => "io.EndOfInput",
@@ -302,6 +950,18 @@ fn io_error_name(err: IoError) -> String {
     }
 }
 
+/// `io_error_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_error_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_error_context(error: IoError, context: String) -> IoErrorContext {
     IoErrorContext {
         error: error,
@@ -310,15 +970,51 @@ fn io_error_context(error: IoError, context: String) -> IoErrorContext {
     }
 }
 
+/// `with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_context(context: IoErrorContext, next_context: String) -> IoErrorContext {
     let _next_context = next_context;
     context
 }
 
+/// `error_chain` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `error_chain` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn error_chain(context: IoErrorContext) -> String {
     context.chain
 }
 
+/// `fs_error_name` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `fs_error_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn fs_error_name(err: FsError) -> String {
     match err {
         NotFound => "fs.NotFound",
@@ -329,6 +1025,18 @@ fn fs_error_name(err: FsError) -> String {
     }
 }
 
+/// `net_error_name` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `net_error_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn net_error_name(err: NetError) -> String {
     match err {
         NotFound => "net.NotFound",
@@ -341,6 +1049,18 @@ fn net_error_name(err: NetError) -> String {
     }
 }
 
+/// `proc_error_name` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `proc_error_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn proc_error_name(err: ProcError) -> String {
     match err {
         NotFound => "proc.NotFound",
@@ -351,6 +1071,18 @@ fn proc_error_name(err: ProcError) -> String {
     }
 }
 
+/// `env_error_name` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `env_error_name` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn env_error_name(err: EnvError) -> String {
     match err {
         NotFound => "env.NotFound",
@@ -360,10 +1092,34 @@ fn env_error_name(err: EnvError) -> String {
     }
 }
 
+/// `io_error` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `io_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn io_error(context: IoErrorContext) -> IoError {
     context.error
 }
 
+/// `mapped_error_with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `mapped_error_with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn mapped_error_with_context(mapped: IoError, context: String, source: String) -> IoErrorContext {
     let _source = source;
     let mapped_name = io_error_name(mapped);
@@ -371,6 +1127,18 @@ fn mapped_error_with_context(mapped: IoError, context: String, source: String) -
     with_context(base, mapped_name)
 }
 
+/// `from_fs_error_with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_fs_error_with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext {
     match err {
         NotFound => mapped_error_with_context(io_end_of_input(), context, "fs.NotFound"),
@@ -381,6 +1149,18 @@ fn from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext {
     }
 }
 
+/// `from_net_error_with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_net_error_with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_net_error_with_context(err: NetError, context: String) -> IoErrorContext {
     match err {
         NotFound => mapped_error_with_context(io_other(), context, "net.NotFound"),
@@ -393,6 +1173,18 @@ fn from_net_error_with_context(err: NetError, context: String) -> IoErrorContext
     }
 }
 
+/// `from_proc_error_with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_proc_error_with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_proc_error_with_context(err: ProcError, context: String) -> IoErrorContext {
     match err {
         NotFound => mapped_error_with_context(io_other(), context, "proc.NotFound"),
@@ -403,6 +1195,18 @@ fn from_proc_error_with_context(err: ProcError, context: String) -> IoErrorConte
     }
 }
 
+/// `from_env_error_with_context` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `from_env_error_with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_env_error_with_context(err: EnvError, context: String) -> IoErrorContext {
     match err {
         NotFound => mapped_error_with_context(io_end_of_input(), context, "env.NotFound"),
@@ -412,18 +1216,66 @@ fn from_env_error_with_context(err: EnvError, context: String) -> IoErrorContext
     }
 }
 
+/// `stdin_reader` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `stdin_reader` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn stdin_reader() -> Reader {
     ReadStdin()
 }
 
+/// `stdout_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `stdout_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn stdout_writer() -> Writer {
     WriteStdout()
 }
 
+/// `stderr_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `stderr_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn stderr_writer() -> Writer {
     WriteStderr()
 }
 
+/// `tcp_reader` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `tcp_reader` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_reader(handle: Int, max_bytes: Int, timeout_ms: Int) -> Reader {
     ReadTcp(TcpReader {
         handle: handle,
@@ -432,10 +1284,34 @@ fn tcp_reader(handle: Int, max_bytes: Int, timeout_ms: Int) -> Reader {
     })
 }
 
+/// `tcp_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `tcp_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_writer(handle: Int) -> Writer {
     WriteTcp(handle)
 }
 
+/// `file_reader` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `file_reader` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_reader(path: String) -> Result[Reader, IoError] effects { fs } {
     match open_read(path) {
         Ok(file) => Ok(ReadFile(file)),
@@ -443,6 +1319,18 @@ fn file_reader(path: String) -> Result[Reader, IoError] effects { fs } {
     }
 }
 
+/// `file_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `file_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_writer(path: String) -> Result[Writer, IoError] effects { fs } {
     match open_write(path) {
         Ok(file) => Ok(WriteFile(file)),
@@ -450,6 +1338,18 @@ fn file_writer(path: String) -> Result[Writer, IoError] effects { fs } {
     }
 }
 
+/// `file_appender` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `file_appender` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn file_appender(path: String) -> Result[Writer, IoError] effects { fs } {
     match open_append(path) {
         Ok(file) => Ok(WriteFile(file)),
@@ -457,6 +1357,18 @@ fn file_appender(path: String) -> Result[Writer, IoError] effects { fs } {
     }
 }
 
+/// `tcp_connect_reader` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `tcp_connect_reader` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_connect_reader(addr: String, timeout_ms: Int, max_bytes: Int) -> Result[Reader, IoError] effects { net } {
     match tcp_connect(addr, timeout_ms) {
         Ok(handle) => Ok(ReadTcp(TcpReader {
@@ -468,6 +1380,18 @@ fn tcp_connect_reader(addr: String, timeout_ms: Int, max_bytes: Int) -> Result[R
     }
 }
 
+/// `tcp_connect_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `tcp_connect_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_connect_writer(addr: String, timeout_ms: Int) -> Result[Writer, IoError] effects { net } {
     match tcp_connect(addr, timeout_ms) {
         Ok(handle) => Ok(WriteTcp(handle)),
@@ -475,6 +1399,18 @@ fn tcp_connect_writer(addr: String, timeout_ms: Int) -> Result[Writer, IoError] 
     }
 }
 
+/// `read_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `read_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_stream(reader: Reader) -> Result[String, IoError] effects { io } {
     match reader {
         ReadStdin => read_line(),
@@ -489,6 +1425,18 @@ fn read_stream(reader: Reader) -> Result[String, IoError] effects { io } {
     }
 }
 
+/// `read_stream_optional` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `read_stream_optional` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_stream_optional(reader: Reader) -> Result[Option[String], IoError] effects { io } {
     match read_stream(reader) {
         Ok(text) => io_ok_some_string(text),
@@ -500,22 +1448,82 @@ fn read_stream_optional(reader: Reader) -> Result[Option[String], IoError] effec
     }
 }
 
+/// `write_stdout_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `write_stdout_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_stdout_stream(content: String) -> Result[Int, IoError] effects { io } {
     aic_io_write_stdout_intrinsic(content)
 }
 
+/// `write_stderr_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `write_stderr_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_stderr_stream(content: String) -> Result[Int, IoError] effects { io } {
     aic_io_write_stderr_intrinsic(content)
 }
 
+/// `write_file_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `write_file_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_file_stream(file: FileHandle, content: String) -> Result[Int, IoError] effects { io } {
     aic_io_file_write_str_intrinsic(file, content)
 }
 
+/// `write_tcp_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `write_tcp_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_tcp_stream(handle: Int, content: String) -> Result[Int, IoError] effects { io } {
     aic_io_tcp_send_intrinsic(handle, content)
 }
 
+/// `write_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `write_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io } {
     match writer {
         WriteStdout => write_stdout_stream(content),
@@ -525,16 +1533,52 @@ fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects
     }
 }
 
+/// `flush_stdout_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `flush_stdout_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn flush_stdout_stream() -> Result[Bool, IoError] effects { io } {
     aic_io_flush_stdout_intrinsic();
     io_ok_bool_true()
 }
 
+/// `flush_stderr_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `flush_stderr_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn flush_stderr_stream() -> Result[Bool, IoError] effects { io } {
     aic_io_flush_stderr_intrinsic();
     io_ok_bool_true()
 }
 
+/// `flush_stream` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `flush_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn flush_stream(writer: Writer) -> Result[Bool, IoError] effects { io } {
     match writer {
         WriteStdout => flush_stdout_stream(),
@@ -543,6 +1587,18 @@ fn flush_stream(writer: Writer) -> Result[Bool, IoError] effects { io } {
     }
 }
 
+/// `close_reader` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `close_reader` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_reader(reader: Reader) -> Result[Bool, IoError] effects { io } {
     match reader {
         ReadStdin => io_ok_bool_true(),
@@ -551,16 +1607,52 @@ fn close_reader(reader: Reader) -> Result[Bool, IoError] effects { io } {
     }
 }
 
+/// `close_stdout_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `close_stdout_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_stdout_writer() -> Result[Bool, IoError] effects { io } {
     aic_io_flush_stdout_intrinsic();
     io_ok_bool_true()
 }
 
+/// `close_stderr_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `close_stderr_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_stderr_writer() -> Result[Bool, IoError] effects { io } {
     aic_io_flush_stderr_intrinsic();
     io_ok_bool_true()
 }
 
+/// `close_writer` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `close_writer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_writer(writer: Writer) -> Result[Bool, IoError] effects { io } {
     match writer {
         WriteStdout => close_stdout_writer(),
@@ -570,6 +1662,18 @@ fn close_writer(writer: Writer) -> Result[Bool, IoError] effects { io } {
     }
 }
 
+/// `stream_copy` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `stream_copy` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn stream_copy(reader: Reader, writer: Writer) -> Result[Int, IoError] effects { io } {
     match read_stream_optional(reader) {
         Ok(next) => match next {
@@ -633,50 +1737,194 @@ fn print_float(x: Float) -> () effects { io } {
     aic_io_print_float_intrinsic(x)
 }
 
+/// `read_line` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `read_line` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_line() -> Result[String, IoError] effects { io } {
     aic_io_read_line_intrinsic()
 }
 
+/// `read_int` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `read_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_int() -> Result[Int, IoError] effects { io } {
     aic_io_read_int_intrinsic()
 }
 
+/// `read_char` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `read_char` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_char() -> Result[String, IoError] effects { io } {
     aic_io_read_char_intrinsic()
 }
 
+/// `prompt` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `prompt` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn prompt(message: String) -> Result[String, IoError] effects { io } {
     aic_io_prompt_intrinsic(message)
 }
 
+/// `eprint_str` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `eprint_str` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn eprint_str(x: String) -> () effects { io } {
     aic_io_eprint_str_intrinsic(x)
 }
 
+/// `eprint_int` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `eprint_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn eprint_int(x: Int) -> () effects { io } {
     aic_io_eprint_int_intrinsic(x)
 }
 
+/// `println_str` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `println_str` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn println_str(x: String) -> () effects { io } {
     aic_io_println_str_intrinsic(x)
 }
 
+/// `println_int` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `println_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn println_int(x: Int) -> () effects { io } {
     aic_io_println_int_intrinsic(x)
 }
 
+/// `print_bool` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `print_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn print_bool(x: Bool) -> () effects { io } {
     aic_io_print_bool_intrinsic(x)
 }
 
+/// `println_bool` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `println_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn println_bool(x: Bool) -> () effects { io } {
     aic_io_println_bool_intrinsic(x)
 }
 
+/// `flush_stdout` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `flush_stdout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn flush_stdout() -> () effects { io } {
     aic_io_flush_stdout_intrinsic()
 }
 
+/// `flush_stderr` in `std.io`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.io` and call `flush_stderr` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn flush_stderr() -> () effects { io } {
     aic_io_flush_stderr_intrinsic()
 }

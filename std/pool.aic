@@ -1,3 +1,9 @@
+/// The `std.pool` module provides standard-library `pool` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.pool;
+/// ```
 module std.pool;
 
 import std.concurrent;
@@ -5,14 +11,31 @@ import std.option;
 import std.result;
 import std.vec;
 
+/// `PoolError` is a `enum` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolError` through `std.pool` APIs.
+/// ```
 enum PoolError {
+    /// `MaxSizeReached` enum variant.
     MaxSizeReached,
+    /// `Timeout` enum variant.
     Timeout,
+    /// `ConnectionFailed` enum variant.
     ConnectionFailed,
+    /// `Closed` enum variant.
     Closed,
+    /// `HealthCheckFailed` enum variant.
     HealthCheckFailed,
 }
 
+/// `PoolConfig` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolConfig` through `std.pool` APIs.
+/// ```
 struct PoolConfig {
     min_size: Int,
     max_size: Int,
@@ -22,15 +45,33 @@ struct PoolConfig {
     health_check_ms: Int,
 }
 
+/// `Pool` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Pool` through `std.pool` APIs.
+/// ```
 struct Pool[T] {
     handle: Int,
 }
 
+/// `PooledConn` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PooledConn` through `std.pool` APIs.
+/// ```
 struct PooledConn[T] {
     handle: Int,
     value: T,
 }
 
+/// `PoolStats` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolStats` through `std.pool` APIs.
+/// ```
 struct PoolStats {
     total: Int,
     idle: Int,
@@ -39,6 +80,12 @@ struct PoolStats {
     destroyed: Int,
 }
 
+/// `PoolEntry` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolEntry` through `std.pool` APIs.
+/// ```
 struct PoolEntry[T] {
     lease: Int,
     value: T,
@@ -47,6 +94,12 @@ struct PoolEntry[T] {
     health_ms: Int,
 }
 
+/// `PoolState` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolState` through `std.pool` APIs.
+/// ```
 struct PoolState[T] {
     next_lease: Int,
     idle: Vec[PoolEntry[T]],
@@ -56,64 +109,201 @@ struct PoolState[T] {
     destroyed: Int,
 }
 
+/// `AcquireReq` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `AcquireReq` through `std.pool` APIs.
+/// ```
 struct AcquireReq[T] {
     reply: Sender[Result[PooledConn[T], PoolError]],
 }
 
+/// `ReleaseReq` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ReleaseReq` through `std.pool` APIs.
+/// ```
 struct ReleaseReq[T] {
     lease: Int,
     value: T,
 }
 
+/// `StatsReq` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `StatsReq` through `std.pool` APIs.
+/// ```
 struct StatsReq {
     reply: Sender[PoolStats],
 }
 
+/// `CloseReq` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `CloseReq` through `std.pool` APIs.
+/// ```
 struct CloseReq {
     reply: Sender[Bool],
 }
 
+/// `PoolRequest` is a `enum` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `PoolRequest` through `std.pool` APIs.
+/// ```
 enum PoolRequest[T] {
+    /// `Acquire` enum variant.
     Acquire(AcquireReq[T]),
+    /// `Release` enum variant.
     Release(ReleaseReq[T]),
+    /// `Discard` enum variant.
     Discard(ReleaseReq[T]),
+    /// `Stats` enum variant.
     Stats(StatsReq),
+    /// `Close` enum variant.
     Close(CloseReq),
 }
 
+/// `RequestOut` is a `struct` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RequestOut` through `std.pool` APIs.
+/// ```
 struct RequestOut[T] {
     state: PoolState[T],
     close_loop: Bool,
 }
 
+/// `pool_timeout_error` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_timeout_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_timeout_error() -> PoolError {
     Timeout()
 }
 
+/// `pool_closed_error` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_closed_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_closed_error() -> PoolError {
     Closed()
 }
 
+/// `acquire_result_ok` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `acquire_result_ok` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn acquire_result_ok[T](conn: PooledConn[T]) -> Result[PooledConn[T], PoolError] {
     Ok(conn)
 }
 
+/// `acquire_result_err` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `acquire_result_err` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn acquire_result_err[T](err: PoolError) -> Result[PooledConn[T], PoolError] {
     Err(err)
 }
 
+/// `acquire_result_timeout` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `acquire_result_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn acquire_result_timeout[T]() -> Result[PooledConn[T], PoolError] {
     Err(pool_timeout_error())
 }
 
+/// `id_base` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `id_base` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn id_base() -> Int {
     1000000
 }
 
+/// `timeout_field_base` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `timeout_field_base` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn timeout_field_base() -> Int {
     1000000000000
 }
 
+/// `clamp_non_negative` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `clamp_non_negative` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn clamp_non_negative(value: Int) -> Int {
     if value < 0 {
         0
@@ -122,6 +312,18 @@ fn clamp_non_negative(value: Int) -> Int {
     }
 }
 
+/// `normalized_timeout_ms` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `normalized_timeout_ms` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalized_timeout_ms(value: Int) -> Int {
     let raw = clamp_non_negative(value);
     if raw > 999999 {
@@ -131,6 +333,18 @@ fn normalized_timeout_ms(value: Int) -> Int {
     }
 }
 
+/// `normalized_config` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `normalized_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalized_config(config: PoolConfig) -> PoolConfig {
     let max_raw = clamp_non_negative(config.max_size);
     let max_size = if max_raw <= 0 { 1 } else { max_raw };
@@ -146,37 +360,133 @@ fn normalized_config(config: PoolConfig) -> PoolConfig {
     }
 }
 
+/// `encode_pool_handle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `encode_pool_handle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_pool_handle(request_handle: Int, manager_handle: Int, acquire_timeout_ms: Int) -> Int {
     request_handle + (manager_handle * id_base()) + (acquire_timeout_ms * timeout_field_base())
 }
 
+/// `pool_request_handle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_request_handle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_request_handle(pool_handle: Int) -> Int {
     let no_timeout = pool_handle % timeout_field_base();
     no_timeout % id_base()
 }
 
+/// `pool_manager_handle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_manager_handle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_manager_handle(pool_handle: Int) -> Int {
     let no_timeout = pool_handle % timeout_field_base();
     no_timeout / id_base()
 }
 
+/// `pool_acquire_timeout_ms` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_acquire_timeout_ms` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_acquire_timeout_ms(pool_handle: Int) -> Int {
     let timeout = pool_handle / timeout_field_base();
     clamp_non_negative(timeout)
 }
 
+/// `encode_conn_handle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `encode_conn_handle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_conn_handle(request_handle: Int, lease: Int) -> Int {
     request_handle + (lease * id_base())
 }
 
+/// `conn_request_handle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `conn_request_handle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn conn_request_handle(conn_handle: Int) -> Int {
     conn_handle % id_base()
 }
 
+/// `conn_lease` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `conn_lease` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn conn_lease(conn_handle: Int) -> Int {
     conn_handle / id_base()
 }
 
+/// `pool_state_new` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_new` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_new[T]() -> PoolState[T] {
     PoolState {
         next_lease: 0,
@@ -188,10 +498,34 @@ fn pool_state_new[T]() -> PoolState[T] {
     }
 }
 
+/// `pool_state_total` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_total` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_total[T](state: PoolState[T]) -> Int {
     state.idle.len + state.in_use.len
 }
 
+/// `pool_state_stats` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_stats` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_stats[T](state: PoolState[T]) -> PoolStats {
     PoolStats {
         total: pool_state_total(state),
@@ -202,6 +536,18 @@ fn pool_state_stats[T](state: PoolState[T]) -> PoolStats {
     }
 }
 
+/// `pool_entry_tick` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_entry_tick` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_entry_tick[T](entry: PoolEntry[T], delta_ms: Int, is_idle: Bool) -> PoolEntry[T] {
     let next_created = entry.created_ms + delta_ms;
     if is_idle {
@@ -223,6 +569,18 @@ fn pool_entry_tick[T](entry: PoolEntry[T], delta_ms: Int, is_idle: Bool) -> Pool
     }
 }
 
+/// `pool_state_tick` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_tick` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T] {
     if delta_ms <= 0 {
         state
@@ -258,6 +616,18 @@ fn pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T] {
     }
 }
 
+/// `should_reap_idle_entry` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `should_reap_idle_entry` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn should_reap_idle_entry[T](entry: PoolEntry[T], config: PoolConfig) -> Bool {
     let idle_expired =
         config.idle_timeout_ms > 0 && entry.idle_ms >= config.idle_timeout_ms;
@@ -266,6 +636,18 @@ fn should_reap_idle_entry[T](entry: PoolEntry[T], config: PoolConfig) -> Bool {
     idle_expired || lifetime_expired
 }
 
+/// `pool_state_maintain_idle` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_maintain_idle` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_maintain_idle[T](
     state: PoolState[T],
     config: PoolConfig,
@@ -315,6 +697,18 @@ fn pool_state_maintain_idle[T](
     }
 }
 
+/// `pool_state_ensure_min_size` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_ensure_min_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_ensure_min_size[T](
     state: PoolState[T],
     config: PoolConfig,
@@ -356,6 +750,18 @@ fn pool_state_ensure_min_size[T](
     next
 }
 
+/// `find_entry_index` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `find_entry_index` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find_entry_index[T](entries: Vec[PoolEntry[T]], lease: Int) -> Int {
     let mut i = 0;
     let mut found_idx = -1;
@@ -374,6 +780,18 @@ fn find_entry_index[T](entries: Vec[PoolEntry[T]], lease: Int) -> Int {
     found_idx
 }
 
+/// `pop_idle_entry` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pop_idle_entry` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pop_idle_entry[T](state: PoolState[T]) -> (PoolState[T], Option[PoolEntry[T]]) {
     if state.idle.len <= 0 {
         (state, None())
@@ -396,6 +814,18 @@ fn pop_idle_entry[T](state: PoolState[T]) -> (PoolState[T], Option[PoolEntry[T]]
     }
 }
 
+/// `pool_state_acquire` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_acquire` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_acquire[T](
     request_handle: Int,
     state: PoolState[T],
@@ -476,6 +906,18 @@ fn pool_state_acquire[T](
     }
 }
 
+/// `pool_state_release` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_release` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_release[T](
     state: PoolState[T],
     lease: Int,
@@ -532,6 +974,18 @@ fn pool_state_release[T](
     }
 }
 
+/// `pool_state_discard` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_discard` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_discard[T](
     state: PoolState[T],
     lease: Int,
@@ -561,6 +1015,18 @@ fn pool_state_discard[T](
     }
 }
 
+/// `pool_state_close_all` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_close_all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_state_close_all[T](state: PoolState[T], destroy: Fn(T) -> ()) -> PoolState[T] {
     let mut destroyed = state.destroyed;
     let mut i = 0;
@@ -599,6 +1065,18 @@ fn pool_state_close_all[T](state: PoolState[T], destroy: Fn(T) -> ()) -> PoolSta
     }
 }
 
+/// `pool_handle_request` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_handle_request` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_handle_request[T](
     request_handle: Int,
     state: PoolState[T],
@@ -657,6 +1135,18 @@ fn pool_handle_request[T](
     }
 }
 
+/// `pool_manager_loop` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_manager_loop` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_manager_loop[T](
     request_handle: Int,
     req_rx: Receiver[PoolRequest[T]],
@@ -719,6 +1209,18 @@ fn pool_manager_loop[T](
     1
 }
 
+/// `request_capacity` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `request_capacity` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn request_capacity(config: PoolConfig) -> Int {
     let desired = config.max_size * 4;
     if desired < 8 {
@@ -728,10 +1230,34 @@ fn request_capacity(config: PoolConfig) -> Int {
     }
 }
 
+/// `default_pool_backoff_ms` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `default_pool_backoff_ms` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn default_pool_backoff_ms() -> Int {
     1
 }
 
+/// `wait_backoff_tick` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `wait_backoff_tick` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn wait_backoff_tick() -> () effects { concurrency } {
     match spawn_task(0, default_pool_backoff_ms()) {
         Ok(t) => if true {
@@ -744,6 +1270,18 @@ fn wait_backoff_tick() -> () effects { concurrency } {
     }
 }
 
+/// `new_pool` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `new_pool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_pool[T](
     config: PoolConfig,
     create: Fn() -> Result[T, PoolError],
@@ -769,6 +1307,18 @@ fn new_pool[T](
     }
 }
 
+/// `acquire` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `acquire` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concurrency } {
     let request_handle = pool_request_handle(pool.handle);
     if request_handle <= 0 {
@@ -863,6 +1413,18 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
     }
 }
 
+/// `release` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `release` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn release[T](conn: PooledConn[T]) -> () effects { concurrency } {
     let request_handle = conn_request_handle(conn.handle);
     let lease = conn_lease(conn.handle);
@@ -883,6 +1445,18 @@ fn release[T](conn: PooledConn[T]) -> () effects { concurrency } {
     }
 }
 
+/// `discard` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `discard` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn discard[T](conn: PooledConn[T]) -> () effects { concurrency } {
     let request_handle = conn_request_handle(conn.handle);
     let lease = conn_lease(conn.handle);
@@ -903,6 +1477,18 @@ fn discard[T](conn: PooledConn[T]) -> () effects { concurrency } {
     }
 }
 
+/// `pool_stats` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_stats` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency } {
     let request_handle = pool_request_handle(pool.handle);
     if request_handle <= 0 {
@@ -947,6 +1533,18 @@ fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency } {
     }
 }
 
+/// `close_pool` in `std.pool`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `close_pool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_pool[T](pool: Pool[T]) -> () effects { concurrency } {
     let request_handle = pool_request_handle(pool.handle);
     if request_handle > 0 {

@@ -1,20 +1,47 @@
+/// The `std.http_server` module provides standard-library `http server` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.http_server;
+/// ```
 module std.http_server;
 
 import std.map;
 import std.result;
 
+/// `ServerError` is a `enum` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ServerError` through `std.http_server` APIs.
+/// ```
 enum ServerError {
+    /// `InvalidRequest` enum variant.
     InvalidRequest,
+    /// `InvalidMethod` enum variant.
     InvalidMethod,
+    /// `InvalidHeader` enum variant.
     InvalidHeader,
+    /// `InvalidTarget` enum variant.
     InvalidTarget,
+    /// `Timeout` enum variant.
     Timeout,
+    /// `ConnectionClosed` enum variant.
     ConnectionClosed,
+    /// `BodyTooLarge` enum variant.
     BodyTooLarge,
+    /// `Net` enum variant.
     Net,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `Request` is a `struct` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Request` through `std.http_server` APIs.
+/// ```
 struct Request {
     method: String,
     path: String,
@@ -23,18 +50,48 @@ struct Request {
     body: String,
 }
 
+/// `Response` is a `struct` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Response` through `std.http_server` APIs.
+/// ```
 struct Response {
     status: Int,
     headers: Map[String, String],
     body: String,
 }
 
+/// `aic_http_server_listen_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_listen_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net } {
     let _addr = addr;
     let out: Result[Int, ServerError] = Err(Net());
     out
 }
 
+/// `aic_http_server_accept_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_accept_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net } {
     let _listener = listener;
     let _timeout_ms = timeout_ms;
@@ -42,6 +99,18 @@ fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[In
     out
 }
 
+/// `aic_http_server_read_request_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_read_request_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
     let _conn = conn;
     let _max_bytes = max_bytes;
@@ -50,6 +119,18 @@ fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms:
     out
 }
 
+/// `aic_http_server_write_response_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_write_response_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
     let _conn = conn;
     let _response = response;
@@ -57,12 +138,36 @@ fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Re
     out
 }
 
+/// `aic_http_server_close_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net } {
     let _handle = handle;
     let out: Result[Bool, ServerError] = Err(Net());
     out
 }
 
+/// `aic_http_server_text_response_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_text_response_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Response {
     let headers0: Map[String, String] = aic_map_new_intrinsic();
     let headers = aic_map_insert_intrinsic(headers0, "content-type", "text/plain; charset=utf-8");
@@ -73,6 +178,18 @@ fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Respons
     }
 }
 
+/// `aic_http_server_json_response_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_json_response_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Response {
     let headers0: Map[String, String] = aic_map_new_intrinsic();
     let headers = aic_map_insert_intrinsic(headers0, "content-type", "application/json");
@@ -83,30 +200,114 @@ fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Respons
     }
 }
 
+/// `aic_http_server_header_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_header_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_http_server_header_intrinsic(resp: Response, name: String) -> Option[String] {
     aic_map_get_intrinsic(resp.headers, name)
 }
 
+/// `listen` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `listen` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn listen(addr: String) -> Result[Int, ServerError] effects { net } {
     aic_http_server_listen_intrinsic(addr)
 }
 
+/// `accept` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `accept` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn accept(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net } {
     aic_http_server_accept_intrinsic(listener, timeout_ms)
 }
 
+/// `read_request` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `read_request` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
     aic_http_server_read_request_intrinsic(conn, max_bytes, timeout_ms)
 }
 
+/// `write_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `write_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_response(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
     aic_http_server_write_response_intrinsic(conn, response)
 }
 
+/// `close` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close(handle: Int) -> Result[Bool, ServerError] effects { net } {
     aic_http_server_close_intrinsic(handle)
 }
 
+/// `response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn response(status: Int, headers: Map[String, String], body: String) -> Response {
     Response {
         status: status,
@@ -115,18 +316,66 @@ fn response(status: Int, headers: Map[String, String], body: String) -> Response
     }
 }
 
+/// `text_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `text_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn text_response(status: Int, body: String) -> Response {
     aic_http_server_text_response_intrinsic(status, body)
 }
 
+/// `json_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `json_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn json_response(status: Int, body: String) -> Response {
     aic_http_server_json_response_intrinsic(status, body)
 }
 
+/// `error_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `error_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn error_response(status: Int, message: String) -> Response {
     text_response(status, message)
 }
 
+/// `header` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `header` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn header(resp: Response, name: String) -> Option[String] {
     aic_http_server_header_intrinsic(resp, name)
 }

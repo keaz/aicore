@@ -1,72 +1,421 @@
+/// The `std.net` module provides standard-library `net` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.net;
+/// ```
 module std.net;
 
 import std.bytes;
 import std.result;
 
+/// `NetError` is a `enum` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Use `NetError` through `std.net` APIs.
+/// ```
 enum NetError {
+    /// `NotFound` enum variant.
     NotFound,
+    /// `PermissionDenied` enum variant.
     PermissionDenied,
+    /// `Refused` enum variant.
     Refused,
+    /// `Timeout` enum variant.
     Timeout,
+    /// `AddressInUse` enum variant.
     AddressInUse,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `UdpPacket` is a `struct` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Use `UdpPacket` through `std.net` APIs.
+/// ```
 struct UdpPacket {
     from: String,
     payload: Bytes,
 }
 
+/// `AsyncIntOp` is a `struct` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Use `AsyncIntOp` through `std.net` APIs.
+/// ```
 struct AsyncIntOp {
     handle: Int,
 }
 
+/// `AsyncStringOp` is a `struct` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Use `AsyncStringOp` through `std.net` APIs.
+/// ```
 struct AsyncStringOp {
     handle: Int,
 }
 
+/// `aic_net_tcp_listen_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_listen_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_listen_intrinsic(addr: String) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_local_addr_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_local_addr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net };
+/// `aic_net_tcp_accept_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_accept_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_connect_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_connect_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_send_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_send_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_recv_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_recv_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net };
+/// `aic_net_tcp_close_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_udp_bind_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_udp_bind_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_udp_bind_intrinsic(addr: String) -> Result[Int, NetError] effects { net };
+/// `aic_net_udp_local_addr_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_udp_local_addr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_udp_local_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net };
+/// `aic_net_udp_send_to_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_udp_send_to_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_udp_send_to_intrinsic(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net };
+/// `aic_net_udp_recv_from_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_udp_recv_from_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_udp_recv_from_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net };
+/// `aic_net_udp_close_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_udp_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_udp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_dns_lookup_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_dns_lookup_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_dns_lookup_intrinsic(host: String) -> Result[String, NetError] effects { net };
+/// `aic_net_dns_reverse_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_dns_reverse_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_dns_reverse_intrinsic(addr: String) -> Result[String, NetError] effects { net };
+/// `aic_net_async_accept_submit_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_accept_submit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_accept_submit_intrinsic(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency };
+/// `aic_net_async_send_submit_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_send_submit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_send_submit_intrinsic(handle: Int, payload: String) -> Result[AsyncIntOp, NetError] effects { net, concurrency };
+/// `aic_net_async_recv_submit_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_recv_submit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_recv_submit_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency };
+/// `aic_net_async_wait_int_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_wait_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency };
+/// `aic_net_async_wait_string_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_wait_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency };
+/// `aic_net_async_shutdown_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_async_shutdown_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_async_shutdown_intrinsic() -> Result[Bool, NetError] effects { net, concurrency };
 
+/// `tcp_listen` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_listen` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_listen_intrinsic(addr)
 }
 
+/// `tcp_local_addr` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_local_addr` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net } {
     aic_net_tcp_local_addr_intrinsic(handle)
 }
 
+/// `tcp_accept` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_accept` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_accept_intrinsic(listener, timeout_ms)
 }
 
+/// `tcp_connect` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_connect` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_connect_intrinsic(addr, timeout_ms)
 }
 
+/// `tcp_send` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_send_intrinsic(handle, payload.data)
 }
 
+/// `tcp_recv` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net } {
     let raw = aic_net_tcp_recv_intrinsic(handle, max_bytes, timeout_ms);
     match raw {
@@ -75,54 +424,210 @@ fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetEr
     }
 }
 
+/// `tcp_close` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
     aic_net_tcp_close_intrinsic(handle)
 }
 
+/// `udp_bind` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `udp_bind` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net } {
     aic_net_udp_bind_intrinsic(addr)
 }
 
+/// `udp_local_addr` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `udp_local_addr` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net } {
     aic_net_udp_local_addr_intrinsic(handle)
 }
 
+/// `udp_send_to` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `udp_send_to` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net } {
     aic_net_udp_send_to_intrinsic(handle, addr, payload.data)
 }
 
+/// `udp_recv_from` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `udp_recv_from` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net } {
     aic_net_udp_recv_from_intrinsic(handle, max_bytes, timeout_ms)
 }
 
+/// `udp_close` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `udp_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
     aic_net_udp_close_intrinsic(handle)
 }
 
+/// `dns_lookup` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `dns_lookup` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net } {
     aic_net_dns_lookup_intrinsic(host)
 }
 
+/// `dns_reverse` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `dns_reverse` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn dns_reverse(addr: String) -> Result[String, NetError] effects { net } {
     aic_net_dns_reverse_intrinsic(addr)
 }
 
+/// `async_accept_submit` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_accept_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
     aic_net_async_accept_submit_intrinsic(listener, timeout_ms)
 }
 
+/// `async_tcp_send_submit` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_tcp_send_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
     aic_net_async_send_submit_intrinsic(handle, payload.data)
 }
 
+/// `async_tcp_recv_submit` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_tcp_recv_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency } {
     aic_net_async_recv_submit_intrinsic(handle, max_bytes, timeout_ms)
 }
 
+/// `async_wait_int` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_wait_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
     aic_net_async_wait_int_intrinsic(op, timeout_ms)
 }
 
+/// `async_wait_string` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_wait_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency } {
     let raw = aic_net_async_wait_string_intrinsic(op, timeout_ms);
     match raw {
@@ -131,10 +636,34 @@ fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetErr
     }
 }
 
+/// `async_shutdown` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_shutdown` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency } {
     aic_net_async_shutdown_intrinsic()
 }
 
+/// `async_accept` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_accept` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
     let submitted = async_accept_submit(listener, timeout_ms);
     match submitted {
@@ -143,6 +672,18 @@ fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects
     }
 }
 
+/// `async_tcp_send` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_tcp_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
     let submitted = async_tcp_send_submit(handle, payload);
     match submitted {
@@ -151,6 +692,18 @@ fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, N
     }
 }
 
+/// `async_tcp_recv` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_tcp_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency } {
     let submitted = async_tcp_recv_submit(handle, max_bytes, timeout_ms);
     match submitted {

@@ -1,3 +1,9 @@
+/// The `std.concurrent` module provides standard-library `concurrent` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.concurrent;
+/// ```
 module std.concurrent;
 
 import std.json;
@@ -5,167 +11,968 @@ import std.option;
 import std.result;
 import std.vec;
 
+/// `ConcurrencyError` is a `enum` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ConcurrencyError` through `std.concurrent` APIs.
+/// ```
 enum ConcurrencyError {
+    /// `NotFound` enum variant.
     NotFound,
+    /// `Timeout` enum variant.
     Timeout,
+    /// `Cancelled` enum variant.
     Cancelled,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Panic` enum variant.
     Panic,
+    /// `Closed` enum variant.
     Closed,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `ChannelError` is a `enum` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ChannelError` through `std.concurrent` APIs.
+/// ```
 enum ChannelError {
+    /// `Closed` enum variant.
     Closed,
+    /// `Full` enum variant.
     Full,
+    /// `Empty` enum variant.
     Empty,
+    /// `Timeout` enum variant.
     Timeout,
 }
 
+/// `Send` is a `trait` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Send` through `std.concurrent` APIs.
+/// ```
 trait Send[T];
+/// `Sync` is a `trait` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Sync` through `std.concurrent` APIs.
+/// ```
 trait Sync[T];
 
+/// `Task` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Task` through `std.concurrent` APIs.
+/// ```
 struct Task[T] {
     handle: Int,
 }
 
+/// `Scope` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Scope` through `std.concurrent` APIs.
+/// ```
 struct Scope {
     handle: Int,
 }
 
+/// `Sender` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Sender` through `std.concurrent` APIs.
+/// ```
 struct Sender[T] {
     handle: Int,
 }
 
+/// `Receiver` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Receiver` through `std.concurrent` APIs.
+/// ```
 struct Receiver[T] {
     handle: Int,
 }
 
+/// `IntChannel` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IntChannel` through `std.concurrent` APIs.
+/// ```
 struct IntChannel {
     handle: Int,
 }
 
+/// `IntChannelSelection` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IntChannelSelection` through `std.concurrent` APIs.
+/// ```
 struct IntChannelSelection {
     channel_index: Int,
     value: Int,
 }
 
+/// `IntMutex` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IntMutex` through `std.concurrent` APIs.
+/// ```
 struct IntMutex {
     handle: Int,
 }
 
+/// `Arc` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Arc` through `std.concurrent` APIs.
+/// ```
 struct Arc[T] {
     handle: Int,
 }
 
+/// `AtomicInt` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `AtomicInt` through `std.concurrent` APIs.
+/// ```
 struct AtomicInt {
     handle: Int,
 }
 
+/// `AtomicBool` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `AtomicBool` through `std.concurrent` APIs.
+/// ```
 struct AtomicBool {
     handle: Int,
 }
 
+/// `ThreadLocal` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ThreadLocal` through `std.concurrent` APIs.
+/// ```
 struct ThreadLocal[T] {
     handle: Int,
 }
 
+/// `Mutex` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Mutex` through `std.concurrent` APIs.
+/// ```
 struct Mutex[T] {
     handle: Int,
 }
 
+/// `MutexGuard` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `MutexGuard` through `std.concurrent` APIs.
+/// ```
 struct MutexGuard[T] {
     handle: Int,
     guard_kind: Int,
     value: T,
 }
 
+/// `RwLock` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RwLock` through `std.concurrent` APIs.
+/// ```
 struct RwLock[T] {
     handle: Int,
 }
 
+/// `IntRwLock` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IntRwLock` through `std.concurrent` APIs.
+/// ```
 struct IntRwLock {
     handle: Int,
 }
 
+/// `IntTaskSelection` is a `struct` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IntTaskSelection` through `std.concurrent` APIs.
+/// ```
 struct IntTaskSelection {
     task_index: Int,
     value: Int,
 }
 
+/// `SelectResult` is a `enum` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Use `SelectResult` through `std.concurrent` APIs.
+/// ```
 enum SelectResult[A, B] {
+    /// `First` enum variant.
     First(A),
+    /// `Second` enum variant.
     Second(B),
+    /// `Timeout` enum variant.
     Timeout,
+    /// `Closed` enum variant.
     Closed,
 }
 
+/// `aic_conc_spawn_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_spawn_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_spawn_intrinsic(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency };
+/// `aic_conc_join_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_join_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_join_intrinsic(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_join_timeout_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_join_timeout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_join_timeout_intrinsic(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_cancel_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_cancel_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_cancel_intrinsic(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_spawn_fn_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_spawn_fn_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_spawn_fn_intrinsic[T](f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+/// `aic_conc_spawn_fn_named_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_spawn_fn_named_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_spawn_fn_named_intrinsic[T](name: String, f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+/// `aic_conc_join_value_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_join_value_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_join_value_intrinsic[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency };
+/// `aic_conc_scope_new_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_scope_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_scope_new_intrinsic() -> Result[Scope, ConcurrencyError] effects { concurrency };
+/// `aic_conc_scope_spawn_fn_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_scope_spawn_fn_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_scope_spawn_fn_intrinsic[T](scope: Scope, f: Fn() -> T) -> Result[Task[T], ConcurrencyError] effects { concurrency };
+/// `aic_conc_scope_join_all_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_scope_join_all_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_scope_join_all_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_scope_cancel_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_scope_cancel_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_scope_cancel_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_scope_close_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_scope_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_scope_close_intrinsic(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_spawn_group_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_spawn_group_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_spawn_group_intrinsic(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency };
+/// `aic_conc_select_first_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_select_first_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_select_first_intrinsic(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency };
+/// `aic_conc_channel_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_channel_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_channel_int_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency };
+/// `aic_conc_channel_int_buffered_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_channel_int_buffered_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_channel_int_buffered_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency };
+/// `aic_conc_send_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_send_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_send_int_intrinsic(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_try_send_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_try_send_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_try_send_int_intrinsic(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency };
+/// `aic_conc_recv_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_recv_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_recv_int_intrinsic(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_try_recv_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_try_recv_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_try_recv_int_intrinsic(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency };
+/// `aic_conc_select_recv_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_select_recv_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_select_recv_int_intrinsic(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency };
+/// `aic_conc_close_channel_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_close_channel_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_close_channel_intrinsic(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_mutex_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_mutex_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_mutex_int_intrinsic(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency };
+/// `aic_conc_mutex_lock_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_mutex_lock_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_mutex_lock_intrinsic(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_mutex_unlock_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_mutex_unlock_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_mutex_unlock_intrinsic(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_mutex_close_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_mutex_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_rwlock_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_rwlock_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_rwlock_int_intrinsic(initial: Int) -> Result[IntRwLock, ConcurrencyError] effects { concurrency };
+/// `aic_conc_rwlock_read_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_rwlock_read_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_rwlock_read_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_rwlock_write_lock_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_rwlock_write_lock_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_rwlock_write_lock_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_rwlock_write_unlock_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_rwlock_write_unlock_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_rwlock_write_unlock_intrinsic(rwlock: IntRwLock, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_rwlock_close_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_rwlock_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_rwlock_close_intrinsic(rwlock: IntRwLock) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_payload_store_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_payload_store_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_payload_take_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_payload_take_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency };
+/// `aic_conc_payload_drop_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_payload_drop_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_payload_drop_intrinsic(payload_id: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_arc_new_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_arc_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_arc_new_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_arc_clone_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_arc_clone_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_arc_clone_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_arc_get_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_arc_get_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_arc_get_intrinsic(handle: Int) -> Result[String, ConcurrencyError] effects { concurrency };
+/// `aic_conc_arc_strong_count_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_arc_strong_count_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_arc_strong_count_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_int_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_int_intrinsic(initial: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_load_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_load_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_load_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_store_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_store_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_store_intrinsic(handle: Int, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_add_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_add_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_add_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_sub_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_sub_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_sub_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_cas_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_cas_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_cas_intrinsic(handle: Int, expected: Int, desired: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_bool_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_bool_intrinsic(initial: Bool) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_load_bool_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_load_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_load_bool_intrinsic(handle: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_store_bool_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_store_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_store_bool_intrinsic(handle: Int, value: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_atomic_swap_bool_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_atomic_swap_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_atomic_swap_bool_intrinsic(handle: Int, desired: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
+/// `aic_conc_tl_new_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_tl_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_tl_new_intrinsic[T](init: Fn() -> T) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_tl_get_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_tl_get_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_tl_get_intrinsic[T](handle: Int) -> Result[T, ConcurrencyError] effects { concurrency };
+/// `aic_conc_tl_set_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_tl_set_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_tl_set_intrinsic[T](handle: Int, value: T) -> Result[Bool, ConcurrencyError] effects { concurrency };
 
+/// `default_blocking_timeout_ms` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `default_blocking_timeout_ms` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn default_blocking_timeout_ms() -> Int {
     2147483647
 }
 
+/// `channel_closed` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `channel_closed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn channel_closed() -> ChannelError {
     let out: ChannelError = Closed();
     out
 }
 
+/// `channel_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `channel_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn channel_timeout() -> ChannelError {
     let out: ChannelError = Timeout();
     out
 }
 
+/// `map_concurrency_to_channel_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `map_concurrency_to_channel_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError {
     match err {
         Timeout => channel_timeout(),
@@ -174,6 +981,18 @@ fn map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError {
     }
 }
 
+/// `map_channel_to_concurrency_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `map_channel_to_concurrency_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn map_channel_to_concurrency_error(err: ChannelError) -> ConcurrencyError {
     match err {
         Timeout => Timeout(),
@@ -183,6 +1002,18 @@ fn map_channel_to_concurrency_error(err: ChannelError) -> ConcurrencyError {
     }
 }
 
+/// `take_payload_string` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `take_payload_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects { concurrency } {
     match aic_conc_payload_take_intrinsic(payload_id) {
         Ok(payload) => Ok(payload),
@@ -190,6 +1021,18 @@ fn take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects 
     }
 }
 
+/// `json_stringify_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `json_stringify_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn json_stringify_payload(encoded: JsonValue) -> Result[String, ChannelError] {
     let payload_result: Result[String, JsonError] = aic_json_stringify_intrinsic(encoded);
     match payload_result {
@@ -198,6 +1041,18 @@ fn json_stringify_payload(encoded: JsonValue) -> Result[String, ChannelError] {
     }
 }
 
+/// `json_encode_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `json_encode_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn json_encode_payload[T](value: T) -> Result[String, ChannelError] {
     let encoded_result: Result[JsonValue, JsonError] = aic_json_serde_encode_intrinsic(value);
     match encoded_result {
@@ -206,11 +1061,35 @@ fn json_encode_payload[T](value: T) -> Result[String, ChannelError] {
     }
 }
 
+/// `none_from_receiver` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `none_from_receiver` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn none_from_receiver[T](hint: Receiver[T]) -> Option[T] {
     let _hint = hint;
     None()
 }
 
+/// `decode_payload_for_receiver` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_payload_for_receiver` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     match take_payload_string(payload_id) {
         Ok(payload) => match aic_json_parse_intrinsic(payload) {
@@ -224,6 +1103,18 @@ fn decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[
     }
 }
 
+/// `decode_task_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_task_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_task_payload[T](payload_id: Int) -> Result[T, ConcurrencyError] effects { concurrency } {
     let hint: Receiver[T] = Receiver { handle: 0 };
     match decode_payload_for_receiver(payload_id, hint) {
@@ -232,21 +1123,69 @@ fn decode_task_payload[T](payload_id: Int) -> Result[T, ConcurrencyError] effect
     }
 }
 
+/// `none_from_mutex` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `none_from_mutex` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn none_from_mutex[T](hint: Mutex[T]) -> Option[T] {
     let _hint = hint;
     None()
 }
 
+/// `none_from_rwlock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `none_from_rwlock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn none_from_rwlock[T](hint: RwLock[T]) -> Option[T] {
     let _hint = hint;
     None()
 }
 
+/// `none_from_arc` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `none_from_arc` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn none_from_arc[T](hint: Arc[T]) -> Option[T] {
     let _hint = hint;
     None()
 }
 
+/// `decode_payload_for_mutex` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_payload_for_mutex` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_payload_for_mutex[T](
     payload_id: Int,
     hint: Mutex[T],
@@ -263,6 +1202,18 @@ fn decode_payload_for_mutex[T](
     }
 }
 
+/// `decode_payload_for_rwlock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_payload_for_rwlock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_payload_for_rwlock[T](
     payload_id: Int,
     hint: RwLock[T],
@@ -279,6 +1230,18 @@ fn decode_payload_for_rwlock[T](
     }
 }
 
+/// `mutex_decode_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `mutex_decode_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn mutex_decode_error[T](
     handle: Int,
     payload_id: Int,
@@ -288,6 +1251,18 @@ fn mutex_decode_error[T](
     Err(err)
 }
 
+/// `rwlock_decode_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `rwlock_decode_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn rwlock_decode_error[T](
     handle: Int,
     payload_id: Int,
@@ -298,6 +1273,18 @@ fn rwlock_decode_error[T](
     Err(err)
 }
 
+/// `decode_mutex_locked_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_mutex_locked_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_mutex_locked_payload[T](
     m: Mutex[T],
     payload_id: Int,
@@ -313,6 +1300,18 @@ fn decode_mutex_locked_payload[T](
     }
 }
 
+/// `decode_rwlock_read_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_rwlock_read_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_rwlock_read_payload[T](
     rw: RwLock[T],
     payload_id: Int,
@@ -321,6 +1320,18 @@ fn decode_rwlock_read_payload[T](
     decode_payload_for_rwlock(payload_id, hint)
 }
 
+/// `decode_rwlock_write_payload` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `decode_rwlock_write_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_rwlock_write_payload[T](
     rw: RwLock[T],
     payload_id: Int,
@@ -336,6 +1347,18 @@ fn decode_rwlock_write_payload[T](
     }
 }
 
+/// `channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency } {
     match aic_conc_channel_int_buffered_intrinsic(1) {
         Ok(ch) => (
@@ -349,6 +1372,18 @@ fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency } {
     }
 }
 
+/// `buffered_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `buffered_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency } {
     match aic_conc_channel_int_buffered_intrinsic(capacity) {
         Ok(ch) => (
@@ -362,19 +1397,67 @@ fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { conc
     }
 }
 
+/// `close_sender` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `close_sender` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     close_channel(IntChannel { handle: tx.handle })
 }
 
+/// `close_receiver` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `close_receiver` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     close_channel(IntChannel { handle: rx.handle })
 }
 
+/// `send_cleanup_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `send_cleanup_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn send_cleanup_error(payload_id: Int, err: ConcurrencyError) -> ChannelError effects { concurrency } {
     let _drop_payload = aic_conc_payload_drop_intrinsic(payload_id);
     map_concurrency_to_channel_error(err)
 }
 
+/// `send` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
@@ -388,11 +1471,35 @@ fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { conc
     }
 }
 
+/// `try_send_cleanup_error` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_send_cleanup_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_send_cleanup_error(payload_id: Int, err: ChannelError) -> ChannelError effects { concurrency } {
     let _drop_payload = aic_conc_payload_drop_intrinsic(payload_id);
     err
 }
 
+/// `try_send` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
@@ -406,6 +1513,18 @@ fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { 
     }
 }
 
+/// `recv` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, default_blocking_timeout_ms()) {
         Ok(payload_id) => match take_payload_string(payload_id) {
@@ -422,6 +1541,18 @@ fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     }
 }
 
+/// `try_recv` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_try_recv_int_intrinsic(IntChannel { handle: rx.handle }) {
         Ok(payload_id) => match take_payload_string(payload_id) {
@@ -438,6 +1569,18 @@ fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency
     }
 }
 
+/// `recv_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `recv_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, timeout_ms) {
         Ok(payload_id) => match take_payload_string(payload_id) {
@@ -454,6 +1597,18 @@ fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] 
     }
 }
 
+/// `spawn` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `spawn` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency } {
     match aic_conc_spawn_fn_intrinsic(f) {
         Ok(task) => Task { handle: task.handle },
@@ -461,14 +1616,50 @@ fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency } {
     }
 }
 
+/// `join` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `join` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn join[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
     aic_conc_join_value_intrinsic(task)
 }
 
+/// `join_value` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `join_value` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
     aic_conc_join_value_intrinsic(task)
 }
 
+/// `spawn_named` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `spawn_named` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn spawn_named[T](name: String, f: Fn() -> T) -> Task[T] effects { concurrency } {
     match aic_conc_spawn_fn_named_intrinsic(name, f) {
         Ok(task) => Task { handle: task.handle },
@@ -476,6 +1667,18 @@ fn spawn_named[T](name: String, f: Fn() -> T) -> Task[T] effects { concurrency }
     }
 }
 
+/// `scoped` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `scoped` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency } {
     match aic_conc_scope_new_intrinsic() {
         Ok(created_scope) => scoped_run_with_scope(created_scope, f),
@@ -483,6 +1686,18 @@ fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency } {
     }
 }
 
+/// `scoped_run_with_scope` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `scoped_run_with_scope` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn scoped_run_with_scope[T](created_scope: Scope, f: Fn(Scope) -> T) -> T effects { concurrency } {
     let scope_handle = created_scope.handle;
     let value = f(created_scope);
@@ -493,6 +1708,18 @@ fn scoped_run_with_scope[T](created_scope: Scope, f: Fn(Scope) -> T) -> T effect
     value
 }
 
+/// `scope_spawn` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `scope_spawn` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency } {
     match aic_conc_scope_spawn_fn_intrinsic(scope, f) {
         Ok(task) => Task { handle: task.handle },
@@ -500,70 +1727,274 @@ fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency }
     }
 }
 
+/// `scope_cancel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `scope_cancel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn scope_cancel(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_scope_cancel_intrinsic(scope)
 }
 
+/// `scope_join_all` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `scope_join_all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn scope_join_all(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_scope_join_all_intrinsic(scope)
 }
 
+/// `spawn_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `spawn_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency } {
     aic_conc_spawn_intrinsic(value, delay_ms)
 }
 
+/// `join_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `join_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn join_task(task: Task[Int]) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_join_intrinsic(task)
 }
 
+/// `timeout_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `timeout_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_join_timeout_intrinsic(task, timeout_ms)
 }
 
+/// `cancel_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `cancel_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_cancel_intrinsic(task)
 }
 
+/// `spawn_group` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `spawn_group` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency } {
     aic_conc_spawn_group_intrinsic(values, delay_ms)
 }
 
+/// `select_first` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select_first` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency } {
     aic_conc_select_first_intrinsic(tasks, timeout_ms)
 }
 
+/// `channel_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `channel_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
     aic_conc_channel_int_intrinsic(capacity)
 }
 
+/// `buffered_channel_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `buffered_channel_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
     aic_conc_channel_int_buffered_intrinsic(capacity)
 }
 
+/// `channel_int_buffered` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `channel_int_buffered` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
     aic_conc_channel_int_buffered_intrinsic(capacity)
 }
 
+/// `send_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `send_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_send_int_intrinsic(ch, value, timeout_ms)
 }
 
+/// `try_send_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_send_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_send_int(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency } {
     aic_conc_try_send_int_intrinsic(ch, value)
 }
 
+/// `recv_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `recv_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_recv_int_intrinsic(ch, timeout_ms)
 }
 
+/// `try_recv_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_recv_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency } {
     aic_conc_try_recv_int_intrinsic(ch)
 }
 
+/// `select_recv_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select_recv_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency } {
     aic_conc_select_recv_int_intrinsic(ch1, ch2, timeout_ms)
 }
 
+/// `select2` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select2` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency } {
     match select_recv_int(
         IntChannel { handle: rx1.handle },
@@ -589,6 +2020,18 @@ fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectR
     }
 }
 
+/// `select_any` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select_any` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env } {
     if timeout_ms < 0 {
         Err(channel_timeout())
@@ -673,10 +2116,34 @@ fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T
     }
 }
 
+/// `close_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `close_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_close_channel_intrinsic(ch)
 }
 
+/// `arc_new` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `arc_new` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn arc_new[T](value: T) -> Arc[T] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_arc_new_intrinsic(payload) {
@@ -687,6 +2154,18 @@ fn arc_new[T](value: T) -> Arc[T] effects { concurrency } {
     }
 }
 
+/// `arc_clone` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `arc_clone` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency } {
     match aic_conc_arc_clone_intrinsic(a.handle) {
         Ok(handle) => Arc { handle: handle },
@@ -694,6 +2173,18 @@ fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency } {
     }
 }
 
+/// `arc_get` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `arc_get` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
     match aic_conc_arc_get_intrinsic(a.handle) {
         Ok(payload) => match aic_json_parse_intrinsic(payload) {
@@ -707,6 +2198,18 @@ fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency } 
     }
 }
 
+/// `arc_strong_count` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `arc_strong_count` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency } {
     match aic_conc_arc_strong_count_intrinsic(a.handle) {
         Ok(count) => count,
@@ -714,6 +2217,18 @@ fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency } {
     }
 }
 
+/// `atomic_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_int(initial: Int) -> AtomicInt effects { concurrency } {
     match aic_conc_atomic_int_intrinsic(initial) {
         Ok(handle) => AtomicInt { handle: handle },
@@ -721,6 +2236,18 @@ fn atomic_int(initial: Int) -> AtomicInt effects { concurrency } {
     }
 }
 
+/// `atomic_load` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_load` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_load(a: AtomicInt) -> Int effects { concurrency } {
     match aic_conc_atomic_load_intrinsic(a.handle) {
         Ok(value) => value,
@@ -728,10 +2255,34 @@ fn atomic_load(a: AtomicInt) -> Int effects { concurrency } {
     }
 }
 
+/// `atomic_store` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_store` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency } {
     let _out = aic_conc_atomic_store_intrinsic(a.handle, value);
 }
 
+/// `atomic_add` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_add` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
     match aic_conc_atomic_add_intrinsic(a.handle, delta) {
         Ok(value) => value,
@@ -739,6 +2290,18 @@ fn atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
     }
 }
 
+/// `atomic_sub` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_sub` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
     match aic_conc_atomic_sub_intrinsic(a.handle, delta) {
         Ok(value) => value,
@@ -746,6 +2309,18 @@ fn atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
     }
 }
 
+/// `atomic_cas` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_cas` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concurrency } {
     match aic_conc_atomic_cas_intrinsic(a.handle, expected, desired) {
         Ok(swapped) => swapped,
@@ -753,6 +2328,18 @@ fn atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concu
     }
 }
 
+/// `atomic_bool` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency } {
     match aic_conc_atomic_bool_intrinsic(initial) {
         Ok(handle) => AtomicBool { handle: handle },
@@ -760,6 +2347,18 @@ fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency } {
     }
 }
 
+/// `atomic_load_bool` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_load_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency } {
     match aic_conc_atomic_load_bool_intrinsic(a.handle) {
         Ok(value) => value,
@@ -767,10 +2366,34 @@ fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency } {
     }
 }
 
+/// `atomic_store_bool` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_store_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency } {
     let _out = aic_conc_atomic_store_bool_intrinsic(a.handle, value);
 }
 
+/// `atomic_swap_bool` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `atomic_swap_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency } {
     match aic_conc_atomic_swap_bool_intrinsic(a.handle, desired) {
         Ok(value) => value,
@@ -778,6 +2401,18 @@ fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency 
     }
 }
 
+/// `thread_local` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `thread_local` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn thread_local[T](init: Fn() -> T) -> ThreadLocal[T] effects { concurrency } {
     let created: Result[Int, ConcurrencyError] = aic_conc_tl_new_intrinsic(init);
     match created {
@@ -786,6 +2421,18 @@ fn thread_local[T](init: Fn() -> T) -> ThreadLocal[T] effects { concurrency } {
     }
 }
 
+/// `tl_get` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `tl_get` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tl_get[T](tl: ThreadLocal[T]) -> T effects { concurrency } {
     let fetched: Result[T, ConcurrencyError] = aic_conc_tl_get_intrinsic(tl.handle);
     match fetched {
@@ -794,26 +2441,98 @@ fn tl_get[T](tl: ThreadLocal[T]) -> T effects { concurrency } {
     }
 }
 
+/// `tl_set` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `tl_set` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn tl_set[T](tl: ThreadLocal[T], value: T) -> () effects { concurrency } {
     let _out: Result[Bool, ConcurrencyError] = aic_conc_tl_set_intrinsic(tl.handle, value);
 }
 
+/// `mutex_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `mutex_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency } {
     aic_conc_mutex_int_intrinsic(initial)
 }
 
+/// `lock_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `lock_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency } {
     aic_conc_mutex_lock_intrinsic(mutex, timeout_ms)
 }
 
+/// `unlock_int` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `unlock_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_mutex_unlock_intrinsic(mutex, value)
 }
 
+/// `close_mutex` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `close_mutex` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_mutex_close_intrinsic(mutex)
 }
 
+/// `new_mutex` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `new_mutex` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
@@ -827,14 +2546,50 @@ fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency } {
     }
 }
 
+/// `lock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `lock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
     lock_timeout(m, default_blocking_timeout_ms())
 }
 
+/// `try_lock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_lock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
     lock_timeout(m, 0)
 }
 
+/// `lock_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `lock_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn lock_timeout[T](m: Mutex[T], ms: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
     match aic_conc_mutex_lock_intrinsic(IntMutex { handle: m.handle }, ms) {
         Ok(payload_id) => decode_mutex_locked_payload(m, payload_id),
@@ -842,10 +2597,34 @@ fn lock_timeout[T](m: Mutex[T], ms: Int) -> Result[MutexGuard[T], ConcurrencyErr
     }
 }
 
+/// `guard_value` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `guard_value` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn guard_value[T](g: MutexGuard[T]) -> T {
     g.value
 }
 
+/// `guard_set` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `guard_set` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T] {
     MutexGuard {
         handle: g.handle,
@@ -854,6 +2633,18 @@ fn guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T] {
     }
 }
 
+/// `unlock_guard` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `unlock_guard` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn unlock_guard[T](g: MutexGuard[T]) -> () effects { concurrency } {
     let payload_id = match json_encode_payload(g.value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
@@ -875,6 +2666,18 @@ fn unlock_guard[T](g: MutexGuard[T]) -> () effects { concurrency } {
     }
 }
 
+/// `new_rwlock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `new_rwlock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_rwlock[T](value: T) -> RwLock[T] effects { concurrency } {
     match json_encode_payload(value) {
         Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
@@ -888,6 +2691,18 @@ fn new_rwlock[T](value: T) -> RwLock[T] effects { concurrency } {
     }
 }
 
+/// `read_lock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `read_lock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
     match aic_conc_rwlock_read_intrinsic(
         IntRwLock { handle: rw.handle },
@@ -898,6 +2713,18 @@ fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurre
     }
 }
 
+/// `write_lock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `write_lock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
     match aic_conc_rwlock_write_lock_intrinsic(
         IntRwLock { handle: rw.handle },
@@ -908,6 +2735,18 @@ fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effec
     }
 }
 
+/// `close_rwlock` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `close_rwlock` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_rwlock_close_intrinsic(IntRwLock { handle: rw.handle })
 }

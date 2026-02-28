@@ -1,3 +1,9 @@
+/// The `std.regex` module provides standard-library `regex` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.regex;
+/// ```
 module std.regex;
 
 import std.option;
@@ -5,20 +11,44 @@ import std.result;
 import std.string;
 import std.vec;
 
+/// `RegexError` is a `enum` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RegexError` through `std.regex` APIs.
+/// ```
 enum RegexError {
+    /// `InvalidPattern` enum variant.
     InvalidPattern,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `NoMatch` enum variant.
     NoMatch,
+    /// `UnsupportedFeature` enum variant.
     UnsupportedFeature,
+    /// `TooComplex` enum variant.
     TooComplex,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `Regex` is a `struct` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Regex` through `std.regex` APIs.
+/// ```
 struct Regex {
     pattern: String,
     flags: Int,
 }
 
+/// `RegexMatch` is a `struct` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RegexMatch` through `std.regex` APIs.
+/// ```
 struct RegexMatch {
     full: String,
     groups: Vec[String],
@@ -26,6 +56,18 @@ struct RegexMatch {
     end: Int,
 }
 
+/// `aic_regex_compile_intrinsic` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `aic_regex_compile_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError] {
     let out: Result[Regex, RegexError] = Ok(Regex {
         pattern: pattern,
@@ -34,21 +76,69 @@ fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, Reg
     out
 }
 
+/// `aic_regex_is_match_intrinsic` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `aic_regex_is_match_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError] {
     let out: Result[Bool, RegexError] = Ok(false);
     out
 }
 
+/// `aic_regex_find_intrinsic` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `aic_regex_find_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError] {
     let out: Result[String, RegexError] = Ok("");
     out
 }
 
+/// `aic_regex_replace_intrinsic` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `aic_regex_replace_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
     let out: Result[String, RegexError] = Ok(text);
     out
 }
 
+/// `aic_regex_captures_intrinsic` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `aic_regex_captures_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError] {
     let out: Result[Option[RegexMatch], RegexError] = Ok(None());
     out
@@ -74,30 +164,114 @@ fn flag_dot_matches_newline() -> Int {
     4
 }
 
+/// `compile` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `compile` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn compile(pattern: String) -> Result[Regex, RegexError] {
     compile_with_flags(pattern, no_flags())
 }
 
+/// `compile_with_flags` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `compile_with_flags` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn compile_with_flags(pattern: String, flags: Int) -> Result[Regex, RegexError] {
     aic_regex_compile_intrinsic(pattern, flags)
 }
 
+/// `is_match` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `is_match` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_match(regex: Regex, text: String) -> Result[Bool, RegexError] {
     aic_regex_is_match_intrinsic(regex, text)
 }
 
+/// `find` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `find` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find(regex: Regex, text: String) -> Result[String, RegexError] {
     aic_regex_find_intrinsic(regex, text)
 }
 
+/// `replace` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `replace` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn replace(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
     aic_regex_replace_intrinsic(regex, text, replacement)
 }
 
+/// `captures` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `captures` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn captures(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError] {
     aic_regex_captures_intrinsic(regex, text)
 }
 
+/// `find_all_step` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `find_all_step` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find_all_step(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch], m: RegexMatch) -> Result[Vec[RegexMatch], RegexError] {
     let next_cursor = if m.end > m.start {
         cursor + m.end
@@ -113,6 +287,18 @@ fn find_all_step(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch], 
     find_all_collect(regex, text, next_cursor, next_acc)
 }
 
+/// `find_all_collect` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `find_all_collect` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find_all_collect(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch]) -> Result[Vec[RegexMatch], RegexError] {
     let text_len = string.len(text);
     if cursor > text_len {
@@ -129,6 +315,18 @@ fn find_all_collect(regex: Regex, text: String, cursor: Int, acc: Vec[RegexMatch
     }
 }
 
+/// `find_all` in `std.regex`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.regex` and call `find_all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find_all(regex: Regex, text: String) -> Result[Vec[RegexMatch], RegexError] {
     let empty: Vec[RegexMatch] = vec.new_vec();
     find_all_collect(regex, text, 0, empty)

@@ -1,11 +1,35 @@
+/// The `std.set` module provides standard-library `set` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.set;
+/// ```
 module std.set;
 
 import std.map;
 
+/// `Set` is a `struct` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Set` through `std.set` APIs.
+/// ```
 struct Set[T] {
     items: Map[T, Int],
 }
 
+/// `new_set` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `new_set` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_set[T]() -> Set[T] {
     let items: Map[T, Int] = aic_map_new_intrinsic();
     Set {
@@ -13,22 +37,70 @@ fn new_set[T]() -> Set[T] {
     }
 }
 
+/// `add` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `add` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn add[T](s: Set[T], value: T) -> Set[T] {
     Set {
         items: aic_map_insert_intrinsic(s.items, value, 1),
     }
 }
 
+/// `has` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `has` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn has[T](s: Set[T], value: T) -> Bool {
     aic_map_contains_key_intrinsic(s.items, value)
 }
 
+/// `discard` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `discard` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn discard[T](s: Set[T], value: T) -> Set[T] {
     Set {
         items: aic_map_remove_intrinsic(s.items, value),
     }
 }
 
+/// `set_size` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `set_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn set_size[T](s: Set[T]) -> Int {
     aic_map_size_intrinsic(s.items)
 }
@@ -38,6 +110,18 @@ fn to_vec[T](s: Set[T]) -> Vec[T] {
     aic_map_keys_intrinsic(s.items)
 }
 
+/// `union` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `union` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn union[T](left: Set[T], right: Set[T]) -> Set[T] {
     let mut out: Set[T] = new_set();
     let left_items = aic_map_keys_intrinsic(left.items);
@@ -66,6 +150,18 @@ fn union[T](left: Set[T], right: Set[T]) -> Set[T] {
     out
 }
 
+/// `intersection` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `intersection` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn intersection[T](left: Set[T], right: Set[T]) -> Set[T] {
     let mut out: Set[T] = new_set();
     let left_items = aic_map_keys_intrinsic(left.items);
@@ -86,6 +182,18 @@ fn intersection[T](left: Set[T], right: Set[T]) -> Set[T] {
     out
 }
 
+/// `difference` in `std.set`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.set` and call `difference` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn difference[T](left: Set[T], right: Set[T]) -> Set[T] {
     let mut out: Set[T] = new_set();
     let left_items = aic_map_keys_intrinsic(left.items);

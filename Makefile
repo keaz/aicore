@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -26,6 +26,7 @@ help:
 	@echo "  make test-e9       Run E9 release/security operations tests"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
+	@echo "  make std-doc-check Verify std modules have required doc comments"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
 	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
@@ -53,7 +54,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 intrinsic-placeholder-guard verify-intrinsics examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -107,6 +108,9 @@ intrinsic-placeholder-guard:
 verify-intrinsics:
 	./target/debug/aic verify-intrinsics std --json >/tmp/aic-verify-intrinsics.json
 	python3 -m json.tool /tmp/aic-verify-intrinsics.json >/dev/null
+
+std-doc-check:
+	python3 scripts/ci/std_doc_coverage.py --check
 
 examples-check:
 	./scripts/ci/examples.sh check

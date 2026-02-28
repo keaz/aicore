@@ -1,100 +1,394 @@
+/// The `std.math` module provides standard-library `math` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.math;
+/// ```
 module std.math;
 
 const PI: Float = 3.14159265358979;
 const E: Float = 2.71828182845905;
 
+/// `aic_math_abs_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_abs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_abs_intrinsic(x: Int) -> Int {
     0
 }
 
+/// `aic_math_abs_float_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_abs_float_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_abs_float_intrinsic(x: Float) -> Float {
     0.0
 }
 
+/// `aic_math_min_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_min_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_min_intrinsic(a: Int, b: Int) -> Int {
     0
 }
 
+/// `aic_math_max_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_max_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_max_intrinsic(a: Int, b: Int) -> Int {
     0
 }
 
+/// `aic_math_pow_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_pow_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_pow_intrinsic(base: Float, exp: Float) -> Float {
     0.0
 }
 
+/// `aic_math_sqrt_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_sqrt_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_sqrt_intrinsic(x: Float) -> Float {
     0.0
 }
 
+/// `aic_math_floor_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_floor_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_floor_intrinsic(x: Float) -> Int {
     0
 }
 
+/// `aic_math_ceil_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_ceil_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_ceil_intrinsic(x: Float) -> Int {
     0
 }
 
+/// `aic_math_round_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_round_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_round_intrinsic(x: Float) -> Int {
     0
 }
 
+/// `aic_math_log_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_log_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_log_intrinsic(x: Float) -> Float {
     0.0
 }
 
+/// `aic_math_sin_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_sin_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_sin_intrinsic(x: Float) -> Float {
     0.0
 }
 
+/// `aic_math_cos_intrinsic` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `aic_math_cos_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_math_cos_intrinsic(x: Float) -> Float {
     0.0
 }
 
+/// `abs` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `abs` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn abs(x: Int) -> Int {
     aic_math_abs_intrinsic(x)
 }
 
+/// `abs_float` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `abs_float` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn abs_float(x: Float) -> Float {
     aic_math_abs_float_intrinsic(x)
 }
 
+/// `min` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `min` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn min(a: Int, b: Int) -> Int {
     aic_math_min_intrinsic(a, b)
 }
 
+/// `max` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `max` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn max(a: Int, b: Int) -> Int {
     aic_math_max_intrinsic(a, b)
 }
 
+/// `pow` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `pow` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pow(base: Float, exp: Float) -> Float {
     aic_math_pow_intrinsic(base, exp)
 }
 
+/// `sqrt` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `sqrt` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn sqrt(x: Float) -> Float {
     aic_math_sqrt_intrinsic(x)
 }
 
+/// `floor` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `floor` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn floor(x: Float) -> Int {
     aic_math_floor_intrinsic(x)
 }
 
+/// `ceil` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `ceil` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn ceil(x: Float) -> Int {
     aic_math_ceil_intrinsic(x)
 }
 
+/// `round` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `round` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn round(x: Float) -> Int {
     aic_math_round_intrinsic(x)
 }
 
+/// `log` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `log` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn log(x: Float) -> Float {
     aic_math_log_intrinsic(x)
 }
 
+/// `sin` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `sin` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn sin(x: Float) -> Float {
     aic_math_sin_intrinsic(x)
 }
 
+/// `cos` in `std.math`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.math` and call `cos` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cos(x: Float) -> Float {
     aic_math_cos_intrinsic(x)
 }

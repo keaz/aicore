@@ -1,13 +1,55 @@
+/// The `std.rand` module provides standard-library `rand` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.rand;
+/// ```
 module std.rand;
 
+/// `aic_rand_seed_intrinsic` in `std.rand`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.rand` and call `aic_rand_seed_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand } {
     ()
 }
 
+/// `aic_rand_int_intrinsic` in `std.rand`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.rand` and call `aic_rand_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_rand_int_intrinsic() -> Int effects { rand } {
     0
 }
 
+/// `aic_rand_range_intrinsic` in `std.rand`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.rand` and call `aic_rand_range_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
     min_inclusive
 }

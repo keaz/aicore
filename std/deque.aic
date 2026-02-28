@@ -1,17 +1,47 @@
+/// The `std.deque` module provides standard-library `deque` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.deque;
+/// ```
 module std.deque;
 
 import std.option;
 import std.vec;
 
+/// `Deque` is a `struct` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Deque` through `std.deque` APIs.
+/// ```
 struct Deque[T] {
     front: Vec[T],
     back: Vec[T],
 }
 
+/// `Queue` is a `struct` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Queue` through `std.deque` APIs.
+/// ```
 struct Queue[T] {
     inner: Deque[T],
 }
 
+/// `new_deque` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `new_deque` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_deque[T]() -> Deque[T] {
     let front: Vec[T] = aic_vec_new_intrinsic();
     let back: Vec[T] = aic_vec_new_intrinsic();
@@ -21,10 +51,34 @@ fn new_deque[T]() -> Deque[T] {
     }
 }
 
+/// `deque_len` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `deque_len` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn deque_len[T](d: Deque[T]) -> Int {
     d.front.len + d.back.len
 }
 
+/// `push_front` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `push_front` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn push_front[T](d: Deque[T], value: T) -> Deque[T] {
     Deque {
         front: aic_vec_push_intrinsic(d.front, value),
@@ -32,6 +86,18 @@ fn push_front[T](d: Deque[T], value: T) -> Deque[T] {
     }
 }
 
+/// `push_back` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `push_back` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn push_back[T](d: Deque[T], value: T) -> Deque[T] {
     Deque {
         front: d.front,
@@ -39,6 +105,18 @@ fn push_back[T](d: Deque[T], value: T) -> Deque[T] {
     }
 }
 
+/// `pop_front` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `pop_front` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pop_front[T](d: Deque[T]) -> (Option[T], Deque[T]) {
     if d.front.len > 0 {
         let idx = d.front.len - 1;
@@ -65,6 +143,18 @@ fn pop_front[T](d: Deque[T]) -> (Option[T], Deque[T]) {
     }
 }
 
+/// `pop_back` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `pop_back` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn pop_back[T](d: Deque[T]) -> (Option[T], Deque[T]) {
     if d.back.len > 0 {
         let idx = d.back.len - 1;
@@ -91,18 +181,54 @@ fn pop_back[T](d: Deque[T]) -> (Option[T], Deque[T]) {
     }
 }
 
+/// `new_queue` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `new_queue` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_queue[T]() -> Queue[T] {
     Queue {
         inner: new_deque(),
     }
 }
 
+/// `enqueue` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `enqueue` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn enqueue[T](q: Queue[T], value: T) -> Queue[T] {
     Queue {
         inner: push_back(q.inner, value),
     }
 }
 
+/// `dequeue` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `dequeue` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn dequeue[T](q: Queue[T]) -> (Option[T], Queue[T]) {
     let (value, next_inner) = pop_front(q.inner);
     (
@@ -113,6 +239,18 @@ fn dequeue[T](q: Queue[T]) -> (Option[T], Queue[T]) {
     )
 }
 
+/// `queue_len` in `std.deque`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.deque` and call `queue_len` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn queue_len[T](q: Queue[T]) -> Int {
     deque_len(q.inner)
 }

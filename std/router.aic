@@ -1,29 +1,81 @@
+/// The `std.router` module provides standard-library `router` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.router;
+/// ```
 module std.router;
 
 import std.map;
 import std.result;
 
+/// `RouterError` is a `enum` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RouterError` through `std.router` APIs.
+/// ```
 enum RouterError {
+    /// `InvalidPattern` enum variant.
     InvalidPattern,
+    /// `InvalidMethod` enum variant.
     InvalidMethod,
+    /// `Capacity` enum variant.
     Capacity,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `Router` is a `struct` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Router` through `std.router` APIs.
+/// ```
 struct Router {
     handle: Int,
 }
 
+/// `RouteMatch` is a `struct` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RouteMatch` through `std.router` APIs.
+/// ```
 struct RouteMatch {
     route_id: Int,
     params: Map[String, String],
 }
 
+/// `aic_router_new_intrinsic` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `aic_router_new_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_router_new_intrinsic() -> Result[Router, RouterError] {
     let out: Result[Router, RouterError] = Err(Capacity());
     out
 }
 
+/// `aic_router_add_intrinsic` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `aic_router_add_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_router_add_intrinsic(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
     let _router = router;
     let _method = method;
@@ -33,6 +85,18 @@ fn aic_router_add_intrinsic(router: Router, method: String, pattern: String, rou
     out
 }
 
+/// `aic_router_match_intrinsic` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `aic_router_match_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_router_match_intrinsic(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
     let _router = router;
     let _method = method;
@@ -41,14 +105,50 @@ fn aic_router_match_intrinsic(router: Router, method: String, path: String) -> R
     out
 }
 
+/// `new_router` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `new_router` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_router() -> Result[Router, RouterError] {
     aic_router_new_intrinsic()
 }
 
+/// `add` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `add` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn add(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError] {
     aic_router_add_intrinsic(router, method, pattern, route_id)
 }
 
+/// `match_route` in `std.router`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.router` and call `match_route` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn match_route(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError] {
     aic_router_match_intrinsic(router, method, path)
 }

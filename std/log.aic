@@ -1,28 +1,92 @@
+/// The `std.log` module provides standard-library `log` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.log;
+/// ```
 module std.log;
 
+/// `LogLevel` is a `enum` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Use `LogLevel` through `std.log` APIs.
+/// ```
 enum LogLevel {
+    /// `Debug` enum variant.
     Debug,
+    /// `Info` enum variant.
     Info,
+    /// `Warn` enum variant.
     Warn,
+    /// `Error` enum variant.
     Error,
 }
 
+/// `aic_log_emit_intrinsic` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `aic_log_emit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io } {
     let _level = level;
     let _message = message;
     ()
 }
 
+/// `aic_log_set_level_intrinsic` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `aic_log_set_level_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_log_set_level_intrinsic(level: Int) -> () effects { io } {
     let _level = level;
     ()
 }
 
+/// `aic_log_set_json_output_intrinsic` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `aic_log_set_json_output_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_log_set_json_output_intrinsic(enabled: Bool) -> () effects { io } {
     let _enabled = enabled;
     ()
 }
 
+/// `level_code` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `level_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn level_code(level: LogLevel) -> Int {
     match level {
         Debug => 0,
@@ -32,30 +96,114 @@ fn level_code(level: LogLevel) -> Int {
     }
 }
 
+/// `log` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `log` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn log(level: LogLevel, message: String) -> () effects { io } {
     aic_log_emit_intrinsic(level_code(level), message)
 }
 
+/// `debug` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `debug` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn debug(message: String) -> () effects { io } {
     log(Debug(), message)
 }
 
+/// `info` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `info` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn info(message: String) -> () effects { io } {
     log(Info(), message)
 }
 
+/// `warn` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `warn` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn warn(message: String) -> () effects { io } {
     log(Warn(), message)
 }
 
+/// `error` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn error(message: String) -> () effects { io } {
     log(Error(), message)
 }
 
+/// `set_level` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `set_level` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn set_level(level: LogLevel) -> () effects { io } {
     aic_log_set_level_intrinsic(level_code(level))
 }
 
+/// `set_json_output` in `std.log`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.log` and call `set_json_output` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn set_json_output(enabled: Bool) -> () effects { io } {
     aic_log_set_json_output_intrinsic(enabled)
 }

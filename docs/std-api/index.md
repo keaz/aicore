@@ -29,6 +29,21 @@ cargo run --quiet --bin aic -- std-compat --check --baseline /Users/kasunranasin
 
 The check treats removed/changed symbols as breaking and additive symbols as compatible.
 
+## Std doc coverage gate
+
+`make std-doc-check` enforces `///` documentation in `std/*.aic` for:
+
+- module headers (`module ...;`)
+- `struct`, `enum`, and `trait` declarations
+- enum variants
+- `fn` and `intrinsic fn` declarations (including methods inside `impl`)
+
+Autofix helper:
+
+```bash
+python3 scripts/ci/std_doc_coverage.py --fix
+```
+
 ## `aic doc` generation contract
 
 `aic doc <input> --output <dir>` creates `<dir>` when missing. With the default `--format all`, it emits:

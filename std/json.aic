@@ -1,31 +1,80 @@
+/// The `std.json` module provides standard-library `json` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.json;
+/// ```
 module std.json;
 
 import std.result;
 
+/// `JsonError` is a `enum` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Use `JsonError` through `std.json` APIs.
+/// ```
 enum JsonError {
+    /// `InvalidJson` enum variant.
     InvalidJson,
+    /// `InvalidType` enum variant.
     InvalidType,
+    /// `MissingField` enum variant.
     MissingField,
+    /// `InvalidNumber` enum variant.
     InvalidNumber,
+    /// `InvalidString` enum variant.
     InvalidString,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `JsonKind` is a `enum` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Use `JsonKind` through `std.json` APIs.
+/// ```
 enum JsonKind {
+    /// `NullValue` enum variant.
     NullValue,
+    /// `BoolValue` enum variant.
     BoolValue,
+    /// `NumberValue` enum variant.
     NumberValue,
+    /// `StringValue` enum variant.
     StringValue,
+    /// `ArrayValue` enum variant.
     ArrayValue,
+    /// `ObjectValue` enum variant.
     ObjectValue,
 }
 
+/// `JsonValue` is a `struct` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Use `JsonValue` through `std.json` APIs.
+/// ```
 struct JsonValue {
     raw: String,
     kind: JsonKind,
 }
 
+/// `aic_json_parse_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_parse_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_parse_intrinsic(text: String) -> Result[JsonValue, JsonError] {
     let out: Result[JsonValue, JsonError] = Ok(JsonValue {
         raw: text,
@@ -34,11 +83,35 @@ fn aic_json_parse_intrinsic(text: String) -> Result[JsonValue, JsonError] {
     out
 }
 
+/// `aic_json_stringify_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_stringify_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_stringify_intrinsic(value: JsonValue) -> Result[String, JsonError] {
     let out: Result[String, JsonError] = Ok(value.raw);
     out
 }
 
+/// `aic_json_encode_int_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_encode_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_encode_int_intrinsic(value: Int) -> JsonValue {
     JsonValue {
         raw: "0",
@@ -46,6 +119,18 @@ fn aic_json_encode_int_intrinsic(value: Int) -> JsonValue {
     }
 }
 
+/// `aic_json_encode_float_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_encode_float_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_encode_float_intrinsic(value: Float) -> JsonValue {
     JsonValue {
         raw: "0.0",
@@ -53,6 +138,18 @@ fn aic_json_encode_float_intrinsic(value: Float) -> JsonValue {
     }
 }
 
+/// `aic_json_encode_bool_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_encode_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue {
     JsonValue {
         raw: "false",
@@ -60,6 +157,18 @@ fn aic_json_encode_bool_intrinsic(value: Bool) -> JsonValue {
     }
 }
 
+/// `aic_json_encode_string_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_encode_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_encode_string_intrinsic(value: String) -> JsonValue {
     JsonValue {
         raw: "\"\"",
@@ -67,6 +176,18 @@ fn aic_json_encode_string_intrinsic(value: String) -> JsonValue {
     }
 }
 
+/// `aic_json_encode_null_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_encode_null_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_encode_null_intrinsic() -> JsonValue {
     JsonValue {
         raw: "",
@@ -74,26 +195,86 @@ fn aic_json_encode_null_intrinsic() -> JsonValue {
     }
 }
 
+/// `aic_json_decode_int_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_decode_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_decode_int_intrinsic(value: JsonValue) -> Result[Int, JsonError] {
     let out: Result[Int, JsonError] = Ok(0);
     out
 }
 
+/// `aic_json_decode_float_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_decode_float_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_decode_float_intrinsic(value: JsonValue) -> Result[Float, JsonError] {
     let out: Result[Float, JsonError] = Ok(0.0);
     out
 }
 
+/// `aic_json_decode_bool_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_decode_bool_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_decode_bool_intrinsic(value: JsonValue) -> Result[Bool, JsonError] {
     let out: Result[Bool, JsonError] = Ok(false);
     out
 }
 
+/// `aic_json_decode_string_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_decode_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_decode_string_intrinsic(value: JsonValue) -> Result[String, JsonError] {
     let out: Result[String, JsonError] = Ok("");
     out
 }
 
+/// `aic_json_object_empty_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_object_empty_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_object_empty_intrinsic() -> JsonValue {
     JsonValue {
         raw: "{}",
@@ -101,107 +282,407 @@ fn aic_json_object_empty_intrinsic() -> JsonValue {
     }
 }
 
+/// `aic_json_object_set_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_object_set_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_object_set_intrinsic(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError] {
     let out: Result[JsonValue, JsonError] = Ok(object);
     out
 }
 
+/// `aic_json_object_get_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_object_get_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_object_get_intrinsic(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError] {
     let out: Result[Option[JsonValue], JsonError] = Ok(None());
     out
 }
 
+/// `aic_json_kind_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_kind_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_kind_intrinsic(value: JsonValue) -> JsonKind {
     value.kind
 }
 
+/// `aic_json_serde_encode_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_serde_encode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_serde_encode_intrinsic[T](value: T) -> Result[JsonValue, JsonError] {
     let out: Result[JsonValue, JsonError] = Ok(encode_null());
     out
 }
 
+/// `aic_json_serde_decode_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_serde_decode_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_serde_decode_intrinsic[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError] {
     let out: Result[T, JsonError] = Err(InvalidType());
     out
 }
 
+/// `aic_json_serde_schema_intrinsic` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `aic_json_serde_schema_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_json_serde_schema_intrinsic[T](marker: Option[T]) -> Result[String, JsonError] {
     let out: Result[String, JsonError] = Ok("");
     out
 }
 
+/// `parse` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `parse` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn parse(text: String) -> Result[JsonValue, JsonError] {
     aic_json_parse_intrinsic(text)
 }
 
+/// `stringify` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `stringify` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn stringify(value: JsonValue) -> Result[String, JsonError] {
     aic_json_stringify_intrinsic(value)
 }
 
+/// `encode_int` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_int(value: Int) -> JsonValue {
     aic_json_encode_int_intrinsic(value)
 }
 
+/// `encode_float` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode_float` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_float(value: Float) -> JsonValue {
     aic_json_encode_float_intrinsic(value)
 }
 
+/// `encode_bool` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_bool(value: Bool) -> JsonValue {
     aic_json_encode_bool_intrinsic(value)
 }
 
+/// `encode_string` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_string(value: String) -> JsonValue {
     aic_json_encode_string_intrinsic(value)
 }
 
+/// `encode_null` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode_null` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode_null() -> JsonValue {
     aic_json_encode_null_intrinsic()
 }
 
+/// `decode_int` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `decode_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_int(value: JsonValue) -> Result[Int, JsonError] {
     aic_json_decode_int_intrinsic(value)
 }
 
+/// `decode_float` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `decode_float` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_float(value: JsonValue) -> Result[Float, JsonError] {
     aic_json_decode_float_intrinsic(value)
 }
 
+/// `decode_bool` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `decode_bool` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_bool(value: JsonValue) -> Result[Bool, JsonError] {
     aic_json_decode_bool_intrinsic(value)
 }
 
+/// `decode_string` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `decode_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_string(value: JsonValue) -> Result[String, JsonError] {
     aic_json_decode_string_intrinsic(value)
 }
 
+/// `object_empty` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `object_empty` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn object_empty() -> JsonValue {
     aic_json_object_empty_intrinsic()
 }
 
+/// `object_set` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `object_set` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn object_set(object: JsonValue, key: String, value: JsonValue) -> Result[JsonValue, JsonError] {
     aic_json_object_set_intrinsic(object, key, value)
 }
 
+/// `object_get` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `object_get` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn object_get(object: JsonValue, key: String) -> Result[Option[JsonValue], JsonError] {
     aic_json_object_get_intrinsic(object, key)
 }
 
+/// `kind` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `kind` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn kind(value: JsonValue) -> JsonKind {
     aic_json_kind_intrinsic(value)
 }
 
+/// `encode` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `encode` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn encode[T](value: T) -> Result[JsonValue, JsonError] {
     aic_json_serde_encode_intrinsic(value)
 }
 
+/// `decode_with` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `decode_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn decode_with[T](value: JsonValue, marker: Option[T]) -> Result[T, JsonError] {
     aic_json_serde_decode_intrinsic(value, marker)
 }
 
+/// `schema` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `schema` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn schema[T](marker: Option[T]) -> Result[String, JsonError] {
     aic_json_serde_schema_intrinsic(marker)
 }
 
+/// `is_null` in `std.json`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.json` and call `is_null` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_null(value: JsonValue) -> Bool {
     match kind(value) {
         NullValue => true,

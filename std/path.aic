@@ -1,41 +1,167 @@
+/// The `std.path` module provides standard-library `path` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.path;
+/// ```
 module std.path;
 
+/// `aic_path_join_intrinsic` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `aic_path_join_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_path_join_intrinsic(left: String, right: String) -> String {
     ""
 }
 
+/// `aic_path_basename_intrinsic` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `aic_path_basename_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_path_basename_intrinsic(path: String) -> String {
     ""
 }
 
+/// `aic_path_dirname_intrinsic` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `aic_path_dirname_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_path_dirname_intrinsic(path: String) -> String {
     ""
 }
 
+/// `aic_path_extension_intrinsic` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `aic_path_extension_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_path_extension_intrinsic(path: String) -> String {
     ""
 }
 
+/// `aic_path_is_abs_intrinsic` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `aic_path_is_abs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_path_is_abs_intrinsic(path: String) -> Bool {
     false
 }
 
+/// `join` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `join` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn join(left: String, right: String) -> String {
     aic_path_join_intrinsic(left, right)
 }
 
+/// `basename` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `basename` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn basename(path: String) -> String {
     aic_path_basename_intrinsic(path)
 }
 
+/// `dirname` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `dirname` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn dirname(path: String) -> String {
     aic_path_dirname_intrinsic(path)
 }
 
+/// `extension` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `extension` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn extension(path: String) -> String {
     aic_path_extension_intrinsic(path)
 }
 
+/// `is_abs` in `std.path`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.path` and call `is_abs` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_abs(path: String) -> Bool {
     aic_path_is_abs_intrinsic(path)
 }

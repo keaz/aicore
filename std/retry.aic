@@ -1,9 +1,21 @@
+/// The `std.retry` module provides standard-library `retry` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.retry;
+/// ```
 module std.retry;
 
 import std.rand;
 import std.result;
 import std.time;
 
+/// `RetryConfig` is a `struct` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RetryConfig` through `std.retry` APIs.
+/// ```
 struct RetryConfig {
     max_attempts: Int,
     initial_backoff_ms: Int,
@@ -13,12 +25,30 @@ struct RetryConfig {
     jitter_ms: Int,
 }
 
+/// `RetryResult` is a `struct` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Use `RetryResult` through `std.retry` APIs.
+/// ```
 struct RetryResult[T] {
     result: Result[T, String],
     attempts: Int,
     elapsed_ms: Int,
 }
 
+/// `default_retry_config` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `default_retry_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn default_retry_config() -> RetryConfig {
     RetryConfig {
         max_attempts: 4,
@@ -30,6 +60,18 @@ fn default_retry_config() -> RetryConfig {
     }
 }
 
+/// `normalize_non_negative` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `normalize_non_negative` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalize_non_negative(value: Int) -> Int {
     if value < 0 {
         0
@@ -38,6 +80,18 @@ fn normalize_non_negative(value: Int) -> Int {
     }
 }
 
+/// `normalize_attempts` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `normalize_attempts` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalize_attempts(value: Int) -> Int {
     if value <= 0 {
         1
@@ -46,6 +100,18 @@ fn normalize_attempts(value: Int) -> Int {
     }
 }
 
+/// `normalize_multiplier` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `normalize_multiplier` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalize_multiplier(value: Int) -> Int {
     if value < 1 {
         1
@@ -54,6 +120,18 @@ fn normalize_multiplier(value: Int) -> Int {
     }
 }
 
+/// `cap_delay` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `cap_delay` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn cap_delay(delay_ms: Int, max_backoff_ms: Int) -> Int {
     let bounded_delay = normalize_non_negative(delay_ms);
     let bounded_cap = normalize_non_negative(max_backoff_ms);
@@ -64,6 +142,18 @@ fn cap_delay(delay_ms: Int, max_backoff_ms: Int) -> Int {
     }
 }
 
+/// `normalize_config` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `normalize_config` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn normalize_config(config: RetryConfig) -> RetryConfig {
     let bounded_cap = normalize_non_negative(config.max_backoff_ms);
     let bounded_initial = cap_delay(config.initial_backoff_ms, bounded_cap);
@@ -77,6 +167,18 @@ fn normalize_config(config: RetryConfig) -> RetryConfig {
     }
 }
 
+/// `next_backoff_ms` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `next_backoff_ms` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn next_backoff_ms(current_ms: Int, multiplier: Int, max_backoff_ms: Int) -> Int {
     let current = cap_delay(current_ms, max_backoff_ms);
     let bounded_cap = normalize_non_negative(max_backoff_ms);
@@ -97,6 +199,18 @@ fn next_backoff_ms(current_ms: Int, multiplier: Int, max_backoff_ms: Int) -> Int
     }
 }
 
+/// `delay_with_optional_jitter` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `delay_with_optional_jitter` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn delay_with_optional_jitter(delay_ms: Int, config: RetryConfig) -> Int effects { rand } {
     let base = cap_delay(delay_ms, config.max_backoff_ms);
     if !config.jitter_enabled || config.jitter_ms <= 0 {
@@ -107,6 +221,18 @@ fn delay_with_optional_jitter(delay_ms: Int, config: RetryConfig) -> Int effects
     }
 }
 
+/// `retry` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `retry` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn retry[T](config: RetryConfig, operation: Fn() -> Result[T, String]) -> RetryResult[T] effects { time, rand } {
     let normalized = normalize_config(config);
     let started = monotonic_ms();
@@ -175,6 +301,18 @@ fn retry[T](config: RetryConfig, operation: Fn() -> Result[T, String]) -> RetryR
     }
 }
 
+/// `with_timeout` in `std.retry`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.retry` and call `with_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_timeout[T](timeout_ms: Int, operation: Fn() -> T) -> Result[T, String] effects { time } {
     if timeout_ms <= 0 {
         Err("deadline exceeded")

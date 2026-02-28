@@ -1,11 +1,37 @@
+/// The `std.option` module provides standard-library `option` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.option;
+/// ```
 module std.option;
 
+/// `Option` is a `enum` in `std.option`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Option` through `std.option` APIs.
+/// ```
 enum Option[T] {
+    /// `None` enum variant.
     None,
+    /// `Some` enum variant.
     Some(T),
 }
 
 impl Option {
+    /// `unwrap_or` in `std.option`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.option` and call `unwrap_or` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn unwrap_or[T](self: Option[T], fallback: T) -> T {
         match self {
             Some(value) => value,
@@ -13,6 +39,18 @@ impl Option {
         }
     }
 
+    /// `map` in `std.option`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.option` and call `map` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn map[T, U](self: Option[T], mapper: Fn(T) -> U) -> Option[U] {
         match self {
             Some(value) => Some(mapper(value)),
@@ -20,6 +58,18 @@ impl Option {
         }
     }
 
+    /// `and_then` in `std.option`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.option` and call `and_then` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
     fn and_then[T, U](self: Option[T], mapper: Fn(T) -> Option[U]) -> Option[U] {
         match self {
             Some(value) => mapper(value),

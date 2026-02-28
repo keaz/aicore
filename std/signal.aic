@@ -1,31 +1,92 @@
+/// The `std.signal` module provides standard-library `signal` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.signal;
+/// ```
 module std.signal;
 
 import std.result;
 
+/// `Signal` is a `enum` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Signal` through `std.signal` APIs.
+/// ```
 enum Signal {
+    /// `SigInt` enum variant.
     SigInt,
+    /// `SigTerm` enum variant.
     SigTerm,
+    /// `SigHup` enum variant.
     SigHup,
 }
 
+/// `SignalError` is a `enum` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Use `SignalError` through `std.signal` APIs.
+/// ```
 enum SignalError {
+    /// `UnsupportedPlatform` enum variant.
     UnsupportedPlatform,
+    /// `InvalidSignal` enum variant.
     InvalidSignal,
+    /// `PermissionDenied` enum variant.
     PermissionDenied,
+    /// `Internal` enum variant.
     Internal,
 }
 
+/// `aic_signal_register_intrinsic` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.signal` and call `aic_signal_register_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] effects { proc } {
     let _signal_code = signal_code;
     let out: Result[Bool, SignalError] = Err(Internal());
     out
 }
 
+/// `aic_signal_wait_intrinsic` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.signal` and call `aic_signal_wait_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_signal_wait_intrinsic() -> Result[Int, SignalError] effects { proc } {
     let out: Result[Int, SignalError] = Err(Internal());
     out
 }
 
+/// `signal_code` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.signal` and call `signal_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn signal_code(signal: Signal) -> Int {
     match signal {
         SigInt => 2,
@@ -34,6 +95,18 @@ fn signal_code(signal: Signal) -> Int {
     }
 }
 
+/// `signal_from_code` in `std.signal`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.signal` and call `signal_from_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn signal_from_code(signal_code: Int) -> Signal {
     if signal_code == 2 {
         SigInt()

@@ -1,14 +1,38 @@
+/// The `std.error_context` module provides standard-library `error context` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.error_context;
+/// ```
 module std.error_context;
 
 import std.string;
 import std.vec;
 
+/// `ErrorContext` is a `struct` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ErrorContext` through `std.error_context` APIs.
+/// ```
 struct ErrorContext[E] {
     error: E,
     context: String,
     chain: String,
 }
 
+/// `new_error_context` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `new_error_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn new_error_context[E](error: E, context: String) -> ErrorContext[E] {
     ErrorContext {
         error: error,
@@ -17,6 +41,18 @@ fn new_error_context[E](error: E, context: String) -> ErrorContext[E] {
     }
 }
 
+/// `with_context` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `with_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_context[E](ctx: ErrorContext[E], context: String) -> ErrorContext[E] {
     let chain_parts: Vec[String] = vec.push(vec.vec_of(ctx.chain), context);
     ErrorContext {
@@ -26,23 +62,83 @@ fn with_context[E](ctx: ErrorContext[E], context: String) -> ErrorContext[E] {
     }
 }
 
+/// `with_context_error` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `with_context_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_context_error[E](error: E, context: String) -> ErrorContext[E] {
     new_error_context(error, context)
 }
 
+/// `with_cause` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `with_cause` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_cause[E](error: E, context: String, cause: String) -> ErrorContext[E] {
     let base: ErrorContext[E] = new_error_context(error, context);
     with_context(base, cause)
 }
 
+/// `with_cause_context` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `with_cause_context` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn with_cause_context[E](ctx: ErrorContext[E], cause: String) -> ErrorContext[E] {
     with_context(ctx, cause)
 }
 
+/// `error_value` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `error_value` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn error_value[E](ctx: ErrorContext[E]) -> E {
     ctx.error
 }
 
+/// `error_chain` in `std.error_context`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.error_context` and call `error_chain` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn error_chain[E](ctx: ErrorContext[E]) -> String {
     ctx.chain
 }

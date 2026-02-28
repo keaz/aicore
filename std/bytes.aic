@@ -1,61 +1,226 @@
+/// The `std.bytes` module provides standard-library `bytes` APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.bytes;
+/// ```
 module std.bytes;
 
 import std.result;
 import std.string;
 import std.vec;
 
+/// `BytesError` is a `enum` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Use `BytesError` through `std.bytes` APIs.
+/// ```
 enum BytesError {
+    /// `InvalidUtf8` enum variant.
     InvalidUtf8,
+    /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Io` enum variant.
     Io,
 }
 
+/// `Bytes` is a `struct` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Bytes` through `std.bytes` APIs.
+/// ```
 struct Bytes {
     data: String,
 }
 
+/// `aic_bytes_byte_at_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_byte_at_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int;
+/// `aic_bytes_from_byte_values_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_from_byte_values_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String;
 
+/// `aic_bytes_len_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_len_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_bytes_len_intrinsic(data: String) -> Int {
     aic_string_len_intrinsic(data)
 }
 
+/// `aic_bytes_concat_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_concat_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_bytes_concat_intrinsic(left: String, right: String) -> String {
     let pieces = append(vec_of(left), vec_of(right));
     aic_string_format_intrinsic("{0}{1}", pieces)
 }
 
+/// `aic_bytes_is_valid_utf8_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_is_valid_utf8_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool {
     aic_string_is_valid_utf8_intrinsic(data)
 }
 
+/// `aic_bytes_to_string_lossy_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_bytes_to_string_lossy_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn aic_bytes_to_string_lossy_intrinsic(data: String) -> String {
     aic_string_bytes_to_string_lossy_intrinsic(data)
 }
 
+/// `empty` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `empty` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn empty() -> Bytes {
     Bytes { data: "" }
 }
 
+/// `from_string` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `from_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_string(s: String) -> Bytes {
     Bytes { data: s }
 }
 
+/// `byte_len` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `byte_len` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn byte_len(data: Bytes) -> Int {
     aic_bytes_len_intrinsic(data.data)
 }
 
+/// `is_empty` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `is_empty` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_empty(data: Bytes) -> Bool {
     byte_len(data) == 0
 }
 
+/// `concat` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `concat` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn concat(left: Bytes, right: Bytes) -> Bytes {
     Bytes {
         data: aic_bytes_concat_intrinsic(left.data, right.data),
     }
 }
 
+/// `to_string` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `to_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_string(data: Bytes) -> Result[String, BytesError] {
     if aic_bytes_is_valid_utf8_intrinsic(data.data) {
         let out: Result[String, BytesError] = Ok(data.data);
@@ -66,14 +231,50 @@ fn to_string(data: Bytes) -> Result[String, BytesError] {
     }
 }
 
+/// `to_string_lossy` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `to_string_lossy` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_string_lossy(data: Bytes) -> String {
     aic_bytes_to_string_lossy_intrinsic(data.data)
 }
 
+/// `is_valid_utf8` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `is_valid_utf8` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn is_valid_utf8(data: Bytes) -> Bool {
     aic_bytes_is_valid_utf8_intrinsic(data.data)
 }
 
+/// `byte_at` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `byte_at` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn byte_at(data: Bytes, index: Int) -> Result[Int, BytesError] {
     let len = byte_len(data);
     if index < 0 || index >= len {
@@ -85,6 +286,18 @@ fn byte_at(data: Bytes, index: Int) -> Result[Int, BytesError] {
     }
 }
 
+/// `byte_slice` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `byte_slice` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError] {
     let len = byte_len(data);
     if start < 0 || end < 0 || start > end || end > len {
@@ -98,6 +311,18 @@ fn byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError] {
     }
 }
 
+/// `find_byte` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `find_byte` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn find_byte(data: Bytes, value: Int) -> Option[Int] {
     if value < 0 || value > 255 {
         let out: Option[Int] = None();
@@ -128,14 +353,50 @@ fn find_byte(data: Bytes, value: Int) -> Option[Int] {
     }
 }
 
+/// `starts_with` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `starts_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn starts_with(data: Bytes, prefix: Bytes) -> Bool {
     aic_string_starts_with_intrinsic(data.data, prefix.data)
 }
 
+/// `ends_with` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `ends_with` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn ends_with(data: Bytes, suffix: Bytes) -> Bool {
     aic_string_ends_with_intrinsic(data.data, suffix.data)
 }
 
+/// `compare_bytes` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `compare_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn compare_bytes(a: Bytes, b: Bytes) -> Int {
     let len_a = byte_len(a);
     let len_b = byte_len(b);
@@ -179,6 +440,18 @@ fn compare_bytes(a: Bytes, b: Bytes) -> Int {
     }
 }
 
+/// `from_byte_values` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `from_byte_values` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError] {
     let mut i = 0;
     let mut valid = true;
@@ -205,6 +478,18 @@ fn from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError] {
     }
 }
 
+/// `to_byte_values` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `to_byte_values` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
 fn to_byte_values(data: Bytes) -> Vec[Int] {
     let mut out: Vec[Int] = aic_vec_new_intrinsic();
     let len = byte_len(data);
