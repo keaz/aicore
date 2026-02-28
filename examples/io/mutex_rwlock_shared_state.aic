@@ -1,0 +1,83 @@
+import std.concurrent;
+import std.io;
+import std.map;
+import std.vec;
+
+fn map_mutex_write_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let next = map.insert(g.value, "count", 42);
+    let updated: MutexGuard[Map[String, Int]] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: next,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn map_mutex_write(m: Mutex[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    match lock(m) {
+        Ok(g) => map_mutex_write_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn map_mutex_read_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let out = match map.get(g.value, "count") {
+        Some(v) => v,
+        None => 0,
+    };
+    unlock_guard(g);
+    out
+}
+
+fn map_mutex_read(m: Mutex[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    match lock(m) {
+        Ok(g) => map_mutex_read_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn rwlock_write_guard(g: MutexGuard[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let next = vec.push(g.value, 2);
+    let updated: MutexGuard[Vec[Int]] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: next,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn rwlock_write(rw: RwLock[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    match write_lock(rw) {
+        Ok(g) => rwlock_write_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let base_map: Map[String, Int] = map.new_map();
+    let seeded_map = map.insert(base_map, "count", 1);
+    let map_mutex: Mutex[Map[String, Int]] = new_mutex(seeded_map);
+
+    let map_write_ok = map_mutex_write(map_mutex);
+    let map_value = map_mutex_read(map_mutex);
+
+    let rw: RwLock[Vec[Int]] = new_rwlock(vec.vec_of(40));
+    let write_ok = rwlock_write(rw);
+    let rw_tail = match read_lock(rw) {
+        Ok(values) => match vec.get(values, 1) {
+            Some(v) => v,
+            None => 0,
+        },
+        Err(_) => 0,
+    };
+    let _close_rw = close_rwlock(rw);
+
+    if map_write_ok + write_ok == 2 && map_value == 42 && rw_tail == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -3667,6 +3667,13 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &source,
         "std/concurrent.aic",
+        "close_rwlock",
+        "aic_conc_rwlock_close_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
         "scope_cancel",
         "aic_conc_scope_cancel_intrinsic",
         1,
@@ -3706,6 +3713,11 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_conc_mutex_lock_intrinsic", 2usize),
         ("aic_conc_mutex_unlock_intrinsic", 2usize),
         ("aic_conc_mutex_close_intrinsic", 1usize),
+        ("aic_conc_rwlock_int_intrinsic", 1usize),
+        ("aic_conc_rwlock_read_intrinsic", 2usize),
+        ("aic_conc_rwlock_write_lock_intrinsic", 2usize),
+        ("aic_conc_rwlock_write_unlock_intrinsic", 2usize),
+        ("aic_conc_rwlock_close_intrinsic", 1usize),
     ] {
         assert_intrinsic_declaration(&source, "std/concurrent.aic", name, arity);
     }
@@ -3933,6 +3945,12 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _lock = lock_int(IntMutex { handle: 1 }, 1);
     let _unlock = unlock_int(IntMutex { handle: 1 }, 1);
     let _close_mutex = close_mutex(IntMutex { handle: 1 });
+    let _gm = new_mutex(vec.vec_of(1));
+    let _glock = lock(_gm);
+    let _grw = new_rwlock(vec.vec_of(1));
+    let _gread = read_lock(_grw);
+    let _gwrite = write_lock(_grw);
+    let _grw_close = close_rwlock(_grw);
     let _n = string.len("abc");
     let _contains = string.contains("abc", "b");
     let _starts = starts_with("abc", "a");
@@ -4263,10 +4281,23 @@ fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
     }
 }
 
+fn unwrap_mutex(v: Result[IntMutex, ConcurrencyError]) -> IntMutex {
+    match v {
+        Ok(m) => m,
+        Err(_) => IntMutex { handle: 0 },
+    }
+}
+
 fn main() -> Int effects { concurrency } capabilities { concurrency } {
     let ch = unwrap_channel(channel_int(1));
     let _sent = send_int(ch, 7, 1000);
     let _recv = recv_int(ch, 1000);
+    let m = unwrap_mutex(mutex_int(1));
+    let v = lock_int(m, 1000);
+    let _released = match v {
+        Ok(value) => unlock_int(m, value + 1),
+        Err(_) => unlock_int(m, 0),
+    };
     0
 }
 "#,
@@ -4286,8 +4317,8 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
         .filter(|d| d.code == "E6001" && matches!(d.severity, Severity::Warning))
         .collect::<Vec<_>>();
     assert!(
-        warnings.len() >= 3,
-        "expected deprecation warnings for channel_int/send_int/recv_int, got {warnings:#?}"
+        warnings.len() >= 6,
+        "expected deprecation warnings for channel_int/send_int/recv_int/mutex_int/lock_int/unlock_int, got {warnings:#?}"
     );
     assert!(warnings.iter().any(|d| d
         .help
@@ -4301,6 +4332,18 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
         .help
         .iter()
         .any(|h| h.contains("std.concurrent.recv[Int]"))));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.new_mutex[Int]"))));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.lock[Int]"))));
+    assert!(warnings.iter().any(|d| d
+        .help
+        .iter()
+        .any(|h| h.contains("std.concurrent.unlock_guard[Int]"))));
 }
 
 #[test]

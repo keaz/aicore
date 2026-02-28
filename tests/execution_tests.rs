@@ -4227,6 +4227,265 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_generic_mutex_supports_map_and_vec_payloads() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.map;
+import std.vec;
+
+fn map_write_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    let next_map = map.insert(g.value, "count", 42);
+    let updated: MutexGuard[Map[String, Int]] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: next_map,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn map_write(m: Mutex[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    match lock(m) {
+        Ok(g) => map_write_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn map_read_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    let out = match map.get(g.value, "count") {
+        Some(v) => v,
+        None => 0,
+    };
+    unlock_guard(g);
+    out
+}
+
+fn map_read(m: Mutex[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    match lock(m) {
+        Ok(g) => map_read_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn vec_write_guard(g: MutexGuard[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    let next_vec = vec.push(g.value, 9);
+    let updated: MutexGuard[Vec[Int]] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: next_vec,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn vec_write(m: Mutex[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    match lock(m) {
+        Ok(g) => vec_write_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn vec_read_guard(g: MutexGuard[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    let out = match vec.get(g.value, 1) {
+        Some(v) => v,
+        None => 0,
+    };
+    unlock_guard(g);
+    out
+}
+
+fn vec_read(m: Mutex[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    match lock(m) {
+        Ok(g) => vec_read_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let base_map: Map[String, Int] = map.new_map();
+    let seeded_map = map.insert(base_map, "count", 1);
+    let map_mutex: Mutex[Map[String, Int]] = new_mutex(seeded_map);
+    let map_write_ok = map_write(map_mutex);
+    let map_value = map_read(map_mutex);
+
+    let base_vec: Vec[Int] = vec.vec_of(7);
+    let vec_mutex: Mutex[Vec[Int]] = new_mutex(base_vec);
+    let vec_write_ok = vec_write(vec_mutex);
+    let vec_second = vec_read(vec_mutex);
+
+    if map_write_ok + vec_write_ok == 2 && map_value == 42 && vec_second == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_rwlock_reader_writer_contention_is_enforced() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn read_ok(rw: RwLock[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match read_lock(rw) {
+        Ok(value) => if value == 7 { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn writer_release(g: MutexGuard[Int], release_rx: Receiver[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    let released = match recv(release_rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    unlock_guard(g);
+    released
+}
+
+fn writer_with_guard(
+    g: MutexGuard[Int],
+    entered_tx: Sender[Int],
+    release_rx: Receiver[Int],
+) -> Int effects { concurrency } capabilities { concurrency  } {
+    let entered = match send(entered_tx, 1) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let released = writer_release(g, release_rx);
+    if entered == 1 && released == 1 { 1 } else { 0 }
+}
+
+fn writer_hold_and_release(
+    rw: RwLock[Int],
+    entered_tx: Sender[Int],
+    release_rx: Receiver[Int],
+) -> Int effects { concurrency } capabilities { concurrency  } {
+    match write_lock(rw) {
+        Ok(g) => writer_with_guard(g, entered_tx, release_rx),
+        Err(_) => 0,
+    }
+}
+
+fn publish_reader_value(value: Int, out_tx: Sender[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    let sent = match send(out_tx, value) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    if sent == 1 && value == 7 { 1 } else { 0 }
+}
+
+fn read_and_publish(rw: RwLock[Int], out_tx: Sender[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match read_lock(rw) {
+        Ok(value) => publish_reader_value(value, out_tx),
+        Err(_) => 0,
+    }
+}
+
+fn recv_one_or_zero(rx: Receiver[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match recv(rx) {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn try_recv_empty(rx: Receiver[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match try_recv(rx) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
+    let rw: RwLock[Int] = new_rwlock(7);
+
+    let t1: Task[Int] = spawn_named("read-1", || -> Int { read_ok(rw) });
+    let t2: Task[Int] = spawn_named("read-2", || -> Int { read_ok(rw) });
+    let readers_ok = match join_value(t1) {
+        Ok(a) => match join_value(t2) {
+            Ok(b) => if a + b == 2 { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let entered_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let release_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let blocked_pair: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+
+    let entered_tx = entered_pair.0;
+    let entered_rx = entered_pair.1;
+    let release_tx = release_pair.0;
+    let release_rx = release_pair.1;
+    let blocked_tx = blocked_pair.0;
+    let blocked_rx = blocked_pair.1;
+
+    let writer: Task[Int] = spawn_named("writer", || -> Int {
+        writer_hold_and_release(rw, entered_tx, release_rx)
+    });
+    let writer_entered = match recv(entered_rx) {
+        Ok(v) => if v == 1 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let blocked_reader: Task[Int] = spawn_named("blocked-reader", || -> Int {
+        read_and_publish(rw, blocked_tx)
+    });
+
+    let blocked_before_release = try_recv_empty(blocked_rx);
+    let released = match send(release_tx, 1) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let blocked_value = recv_one_or_zero(blocked_rx);
+    let writer_ok = match join_value(writer) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let blocked_reader_ok = match join_value(blocked_reader) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let final_read = match read_lock(rw) {
+        Ok(value) => value,
+        Err(_) => 0,
+    };
+    let closed_ok = match close_rwlock(rw) {
+        Ok(ok) => if ok { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if readers_ok == 1
+        && writer_entered == 1
+        && blocked_before_release == 1
+        && released == 1
+        && blocked_value == 7
+        && writer_ok == 1
+        && blocked_reader_ok == 1
+        && final_read == 7
+        && closed_ok == 1
+    {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_spawn_join_generic_closure_capture_is_stable() {
     let src = r#"
 import std.concurrent;

@@ -1,17 +1,11 @@
 import std.io;
 import std.concurrent;
+import std.vec;
 
 fn unwrap_task(v: Result[Task[Int], ConcurrencyError]) -> Task[Int] {
     match v {
         Ok(task) => task,
         Err(_) => Task { handle: 0 },
-    }
-}
-
-fn unwrap_mutex(v: Result[IntMutex, ConcurrencyError]) -> IntMutex {
-    match v {
-        Ok(m) => m,
-        Err(_) => IntMutex { handle: 0 },
     }
 }
 
@@ -22,13 +16,62 @@ fn unwrap_int(v: Result[Int, ConcurrencyError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
+fn set_mutex_guard(g: MutexGuard[Int], value: Int) -> Int effects { concurrency } capabilities { concurrency  } {
+    let updated: MutexGuard[Int] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: value,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn set_mutex_value(m: Mutex[Int], value: Int) -> Int effects { concurrency } capabilities { concurrency  } {
+    match lock(m) {
+        Ok(g) => set_mutex_guard(g, value),
+        Err(_) => 0,
+    }
+}
+
+fn read_mutex_guard(g: MutexGuard[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    let out = g.value;
+    unlock_guard(g);
+    out
+}
+
+fn read_mutex_value(m: Mutex[Int]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match lock(m) {
+        Ok(g) => read_mutex_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn append_rwlock_guard(g: MutexGuard[Vec[Int]], value: Int) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    let next_values = vec.push(g.value, value);
+    let updated: MutexGuard[Vec[Int]] = MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: next_values,
+    };
+    unlock_guard(updated);
+    1
+}
+
+fn append_rwlock_value(rw: RwLock[Vec[Int]], value: Int) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
+    match write_lock(rw) {
+        Ok(g) => append_rwlock_guard(g, value),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env  } {
     let t1 = unwrap_task(spawn_task(10, 20));
     let t2 = unwrap_task(spawn_task(11, 5));
     let pair: (Sender[Int], Receiver[Int]) = buffered_channel(4);
     let tx = pair.0;
     let rx = pair.1;
-    let m = unwrap_mutex(mutex_int(0));
+    let m: Mutex[Int] = new_mutex(0);
+    let rw: RwLock[Vec[Int]] = new_rwlock(vec.vec_of(40));
 
     let r1 = unwrap_int(join_task(t1));
     let r2 = unwrap_int(join_task(t2));
@@ -51,16 +94,23 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency  } {
         Err(_) => 0,
     };
 
-    let current = unwrap_int(lock_int(m, 1000));
-    let _release = unlock_int(m, current + a + b);
-    let total = unwrap_int(lock_int(m, 1000));
-    let _release_final = unlock_int(m, total);
+    let _release = set_mutex_value(m, a + b);
+    let total = read_mutex_value(m);
+
+    let write_ok = append_rwlock_value(rw, 2);
+    let rw_tail = match read_lock(rw) {
+        Ok(values) => match vec.get(values, 1) {
+            Some(v) => v,
+            None => 0,
+        },
+        Err(_) => 0,
+    };
 
     let _close_tx = close_sender(tx);
     let _close_rx = close_receiver(rx);
-    let _close_m = close_mutex(m);
+    let _close_rw = close_rwlock(rw);
 
-    if sent1 + sent2 == 2 && total == 42 {
+    if sent1 + sent2 == 2 && total == 42 && write_ok == 1 && rw_tail == 2 {
         print_int(42);
     } else {
         print_int(0);

@@ -238,6 +238,46 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_rwlock_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_rwlock_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[IntRwLock, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_rwlock_read_intrinsic",
+        runtime_symbol: "aic_rt_conc_rwlock_read",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntRwLock", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_rwlock_write_lock_intrinsic",
+        runtime_symbol: "aic_rt_conc_rwlock_write_lock",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntRwLock", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_rwlock_write_unlock_intrinsic",
+        runtime_symbol: "aic_rt_conc_rwlock_write_unlock",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntRwLock", "Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_rwlock_close_intrinsic",
+        runtime_symbol: "aic_rt_conc_rwlock_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["IntRwLock"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_conc_payload_store_intrinsic",
         runtime_symbol: "aic_rt_conc_payload_store",
         signatures: &[IntrinsicSignatureShape {
@@ -2463,6 +2503,11 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_mutex_unlock(i64, i64)\n");
         text.push_str("declare i64 @aic_rt_conc_mutex_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_rwlock_int(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_rwlock_read(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_rwlock_write_lock(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_rwlock_write_unlock(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_rwlock_close(i64)\n");
         text.push_str("declare i64 @aic_rt_conc_payload_store(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_payload_take(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_payload_drop(i64, i64*)\n\n");
@@ -3480,8 +3525,8 @@ impl<'a> Generator<'a> {
                                 }
                             }
                         }
-                        self.mark_moved_resource_locals_in_expr(expr, fctx);
                     }
+                    self.mark_moved_resource_locals_in_expr(expr, fctx);
                     let ptr = self.new_temp();
                     fctx.lines
                         .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
@@ -3711,12 +3756,96 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn mark_moved_resource_locals_in_block(&mut self, block: &ir::Block, fctx: &mut FnCtx) {
+        for stmt in &block.stmts {
+            match stmt {
+                ir::Stmt::Let { expr, .. }
+                | ir::Stmt::Assign { expr, .. }
+                | ir::Stmt::Expr { expr, .. }
+                | ir::Stmt::Assert { expr, .. } => {
+                    self.mark_moved_resource_locals_in_expr(expr, fctx);
+                }
+                ir::Stmt::Return { expr, .. } => {
+                    if let Some(expr) = expr {
+                        self.mark_moved_resource_locals_in_expr(expr, fctx);
+                    }
+                }
+            }
+        }
+        if let Some(tail) = &block.tail {
+            self.mark_moved_resource_locals_in_expr(tail, fctx);
+        }
+    }
+
     fn mark_moved_resource_locals_in_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) {
         match &expr.kind {
             ir::ExprKind::Var(name) => self.mark_local_resource_moved(name, fctx),
+            ir::ExprKind::Call { callee, args, .. } => {
+                self.mark_moved_resource_locals_in_expr(callee, fctx);
+                for arg in args {
+                    self.mark_moved_resource_locals_in_expr(arg, fctx);
+                }
+            }
             ir::ExprKind::StructInit { fields, .. } => {
                 for (_, value, _) in fields {
                     self.mark_moved_resource_locals_in_expr(value, fctx);
+                }
+            }
+            ir::ExprKind::FieldAccess { base, field } => {
+                if let ir::ExprKind::Var(name) = &base.kind {
+                    if let Some(local) = find_local(&fctx.vars, name) {
+                        if let LType::Struct(layout) = &local.ty {
+                            if let Some(field_layout) =
+                                layout.fields.iter().find(|f| f.name == *field)
+                            {
+                                if self.type_needs_explicit_drop(&field_layout.ty) {
+                                    self.mark_local_resource_moved(name, fctx);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+                self.mark_moved_resource_locals_in_expr(base, fctx);
+            }
+            ir::ExprKind::Binary { lhs, rhs, .. } => {
+                self.mark_moved_resource_locals_in_expr(lhs, fctx);
+                self.mark_moved_resource_locals_in_expr(rhs, fctx);
+            }
+            ir::ExprKind::Unary { expr, .. }
+            | ir::ExprKind::Borrow { expr, .. }
+            | ir::ExprKind::Await { expr }
+            | ir::ExprKind::Try { expr } => {
+                self.mark_moved_resource_locals_in_expr(expr, fctx);
+            }
+            ir::ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.mark_moved_resource_locals_in_expr(cond, fctx);
+                self.mark_moved_resource_locals_in_block(then_block, fctx);
+                self.mark_moved_resource_locals_in_block(else_block, fctx);
+            }
+            ir::ExprKind::Match { expr, arms } => {
+                self.mark_moved_resource_locals_in_expr(expr, fctx);
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        self.mark_moved_resource_locals_in_expr(guard, fctx);
+                    }
+                    self.mark_moved_resource_locals_in_expr(&arm.body, fctx);
+                }
+            }
+            ir::ExprKind::While { cond, body } => {
+                self.mark_moved_resource_locals_in_expr(cond, fctx);
+                self.mark_moved_resource_locals_in_block(body, fctx);
+            }
+            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+                self.mark_moved_resource_locals_in_block(body, fctx);
+            }
+            ir::ExprKind::Break { expr } => {
+                if let Some(expr) = expr {
+                    self.mark_moved_resource_locals_in_expr(expr, fctx);
                 }
             }
             _ => {}
@@ -8072,6 +8201,11 @@ impl<'a> Generator<'a> {
             "lock_int" | "aic_conc_mutex_lock_intrinsic" => "lock_int",
             "unlock_int" | "aic_conc_mutex_unlock_intrinsic" => "unlock_int",
             "close_mutex" | "aic_conc_mutex_close_intrinsic" => "close_mutex",
+            "rwlock_int" | "aic_conc_rwlock_int_intrinsic" => "rwlock_int",
+            "read_lock_int" | "aic_conc_rwlock_read_intrinsic" => "read_lock_int",
+            "write_lock_int" | "aic_conc_rwlock_write_lock_intrinsic" => "write_lock_int",
+            "write_unlock_int" | "aic_conc_rwlock_write_unlock_intrinsic" => "write_unlock_int",
+            "close_rwlock" | "aic_conc_rwlock_close_intrinsic" => "close_rwlock",
             "aic_conc_payload_store_intrinsic" => "payload_store",
             "aic_conc_payload_take_intrinsic" => "payload_take",
             "aic_conc_payload_drop_intrinsic" => "payload_drop",
@@ -8258,6 +8392,51 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_concurrency_close_mutex_call(name, args, span, fctx))
+            }
+            "rwlock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int"],
+                    "Result[IntRwLock, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_rwlock_int_call(name, args, span, fctx))
+            }
+            "read_lock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntRwLock", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_rwlock_read_call(name, args, span, fctx))
+            }
+            "write_lock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntRwLock", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_rwlock_write_lock_call(name, args, span, fctx))
+            }
+            "write_unlock_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntRwLock", "Int"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_rwlock_write_unlock_call(name, args, span, fctx))
+            }
+            "close_rwlock"
+                if self.sig_matches_shape(
+                    name,
+                    &["IntRwLock"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_close_rwlock_call(name, args, span, fctx))
             }
             "payload_store"
                 if self.sig_matches_shape(name, &["String"], "Result[Int, ConcurrencyError]") =>
@@ -10091,6 +10270,246 @@ impl<'a> Generator<'a> {
         let err = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @aic_rt_conc_mutex_close(i64 {})",
+            err, handle
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_rwlock_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "rwlock_int expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let initial = self.gen_expr(&args[0], fctx)?;
+        if initial.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "rwlock_int expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_rwlock_int(i64 {}, i64* {})",
+            err,
+            initial.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload =
+            self.build_concurrency_ok_handle_payload(&result_ty, "IntRwLock", &handle, span, fctx)?;
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_rwlock_read_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "read_lock_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let rwlock = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &rwlock,
+            "IntRwLock",
+            "read_lock_int",
+            args[0].span,
+            fctx,
+        )?;
+        let timeout_ms = self.gen_expr(&args[1], fctx)?;
+        if timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "read_lock_int expects (IntRwLock, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_rwlock_read(i64 {}, i64 {}, i64* {})",
+            err,
+            handle,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_rwlock_write_lock_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "write_lock_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let rwlock = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &rwlock,
+            "IntRwLock",
+            "write_lock_int",
+            args[0].span,
+            fctx,
+        )?;
+        let timeout_ms = self.gen_expr(&args[1], fctx)?;
+        if timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "write_lock_int expects (IntRwLock, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_rwlock_write_lock(i64 {}, i64 {}, i64* {})",
+            err,
+            handle,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_rwlock_write_unlock_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "write_unlock_int expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let rwlock = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &rwlock,
+            "IntRwLock",
+            "write_unlock_int",
+            args[0].span,
+            fctx,
+        )?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "write_unlock_int expects (IntRwLock, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_rwlock_write_unlock(i64 {}, i64 {})",
+            err,
+            handle,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_close_rwlock_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "close_rwlock expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let rwlock = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &rwlock,
+            "IntRwLock",
+            "close_rwlock",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_rwlock_close(i64 {})",
             err, handle
         ));
         let result_ty = self.concurrency_result_ty(name, span)?;
@@ -31887,6 +32306,7 @@ enum ResourceDropAction {
     NetTcpClose,
     ConcurrencyCloseChannel,
     ConcurrencyCloseMutex,
+    ConcurrencyCloseRwLock,
 }
 
 fn find_local(scopes: &[BTreeMap<String, Local>], name: &str) -> Option<Local> {
@@ -32126,6 +32546,11 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("conc", "lock_int") => Some("aic_conc_mutex_lock_intrinsic"),
         ("conc", "unlock_int") => Some("aic_conc_mutex_unlock_intrinsic"),
         ("conc", "close_mutex") => Some("aic_conc_mutex_close_intrinsic"),
+        ("conc", "rwlock_int") => Some("aic_conc_rwlock_int_intrinsic"),
+        ("conc", "read_lock_int") => Some("aic_conc_rwlock_read_intrinsic"),
+        ("conc", "write_lock_int") => Some("aic_conc_rwlock_write_lock_intrinsic"),
+        ("conc", "write_unlock_int") => Some("aic_conc_rwlock_write_unlock_intrinsic"),
+        ("conc", "close_rwlock") => Some("aic_conc_rwlock_close_intrinsic"),
         ("fs", "exists") => Some("aic_fs_exists_intrinsic"),
         ("fs", "read_text") => Some("aic_fs_read_text_intrinsic"),
         ("fs", "write_text") => Some("aic_fs_write_text_intrinsic"),
@@ -32493,6 +32918,7 @@ fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
         "TcpReader" => Some(ResourceDropAction::NetTcpClose),
         "IntChannel" => Some(ResourceDropAction::ConcurrencyCloseChannel),
         "IntMutex" => Some(ResourceDropAction::ConcurrencyCloseMutex),
+        "IntRwLock" => Some(ResourceDropAction::ConcurrencyCloseRwLock),
         _ => None,
     }
 }
@@ -32504,6 +32930,7 @@ fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
         ResourceDropAction::NetTcpClose => "aic_rt_net_tcp_close",
         ResourceDropAction::ConcurrencyCloseChannel => "aic_rt_conc_close_channel",
         ResourceDropAction::ConcurrencyCloseMutex => "aic_rt_conc_mutex_close",
+        ResourceDropAction::ConcurrencyCloseRwLock => "aic_rt_conc_rwlock_close",
     }
 }
 
@@ -44274,6 +44701,43 @@ long aic_rt_conc_mutex_close(long handle) {
     return 7;
 }
 
+long aic_rt_conc_rwlock_int(long initial, long* out_handle) {
+    (void)initial;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
+    (void)handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value) {
+    (void)handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_rwlock_write_unlock(long handle, long value) {
+    (void)handle;
+    (void)value;
+    return 7;
+}
+
+long aic_rt_conc_rwlock_close(long handle) {
+    (void)handle;
+    return 7;
+}
+
 long aic_rt_conc_payload_store(
     const char* payload_ptr,
     long payload_len,
@@ -44311,6 +44775,7 @@ long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
 #define AIC_RT_CONC_TASK_CAP 128
 #define AIC_RT_CONC_CHANNEL_CAP 128
 #define AIC_RT_CONC_MUTEX_CAP 128
+#define AIC_RT_CONC_RWLOCK_CAP 128
 #define AIC_RT_CONC_SCOPE_CAP 128
 #define AIC_RT_CONC_PAYLOAD_CAP 4096
 
@@ -44358,6 +44823,15 @@ typedef struct {
 
 typedef struct {
     int active;
+    int closed;
+    int write_locked;
+    long value;
+    pthread_rwlock_t rwlock;
+    pthread_mutex_t meta_mutex;
+} AicConcRwLockSlot;
+
+typedef struct {
+    int active;
     int cancelled;
     long parent;
 } AicConcScopeSlot;
@@ -44371,6 +44845,7 @@ typedef struct {
 static AicConcTaskSlot aic_rt_conc_tasks[AIC_RT_CONC_TASK_CAP];
 static AicConcChannelSlot aic_rt_conc_channels[AIC_RT_CONC_CHANNEL_CAP];
 static AicConcMutexSlot aic_rt_conc_mutexes[AIC_RT_CONC_MUTEX_CAP];
+static AicConcRwLockSlot aic_rt_conc_rwlocks[AIC_RT_CONC_RWLOCK_CAP];
 static AicConcScopeSlot aic_rt_conc_scopes[AIC_RT_CONC_SCOPE_CAP];
 static AicConcPayloadSlot aic_rt_conc_payloads[AIC_RT_CONC_PAYLOAD_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -44539,6 +45014,70 @@ static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
         return NULL;
     }
     return slot;
+}
+
+static AicConcRwLockSlot* aic_rt_conc_get_rwlock(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_RWLOCK_CAP) {
+        return NULL;
+    }
+    AicConcRwLockSlot* slot = &aic_rt_conc_rwlocks[handle - 1];
+    if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static long aic_rt_conc_payload_clone_internal(long payload_id, long* out_payload_id) {
+    if (out_payload_id != NULL) {
+        *out_payload_id = 0;
+    }
+    if (payload_id <= 0 || payload_id > AIC_RT_CONC_PAYLOAD_CAP) {
+        return 1;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_conc_payload_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_conc_map_errno(lock_rc);
+    }
+
+    AicConcPayloadSlot* src = &aic_rt_conc_payloads[payload_id - 1];
+    if (!src->active || src->ptr == NULL) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 1;
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
+        if (!aic_rt_conc_payloads[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 7;
+    }
+
+    size_t size = (size_t)src->len;
+    char* copy = (char*)malloc(size + 1UL);
+    if (copy == NULL) {
+        pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+        return 7;
+    }
+    if (size > 0) {
+        memcpy(copy, src->ptr, size);
+    }
+    copy[size] = '\0';
+
+    aic_rt_conc_payloads[slot_index].active = 1;
+    aic_rt_conc_payloads[slot_index].ptr = copy;
+    aic_rt_conc_payloads[slot_index].len = src->len;
+    if (out_payload_id != NULL) {
+        *out_payload_id = slot_index + 1;
+    }
+
+    pthread_mutex_unlock(&aic_rt_conc_payload_mutex);
+    return 0;
 }
 
 static void aic_rt_conc_task_set_name(
@@ -45651,6 +46190,218 @@ long aic_rt_conc_mutex_close(long handle) {
     slot->locked = 0;
     pthread_cond_broadcast(&slot->cond);
     pthread_mutex_unlock(&slot->mutex);
+    return 0;
+}
+
+long aic_rt_conc_rwlock_int(long initial, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+
+    long slot_index = -1;
+    for (long i = 0; i < AIC_RT_CONC_RWLOCK_CAP; ++i) {
+        if (!aic_rt_conc_rwlocks[i].active) {
+            slot_index = i;
+            break;
+        }
+    }
+    if (slot_index < 0) {
+        return 7;
+    }
+
+    AicConcRwLockSlot* slot = &aic_rt_conc_rwlocks[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    if (pthread_rwlock_init(&slot->rwlock, NULL) != 0) {
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    if (pthread_mutex_init(&slot->meta_mutex, NULL) != 0) {
+        pthread_rwlock_destroy(&slot->rwlock);
+        memset(slot, 0, sizeof(*slot));
+        return 7;
+    }
+    slot->active = 1;
+    slot->closed = 0;
+    slot->write_locked = 0;
+    slot->value = initial;
+    if (out_handle != NULL) {
+        *out_handle = slot_index + 1;
+    }
+    return 0;
+}
+
+long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0) {
+        return 4;
+    }
+    AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    long started_ms = aic_rt_time_monotonic_ms();
+    if (started_ms < 0) {
+        started_ms = 0;
+    }
+    for (;;) {
+        int try_rc = pthread_rwlock_tryrdlock(&slot->rwlock);
+        if (try_rc == 0) {
+            break;
+        }
+#if defined(EBUSY) && defined(EAGAIN)
+        if (try_rc == EBUSY || try_rc == EAGAIN) {
+#elif defined(EBUSY)
+        if (try_rc == EBUSY) {
+#elif defined(EAGAIN)
+        if (try_rc == EAGAIN) {
+#else
+        if (0) {
+#endif
+            if (timeout_ms == 0) {
+                return 2;
+            }
+            long now_ms = aic_rt_time_monotonic_ms();
+            if (now_ms < 0) {
+                now_ms = started_ms;
+            }
+            if (now_ms - started_ms >= timeout_ms) {
+                return 2;
+            }
+            aic_rt_time_sleep_ms(1);
+            continue;
+        }
+        return aic_rt_conc_map_errno(try_rc);
+    }
+
+    int meta_lock_rc = pthread_mutex_lock(&slot->meta_mutex);
+    if (meta_lock_rc != 0) {
+        pthread_rwlock_unlock(&slot->rwlock);
+        return aic_rt_conc_map_errno(meta_lock_rc);
+    }
+    if (slot->closed) {
+        pthread_mutex_unlock(&slot->meta_mutex);
+        pthread_rwlock_unlock(&slot->rwlock);
+        return 6;
+    }
+    long payload_id = slot->value;
+    pthread_mutex_unlock(&slot->meta_mutex);
+
+    long cloned_payload_id = 0;
+    long clone_rc = aic_rt_conc_payload_clone_internal(payload_id, &cloned_payload_id);
+    pthread_rwlock_unlock(&slot->rwlock);
+    if (clone_rc != 0) {
+        return clone_rc;
+    }
+    if (out_value != NULL) {
+        *out_value = cloned_payload_id;
+    }
+    return 0;
+}
+
+long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0) {
+        return 4;
+    }
+    AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    long started_ms = aic_rt_time_monotonic_ms();
+    if (started_ms < 0) {
+        started_ms = 0;
+    }
+    for (;;) {
+        int try_rc = pthread_rwlock_trywrlock(&slot->rwlock);
+        if (try_rc == 0) {
+            break;
+        }
+#if defined(EBUSY) && defined(EAGAIN)
+        if (try_rc == EBUSY || try_rc == EAGAIN) {
+#elif defined(EBUSY)
+        if (try_rc == EBUSY) {
+#elif defined(EAGAIN)
+        if (try_rc == EAGAIN) {
+#else
+        if (0) {
+#endif
+            if (timeout_ms == 0) {
+                return 2;
+            }
+            long now_ms = aic_rt_time_monotonic_ms();
+            if (now_ms < 0) {
+                now_ms = started_ms;
+            }
+            if (now_ms - started_ms >= timeout_ms) {
+                return 2;
+            }
+            aic_rt_time_sleep_ms(1);
+            continue;
+        }
+        return aic_rt_conc_map_errno(try_rc);
+    }
+
+    int meta_lock_rc = pthread_mutex_lock(&slot->meta_mutex);
+    if (meta_lock_rc != 0) {
+        pthread_rwlock_unlock(&slot->rwlock);
+        return aic_rt_conc_map_errno(meta_lock_rc);
+    }
+    if (slot->closed) {
+        pthread_mutex_unlock(&slot->meta_mutex);
+        pthread_rwlock_unlock(&slot->rwlock);
+        return 6;
+    }
+    slot->write_locked = 1;
+    long payload_id = slot->value;
+    pthread_mutex_unlock(&slot->meta_mutex);
+    if (out_value != NULL) {
+        *out_value = payload_id;
+    }
+    return 0;
+}
+
+long aic_rt_conc_rwlock_write_unlock(long handle, long value) {
+    AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+
+    int meta_lock_rc = pthread_mutex_lock(&slot->meta_mutex);
+    if (meta_lock_rc != 0) {
+        return aic_rt_conc_map_errno(meta_lock_rc);
+    }
+    if (!slot->write_locked) {
+        pthread_mutex_unlock(&slot->meta_mutex);
+        return 4;
+    }
+    slot->value = value;
+    slot->write_locked = 0;
+    pthread_mutex_unlock(&slot->meta_mutex);
+
+    int unlock_rc = pthread_rwlock_unlock(&slot->rwlock);
+    if (unlock_rc != 0) {
+        return aic_rt_conc_map_errno(unlock_rc);
+    }
+    return 0;
+}
+
+long aic_rt_conc_rwlock_close(long handle) {
+    AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int meta_lock_rc = pthread_mutex_lock(&slot->meta_mutex);
+    if (meta_lock_rc != 0) {
+        return aic_rt_conc_map_errno(meta_lock_rc);
+    }
+    slot->closed = 1;
+    pthread_mutex_unlock(&slot->meta_mutex);
     return 0;
 }
 
@@ -55044,6 +55795,9 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_conc_rwlock_write_lock(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
         assert!(output.llvm_ir.contains(
             "declare i64 @aic_rt_net_udp_recv_from(i64, i64, i64, i8**, i64*, i8**, i64*)"
@@ -55287,6 +56041,9 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source().contains("long aic_rt_conc_select_recv_int("));
         assert!(runtime_c_source().contains(
             "long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value)"
+        ));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value)"
         ));
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));

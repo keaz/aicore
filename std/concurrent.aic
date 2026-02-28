@@ -51,6 +51,24 @@ struct IntMutex {
     handle: Int,
 }
 
+struct Mutex[T] {
+    handle: Int,
+}
+
+struct MutexGuard[T] {
+    handle: Int,
+    guard_kind: Int,
+    value: T,
+}
+
+struct RwLock[T] {
+    handle: Int,
+}
+
+struct IntRwLock {
+    handle: Int,
+}
+
 struct IntTaskSelection {
     task_index: Int,
     value: Int,
@@ -89,6 +107,11 @@ intrinsic fn aic_conc_mutex_int_intrinsic(initial: Int) -> Result[IntMutex, Conc
 intrinsic fn aic_conc_mutex_lock_intrinsic(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_mutex_unlock_intrinsic(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_mutex_close_intrinsic(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_rwlock_int_intrinsic(initial: Int) -> Result[IntRwLock, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_rwlock_read_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_rwlock_write_lock_intrinsic(rwlock: IntRwLock, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_rwlock_write_unlock_intrinsic(rwlock: IntRwLock, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_rwlock_close_intrinsic(rwlock: IntRwLock) -> Result[Bool, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_payload_drop_intrinsic(payload_id: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
@@ -170,6 +193,105 @@ fn decode_task_payload[T](payload_id: Int) -> Result[T, ConcurrencyError] effect
     match decode_payload_for_receiver(payload_id, hint) {
         Ok(value) => Ok(value),
         Err(err) => Err(map_channel_to_concurrency_error(err)),
+    }
+}
+
+fn none_from_mutex[T](hint: Mutex[T]) -> Option[T] {
+    let _hint = hint;
+    None()
+}
+
+fn none_from_rwlock[T](hint: RwLock[T]) -> Option[T] {
+    let _hint = hint;
+    None()
+}
+
+fn decode_payload_for_mutex[T](
+    payload_id: Int,
+    hint: Mutex[T],
+) -> Result[T, ConcurrencyError] effects { concurrency } {
+    match aic_conc_payload_take_intrinsic(payload_id) {
+        Ok(payload) => match aic_json_parse_intrinsic(payload) {
+            Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, none_from_mutex(hint)) {
+                Ok(value) => Ok(value),
+                Err(_) => Err(Closed()),
+            },
+            Err(_) => Err(Closed()),
+        },
+        Err(err) => Err(err),
+    }
+}
+
+fn decode_payload_for_rwlock[T](
+    payload_id: Int,
+    hint: RwLock[T],
+) -> Result[T, ConcurrencyError] effects { concurrency } {
+    match aic_conc_payload_take_intrinsic(payload_id) {
+        Ok(payload) => match aic_json_parse_intrinsic(payload) {
+            Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, none_from_rwlock(hint)) {
+                Ok(value) => Ok(value),
+                Err(_) => Err(Closed()),
+            },
+            Err(_) => Err(Closed()),
+        },
+        Err(err) => Err(err),
+    }
+}
+
+fn mutex_decode_error[T](
+    handle: Int,
+    payload_id: Int,
+    err: ConcurrencyError,
+) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    let _unlock = aic_conc_mutex_unlock_intrinsic(IntMutex { handle: handle }, payload_id);
+    Err(err)
+}
+
+fn rwlock_decode_error[T](
+    handle: Int,
+    payload_id: Int,
+    err: ConcurrencyError,
+) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    let _unlock =
+        aic_conc_rwlock_write_unlock_intrinsic(IntRwLock { handle: handle }, payload_id);
+    Err(err)
+}
+
+fn decode_mutex_locked_payload[T](
+    m: Mutex[T],
+    payload_id: Int,
+) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    let hint: Mutex[T] = Mutex { handle: m.handle };
+    match decode_payload_for_mutex(payload_id, hint) {
+        Ok(value) => Ok(MutexGuard {
+            handle: m.handle,
+            guard_kind: 1,
+            value: value,
+        }),
+        Err(err) => mutex_decode_error(m.handle, payload_id, err),
+    }
+}
+
+fn decode_rwlock_read_payload[T](
+    rw: RwLock[T],
+    payload_id: Int,
+) -> Result[T, ConcurrencyError] effects { concurrency } {
+    let hint: RwLock[T] = RwLock { handle: rw.handle };
+    decode_payload_for_rwlock(payload_id, hint)
+}
+
+fn decode_rwlock_write_payload[T](
+    rw: RwLock[T],
+    payload_id: Int,
+) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    let hint: RwLock[T] = RwLock { handle: rw.handle };
+    match decode_payload_for_rwlock(payload_id, hint) {
+        Ok(value) => Ok(MutexGuard {
+            handle: rw.handle,
+            guard_kind: 2,
+            value: value,
+        }),
+        Err(err) => rwlock_decode_error(rw.handle, payload_id, err),
     }
 }
 
@@ -528,4 +650,102 @@ fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] eff
 
 fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_mutex_close_intrinsic(mutex)
+}
+
+fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency } {
+    match json_encode_payload(value) {
+        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
+            Ok(payload_id) => match aic_conc_mutex_int_intrinsic(payload_id) {
+                Ok(raw) => Mutex { handle: raw.handle },
+                Err(_) => Mutex { handle: 0 },
+            },
+            Err(_) => Mutex { handle: 0 },
+        },
+        Err(_) => Mutex { handle: 0 },
+    }
+}
+
+fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    lock_timeout(m, default_blocking_timeout_ms())
+}
+
+fn try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    lock_timeout(m, 0)
+}
+
+fn lock_timeout[T](m: Mutex[T], ms: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    match aic_conc_mutex_lock_intrinsic(IntMutex { handle: m.handle }, ms) {
+        Ok(payload_id) => decode_mutex_locked_payload(m, payload_id),
+        Err(err) => Err(err),
+    }
+}
+
+fn guard_value[T](g: MutexGuard[T]) -> T {
+    g.value
+}
+
+fn guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T] {
+    MutexGuard {
+        handle: g.handle,
+        guard_kind: g.guard_kind,
+        value: value,
+    }
+}
+
+fn unlock_guard[T](g: MutexGuard[T]) -> () effects { concurrency } {
+    let payload_id = match json_encode_payload(g.value) {
+        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
+            Ok(id) => id,
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+    if g.guard_kind == 2 {
+        let _unlock = aic_conc_rwlock_write_unlock_intrinsic(
+            IntRwLock { handle: g.handle },
+            payload_id,
+        );
+    } else {
+        let _unlock = aic_conc_mutex_unlock_intrinsic(
+            IntMutex { handle: g.handle },
+            payload_id,
+        );
+    }
+}
+
+fn new_rwlock[T](value: T) -> RwLock[T] effects { concurrency } {
+    match json_encode_payload(value) {
+        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
+            Ok(payload_id) => match aic_conc_rwlock_int_intrinsic(payload_id) {
+                Ok(raw) => RwLock { handle: raw.handle },
+                Err(_) => RwLock { handle: 0 },
+            },
+            Err(_) => RwLock { handle: 0 },
+        },
+        Err(_) => RwLock { handle: 0 },
+    }
+}
+
+fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency } {
+    match aic_conc_rwlock_read_intrinsic(
+        IntRwLock { handle: rw.handle },
+        default_blocking_timeout_ms(),
+    ) {
+        Ok(payload_id) => decode_rwlock_read_payload(rw, payload_id),
+        Err(err) => Err(err),
+    }
+}
+
+fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency } {
+    match aic_conc_rwlock_write_lock_intrinsic(
+        IntRwLock { handle: rw.handle },
+        default_blocking_timeout_ms(),
+    ) {
+        Ok(payload_id) => decode_rwlock_write_payload(rw, payload_id),
+        Err(err) => Err(err),
+    }
+}
+
+fn close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_rwlock_close_intrinsic(IntRwLock { handle: rw.handle })
 }

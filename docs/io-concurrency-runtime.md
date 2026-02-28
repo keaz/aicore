@@ -15,7 +15,8 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Generic channels: `Sender[T]` / `Receiver[T]` with buffered creation, blocking/non-blocking send/recv
 - Typed channel selection: `select2` and `select_any`
 - Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
-- Synchronization utility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
+- Generic synchronization: `Mutex[T]`, `MutexGuard[T]`, `RwLock[T]`
+- Legacy synchronization compatibility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 
 All APIs are `effects { concurrency }`.
 
@@ -52,6 +53,10 @@ struct IntTaskSelection { task_index: Int, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
 struct IntMutex { handle: Int }
+struct Mutex[T] { handle: Int }
+struct MutexGuard[T] { handle: Int, guard_kind: Int, value: T }
+struct RwLock[T] { handle: Int }
+struct IntRwLock { handle: Int }
 ```
 
 ## API
@@ -100,6 +105,19 @@ fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concu
 fn lock_int(mutex: IntMutex, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
 fn unlock_int(mutex: IntMutex, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { concurrency }
+
+fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency }
+fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
+fn try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
+fn lock_timeout[T](m: Mutex[T], ms: Int) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
+fn guard_value[T](g: MutexGuard[T]) -> T
+fn guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T]
+fn unlock_guard[T](g: MutexGuard[T]) -> () effects { concurrency }
+
+fn new_rwlock[T](value: T) -> RwLock[T] effects { concurrency }
+fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurrency }
+fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
+fn close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 ```
 
 ## Migration Strategy (Legacy -> Generic)
@@ -120,7 +138,7 @@ Legacy-to-preferred mapping:
 
 Planned legacy-to-generic transitions (sequenced with MT-T2/MT-T4):
 
-- `IntMutex` / `lock_int` / `unlock_int` -> `Mutex[T]` / guard-based lock APIs
+- `mutex_int` / `lock_int` / `unlock_int` -> `new_mutex[T]` / `lock[T]` / `unlock_guard[T]`
 - `Task` + `spawn_task(value, delay_ms)` -> `Task[T]` + closure-based `spawn(fn() -> T)`
 - Named/structured threads:
   - `spawn_named("worker-a", || -> T { ... })` for debuggable thread labels
@@ -193,6 +211,9 @@ Sunset policy:
   - Blocking receives on empty closed channel return `Err(Closed)`.
 - Locking and liveness:
   - `lock_int` uses bounded wait via `timeout_ms` and returns `Err(Timeout)` if lock cannot be acquired.
+  - `Mutex[T]` stores typed payloads via concurrency payload slots and exposes updates through `MutexGuard[T]`.
+  - `RwLock[T]` supports concurrent read access and exclusive write access.
+  - Read paths clone payload handles to keep read operations non-destructive.
 
 ## Error-Code Mapping
 
@@ -243,6 +264,11 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_mutex_lock`
 - `aic_rt_conc_mutex_unlock`
 - `aic_rt_conc_mutex_close`
+- `aic_rt_conc_rwlock_int`
+- `aic_rt_conc_rwlock_read`
+- `aic_rt_conc_rwlock_write_lock`
+- `aic_rt_conc_rwlock_write_unlock`
+- `aic_rt_conc_rwlock_close`
 - `aic_rt_conc_payload_store`
 - `aic_rt_conc_payload_take`
 - `aic_rt_conc_payload_drop`
@@ -260,6 +286,7 @@ Codegen lowers to these runtime symbols:
 ## Example
 
 - `examples/io/worker_pool.aic`
+- `examples/io/mutex_rwlock_shared_state.aic`
 - `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`

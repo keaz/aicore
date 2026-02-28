@@ -73,6 +73,27 @@ pub static DEPRECATED_APIS: &[DeprecatedApi] = &[
         since: "0.2.0",
         note: "prefer generic receiver API",
     },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "mutex_int",
+        replacement: "std.concurrent.new_mutex[Int]",
+        since: "0.2.0",
+        note: "prefer generic mutex API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "lock_int",
+        replacement: "std.concurrent.lock[Int]",
+        since: "0.2.0",
+        note: "prefer generic mutex API",
+    },
+    DeprecatedApi {
+        module: "std.concurrent",
+        symbol: "unlock_int",
+        replacement: "std.concurrent.unlock_guard[Int]",
+        since: "0.2.0",
+        note: "prefer generic mutex API",
+    },
 ];
 
 pub fn find_deprecated_api(module: &str, symbol: &str) -> Option<&'static DeprecatedApi> {
@@ -338,6 +359,15 @@ mod tests {
         let recv =
             find_deprecated_api("std.concurrent", "recv_int").expect("recv_int deprecation entry");
         assert_eq!(recv.replacement, "std.concurrent.recv[Int]");
+        let mutex = find_deprecated_api("std.concurrent", "mutex_int")
+            .expect("mutex_int deprecation entry");
+        assert_eq!(mutex.replacement, "std.concurrent.new_mutex[Int]");
+        let lock =
+            find_deprecated_api("std.concurrent", "lock_int").expect("lock_int deprecation entry");
+        assert_eq!(lock.replacement, "std.concurrent.lock[Int]");
+        let unlock = find_deprecated_api("std.concurrent", "unlock_int")
+            .expect("unlock_int deprecation entry");
+        assert_eq!(unlock.replacement, "std.concurrent.unlock_guard[Int]");
     }
 
     #[test]
