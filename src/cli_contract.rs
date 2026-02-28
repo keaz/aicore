@@ -154,7 +154,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "doc",
         description: "Generate package API docs",
-        stable_flags: &["--output", "--offline"],
+        stable_flags: &["--output", "--format", "--offline"],
         output_modes: &["text"],
     },
     CommandContract {

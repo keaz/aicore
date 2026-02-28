@@ -434,6 +434,7 @@ Diagnostics:
 
 - Emits deterministic docs to output directory (default `docs/api`).
 - Produces:
+  - `index.html`
   - `index.md`
   - `api.json`
 - Includes signatures, effects, contracts, invariants, and deprecation metadata.

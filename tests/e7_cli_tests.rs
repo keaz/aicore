@@ -3852,3 +3852,251 @@ fn prod_t3_t7_t9_examples_are_ci_wired_and_run_with_expected_outputs() {
         assert_eq!(String::from_utf8_lossy(&run.stdout), expected, "{rel}");
     }
 }
+
+#[test]
+fn doc_command_supports_format_flags_and_doc_comment_metadata() {
+    let project = tempdir().expect("project");
+    let source = project.path().join("docs_demo.aic");
+    fs::write(
+        &source,
+        r#"module docs.demo;
+
+/// A typed metric value.
+///
+/// ## Example
+/// ```aic
+/// Metric { value: 1 }
+/// ```
+struct Metric {
+    value: Int
+}
+
+/// Build a metric from an integer.
+///
+/// ## Example
+/// ```aic
+/// make_metric(1)
+/// ```
+fn make_metric(v: Int) -> Metric {
+    Metric { value: v }
+}
+
+fn main() -> Int {
+    0
+}
+"#,
+    )
+    .expect("write docs demo source");
+
+    let source_arg = source.to_string_lossy().to_string();
+
+    let json_out = project.path().join("target/docs-json");
+    let json_out_arg = json_out.to_string_lossy().to_string();
+    let json_run = run_aic_in_dir(
+        project.path(),
+        &[
+            "doc",
+            &source_arg,
+            "--output",
+            &json_out_arg,
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(
+        json_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&json_run.stdout),
+        String::from_utf8_lossy(&json_run.stderr)
+    );
+    let api_path = json_out.join("api.json");
+    assert!(api_path.is_file(), "missing api.json output");
+    let payload: Value =
+        serde_json::from_str(&fs::read_to_string(&api_path).expect("read api json")).expect("json");
+    let modules = payload["modules"].as_array().expect("modules array");
+    let docs_demo = modules
+        .iter()
+        .find(|module| module["module"].as_str() == Some("docs.demo"))
+        .expect("docs.demo module");
+    let items = docs_demo["items"].as_array().expect("items array");
+    let make_metric = items
+        .iter()
+        .find(|item| item["name"].as_str() == Some("make_metric"))
+        .expect("make_metric item");
+    assert_eq!(
+        make_metric["summary"].as_str(),
+        Some("Build a metric from an integer.")
+    );
+    assert_eq!(make_metric["return_type"].as_str(), Some("Metric"));
+    assert_eq!(
+        make_metric["return_type_link"].as_str(),
+        Some("#type-metric")
+    );
+    assert!(
+        make_metric["examples"]
+            .as_array()
+            .is_some_and(|examples| !examples.is_empty()),
+        "expected extracted doc examples"
+    );
+    assert!(
+        make_metric["source_path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("docs_demo.aic")),
+        "expected source_path to reference docs_demo.aic"
+    );
+    assert!(
+        make_metric["source_line"]
+            .as_u64()
+            .is_some_and(|line| line > 0),
+        "expected positive source line for make_metric"
+    );
+
+    let md_out = project.path().join("target/docs-md");
+    let md_out_arg = md_out.to_string_lossy().to_string();
+    let md_run = run_aic_in_dir(
+        project.path(),
+        &[
+            "doc",
+            &source_arg,
+            "--output",
+            &md_out_arg,
+            "--format",
+            "markdown",
+        ],
+    );
+    assert_eq!(
+        md_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&md_run.stdout),
+        String::from_utf8_lossy(&md_run.stderr)
+    );
+    let index_md = fs::read_to_string(md_out.join("index.md")).expect("read markdown docs");
+    assert!(index_md.contains("- Returns: [Metric](#type-metric)"));
+
+    let html_out = project.path().join("target/docs-html");
+    let html_out_arg = html_out.to_string_lossy().to_string();
+    let html_run = run_aic_in_dir(
+        project.path(),
+        &[
+            "doc",
+            &source_arg,
+            "--output",
+            &html_out_arg,
+            "--format",
+            "html",
+        ],
+    );
+    assert_eq!(
+        html_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&html_run.stdout),
+        String::from_utf8_lossy(&html_run.stderr)
+    );
+    let index_html = fs::read_to_string(html_out.join("index.html")).expect("read html docs");
+    assert!(index_html.contains("searchBox"));
+    assert!(index_html.contains("type-metric"));
+
+    let all_out = project.path().join("target/docs-all");
+    let all_out_arg = all_out.to_string_lossy().to_string();
+    let all_run = run_aic_in_dir(
+        project.path(),
+        &["doc", &source_arg, "--output", &all_out_arg],
+    );
+    assert_eq!(
+        all_run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&all_run.stdout),
+        String::from_utf8_lossy(&all_run.stderr)
+    );
+    let all_stdout = String::from_utf8_lossy(&all_run.stdout);
+    assert!(
+        all_stdout
+            .trim()
+            .ends_with(&format!("{}/index.html", all_out_arg)),
+        "expected default doc output to report index.html\nstdout={all_stdout}"
+    );
+    assert!(
+        all_out.join("index.html").is_file(),
+        "missing default html output"
+    );
+    assert!(
+        all_out.join("index.md").is_file(),
+        "missing default markdown output"
+    );
+    assert!(
+        all_out.join("api.json").is_file(),
+        "missing default json output"
+    );
+}
+
+#[test]
+fn doc_command_std_net_json_includes_all_declared_functions() {
+    let root = repo_root();
+    let source = root.join("std/net.aic");
+    let project = tempdir().expect("project");
+    let output_dir = project.path().join("target/std-net-docs");
+    let output_arg = output_dir.to_string_lossy().to_string();
+    let source_arg = source.to_string_lossy().to_string();
+
+    let run = run_aic_in_dir(
+        project.path(),
+        &[
+            "doc",
+            &source_arg,
+            "--output",
+            &output_arg,
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let source_text = fs::read_to_string(&source).expect("read std/net.aic");
+    let mut declared_functions = source_text
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed
+                .strip_prefix("fn ")
+                .or_else(|| trimmed.strip_prefix("intrinsic fn "))?;
+            let (name, _) = rest.split_once('(')?;
+            Some(name.trim().to_string())
+        })
+        .collect::<Vec<_>>();
+    declared_functions.sort();
+    declared_functions.dedup();
+
+    let payload: Value = serde_json::from_str(
+        &fs::read_to_string(output_dir.join("api.json")).expect("read api.json"),
+    )
+    .expect("parse api json");
+    let modules = payload["modules"].as_array().expect("modules array");
+    let std_net = modules
+        .iter()
+        .find(|module| module["module"].as_str() == Some("std.net"))
+        .expect("std.net module in docs json");
+    let mut documented_functions = std_net["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .filter(|item| item["kind"].as_str() == Some("fn"))
+        .filter_map(|item| item["name"].as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    documented_functions.sort();
+    documented_functions.dedup();
+
+    assert_eq!(
+        documented_functions, declared_functions,
+        "std.net function coverage mismatch in aic doc json"
+    );
+}

@@ -759,8 +759,8 @@ fn std_api_docs_explain_human_and_machine_readable_outputs() {
             doc_path.display()
         );
         assert!(
-            text.contains("index.md"),
-            "{} must describe the human-readable output file",
+            text.contains("index.html") && text.contains("index.md"),
+            "{} must describe the human-readable HTML and Markdown output files",
             doc_path.display()
         );
         assert!(
@@ -807,7 +807,11 @@ fn std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs(
     );
     assert_eq!(
         expected_files,
-        vec!["index.md".to_string(), "api.json".to_string()],
+        vec![
+            "index.html".to_string(),
+            "index.md".to_string(),
+            "api.json".to_string(),
+        ],
         "std API docgen file contract changed unexpectedly in {}",
         doc_path.display()
     );
@@ -837,7 +841,7 @@ fn std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs(
         );
 
         let expected_index = output_root.join("index.md");
-        let expected_index_suffix = output_dir.join("index.md");
+        let expected_index_suffix = output_dir.join("index.html");
         assert!(
             stdout.trim().starts_with("generated ")
                 && stdout

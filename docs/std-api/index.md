@@ -31,9 +31,10 @@ The check treats removed/changed symbols as breaking and additive symbols as com
 
 ## `aic doc` generation contract
 
-`aic doc <input> --output <dir>` creates `<dir>` when missing and always emits:
+`aic doc <input> --output <dir>` creates `<dir>` when missing. With the default `--format all`, it emits:
 
-- `index.md`: human-readable module documentation.
+- `index.html`: human-readable browsable API reference with client-side search.
+- `index.md`: human-readable markdown API reference suitable for repository docs.
 - `api.json`: machine-readable module/item payload (`schema_version = 1`).
 
 Use these commands to validate module and std documentation generation behavior:
@@ -46,6 +47,7 @@ aic doc std/fs.aic --output target/docs-contract/std-fs-docs
 Each command above must produce the following files inside its output directory:
 
 <!-- std-api:docgen-files:start -->
+index.html
 index.md
 api.json
 <!-- std-api:docgen-files:end -->

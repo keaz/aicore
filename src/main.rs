@@ -22,7 +22,7 @@ use aicore::daemon;
 use aicore::diag_fixes::apply_safe_fixes;
 use aicore::diagnostic_explain::{explain, explain_text};
 use aicore::diagnostics::{Diagnostic, Severity};
-use aicore::docgen::generate_docs;
+use aicore::docgen::{generate_docs, DocFormat};
 use aicore::driver::{
     diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
     sort_diagnostics, FrontendOptions, FrontendOutput,
@@ -257,6 +257,8 @@ enum Command {
         input: PathBuf,
         #[arg(short, long, default_value = "docs/api")]
         output: PathBuf,
+        #[arg(long, value_enum, default_value = "all")]
+        format: DocFormatArg,
         #[arg(long)]
         offline: bool,
     },
@@ -369,6 +371,14 @@ enum BuildTarget {
     X8664Windows,
     #[value(name = "wasm32")]
     Wasm32,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DocFormatArg {
+    All,
+    Html,
+    Markdown,
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1711,6 +1721,7 @@ fn run_cli() -> anyhow::Result<i32> {
         Command::Doc {
             input,
             output,
+            format,
             offline,
         } => {
             let front = run_frontend_with_options(&input, FrontendOptions { offline })?;
@@ -1718,8 +1729,14 @@ fn run_cli() -> anyhow::Result<i32> {
                 print!("{}", diagnostics_pretty(&front.diagnostics));
                 EXIT_DIAGNOSTIC_ERROR
             } else {
-                let out = generate_docs(&front, &output)?;
-                println!("generated {}", out.index_path.display());
+                let format = match format {
+                    DocFormatArg::All => DocFormat::All,
+                    DocFormatArg::Html => DocFormat::Html,
+                    DocFormatArg::Markdown => DocFormat::Markdown,
+                    DocFormatArg::Json => DocFormat::Json,
+                };
+                let out = generate_docs(&front, &output, &input, format)?;
+                println!("generated {}", out.primary_path.display());
                 EXIT_OK
             }
         }

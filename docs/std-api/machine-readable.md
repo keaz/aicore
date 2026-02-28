@@ -12,6 +12,7 @@ The command prints JSON matching `/Users/kasunranasinghe/Projects/Rust/aicore/sr
 
 `aic doc <input> --output <dir>` emits both documentation formats from the same frontend/docgen pass:
 
+- `<dir>/index.html`: human-readable browsable API reference.
 - `<dir>/index.md`: human-readable rendered API reference.
 - `<dir>/api.json`: machine-readable API index used by automation checks.
 
