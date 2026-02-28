@@ -2,6 +2,8 @@
 
 AICore is an **agent-native, IR-first programming language** designed for **human + AI agent collaboration** on real software. It features deterministic formatting, structured diagnostics, a type + effect checker, design-by-contract support, and an LLVM native backend.
 
+**Inspired by Rust**, AICore inherits many of the principles that make Rust a reliable systems language — strong static typing with no implicit coercions, an ownership and borrow discipline for memory safety, algebraic data types (`enum`/`struct`), exhaustive pattern matching, explicit error handling via `Result[T, E]` and `Option[T]` (no null), and trait-based generics. AICore extends these foundations with an explicit effect system, design-by-contract (`requires`/`ensures`/`invariant`), an IR-first architecture for deterministic tooling, and structured machine-readable diagnostics — all purpose-built for AI agent workflows at scale.
+
 The canonical source of truth is **IR** (`aic ir --emit json`), while text syntax is a deterministic view (`aic fmt`).
 
 ---
