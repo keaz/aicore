@@ -611,15 +611,15 @@ fn verify_intrinsics_std_runtime_bindings_emit_stable_json() {
     assert_eq!(report["ok"], true);
     assert_eq!(report["issue_count"], 0);
     assert!(
-        report["files_scanned"].as_u64().unwrap_or(0) >= 3,
+        report["files_scanned"].as_u64().unwrap_or(0) >= 35,
         "report={report:#}"
     );
     assert!(
-        report["intrinsic_declarations"].as_u64().unwrap_or(0) >= 48,
+        report["intrinsic_declarations"].as_u64().unwrap_or(0) >= 120,
         "report={report:#}"
     );
-    assert!(
-        report["verified_bindings"].as_u64().unwrap_or(0) >= 48,
+    assert_eq!(
+        report["verified_bindings"], report["intrinsic_declarations"],
         "report={report:#}"
     );
 }

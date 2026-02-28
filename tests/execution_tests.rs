@@ -6017,6 +6017,94 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_prod_t1_intrinsics_runtime_smoke() {
+    let src = r#"
+import std.bytes;
+import std.concurrent;
+import std.crypto;
+import std.io;
+import std.net;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn digest_matches_hex(digest_hex: String, expected_hex: String) -> Bool {
+    match hex_decode(digest_hex) {
+        Ok(actual) => match hex_decode(expected_hex) {
+            Ok(expected) => secure_eq(actual, expected),
+            Err(_) => false,
+        },
+        Err(_) => false,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency, env, proc } capabilities { io, net, concurrency, env, proc  } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let send_ok = match tcp_send(client, bytes.from_string("ok")) {
+        Ok(n) => bool_to_int(n == 2),
+        Err(_) => 0,
+    };
+    let recv_ok = match tcp_recv(server, 8, 1000) {
+        Ok(payload) => bool_to_int(bytes.byte_len(payload) == 2),
+        Err(_) => 0,
+    };
+    let close_ok =
+        match tcp_close(client) {
+            Ok(done) => bool_to_int(done),
+            Err(_) => 0,
+        } +
+        match tcp_close(server) {
+            Ok(done) => bool_to_int(done),
+            Err(_) => 0,
+        } +
+        match tcp_close(listener) {
+            Ok(done) => bool_to_int(done),
+            Err(_) => 0,
+        };
+
+    let sha_ok = bool_to_int(
+        digest_matches_hex(
+            sha256("hello"),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        )
+    );
+    let task: Task[Int] = spawn_named("prod-t1-smoke", || -> Int { 42 });
+    let join_ok = match join_value(task) {
+        Ok(value) => bool_to_int(value == 42),
+        Err(_) => 0,
+    };
+
+    if send_ok + recv_ok + close_ok + sha_ok + join_ok == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_udp_and_dns_helpers() {
     let src = r#"
 import std.io;

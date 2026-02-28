@@ -31,6 +31,24 @@ Validate with:
 aic verify-intrinsics std --json
 ```
 
+## PROD-T1 Acceptance Coverage
+
+`[PROD-T1]` requires real runtime behavior for networking, crypto, and concurrency intrinsics.
+These acceptance checks are wired into repository tests/examples:
+
+- `tcp_connect("127.0.0.1:...")` opens a real loopback socket:
+  - `tests/execution_tests.rs::exec_net_tcp_loopback_echo`
+  - `tests/execution_tests.rs::exec_prod_t1_intrinsics_runtime_smoke`
+- `sha256("hello")` returns the expected digest:
+  - `tests/execution_tests.rs::exec_crypto_vectors_roundtrip_and_secure_compare_paths`
+  - `tests/execution_tests.rs::exec_prod_t1_intrinsics_runtime_smoke`
+- `spawn(|| -> Int { 42 })` runs on runtime-backed task execution:
+  - `tests/execution_tests.rs::exec_concurrency_spawn_join_generic_closure_capture_is_stable`
+  - `tests/execution_tests.rs::exec_prod_t1_intrinsics_runtime_smoke`
+- Intrinsic binding completeness over the standard library:
+  - `tests/e7_cli_tests.rs::verify_intrinsics_std_runtime_bindings_emit_stable_json`
+  - `aic verify-intrinsics std --json`
+
 ## Side-Effect Boundaries
 
 Effect authority is carried by intrinsic signatures and wrapper APIs:
@@ -65,10 +83,14 @@ This rejects source-level body implementations for `aic_conc_*_intrinsic`, `aic_
 - Verification fixtures:
   - `examples/verify/intrinsics/valid_bindings.aic`
   - `examples/verify/intrinsics/invalid_bindings.aic`
+- PROD-T1 runtime smoke example:
+  - `examples/io/prod_t1_intrinsics_runtime_smoke.aic`
 
 <!-- docs-test:start -->
 aic check examples/core/intrinsic_declaration_demo.aic
 ! aic check examples/core/intrinsic_declaration_invalid_body.aic
 aic verify-intrinsics examples/verify/intrinsics/valid_bindings.aic --json
 ! aic verify-intrinsics examples/verify/intrinsics/invalid_bindings.aic --json
+aic verify-intrinsics std --json
+aic run examples/io/prod_t1_intrinsics_runtime_smoke.aic
 <!-- docs-test:end -->
