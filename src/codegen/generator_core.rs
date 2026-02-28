@@ -2614,6 +2614,13 @@ impl<'a> Generator<'a> {
             return value;
         }
 
+        if name == "aic_for_into_iter" {
+            return self.gen_for_into_iter_call(args, span, expected_ty, fctx);
+        }
+        if name == "aic_for_next_iter" {
+            return self.gen_for_next_iter_call(args, span, expected_ty, fctx);
+        }
+
         if name == "print_int" || name == "aic_io_print_int_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
@@ -3027,34 +3034,7 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let receiver = self.gen_expr(base, fctx)?;
-        let receiver_type_name = match &receiver.ty {
-            LType::Struct(layout) => {
-                let base = base_type_name(&layout.repr);
-                if base == "Ref" || base == "RefMut" {
-                    extract_generic_args(&layout.repr)
-                        .and_then(|args| args.first().cloned())
-                        .map(|inner| base_type_name(&inner).to_string())
-                        .unwrap_or_else(|| base.to_string())
-                } else {
-                    base.to_string()
-                }
-            }
-            LType::Enum(layout) => base_type_name(&layout.repr).to_string(),
-            LType::Int => "Int".to_string(),
-            LType::Float => "Float".to_string(),
-            LType::Bool => "Bool".to_string(),
-            LType::String => "String".to_string(),
-            LType::Unit => "()".to_string(),
-            other => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5012",
-                    format!("type '{other:?}' does not support method call syntax"),
-                    self.file,
-                    base.span,
-                ));
-                return None;
-            }
-        };
+        let receiver_type_name = self.method_receiver_type_name(&receiver, base.span)?;
 
         let associated = format!("{receiver_type_name}::{field}");
         let mut values = Vec::with_capacity(args.len() + 1);
@@ -3063,6 +3043,140 @@ impl<'a> Generator<'a> {
             values.push(self.gen_expr(arg, fctx)?);
         }
         self.gen_named_function_call_with_values(&associated, values, span, fctx)
+    }
+
+    fn has_callable_name(&self, name: &str) -> bool {
+        self.fn_sigs.contains_key(name)
+            || self.generic_fn_instances.contains_key(name)
+            || self.callable_declared_in_program(name)
+    }
+
+    fn callable_declared_in_program(&self, name: &str) -> bool {
+        self.program.items.iter().any(|item| match item {
+            ir::Item::Function(func) => func.name == name,
+            ir::Item::Impl(impl_def) => impl_def.methods.iter().any(|method| method.name == name),
+            _ => false,
+        })
+    }
+
+    fn method_receiver_type_name(
+        &mut self,
+        receiver: &Value,
+        span: crate::span::Span,
+    ) -> Option<String> {
+        match &receiver.ty {
+            LType::Struct(layout) => {
+                let base = base_type_name(&layout.repr);
+                if base == "Ref" || base == "RefMut" {
+                    Some(
+                        extract_generic_args(&layout.repr)
+                            .and_then(|args| args.first().cloned())
+                            .map(|inner| base_type_name(&inner).to_string())
+                            .unwrap_or_else(|| base.to_string()),
+                    )
+                } else {
+                    Some(base.to_string())
+                }
+            }
+            LType::Enum(layout) => Some(base_type_name(&layout.repr).to_string()),
+            LType::Int => Some("Int".to_string()),
+            LType::Float => Some("Float".to_string()),
+            LType::Bool => Some("Bool".to_string()),
+            LType::String => Some("String".to_string()),
+            LType::Unit => Some("()".to_string()),
+            other => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("type '{other:?}' does not support method call syntax"),
+                    self.file,
+                    span,
+                ));
+                None
+            }
+        }
+    }
+
+    pub(super) fn gen_for_into_iter_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        _expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "'aic_for_into_iter' expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let receiver = self.gen_expr(&args[0], fctx)?;
+        let receiver_name = self.method_receiver_type_name(&receiver, args[0].span)?;
+        let iter_assoc = format!("{receiver_name}::iter");
+        if self.has_callable_name(&iter_assoc) {
+            return self.gen_named_function_call_with_values(
+                &iter_assoc,
+                vec![receiver],
+                span,
+                fctx,
+            );
+        }
+        let next_assoc = format!("{receiver_name}::next");
+        if self.has_callable_name(&next_assoc) {
+            return Some(receiver);
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E5012",
+                format!(
+                    "for-in source type '{}' is not iterable (missing '{}.iter' or '{}.next')",
+                    receiver_name, receiver_name, receiver_name
+                ),
+                self.file,
+                span,
+            )
+            .with_help("implement iterator methods for this type"),
+        );
+        None
+    }
+
+    pub(super) fn gen_for_next_iter_call(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        _expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "'aic_for_next_iter' expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let receiver = self.gen_expr(&args[0], fctx)?;
+        let receiver_name = self.method_receiver_type_name(&receiver, args[0].span)?;
+        let next_assoc = format!("{receiver_name}::next");
+        if !self.has_callable_name(&next_assoc) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5012",
+                    format!(
+                        "for-in iterator type '{}' does not define '{}.next'",
+                        receiver_name, receiver_name
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("implement `next` for this iterator type"),
+            );
+            return None;
+        }
+        self.gen_named_function_call_with_values(&next_assoc, vec![receiver], span, fctx)
     }
 
     pub(super) fn gen_named_function_call_with_values(
@@ -3343,6 +3457,37 @@ impl<'a> Generator<'a> {
                 .cloned()
             {
                 bindings.insert(generic.clone(), active);
+            }
+        }
+        // Some std trait methods carry placeholder generics that do not appear in
+        // argument or return types. Bind those to a concrete fallback so
+        // monomorphization can proceed for call sites that otherwise resolve
+        // unambiguously from arguments.
+        let param_reprs = func
+            .params
+            .iter()
+            .map(|param| {
+                self.type_map
+                    .get(&param.ty)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string())
+            })
+            .collect::<Vec<_>>();
+        let ret_repr = self
+            .type_map
+            .get(&func.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        for generic in &generic_names {
+            if bindings.contains_key(generic) {
+                continue;
+            }
+            let used_in_sig = param_reprs
+                .iter()
+                .any(|param_repr| type_uses_generic(param_repr, generic))
+                || type_uses_generic(&ret_repr, generic);
+            if !used_in_sig {
+                bindings.insert(generic.clone(), "Int".to_string());
             }
         }
         if generic_names
@@ -4093,4 +4238,13 @@ impl<'a> Generator<'a> {
         }
         None
     }
+}
+
+fn type_uses_generic(ty: &str, generic: &str) -> bool {
+    if ty == generic {
+        return true;
+    }
+    extract_generic_args(ty)
+        .map(|args| args.iter().any(|arg| type_uses_generic(arg, generic)))
+        .unwrap_or(false)
 }

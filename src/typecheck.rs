@@ -3429,6 +3429,31 @@ impl<'a> Checker<'a> {
                     }
                 }
 
+                if !qualified && name == "aic_for_into_iter" {
+                    return self.check_for_into_iter_call(
+                        args,
+                        arg_names,
+                        expr,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    );
+                }
+                if !qualified && name == "aic_for_next_iter" {
+                    return self.check_for_next_iter_call(
+                        args,
+                        arg_names,
+                        expr,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    );
+                }
+
                 // Option / Result constructors.
                 if !qualified && name == "Some" {
                     if args.len() != 1 {
@@ -3583,6 +3608,7 @@ impl<'a> Checker<'a> {
                 } else {
                     if self.enforce_import_visibility
                         && !internal_intrinsic_use
+                        && !name.contains("::")
                         && !self.resolution.visible_functions.contains(&name)
                     {
                         if let Some(modules) = self.resolution.function_modules.get(&name) {
@@ -3639,13 +3665,36 @@ impl<'a> Checker<'a> {
                         }
                     }
 
-                    if self
+                    let visible_candidate_modules = self
                         .resolution
                         .function_modules
                         .get(&name)
-                        .map(|mods| mods.len() > 1)
-                        .unwrap_or(false)
-                    {
+                        .map(|modules| {
+                            modules
+                                .iter()
+                                .filter(|module| {
+                                    if !self.resolution.imports.contains(*module)
+                                        && !self.module_matches_current(module)
+                                    {
+                                        return false;
+                                    }
+                                    self.resolution
+                                        .module_function_infos
+                                        .get(&((*module).clone(), name.clone()))
+                                        .map(|info| {
+                                            internal_intrinsic_use
+                                                || self.function_is_accessible_from_current(
+                                                    module, info,
+                                                )
+                                        })
+                                        .unwrap_or(true)
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+
+                    if visible_candidate_modules.len() > 1 {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E2104",
@@ -3658,10 +3707,8 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     }
 
-                    if let Some(modules) = self.resolution.function_modules.get(&name) {
-                        if modules.len() == 1 {
-                            resolved_module = modules.iter().next().cloned();
-                        }
+                    if visible_candidate_modules.len() == 1 {
+                        resolved_module = visible_candidate_modules.into_iter().next();
                     }
 
                     name.clone()
@@ -3902,6 +3949,19 @@ impl<'a> Checker<'a> {
                     }
 
                     if !sig.generic_params.is_empty() {
+                        for generic_name in &sig.generic_params {
+                            if generic_bindings.contains_key(generic_name) {
+                                continue;
+                            }
+                            let used_in_signature =
+                                sig.params.iter().any(|param_ty| {
+                                    type_uses_generic_param(param_ty, generic_name)
+                                }) || type_uses_generic_param(&sig.ret, generic_name);
+                            if !used_in_signature {
+                                generic_bindings.insert(generic_name.clone(), "Int".to_string());
+                            }
+                        }
+
                         let unresolved = sig
                             .generic_params
                             .iter()
@@ -5603,6 +5663,131 @@ impl<'a> Checker<'a> {
             .with_help("define an inherent method or add a trait bound that declares this method"),
         );
         "<?>".to_string()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_for_into_iter_call(
+        &mut self,
+        args: &[ir::Expr],
+        arg_names: &[Option<String>],
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        if Self::has_named_call_args(arg_names) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1213",
+                    "named arguments are not supported for compiler-generated iterator helpers",
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("use positional arguments"),
+            );
+        }
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!("'aic_for_into_iter' expects 1 arg, got {}", args.len()),
+                self.file,
+                call_expr.span,
+            ));
+            return "<?>".to_string();
+        }
+
+        let source = &args[0];
+        let source_ty = self.check_expr(source, locals, allowed_effects, ctx, contract_mode);
+        let normalized = self.normalize_type(&source_ty);
+        let receiver_ty = match base_type_name(&normalized) {
+            "Ref" | "RefMut" => extract_generic_args(&normalized)
+                .and_then(|vals| vals.first().cloned())
+                .unwrap_or(normalized),
+            _ => normalized,
+        };
+        let receiver_name = base_type_name(&receiver_ty).to_string();
+        let iter_assoc = format!("{receiver_name}::iter");
+        if self.functions.contains_key(&iter_assoc) {
+            return self.check_method_call(
+                source,
+                "iter",
+                &[],
+                &[],
+                call_expr,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                expected_ty,
+            );
+        }
+
+        let next_assoc = format!("{receiver_name}::next");
+        if self.functions.contains_key(&next_assoc) {
+            return source_ty;
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1228",
+                format!(
+                    "for-in source of type '{}' is not iterable: missing '{}.iter()' or '{}.next()'",
+                    receiver_ty, receiver_name, receiver_name
+                ),
+                self.file,
+                call_expr.span,
+            )
+            .with_help("implement `iter` or `next` for this type"),
+        );
+        "<?>".to_string()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_for_next_iter_call(
+        &mut self,
+        args: &[ir::Expr],
+        arg_names: &[Option<String>],
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        if Self::has_named_call_args(arg_names) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1213",
+                    "named arguments are not supported for compiler-generated iterator helpers",
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help("use positional arguments"),
+            );
+        }
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!("'aic_for_next_iter' expects 1 arg, got {}", args.len()),
+                self.file,
+                call_expr.span,
+            ));
+            return "<?>".to_string();
+        }
+        self.check_method_call(
+            &args[0],
+            "next",
+            &[],
+            &[],
+            call_expr,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        )
     }
 
     fn check_struct_default_call(
@@ -7709,6 +7894,18 @@ fn infer_generic_bindings(
         }
     }
     true
+}
+
+fn type_uses_generic_param(ty: &str, generic: &str) -> bool {
+    if ty == generic {
+        return true;
+    }
+    extract_generic_args(ty)
+        .map(|args| {
+            args.iter()
+                .any(|arg| type_uses_generic_param(arg.as_str(), generic))
+        })
+        .unwrap_or(false)
 }
 
 fn substitute_type_vars(

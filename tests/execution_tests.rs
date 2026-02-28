@@ -588,6 +588,145 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
 }
 
 #[test]
+fn exec_for_in_map_and_set_use_iterator_trait() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.set;
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut total = 0;
+
+    let mut m: Map[String, Int] = map.new_map();
+    m = map.insert(m, "a", 20);
+    m = map.insert(m, "b", 22);
+    for entry in m {
+        total = total + entry.value;
+    };
+
+    let mut s: Set[Int] = set.new_set();
+    s = set.add(s, 3);
+    s = set.add(s, 3);
+    s = set.add(s, 4);
+    for value in s {
+        total = total + value;
+    };
+
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "49\n");
+}
+
+#[test]
+fn exec_iterator_adapters_map_filter_take_skip_enumerate_zip_chain() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.iterator;
+
+fn gt_two(x: Int) -> Bool { x > 2 }
+fn double(x: Int) -> Int { x * 2 }
+
+fn vec1234() -> Vec[Int] {
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 1);
+    v = vec.push(v, 2);
+    v = vec.push(v, 3);
+    v = vec.push(v, 4);
+    v
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let piped = vec1234().iter().map(double).filter(gt_two).skip(1).take(2).collect();
+    let enumed = vec1234().iter().enumerate().take(2).collect();
+    let zipped = vec1234().iter().zip(vec1234().iter().skip(2)).collect();
+    let chained = vec1234().iter().take(2).chain(vec1234().iter().skip(3)).collect();
+
+    let mut piped_total = 0;
+    for value in piped {
+        piped_total = piped_total + value;
+    };
+
+    let mut enum_total = 0;
+    for entry in enumed {
+        enum_total = enum_total + entry.index + entry.value;
+    };
+
+    let mut zip_total = 0;
+    for pair in zipped {
+        zip_total = zip_total + pair.left + pair.right;
+    };
+
+    let mut chain_total = 0;
+    for value in chained {
+        chain_total = chain_total + value;
+    };
+
+    print_int(piped_total + enum_total + zip_total + chain_total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "35\n");
+}
+
+#[test]
+fn exec_custom_iterator_trait_impl_works_with_for_in() {
+    let src = r#"
+import std.io;
+import std.iterator;
+
+struct Counter {
+    current: Int,
+    limit: Int,
+}
+
+impl Iterator[Counter, Int] {
+    fn next[T, U](self: Counter) -> IterStep[Int, Counter] {
+        if self.current < self.limit {
+            IterStep {
+                item: Some(self.current),
+                iter: Counter {
+                    current: self.current + 1,
+                    limit: self.limit,
+                },
+            }
+        } else {
+            IterStep {
+                item: None(),
+                iter: self,
+            }
+        }
+    }
+}
+
+fn make_counter(limit: Int) -> Counter {
+    Counter {
+        current: 0,
+        limit: limit,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut total = 0;
+    for value in make_counter(5) {
+        total = total + value;
+    };
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "10\n");
+}
+
+#[test]
 fn exec_for_map_entries_iterates_deterministically() {
     let src = r#"
 import std.io;

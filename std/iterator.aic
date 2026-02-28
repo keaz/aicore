@@ -1,0 +1,1119 @@
+/// The `std.iterator` module provides standard-library iterator APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.iterator;
+/// import std.vec;
+///
+/// fn demo() -> Int {
+///     let mut v: Vec[Int] = vec.new_vec();
+///     v = vec.push(v, 1);
+///     v = vec.push(v, 2);
+///     let out = v.iter().map(|x| x * 10).collect();
+///     if out.len == 2 { 1 } else { 0 }
+/// }
+/// ```
+module std.iterator;
+
+import std.deque;
+import std.map;
+import std.option;
+import std.set;
+import std.vec;
+
+/// `IterStep` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `IterStep` through `std.iterator` APIs.
+/// ```
+struct IterStep[T, S] {
+    item: Option[T],
+    iter: S,
+}
+
+/// `LazyIter` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `LazyIter` through `std.iterator` APIs.
+/// ```
+struct LazyIter[T, S] {
+    state: S,
+    next_fn: Fn(S) -> IterStep[T, S],
+}
+
+/// `EnumeratedValue` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `EnumeratedValue` through `std.iterator` APIs.
+/// ```
+struct EnumeratedValue[T] {
+    index: Int,
+    value: T,
+}
+
+/// `ZipPair` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ZipPair` through `std.iterator` APIs.
+/// ```
+struct ZipPair[T, U] {
+    left: T,
+    right: U,
+}
+
+/// `MapState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `MapState` through `std.iterator` APIs.
+/// ```
+struct MapState[T, U, S] {
+    base: LazyIter[T, S],
+    mapper: Fn(T) -> U,
+}
+
+/// `FilterState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `FilterState` through `std.iterator` APIs.
+/// ```
+struct FilterState[T, S] {
+    base: LazyIter[T, S],
+    predicate: Fn(T) -> Bool,
+}
+
+/// `TakeState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TakeState` through `std.iterator` APIs.
+/// ```
+struct TakeState[T, S] {
+    base: LazyIter[T, S],
+    remaining: Int,
+}
+
+/// `SkipState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `SkipState` through `std.iterator` APIs.
+/// ```
+struct SkipState[T, S] {
+    base: LazyIter[T, S],
+    remaining: Int,
+}
+
+/// `EnumerateState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `EnumerateState` through `std.iterator` APIs.
+/// ```
+struct EnumerateState[T, S] {
+    base: LazyIter[T, S],
+    index: Int,
+}
+
+/// `ZipState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ZipState` through `std.iterator` APIs.
+/// ```
+struct ZipState[T, U, LS, RS] {
+    left: LazyIter[T, LS],
+    right: LazyIter[U, RS],
+}
+
+/// `ChainState` is a `struct` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ChainState` through `std.iterator` APIs.
+/// ```
+struct ChainState[T, LS, RS] {
+    left: LazyIter[T, LS],
+    right: LazyIter[T, RS],
+    in_left: Bool,
+}
+
+/// `Iterator` is a `trait` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Iterator` through `std.iterator` APIs.
+/// ```
+trait Iterator[State, Item] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[A, B](self: State) -> IterStep[Item, State];
+}
+
+/// `Iterable` is a `trait` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `Iterable` through `std.iterator` APIs.
+/// ```
+trait Iterable[Collection, Item, State] {
+    /// `iter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `iter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn iter[A, B](self: Collection) -> LazyIter[Item, State];
+}
+
+/// `LazyIterOps` is a `trait` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Use `LazyIterOps` through `std.iterator` APIs.
+/// ```
+trait LazyIterOps[IterType, Item, State] {
+    /// `collect` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `collect` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn collect[T, S](self: IterType) -> Vec[Item];
+
+    /// `map` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `map` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn map[T, S, U](self: IterType, mapper: Fn(Item) -> U) -> LazyIter[U, MapState[Item, U, State]];
+
+    /// `filter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `filter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn filter[T, S](self: IterType, predicate: Fn(Item) -> Bool) -> LazyIter[Item, FilterState[Item, State]];
+
+    /// `take` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `take` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn take[T, S](self: IterType, count: Int) -> LazyIter[Item, TakeState[Item, State]];
+
+    /// `skip` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `skip` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn skip[T, S](self: IterType, count: Int) -> LazyIter[Item, SkipState[Item, State]];
+
+    /// `enumerate` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `enumerate` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn enumerate[T, S](self: IterType) -> LazyIter[EnumeratedValue[Item], EnumerateState[Item, State]];
+
+    /// `zip` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `zip` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn zip[T, S, U, RS](self: IterType, other: LazyIter[U, RS]) -> LazyIter[ZipPair[Item, U], ZipState[Item, U, State, RS]];
+
+    /// `chain` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `chain` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn chain[T, S, RS](self: IterType, other: LazyIter[Item, RS]) -> LazyIter[Item, ChainState[Item, State, RS]];
+}
+
+/// `from_state` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `from_state` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn from_state[T, S](state: S, next_fn: Fn(S) -> IterStep[T, S]) -> LazyIter[T, S] {
+    LazyIter {
+        state: state,
+        next_fn: next_fn,
+    }
+}
+
+/// `vec_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `vec_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn vec_next[T](values: Vec[T]) -> IterStep[T, Vec[T]] {
+    match aic_vec_get_intrinsic(values, 0) {
+        Some(value) => IterStep {
+            item: Some(value),
+            iter: aic_vec_remove_at_intrinsic(values, 0),
+        },
+        None => IterStep {
+            item: None(),
+            iter: values,
+        },
+    }
+}
+
+/// `map_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `map_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn map_next[K, V](values: Map[K, V]) -> IterStep[MapEntry[K, V], Map[K, V]] {
+    let entries = aic_map_entries_intrinsic(values);
+    match aic_vec_get_intrinsic(entries, 0) {
+        Some(entry) => IterStep {
+            item: Some(entry),
+            iter: aic_map_remove_intrinsic(values, entry.key),
+        },
+        None => IterStep {
+            item: None(),
+            iter: values,
+        },
+    }
+}
+
+/// `set_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `set_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn set_next[T](values: Set[T]) -> IterStep[T, Set[T]] {
+    let items = aic_map_keys_intrinsic(values.items);
+    match aic_vec_get_intrinsic(items, 0) {
+        Some(value) => IterStep {
+            item: Some(value),
+            iter: Set {
+                items: aic_map_remove_intrinsic(values.items, value),
+            },
+        },
+        None => IterStep {
+            item: None(),
+            iter: values,
+        },
+    }
+}
+
+/// `deque_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `deque_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn deque_next[T](values: Deque[T]) -> IterStep[T, Deque[T]] {
+    let (item, next_values) = pop_front(values);
+    IterStep {
+        item: item,
+        iter: next_values,
+    }
+}
+
+/// `lazy_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `lazy_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn lazy_next[T, S](iter: LazyIter[T, S]) -> IterStep[T, LazyIter[T, S]] {
+    let step_fn = iter.next_fn;
+    let step = step_fn(iter.state);
+    IterStep {
+        item: step.item,
+        iter: LazyIter {
+            state: step.iter,
+            next_fn: step_fn,
+        },
+    }
+}
+
+/// `map_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `map_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn map_state_next[T, U, S](state: MapState[T, U, S]) -> IterStep[U, MapState[T, U, S]] {
+    let step = lazy_next(state.base);
+    let mapper = state.mapper;
+    match step.item {
+        Some(value) => IterStep {
+            item: Some(mapper(value)),
+            iter: MapState {
+                base: step.iter,
+                mapper: mapper,
+            },
+        },
+        None => IterStep {
+            item: None(),
+            iter: MapState {
+                base: step.iter,
+                mapper: mapper,
+            },
+        },
+    }
+}
+
+/// `filter_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `filter_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn filter_state_next[T, S](state: FilterState[T, S]) -> IterStep[T, FilterState[T, S]] {
+    let predicate = state.predicate;
+    let mut current = state.base;
+    let mut found: Option[T] = None();
+    let mut done = false;
+    while !done {
+        let step = lazy_next(current);
+        current = step.iter;
+        match step.item {
+            Some(value) => if predicate(value) {
+                found = Some(value);
+                done = true;
+            } else {
+                ()
+            },
+            None => if true {
+                done = true;
+            } else {
+                ()
+            },
+        };
+    };
+    IterStep {
+        item: found,
+        iter: FilterState {
+            base: current,
+            predicate: predicate,
+        },
+    }
+}
+
+/// `take_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `take_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn take_state_next[T, S](state: TakeState[T, S]) -> IterStep[T, TakeState[T, S]] {
+    if state.remaining <= 0 {
+        IterStep {
+            item: None(),
+            iter: TakeState {
+                base: state.base,
+                remaining: 0,
+            },
+        }
+    } else {
+        let step = lazy_next(state.base);
+        match step.item {
+            Some(value) => IterStep {
+                item: Some(value),
+                iter: TakeState {
+                    base: step.iter,
+                    remaining: state.remaining - 1,
+                },
+            },
+            None => IterStep {
+                item: None(),
+                iter: TakeState {
+                    base: step.iter,
+                    remaining: 0,
+                },
+            },
+        }
+    }
+}
+
+/// `skip_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `skip_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn skip_state_next[T, S](state: SkipState[T, S]) -> IterStep[T, SkipState[T, S]] {
+    let mut current = state.base;
+    let mut remaining = state.remaining;
+    while remaining > 0 {
+        let step = lazy_next(current);
+        current = step.iter;
+        remaining = remaining - 1;
+    };
+    let next_step = lazy_next(current);
+    IterStep {
+        item: next_step.item,
+        iter: SkipState {
+            base: next_step.iter,
+            remaining: 0,
+        },
+    }
+}
+
+/// `enumerate_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `enumerate_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn enumerate_state_next[T, S](state: EnumerateState[T, S]) -> IterStep[EnumeratedValue[T], EnumerateState[T, S]] {
+    let step = lazy_next(state.base);
+    match step.item {
+        Some(value) => IterStep {
+            item: Some(EnumeratedValue {
+                index: state.index,
+                value: value,
+            }),
+            iter: EnumerateState {
+                base: step.iter,
+                index: state.index + 1,
+            },
+        },
+        None => IterStep {
+            item: None(),
+            iter: EnumerateState {
+                base: step.iter,
+                index: state.index,
+            },
+        },
+    }
+}
+
+/// `zip_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `zip_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn zip_state_next[T, U, LS, RS](state: ZipState[T, U, LS, RS]) -> IterStep[ZipPair[T, U], ZipState[T, U, LS, RS]] {
+    let left_step = lazy_next(state.left);
+    let right_step = lazy_next(state.right);
+    match left_step.item {
+        Some(left_value) => match right_step.item {
+            Some(right_value) => IterStep {
+                item: Some(ZipPair {
+                    left: left_value,
+                    right: right_value,
+                }),
+                iter: ZipState {
+                    left: left_step.iter,
+                    right: right_step.iter,
+                },
+            },
+            None => IterStep {
+                item: None(),
+                iter: ZipState {
+                    left: left_step.iter,
+                    right: right_step.iter,
+                },
+            },
+        },
+        None => IterStep {
+            item: None(),
+            iter: ZipState {
+                left: left_step.iter,
+                right: right_step.iter,
+            },
+        },
+    }
+}
+
+/// `chain_state_next` in `std.iterator`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.iterator` and call `chain_state_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn chain_state_next[T, LS, RS](state: ChainState[T, LS, RS]) -> IterStep[T, ChainState[T, LS, RS]] {
+    if state.in_left {
+        let left_step = lazy_next(state.left);
+        match left_step.item {
+            Some(value) => IterStep {
+                item: Some(value),
+                iter: ChainState {
+                    left: left_step.iter,
+                    right: state.right,
+                    in_left: true,
+                },
+            },
+            None => if true {
+                let right_step = lazy_next(state.right);
+                IterStep {
+                    item: right_step.item,
+                    iter: ChainState {
+                        left: left_step.iter,
+                        right: right_step.iter,
+                        in_left: false,
+                    },
+                }
+            } else {
+                IterStep {
+                    item: None(),
+                    iter: state,
+                }
+            },
+        }
+    } else {
+        let right_step = lazy_next(state.right);
+        IterStep {
+            item: right_step.item,
+            iter: ChainState {
+                left: state.left,
+                right: right_step.iter,
+                in_left: false,
+            },
+        }
+    }
+}
+
+impl Iterator[Vec[T], T] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[T, U](self: Vec[T]) -> IterStep[T, Vec[T]] {
+        vec_next(self)
+    }
+}
+
+impl Iterator[Map[K, V], MapEntry[K, V]] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[K, V](self: Map[K, V]) -> IterStep[MapEntry[K, V], Map[K, V]] {
+        map_next(self)
+    }
+}
+
+impl Iterator[Set[T], T] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[T, U](self: Set[T]) -> IterStep[T, Set[T]] {
+        set_next(self)
+    }
+}
+
+impl Iterator[Deque[T], T] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[T, U](self: Deque[T]) -> IterStep[T, Deque[T]] {
+        deque_next(self)
+    }
+}
+
+impl Iterator[LazyIter[T, S], T] {
+    /// `next` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[T, S](self: LazyIter[T, S]) -> IterStep[T, LazyIter[T, S]] {
+        lazy_next(self)
+    }
+}
+
+impl Iterable[Vec[T], T, Vec[T]] {
+    /// `iter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `iter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn iter[T, U](self: Vec[T]) -> LazyIter[T, Vec[T]] {
+        LazyIter {
+            state: self,
+            next_fn: |values: Vec[T]| -> IterStep[T, Vec[T]] {
+                vec_next(values)
+            },
+        }
+    }
+}
+
+impl Iterable[Map[K, V], MapEntry[K, V], Map[K, V]] {
+    /// `iter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `iter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn iter[K, V](self: Map[K, V]) -> LazyIter[MapEntry[K, V], Map[K, V]] {
+        LazyIter {
+            state: self,
+            next_fn: |values: Map[K, V]| -> IterStep[MapEntry[K, V], Map[K, V]] {
+                map_next(values)
+            },
+        }
+    }
+}
+
+impl Iterable[Set[T], T, Set[T]] {
+    /// `iter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `iter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn iter[T, U](self: Set[T]) -> LazyIter[T, Set[T]] {
+        LazyIter {
+            state: self,
+            next_fn: |values: Set[T]| -> IterStep[T, Set[T]] {
+                set_next(values)
+            },
+        }
+    }
+}
+
+impl Iterable[Deque[T], T, Deque[T]] {
+    /// `iter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `iter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn iter[T, U](self: Deque[T]) -> LazyIter[T, Deque[T]] {
+        LazyIter {
+            state: self,
+            next_fn: |values: Deque[T]| -> IterStep[T, Deque[T]] {
+                deque_next(values)
+            },
+        }
+    }
+}
+
+impl LazyIterOps[LazyIter[T, S], T, S] {
+    /// `collect` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `collect` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn collect[T, S](self: LazyIter[T, S]) -> Vec[T] {
+        let mut out: Vec[T] = aic_vec_new_intrinsic();
+        let mut current = self;
+        let mut done = false;
+        while !done {
+            let step = lazy_next(current);
+            current = step.iter;
+            out = match step.item {
+                Some(value) => aic_vec_push_intrinsic(out, value),
+                None => if true {
+                    done = true;
+                    out
+                } else {
+                    out
+                },
+            };
+        };
+        out
+    }
+
+    /// `map` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `map` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn map[T, S, U](self: LazyIter[T, S], mapper: Fn(T) -> U) -> LazyIter[U, MapState[T, U, S]] {
+        LazyIter {
+            state: MapState {
+                base: self,
+                mapper: mapper,
+            },
+            next_fn: |state: MapState[T, U, S]| -> IterStep[U, MapState[T, U, S]] {
+                map_state_next(state)
+            },
+        }
+    }
+
+    /// `filter` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `filter` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn filter[T, S](self: LazyIter[T, S], predicate: Fn(T) -> Bool) -> LazyIter[T, FilterState[T, S]] {
+        LazyIter {
+            state: FilterState {
+                base: self,
+                predicate: predicate,
+            },
+            next_fn: |state: FilterState[T, S]| -> IterStep[T, FilterState[T, S]] {
+                filter_state_next(state)
+            },
+        }
+    }
+
+    /// `take` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `take` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn take[T, S](self: LazyIter[T, S], count: Int) -> LazyIter[T, TakeState[T, S]] {
+        let normalized = if count < 0 { 0 } else { count };
+        LazyIter {
+            state: TakeState {
+                base: self,
+                remaining: normalized,
+            },
+            next_fn: |state: TakeState[T, S]| -> IterStep[T, TakeState[T, S]] {
+                take_state_next(state)
+            },
+        }
+    }
+
+    /// `skip` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `skip` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn skip[T, S](self: LazyIter[T, S], count: Int) -> LazyIter[T, SkipState[T, S]] {
+        let normalized = if count < 0 { 0 } else { count };
+        LazyIter {
+            state: SkipState {
+                base: self,
+                remaining: normalized,
+            },
+            next_fn: |state: SkipState[T, S]| -> IterStep[T, SkipState[T, S]] {
+                skip_state_next(state)
+            },
+        }
+    }
+
+    /// `enumerate` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `enumerate` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn enumerate[T, S](self: LazyIter[T, S]) -> LazyIter[EnumeratedValue[T], EnumerateState[T, S]] {
+        LazyIter {
+            state: EnumerateState {
+                base: self,
+                index: 0,
+            },
+            next_fn: |state: EnumerateState[T, S]| -> IterStep[EnumeratedValue[T], EnumerateState[T, S]] {
+                enumerate_state_next(state)
+            },
+        }
+    }
+
+    /// `zip` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `zip` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn zip[T, S, U, RS](self: LazyIter[T, S], other: LazyIter[U, RS]) -> LazyIter[ZipPair[T, U], ZipState[T, U, S, RS]] {
+        LazyIter {
+            state: ZipState {
+                left: self,
+                right: other,
+            },
+            next_fn: |state: ZipState[T, U, S, RS]| -> IterStep[ZipPair[T, U], ZipState[T, U, S, RS]] {
+                zip_state_next(state)
+            },
+        }
+    }
+
+    /// `chain` in `std.iterator`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.iterator` and call `chain` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn chain[T, S, RS](self: LazyIter[T, S], other: LazyIter[T, RS]) -> LazyIter[T, ChainState[T, S, RS]] {
+        LazyIter {
+            state: ChainState {
+                left: self,
+                right: other,
+                in_left: true,
+            },
+            next_fn: |state: ChainState[T, S, RS]| -> IterStep[T, ChainState[T, S, RS]] {
+                chain_state_next(state)
+            },
+        }
+    }
+}

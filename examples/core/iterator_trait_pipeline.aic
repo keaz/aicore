@@ -1,0 +1,78 @@
+import std.io;
+import std.iterator;
+import std.map;
+import std.set;
+import std.vec;
+
+struct Counter {
+    current: Int,
+    limit: Int,
+}
+
+impl Iterator[Counter, Int] {
+    fn next[T, U](self: Counter) -> IterStep[Int, Counter] {
+        if self.current < self.limit {
+            IterStep {
+                item: Some(self.current),
+                iter: Counter {
+                    current: self.current + 1,
+                    limit: self.limit,
+                },
+            }
+        } else {
+            IterStep {
+                item: None(),
+                iter: self,
+            }
+        }
+    }
+}
+
+fn new_counter(limit: Int) -> Counter {
+    Counter {
+        current: 0,
+        limit: limit,
+    }
+}
+
+fn gt_two(x: Int) -> Bool { x > 2 }
+fn double(x: Int) -> Int { x * 2 }
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut from_counter = 0;
+    for value in new_counter(5) {
+        from_counter = from_counter + value;
+    };
+
+    let mut base: Vec[Int] = vec.new_vec();
+    base = vec.push(base, 1);
+    base = vec.push(base, 2);
+    base = vec.push(base, 3);
+    base = vec.push(base, 4);
+
+    let transformed = base.iter().map(double).filter(gt_two).skip(1).take(1).collect();
+    let mut from_pipeline = 0;
+    for value in transformed {
+        from_pipeline = from_pipeline + value;
+    };
+
+    let mut from_map = 0;
+    let mut counts: Map[String, Int] = map.new_map();
+    counts = map.insert(counts, "ok", 5);
+    counts = map.insert(counts, "warn", 7);
+    for entry in counts {
+        from_map = from_map + entry.value;
+    };
+
+    let mut from_set = 0;
+    let mut uniques: Set[Int] = set.new_set();
+    uniques = set.add(uniques, 6);
+    uniques = set.add(uniques, 6);
+    uniques = set.add(uniques, 8);
+    for value in uniques {
+        from_set = from_set + value;
+    };
+
+    print_int(from_counter + from_pipeline + from_map + from_set);
+    0
+}

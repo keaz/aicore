@@ -2439,7 +2439,7 @@ impl<'a> Parser<'a> {
             self.parse_block()?
         };
 
-        Some(self.desugar_for_vec(binding, iterable, body, start))
+        Some(self.desugar_for_iter(binding, iterable, body, start))
     }
 
     fn parse_while_expr(&mut self) -> Option<Expr> {
@@ -2941,7 +2941,7 @@ impl<'a> Parser<'a> {
     }
 
     fn make_for_name(&self, prefix: &str, id: usize) -> String {
-        format!("__aic_for_{prefix}_{id}")
+        format!("aic_for_{prefix}_{id}")
     }
 
     fn make_bool_expr(&self, value: bool, span: Span) -> Expr {
@@ -3002,7 +3002,7 @@ impl<'a> Parser<'a> {
         stmts
     }
 
-    fn desugar_for_vec(
+    fn desugar_for_iter(
         &mut self,
         binding: String,
         iterable: Expr,
@@ -3012,18 +3012,25 @@ impl<'a> Parser<'a> {
         let id = self.next_for_id();
         let span = Span::new(start, body.span.end);
         let iter_name = self.make_for_name("iter", id);
-        let index_name = self.make_for_name("index", id);
+        let step_name = self.make_for_name("step", id);
+        let step_item_expr = Expr {
+            kind: ExprKind::FieldAccess {
+                base: Box::new(self.make_var_expr(step_name.clone(), span)),
+                field: "item".to_string(),
+            },
+            span,
+        };
+        let step_iter_expr = Expr {
+            kind: ExprKind::FieldAccess {
+                base: Box::new(self.make_var_expr(step_name.clone(), span)),
+                field: "iter".to_string(),
+            },
+            span,
+        };
 
         let mut some_body_stmts = vec![Stmt::Assign {
-            target: index_name.clone(),
-            expr: Expr {
-                kind: ExprKind::Binary {
-                    op: BinOp::Add,
-                    lhs: Box::new(self.make_var_expr(index_name.clone(), span)),
-                    rhs: Box::new(self.make_int_expr(1, span)),
-                },
-                span,
-            },
+            target: iter_name.clone(),
+            expr: step_iter_expr,
             span,
         }];
         some_body_stmts.extend(self.for_body_to_stmts(&body));
@@ -3067,47 +3074,51 @@ impl<'a> Parser<'a> {
         };
 
         let loop_body = Block {
-            stmts: vec![Stmt::Expr {
-                expr: Expr {
-                    kind: ExprKind::Match {
-                        expr: Box::new(Expr {
-                            kind: ExprKind::Call {
-                                callee: Box::new(self.make_var_expr("aic_vec_get_intrinsic", span)),
-                                args: vec![
-                                    self.make_var_expr(iter_name.clone(), span),
-                                    self.make_var_expr(index_name.clone(), span),
-                                ],
-                                arg_names: Vec::new(),
-                            },
-                            span,
-                        }),
-                        arms: vec![some_arm, none_arm],
+            stmts: vec![
+                Stmt::Let {
+                    name: step_name.clone(),
+                    mutable: false,
+                    ty: None,
+                    expr: Expr {
+                        kind: ExprKind::Call {
+                            callee: Box::new(self.make_var_expr("aic_for_next_iter", span)),
+                            args: vec![self.make_var_expr(iter_name.clone(), span)],
+                            arg_names: Vec::new(),
+                        },
+                        span,
                     },
                     span,
                 },
-                span,
-            }],
+                Stmt::Expr {
+                    expr: Expr {
+                        kind: ExprKind::Match {
+                            expr: Box::new(step_item_expr),
+                            arms: vec![some_arm, none_arm],
+                        },
+                        span,
+                    },
+                    span,
+                },
+            ],
             tail: None,
             span,
         };
 
         let then_block = Block {
-            stmts: vec![
-                Stmt::Let {
-                    name: iter_name.clone(),
-                    mutable: false,
-                    ty: None,
-                    expr: iterable,
+            stmts: vec![Stmt::Let {
+                name: iter_name.clone(),
+                mutable: true,
+                ty: None,
+                expr: Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(self.make_var_expr("aic_for_into_iter", span)),
+                        args: vec![iterable],
+                        arg_names: Vec::new(),
+                    },
                     span,
                 },
-                Stmt::Let {
-                    name: index_name,
-                    mutable: true,
-                    ty: None,
-                    expr: self.make_int_expr(0, span),
-                    span,
-                },
-            ],
+                span,
+            }],
             tail: Some(Box::new(Expr {
                 kind: ExprKind::Loop { body: loop_body },
                 span,

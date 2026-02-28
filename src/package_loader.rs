@@ -283,6 +283,24 @@ impl Loader {
             .iter()
             .map(|i| (i.path.join("."), i.clone()))
             .collect::<Vec<_>>();
+        let module_is_std = program
+            .module
+            .as_ref()
+            .and_then(|module| module.path.first())
+            .map(|root| root == "std")
+            .unwrap_or(false);
+        if !module_is_std
+            && program_uses_compiler_iterator_helpers(&program)
+            && !imports.iter().any(|(key, _)| key == "std.iterator")
+        {
+            imports.push((
+                "std.iterator".to_string(),
+                ast::ImportDecl {
+                    path: vec!["std".to_string(), "iterator".to_string()],
+                    span: program.span,
+                },
+            ));
+        }
         imports.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (_, import) in imports {
@@ -500,6 +518,137 @@ fn canonicalize_cycle(cycle: &[String]) -> (String, String) {
     best.push(best[0].clone());
     let display = best.join(" -> ");
     (key, display)
+}
+
+fn program_uses_compiler_iterator_helpers(program: &ast::Program) -> bool {
+    program
+        .items
+        .iter()
+        .any(item_uses_compiler_iterator_helpers)
+}
+
+fn item_uses_compiler_iterator_helpers(item: &ast::Item) -> bool {
+    match item {
+        ast::Item::Function(func) => function_uses_compiler_iterator_helpers(func),
+        ast::Item::Impl(impl_def) => impl_def
+            .methods
+            .iter()
+            .any(function_uses_compiler_iterator_helpers),
+        ast::Item::Trait(trait_def) => trait_def
+            .methods
+            .iter()
+            .any(function_uses_compiler_iterator_helpers),
+        ast::Item::Struct(def) => {
+            def.fields.iter().any(|field| {
+                field
+                    .default_value
+                    .as_ref()
+                    .map(expr_uses_compiler_iterator_helpers)
+                    .unwrap_or(false)
+            }) || def
+                .invariant
+                .as_ref()
+                .map(expr_uses_compiler_iterator_helpers)
+                .unwrap_or(false)
+        }
+        ast::Item::Enum(_) => false,
+    }
+}
+
+fn function_uses_compiler_iterator_helpers(func: &ast::Function) -> bool {
+    func.requires
+        .as_ref()
+        .map(expr_uses_compiler_iterator_helpers)
+        .unwrap_or(false)
+        || func
+            .ensures
+            .as_ref()
+            .map(expr_uses_compiler_iterator_helpers)
+            .unwrap_or(false)
+        || block_uses_compiler_iterator_helpers(&func.body)
+}
+
+fn block_uses_compiler_iterator_helpers(block: &ast::Block) -> bool {
+    block.stmts.iter().any(stmt_uses_compiler_iterator_helpers)
+        || block
+            .tail
+            .as_ref()
+            .map(|expr| expr_uses_compiler_iterator_helpers(expr))
+            .unwrap_or(false)
+}
+
+fn stmt_uses_compiler_iterator_helpers(stmt: &ast::Stmt) -> bool {
+    match stmt {
+        ast::Stmt::Let { expr, .. }
+        | ast::Stmt::Assign { expr, .. }
+        | ast::Stmt::Assert { expr, .. } => expr_uses_compiler_iterator_helpers(expr),
+        ast::Stmt::Expr { expr, .. } => expr_uses_compiler_iterator_helpers(expr),
+        ast::Stmt::Return { expr, .. } => expr
+            .as_ref()
+            .map(expr_uses_compiler_iterator_helpers)
+            .unwrap_or(false),
+    }
+}
+
+fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args, .. } => {
+            matches!(
+                &callee.kind,
+                ast::ExprKind::Var(name)
+                    if name == "aic_for_into_iter" || name == "aic_for_next_iter"
+            ) || expr_uses_compiler_iterator_helpers(callee)
+                || args.iter().any(expr_uses_compiler_iterator_helpers)
+        }
+        ast::ExprKind::Closure { body, .. } => block_uses_compiler_iterator_helpers(body),
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            expr_uses_compiler_iterator_helpers(cond)
+                || block_uses_compiler_iterator_helpers(then_block)
+                || block_uses_compiler_iterator_helpers(else_block)
+        }
+        ast::ExprKind::While { cond, body } => {
+            expr_uses_compiler_iterator_helpers(cond) || block_uses_compiler_iterator_helpers(body)
+        }
+        ast::ExprKind::Loop { body } => block_uses_compiler_iterator_helpers(body),
+        ast::ExprKind::Break { expr } => expr
+            .as_ref()
+            .map(|value| expr_uses_compiler_iterator_helpers(value))
+            .unwrap_or(false),
+        ast::ExprKind::Match { expr, arms } => {
+            expr_uses_compiler_iterator_helpers(expr)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .map(expr_uses_compiler_iterator_helpers)
+                        .unwrap_or(false)
+                        || expr_uses_compiler_iterator_helpers(&arm.body)
+                })
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            expr_uses_compiler_iterator_helpers(lhs) || expr_uses_compiler_iterator_helpers(rhs)
+        }
+        ast::ExprKind::Unary { expr, .. }
+        | ast::ExprKind::Borrow { expr, .. }
+        | ast::ExprKind::Await { expr }
+        | ast::ExprKind::Try { expr } => expr_uses_compiler_iterator_helpers(expr),
+        ast::ExprKind::UnsafeBlock { block } => block_uses_compiler_iterator_helpers(block),
+        ast::ExprKind::StructInit { fields, .. } => fields
+            .iter()
+            .any(|(_, value, _)| expr_uses_compiler_iterator_helpers(value)),
+        ast::ExprKind::FieldAccess { base, .. } => expr_uses_compiler_iterator_helpers(base),
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_)
+        | ast::ExprKind::Continue => false,
+    }
 }
 
 #[cfg(test)]
