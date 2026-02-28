@@ -3823,3 +3823,32 @@ fn template_literal_example_supports_double_braces_and_is_ci_wired() {
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
 }
+
+#[test]
+fn prod_t3_t7_t9_examples_are_ci_wired_and_run_with_expected_outputs() {
+    let root = repo_root();
+    let examples_ci = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+
+    for (rel, expected) in [
+        ("examples/io/raii_file_cleanup.aic", "42\n"),
+        ("examples/io/drop_trait_cleanup.aic", "42\n"),
+        ("examples/core/tuple_types.aic", "42\n"),
+        ("examples/core/borrow_checker_completeness.aic", "2\n"),
+    ] {
+        assert!(root.join(rel).is_file(), "missing example: {rel}");
+        assert!(
+            examples_ci.contains(&format!("\"{rel}\"")),
+            "examples.sh missing wiring for {rel}"
+        );
+        let run = run_aic(&["run", rel]);
+        assert_eq!(
+            run.status.code(),
+            Some(0),
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&run.stdout), expected, "{rel}");
+    }
+}

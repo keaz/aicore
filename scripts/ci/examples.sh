@@ -602,6 +602,8 @@ case "$MODE" in
     expect_run_value "examples/io/arc_mutex_shared_ownership.aic" "42"
     expect_run_value "examples/io/atomic_counter_vs_mutex.aic" "42"
     expect_run_value "examples/io/thread_local_isolation.aic" "42"
+    expect_run_value "examples/io/raii_file_cleanup.aic" "42"
+    expect_run_value "examples/io/drop_trait_cleanup.aic" "42"
     expect_run_value "examples/io/channel_migration_compat.aic" "42"
     expect_run_value "examples/io/generic_channel_types.aic" "42"
     expect_run_value "examples/io/structured_concurrency.aic" "42"
