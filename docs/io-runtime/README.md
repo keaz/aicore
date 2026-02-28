@@ -18,6 +18,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 | `std.rand` | `rand` | deterministic seeding, random int/range/bool | deterministic when seeded |
 | `std.retry` | `time`, `rand` | retry/backoff policy and timeout wrappers | `RetryResult[T]` and timeout `Result[T, String]` |
 | `std.concurrent` | `concurrency` | tasks, structured group/select/timeout helpers, generic `Sender[T]/Receiver[T]` channels, legacy int channel compatibility, int mutex | `ConcurrencyError`, `ChannelError` |
+| `std.pool` | `concurrency` | generic resource pooling with health checks, idle/lifetime recycling, lifecycle stats | `PoolError` |
 
 ## Effect Boundaries
 
@@ -85,6 +86,7 @@ fn main() -> Int effects { io, net } {
 - Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)
 - Concurrency worker pool: `examples/io/worker_pool.aic`
+- Connection pool lifecycle + health/recycle checks: `examples/io/connection_pool.aic`
 - Legacy-to-generic channel migration compatibility: `examples/io/channel_migration_compat.aic`
 - Generic channel payloads (`String`/`Vec[Int]`/struct): `examples/io/generic_channel_types.aic`
 - Generic channel protocol-valid lifecycle: `examples/verify/generic_channel_protocol_ok.aic`
@@ -102,6 +104,7 @@ cargo run --quiet --bin aic -- run examples/io/tcp_echo.aic
 cargo run --quiet --bin aic -- run examples/io/async_await_submit_bridge.aic
 cargo run --quiet --bin aic -- run examples/io/retry_with_jitter.aic
 cargo run --quiet --bin aic -- run examples/io/worker_pool.aic
+cargo run --quiet --bin aic -- run examples/io/connection_pool.aic
 cargo run --quiet --bin aic -- run examples/io/channel_migration_compat.aic
 cargo run --quiet --bin aic -- run examples/io/generic_channel_types.aic
 cargo run --quiet --bin aic -- run examples/io/structured_concurrency.aic
@@ -115,6 +118,7 @@ Expected final line for each: `42`.
 - Network/time/rand/retry API contract: `docs/io-runtime/net-time-rand.md`
 - Error model + remediation playbook: `docs/io-runtime/error-model.md`
 - Resource lifecycle + long-running service guidance: `docs/io-runtime/lifecycle-playbook.md`
+- Connection pool contract + agent-safe usage: `docs/io-runtime/connection-pool.md`
 - FS API contract: `docs/io-filesystem.md`
 - Proc/env/path contract: `docs/io-process-env-path.md`
 - Concurrency runtime contract: `docs/io-concurrency-runtime.md`

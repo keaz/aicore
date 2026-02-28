@@ -4453,6 +4453,96 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
 }
 
 #[test]
+fn unit_std_pool_public_apis_are_present() {
+    let source = fs::read_to_string("std/pool.aic").expect("read std/pool.aic");
+    assert!(source.contains("enum PoolError {"));
+    assert!(source.contains("struct PoolConfig {"));
+    assert!(source.contains("struct Pool[T] {"));
+    assert!(source.contains("struct PooledConn[T] {"));
+    assert!(source.contains("struct PoolStats {"));
+    assert!(source.contains("fn new_pool[T]("));
+    assert!(source.contains(
+        "fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concurrency }"
+    ));
+    assert!(source.contains("fn release[T](conn: PooledConn[T]) -> () effects { concurrency }"));
+    assert!(source.contains("fn discard[T](conn: PooledConn[T]) -> () effects { concurrency }"));
+    assert!(source.contains("fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency }"));
+    assert!(source.contains("fn close_pool[T](pool: Pool[T]) -> () effects { concurrency }"));
+}
+
+#[test]
+fn unit_std_pool_module_typechecks_for_basic_usage() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.pool;
+
+struct Conn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let create_cb: Fn() -> Result[Conn, PoolError] =
+        || -> Result[Conn, PoolError] { Ok(Conn { id: 1, healthy: true }) };
+    let check_cb: Fn(Conn) -> Bool = |conn: Conn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(Conn) -> () = |conn: Conn| -> () { () };
+
+    let pool_result: Result[Pool[Conn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 1,
+            max_size: 2,
+            acquire_timeout_ms: 10,
+            idle_timeout_ms: 5,
+            max_lifetime_ms: 20,
+            health_check_ms: 5,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[Conn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let stats0 = pool_stats(pool);
+    let maybe_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let stats1 = pool_stats(pool);
+    close_pool(pool);
+    if stats0.total >= 0 && stats1.idle >= 0 && maybe_id >= 0 {
+        0
+    } else {
+        1
+    }
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "unexpected diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_std_env_cwd_requires_fs_effect() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();

@@ -1,0 +1,114 @@
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 1,
+            max_size: 2,
+            acquire_timeout_ms: 200,
+            idle_timeout_ms: 4,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let first_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    wait_ms(20);
+
+    let recycled_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let discarded_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            discard(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let replaced_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let stats = pool_stats(pool);
+    close_pool(pool);
+
+    if first_id > 0
+        && recycled_id > first_id
+        && discarded_id > 0
+        && replaced_id > discarded_id
+        && stats.total <= 2
+        && stats.in_use == 0
+    {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

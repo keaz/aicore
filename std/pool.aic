@@ -1,0 +1,978 @@
+module std.pool;
+
+import std.concurrent;
+import std.option;
+import std.result;
+import std.vec;
+
+enum PoolError {
+    MaxSizeReached,
+    Timeout,
+    ConnectionFailed,
+    Closed,
+    HealthCheckFailed,
+}
+
+struct PoolConfig {
+    min_size: Int,
+    max_size: Int,
+    acquire_timeout_ms: Int,
+    idle_timeout_ms: Int,
+    max_lifetime_ms: Int,
+    health_check_ms: Int,
+}
+
+struct Pool[T] {
+    handle: Int,
+}
+
+struct PooledConn[T] {
+    handle: Int,
+    value: T,
+}
+
+struct PoolStats {
+    total: Int,
+    idle: Int,
+    in_use: Int,
+    created: Int,
+    destroyed: Int,
+}
+
+struct PoolEntry[T] {
+    lease: Int,
+    value: T,
+    created_ms: Int,
+    idle_ms: Int,
+    health_ms: Int,
+}
+
+struct PoolState[T] {
+    next_lease: Int,
+    idle: Vec[PoolEntry[T]],
+    in_use: Vec[PoolEntry[T]],
+    closed: Bool,
+    created: Int,
+    destroyed: Int,
+}
+
+struct AcquireReq[T] {
+    reply: Sender[Result[PooledConn[T], PoolError]],
+}
+
+struct ReleaseReq[T] {
+    lease: Int,
+    value: T,
+}
+
+struct StatsReq {
+    reply: Sender[PoolStats],
+}
+
+struct CloseReq {
+    reply: Sender[Bool],
+}
+
+enum PoolRequest[T] {
+    Acquire(AcquireReq[T]),
+    Release(ReleaseReq[T]),
+    Discard(ReleaseReq[T]),
+    Stats(StatsReq),
+    Close(CloseReq),
+}
+
+struct RequestOut[T] {
+    state: PoolState[T],
+    close_loop: Bool,
+}
+
+fn pool_timeout_error() -> PoolError {
+    Timeout()
+}
+
+fn pool_closed_error() -> PoolError {
+    Closed()
+}
+
+fn acquire_result_ok[T](conn: PooledConn[T]) -> Result[PooledConn[T], PoolError] {
+    Ok(conn)
+}
+
+fn acquire_result_err[T](err: PoolError) -> Result[PooledConn[T], PoolError] {
+    Err(err)
+}
+
+fn acquire_result_timeout[T]() -> Result[PooledConn[T], PoolError] {
+    Err(pool_timeout_error())
+}
+
+fn id_base() -> Int {
+    1000000
+}
+
+fn timeout_field_base() -> Int {
+    1000000000000
+}
+
+fn clamp_non_negative(value: Int) -> Int {
+    if value < 0 {
+        0
+    } else {
+        value
+    }
+}
+
+fn normalized_timeout_ms(value: Int) -> Int {
+    let raw = clamp_non_negative(value);
+    if raw > 999999 {
+        999999
+    } else {
+        raw
+    }
+}
+
+fn normalized_config(config: PoolConfig) -> PoolConfig {
+    let max_raw = clamp_non_negative(config.max_size);
+    let max_size = if max_raw <= 0 { 1 } else { max_raw };
+    let min_raw = clamp_non_negative(config.min_size);
+    let min_size = if min_raw > max_size { max_size } else { min_raw };
+    PoolConfig {
+        min_size: min_size,
+        max_size: max_size,
+        acquire_timeout_ms: normalized_timeout_ms(config.acquire_timeout_ms),
+        idle_timeout_ms: clamp_non_negative(config.idle_timeout_ms),
+        max_lifetime_ms: clamp_non_negative(config.max_lifetime_ms),
+        health_check_ms: clamp_non_negative(config.health_check_ms),
+    }
+}
+
+fn encode_pool_handle(request_handle: Int, manager_handle: Int, acquire_timeout_ms: Int) -> Int {
+    request_handle + (manager_handle * id_base()) + (acquire_timeout_ms * timeout_field_base())
+}
+
+fn pool_request_handle(pool_handle: Int) -> Int {
+    let no_timeout = pool_handle % timeout_field_base();
+    no_timeout % id_base()
+}
+
+fn pool_manager_handle(pool_handle: Int) -> Int {
+    let no_timeout = pool_handle % timeout_field_base();
+    no_timeout / id_base()
+}
+
+fn pool_acquire_timeout_ms(pool_handle: Int) -> Int {
+    let timeout = pool_handle / timeout_field_base();
+    clamp_non_negative(timeout)
+}
+
+fn encode_conn_handle(request_handle: Int, lease: Int) -> Int {
+    request_handle + (lease * id_base())
+}
+
+fn conn_request_handle(conn_handle: Int) -> Int {
+    conn_handle % id_base()
+}
+
+fn conn_lease(conn_handle: Int) -> Int {
+    conn_handle / id_base()
+}
+
+fn pool_state_new[T]() -> PoolState[T] {
+    PoolState {
+        next_lease: 0,
+        idle: aic_vec_new_intrinsic(),
+        in_use: aic_vec_new_intrinsic(),
+        closed: false,
+        created: 0,
+        destroyed: 0,
+    }
+}
+
+fn pool_state_total[T](state: PoolState[T]) -> Int {
+    state.idle.len + state.in_use.len
+}
+
+fn pool_state_stats[T](state: PoolState[T]) -> PoolStats {
+    PoolStats {
+        total: pool_state_total(state),
+        idle: state.idle.len,
+        in_use: state.in_use.len,
+        created: state.created,
+        destroyed: state.destroyed,
+    }
+}
+
+fn pool_entry_tick[T](entry: PoolEntry[T], delta_ms: Int, is_idle: Bool) -> PoolEntry[T] {
+    let next_created = entry.created_ms + delta_ms;
+    if is_idle {
+        PoolEntry {
+            lease: entry.lease,
+            value: entry.value,
+            created_ms: next_created,
+            idle_ms: entry.idle_ms + delta_ms,
+            health_ms: entry.health_ms + delta_ms,
+        }
+    } else {
+        PoolEntry {
+            lease: entry.lease,
+            value: entry.value,
+            created_ms: next_created,
+            idle_ms: 0,
+            health_ms: entry.health_ms,
+        }
+    }
+}
+
+fn pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T] {
+    if delta_ms <= 0 {
+        state
+    } else {
+        let mut next_idle: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+        let mut i = 0;
+        while i < state.idle.len {
+            next_idle = match aic_vec_get_intrinsic(state.idle, i) {
+                Some(entry) => aic_vec_push_intrinsic(next_idle, pool_entry_tick(entry, delta_ms, true)),
+                None => next_idle,
+            };
+            i = i + 1;
+        };
+
+        let mut next_in_use: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+        let mut j = 0;
+        while j < state.in_use.len {
+            next_in_use = match aic_vec_get_intrinsic(state.in_use, j) {
+                Some(entry) => aic_vec_push_intrinsic(next_in_use, pool_entry_tick(entry, delta_ms, false)),
+                None => next_in_use,
+            };
+            j = j + 1;
+        };
+
+        PoolState {
+            next_lease: state.next_lease,
+            idle: next_idle,
+            in_use: next_in_use,
+            closed: state.closed,
+            created: state.created,
+            destroyed: state.destroyed,
+        }
+    }
+}
+
+fn should_reap_idle_entry[T](entry: PoolEntry[T], config: PoolConfig) -> Bool {
+    let idle_expired =
+        config.idle_timeout_ms > 0 && entry.idle_ms >= config.idle_timeout_ms;
+    let lifetime_expired =
+        config.max_lifetime_ms > 0 && entry.created_ms >= config.max_lifetime_ms;
+    idle_expired || lifetime_expired
+}
+
+fn pool_state_maintain_idle[T](
+    state: PoolState[T],
+    config: PoolConfig,
+    health_check: Fn(T) -> Bool,
+    destroy: Fn(T) -> (),
+) -> PoolState[T] {
+    let mut next_idle: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+    let mut destroyed = state.destroyed;
+    let mut i = 0;
+    while i < state.idle.len {
+        match aic_vec_get_intrinsic(state.idle, i) {
+            Some(entry) => if should_reap_idle_entry(entry, config) {
+                destroy(entry.value);
+                destroyed = destroyed + 1;
+            } else {
+                if config.health_check_ms > 0 && entry.health_ms >= config.health_check_ms {
+                    if health_check(entry.value) {
+                        next_idle = aic_vec_push_intrinsic(
+                            next_idle,
+                            PoolEntry {
+                                lease: entry.lease,
+                                value: entry.value,
+                                created_ms: entry.created_ms,
+                                idle_ms: entry.idle_ms,
+                                health_ms: 0,
+                            },
+                        );
+                    } else {
+                        destroy(entry.value);
+                        destroyed = destroyed + 1;
+                    }
+                } else {
+                    next_idle = aic_vec_push_intrinsic(next_idle, entry);
+                }
+            },
+            None => (),
+        };
+        i = i + 1;
+    };
+    PoolState {
+        next_lease: state.next_lease,
+        idle: next_idle,
+        in_use: state.in_use,
+        closed: state.closed,
+        created: state.created,
+        destroyed: destroyed,
+    }
+}
+
+fn pool_state_ensure_min_size[T](
+    state: PoolState[T],
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+) -> PoolState[T] {
+    let mut next = state;
+    let mut keep_running = true;
+    while keep_running && !next.closed && pool_state_total(next) < config.min_size {
+        match create() {
+            Ok(value) => if true {
+                let lease = next.next_lease + 1;
+                next = PoolState {
+                    next_lease: lease,
+                    idle: aic_vec_push_intrinsic(
+                        next.idle,
+                        PoolEntry {
+                            lease: lease,
+                            value: value,
+                            created_ms: 0,
+                            idle_ms: 0,
+                            health_ms: 0,
+                        },
+                    ),
+                    in_use: next.in_use,
+                    closed: next.closed,
+                    created: next.created + 1,
+                    destroyed: next.destroyed,
+                };
+            } else {
+                ()
+            },
+            Err(_) => if true {
+                keep_running = false;
+            } else {
+                ()
+            },
+        }
+    };
+    next
+}
+
+fn find_entry_index[T](entries: Vec[PoolEntry[T]], lease: Int) -> Int {
+    let mut i = 0;
+    let mut found_idx = -1;
+    while i < entries.len {
+        let found = match aic_vec_get_intrinsic(entries, i) {
+            Some(entry) => entry.lease == lease,
+            None => false,
+        };
+        if found && found_idx < 0 {
+            found_idx = i;
+        } else {
+            ();
+        };
+        i = i + 1;
+    };
+    found_idx
+}
+
+fn pop_idle_entry[T](state: PoolState[T]) -> (PoolState[T], Option[PoolEntry[T]]) {
+    if state.idle.len <= 0 {
+        (state, None())
+    } else {
+        let idx = state.idle.len - 1;
+        match aic_vec_get_intrinsic(state.idle, idx) {
+            Some(entry) => (
+                PoolState {
+                    next_lease: state.next_lease,
+                    idle: aic_vec_remove_at_intrinsic(state.idle, idx),
+                    in_use: state.in_use,
+                    closed: state.closed,
+                    created: state.created,
+                    destroyed: state.destroyed,
+                },
+                Some(entry),
+            ),
+            None => (state, None()),
+        }
+    }
+}
+
+fn pool_state_acquire[T](
+    request_handle: Int,
+    state: PoolState[T],
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+) -> (PoolState[T], Result[PooledConn[T], PoolError]) {
+    let with_min = pool_state_ensure_min_size(state, config, create);
+    if with_min.closed {
+        (with_min, Err(Closed()))
+    } else {
+        let popped = pop_idle_entry(with_min);
+        match popped.1 {
+            Some(entry) => if true {
+                let with_in_use = PoolState {
+                    next_lease: popped.0.next_lease,
+                    idle: popped.0.idle,
+                    in_use: aic_vec_push_intrinsic(
+                        popped.0.in_use,
+                        PoolEntry {
+                            lease: entry.lease,
+                            value: entry.value,
+                            created_ms: entry.created_ms,
+                            idle_ms: 0,
+                            health_ms: entry.health_ms,
+                        },
+                    ),
+                    closed: popped.0.closed,
+                    created: popped.0.created,
+                    destroyed: popped.0.destroyed,
+                };
+                (
+                    with_in_use,
+                    Ok(PooledConn {
+                        handle: encode_conn_handle(request_handle, entry.lease),
+                        value: entry.value,
+                    }),
+                )
+            } else {
+                (popped.0, Err(Closed()))
+            },
+            None => if pool_state_total(with_min) >= config.max_size {
+                (with_min, Err(MaxSizeReached()))
+            } else {
+                match create() {
+                    Ok(value) => if true {
+                        let lease = with_min.next_lease + 1;
+                        let with_in_use = PoolState {
+                            next_lease: lease,
+                            idle: with_min.idle,
+                            in_use: aic_vec_push_intrinsic(
+                                with_min.in_use,
+                                PoolEntry {
+                                    lease: lease,
+                                    value: value,
+                                    created_ms: 0,
+                                    idle_ms: 0,
+                                    health_ms: 0,
+                                },
+                            ),
+                            closed: with_min.closed,
+                            created: with_min.created + 1,
+                            destroyed: with_min.destroyed,
+                        };
+                        (
+                            with_in_use,
+                            Ok(PooledConn {
+                                handle: encode_conn_handle(request_handle, lease),
+                                value: value,
+                            }),
+                        )
+                    } else {
+                        (with_min, Err(ConnectionFailed()))
+                    },
+                    Err(err) => (with_min, Err(err)),
+                }
+            },
+        }
+    }
+}
+
+fn pool_state_release[T](
+    state: PoolState[T],
+    lease: Int,
+    value: T,
+    destroy: Fn(T) -> (),
+) -> PoolState[T] {
+    let idx = find_entry_index(state.in_use, lease);
+    if idx < 0 {
+        destroy(value);
+        PoolState {
+            next_lease: state.next_lease,
+            idle: state.idle,
+            in_use: state.in_use,
+            closed: state.closed,
+            created: state.created,
+            destroyed: state.destroyed + 1,
+        }
+    } else {
+        match aic_vec_get_intrinsic(state.in_use, idx) {
+            Some(existing) => if true {
+                let next_in_use = aic_vec_remove_at_intrinsic(state.in_use, idx);
+                if state.closed {
+                    destroy(value);
+                    PoolState {
+                        next_lease: state.next_lease,
+                        idle: state.idle,
+                        in_use: next_in_use,
+                        closed: state.closed,
+                        created: state.created,
+                        destroyed: state.destroyed + 1,
+                    }
+                } else {
+                    let released = PoolEntry {
+                        lease: existing.lease,
+                        value: value,
+                        created_ms: existing.created_ms,
+                        idle_ms: 0,
+                        health_ms: 0,
+                    };
+                    PoolState {
+                        next_lease: state.next_lease,
+                        idle: aic_vec_push_intrinsic(state.idle, released),
+                        in_use: next_in_use,
+                        closed: state.closed,
+                        created: state.created,
+                        destroyed: state.destroyed,
+                    }
+                }
+            } else {
+                state
+            },
+            None => state,
+        }
+    }
+}
+
+fn pool_state_discard[T](
+    state: PoolState[T],
+    lease: Int,
+    value: T,
+    destroy: Fn(T) -> (),
+) -> PoolState[T] {
+    let idx = find_entry_index(state.in_use, lease);
+    destroy(value);
+    if idx < 0 {
+        PoolState {
+            next_lease: state.next_lease,
+            idle: state.idle,
+            in_use: state.in_use,
+            closed: state.closed,
+            created: state.created,
+            destroyed: state.destroyed + 1,
+        }
+    } else {
+        PoolState {
+            next_lease: state.next_lease,
+            idle: state.idle,
+            in_use: aic_vec_remove_at_intrinsic(state.in_use, idx),
+            closed: state.closed,
+            created: state.created,
+            destroyed: state.destroyed + 1,
+        }
+    }
+}
+
+fn pool_state_close_all[T](state: PoolState[T], destroy: Fn(T) -> ()) -> PoolState[T] {
+    let mut destroyed = state.destroyed;
+    let mut i = 0;
+    while i < state.idle.len {
+        destroyed = match aic_vec_get_intrinsic(state.idle, i) {
+            Some(entry) => if true {
+                destroy(entry.value);
+                destroyed + 1
+            } else {
+                destroyed
+            },
+            None => destroyed,
+        };
+        i = i + 1;
+    };
+    let mut j = 0;
+    while j < state.in_use.len {
+        destroyed = match aic_vec_get_intrinsic(state.in_use, j) {
+            Some(entry) => if true {
+                destroy(entry.value);
+                destroyed + 1
+            } else {
+                destroyed
+            },
+            None => destroyed,
+        };
+        j = j + 1;
+    };
+    PoolState {
+        next_lease: state.next_lease,
+        idle: aic_vec_new_intrinsic(),
+        in_use: aic_vec_new_intrinsic(),
+        closed: true,
+        created: state.created,
+        destroyed: destroyed,
+    }
+}
+
+fn pool_handle_request[T](
+    request_handle: Int,
+    state: PoolState[T],
+    req: PoolRequest[T],
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+    destroy: Fn(T) -> (),
+) -> RequestOut[T] effects { concurrency } {
+    match req {
+        Acquire(payload) => if true {
+            let acquired = pool_state_acquire(request_handle, state, config, create);
+            let _sent = send(payload.reply, acquired.1);
+            RequestOut {
+                state: acquired.0,
+                close_loop: false,
+            }
+        } else {
+            RequestOut {
+                state: state,
+                close_loop: false,
+            }
+        },
+        Release(payload) => RequestOut {
+            state: pool_state_release(state, payload.lease, payload.value, destroy),
+            close_loop: false,
+        },
+        Discard(payload) => RequestOut {
+            state: pool_state_discard(state, payload.lease, payload.value, destroy),
+            close_loop: false,
+        },
+        Stats(payload) => if true {
+            let _sent = send(payload.reply, pool_state_stats(state));
+            RequestOut {
+                state: state,
+                close_loop: false,
+            }
+        } else {
+            RequestOut {
+                state: state,
+                close_loop: false,
+            }
+        },
+        Close(payload) => if true {
+            let closed = pool_state_close_all(state, destroy);
+            let _sent = send(payload.reply, true);
+            RequestOut {
+                state: closed,
+                close_loop: true,
+            }
+        } else {
+            RequestOut {
+                state: state,
+                close_loop: false,
+            }
+        },
+    }
+}
+
+fn pool_manager_loop[T](
+    request_handle: Int,
+    req_rx: Receiver[PoolRequest[T]],
+    guard: Mutex[Int],
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+    health_check: Fn(T) -> Bool,
+    destroy: Fn(T) -> (),
+) -> Int effects { concurrency } capabilities { concurrency } {
+    let mut state: PoolState[T] = pool_state_new();
+    loop {
+        let next_req: Result[PoolRequest[T], ChannelError] = recv_timeout(req_rx, 1);
+        let lock_out = lock(guard);
+        let handled = match lock_out {
+            Ok(guard_token) => if true {
+                state = pool_state_tick(state, 1);
+                state = pool_state_maintain_idle(state, config, health_check, destroy);
+                state = pool_state_ensure_min_size(state, config, create);
+                let handled_inner = match next_req {
+                    Ok(req) => pool_handle_request(request_handle, state, req, config, create, destroy),
+                    Err(err) => match err {
+                        Timeout => RequestOut {
+                            state: state,
+                            close_loop: false,
+                        },
+                        Closed => RequestOut {
+                            state: pool_state_close_all(state, destroy),
+                            close_loop: true,
+                        },
+                        Empty => RequestOut {
+                            state: state,
+                            close_loop: false,
+                        },
+                        Full => RequestOut {
+                            state: state,
+                            close_loop: false,
+                        },
+                    },
+                };
+                unlock_guard(guard_token);
+                handled_inner
+            } else {
+                RequestOut {
+                    state: state,
+                    close_loop: false,
+                }
+            },
+            Err(_) => RequestOut {
+                state: state,
+                close_loop: false,
+            },
+        };
+        state = handled.state;
+        if handled.close_loop {
+            break;
+        } else {
+            ();
+        };
+    };
+    1
+}
+
+fn request_capacity(config: PoolConfig) -> Int {
+    let desired = config.max_size * 4;
+    if desired < 8 {
+        8
+    } else {
+        desired
+    }
+}
+
+fn default_pool_backoff_ms() -> Int {
+    1
+}
+
+fn wait_backoff_tick() -> () effects { concurrency } {
+    match spawn_task(0, default_pool_backoff_ms()) {
+        Ok(t) => if true {
+            let _joined = join_task(t);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn new_pool[T](
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+    health_check: Fn(T) -> Bool,
+    destroy: Fn(T) -> (),
+) -> Result[Pool[T], PoolError] effects { concurrency } {
+    let cfg = normalized_config(config);
+    let chans: (Sender[PoolRequest[T]], Receiver[PoolRequest[T]]) =
+        buffered_channel(request_capacity(cfg));
+    let req_tx = chans.0;
+    let req_rx = chans.1;
+    let guard = new_mutex(0);
+    let manager = spawn_named("pool-manager", || -> Int {
+        pool_manager_loop(req_tx.handle, req_rx, guard, cfg, create, health_check, destroy)
+    });
+    if manager.handle <= 0 || req_tx.handle <= 0 {
+        let _closed = close_sender(req_tx);
+        Err(ConnectionFailed())
+    } else {
+        Ok(Pool {
+            handle: encode_pool_handle(req_tx.handle, manager.handle, cfg.acquire_timeout_ms),
+        })
+    }
+}
+
+fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concurrency } {
+    let request_handle = pool_request_handle(pool.handle);
+    if request_handle <= 0 {
+        Err(Closed())
+    } else {
+        let tx: Sender[PoolRequest[T]] = Sender {
+            handle: request_handle,
+        };
+        let mut remaining = pool_acquire_timeout_ms(pool.handle);
+        let mut done = false;
+        let mut out: Result[PooledConn[T], PoolError] = acquire_result_timeout();
+        while !done {
+            let reply_ch: (
+                Sender[Result[PooledConn[T], PoolError]],
+                Receiver[Result[PooledConn[T], PoolError]],
+            ) = buffered_channel(1);
+            let reply_tx = reply_ch.0;
+            let reply_rx = reply_ch.1;
+            let sent = send(
+                tx,
+                Acquire(AcquireReq {
+                    reply: reply_tx,
+                }),
+            );
+            match sent {
+                Ok(_) => if true {
+                    let step = if remaining > 0 { 1 } else { 0 };
+                    let recv_out: Result[Result[PooledConn[T], PoolError], ChannelError] =
+                        recv_timeout(reply_rx, step);
+                    let next = match recv_out {
+                        Ok(reply) => match reply {
+                            Ok(conn) => (
+                                true,
+                                acquire_result_ok(conn),
+                                remaining,
+                            ),
+                            Err(err) => match err {
+                                MaxSizeReached => if remaining <= 0 {
+                                    (true, acquire_result_timeout(), remaining)
+                                } else {
+                                    wait_backoff_tick();
+                                    (false, acquire_result_timeout(), remaining - 1)
+                                },
+                                _ => (
+                                    true,
+                                    acquire_result_err(err),
+                                    remaining,
+                                ),
+                            },
+                        },
+                        Err(err) => match err {
+                            Timeout => if remaining <= 0 {
+                                (true, acquire_result_timeout(), remaining)
+                            } else {
+                                wait_backoff_tick();
+                                (false, acquire_result_timeout(), remaining - 1)
+                            },
+                            Closed => (
+                                true,
+                                acquire_result_err(pool_closed_error()),
+                                remaining,
+                            ),
+                            Empty => (
+                                false,
+                                acquire_result_timeout(),
+                                remaining,
+                            ),
+                            Full => (
+                                false,
+                                acquire_result_timeout(),
+                                remaining,
+                            ),
+                        },
+                    };
+                    done = next.0;
+                    out = next.1;
+                    remaining = next.2;
+                    ()
+                } else {
+                    ()
+                },
+                Err(_) => if true {
+                    out = acquire_result_err(pool_closed_error());
+                    done = true;
+                    ()
+                } else {
+                    ()
+                },
+            };
+        };
+        out
+    }
+}
+
+fn release[T](conn: PooledConn[T]) -> () effects { concurrency } {
+    let request_handle = conn_request_handle(conn.handle);
+    let lease = conn_lease(conn.handle);
+    if request_handle <= 0 || lease <= 0 {
+        ()
+    } else {
+        let tx: Sender[PoolRequest[T]] = Sender {
+            handle: request_handle,
+        };
+        let _sent = send(
+            tx,
+            Release(ReleaseReq {
+                lease: lease,
+                value: conn.value,
+            }),
+        );
+        ()
+    }
+}
+
+fn discard[T](conn: PooledConn[T]) -> () effects { concurrency } {
+    let request_handle = conn_request_handle(conn.handle);
+    let lease = conn_lease(conn.handle);
+    if request_handle <= 0 || lease <= 0 {
+        ()
+    } else {
+        let tx: Sender[PoolRequest[T]] = Sender {
+            handle: request_handle,
+        };
+        let _sent = send(
+            tx,
+            Discard(ReleaseReq {
+                lease: lease,
+                value: conn.value,
+            }),
+        );
+        ()
+    }
+}
+
+fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency } {
+    let request_handle = pool_request_handle(pool.handle);
+    if request_handle <= 0 {
+        PoolStats {
+            total: 0,
+            idle: 0,
+            in_use: 0,
+            created: 0,
+            destroyed: 0,
+        }
+    } else {
+        let tx: Sender[PoolRequest[T]] = Sender {
+            handle: request_handle,
+        };
+        let reply: (Sender[PoolStats], Receiver[PoolStats]) = buffered_channel(1);
+        let stats_req: PoolRequest[T] = Stats(StatsReq {
+            reply: reply.0,
+        });
+        let sent = send(
+            tx,
+            stats_req,
+        );
+        match sent {
+            Ok(_) => match recv_timeout(reply.1, 20) {
+                Ok(stats) => stats,
+                Err(_) => PoolStats {
+                    total: 0,
+                    idle: 0,
+                    in_use: 0,
+                    created: 0,
+                    destroyed: 0,
+                },
+            },
+            Err(_) => PoolStats {
+                total: 0,
+                idle: 0,
+                in_use: 0,
+                created: 0,
+                destroyed: 0,
+            },
+        }
+    }
+}
+
+fn close_pool[T](pool: Pool[T]) -> () effects { concurrency } {
+    let request_handle = pool_request_handle(pool.handle);
+    if request_handle > 0 {
+        let tx: Sender[PoolRequest[T]] = Sender {
+            handle: request_handle,
+        };
+        let reply: (Sender[Bool], Receiver[Bool]) = buffered_channel(1);
+        let close_req: PoolRequest[T] = Close(CloseReq {
+            reply: reply.0,
+        });
+        let _sent = send(
+            tx,
+            close_req,
+        );
+        let _ack = recv_timeout(reply.1, 50);
+        let _closed = close_sender(tx);
+    } else {
+        ();
+    };
+    let manager_handle = pool_manager_handle(pool.handle);
+    if manager_handle > 0 {
+        let manager: Task[Int] = Task {
+            handle: manager_handle,
+        };
+        let _joined = join_task(manager);
+    } else {
+        ();
+    };
+}

@@ -5242,6 +5242,290 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_pool_ten_workers_share_five_connections_without_leaks() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+import std.vec;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn release_and_one(conn: PooledConn[FakeConn]) -> Int effects { concurrency } capabilities { concurrency } {
+    release(conn);
+    1
+}
+
+fn worker_once(pool_ref: Pool[FakeConn]) -> Int effects { concurrency } capabilities { concurrency } {
+    let acquired: Result[PooledConn[FakeConn], PoolError] = acquire(pool_ref);
+    match acquired {
+        Ok(conn) => release_and_one(conn),
+        Err(_) => 0,
+    }
+}
+
+fn spawn_worker(pool_ref: Pool[FakeConn]) -> Task[Int] effects { concurrency } capabilities { concurrency } {
+    spawn_named("pool-worker", || -> Int { worker_once(pool_ref) })
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 5,
+            max_size: 5,
+            acquire_timeout_ms: 200,
+            idle_timeout_ms: 40,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let mut tasks: Vec[Task[Int]] = vec.new_vec();
+    let mut i = 0;
+    while i < 10 {
+        tasks = vec.push(tasks, spawn_worker(pool));
+        i = i + 1;
+    };
+
+    let mut joined = 0;
+    let mut j = 0;
+    while j < tasks.len {
+        joined = joined + match vec.get(tasks, j) {
+            Some(task) => match join_value(task) {
+                Ok(v) => v,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        j = j + 1;
+    };
+
+    wait_ms(20);
+    let stats = pool_stats(pool);
+    close_pool(pool);
+
+    if joined == 10 && stats.total <= 5 && stats.in_use == 0 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_pool_idle_connections_are_recycled_after_timeout() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 1,
+            max_size: 2,
+            acquire_timeout_ms: 30,
+            idle_timeout_ms: 4,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let first_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    wait_ms(20);
+
+    let second_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    close_pool(pool);
+
+    if first_id > 0 && second_id > first_id {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_pool_discarded_connection_is_replaced() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 1,
+            max_size: 1,
+            acquire_timeout_ms: 30,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let first_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            discard(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let second_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    close_pool(pool);
+
+    if first_id > 0 && second_id > first_id {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_structured_group_timeout_and_select_first_are_stable() {
     let src = r#"
 import std.io;

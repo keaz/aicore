@@ -560,6 +560,64 @@ Notes:
 - `with_timeout` enforces deadline checks before and after operation execution; the wrapped operation is not force-cancelled mid-call.
 - Secure pooled retry reference (including timeout/capacity negatives): `examples/io/postgres_tls_scram_reference.aic`.
 
+## `std.pool`
+
+```aic
+enum PoolError {
+    MaxSizeReached,
+    Timeout,
+    ConnectionFailed,
+    Closed,
+    HealthCheckFailed,
+}
+
+struct PoolConfig {
+    min_size: Int,
+    max_size: Int,
+    acquire_timeout_ms: Int,
+    idle_timeout_ms: Int,
+    max_lifetime_ms: Int,
+    health_check_ms: Int,
+}
+
+struct Pool[T] {
+    handle: Int,
+}
+
+struct PooledConn[T] {
+    handle: Int,
+    value: T,
+}
+
+struct PoolStats {
+    total: Int,
+    idle: Int,
+    in_use: Int,
+    created: Int,
+    destroyed: Int,
+}
+
+fn new_pool[T](
+    config: PoolConfig,
+    create: Fn() -> Result[T, PoolError],
+    health_check: Fn(T) -> Bool,
+    destroy: Fn(T) -> (),
+) -> Result[Pool[T], PoolError] effects { concurrency }
+
+fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concurrency }
+fn release[T](conn: PooledConn[T]) -> () effects { concurrency }
+fn discard[T](conn: PooledConn[T]) -> () effects { concurrency }
+fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency }
+fn close_pool[T](pool: Pool[T]) -> () effects { concurrency }
+```
+
+Notes:
+
+- Use typed callback bindings (`Fn() -> Result[Conn, PoolError]`, etc.) and a typed `pool_result: Result[Pool[Conn], PoolError]` binding for stable inference.
+- `discard(...)` is for broken resources; it destroys and rotates capacity.
+- `pool_stats(...)` is safe for runtime observability and CI assertions.
+- Runnable reference: `examples/io/connection_pool.aic`.
+
 ## `std.buffer`
 
 ```aic

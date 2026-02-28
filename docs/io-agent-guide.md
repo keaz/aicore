@@ -56,7 +56,9 @@ Treat error enums as control-flow boundaries, not exceptions.
     - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
 - Postgres TLS/SCRAM replay reference (`examples/io/postgres_tls_scram_reference.aic`):
   - deterministic and CI-safe (no external network dependency).
-  - pool behavior is currently modeled via `PoolErrorContract` compatibility contract until full pool runtime APIs are widened.
+  - secure-flow error compatibility still maps via `PoolErrorContract` when normalizing into `std.secure_errors`.
+- Runtime connection pooling is available via `std.pool` (`new_pool/acquire/release/discard/pool_stats/close_pool`).
+- See `docs/io-runtime/connection-pool.md` and `examples/io/connection_pool.aic` for agent-safe callback typing and lifecycle patterns.
 
 ## 5. Resource Lifecycle Rules
 
@@ -91,7 +93,9 @@ cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 cargo run --quiet --bin aic -- check examples/io/tls_policy_defaults.aic
 cargo run --quiet --bin aic -- check examples/io/secure_error_contract.aic
 cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- check examples/io/connection_pool.aic
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- run examples/io/connection_pool.aic
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- bad-cert
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- auth-failure
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- timeout
