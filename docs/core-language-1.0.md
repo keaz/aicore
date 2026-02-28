@@ -125,7 +125,7 @@ Backend note:
 - Canonical printing: `src/formatter.rs`
 - Type and pattern checks: `src/typecheck.rs`
 - Contract expression cloning/traversal: `src/contracts.rs`
-- LLVM lowering behavior: `src/codegen.rs`
+- LLVM lowering behavior: `src/codegen/mod.rs`
 
 ## Validation Workflow
 

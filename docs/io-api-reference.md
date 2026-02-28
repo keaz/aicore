@@ -1,7 +1,7 @@
 # IO API Reference
 
 This file is the agent-facing reference for the current IO runtime surface.
-Source of truth is the current repository state in `std/*.aic` and runtime lowering in `src/codegen.rs`.
+Source of truth is the current repository state in `std/*.aic` and runtime lowering in `src/codegen/mod.rs`.
 
 ## Scope
 
@@ -41,7 +41,7 @@ Typechecking enforces direct and transitive effect declarations (`E2001`, `E2005
 
 ## Runtime Error Mapping
 
-The backend maps runtime status codes to typed error enums in `src/codegen.rs`.
+The backend maps runtime status codes to typed error enums in `src/codegen/mod.rs`.
 
 | Module | Status-to-variant mapping |
 |---|---|

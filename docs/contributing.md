@@ -37,7 +37,7 @@ make init
 1. Identify subsystem ownership
 - Frontend grammar/parsing: `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`
 - Semantic checks: `src/resolver.rs`, `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs`
-- Backend/runtime lowering: `src/codegen.rs`
+- Backend/runtime lowering: `src/codegen/mod.rs`
 - Package/workspace flows: `src/package_loader.rs`, `src/package_workflow.rs`, `src/package_registry.rs`
 
 2. Implement and keep docs synchronized
@@ -148,7 +148,7 @@ Golden workflow examples are documented in `docs/examples/test-golden-workflow.m
 
 ### Adding std/runtime APIs
 
-- Update std surface in `std/*.aic` and backend lowering in `src/codegen.rs`.
+- Update std surface in `std/*.aic` and backend lowering in `src/codegen/mod.rs`.
 - Validate with execution tests and examples.
 - Keep compatibility/deprecation policies coherent (`aic std-compat --check`).
 

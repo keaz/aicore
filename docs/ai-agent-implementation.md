@@ -15,7 +15,7 @@ Core language-specific deep dive:
 - Effects normalization + validation: `src/effects.rs`
 - Type/effect checking + generic instantiation recording: `src/typecheck.rs`
 - Contract static verification + runtime lowering: `src/contracts.rs`
-- LLVM backend + runtime ABI: `src/codegen.rs`
+- LLVM backend + runtime ABI: `src/codegen/mod.rs`
 - API doc generation: `src/docgen.rs`
 - Std compatibility/deprecation policy: `src/std_policy.rs`
 - SARIF diagnostics export: `src/sarif.rs`
@@ -87,7 +87,7 @@ Use this checklist to gate closure of epic `#62`. Keep epic status as In Progres
 
 ### Toolchain contract
 
-In `src/codegen.rs`:
+In `src/codegen/mod.rs`:
 
 - `probe_toolchain()` inspects `clang --version`
 - `MIN_SUPPORTED_LLVM_MAJOR = 14`
@@ -246,7 +246,7 @@ Diagnostics:
 
 ### Native dependency bridge (PKG-T3)
 
-`src/package_workflow.rs`, `src/typecheck.rs`, `src/codegen.rs`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
+`src/package_workflow.rs`, `src/typecheck.rs`, `src/codegen/mod.rs`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
 
 - Frontend syntax:
   - `extern "C" fn ...;`
@@ -841,7 +841,7 @@ Verifier-focused examples:
   - `src/lexer.rs`
   - `src/parser.rs`
   - `src/typecheck.rs`
-  - `src/codegen.rs`
+  - `src/codegen/mod.rs`
 - Verification:
   - `src/lexer.rs` parser/lexer unit tests include hex + bitwise token coverage.
   - `src/parser.rs` tests cover precedence and compound assignment desugaring.

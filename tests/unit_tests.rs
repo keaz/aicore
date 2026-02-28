@@ -2627,7 +2627,19 @@ fn unit_tls_policy_manifest_matches_runtime_defaults() {
         "tls policy manifest must include unsafe override audit tag"
     );
 
-    let runtime_source = fs::read_to_string("src/codegen.rs").expect("read src/codegen.rs");
+    let runtime_dir = "src/codegen/runtime";
+    let mut part_paths = fs::read_dir(runtime_dir)
+        .expect("read src/codegen/runtime")
+        .map(|entry| entry.expect("runtime dir entry").path())
+        .collect::<Vec<_>>();
+    part_paths.sort();
+    let mut runtime_source = String::new();
+    for part in part_paths {
+        runtime_source.push_str(
+            &fs::read_to_string(&part)
+                .unwrap_or_else(|_| panic!("read runtime source part {}", part.display())),
+        );
+    }
     assert!(
         runtime_source.contains("AIC_TLS_POLICY_UNSAFE verify_server=false disables certificate and hostname validation"),
         "runtime must emit explicit audit warning when TLS verification is disabled"

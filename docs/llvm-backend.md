@@ -1,6 +1,6 @@
 # LLVM Backend Overview (E5)
 
-This document describes the current native backend contract implemented in `src/codegen.rs`.
+This document describes the current native backend contract implemented in `src/codegen/mod.rs`.
 
 ## Backend Flow
 

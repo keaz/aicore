@@ -103,7 +103,7 @@ LLVM runtime functions used by codegen:
 - `aic_rt_fs_temp_file`
 - `aic_rt_fs_temp_dir`
 
-These are implemented in `src/codegen.rs` runtime shim (`runtime_c_source()`).
+These are implemented in `src/codegen/mod.rs` runtime shim (`runtime_c_source()`).
 
 ## Example
 

@@ -8,7 +8,7 @@ This document describes the current AICore compiler/runtime architecture as impl
 
 - CLI orchestration: `src/main.rs`, `src/cli_contract.rs`, `src/coverage.rs`, `src/impact.rs`, `src/profile.rs`
 - Frontend pipeline: `src/package_loader.rs`, `src/parser.rs`, `src/ir_builder.rs`, `src/effects.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/contracts.rs`
-- Backend/code generation: `src/codegen.rs`
+- Backend/code generation: `src/codegen/mod.rs`
 - Tooling surfaces: `src/lsp.rs`, `src/daemon.rs`, `src/docgen.rs`, `src/diag_fixes.rs`
 - Package/workspace workflows: `src/package_workflow.rs`, `src/package_registry.rs`
 - Verification and test harness support: `src/conformance.rs`, `src/differential.rs`, `src/fuzzing.rs`, `src/execution_matrix.rs`, `src/perf_gate.rs`, `src/test_harness.rs`
@@ -87,7 +87,7 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 - Validate with: `tests/unit_tests.rs`, `tests/e7_cli_tests.rs`, `tests/e8_conformance_tests.rs`
 
 ### 3) Backend lowering and runtime ABI
-- Edit: `src/codegen.rs`
+- Edit: `src/codegen/mod.rs`
 - Keep behavior aligned with std APIs in `std/*.aic`
 - Validate with: `tests/execution_tests.rs`, `tests/e8_matrix_tests.rs`
 
@@ -107,9 +107,9 @@ For open language issues `#128`, `#130`, `#136`, `#137`, `#138`, `#139`, use
 
 | Issue | Primary implementation files | Minimum validation focus |
 | --- | --- | --- |
-| `#128` tuple types | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen.rs` | `tests/golden_tests.rs`, `tests/unit_tests.rs`, compile-fail fixtures, `tests/execution_tests.rs` |
-| `#130` struct methods | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen.rs` | parser/resolver/typecheck tests, method call execution tests |
-| `#136` trait methods + dispatch | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/codegen.rs` | trait conformance tests, generic bound call tests, dispatch-path execution tests |
+| `#128` tuple types | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen/mod.rs` | `tests/golden_tests.rs`, `tests/unit_tests.rs`, compile-fail fixtures, `tests/execution_tests.rs` |
+| `#130` struct methods | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen/mod.rs` | parser/resolver/typecheck tests, method call execution tests |
+| `#136` trait methods + dispatch | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/codegen/mod.rs` | trait conformance tests, generic bound call tests, dispatch-path execution tests |
 | `#137` borrow completeness | `src/typecheck.rs` (borrow model), supporting IR/type utilities | borrow compile-fail matrix + run-pass safety cases |
 | `#138` constraints + `where` | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs` | generic-bound parser/typecheck tests and equivalence tests |
 | `#139` inference improvements | `src/typecheck.rs` (constraint solving/inference), related resolver/type utilities | inference-focused unit tests with ambiguity/failure cases |

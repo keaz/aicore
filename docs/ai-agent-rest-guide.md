@@ -18,7 +18,7 @@ Use this as the minimum map before changing REST behavior.
 |---|---|
 | Frontend orchestration and package load | `src/driver.rs`, `src/package_loader.rs` |
 | Type/effect/contracts validation | `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs` |
-| Runtime lowering and LLVM backend | `src/codegen.rs` |
+| Runtime lowering and LLVM backend | `src/codegen/mod.rs` |
 | REST stdlib API surface | `std/http_server.aic`, `std/router.aic`, `std/net.aic`, `std/json.aic`, `std/string.aic`, `std/map.aic` |
 | Test coverage | `tests/unit_tests.rs`, `tests/execution_tests.rs`, `tests/e8_perf_tests.rs` |
 | Example and CI wiring | `scripts/ci/examples.sh` |
@@ -30,7 +30,7 @@ Machine-checkable file reference set:
 AGENTS.md
 docs/ai-agent-implementation.md
 scripts/ci/examples.sh
-src/codegen.rs
+src/codegen/mod.rs
 src/contracts.rs
 src/driver.rs
 src/effects.rs
@@ -51,11 +51,11 @@ tests/unit_tests.rs
 
 | Change goal | Primary files | Required coverage |
 |---|---|---|
-| New REST stdlib API shape | `std/*.aic` + `src/codegen.rs` intrinsic mapping | Unit delegate tests + execution behavior test + example |
-| HTTP parse/serialize behavior | `src/codegen.rs` runtime C section + `std/http_server.aic` | Execution test with malformed and valid requests |
-| Route dispatch semantics | `std/router.aic` + `src/codegen.rs` router runtime calls | Deterministic route precedence tests + example |
-| JSON payload behavior for REST | `std/json.aic` + `src/codegen.rs` JSON lowering/runtime | Roundtrip and negative-path execution tests |
-| Async REST networking behavior | `std/net.aic` + `src/codegen.rs` async runtime section | Multi-connection test + backpressure test + perf gate |
+| New REST stdlib API shape | `std/*.aic` + `src/codegen/mod.rs` intrinsic mapping | Unit delegate tests + execution behavior test + example |
+| HTTP parse/serialize behavior | `src/codegen/mod.rs` runtime C section + `std/http_server.aic` | Execution test with malformed and valid requests |
+| Route dispatch semantics | `std/router.aic` + `src/codegen/mod.rs` router runtime calls | Deterministic route precedence tests + example |
+| JSON payload behavior for REST | `std/json.aic` + `src/codegen/mod.rs` JSON lowering/runtime | Roundtrip and negative-path execution tests |
+| Async REST networking behavior | `std/net.aic` + `src/codegen/mod.rs` async runtime section | Multi-connection test + backpressure test + perf gate |
 
 ## 4. Deterministic End-To-End Workflow
 
