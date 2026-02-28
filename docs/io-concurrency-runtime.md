@@ -17,6 +17,7 @@ This document defines `std.concurrent` behavior, runtime ABI, and operational gu
 - Legacy compatibility: `IntChannel` and `*_int` channel APIs remain available during migration
 - Generic synchronization: `Mutex[T]`, `MutexGuard[T]`, `RwLock[T]`
 - Shared ownership: `Arc[T]` with atomic reference counting
+- Lock-free primitives: `AtomicInt`, `AtomicBool` with sequentially-consistent operations
 - Legacy synchronization compatibility: `IntMutex` with `lock_int`, `unlock_int`, `close_mutex`
 - Compile-time thread-safety checks: marker traits `Send[T]` / `Sync[T]` with `Send` enforcement on cross-thread payload APIs
 
@@ -59,6 +60,8 @@ struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
 struct IntMutex { handle: Int }
 struct Arc[T] { handle: Int }
+struct AtomicInt { handle: Int }
+struct AtomicBool { handle: Int }
 struct Mutex[T] { handle: Int }
 struct MutexGuard[T] { handle: Int, guard_kind: Int, value: T }
 struct RwLock[T] { handle: Int }
@@ -119,6 +122,16 @@ fn arc_new[T](value: T) -> Arc[T] effects { concurrency }
 fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency }
 fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }
 fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }
+fn atomic_int(initial: Int) -> AtomicInt effects { concurrency }
+fn atomic_load(a: AtomicInt) -> Int effects { concurrency }
+fn atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency }
+fn atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency }
+fn atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency }
+fn atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concurrency }
+fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency }
+fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency }
+fn atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency }
+fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency }
 
 fn new_mutex[T](value: T) -> Mutex[T] effects { concurrency }
 fn lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
@@ -161,6 +174,31 @@ let _task: Task[Int] = spawn_named("worker", || -> Int {
         Err(_) => 0,
     }
 });
+```
+
+## Atomic Usage Pattern
+
+Use atomics for lock-free counters/flags where shared mutable state does not require compound invariants:
+
+```aic
+import std.concurrent;
+import std.vec;
+
+let counter = atomic_int(0);
+let mut tasks: Vec[Task[Int]] = vec.new_vec();
+let mut i = 0;
+while i < 10 {
+    tasks = vec.push(tasks, spawn(|| -> Int {
+        let mut j = 0;
+        while j < 1000 {
+            let _old = atomic_add(counter, 1);
+            j = j + 1;
+        };
+        1
+    }));
+    i = i + 1;
+};
+// counter == 10000 after joins
 ```
 
 ## Migration Strategy (Legacy -> Generic)
@@ -263,6 +301,11 @@ Sunset policy:
   - `arc_release` is runtime-managed and decrements refcount with sequentially-consistent atomics (`fetch_sub`).
   - Arc payload storage is freed automatically when strong count reaches `0`.
   - `Arc[T]` is treated as a thread-safe wrapper and supports `Arc[Mutex[T]]` for shared mutable state.
+- Lock-free atomics:
+  - `atomic_add`/`atomic_sub` lower to host `fetch_add`/`fetch_sub` with sequential consistency.
+  - `atomic_cas` lowers to compare-and-swap (`compare_exchange`) with sequential consistency.
+  - `atomic_*_bool` operations map to sequentially-consistent load/store/swap on bool slots.
+  - Atomic handle allocation uses lock-free slot activation (`compare_exchange` on active flags).
 
 ## Error-Code Mapping
 
@@ -326,6 +369,16 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_arc_get`
 - `aic_rt_conc_arc_strong_count`
 - `aic_rt_conc_arc_release`
+- `aic_rt_conc_atomic_int_new`
+- `aic_rt_conc_atomic_int_load`
+- `aic_rt_conc_atomic_int_store`
+- `aic_rt_conc_atomic_int_add`
+- `aic_rt_conc_atomic_int_sub`
+- `aic_rt_conc_atomic_int_cas`
+- `aic_rt_conc_atomic_bool_new`
+- `aic_rt_conc_atomic_bool_load`
+- `aic_rt_conc_atomic_bool_store`
+- `aic_rt_conc_atomic_bool_swap`
 - `aic_rt_async_poll_int`
 - `aic_rt_async_poll_string`
 
@@ -334,7 +387,7 @@ Codegen lowers to these runtime symbols:
 - Linux/macOS:
   - Full channel/task/mutex runtime behavior is implemented.
 - Windows:
-  - Existing concurrency APIs (including generic spawn/join/scoped APIs and Arc APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
+  - Existing concurrency APIs (including generic spawn/join/scoped APIs, Arc APIs, and atomic APIs) return `ConcurrencyError::Io` for unsupported runtime paths.
   - Channel try/select APIs return deterministic `ChannelError::Closed`.
 
 ## Example
@@ -342,6 +395,7 @@ Codegen lowers to these runtime symbols:
 - `examples/io/worker_pool.aic`
 - `examples/io/mutex_rwlock_shared_state.aic`
 - `examples/io/arc_mutex_shared_ownership.aic`
+- `examples/io/atomic_counter_vs_mutex.aic`
 - `examples/io/channel_migration_compat.aic`
 - `examples/io/generic_channel_types.aic`
 - `examples/io/structured_concurrency.aic`

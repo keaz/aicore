@@ -4633,6 +4633,111 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_atomic_int_ten_threads_thousand_increments_each() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.vec;
+
+fn bump_many(counter: AtomicInt, iterations: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let mut i = 0;
+    while i < iterations {
+        let _old = atomic_add(counter, 1);
+        i = i + 1;
+    };
+    1
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let counter = atomic_int(0);
+    let mut tasks: Vec[Task[Int]] = vec.new_vec();
+    let mut i = 0;
+    while i < 10 {
+        let task: Task[Int] = spawn_named("atomic-inc", || -> Int { bump_many(counter, 1000) });
+        tasks = vec.push(tasks, task);
+        i = i + 1;
+    };
+
+    let mut joined = 0;
+    let mut j = 0;
+    while j < tasks.len {
+        joined = joined + match vec.get(tasks, j) {
+            Some(task) => match join_value(task) {
+                Ok(v) => v,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        j = j + 1;
+    };
+
+    let total = atomic_load(counter);
+    if joined == 10 && total == 10000 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_atomic_ops_cas_and_bool_swap_are_consistent() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let num = atomic_int(10);
+    let old_add = atomic_add(num, 5);
+    let old_sub = atomic_sub(num, 3);
+    let cas_ok = atomic_cas(num, 12, 99);
+    let cas_fail = atomic_cas(num, 12, 77);
+    let final_num = atomic_load(num);
+
+    let flag = atomic_bool(false);
+    let old_first = atomic_swap_bool(flag, true);
+    atomic_store_bool(flag, false);
+    let old_second = atomic_swap_bool(flag, true);
+    let final_flag = atomic_load_bool(flag);
+
+    let pass = if old_add == 10
+        && old_sub == 15
+        && cas_ok
+        && !cas_fail
+        && final_num == 99
+        && !old_first
+        && !old_second
+        && final_flag {
+        1
+    } else {
+        0
+    };
+
+    if pass == 1 {
+        print_int(42);
+    } else {
+        print_int(bool_to_int(cas_ok) + bool_to_int(final_flag));
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_spawn_join_generic_closure_capture_is_stable() {
     let src = r#"
 import std.concurrent;

@@ -1,0 +1,115 @@
+import std.concurrent;
+import std.io;
+import std.time;
+import std.vec;
+
+fn bump_atomic(counter: AtomicInt, iterations: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let mut i = 0;
+    while i < iterations {
+        let _old = atomic_add(counter, 1);
+        i = i + 1;
+    };
+    1
+}
+
+fn unlock_incremented(g: MutexGuard[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    let next = g.value + 1;
+    unlock_guard(guard_set(g, next));
+    1
+}
+
+fn increment_mutex_once(counter: Mutex[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    match lock(counter) {
+        Ok(g) => unlock_incremented(g),
+        Err(_) => 0,
+    }
+}
+
+fn bump_mutex(counter: Mutex[Int], iterations: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let mut i = 0;
+    let mut ok = 1;
+    while i < iterations {
+        let step = increment_mutex_once(counter);
+        ok = ok * step;
+        i = i + 1;
+    };
+    ok
+}
+
+fn read_mutex_guard(g: MutexGuard[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    let out = g.value;
+    unlock_guard(g);
+    out
+}
+
+fn read_mutex(counter: Mutex[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    match lock(counter) {
+        Ok(g) => read_mutex_guard(g),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env, time } capabilities { io, concurrency, env, time } {
+    let threads = 10;
+    let iterations = 1000;
+
+    let atomic_counter = atomic_int(0);
+    let atomic_started = monotonic_ms();
+    let mut atomic_tasks: Vec[Task[Int]] = vec.new_vec();
+    let mut i = 0;
+    while i < threads {
+        let t: Task[Int] = spawn_named("atomic-worker", || -> Int { bump_atomic(atomic_counter, iterations) });
+        atomic_tasks = vec.push(atomic_tasks, t);
+        i = i + 1;
+    };
+    let mut atomic_joined = 0;
+    let mut a = 0;
+    while a < atomic_tasks.len {
+        atomic_joined = atomic_joined + match vec.get(atomic_tasks, a) {
+            Some(t) => match join_value(t) {
+                Ok(v) => v,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        a = a + 1;
+    };
+    let atomic_total = atomic_load(atomic_counter);
+    let atomic_elapsed = monotonic_ms() - atomic_started;
+
+    let mutex_counter = new_mutex(0);
+    let mutex_started = monotonic_ms();
+    let mut mutex_tasks: Vec[Task[Int]] = vec.new_vec();
+    let mut j = 0;
+    while j < threads {
+        let t: Task[Int] = spawn_named("mutex-worker", || -> Int { bump_mutex(mutex_counter, iterations) });
+        mutex_tasks = vec.push(mutex_tasks, t);
+        j = j + 1;
+    };
+    let mut mutex_joined = 0;
+    let mut m = 0;
+    while m < mutex_tasks.len {
+        mutex_joined = mutex_joined + match vec.get(mutex_tasks, m) {
+            Some(t) => match join_value(t) {
+                Ok(v) => v,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        m = m + 1;
+    };
+    let mutex_total = read_mutex(mutex_counter);
+    let mutex_elapsed = monotonic_ms() - mutex_started;
+
+    let benchmark_measured = if atomic_elapsed >= 0 && mutex_elapsed >= 0 { 1 } else { 0 };
+    if atomic_joined == threads
+        && mutex_joined == threads
+        && atomic_total == threads * iterations
+        && mutex_total == threads * iterations
+        && benchmark_measured == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

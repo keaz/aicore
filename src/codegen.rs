@@ -334,6 +334,86 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_int_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_new",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_load_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_load",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_store_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_store",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_add_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_add",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_sub_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_sub",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_cas_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_int_cas",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_bool_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_bool_new",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Bool"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_load_bool_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_bool_load",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_store_bool_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_bool_store",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Bool"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_atomic_swap_bool_intrinsic",
+        runtime_symbol: "aic_rt_conc_atomic_bool_swap",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Bool"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_proc_spawn_intrinsic",
         runtime_symbol: "aic_rt_proc_spawn",
         signatures: &[IntrinsicSignatureShape {
@@ -2548,6 +2628,18 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_conc_arc_get(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_arc_strong_count(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_arc_release(i64)\n\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_new(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_load(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_store(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_add(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_sub(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_cas(i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_int_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_bool_new(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_bool_load(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_bool_store(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_bool_swap(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_atomic_bool_close(i64)\n\n");
         text.push_str("declare i64 @aic_rt_fs_exists(i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
@@ -8250,6 +8342,16 @@ impl<'a> Generator<'a> {
             "aic_conc_arc_clone_intrinsic" => "arc_clone",
             "aic_conc_arc_get_intrinsic" => "arc_get",
             "aic_conc_arc_strong_count_intrinsic" => "arc_strong_count",
+            "aic_conc_atomic_int_intrinsic" => "atomic_int",
+            "aic_conc_atomic_load_intrinsic" => "atomic_load",
+            "aic_conc_atomic_store_intrinsic" => "atomic_store",
+            "aic_conc_atomic_add_intrinsic" => "atomic_add",
+            "aic_conc_atomic_sub_intrinsic" => "atomic_sub",
+            "aic_conc_atomic_cas_intrinsic" => "atomic_cas",
+            "aic_conc_atomic_bool_intrinsic" => "atomic_bool",
+            "aic_conc_atomic_load_bool_intrinsic" => "atomic_load_bool",
+            "aic_conc_atomic_store_bool_intrinsic" => "atomic_store_bool",
+            "aic_conc_atomic_swap_bool_intrinsic" => "atomic_swap_bool",
             _ => return None,
         };
 
@@ -8513,6 +8615,80 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["Int"], "Result[Int, ConcurrencyError]") =>
             {
                 Some(self.gen_concurrency_arc_strong_count_call(name, args, span, fctx))
+            }
+            "atomic_int"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_atomic_int_new_call(name, args, span, fctx))
+            }
+            "atomic_load"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_atomic_int_load_call(name, args, span, fctx))
+            }
+            "atomic_store"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_int_store_call(name, args, span, fctx))
+            }
+            "atomic_add"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_int_add_call(name, args, span, fctx))
+            }
+            "atomic_sub"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[Int, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_int_sub_call(name, args, span, fctx))
+            }
+            "atomic_cas"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_int_cas_call(name, args, span, fctx))
+            }
+            "atomic_bool"
+                if self.sig_matches_shape(name, &["Bool"], "Result[Int, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_atomic_bool_new_call(name, args, span, fctx))
+            }
+            "atomic_load_bool"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, ConcurrencyError]") =>
+            {
+                Some(self.gen_concurrency_atomic_bool_load_call(name, args, span, fctx))
+            }
+            "atomic_store_bool"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Bool"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_bool_store_call(name, args, span, fctx))
+            }
+            "atomic_swap_bool"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Bool"],
+                    "Result[Bool, ConcurrencyError]",
+                ) =>
+            {
+                Some(self.gen_concurrency_atomic_bool_swap_call(name, args, span, fctx))
             }
             _ => None,
         }
@@ -10915,6 +11091,524 @@ impl<'a> Generator<'a> {
         let ok_payload = Value {
             ty: LType::Int,
             repr: Some(count),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_int_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let initial = self.gen_expr(&args[0], fctx)?;
+        if initial.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_int_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_new(i64 {}, i64* {})",
+            err,
+            initial.repr.clone().unwrap_or_else(|| "0".to_string()),
+            handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_load_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_load_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_load_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_value_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_value_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_load(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_value, out_value_slot
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_store_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_store_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || value.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_store_intrinsic expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_store(i64 {}, i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_add_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_add_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let delta = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || delta.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_add_intrinsic expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_old_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_old_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_old_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_add(i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            delta.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_old_slot
+        ));
+        let out_old = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_old, out_old_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_old),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_sub_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_sub_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let delta = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || delta.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_sub_intrinsic expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_old_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_old_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_old_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_sub(i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            delta.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_old_slot
+        ));
+        let out_old = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_old, out_old_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_old),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_int_cas_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_cas_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let expected = self.gen_expr(&args[1], fctx)?;
+        let desired = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || expected.ty != LType::Int || desired.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_cas_intrinsic expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_swapped_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_swapped_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_swapped_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_int_cas(i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            expected.repr.clone().unwrap_or_else(|| "0".to_string()),
+            desired.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_swapped_slot
+        ));
+        let out_swapped_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_swapped_i64, out_swapped_slot
+        ));
+        let out_swapped = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            out_swapped, out_swapped_i64
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(out_swapped),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_bool_new_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_bool_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let initial = self.gen_expr(&args[0], fctx)?;
+        if initial.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_bool_intrinsic expects Bool",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let initial_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            initial_i64,
+            initial.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let handle_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_bool_new(i64 {}, i64* {})",
+            err, initial_i64, handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, handle_slot));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(handle),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_bool_load_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_load_bool_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_load_bool_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_value_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_value_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_bool_load(i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_value_slot
+        ));
+        let out_value_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_value_i64, out_value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            out_value, out_value_i64
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(out_value),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_bool_store_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_store_bool_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let value = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_store_bool_intrinsic expects (Int, Bool)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            value_i64,
+            value.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_bool_store(i64 {}, i64 {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            value_i64
+        ));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    fn gen_concurrency_atomic_bool_swap_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_atomic_swap_bool_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let desired = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || desired.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_atomic_swap_bool_intrinsic expects (Int, Bool)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let desired_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = zext i1 {} to i64",
+            desired_i64,
+            desired.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let out_old_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_old_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_old_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_atomic_bool_swap(i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            desired_i64,
+            out_old_slot
+        ));
+        let out_old_i64 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_old_i64, out_old_slot
+        ));
+        let out_old = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", out_old, out_old_i64));
+        let result_ty = self.concurrency_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(out_old),
         };
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -32807,6 +33501,16 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("conc", "arc_clone") => Some("aic_conc_arc_clone_intrinsic"),
         ("conc", "arc_get") => Some("aic_conc_arc_get_intrinsic"),
         ("conc", "arc_strong_count") => Some("aic_conc_arc_strong_count_intrinsic"),
+        ("conc", "atomic_int") => Some("aic_conc_atomic_int_intrinsic"),
+        ("conc", "atomic_load") => Some("aic_conc_atomic_load_intrinsic"),
+        ("conc", "atomic_store") => Some("aic_conc_atomic_store_intrinsic"),
+        ("conc", "atomic_add") => Some("aic_conc_atomic_add_intrinsic"),
+        ("conc", "atomic_sub") => Some("aic_conc_atomic_sub_intrinsic"),
+        ("conc", "atomic_cas") => Some("aic_conc_atomic_cas_intrinsic"),
+        ("conc", "atomic_bool") => Some("aic_conc_atomic_bool_intrinsic"),
+        ("conc", "atomic_load_bool") => Some("aic_conc_atomic_load_bool_intrinsic"),
+        ("conc", "atomic_store_bool") => Some("aic_conc_atomic_store_bool_intrinsic"),
+        ("conc", "atomic_swap_bool") => Some("aic_conc_atomic_swap_bool_intrinsic"),
         ("fs", "exists") => Some("aic_fs_exists_intrinsic"),
         ("fs", "read_text") => Some("aic_fs_read_text_intrinsic"),
         ("fs", "write_text") => Some("aic_fs_write_text_intrinsic"),
@@ -45079,6 +45783,97 @@ long aic_rt_conc_arc_release(long handle) {
     (void)handle;
     return 7;
 }
+
+long aic_rt_conc_atomic_int_new(long initial, long* out_handle) {
+    (void)initial;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_load(long handle, long* out_value) {
+    (void)handle;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_store(long handle, long value) {
+    (void)handle;
+    (void)value;
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old) {
+    (void)handle;
+    (void)delta;
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old) {
+    (void)handle;
+    (void)delta;
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* out_swapped) {
+    (void)handle;
+    (void)expected;
+    (void)desired;
+    if (out_swapped != NULL) {
+        *out_swapped = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_close(long handle) {
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_new(long initial, long* out_handle) {
+    (void)initial;
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_load(long handle, long* out_value) {
+    (void)handle;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_store(long handle, long value) {
+    (void)handle;
+    (void)value;
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old) {
+    (void)handle;
+    (void)desired;
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_close(long handle) {
+    (void)handle;
+    return 7;
+}
 #else
 #define AIC_RT_CONC_TASK_CAP 128
 #define AIC_RT_CONC_CHANNEL_CAP 128
@@ -45087,6 +45882,8 @@ long aic_rt_conc_arc_release(long handle) {
 #define AIC_RT_CONC_SCOPE_CAP 128
 #define AIC_RT_CONC_PAYLOAD_CAP 4096
 #define AIC_RT_CONC_ARC_CAP 4096
+#define AIC_RT_CONC_ATOMIC_INT_CAP 4096
+#define AIC_RT_CONC_ATOMIC_BOOL_CAP 4096
 
 typedef long (*AicConcEntryFn)(void*);
 
@@ -45158,6 +45955,16 @@ typedef struct {
     long payload_len;
 } AicConcArcSlot;
 
+typedef struct {
+    atomic_int active;
+    atomic_long value;
+} AicConcAtomicIntSlot;
+
+typedef struct {
+    atomic_int active;
+    atomic_int value;
+} AicConcAtomicBoolSlot;
+
 static AicConcTaskSlot aic_rt_conc_tasks[AIC_RT_CONC_TASK_CAP];
 static AicConcChannelSlot aic_rt_conc_channels[AIC_RT_CONC_CHANNEL_CAP];
 static AicConcMutexSlot aic_rt_conc_mutexes[AIC_RT_CONC_MUTEX_CAP];
@@ -45165,6 +45972,8 @@ static AicConcRwLockSlot aic_rt_conc_rwlocks[AIC_RT_CONC_RWLOCK_CAP];
 static AicConcScopeSlot aic_rt_conc_scopes[AIC_RT_CONC_SCOPE_CAP];
 static AicConcPayloadSlot aic_rt_conc_payloads[AIC_RT_CONC_PAYLOAD_CAP];
 static AicConcArcSlot aic_rt_conc_arcs[AIC_RT_CONC_ARC_CAP];
+static AicConcAtomicIntSlot aic_rt_conc_atomic_ints[AIC_RT_CONC_ATOMIC_INT_CAP];
+static AicConcAtomicBoolSlot aic_rt_conc_atomic_bools[AIC_RT_CONC_ATOMIC_BOOL_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -45340,6 +46149,28 @@ static AicConcRwLockSlot* aic_rt_conc_get_rwlock(long handle) {
     }
     AicConcRwLockSlot* slot = &aic_rt_conc_rwlocks[handle - 1];
     if (!slot->active) {
+        return NULL;
+    }
+    return slot;
+}
+
+static AicConcAtomicIntSlot* aic_rt_conc_get_atomic_int(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_INT_CAP) {
+        return NULL;
+    }
+    AicConcAtomicIntSlot* slot = &aic_rt_conc_atomic_ints[handle - 1];
+    if (!atomic_load_explicit(&slot->active, memory_order_seq_cst)) {
+        return NULL;
+    }
+    return slot;
+}
+
+static AicConcAtomicBoolSlot* aic_rt_conc_get_atomic_bool(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_BOOL_CAP) {
+        return NULL;
+    }
+    AicConcAtomicBoolSlot* slot = &aic_rt_conc_atomic_bools[handle - 1];
+    if (!atomic_load_explicit(&slot->active, memory_order_seq_cst)) {
         return NULL;
     }
     return slot;
@@ -47040,6 +47871,198 @@ long aic_rt_conc_arc_release(long handle) {
     if (payload_to_free != NULL) {
         free(payload_to_free);
     }
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_new(long initial, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    for (long i = 0; i < AIC_RT_CONC_ATOMIC_INT_CAP; ++i) {
+        AicConcAtomicIntSlot* slot = &aic_rt_conc_atomic_ints[i];
+        int expected = 0;
+        if (atomic_compare_exchange_strong_explicit(
+                &slot->active,
+                &expected,
+                1,
+                memory_order_seq_cst,
+                memory_order_seq_cst
+            )) {
+            atomic_store_explicit(&slot->value, initial, memory_order_seq_cst);
+            if (out_handle != NULL) {
+                *out_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_int_load(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    if (out_value != NULL) {
+        *out_value = atomic_load_explicit(&slot->value, memory_order_seq_cst);
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_store(long handle, long value) {
+    AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    atomic_store_explicit(&slot->value, value, memory_order_seq_cst);
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old) {
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    long old = atomic_fetch_add_explicit(&slot->value, delta, memory_order_seq_cst);
+    if (out_old != NULL) {
+        *out_old = old;
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old) {
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    long old = atomic_fetch_sub_explicit(&slot->value, delta, memory_order_seq_cst);
+    if (out_old != NULL) {
+        *out_old = old;
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* out_swapped) {
+    if (out_swapped != NULL) {
+        *out_swapped = 0;
+    }
+    AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    long expected_local = expected;
+    int swapped = atomic_compare_exchange_strong_explicit(
+        &slot->value,
+        &expected_local,
+        desired,
+        memory_order_seq_cst,
+        memory_order_seq_cst
+    );
+    if (out_swapped != NULL) {
+        *out_swapped = swapped ? 1 : 0;
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_int_close(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_INT_CAP) {
+        return 1;
+    }
+    AicConcAtomicIntSlot* slot = &aic_rt_conc_atomic_ints[handle - 1];
+    int was_active = atomic_exchange_explicit(&slot->active, 0, memory_order_seq_cst);
+    if (!was_active) {
+        return 1;
+    }
+    atomic_store_explicit(&slot->value, 0, memory_order_seq_cst);
+    return 0;
+}
+
+long aic_rt_conc_atomic_bool_new(long initial, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    int normalized = initial != 0 ? 1 : 0;
+    for (long i = 0; i < AIC_RT_CONC_ATOMIC_BOOL_CAP; ++i) {
+        AicConcAtomicBoolSlot* slot = &aic_rt_conc_atomic_bools[i];
+        int expected = 0;
+        if (atomic_compare_exchange_strong_explicit(
+                &slot->active,
+                &expected,
+                1,
+                memory_order_seq_cst,
+                memory_order_seq_cst
+            )) {
+            atomic_store_explicit(&slot->value, normalized, memory_order_seq_cst);
+            if (out_handle != NULL) {
+                *out_handle = i + 1;
+            }
+            return 0;
+        }
+    }
+    return 7;
+}
+
+long aic_rt_conc_atomic_bool_load(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicConcAtomicBoolSlot* slot = aic_rt_conc_get_atomic_bool(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    if (out_value != NULL) {
+        *out_value = atomic_load_explicit(&slot->value, memory_order_seq_cst) != 0 ? 1 : 0;
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_bool_store(long handle, long value) {
+    AicConcAtomicBoolSlot* slot = aic_rt_conc_get_atomic_bool(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    atomic_store_explicit(&slot->value, value != 0 ? 1 : 0, memory_order_seq_cst);
+    return 0;
+}
+
+long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old) {
+    if (out_old != NULL) {
+        *out_old = 0;
+    }
+    AicConcAtomicBoolSlot* slot = aic_rt_conc_get_atomic_bool(handle);
+    if (slot == NULL) {
+        return 1;
+    }
+    int old = atomic_exchange_explicit(
+        &slot->value,
+        desired != 0 ? 1 : 0,
+        memory_order_seq_cst
+    );
+    if (out_old != NULL) {
+        *out_old = old != 0 ? 1 : 0;
+    }
+    return 0;
+}
+
+long aic_rt_conc_atomic_bool_close(long handle) {
+    if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_BOOL_CAP) {
+        return 1;
+    }
+    AicConcAtomicBoolSlot* slot = &aic_rt_conc_atomic_bools[handle - 1];
+    int was_active = atomic_exchange_explicit(&slot->active, 0, memory_order_seq_cst);
+    if (!was_active) {
+        return 1;
+    }
+    atomic_store_explicit(&slot->value, 0, memory_order_seq_cst);
     return 0;
 }
 #endif
@@ -56325,6 +57348,36 @@ fn main() -> Int effects { io } {
             .contains("declare i64 @aic_rt_conc_arc_release(i64)"));
         assert!(output
             .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_new(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_load(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_store(i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_add(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_sub(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_int_cas(i64, i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_bool_new(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_bool_load(i64, i64*)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_bool_store(i64, i64)"));
+        assert!(output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_conc_atomic_bool_swap(i64, i64, i64*)"));
+        assert!(output
+            .llvm_ir
             .contains("declare i64 @aic_rt_conc_mutex_lock(i64, i64, i64*)"));
         assert!(output
             .llvm_ir
@@ -56586,9 +57639,33 @@ fn main() -> Int effects { io } {
         assert!(runtime_c_source()
             .contains("long aic_rt_conc_arc_strong_count(long handle, long* out_count)"));
         assert!(runtime_c_source().contains("long aic_rt_conc_arc_release(long handle)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_int_new(long initial, long* out_handle)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_int_load(long handle, long* out_value)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_int_store(long handle, long value)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old)"));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* out_swapped)"
+        ));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_bool_new(long initial, long* out_handle)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_bool_load(long handle, long* out_value)"));
+        assert!(runtime_c_source()
+            .contains("long aic_rt_conc_atomic_bool_store(long handle, long value)"));
+        assert!(runtime_c_source().contains(
+            "long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old)"
+        ));
         assert!(runtime_c_source().contains("#include <stdatomic.h>"));
         assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->ref_count"));
         assert!(runtime_c_source().contains("atomic_fetch_sub_explicit(&slot->ref_count"));
+        assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->value"));
+        assert!(runtime_c_source().contains("atomic_fetch_sub_explicit(&slot->value"));
         assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
         assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
         assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));

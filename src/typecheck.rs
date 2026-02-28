@@ -6819,6 +6819,8 @@ impl<'a> Checker<'a> {
                 "Mutex"
                     | "RwLock"
                     | "Arc"
+                    | "AtomicInt"
+                    | "AtomicBool"
                     | "Sender"
                     | "Receiver"
                     | "Task"

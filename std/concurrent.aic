@@ -58,6 +58,14 @@ struct Arc[T] {
     handle: Int,
 }
 
+struct AtomicInt {
+    handle: Int,
+}
+
+struct AtomicBool {
+    handle: Int,
+}
+
 struct Mutex[T] {
     handle: Int,
 }
@@ -126,6 +134,16 @@ intrinsic fn aic_conc_arc_new_intrinsic(payload: String) -> Result[Int, Concurre
 intrinsic fn aic_conc_arc_clone_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_arc_get_intrinsic(handle: Int) -> Result[String, ConcurrencyError] effects { concurrency };
 intrinsic fn aic_conc_arc_strong_count_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_int_intrinsic(initial: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_load_intrinsic(handle: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_store_intrinsic(handle: Int, value: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_add_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_sub_intrinsic(handle: Int, delta: Int) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_cas_intrinsic(handle: Int, expected: Int, desired: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_bool_intrinsic(initial: Bool) -> Result[Int, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_load_bool_intrinsic(handle: Int) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_store_bool_intrinsic(handle: Int, value: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
+intrinsic fn aic_conc_atomic_swap_bool_intrinsic(handle: Int, desired: Bool) -> Result[Bool, ConcurrencyError] effects { concurrency };
 
 fn default_blocking_timeout_ms() -> Int {
     2147483647
@@ -686,6 +704,70 @@ fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency } {
     match aic_conc_arc_strong_count_intrinsic(a.handle) {
         Ok(count) => count,
         Err(_) => 0,
+    }
+}
+
+fn atomic_int(initial: Int) -> AtomicInt effects { concurrency } {
+    match aic_conc_atomic_int_intrinsic(initial) {
+        Ok(handle) => AtomicInt { handle: handle },
+        Err(_) => AtomicInt { handle: 0 },
+    }
+}
+
+fn atomic_load(a: AtomicInt) -> Int effects { concurrency } {
+    match aic_conc_atomic_load_intrinsic(a.handle) {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency } {
+    let _out = aic_conc_atomic_store_intrinsic(a.handle, value);
+}
+
+fn atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
+    match aic_conc_atomic_add_intrinsic(a.handle, delta) {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency } {
+    match aic_conc_atomic_sub_intrinsic(a.handle, delta) {
+        Ok(value) => value,
+        Err(_) => 0,
+    }
+}
+
+fn atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concurrency } {
+    match aic_conc_atomic_cas_intrinsic(a.handle, expected, desired) {
+        Ok(swapped) => swapped,
+        Err(_) => false,
+    }
+}
+
+fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency } {
+    match aic_conc_atomic_bool_intrinsic(initial) {
+        Ok(handle) => AtomicBool { handle: handle },
+        Err(_) => AtomicBool { handle: 0 },
+    }
+}
+
+fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency } {
+    match aic_conc_atomic_load_bool_intrinsic(a.handle) {
+        Ok(value) => value,
+        Err(_) => false,
+    }
+}
+
+fn atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency } {
+    let _out = aic_conc_atomic_store_bool_intrinsic(a.handle, value);
+}
+
+fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency } {
+    match aic_conc_atomic_swap_bool_intrinsic(a.handle, desired) {
+        Ok(value) => value,
+        Err(_) => false,
     }
 }
 

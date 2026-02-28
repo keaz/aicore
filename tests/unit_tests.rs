@@ -3562,6 +3562,8 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(source.contains("turn = (turn + 1) % count"));
     assert!(source.contains("struct Scope {"));
     assert!(source.contains("struct Arc[T] {"));
+    assert!(source.contains("struct AtomicInt {"));
+    assert!(source.contains("struct AtomicBool {"));
     assert!(source.contains("fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency }"));
     assert!(source.contains(
         "fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency }"
@@ -3572,6 +3574,28 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     ));
     assert!(source.contains("fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }"));
+    assert!(source.contains("fn atomic_int(initial: Int) -> AtomicInt effects { concurrency }"));
+    assert!(source.contains("fn atomic_load(a: AtomicInt) -> Int effects { concurrency }"));
+    assert!(
+        source.contains("fn atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency }")
+    );
+    assert!(
+        source.contains("fn atomic_add(a: AtomicInt, delta: Int) -> Int effects { concurrency }")
+    );
+    assert!(
+        source.contains("fn atomic_sub(a: AtomicInt, delta: Int) -> Int effects { concurrency }")
+    );
+    assert!(source.contains(
+        "fn atomic_cas(a: AtomicInt, expected: Int, desired: Int) -> Bool effects { concurrency }"
+    ));
+    assert!(source.contains("fn atomic_bool(initial: Bool) -> AtomicBool effects { concurrency }"));
+    assert!(source.contains("fn atomic_load_bool(a: AtomicBool) -> Bool effects { concurrency }"));
+    assert!(source.contains(
+        "fn atomic_store_bool(a: AtomicBool, value: Bool) -> () effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn atomic_swap_bool(a: AtomicBool, desired: Bool) -> Bool effects { concurrency }"
+    ));
 
     assert_delegate_call(
         &source,
@@ -3643,6 +3667,16 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "aic_conc_close_channel_intrinsic",
         1,
     );
+    assert!(source.contains("aic_conc_atomic_int_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_load_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_store_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_add_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_sub_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_cas_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_bool_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_load_bool_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_store_bool_intrinsic"));
+    assert!(source.contains("aic_conc_atomic_swap_bool_intrinsic"));
     assert_delegate_call(
         &source,
         "std/concurrent.aic",
@@ -3720,6 +3754,16 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_conc_arc_clone_intrinsic", 1usize),
         ("aic_conc_arc_get_intrinsic", 1usize),
         ("aic_conc_arc_strong_count_intrinsic", 1usize),
+        ("aic_conc_atomic_int_intrinsic", 1usize),
+        ("aic_conc_atomic_load_intrinsic", 1usize),
+        ("aic_conc_atomic_store_intrinsic", 2usize),
+        ("aic_conc_atomic_add_intrinsic", 2usize),
+        ("aic_conc_atomic_sub_intrinsic", 2usize),
+        ("aic_conc_atomic_cas_intrinsic", 3usize),
+        ("aic_conc_atomic_bool_intrinsic", 1usize),
+        ("aic_conc_atomic_load_bool_intrinsic", 1usize),
+        ("aic_conc_atomic_store_bool_intrinsic", 2usize),
+        ("aic_conc_atomic_swap_bool_intrinsic", 2usize),
         ("aic_conc_mutex_int_intrinsic", 1usize),
         ("aic_conc_mutex_lock_intrinsic", 2usize),
         ("aic_conc_mutex_unlock_intrinsic", 2usize),
@@ -4314,6 +4358,38 @@ struct Payload {
 fn main() -> Int effects { concurrency } capabilities { concurrency } {
     let shared: Arc[Payload] = Arc { handle: 1 };
     let _task: Task[Arc[Payload]] = spawn(|| -> Arc[Payload] { shared });
+    0
+}
+"#,
+    )
+    .expect("write main");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1258" && d.message.contains("Send")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_std_concurrency_atomic_wrappers_are_send_safe_for_spawn() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.concurrent;
+
+fn main() -> Int effects { concurrency } capabilities { concurrency } {
+    let counter = atomic_int(0);
+    let flag = atomic_bool(false);
+    let _t1: Task[AtomicInt] = spawn(|| -> AtomicInt { counter });
+    let _t2: Task[AtomicBool] = spawn(|| -> AtomicBool { flag });
     0
 }
 "#,
