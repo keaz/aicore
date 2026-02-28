@@ -7834,6 +7834,104 @@ fn main() -> Int effects { io } capabilities { io  } {
         "expected O2 speedup >5%; o0={o0_best:?} o2={o2_best:?} speedup={speedup:.3}"
     );
 }
+
+#[test]
+fn exec_tail_call_fibonacci_handles_one_million_steps() {
+    let src = r#"
+import std.io;
+
+fn fib_tail(n: Int, a: Int, b: Int) -> Int {
+    if n == 0 {
+        a
+    } else {
+        fib_tail(n - 1, b % 1000000007, (a + b) % 1000000007)
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let fib_mod = fib_tail(1000000, 0, 1);
+    if fib_mod == 918091266 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_tail_call_mutual_recursion_handles_one_million_steps() {
+    let src = r#"
+import std.io;
+
+fn is_even(n: Int) -> Bool {
+    if n == 0 {
+        true
+    } else {
+        is_odd(n - 1)
+    }
+}
+
+fn is_odd(n: Int) -> Bool {
+    if n == 0 {
+        false
+    } else {
+        is_even(n - 1)
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let even_big = bool_to_int(is_even(1000000));
+    let odd_big = bool_to_int(is_odd(999999));
+    if even_big + odd_big == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_non_tail_recursion_semantics_are_unchanged() {
+    let src = r#"
+import std.io;
+
+fn countdown(n: Int) -> Int {
+    if n == 0 {
+        0
+    } else {
+        1 + countdown(n - 1)
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let value = countdown(1000);
+    if value == 1000 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[test]
 fn exec_optimization_levels_preserve_semantics_across_o0_to_o3() {
     let dir = tempdir().expect("tempdir");

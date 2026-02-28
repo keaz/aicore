@@ -1,0 +1,41 @@
+import std.io;
+
+fn fib_tail(n: Int, a: Int, b: Int) -> Int {
+    if n == 0 {
+        a
+    } else {
+        fib_tail(n - 1, b % 1000000007, (a + b) % 1000000007)
+    }
+}
+
+fn is_even(n: Int) -> Bool {
+    if n == 0 {
+        true
+    } else {
+        is_odd(n - 1)
+    }
+}
+
+fn is_odd(n: Int) -> Bool {
+    if n == 0 {
+        false
+    } else {
+        is_even(n - 1)
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let fib_ok = if fib_tail(1000000, 0, 1) == 918091266 { 1 } else { 0 };
+    let even_ok = bool_to_int(is_even(1000000));
+    let odd_ok = bool_to_int(is_odd(999999));
+    if fib_ok + even_ok + odd_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

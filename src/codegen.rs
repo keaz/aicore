@@ -2397,6 +2397,120 @@ fn collect_drop_impl_methods(
     drop_impls
 }
 
+fn collect_direct_calls_in_block(block: &ir::Block, out: &mut BTreeSet<String>) {
+    for stmt in &block.stmts {
+        match stmt {
+            ir::Stmt::Let { expr, .. }
+            | ir::Stmt::Assign { expr, .. }
+            | ir::Stmt::Expr { expr, .. }
+            | ir::Stmt::Assert { expr, .. } => collect_direct_calls_in_expr(expr, out),
+            ir::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_direct_calls_in_expr(expr, out);
+                }
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_direct_calls_in_expr(tail, out);
+    }
+}
+
+fn collect_direct_calls_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
+    match &expr.kind {
+        ir::ExprKind::Call { callee, args, .. } => {
+            if let Some(path) = extract_callee_path(callee) {
+                if path.len() == 1 {
+                    out.insert(path[0].clone());
+                }
+            }
+            collect_direct_calls_in_expr(callee, out);
+            for arg in args {
+                collect_direct_calls_in_expr(arg, out);
+            }
+        }
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_direct_calls_in_expr(value, out);
+            }
+        }
+        ir::ExprKind::FieldAccess { base, .. }
+        | ir::ExprKind::Unary { expr: base, .. }
+        | ir::ExprKind::Borrow { expr: base, .. }
+        | ir::ExprKind::Await { expr: base }
+        | ir::ExprKind::Try { expr: base } => collect_direct_calls_in_expr(base, out),
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_direct_calls_in_expr(lhs, out);
+            collect_direct_calls_in_expr(rhs, out);
+        }
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_direct_calls_in_expr(cond, out);
+            collect_direct_calls_in_block(then_block, out);
+            collect_direct_calls_in_block(else_block, out);
+        }
+        ir::ExprKind::Match { expr, arms } => {
+            collect_direct_calls_in_expr(expr, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_direct_calls_in_expr(guard, out);
+                }
+                collect_direct_calls_in_expr(&arm.body, out);
+            }
+        }
+        ir::ExprKind::While { cond, body } => {
+            collect_direct_calls_in_expr(cond, out);
+            collect_direct_calls_in_block(body, out);
+        }
+        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            collect_direct_calls_in_block(body, out);
+        }
+        ir::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_direct_calls_in_expr(expr, out);
+            }
+        }
+        ir::ExprKind::Closure { body, .. } => collect_direct_calls_in_block(body, out),
+        _ => {}
+    }
+}
+
+fn collect_recursive_call_targets(program: &ir::Program) -> BTreeMap<String, BTreeSet<String>> {
+    let mut direct_calls = BTreeMap::<String, BTreeSet<String>>::new();
+    for item in &program.items {
+        let ir::Item::Function(func) = item else {
+            continue;
+        };
+        let mut calls = BTreeSet::new();
+        collect_direct_calls_in_block(&func.body, &mut calls);
+        direct_calls.insert(func.name.clone(), calls);
+    }
+
+    let mut recursive_targets = BTreeMap::<String, BTreeSet<String>>::new();
+    for (caller, callees) in &direct_calls {
+        for callee in callees {
+            let is_recursive_edge = if callee == caller {
+                true
+            } else {
+                direct_calls
+                    .get(callee)
+                    .map(|targets| targets.contains(caller))
+                    .unwrap_or(false)
+            };
+            if is_recursive_edge {
+                recursive_targets
+                    .entry(caller.clone())
+                    .or_default()
+                    .insert(callee.clone());
+            }
+        }
+    }
+    recursive_targets
+}
+
 struct Generator<'a> {
     program: &'a ir::Program,
     file: &'a str,
@@ -2426,6 +2540,7 @@ struct Generator<'a> {
     closure_counter: usize,
     deferred_fn_defs: Vec<Vec<String>>,
     fn_value_adapters: BTreeMap<String, String>,
+    recursive_call_targets: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl<'a> Generator<'a> {
@@ -2438,6 +2553,7 @@ impl<'a> Generator<'a> {
         let (struct_templates, enum_templates, variant_ctors) =
             collect_type_templates(program, &type_map);
         let drop_impl_methods = collect_drop_impl_methods(program, &type_map);
+        let recursive_call_targets = collect_recursive_call_targets(program);
         let source_map = fs::read_to_string(file)
             .ok()
             .map(|source| SourceMap::from_source(&source));
@@ -2475,6 +2591,7 @@ impl<'a> Generator<'a> {
             closure_counter: 0,
             deferred_fn_defs: Vec::new(),
             fn_value_adapters: BTreeMap::new(),
+            recursive_call_targets,
         }
     }
 
@@ -3449,6 +3566,10 @@ impl<'a> Generator<'a> {
             async_inner_ret: async_inner_ret.clone(),
             debug_scope,
             loop_stack: Vec::new(),
+            current_fn_name: func.name.clone(),
+            current_fn_llvm_name: llvm_name.to_string(),
+            current_fn_sig: sig.clone(),
+            tail_return_mode: false,
         };
         fctx.lines.push("entry:".to_string());
 
@@ -3477,7 +3598,9 @@ impl<'a> Generator<'a> {
         }
 
         let expected_tail = async_inner_ret.as_ref().unwrap_or(&sig.ret);
+        fctx.tail_return_mode = true;
         let tail = self.gen_block_with_expected_tail(&func.body, Some(expected_tail), &mut fctx);
+        fctx.tail_return_mode = false;
 
         if !fctx.terminated {
             if let Some(inner_ty) = async_inner_ret.as_ref() {
@@ -3640,6 +3763,8 @@ impl<'a> Generator<'a> {
         expected_tail: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        let inherited_tail_return_mode = fctx.tail_return_mode;
+        fctx.tail_return_mode = false;
         fctx.vars.push(BTreeMap::new());
         fctx.drop_scopes.push(DropScope {
             lexical_order: lexical_block_drop_order(block),
@@ -3760,6 +3885,9 @@ impl<'a> Generator<'a> {
                         if self.type_needs_explicit_drop(&ret_hint) {
                             self.mark_moved_resource_locals_in_expr(expr, fctx);
                         }
+                        if self.try_emit_musttail_return(expr, fctx) {
+                            continue;
+                        }
                         if let Some(value) =
                             self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
                         {
@@ -3830,12 +3958,22 @@ impl<'a> Generator<'a> {
 
         let tail = if !fctx.terminated {
             if let Some(expr) = &block.tail {
-                if let Some(expected_tail) = expected_tail {
-                    if self.type_needs_explicit_drop(expected_tail) {
-                        self.mark_moved_resource_locals_in_expr(expr, fctx);
+                let previous_tail_mode = fctx.tail_return_mode;
+                fctx.tail_return_mode = inherited_tail_return_mode;
+                let tail = if inherited_tail_return_mode
+                    && self.try_emit_musttail_tail_expr_return(expr, fctx)
+                {
+                    None
+                } else {
+                    if let Some(expected_tail) = expected_tail {
+                        if self.type_needs_explicit_drop(expected_tail) {
+                            self.mark_moved_resource_locals_in_expr(expr, fctx);
+                        }
                     }
-                }
-                self.gen_expr_with_expected(expr, expected_tail, fctx)
+                    self.gen_expr_with_expected(expr, expected_tail, fctx)
+                };
+                fctx.tail_return_mode = previous_tail_mode;
+                tail
             } else {
                 Some(Value {
                     ty: LType::Unit,
@@ -3852,6 +3990,7 @@ impl<'a> Generator<'a> {
         }
         fctx.drop_scopes.pop();
         fctx.vars.pop();
+        fctx.tail_return_mode = inherited_tail_return_mode;
         tail
     }
 
@@ -4443,6 +4582,113 @@ impl<'a> Generator<'a> {
             resource_drop_runtime_fn(action),
             handle
         ));
+    }
+
+    fn try_emit_musttail_return(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> bool {
+        if fctx.async_inner_ret.is_some() {
+            return false;
+        }
+        let ir::ExprKind::Call { callee, args, .. } = &expr.kind else {
+            return false;
+        };
+        self.try_emit_musttail_call(callee, args, fctx)
+    }
+
+    fn try_emit_musttail_tail_expr_return(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> bool {
+        if !fctx.tail_return_mode || fctx.async_inner_ret.is_some() {
+            return false;
+        }
+        let ir::ExprKind::Call { callee, args, .. } = &expr.kind else {
+            return false;
+        };
+        self.try_emit_musttail_call(callee, args, fctx)
+    }
+
+    fn try_emit_musttail_call(
+        &mut self,
+        callee: &ir::Expr,
+        args: &[ir::Expr],
+        fctx: &mut FnCtx,
+    ) -> bool {
+        let Some(path) = extract_callee_path(callee) else {
+            return false;
+        };
+        if path.len() != 1 {
+            return false;
+        }
+        let callee_name = &path[0];
+        let Some(callee_sig) = self.fn_sigs.get(callee_name).cloned() else {
+            return false;
+        };
+        if callee_sig.is_extern || callee_sig.is_intrinsic {
+            return false;
+        }
+        let caller = &fctx.current_fn_name;
+        let recursive_target = self
+            .recursive_call_targets
+            .get(caller)
+            .map(|targets| targets.contains(callee_name))
+            .unwrap_or(false);
+        if !recursive_target {
+            return false;
+        }
+        if callee_sig.params != fctx.current_fn_sig.params
+            || callee_sig.ret != fctx.current_fn_sig.ret
+        {
+            return false;
+        }
+        if args.len() != callee_sig.params.len() {
+            return false;
+        }
+
+        let mut call_args = Vec::with_capacity(args.len());
+        for (arg, expected_ty) in args.iter().zip(callee_sig.params.iter()) {
+            let Some(value) = self.gen_expr_with_expected(arg, Some(expected_ty), fctx) else {
+                self.emit_scope_drops_to_depth(0, fctx);
+                if callee_sig.ret == LType::Unit {
+                    fctx.lines.push("  ret void".to_string());
+                } else {
+                    fctx.lines.push(format!(
+                        "  ret {} {}",
+                        llvm_type(&callee_sig.ret),
+                        default_value(&callee_sig.ret)
+                    ));
+                }
+                fctx.terminated = true;
+                return true;
+            };
+            let value_repr = value.repr.unwrap_or_else(|| default_value(&value.ty));
+            call_args.push(format!("{} {}", llvm_type(expected_ty), value_repr));
+        }
+
+        let callee_llvm = if *callee_name == fctx.current_fn_name {
+            fctx.current_fn_llvm_name.clone()
+        } else {
+            mangle(callee_name)
+        };
+
+        self.emit_scope_drops_to_depth(0, fctx);
+        if callee_sig.ret == LType::Unit {
+            fctx.lines.push(format!(
+                "  musttail call void @{}({})",
+                callee_llvm,
+                call_args.join(", ")
+            ));
+            fctx.lines.push("  ret void".to_string());
+        } else {
+            let out = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = musttail call {} @{}({})",
+                out,
+                llvm_type(&callee_sig.ret),
+                callee_llvm,
+                call_args.join(", ")
+            ));
+            fctx.lines
+                .push(format!("  ret {} {}", llvm_type(&callee_sig.ret), out));
+        }
+        fctx.terminated = true;
+        true
     }
 
     fn struct_int_field_index(&self, layout: &StructLayoutType, field_name: &str) -> Option<usize> {
@@ -6143,6 +6389,18 @@ impl<'a> Generator<'a> {
             async_inner_ret: None,
             debug_scope: None,
             loop_stack: Vec::new(),
+            current_fn_name: closure_name.to_string(),
+            current_fn_llvm_name: closure_name.to_string(),
+            current_fn_sig: FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
+                params: param_tys.to_vec(),
+                ret: ret_ty.clone(),
+            },
+            tail_return_mode: false,
         };
 
         if captures.is_empty() {
@@ -6214,7 +6472,9 @@ impl<'a> Generator<'a> {
             );
         }
 
+        fctx.tail_return_mode = true;
         let tail = self.gen_block_with_expected_tail(body, Some(ret_ty), &mut fctx);
+        fctx.tail_return_mode = false;
         if !fctx.terminated {
             match ret_ty {
                 LType::Unit => fctx.lines.push("  ret void".to_string()),
@@ -31547,7 +31807,10 @@ impl<'a> Generator<'a> {
         fctx.terminated = saved_terminated;
 
         if then_terminated && else_terminated {
-            // expression is unreachable from both branches
+            // Both branches end control-flow (for example, `return` in each arm).
+            // Propagate termination so enclosing blocks do not attempt to synthesize
+            // a fallback tail value after this expression.
+            fctx.terminated = true;
             return Some(Value {
                 ty: LType::Unit,
                 repr: None,
@@ -33592,6 +33855,10 @@ struct FnCtx {
     async_inner_ret: Option<LType>,
     debug_scope: Option<usize>,
     loop_stack: Vec<LoopFrame>,
+    current_fn_name: String,
+    current_fn_llvm_name: String,
+    current_fn_sig: FnSig,
+    tail_return_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56440,6 +56707,136 @@ mod tests {
         let lowered = lower_runtime_asserts(&ir);
         let output = emit_llvm(&lowered, "test.aic").expect("llvm");
         assert!(output.llvm_ir.contains("define i64 @aic_main()"));
+    }
+
+    #[test]
+    fn tail_return_fibonacci_emits_musttail() {
+        let src = r#"
+fn fib_tail(n: Int, a: Int, b: Int) -> Int {
+    if n == 0 {
+        return a;
+    } else {
+        return fib_tail(n - 1, b % 1000000007, (a + b) % 1000000007);
+    };
+    0
+}
+
+fn main() -> Int {
+    fib_tail(10, 0, 1)
+}
+"#;
+        let (program, diags) = parse(src, "tail_self.aic");
+        assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let output = emit_llvm(&lowered, "tail_self.aic").expect("llvm");
+        assert!(
+            output
+                .llvm_ir
+                .contains("musttail call i64 @aic_fib_tail(i64"),
+            "llvm missing musttail for fibonacci self recursion:\n{}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn tail_expr_fibonacci_emits_musttail() {
+        let src = r#"
+fn fib_tail(n: Int, a: Int, b: Int) -> Int {
+    if n == 0 {
+        a
+    } else {
+        fib_tail(n - 1, b % 1000000007, (a + b) % 1000000007)
+    }
+}
+
+fn main() -> Int {
+    fib_tail(10, 0, 1)
+}
+"#;
+        let (program, diags) = parse(src, "tail_expr_fib.aic");
+        assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let output = emit_llvm(&lowered, "tail_expr_fib.aic").expect("llvm");
+        assert!(
+            output
+                .llvm_ir
+                .contains("musttail call i64 @aic_fib_tail(i64"),
+            "llvm missing musttail for tail-expression fibonacci:\n{}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn tail_return_mutual_recursion_emits_musttail() {
+        let src = r#"
+fn is_even(n: Int) -> Bool {
+    if n == 0 {
+        return true;
+    } else {
+        return is_odd(n - 1);
+    };
+    false
+}
+
+fn is_odd(n: Int) -> Bool {
+    if n == 0 {
+        return false;
+    } else {
+        return is_even(n - 1);
+    };
+    false
+}
+
+fn main() -> Int {
+    if is_even(10) { 1 } else { 0 }
+}
+"#;
+        let (program, diags) = parse(src, "tail_mutual.aic");
+        assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let output = emit_llvm(&lowered, "tail_mutual.aic").expect("llvm");
+        assert!(
+            output.llvm_ir.contains("musttail call i1 @aic_is_odd(i64"),
+            "llvm missing musttail for even->odd:\n{}",
+            output.llvm_ir
+        );
+        assert!(
+            output.llvm_ir.contains("musttail call i1 @aic_is_even(i64"),
+            "llvm missing musttail for odd->even:\n{}",
+            output.llvm_ir
+        );
+    }
+
+    #[test]
+    fn non_tail_recursion_does_not_emit_musttail() {
+        let src = r#"
+fn countdown(n: Int) -> Int {
+    if n == 0 {
+        0
+    } else {
+        1 + countdown(n - 1)
+    }
+}
+
+fn main() -> Int {
+    countdown(10)
+}
+"#;
+        let (program, diags) = parse(src, "tail_non_tail.aic");
+        assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let output = emit_llvm(&lowered, "tail_non_tail.aic").expect("llvm");
+        assert!(
+            !output
+                .llvm_ir
+                .contains("musttail call i64 @aic_countdown(i64"),
+            "non-tail recursion unexpectedly emitted musttail:\n{}",
+            output.llvm_ir
+        );
     }
 
     #[test]

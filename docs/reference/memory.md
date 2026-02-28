@@ -137,6 +137,15 @@ fn demo() -> Int {
 }
 ```
 
+## Tail Calls
+
+- Tail-position recursive returns are optimized automatically when caller/callee signatures match.
+- Supported forms include self recursion and mutual recursion.
+- Non-tail recursion semantics are unchanged.
+- Detailed guidance and runnable example:
+  - [`docs/runtime-performance/tail-call-optimization.md`](../runtime-performance/tail-call-optimization.md)
+  - `examples/core/tail_call_optimization.aic`
+
 ## Diagnostic mapping
 
 - `E1263`: conflicting mutable borrow
