@@ -119,6 +119,7 @@ Expected final line for each: `42`.
 - Error model + remediation playbook: `docs/io-runtime/error-model.md`
 - Resource lifecycle + long-running service guidance: `docs/io-runtime/lifecycle-playbook.md`
 - Connection pool contract + agent-safe usage: `docs/io-runtime/connection-pool.md`
+- External protocol integration harness contract: `docs/io-runtime/integration-harness.md`
 - FS API contract: `docs/io-filesystem.md`
 - Proc/env/path contract: `docs/io-process-env-path.md`
 - Concurrency runtime contract: `docs/io-concurrency-runtime.md`

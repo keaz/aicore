@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -29,6 +29,8 @@ help:
 	@echo "  make std-doc-check Verify std modules have required doc comments"
 	@echo "  make examples-check Validate example compile/check behavior"
 	@echo "  make examples-run  Run executable example validations"
+	@echo "  make integration-harness-offline Run offline external protocol harness gate"
+	@echo "  make integration-harness-live Run live external protocol harness gate (opt-in)"
 	@echo "  make no-null-lint  Ensure .aic sources do not use null semantics"
 	@echo "  make cli-smoke     End-to-end CLI smoke test"
 	@echo "  make docs-check    Validate docs and schema artifacts"
@@ -54,7 +56,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 intrinsic-placeholder-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -118,6 +120,12 @@ examples-check:
 examples-run:
 	./scripts/ci/examples.sh run
 
+integration-harness-offline:
+	python3 scripts/ci/integration-harness.py --mode offline
+
+integration-harness-live:
+	python3 scripts/ci/integration-harness.py --mode live
+
 cli-smoke:
 	./scripts/ci/cli-smoke.sh
 
@@ -173,6 +181,7 @@ docs-check:
 	@test -f docs/io-runtime/README.md
 	@test -f docs/io-runtime/net-time-rand.md
 	@test -f docs/io-runtime/error-model.md
+	@test -f docs/io-runtime/integration-harness.md
 	@test -f docs/io-runtime/lifecycle-playbook.md
 	@test -f docs/data-regex.md
 	@test -f docs/std-compatibility.md

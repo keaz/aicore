@@ -98,6 +98,25 @@ jobs:
       - name: Example runs
         run: make examples-run
 
+      - name: Integration harness offline replay gate
+        run: make integration-harness-offline
+
+      - name: Integration harness live smoke (opt-in)
+        if: vars.AIC_ENABLE_INTEGRATION_LIVE == '1'
+        env:
+          AIC_INTEGRATION_LIVE: "1"
+          AIC_INTEGRATION_SERVICES: ${{ vars.AIC_INTEGRATION_SERVICES }}
+          AIC_INTEGRATION_MAX_CASES: ${{ vars.AIC_INTEGRATION_MAX_CASES }}
+        run: make integration-harness-live
+
+      - name: Upload integration harness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-harness-linux
+          path: target/e8/integration-harness-report.json
+          if-no-files-found: ignore
+
       - name: CLI smoke
         run: make cli-smoke
 

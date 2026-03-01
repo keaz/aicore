@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "live_smoke_default_max_cases": 1,
+  "offline_cases": [
+    {
+      "id": "postgres-replay-suite",
+      "service": "postgres",
+      "version": "reference",
+      "auth": "scram-sha-256",
+      "security": "tls-contract",
+      "command": "cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic"
+    }
+  ],
+  "live_cases": [
+    {
+      "id": "postgres16-scram-tls",
+      "service": "postgres",
+      "version": "16",
+      "auth": "scram-sha-256",
+      "security": "tls",
+      "compose_file": "tests/integration/docker/postgres16-scram-tls.compose.yml",
+      "healthcheck_cmd": "docker compose -f tests/integration/docker/postgres16-scram-tls.compose.yml exec -T postgres pg_isready -U aic -d aicdb",
+      "smoke_cmd": "docker compose -f tests/integration/docker/postgres16-scram-tls.compose.yml exec -T postgres psql \"host=127.0.0.1 user=aic password=aicpass dbname=aicdb sslmode=require\" -c \"select 1;\" >/dev/null"
+    },
+    {
+      "id": "postgres15-trust-plain",
+      "service": "postgres",
+      "version": "15",
+      "auth": "trust",
+      "security": "plaintext",
+      "compose_file": "tests/integration/docker/postgres15-trust.compose.yml",
+      "healthcheck_cmd": "docker compose -f tests/integration/docker/postgres15-trust.compose.yml exec -T postgres pg_isready -U aic -d aicdb",
+      "smoke_cmd": "docker compose -f tests/integration/docker/postgres15-trust.compose.yml exec -T postgres psql \"host=127.0.0.1 user=aic dbname=aicdb sslmode=disable\" -c \"select 1;\" >/dev/null"
+    },
+    {
+      "id": "redis7-pass-plain",
+      "service": "redis",
+      "version": "7.2",
+      "auth": "password",
+      "security": "plaintext",
+      "compose_file": "tests/integration/docker/redis7-pass.compose.yml",
+      "healthcheck_cmd": "docker compose -f tests/integration/docker/redis7-pass.compose.yml exec -T redis redis-cli -a aicpass ping | grep -q PONG",
+      "smoke_cmd": "docker compose -f tests/integration/docker/redis7-pass.compose.yml exec -T redis sh -lc \"redis-cli -a aicpass set aic-smoke 42 >/dev/null && [ \\\"$(redis-cli -a aicpass get aic-smoke)\\\" = \\\"42\\\" ]\""
+    },
+    {
+      "id": "kafka37-plaintext",
+      "service": "kafka",
+      "version": "3.7",
+      "auth": "none",
+      "security": "plaintext",
+      "compose_file": "tests/integration/docker/kafka37-plaintext.compose.yml",
+      "healthcheck_cmd": "docker compose -f tests/integration/docker/kafka37-plaintext.compose.yml exec -T kafka kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null",
+      "smoke_cmd": "docker compose -f tests/integration/docker/kafka37-plaintext.compose.yml exec -T kafka sh -lc \"kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic aic-smoke --partitions 1 --replication-factor 1 >/dev/null && kafka-topics.sh --bootstrap-server localhost:9092 --list | grep -q '^aic-smoke$'\""
+    }
+  ]
+}

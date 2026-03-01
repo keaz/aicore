@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: redis:7.2
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --requirepass
+      - aicpass
+    ports:
+      - "56379:6379"

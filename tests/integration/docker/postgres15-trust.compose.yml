@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: aic
+      POSTGRES_PASSWORD: aicpass
+      POSTGRES_DB: aicdb
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "55433:5432"
