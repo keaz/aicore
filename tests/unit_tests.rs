@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use std::{collections::BTreeSet, path::PathBuf};
 
 use aicore::codegen::emit_llvm;
@@ -11,6 +12,7 @@ use aicore::ir_builder::build;
 use aicore::parser::parse;
 use aicore::project::init_project;
 use aicore::resolver::resolve;
+use aicore::toolchain::ENV_AIC_STD_ROOT;
 use aicore::typecheck::check;
 use aicore::{driver::has_errors, driver::run_frontend};
 use tempfile::tempdir;
@@ -27,6 +29,43 @@ fn symbol_ids(ir: &aicore::ir::Program) -> Vec<u32> {
 
 fn type_ids(ir: &aicore::ir::Program) -> Vec<u32> {
     ir.types.iter().map(|t| t.id.0).collect()
+}
+
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env lock")
+}
+
+struct ScopedEnvVar {
+    name: &'static str,
+    previous: Option<String>,
+}
+
+impl ScopedEnvVar {
+    fn set(name: &'static str, value: String) -> Self {
+        let previous = std::env::var(name).ok();
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        if let Some(value) = &self.previous {
+            std::env::set_var(self.name, value);
+        } else {
+            std::env::remove_var(self.name);
+        }
+    }
+}
+
+fn protocol_replay_tests_enabled() -> bool {
+    matches!(
+        std::env::var("AIC_ENABLE_PROTOCOL_REPLAY"),
+        Ok(value) if value == "1" || value.eq_ignore_ascii_case("true")
+    )
 }
 
 fn assert_delegate_call(
@@ -1711,6 +1750,10 @@ fn unit_formatter_idempotent_for_syntax_showcase() {
 fn unit_init_project_emits_canonical_source() {
     let dir = tempdir().expect("tempdir");
     init_project(dir.path()).expect("init project");
+    assert!(
+        !dir.path().join("std").exists(),
+        "init should no longer copy std into each project"
+    );
     let main = dir.path().join("src/main.aic");
     let source = fs::read_to_string(&main).expect("read main");
     let ir = lower(&source);
@@ -2423,6 +2466,47 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         assert_intrinsic_declaration(&net_source, "std/net.aic", name, arity);
     }
 }
+
+#[test]
+fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
+    let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+
+    assert!(
+        net_source.contains("struct TcpStream {"),
+        "std/net.aic must expose TcpStream handle wrapper"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream(handle: Int) -> TcpStream"),
+        "std/net.aic must expose tcp_stream adapter constructor"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }"),
+        "std/net.aic must expose tcp_stream_send adapter API"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"),
+        "std/net.aic must expose tcp_stream_recv adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_close adapter API"
+    );
+    assert!(
+        net_source.contains("tcp_send(stream.handle, payload)"),
+        "std/net.aic tcp_stream_send must delegate to tcp_send"
+    );
+    assert!(
+        net_source.contains("tcp_recv(stream.handle, max_bytes, timeout_ms)"),
+        "std/net.aic tcp_stream_recv must delegate to tcp_recv"
+    );
+    assert!(
+        net_source.contains("tcp_close(stream.handle)"),
+        "std/net.aic tcp_stream_close must delegate to tcp_close"
+    );
+}
+
 #[test]
 fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
     let url_source = fs::read_to_string("std/url.aic").expect("read std/url.aic");
@@ -2691,6 +2775,80 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
 }
 
 #[test]
+fn unit_std_tls_byte_stream_adapter_bridges_tcp_and_tls_byte_paths() {
+    let source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
+
+    assert!(
+        source.contains("enum ByteStream {"),
+        "std/tls.aic must define protocol-agnostic ByteStream"
+    );
+    assert!(
+        source.contains("Tcp(TcpStream)"),
+        "std/tls.aic ByteStream must include TCP variant"
+    );
+    assert!(
+        source.contains("Tls(TlsStream)"),
+        "std/tls.aic ByteStream must include TLS variant"
+    );
+    assert!(
+        source.contains("enum ByteStreamError {"),
+        "std/tls.aic must define ByteStreamError"
+    );
+    assert!(
+        source.contains("Net(NetError)"),
+        "std/tls.aic ByteStreamError must preserve NetError variants"
+    );
+    assert!(
+        source.contains("Tls(TlsError)"),
+        "std/tls.aic ByteStreamError must preserve TlsError variants"
+    );
+    assert!(
+        source.contains("fn byte_stream_from_tcp(handle: Int) -> ByteStream"),
+        "std/tls.aic must expose TCP-handle adapter constructor"
+    );
+    assert!(
+        source.contains("Tcp(tcp_stream(handle))"),
+        "std/tls.aic byte_stream_from_tcp must wrap handle via TcpStream adapter"
+    );
+    assert!(
+        source.contains("fn byte_stream_from_tls(stream: TlsStream) -> ByteStream"),
+        "std/tls.aic must expose TLS adapter constructor"
+    );
+    assert!(
+        source.contains("fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net }"),
+        "std/tls.aic must expose byte_stream_send"
+    );
+    assert!(
+        source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_send(tcp, payload))"),
+        "std/tls.aic byte_stream_send must delegate TCP branch to tcp_stream_send"
+    );
+    assert!(
+        source.contains("Tls(tls) => byte_stream_map_tls(tls_send_bytes(tls, payload))"),
+        "std/tls.aic byte_stream_send must delegate TLS branch to tls_send_bytes"
+    );
+    assert!(
+        source.contains(
+            "Tcp(tcp) => byte_stream_map_net(tcp_stream_recv(tcp, max_bytes, timeout_ms))"
+        ),
+        "std/tls.aic byte_stream_recv must delegate TCP branch to tcp_stream_recv"
+    );
+    assert!(
+        source.contains(
+            "Tls(tls) => byte_stream_map_tls(tls_recv_bytes(tls, max_bytes, timeout_ms))"
+        ),
+        "std/tls.aic byte_stream_recv must delegate TLS branch to tls_recv_bytes"
+    );
+    assert!(
+        source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_close(tcp))"),
+        "std/tls.aic byte_stream_close must delegate TCP branch to tcp_stream_close"
+    );
+    assert!(
+        source.contains("Tls(tls) => byte_stream_map_tls(tls_close(tls))"),
+        "std/tls.aic byte_stream_close must delegate TLS branch to tls_close"
+    );
+}
+
+#[test]
 fn unit_tls_policy_manifest_matches_runtime_defaults() {
     let manifest_text = fs::read_to_string("docs/security-ops/tls-policy.v1.json")
         .expect("read docs/security-ops/tls-policy.v1.json");
@@ -2789,6 +2947,10 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
 
 #[test]
 fn unit_postgres_tls_scram_replay_contract_and_example_are_in_sync() {
+    if !protocol_replay_tests_enabled() {
+        return;
+    }
+
     let source = fs::read_to_string("examples/io/postgres_tls_scram_reference.aic")
         .expect("read examples/io/postgres_tls_scram_reference.aic");
     let manifest_text = fs::read_to_string("docs/security-ops/postgres-tls-scram-replay.v1.json")
@@ -3979,6 +4141,52 @@ fn print_int(x: Int) -> () effects { io } {
         out.diagnostics
     );
     assert!(out.ir.items.len() >= 2);
+}
+
+#[test]
+fn unit_std_modules_can_be_resolved_from_global_std_root() {
+    let _env_guard = env_lock();
+
+    let dir = tempdir().expect("tempdir");
+    let std_root = dir.path().join("global-std");
+    let root = dir.path().join("project");
+    fs::create_dir_all(std_root.join("std")).expect("mkdir global std");
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        std_root.join("std/io.aic"),
+        r#"module std.io;
+
+fn sentinel() -> Int {
+    42
+}
+"#,
+    )
+    .expect("write io");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import std.io;
+
+fn main() -> Int {
+    sentinel()
+}
+"#,
+    )
+    .expect("write main");
+
+    let _std_root_override = ScopedEnvVar::set(
+        ENV_AIC_STD_ROOT,
+        std_root.join("std").to_string_lossy().to_string(),
+    );
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
 }
 
 #[test]

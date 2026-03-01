@@ -43,6 +43,16 @@ struct UdpPacket {
     payload: Bytes,
 }
 
+/// `TcpStream` is a `struct` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TcpStream` through `std.net` APIs.
+/// ```
+struct TcpStream {
+    handle: Int,
+}
+
 /// `AsyncIntOp` is a `struct` in `std.net`.
 ///
 /// ## Example
@@ -386,6 +396,70 @@ fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects {
 /// Returns module-defined error variants when the operation fails.
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_connect_intrinsic(addr, timeout_ms)
+}
+
+/// `tcp_stream` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream(handle: Int) -> TcpStream {
+    TcpStream { handle: handle }
+}
+
+/// `tcp_stream_send` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net } {
+    tcp_send(stream.handle, payload)
+}
+
+/// `tcp_stream_recv` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net } {
+    tcp_recv(stream.handle, max_bytes, timeout_ms)
+}
+
+/// `tcp_stream_close` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_close(stream.handle)
 }
 
 /// `tcp_send` in `std.net`.

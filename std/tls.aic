@@ -7,6 +7,7 @@
 module std.tls;
 
 import std.bytes;
+import std.net;
 import std.option;
 import std.result;
 import std.string;
@@ -69,6 +70,32 @@ struct TlsConfig {
 /// ```
 struct TlsStream {
     handle: Int,
+}
+
+/// `ByteStream` is a `enum` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ByteStream` through `std.tls` APIs.
+/// ```
+enum ByteStream {
+    /// `Tcp` enum variant.
+    Tcp(TcpStream),
+    /// `Tls` enum variant.
+    Tls(TlsStream),
+}
+
+/// `ByteStreamError` is a `enum` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `ByteStreamError` through `std.tls` APIs.
+/// ```
+enum ByteStreamError {
+    /// `Net` enum variant.
+    Net(NetError),
+    /// `Tls` enum variant.
+    Tls(TlsError),
 }
 
 /// `aic_tls_connect_intrinsic` in `std.tls`.
@@ -521,6 +548,149 @@ fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
 /// Returns module-defined error variants when the operation fails.
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net } {
     aic_tls_close_intrinsic(stream.handle)
+}
+
+/// `byte_stream_from_tcp` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_from_tcp` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_from_tcp(handle: Int) -> ByteStream {
+    Tcp(tcp_stream(handle))
+}
+
+/// `byte_stream_from_tcp_stream` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_from_tcp_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_from_tcp_stream(stream: TcpStream) -> ByteStream {
+    Tcp(stream)
+}
+
+/// `byte_stream_from_tls` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_from_tls` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_from_tls(stream: TlsStream) -> ByteStream {
+    Tls(stream)
+}
+
+/// `byte_stream_map_net` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_map_net` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_map_net[T](raw: Result[T, NetError]) -> Result[T, ByteStreamError] {
+    match raw {
+        Ok(value) => Ok(value),
+        Err(err) => Err(Net(err)),
+    }
+}
+
+/// `byte_stream_map_tls` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_map_tls` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_map_tls[T](raw: Result[T, TlsError]) -> Result[T, ByteStreamError] {
+    match raw {
+        Ok(value) => Ok(value),
+        Err(err) => Err(Tls(err)),
+    }
+}
+
+/// `byte_stream_send` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_send(tcp, payload)),
+        Tls(tls) => byte_stream_map_tls(tls_send_bytes(tls, payload)),
+    }
+}
+
+/// `byte_stream_recv` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv(tcp, max_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_bytes(tls, max_bytes, timeout_ms)),
+    }
+}
+
+/// `byte_stream_close` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effects { net } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_close(tcp)),
+        Tls(tls) => byte_stream_map_tls(tls_close(tls)),
+    }
 }
 
 /// `tls_peer_subject` in `std.tls`.

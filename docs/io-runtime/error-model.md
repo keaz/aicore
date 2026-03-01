@@ -18,6 +18,7 @@ Use `aic check --json` for machine-readable diagnostics.
 | `E2009` | missing capability authority | effect declaration/call path lacks matching capability | add `capabilities { ... }` and thread authority through callers |
 | `E2100` | missing imported module | module not available/imported | add valid `import` and ensure module exists |
 | `E2102` | symbol requires explicit import | symbol reachable only through module import | add explicit `import module.path;` |
+| `E6007` | Windows target net/TLS strategy guard | non-std `net` effect usage while building `x86_64-windows` | remove `net` usage for Windows artifacts or build linux/macos until parity lands |
 
 ## Runtime Error Enums
 

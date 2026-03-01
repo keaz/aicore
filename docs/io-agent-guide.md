@@ -48,8 +48,9 @@ Treat error enums as control-flow boundaries, not exceptions.
   - full runtime behavior for documented `std.io/fs/env/path/time/rand`.
   - `std.proc` and `std.net` implementations are active.
 - Windows:
-  - `std.net` currently maps to `NetError::Io` (unsupported runtime path).
-  - `std.tls` currently maps to `TlsError::ProtocolError` (unsupported runtime path).
+  - `aic build --target x86_64-windows` rejects non-std `net`/`tls` usage at check time with `E6007`.
+  - Direct unsupported runtime paths still map `std.net` failures to `NetError::Io`.
+  - Direct unsupported runtime paths still map `std.tls` failures to `TlsError::ProtocolError`.
   - `std.proc` partial behavior:
     - `run`, `pipe`, `current_pid` available.
     - `spawn`, `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.

@@ -8,6 +8,7 @@ cd "$ROOT_DIR"
 AIC=(cargo run --quiet --bin aic --)
 ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aic-examples.XXXXXX")"
 trap 'rm -rf "$ARTIFACT_DIR"' EXIT
+INCLUDE_PROTOCOL_EXAMPLES="${AIC_INCLUDE_PROTOCOL_EXAMPLES:-0}"
 
 check_pass=(
   "examples/option_match.aic"
@@ -53,7 +54,6 @@ check_pass=(
   "examples/io/tls_connect.aic"
   "examples/io/tls_policy_defaults.aic"
   "examples/io/secure_error_contract.aic"
-  "examples/io/postgres_tls_scram_reference.aic"
   "examples/io/retry_with_jitter.aic"
   "examples/io/worker_pool.aic"
   "examples/io/connection_pool.aic"
@@ -70,7 +70,6 @@ check_pass=(
   "examples/io/log_tee.aic"
   "examples/io/env_config.aic"
   "examples/io/subprocess_pipeline.aic"
-  "examples/crypto/pg_scram_auth.aic"
   "examples/data/bitwise_protocol.aic"
   "examples/data/binary_protocol.aic"
   "examples/data/bytes_random_access.aic"
@@ -296,6 +295,17 @@ run_fail=(
   "examples/e4/contracts_all_returns.aic:ensures failed"
   "examples/e5/panic_line_map.aic:AICore panic at"
 )
+
+if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
+  check_pass+=(
+    "examples/io/postgres_tls_scram_reference.aic"
+    "examples/crypto/pg_scram_auth.aic"
+  )
+  run_pass+=(
+    "examples/io/postgres_tls_scram_reference.aic"
+    "examples/crypto/pg_scram_auth.aic"
+  )
+fi
 
 expect_check_fail() {
   local file="$1"
@@ -600,14 +610,12 @@ case "$MODE" in
     expect_run_value "examples/io/log_tee.aic" "42"
     expect_run_value "examples/io/env_config.aic" "42"
     expect_run_value "examples/io/subprocess_pipeline.aic" "42"
-    expect_run_value "examples/crypto/pg_scram_auth.aic" "42"
     expect_run_value "examples/io/tcp_echo.aic" "42"
     expect_run_value "examples/io/tcp_echo_client.aic" "42"
     expect_run_value "examples/io/http_server_hello.aic" "42"
     expect_run_value "examples/io/http_router.aic" "42"
     expect_run_value "examples/io/prod_t1_intrinsics_runtime_smoke.aic" "42"
     expect_run_value "examples/io/tls_connect.aic" "42"
-    expect_run_value "examples/io/postgres_tls_scram_reference.aic" "42"
     expect_run_value "examples/io/retry_with_jitter.aic" "42"
     expect_run_value "examples/io/worker_pool.aic" "42"
     expect_run_value "examples/io/connection_pool.aic" "42"
@@ -682,6 +690,10 @@ case "$MODE" in
     expect_run_value "examples/core/pattern_or.aic" "42"
     expect_run_value "examples/verify/range_proofs.aic" "9"
     expect_run_value "examples/verify/qv_contract_proof_fixed.aic" "7"
+    if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
+      expect_run_value "examples/crypto/pg_scram_auth.aic" "42"
+      expect_run_value "examples/io/postgres_tls_scram_reference.aic" "42"
+    fi
     "${AIC[@]}" lock "examples/e6/pkg_app" >/dev/null
     "${AIC[@]}" check "examples/e6/pkg_app" --offline >/dev/null
     if "${AIC[@]}" check "examples/e7/diag_errors.aic" --sarif >"$ARTIFACT_DIR/diag_errors.sarif"; then

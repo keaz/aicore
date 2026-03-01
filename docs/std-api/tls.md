@@ -31,6 +31,16 @@ struct TlsConfig {
 struct TlsStream {
     handle: Int,
 }
+
+enum ByteStream {
+    Tcp(TcpStream),
+    Tls(TlsStream),
+}
+
+enum ByteStreamError {
+    Net(NetError),
+    Tls(TlsError),
+}
 ```
 
 ## API
@@ -52,6 +62,13 @@ fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effec
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
+
+fn byte_stream_from_tcp(handle: Int) -> ByteStream
+fn byte_stream_from_tcp_stream(stream: TcpStream) -> ByteStream
+fn byte_stream_from_tls(stream: TlsStream) -> ByteStream
+fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net }
+fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
+fn byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effects { net }
 
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
@@ -79,6 +96,42 @@ fn main() -> Int effects { net } capabilities { net } {
         },
         Err(_) => 1,
     }
+}
+```
+
+## ByteStream Adapter Example
+
+```aic
+module docs.std_api.tls_byte_stream;
+
+import std.net;
+import std.tls;
+import std.bytes;
+
+fn main() -> Int effects { net } capabilities { net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 3000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 3000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let _sent = byte_stream_send(byte_stream_from_tcp(client), bytes.from_string("ping"));
+    let _recv = byte_stream_recv(byte_stream_from_tcp_stream(tcp_stream(server)), 256, 3000);
+    let _client_close = byte_stream_close(byte_stream_from_tcp(client));
+    let _server_close = byte_stream_close(byte_stream_from_tcp(server));
+    let _listener_close = tcp_close(listener);
+    0
 }
 ```
 
@@ -143,3 +196,4 @@ fn main() -> Int effects { net } capabilities { net } {
 - `unsafe_insecure_tls_config(...)` must only be used in explicitly audited scenarios.
 - `TlsStream` participates in resource protocol checking (`E2006`) after `tls_close`.
 - `TlsStream` also participates in runtime handle cleanup on scope drop (RAII close path).
+- `ByteStream` provides protocol-agnostic byte I/O by adapting `TcpStream` and `TlsStream`.

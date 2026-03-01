@@ -44,6 +44,22 @@ fn write_wasm_io_fixture_source(root: &Path) -> PathBuf {
     source
 }
 
+fn write_windows_net_guard_fixture_source(root: &Path) -> PathBuf {
+    let source = root.join("windows_net_guard.aic");
+    fs::write(
+        &source,
+        concat!(
+            "import std.net;\n",
+            "fn main() -> Int effects { net } capabilities { net } {\n",
+            "    let _dial = tcp_connect(\"127.0.0.1:1\", 5);\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write windows net guard fixture source");
+    source
+}
+
 fn wasm_target_unavailable(stderr: &str) -> bool {
     let lower = stderr.to_ascii_lowercase();
     lower.contains("wasm32-unknown-unknown")
@@ -293,6 +309,52 @@ fn build_rejects_static_link_for_non_linux_target() {
     assert!(
         stderr.contains("--static-link currently supports linux targets only"),
         "missing static-link target diagnostic: {stderr}"
+    );
+}
+
+#[test]
+fn build_windows_target_rejects_net_effect_usage_with_e6007() {
+    let dir = tempdir().expect("temp dir");
+    let input = write_windows_net_guard_fixture_source(dir.path());
+    let output = dir.path().join("demo-windows-net");
+
+    let input_arg = input.to_string_lossy().to_string();
+    let output_arg = output.to_string_lossy().to_string();
+    let args = vec![
+        "build",
+        input_arg.as_str(),
+        "-o",
+        output_arg.as_str(),
+        "--target",
+        "x86_64-windows",
+    ];
+    let run = run_aic_in_dir(dir.path(), &args);
+    assert_eq!(
+        run.status.code(),
+        Some(1),
+        "expected diagnostic failure\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        stdout.contains("E6007"),
+        "expected E6007 in diagnostics:\n{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("target `x86_64-windows` does not currently support net/TLS runtime parity"),
+        "expected Windows net/TLS guard message in diagnostics:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("functions requiring `net`"),
+        "expected net offender hint in diagnostics:\n{stdout}"
+    );
+    assert!(
+        !output.exists(),
+        "guard should fail before writing output artifact at {}",
+        output.display()
     );
 }
 

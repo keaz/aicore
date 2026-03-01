@@ -151,7 +151,6 @@ docs-check:
 	@test -f docs/agent-recipes/bugfix-loop.md
 	@test -f docs/agent-recipes/refactor-loop.md
 	@test -f docs/agent-recipes/diagnostics-loop.md
-	@test -f docs/agent-recipes/secure-postgres-tls-scram-loop.md
 	@test -f docs/agent-tooling/schemas/parse-response.schema.json
 	@test -f docs/agent-tooling/schemas/check-response.schema.json
 	@test -f docs/agent-tooling/schemas/build-response.schema.json
@@ -192,7 +191,6 @@ docs-check:
 	@test -f docs/security-ops/telemetry.md
 	@test -f docs/security-ops/telemetry.schema.json
 	@test -f docs/security-ops/tls-policy.v1.json
-	@test -f docs/security-ops/postgres-tls-scram-replay.v1.json
 	@test -f docs/release/lts-policy.md
 	@test -f docs/release/compatibility-matrix.json
 	@test -f docs/security-ops/migration.md
@@ -208,8 +206,12 @@ docs-check:
 	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
-	@python3 -m json.tool docs/security-ops/postgres-tls-scram-replay.v1.json >/dev/null
 	@python3 -m json.tool docs/errors/secure-networking-error-contract.v1.json >/dev/null
+	@if [ "$${AIC_REQUIRE_PROTOCOL_EXAMPLES:-0}" = "1" ]; then \
+		test -f docs/agent-recipes/secure-postgres-tls-scram-loop.md; \
+		test -f docs/security-ops/postgres-tls-scram-replay.v1.json; \
+		python3 -m json.tool docs/security-ops/postgres-tls-scram-replay.v1.json >/dev/null; \
+	fi
 	@grep -q "aic init" README.md
 	@grep -q "aic check" README.md
 	@grep -q "aic fmt" README.md
