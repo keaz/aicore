@@ -44,7 +44,9 @@ impl<'a> Generator<'a> {
             "write_unlock_int" | "aic_conc_rwlock_write_unlock_intrinsic" => "write_unlock_int",
             "close_rwlock" | "aic_conc_rwlock_close_intrinsic" => "close_rwlock",
             "aic_conc_payload_store_intrinsic" => "payload_store",
+            "aic_conc_payload_store_value_intrinsic" => "payload_store_value",
             "aic_conc_payload_take_intrinsic" => "payload_take",
+            "aic_conc_payload_take_value_intrinsic" => "payload_take_value",
             "aic_conc_payload_drop_intrinsic" => "payload_drop",
             "aic_conc_arc_new_intrinsic" => "arc_new",
             "aic_conc_arc_clone_intrinsic" => "arc_clone",
@@ -297,10 +299,16 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_concurrency_payload_store_call(name, args, span, fctx))
             }
+            "payload_store_value" => {
+                Some(self.gen_concurrency_payload_store_value_call(name, args, span, fctx))
+            }
             "payload_take"
                 if self.sig_matches_shape(name, &["Int"], "Result[String, ConcurrencyError]") =>
             {
                 Some(self.gen_concurrency_payload_take_call(name, args, span, fctx))
+            }
+            "payload_take_value" => {
+                Some(self.gen_concurrency_payload_take_value_call(name, args, span, fctx))
             }
             "payload_drop"
                 if self.sig_matches_shape(name, &["Int"], "Result[Bool, ConcurrencyError]") =>
@@ -2491,7 +2499,7 @@ impl<'a> Generator<'a> {
 
     pub(super) fn gen_concurrency_payload_store_call(
         &mut self,
-        name: &str,
+        _name: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -2531,7 +2539,84 @@ impl<'a> Generator<'a> {
             "  {} = load i64, i64* {}",
             payload_id, payload_id_slot
         ));
-        let result_ty = self.concurrency_result_ty(name, span)?;
+        let result_ty = self.parse_type_repr("Result[Int, ConcurrencyError]", span)?;
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(payload_id),
+        };
+        self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_concurrency_payload_store_value_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_payload_store_value_intrinsic expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let payload = self.gen_expr(&args[0], fctx)?;
+        let (ptr, len, cap) = if payload.ty == LType::Unit {
+            let zero_byte = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i8", zero_byte));
+            fctx.lines.push(format!("  store i8 0, i8* {}", zero_byte));
+            (zero_byte, "0".to_string(), "0".to_string())
+        } else {
+            let payload_llvm = llvm_type(&payload.ty);
+            let payload_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", payload_stack, payload_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                payload_llvm,
+                payload
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&payload.ty)),
+                payload_llvm,
+                payload_stack
+            ));
+            let ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast {}* {} to i8*",
+                ptr, payload_llvm, payload_stack
+            ));
+            let payload_size_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* null, i32 1",
+                payload_size_ptr, payload_llvm, payload_llvm
+            ));
+            let payload_size = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = ptrtoint {}* {} to i64",
+                payload_size, payload_llvm, payload_size_ptr
+            ));
+            (ptr, payload_size.clone(), payload_size)
+        };
+        let payload_id_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", payload_id_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", payload_id_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_payload_store(i8* {}, i64 {}, i64 {}, i64* {})",
+            err, ptr, len, cap, payload_id_slot
+        ));
+        let payload_id = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            payload_id, payload_id_slot
+        ));
+        let result_ty = self.parse_type_repr("Result[Int, ConcurrencyError]", span)?;
         let ok_payload = Value {
             ty: LType::Int,
             repr: Some(payload_id),
@@ -2580,6 +2665,219 @@ impl<'a> Generator<'a> {
         let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
         let result_ty = self.concurrency_result_ty(name, span)?;
         self.wrap_concurrency_result(&result_ty, payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_concurrency_payload_take_value_call(
+        &mut self,
+        _name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_conc_payload_take_value_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let payload_id = self.gen_expr(&args[0], fctx)?;
+        if payload_id.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_take_value_intrinsic expects Int",
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let marker = self.gen_expr(&args[1], fctx)?;
+        let LType::Enum(marker_layout) = marker.ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_take_value_intrinsic expects (Int, Option[T])",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        };
+        if base_type_name(&marker_layout.repr) != "Option" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_take_value_intrinsic expects (Int, Option[T])",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let marker_args = extract_generic_args(&marker_layout.repr).unwrap_or_default();
+        if marker_args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_conc_payload_take_value_intrinsic expects (Int, Option[T])",
+                self.file,
+                args[1].span,
+            ));
+            return None;
+        }
+        let ok_ty = self.parse_type_repr(&marker_args[0], args[1].span)?;
+        let result_ty = self.parse_type_repr(
+            &format!("Result[{}, ConcurrencyError]", marker_args[0]),
+            span,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_payload_take(i64 {}, i8** {}, i64* {})",
+            err,
+            payload_id.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+
+        self.extern_decls
+            .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+        let final_err_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", final_err_slot));
+        fctx.lines
+            .push(format!("  store i64 {}, i64* {}", err, final_err_slot));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+
+        let ok_payload = if ok_ty == LType::Unit {
+            let runtime_ok = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", runtime_ok, err));
+            let check_len_label = self.new_label("conc_payload_take_unit_len");
+            let done_label = self.new_label("conc_payload_take_unit_done");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                runtime_ok, check_len_label, done_label
+            ));
+            fctx.lines.push(format!("{}:", check_len_label));
+            let size_ok = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", size_ok, out_len));
+            let unit_ok_label = self.new_label("conc_payload_take_unit_ok");
+            let unit_bad_label = self.new_label("conc_payload_take_unit_bad");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                size_ok, unit_ok_label, unit_bad_label
+            ));
+            fctx.lines.push(format!("{}:", unit_ok_label));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr));
+            fctx.lines.push(format!("  br label %{}", done_label));
+            fctx.lines.push(format!("{}:", unit_bad_label));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr));
+            fctx.lines
+                .push(format!("  store i64 4, i64* {}", final_err_slot));
+            fctx.lines.push(format!("  br label %{}", done_label));
+            fctx.lines.push(format!("{}:", done_label));
+            Value {
+                ty: LType::Unit,
+                repr: None,
+            }
+        } else {
+            let ok_llvm = llvm_type(&ok_ty);
+            let ok_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", ok_stack, ok_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm,
+                default_value(&ok_ty),
+                ok_llvm,
+                ok_stack
+            ));
+            let expected_size_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* null, i32 1",
+                expected_size_ptr, ok_llvm, ok_llvm
+            ));
+            let expected_size = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = ptrtoint {}* {} to i64",
+                expected_size, ok_llvm, expected_size_ptr
+            ));
+
+            let runtime_ok = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", runtime_ok, err));
+            let check_len_label = self.new_label("conc_payload_take_value_len");
+            let done_label = self.new_label("conc_payload_take_value_done");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                runtime_ok, check_len_label, done_label
+            ));
+            fctx.lines.push(format!("{}:", check_len_label));
+            let size_ok = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = icmp eq i64 {}, {}",
+                size_ok, out_len, expected_size
+            ));
+            let decode_label = self.new_label("conc_payload_take_value_ok");
+            let mismatch_label = self.new_label("conc_payload_take_value_bad");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                size_ok, decode_label, mismatch_label
+            ));
+
+            fctx.lines.push(format!("{}:", decode_label));
+            let typed_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* {} to {}*",
+                typed_ptr, out_ptr, ok_llvm
+            ));
+            let loaded = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded, ok_llvm, ok_llvm, typed_ptr
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                ok_llvm, loaded, ok_llvm, ok_stack
+            ));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr));
+            fctx.lines.push(format!("  br label %{}", done_label));
+
+            fctx.lines.push(format!("{}:", mismatch_label));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr));
+            fctx.lines
+                .push(format!("  store i64 4, i64* {}", final_err_slot));
+            fctx.lines.push(format!("  br label %{}", done_label));
+
+            fctx.lines.push(format!("{}:", done_label));
+            let final_ok = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                final_ok, ok_llvm, ok_llvm, ok_stack
+            ));
+            Value {
+                ty: ok_ty,
+                repr: Some(final_ok),
+            }
+        };
+
+        let final_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            final_err, final_err_slot
+        ));
+        self.wrap_concurrency_result(&result_ty, ok_payload, &final_err, span, fctx)
     }
 
     pub(super) fn gen_concurrency_payload_drop_call(

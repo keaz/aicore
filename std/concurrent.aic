@@ -664,6 +664,19 @@ intrinsic fn aic_conc_rwlock_close_intrinsic(rwlock: IntRwLock) -> Result[Bool, 
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, ConcurrencyError] effects { concurrency };
+/// `aic_conc_payload_store_value_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_payload_store_value_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_conc_payload_store_value_intrinsic[T](payload: T) -> Result[Int, ConcurrencyError] effects { concurrency };
 /// `aic_conc_payload_take_intrinsic` in `std.concurrent`.
 ///
 /// ## Example
@@ -677,6 +690,19 @@ intrinsic fn aic_conc_payload_store_intrinsic(payload: String) -> Result[Int, Co
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency };
+/// `aic_conc_payload_take_value_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_payload_take_value_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_conc_payload_take_value_intrinsic[T](payload_id: Int, marker: Option[T]) -> Result[T, ConcurrencyError] effects { concurrency };
 /// `aic_conc_payload_drop_intrinsic` in `std.concurrent`.
 ///
 /// ## Example
@@ -1149,6 +1175,25 @@ fn json_encode_payload[T](value: T) -> Result[String, ChannelError] {
     }
 }
 
+/// `store_payload_for_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `store_payload_for_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency } {
+    match aic_conc_payload_store_value_intrinsic(value) {
+        Ok(payload_id) => Ok(payload_id),
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
 /// `none_from_receiver` in `std.concurrent`.
 ///
 /// ## Example
@@ -1166,6 +1211,25 @@ fn none_from_receiver[T](hint: Receiver[T]) -> Option[T] {
     None()
 }
 
+/// `take_payload_for_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `take_payload_for_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn take_payload_for_channel[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
+    match aic_conc_payload_take_value_intrinsic(payload_id, none_from_receiver(hint)) {
+        Ok(value) => Ok(value),
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
 /// `decode_payload_for_receiver` in `std.concurrent`.
 ///
 /// ## Example
@@ -1179,16 +1243,7 @@ fn none_from_receiver[T](hint: Receiver[T]) -> Option[T] {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn decode_payload_for_receiver[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
-    match take_payload_string(payload_id) {
-        Ok(payload) => match aic_json_parse_intrinsic(payload) {
-            Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, none_from_receiver(hint)) {
-                Ok(value) => Ok(value),
-                Err(_) => Err(channel_closed()),
-            },
-            Err(_) => Err(channel_closed()),
-        },
-        Err(err) => Err(err),
-    }
+    take_payload_for_channel(payload_id, hint)
 }
 
 /// `decode_task_payload` in `std.concurrent`.
@@ -1579,15 +1634,12 @@ fn send_cleanup_error(payload_id: Int, err: ConcurrencyError) -> ChannelError ef
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
-    match json_encode_payload(value) {
-        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
-            Ok(payload_id) => match aic_conc_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id, default_blocking_timeout_ms()) {
-                Ok(_) => Ok(true),
-                Err(err) => Err(send_cleanup_error(payload_id, err)),
-            },
-            Err(err) => Err(map_concurrency_to_channel_error(err)),
+    match store_payload_for_channel(value) {
+        Ok(payload_id) => match aic_conc_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id, default_blocking_timeout_ms()) {
+            Ok(_) => Ok(true),
+            Err(err) => Err(send_cleanup_error(payload_id, err)),
         },
-        Err(_) => Err(channel_closed()),
+        Err(err) => Err(err),
     }
 }
 
@@ -1647,15 +1699,12 @@ fn try_send_cleanup_error(payload_id: Int, err: ChannelError) -> ChannelError ef
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency } {
-    match json_encode_payload(value) {
-        Ok(payload) => match aic_conc_payload_store_intrinsic(payload) {
-            Ok(payload_id) => match aic_conc_try_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id) {
-                Ok(_) => Ok(true),
-                Err(err) => Err(try_send_cleanup_error(payload_id, err)),
-            },
-            Err(err) => Err(map_concurrency_to_channel_error(err)),
+    match store_payload_for_channel(value) {
+        Ok(payload_id) => match aic_conc_try_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id) {
+            Ok(_) => Ok(true),
+            Err(err) => Err(try_send_cleanup_error(payload_id, err)),
         },
-        Err(_) => Err(channel_closed()),
+        Err(err) => Err(err),
     }
 }
 
@@ -1695,16 +1744,7 @@ fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError]
 /// Returns module-defined error variants when the operation fails.
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, default_blocking_timeout_ms()) {
-        Ok(payload_id) => match take_payload_string(payload_id) {
-            Ok(payload) => match aic_json_parse_intrinsic(payload) {
-                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
-                    Ok(value) => Ok(value),
-                    Err(_) => Err(channel_closed()),
-                },
-                Err(_) => Err(channel_closed()),
-            },
-            Err(err) => Err(err),
-        },
+        Ok(payload_id) => take_payload_for_channel(payload_id, rx),
         Err(err) => Err(map_concurrency_to_channel_error(err)),
     }
 }
@@ -1739,16 +1779,7 @@ fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { conc
 /// Returns module-defined error variants when the operation fails.
 fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_try_recv_int_intrinsic(IntChannel { handle: rx.handle }) {
-        Ok(payload_id) => match take_payload_string(payload_id) {
-            Ok(payload) => match aic_json_parse_intrinsic(payload) {
-                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
-                    Ok(value) => Ok(value),
-                    Err(_) => Err(channel_closed()),
-                },
-                Err(_) => Err(channel_closed()),
-            },
-            Err(err) => Err(err),
-        },
+        Ok(payload_id) => take_payload_for_channel(payload_id, rx),
         Err(err) => Err(err),
     }
 }
@@ -1786,16 +1817,7 @@ fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { 
 /// Returns module-defined error variants when the operation fails.
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency } {
     match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, timeout_ms) {
-        Ok(payload_id) => match take_payload_string(payload_id) {
-            Ok(payload) => match aic_json_parse_intrinsic(payload) {
-                Ok(parsed) => match aic_json_serde_decode_intrinsic(parsed, None()) {
-                    Ok(value) => Ok(value),
-                    Err(_) => Err(channel_closed()),
-                },
-                Err(_) => Err(channel_closed()),
-            },
-            Err(err) => Err(err),
-        },
+        Ok(payload_id) => take_payload_for_channel(payload_id, rx),
         Err(err) => Err(map_concurrency_to_channel_error(err)),
     }
 }

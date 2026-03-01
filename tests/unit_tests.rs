@@ -4162,6 +4162,14 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
     ));
     assert!(source.contains("fn recv_bytes_timeout("));
+    assert!(source.contains(
+        "intrinsic fn aic_conc_payload_store_value_intrinsic[T](payload: T) -> Result[Int, ConcurrencyError] effects { concurrency };"
+    ));
+    assert!(source.contains(
+        "intrinsic fn aic_conc_payload_take_value_intrinsic[T](payload_id: Int, marker: Option[T]) -> Result[T, ConcurrencyError] effects { concurrency };"
+    ));
+    assert!(source.contains("match store_payload_for_channel(value)"));
+    assert!(source.contains("take_payload_for_channel(payload_id, rx)"));
     assert!(source.contains("match aic_conc_payload_store_intrinsic(value.data)"));
     assert!(source.contains("Ok(payload) => Ok(Bytes { data: payload })"));
 
@@ -4347,6 +4355,8 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_conc_rwlock_write_lock_intrinsic", 2usize),
         ("aic_conc_rwlock_write_unlock_intrinsic", 2usize),
         ("aic_conc_rwlock_close_intrinsic", 1usize),
+        ("aic_conc_payload_store_value_intrinsic", 1usize),
+        ("aic_conc_payload_take_value_intrinsic", 2usize),
     ] {
         assert_intrinsic_declaration(&source, "std/concurrent.aic", name, arity);
     }

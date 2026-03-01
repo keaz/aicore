@@ -296,11 +296,12 @@ Sunset policy:
   - `channel_int`, `buffered_channel_int`, and `channel_int_buffered` create bounded buffered channels.
   - Capacity must be positive and within runtime limits.
 - Generic channel payload transport:
-  - `send[T]` serializes payloads to deterministic JSON text and stores them in concurrency payload slots.
+  - `send[T]` stores typed payload snapshots in concurrency payload slots via binary-safe value codec intrinsics.
   - Channel runtime transports payload IDs (`Int`) across thread boundaries.
-  - `recv[T]`/`try_recv[T]`/`recv_timeout[T]` load payload text and decode back to `T`.
+  - `recv[T]`/`try_recv[T]`/`recv_timeout[T]` decode payload snapshots back to `T` with runtime size checks.
   - On send failure paths, staged payloads are dropped to avoid payload-slot leaks.
-  - `send_bytes`/`try_send_bytes` and `recv_bytes`/`try_recv_bytes`/`recv_bytes_timeout` provide a binary path for `Bytes` payloads without JSON stringify/parse overhead.
+  - `send_bytes`/`try_send_bytes` and `recv_bytes`/`try_recv_bytes`/`recv_bytes_timeout` remain the explicit binary-bytes fast path for protocol payloads.
+  - Compatibility guidance: generic channel payloads are now opaque binary snapshots; if tooling relied on JSON payload text in channel internals, migrate to explicit `std.json` encode/decode at the application boundary.
 - Backpressure when full:
   - `send_int` blocks while channel is full, up to `timeout_ms`.
   - If no space is available before deadline, `send_int` returns `Err(Timeout)`.

@@ -4594,14 +4594,15 @@ fn exec_concurrency_bytes_channel_benchmark_reduces_overhead_vs_json_path() {
 import std.bytes;
 import std.concurrent;
 import std.io;
+import std.json;
 import std.time;
 
 fn payload_template() -> Bytes {
     bytes.from_string("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 }
 
-fn run_json_path(iterations: Int) -> Int effects { concurrency, time } capabilities { concurrency, time } {
-    let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_channel(64);
+fn run_manual_json_codec_path(iterations: Int) -> Int effects { concurrency, time } capabilities { concurrency, time } {
+    let pair: (Sender[String], Receiver[String]) = buffered_channel(64);
     let tx = pair.0;
     let rx = pair.1;
     let expected_len = bytes.byte_len(payload_template());
@@ -4609,12 +4610,24 @@ fn run_json_path(iterations: Int) -> Int effects { concurrency, time } capabilit
     let mut i = 0;
     let mut ok = 1;
     while i < iterations {
-        let sent = match send(tx, payload_template()) {
-            Ok(_) => 1,
+        let sent = match json.encode(payload_template()) {
+            Ok(encoded) => match json.stringify(encoded) {
+                Ok(payload_text) => match send(tx, payload_text) {
+                    Ok(_) => 1,
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            },
             Err(_) => 0,
         };
         let recv_ok = match recv(rx) {
-            Ok(value) => if bytes.byte_len(value) == expected_len { 1 } else { 0 },
+            Ok(payload_text) => match json.parse(payload_text) {
+                Ok(parsed) => match json.decode_with(parsed, Some(payload_template())) {
+                    Ok(value) => if bytes.byte_len(value) == expected_len { 1 } else { 0 },
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            },
             Err(_) => 0,
         };
         ok = ok * sent * recv_ok;
@@ -4654,7 +4667,7 @@ fn run_binary_path(iterations: Int) -> Int effects { concurrency, time } capabil
 
 fn main() -> Int effects { io, concurrency, time } capabilities { io, concurrency, time } {
     let iterations = 2500;
-    let json_elapsed = run_json_path(iterations);
+    let json_elapsed = run_manual_json_codec_path(iterations);
     let binary_elapsed = run_binary_path(iterations);
     let measured = if json_elapsed >= 0 && binary_elapsed >= 0 { 1 } else { 0 };
     let improved = if binary_elapsed <= json_elapsed { 1 } else { 0 };

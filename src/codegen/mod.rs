@@ -304,11 +304,27 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_payload_store_value_intrinsic",
+        runtime_symbol: "aic_rt_conc_payload_store",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["T"],
+            ret: "Result[Int, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_conc_payload_take_intrinsic",
         runtime_symbol: "aic_rt_conc_payload_take",
         signatures: &[IntrinsicSignatureShape {
             params: &["Int"],
             ret: "Result[String, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_payload_take_value_intrinsic",
+        runtime_symbol: "aic_rt_conc_payload_take",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Option[T]"],
+            ret: "Result[T, ConcurrencyError]",
         }],
     },
     IntrinsicBindingExpectation {
