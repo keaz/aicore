@@ -906,7 +906,8 @@ Verifier-focused examples:
   - Cursor APIs: `buf_position`, `buf_remaining`, `buf_seek`, `buf_reset`
   - Lifecycle APIs: `buf_close` and drop-safe cleanup of `ByteBuffer` resources
   - Builder APIs: `new_buffer` (fixed) and `new_growable_buffer(initial_capacity, max_capacity)` (bounded auto-grow)
-  - Framing APIs: endian-aware read/write (`u8`, `i16/i32/i64` BE/LE), `buf_read_cstring`, `buf_read_length_prefixed`, `buf_write_cstring`, `buf_write_string_prefixed`
+  - Framing APIs: endian-aware read/write (`u8`, `i16/i32/i64`, `u16/u32/u64` BE/LE), `buf_read_cstring`, `buf_read_length_prefixed`, `buf_write_cstring`, `buf_write_string_prefixed`
+  - Backfill APIs: `buf_patch_u16/u32/u64_be` and `buf_patch_u16/u32/u64_le` for cursor-safe offset patching
 - Runtime ABI surface:
   - `aic_rt_buffer_new`
   - `aic_rt_buffer_new_growable`

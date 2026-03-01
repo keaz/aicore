@@ -924,8 +924,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u16_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u16_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_read_i32_be_intrinsic",
         runtime_symbol: "aic_rt_buffer_read_i32_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u32_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u32_be",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer"],
             ret: "Result[Int, BufferError]",
@@ -940,8 +956,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u64_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u64_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_read_i16_le_intrinsic",
         runtime_symbol: "aic_rt_buffer_read_i16_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u16_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u16_le",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer"],
             ret: "Result[Int, BufferError]",
@@ -956,8 +988,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u32_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u32_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_read_i64_le_intrinsic",
         runtime_symbol: "aic_rt_buffer_read_i64_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Int, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_read_u64_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_read_u64_le",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer"],
             ret: "Result[Int, BufferError]",
@@ -1004,8 +1052,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u16_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u16_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_write_i32_be_intrinsic",
         runtime_symbol: "aic_rt_buffer_write_i32_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u32_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u32_be",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer", "Int"],
             ret: "Result[(), BufferError]",
@@ -1020,8 +1084,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u64_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u64_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_write_i16_le_intrinsic",
         runtime_symbol: "aic_rt_buffer_write_i16_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u16_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u16_le",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer", "Int"],
             ret: "Result[(), BufferError]",
@@ -1036,8 +1116,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u32_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u32_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_write_i64_le_intrinsic",
         runtime_symbol: "aic_rt_buffer_write_i64_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_write_u64_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_write_u64_le",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer", "Int"],
             ret: "Result[(), BufferError]",
@@ -1064,6 +1160,54 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         runtime_symbol: "aic_rt_buffer_write_string_prefixed",
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer", "String"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u16_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u16_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u32_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u32_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u64_be_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u64_be",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u16_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u16_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u32_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u32_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
+            ret: "Result[(), BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_patch_u64_le_intrinsic",
+        runtime_symbol: "aic_rt_buffer_patch_u64_le",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer", "Int", "Int"],
             ret: "Result[(), BufferError]",
         }],
     },
@@ -3124,26 +3268,44 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("buffer", "buf_close") => Some("aic_buffer_close_intrinsic"),
         ("buffer", "buf_read_u8") => Some("aic_buffer_read_u8_intrinsic"),
         ("buffer", "buf_read_i16_be") => Some("aic_buffer_read_i16_be_intrinsic"),
+        ("buffer", "buf_read_u16_be") => Some("aic_buffer_read_u16_be_intrinsic"),
         ("buffer", "buf_read_i32_be") => Some("aic_buffer_read_i32_be_intrinsic"),
+        ("buffer", "buf_read_u32_be") => Some("aic_buffer_read_u32_be_intrinsic"),
         ("buffer", "buf_read_i64_be") => Some("aic_buffer_read_i64_be_intrinsic"),
+        ("buffer", "buf_read_u64_be") => Some("aic_buffer_read_u64_be_intrinsic"),
         ("buffer", "buf_read_i16_le") => Some("aic_buffer_read_i16_le_intrinsic"),
+        ("buffer", "buf_read_u16_le") => Some("aic_buffer_read_u16_le_intrinsic"),
         ("buffer", "buf_read_i32_le") => Some("aic_buffer_read_i32_le_intrinsic"),
+        ("buffer", "buf_read_u32_le") => Some("aic_buffer_read_u32_le_intrinsic"),
         ("buffer", "buf_read_i64_le") => Some("aic_buffer_read_i64_le_intrinsic"),
+        ("buffer", "buf_read_u64_le") => Some("aic_buffer_read_u64_le_intrinsic"),
         ("buffer", "buf_read_bytes") => Some("aic_buffer_read_bytes_intrinsic"),
         ("buffer", "buf_read_cstring") => Some("aic_buffer_read_cstring_intrinsic"),
         ("buffer", "buf_read_length_prefixed") => Some("aic_buffer_read_length_prefixed_intrinsic"),
         ("buffer", "buf_write_u8") => Some("aic_buffer_write_u8_intrinsic"),
         ("buffer", "buf_write_i16_be") => Some("aic_buffer_write_i16_be_intrinsic"),
+        ("buffer", "buf_write_u16_be") => Some("aic_buffer_write_u16_be_intrinsic"),
         ("buffer", "buf_write_i32_be") => Some("aic_buffer_write_i32_be_intrinsic"),
+        ("buffer", "buf_write_u32_be") => Some("aic_buffer_write_u32_be_intrinsic"),
         ("buffer", "buf_write_i64_be") => Some("aic_buffer_write_i64_be_intrinsic"),
+        ("buffer", "buf_write_u64_be") => Some("aic_buffer_write_u64_be_intrinsic"),
         ("buffer", "buf_write_i16_le") => Some("aic_buffer_write_i16_le_intrinsic"),
+        ("buffer", "buf_write_u16_le") => Some("aic_buffer_write_u16_le_intrinsic"),
         ("buffer", "buf_write_i32_le") => Some("aic_buffer_write_i32_le_intrinsic"),
+        ("buffer", "buf_write_u32_le") => Some("aic_buffer_write_u32_le_intrinsic"),
         ("buffer", "buf_write_i64_le") => Some("aic_buffer_write_i64_le_intrinsic"),
+        ("buffer", "buf_write_u64_le") => Some("aic_buffer_write_u64_le_intrinsic"),
         ("buffer", "buf_write_bytes") => Some("aic_buffer_write_bytes_intrinsic"),
         ("buffer", "buf_write_cstring") => Some("aic_buffer_write_cstring_intrinsic"),
         ("buffer", "buf_write_string_prefixed") => {
             Some("aic_buffer_write_string_prefixed_intrinsic")
         }
+        ("buffer", "buf_patch_u16_be") => Some("aic_buffer_patch_u16_be_intrinsic"),
+        ("buffer", "buf_patch_u32_be") => Some("aic_buffer_patch_u32_be_intrinsic"),
+        ("buffer", "buf_patch_u64_be") => Some("aic_buffer_patch_u64_be_intrinsic"),
+        ("buffer", "buf_patch_u16_le") => Some("aic_buffer_patch_u16_le_intrinsic"),
+        ("buffer", "buf_patch_u32_le") => Some("aic_buffer_patch_u32_le_intrinsic"),
+        ("buffer", "buf_patch_u64_le") => Some("aic_buffer_patch_u64_le_intrinsic"),
         ("crypto", "md5") => Some("aic_crypto_md5_intrinsic"),
         ("crypto", "md5_bytes") => Some("aic_crypto_md5_intrinsic"),
         ("crypto", "sha256") => Some("aic_crypto_sha256_intrinsic"),

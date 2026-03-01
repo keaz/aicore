@@ -179,6 +179,8 @@ intrinsic fn aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[Int, Buffer
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned big-endian 16-bit read intrinsic.
+intrinsic fn aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_i32_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -192,6 +194,8 @@ intrinsic fn aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned big-endian 32-bit read intrinsic.
+intrinsic fn aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_i64_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -205,6 +209,8 @@ intrinsic fn aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned big-endian 64-bit read intrinsic.
+intrinsic fn aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_i16_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -218,6 +224,8 @@ intrinsic fn aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned little-endian 16-bit read intrinsic.
+intrinsic fn aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_i32_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -231,6 +239,8 @@ intrinsic fn aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned little-endian 32-bit read intrinsic.
+intrinsic fn aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_i64_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -244,6 +254,8 @@ intrinsic fn aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+/// Unsigned little-endian 64-bit read intrinsic.
+intrinsic fn aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
 /// `aic_buffer_read_bytes_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -309,6 +321,8 @@ intrinsic fn aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Resul
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned big-endian 16-bit write intrinsic.
+intrinsic fn aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_i32_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -322,6 +336,8 @@ intrinsic fn aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned big-endian 32-bit write intrinsic.
+intrinsic fn aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_i64_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -335,6 +351,8 @@ intrinsic fn aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned big-endian 64-bit write intrinsic.
+intrinsic fn aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_i16_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -348,6 +366,8 @@ intrinsic fn aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned little-endian 16-bit write intrinsic.
+intrinsic fn aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_i32_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -361,6 +381,8 @@ intrinsic fn aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned little-endian 32-bit write intrinsic.
+intrinsic fn aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_i64_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -374,6 +396,8 @@ intrinsic fn aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+/// Unsigned little-endian 64-bit write intrinsic.
+intrinsic fn aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
 /// `aic_buffer_write_bytes_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -413,6 +437,18 @@ intrinsic fn aic_buffer_write_cstring_intrinsic(buf: ByteBuffer, s: String) -> R
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_string_prefixed_intrinsic(buf: ByteBuffer, s: String) -> Result[(), BufferError];
+/// Patch-at-offset unsigned big-endian 16-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+/// Patch-at-offset unsigned big-endian 32-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+/// Patch-at-offset unsigned big-endian 64-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+/// Patch-at-offset unsigned little-endian 16-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+/// Patch-at-offset unsigned little-endian 32-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+/// Patch-at-offset unsigned little-endian 64-bit write intrinsic.
+intrinsic fn aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
 
 /// `new_buffer` in `std.buffer`.
 ///
@@ -590,6 +626,22 @@ fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i16_be_intrinsic(buf)
 }
 
+/// `buf_read_u16_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u16_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u16_be_intrinsic(buf)
+}
+
 /// `buf_read_i32_be` in `std.buffer`.
 ///
 /// ## Example
@@ -604,6 +656,22 @@ fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i32_be_intrinsic(buf)
+}
+
+/// `buf_read_u32_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u32_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u32_be_intrinsic(buf)
 }
 
 /// `buf_read_i64_be` in `std.buffer`.
@@ -622,6 +690,22 @@ fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i64_be_intrinsic(buf)
 }
 
+/// `buf_read_u64_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u64_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u64_be_intrinsic(buf)
+}
+
 /// `buf_read_i16_le` in `std.buffer`.
 ///
 /// ## Example
@@ -636,6 +720,22 @@ fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i16_le_intrinsic(buf)
+}
+
+/// `buf_read_u16_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u16_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u16_le_intrinsic(buf)
 }
 
 /// `buf_read_i32_le` in `std.buffer`.
@@ -654,6 +754,22 @@ fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i32_le_intrinsic(buf)
 }
 
+/// `buf_read_u32_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u32_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u32_le_intrinsic(buf)
+}
+
 /// `buf_read_i64_le` in `std.buffer`.
 ///
 /// ## Example
@@ -668,6 +784,22 @@ fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError] {
     aic_buffer_read_i64_le_intrinsic(buf)
+}
+
+/// `buf_read_u64_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_read_u64_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_read_u64_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+    aic_buffer_read_u64_le_intrinsic(buf)
 }
 
 /// `buf_read_bytes` in `std.buffer`.
@@ -750,6 +882,22 @@ fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i16_be_intrinsic(buf, value)
 }
 
+/// `buf_write_u16_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u16_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u16_be_intrinsic(buf, value)
+}
+
 /// `buf_write_i32_be` in `std.buffer`.
 ///
 /// ## Example
@@ -764,6 +912,22 @@ fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i32_be_intrinsic(buf, value)
+}
+
+/// `buf_write_u32_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u32_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u32_be_intrinsic(buf, value)
 }
 
 /// `buf_write_i64_be` in `std.buffer`.
@@ -782,6 +946,22 @@ fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i64_be_intrinsic(buf, value)
 }
 
+/// `buf_write_u64_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u64_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u64_be_intrinsic(buf, value)
+}
+
 /// `buf_write_i16_le` in `std.buffer`.
 ///
 /// ## Example
@@ -796,6 +976,22 @@ fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i16_le_intrinsic(buf, value)
+}
+
+/// `buf_write_u16_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u16_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u16_le_intrinsic(buf, value)
 }
 
 /// `buf_write_i32_le` in `std.buffer`.
@@ -814,6 +1010,22 @@ fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i32_le_intrinsic(buf, value)
 }
 
+/// `buf_write_u32_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u32_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u32_le_intrinsic(buf, value)
+}
+
 /// `buf_write_i64_le` in `std.buffer`.
 ///
 /// ## Example
@@ -828,6 +1040,22 @@ fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
     aic_buffer_write_i64_le_intrinsic(buf, value)
+}
+
+/// `buf_write_u64_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_write_u64_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_write_u64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+    aic_buffer_write_u64_le_intrinsic(buf, value)
 }
 
 /// `buf_write_bytes` in `std.buffer`.
@@ -876,6 +1104,102 @@ fn buf_write_cstring(buf: ByteBuffer, s: String) -> Result[(), BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferError] {
     aic_buffer_write_string_prefixed_intrinsic(buf, s)
+}
+
+/// `buf_patch_u16_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u16_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u16_be_intrinsic(buf, offset, value)
+}
+
+/// `buf_patch_u32_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u32_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u32_be_intrinsic(buf, offset, value)
+}
+
+/// `buf_patch_u64_be` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u64_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u64_be_intrinsic(buf, offset, value)
+}
+
+/// `buf_patch_u16_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u16_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u16_le_intrinsic(buf, offset, value)
+}
+
+/// `buf_patch_u32_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u32_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u32_le_intrinsic(buf, offset, value)
+}
+
+/// `buf_patch_u64_le` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_patch_u64_le` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+    aic_buffer_patch_u64_le_intrinsic(buf, offset, value)
 }
 
 /// `buf_peek_u8` in `std.buffer`.

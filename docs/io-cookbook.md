@@ -137,15 +137,11 @@ fn frame() -> Result[ByteBuffer, BufferError] {
             let write_kind = buf_write_u8(buf, 1);
             let write_tag = buf_write_cstring(buf, "msg");
             let end = buf_position(buf);
-            let seek_header = buf_seek(buf, 0);
-            let patch_len = buf_write_i32_be(buf, end);
-            let seek_end = buf_seek(buf, end);
+            let patch_len = buf_patch_u32_be(buf, 0, end);
             let _a = write_len;
             let _b = write_kind;
             let _c = write_tag;
-            let _d = seek_header;
-            let _e = patch_len;
-            let _f = seek_end;
+            let _d = patch_len;
             Ok(buf)
         }
     }

@@ -699,25 +699,43 @@ fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, Buf
 
 fn buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError]
+fn buf_read_u64_le(buf: ByteBuffer) -> Result[Int, BufferError]
 fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]
 fn buf_read_cstring(buf: ByteBuffer) -> Result[String, BufferError]
 fn buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError]
 
 fn buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
+fn buf_write_u64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]
 fn buf_write_bytes(buf: ByteBuffer, data: Bytes) -> Result[(), BufferError]
 fn buf_write_cstring(buf: ByteBuffer, s: String) -> Result[(), BufferError]
 fn buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferError]
+fn buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
+fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
+fn buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
+fn buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
+fn buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
+fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]
 ```
 
 Notes:
@@ -730,6 +748,8 @@ Notes:
 - `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
 - `buf_close` releases buffer storage explicitly; drop cleanup is idempotent and safe after explicit close.
+- unsigned reads/writes (`u16/u32/u64`) are available for binary protocols; `u64` read returns `InvalidInput` when decoded values exceed signed `Int` range.
+- patch helpers (`buf_patch_u*_be/le`) seek-write-restore the cursor for deterministic backfill fields.
 - `buf_peek_u8` reads at absolute position without changing cursor state.
 - `buf_size` returns total bytes currently stored in the buffer.
 - `buf_slice` returns a `ByteBuffer` for a validated sub-range (`start`, `length`) using byte-level slicing.

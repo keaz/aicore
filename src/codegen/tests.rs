@@ -1769,6 +1769,42 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_buffer_to_bytes(i64, i8**, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u16_be(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u32_be(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u64_be(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u16_le(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u32_le(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_read_u64_le(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u16_be(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u32_be(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u64_be(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u16_le(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u32_le(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_write_u64_le(i64, i64)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_buffer_read_length_prefixed(i64, i8**, i64*)"));
     assert!(output
         .llvm_ir
@@ -1776,6 +1812,12 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_buffer_write_string_prefixed(i64, i8*, i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_patch_u32_be(i64, i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_patch_u32_le(i64, i64, i64)"));
     assert!(
         !output.llvm_ir.contains("{ i32, void"),
         "enum payload lowering must not materialize void fields"
@@ -1924,6 +1966,12 @@ fn panic_runtime_and_ir_abi_match() {
     ));
     assert!(runtime_c_source().contains("long aic_rt_buffer_close(long handle)"));
     assert!(runtime_c_source().contains("long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_len, long s_cap)"));
+    assert!(
+        runtime_c_source().contains("long aic_rt_buffer_read_u32_be(long handle, long* out_value)")
+    );
+    assert!(runtime_c_source().contains("long aic_rt_buffer_write_u32_le(long handle, long value)"));
+    assert!(runtime_c_source()
+        .contains("long aic_rt_buffer_patch_u32_be(long handle, long offset, long value)"));
     assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
     assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));
     assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(long ms)"));

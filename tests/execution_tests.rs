@@ -9529,6 +9529,78 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_buffer_unsigned_codecs_and_patch_helpers_are_stable() {
+    let src = r#"
+import std.io;
+import std.buffer;
+
+fn int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn is_invalid_input_unit(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_input_int(v: Result[Int, BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let frame = new_buffer(64);
+    let _a = buf_write_u16_be(frame, 65535);
+    let _b = buf_write_u32_be(frame, 0);
+    let _c = buf_write_u64_le(frame, 9007199254740991);
+    let end = buf_position(frame);
+    let _patch_ok = buf_patch_u32_be(frame, 2, end);
+
+    buf_reset(frame);
+    let u16 = int_or(buf_read_u16_be(frame), -1);
+    let patched_len = int_or(buf_read_u32_be(frame), -1);
+    let u64 = int_or(buf_read_u64_le(frame), -1);
+
+    let invalid_u16_write = is_invalid_input_unit(buf_write_u16_be(frame, 70000));
+    let invalid_patch_offset = is_invalid_input_unit(buf_patch_u32_be(frame, 200, 7));
+
+    let signed = new_buffer(16);
+    let _signed_write = buf_write_i64_be(signed, -1);
+    buf_reset(signed);
+    let invalid_u64_read = is_invalid_input_int(buf_read_u64_be(signed));
+
+    if u16 == 65535
+        && patched_len == end
+        && u64 == 9007199254740991
+        && invalid_u16_write
+        && invalid_patch_offset
+        && invalid_u64_read {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_crypto_vectors_roundtrip_and_secure_compare_paths() {
     let src = r#"
 import std.io;

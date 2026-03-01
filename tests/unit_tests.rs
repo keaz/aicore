@@ -6612,8 +6612,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             1usize,
         ),
         (
+            "buf_read_u16_be",
+            "aic_buffer_read_u16_be_intrinsic",
+            1usize,
+        ),
+        (
             "buf_read_i32_be",
             "aic_buffer_read_i32_be_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_u32_be",
+            "aic_buffer_read_u32_be_intrinsic",
             1usize,
         ),
         (
@@ -6622,8 +6632,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             1usize,
         ),
         (
+            "buf_read_u64_be",
+            "aic_buffer_read_u64_be_intrinsic",
+            1usize,
+        ),
+        (
             "buf_read_i16_le",
             "aic_buffer_read_i16_le_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_u16_le",
+            "aic_buffer_read_u16_le_intrinsic",
             1usize,
         ),
         (
@@ -6632,8 +6652,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             1usize,
         ),
         (
+            "buf_read_u32_le",
+            "aic_buffer_read_u32_le_intrinsic",
+            1usize,
+        ),
+        (
             "buf_read_i64_le",
             "aic_buffer_read_i64_le_intrinsic",
+            1usize,
+        ),
+        (
+            "buf_read_u64_le",
+            "aic_buffer_read_u64_le_intrinsic",
             1usize,
         ),
         ("buf_read_bytes", "aic_buffer_read_bytes_intrinsic", 2usize),
@@ -6654,8 +6684,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             2usize,
         ),
         (
+            "buf_write_u16_be",
+            "aic_buffer_write_u16_be_intrinsic",
+            2usize,
+        ),
+        (
             "buf_write_i32_be",
             "aic_buffer_write_i32_be_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_u32_be",
+            "aic_buffer_write_u32_be_intrinsic",
             2usize,
         ),
         (
@@ -6664,8 +6704,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             2usize,
         ),
         (
+            "buf_write_u64_be",
+            "aic_buffer_write_u64_be_intrinsic",
+            2usize,
+        ),
+        (
             "buf_write_i16_le",
             "aic_buffer_write_i16_le_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_u16_le",
+            "aic_buffer_write_u16_le_intrinsic",
             2usize,
         ),
         (
@@ -6674,8 +6724,18 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             2usize,
         ),
         (
+            "buf_write_u32_le",
+            "aic_buffer_write_u32_le_intrinsic",
+            2usize,
+        ),
+        (
             "buf_write_i64_le",
             "aic_buffer_write_i64_le_intrinsic",
+            2usize,
+        ),
+        (
+            "buf_write_u64_le",
+            "aic_buffer_write_u64_le_intrinsic",
             2usize,
         ),
         (
@@ -6693,6 +6753,36 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
             "aic_buffer_write_string_prefixed_intrinsic",
             2usize,
         ),
+        (
+            "buf_patch_u16_be",
+            "aic_buffer_patch_u16_be_intrinsic",
+            3usize,
+        ),
+        (
+            "buf_patch_u32_be",
+            "aic_buffer_patch_u32_be_intrinsic",
+            3usize,
+        ),
+        (
+            "buf_patch_u64_be",
+            "aic_buffer_patch_u64_be_intrinsic",
+            3usize,
+        ),
+        (
+            "buf_patch_u16_le",
+            "aic_buffer_patch_u16_le_intrinsic",
+            3usize,
+        ),
+        (
+            "buf_patch_u32_le",
+            "aic_buffer_patch_u32_le_intrinsic",
+            3usize,
+        ),
+        (
+            "buf_patch_u64_le",
+            "aic_buffer_patch_u64_le_intrinsic",
+            3usize,
+        ),
     ] {
         assert_delegate_call(&source, "std/buffer.aic", wrapper, intrinsic, arity);
     }
@@ -6709,24 +6799,42 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
         ("aic_buffer_close_intrinsic", 1usize),
         ("aic_buffer_read_u8_intrinsic", 1usize),
         ("aic_buffer_read_i16_be_intrinsic", 1usize),
+        ("aic_buffer_read_u16_be_intrinsic", 1usize),
         ("aic_buffer_read_i32_be_intrinsic", 1usize),
+        ("aic_buffer_read_u32_be_intrinsic", 1usize),
         ("aic_buffer_read_i64_be_intrinsic", 1usize),
+        ("aic_buffer_read_u64_be_intrinsic", 1usize),
         ("aic_buffer_read_i16_le_intrinsic", 1usize),
+        ("aic_buffer_read_u16_le_intrinsic", 1usize),
         ("aic_buffer_read_i32_le_intrinsic", 1usize),
+        ("aic_buffer_read_u32_le_intrinsic", 1usize),
         ("aic_buffer_read_i64_le_intrinsic", 1usize),
+        ("aic_buffer_read_u64_le_intrinsic", 1usize),
         ("aic_buffer_read_bytes_intrinsic", 2usize),
         ("aic_buffer_read_cstring_intrinsic", 1usize),
         ("aic_buffer_read_length_prefixed_intrinsic", 1usize),
         ("aic_buffer_write_u8_intrinsic", 2usize),
         ("aic_buffer_write_i16_be_intrinsic", 2usize),
+        ("aic_buffer_write_u16_be_intrinsic", 2usize),
         ("aic_buffer_write_i32_be_intrinsic", 2usize),
+        ("aic_buffer_write_u32_be_intrinsic", 2usize),
         ("aic_buffer_write_i64_be_intrinsic", 2usize),
+        ("aic_buffer_write_u64_be_intrinsic", 2usize),
         ("aic_buffer_write_i16_le_intrinsic", 2usize),
+        ("aic_buffer_write_u16_le_intrinsic", 2usize),
         ("aic_buffer_write_i32_le_intrinsic", 2usize),
+        ("aic_buffer_write_u32_le_intrinsic", 2usize),
         ("aic_buffer_write_i64_le_intrinsic", 2usize),
+        ("aic_buffer_write_u64_le_intrinsic", 2usize),
         ("aic_buffer_write_bytes_intrinsic", 2usize),
         ("aic_buffer_write_cstring_intrinsic", 2usize),
         ("aic_buffer_write_string_prefixed_intrinsic", 2usize),
+        ("aic_buffer_patch_u16_be_intrinsic", 3usize),
+        ("aic_buffer_patch_u32_be_intrinsic", 3usize),
+        ("aic_buffer_patch_u64_be_intrinsic", 3usize),
+        ("aic_buffer_patch_u16_le_intrinsic", 3usize),
+        ("aic_buffer_patch_u32_le_intrinsic", 3usize),
+        ("aic_buffer_patch_u64_le_intrinsic", 3usize),
     ] {
         assert_intrinsic_declaration(&source, "std/buffer.aic", intrinsic, arity);
     }
@@ -6743,6 +6851,20 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
     assert!(
         source.contains("fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]"),
         "std/buffer.aic must expose buf_slice helper"
+    );
+    assert!(
+        source.contains("fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError]"),
+        "std/buffer.aic must expose unsigned read helpers"
+    );
+    assert!(
+        source.contains(
+            "fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+        ),
+        "std/buffer.aic must expose unsigned write helpers"
+    );
+    assert!(
+        source.contains("fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"),
+        "std/buffer.aic must expose patch-at-offset helpers"
     );
     assert!(
         source.contains("let _restore = buf_seek(buf, current);"),

@@ -3943,6 +3943,23 @@ long aic_rt_buffer_read_i16_be(long handle, long* out_value) {
     return 0;
 }
 
+long aic_rt_buffer_read_u16_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 2, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint16_t raw = ((uint16_t)bytes[0] << 8) | (uint16_t)bytes[1];
+    if (out_value != NULL) {
+        *out_value = (long)raw;
+    }
+    return 0;
+}
+
 long aic_rt_buffer_read_i32_be(long handle, long* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
@@ -3959,6 +3976,26 @@ long aic_rt_buffer_read_i32_be(long handle, long* out_value) {
         (uint32_t)bytes[3];
     if (out_value != NULL) {
         *out_value = (long)(int32_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_u32_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 4, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint32_t raw = ((uint32_t)bytes[0] << 24) |
+        ((uint32_t)bytes[1] << 16) |
+        ((uint32_t)bytes[2] << 8) |
+        (uint32_t)bytes[3];
+    if (out_value != NULL) {
+        *out_value = (long)raw;
     }
     return 0;
 }
@@ -3987,6 +4024,33 @@ long aic_rt_buffer_read_i64_be(long handle, long* out_value) {
     return 0;
 }
 
+long aic_rt_buffer_read_u64_be(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 8, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint64_t raw = ((uint64_t)bytes[0] << 56) |
+        ((uint64_t)bytes[1] << 48) |
+        ((uint64_t)bytes[2] << 40) |
+        ((uint64_t)bytes[3] << 32) |
+        ((uint64_t)bytes[4] << 24) |
+        ((uint64_t)bytes[5] << 16) |
+        ((uint64_t)bytes[6] << 8) |
+        (uint64_t)bytes[7];
+    if (raw > (uint64_t)LONG_MAX) {
+        return 4;
+    }
+    if (out_value != NULL) {
+        *out_value = (long)raw;
+    }
+    return 0;
+}
+
 long aic_rt_buffer_read_i16_le(long handle, long* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
@@ -4000,6 +4064,23 @@ long aic_rt_buffer_read_i16_le(long handle, long* out_value) {
     uint16_t raw = ((uint16_t)bytes[1] << 8) | (uint16_t)bytes[0];
     if (out_value != NULL) {
         *out_value = (long)(int16_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_u16_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 2, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint16_t raw = ((uint16_t)bytes[1] << 8) | (uint16_t)bytes[0];
+    if (out_value != NULL) {
+        *out_value = (long)raw;
     }
     return 0;
 }
@@ -4024,6 +4105,26 @@ long aic_rt_buffer_read_i32_le(long handle, long* out_value) {
     return 0;
 }
 
+long aic_rt_buffer_read_u32_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 4, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint32_t raw = ((uint32_t)bytes[3] << 24) |
+        ((uint32_t)bytes[2] << 16) |
+        ((uint32_t)bytes[1] << 8) |
+        (uint32_t)bytes[0];
+    if (out_value != NULL) {
+        *out_value = (long)raw;
+    }
+    return 0;
+}
+
 long aic_rt_buffer_read_i64_le(long handle, long* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
@@ -4044,6 +4145,33 @@ long aic_rt_buffer_read_i64_le(long handle, long* out_value) {
         (uint64_t)bytes[0];
     if (out_value != NULL) {
         *out_value = (long)(int64_t)raw;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_read_u64_le(long handle, long* out_value) {
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    const unsigned char* bytes = NULL;
+    long err = aic_rt_buffer_read_span(slot, 8, &bytes);
+    if (err != 0) {
+        return err;
+    }
+    uint64_t raw = ((uint64_t)bytes[7] << 56) |
+        ((uint64_t)bytes[6] << 48) |
+        ((uint64_t)bytes[5] << 40) |
+        ((uint64_t)bytes[4] << 32) |
+        ((uint64_t)bytes[3] << 24) |
+        ((uint64_t)bytes[2] << 16) |
+        ((uint64_t)bytes[1] << 8) |
+        (uint64_t)bytes[0];
+    if (raw > (uint64_t)LONG_MAX) {
+        return 4;
+    }
+    if (out_value != NULL) {
+        *out_value = (long)raw;
     }
     return 0;
 }
@@ -4207,6 +4335,24 @@ long aic_rt_buffer_write_i16_be(long handle, long value) {
     return 0;
 }
 
+long aic_rt_buffer_write_u16_be(long handle, long value) {
+    if (value < 0 || value > 65535) {
+        return 4;
+    }
+    uint16_t raw = (uint16_t)value;
+    unsigned char bytes[2];
+    bytes[0] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[1] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 2, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 2);
+    return 0;
+}
+
 long aic_rt_buffer_write_i32_be(long handle, long value) {
     if (value < (long)INT32_MIN || value > (long)INT32_MAX) {
         return 4;
@@ -4227,8 +4373,52 @@ long aic_rt_buffer_write_i32_be(long handle, long value) {
     return 0;
 }
 
+long aic_rt_buffer_write_u32_be(long handle, long value) {
+    if (value < 0 || (uint64_t)value > (uint64_t)UINT32_MAX) {
+        return 4;
+    }
+    uint32_t raw = (uint32_t)value;
+    unsigned char bytes[4];
+    bytes[0] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[3] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 4, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 4);
+    return 0;
+}
+
 long aic_rt_buffer_write_i64_be(long handle, long value) {
     uint64_t raw = (uint64_t)(int64_t)value;
+    unsigned char bytes[8];
+    bytes[0] = (unsigned char)((raw >> 56) & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 48) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 40) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 32) & 0xFFu);
+    bytes[4] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[5] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[6] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[7] = (unsigned char)(raw & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 8, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 8);
+    return 0;
+}
+
+long aic_rt_buffer_write_u64_be(long handle, long value) {
+    if (value < 0) {
+        return 4;
+    }
+    uint64_t raw = (uint64_t)value;
     unsigned char bytes[8];
     bytes[0] = (unsigned char)((raw >> 56) & 0xFFu);
     bytes[1] = (unsigned char)((raw >> 48) & 0xFFu);
@@ -4266,6 +4456,24 @@ long aic_rt_buffer_write_i16_le(long handle, long value) {
     return 0;
 }
 
+long aic_rt_buffer_write_u16_le(long handle, long value) {
+    if (value < 0 || value > 65535) {
+        return 4;
+    }
+    uint16_t raw = (uint16_t)value;
+    unsigned char bytes[2];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 2, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 2);
+    return 0;
+}
+
 long aic_rt_buffer_write_i32_le(long handle, long value) {
     if (value < (long)INT32_MIN || value > (long)INT32_MAX) {
         return 4;
@@ -4286,8 +4494,52 @@ long aic_rt_buffer_write_i32_le(long handle, long value) {
     return 0;
 }
 
+long aic_rt_buffer_write_u32_le(long handle, long value) {
+    if (value < 0 || (uint64_t)value > (uint64_t)UINT32_MAX) {
+        return 4;
+    }
+    uint32_t raw = (uint32_t)value;
+    unsigned char bytes[4];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 24) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 4, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 4);
+    return 0;
+}
+
 long aic_rt_buffer_write_i64_le(long handle, long value) {
     uint64_t raw = (uint64_t)(int64_t)value;
+    unsigned char bytes[8];
+    bytes[0] = (unsigned char)(raw & 0xFFu);
+    bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
+    bytes[2] = (unsigned char)((raw >> 16) & 0xFFu);
+    bytes[3] = (unsigned char)((raw >> 24) & 0xFFu);
+    bytes[4] = (unsigned char)((raw >> 32) & 0xFFu);
+    bytes[5] = (unsigned char)((raw >> 40) & 0xFFu);
+    bytes[6] = (unsigned char)((raw >> 48) & 0xFFu);
+    bytes[7] = (unsigned char)((raw >> 56) & 0xFFu);
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    unsigned char* out = NULL;
+    long err = aic_rt_buffer_write_span(slot, 8, &out);
+    if (err != 0) {
+        return err;
+    }
+    memcpy(out, bytes, 8);
+    return 0;
+}
+
+long aic_rt_buffer_write_u64_le(long handle, long value) {
+    if (value < 0) {
+        return 4;
+    }
+    uint64_t raw = (uint64_t)value;
     unsigned char bytes[8];
     bytes[0] = (unsigned char)(raw & 0xFFu);
     bytes[1] = (unsigned char)((raw >> 8) & 0xFFu);
@@ -4376,6 +4628,102 @@ long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_
         memcpy(out + 4, s_ptr, text_len);
     }
     return 0;
+}
+
+long aic_rt_buffer_patch_u16_be(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u16_be(handle, value);
+    slot->pos = saved_pos;
+    return err;
+}
+
+long aic_rt_buffer_patch_u32_be(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u32_be(handle, value);
+    slot->pos = saved_pos;
+    return err;
+}
+
+long aic_rt_buffer_patch_u64_be(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u64_be(handle, value);
+    slot->pos = saved_pos;
+    return err;
+}
+
+long aic_rt_buffer_patch_u16_le(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u16_le(handle, value);
+    slot->pos = saved_pos;
+    return err;
+}
+
+long aic_rt_buffer_patch_u32_le(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u32_le(handle, value);
+    slot->pos = saved_pos;
+    return err;
+}
+
+long aic_rt_buffer_patch_u64_le(long handle, long offset, long value) {
+    AicBufferSlot* slot = aic_rt_buffer_get_slot(handle);
+    if (slot == NULL || offset < 0) {
+        return 4;
+    }
+    size_t target = (size_t)offset;
+    if (target > slot->len) {
+        return 4;
+    }
+    size_t saved_pos = slot->pos;
+    slot->pos = target;
+    long err = aic_rt_buffer_write_u64_le(handle, value);
+    slot->pos = saved_pos;
+    return err;
 }
 
 static long aic_rt_math_float_to_int(double value) {
