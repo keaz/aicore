@@ -1,0 +1,169 @@
+import std.io;
+import std.net;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
+    let listener1 = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listener2 = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr2 = match tcp_local_addr(listener2) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let cancel_op = match async_accept_submit(listener1, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let cancel_handle = cancel_op.handle;
+
+    let poll_none = match async_poll_int(AsyncIntOp { handle: cancel_handle }) {
+        Ok(state) => match state {
+            Some(_) => 0,
+            None => 1,
+        },
+        Err(_) => 0,
+    };
+    let cancel_ok = match async_cancel_int(AsyncIntOp { handle: cancel_handle }) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let cancel_wait_code = match async_wait_int(AsyncIntOp { handle: cancel_handle }, 50) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let any_op1 = match async_accept_submit(listener1, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let any_op2 = match async_accept_submit(listener2, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+
+    let any_client = match tcp_connect(addr2, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let any_ok = match async_wait_any_int(any_op1, any_op2, 1000) {
+        Ok(sel) => if true {
+            let accepted = sel.value;
+            let idx_ok = if sel.index == 1 { 1 } else { 0 };
+            let close_accepted = match tcp_close(accepted) {
+                Ok(v) => bool_to_int(v),
+                Err(_) => 0,
+            };
+            idx_ok + close_accepted
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let any_cleanup_cancel = match async_cancel_int(any_op1) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let ignored_wait = async_wait_int(any_op1, 50);
+
+    let close_any_client = match tcp_close(any_client) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    let listener3 = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr3 = match tcp_local_addr(listener3) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let recv_client = match tcp_connect(addr3, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let recv_server = match tcp_accept(listener3, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let recv_op = match async_tcp_recv_submit(recv_server, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let recv_handle = recv_op.handle;
+
+    let recv_poll_none = match async_poll_string(AsyncStringOp { handle: recv_handle }) {
+        Ok(state) => match state {
+            Some(_) => 0,
+            None => 1,
+        },
+        Err(_) => 0,
+    };
+    let recv_cancel_ok = match async_cancel_string(AsyncStringOp { handle: recv_handle }) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let recv_wait_code = match async_wait_string(AsyncStringOp { handle: recv_handle }, 50) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let close_recv_client = match tcp_close(recv_client) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_recv_server = match tcp_close(recv_server) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    let close_listener1 = match tcp_close(listener1) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_listener2 = match tcp_close(listener2) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_listener3 = match tcp_close(listener3) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if poll_none == 1 && cancel_ok == 1 && cancel_wait_code == 9 &&
+        any_ok == 2 && any_cleanup_cancel == 1 && close_any_client == 1 &&
+        recv_poll_none == 1 && recv_cancel_ok == 1 && recv_wait_code == 9 &&
+        close_recv_client + close_recv_server == 2 &&
+        close_listener1 + close_listener2 + close_listener3 == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

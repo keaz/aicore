@@ -839,7 +839,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_payload_store_value_intrinsic[T](payload: T) -> Result[Int, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_payload_take_intrinsic(payload_id: Int) -> Result[String, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_payload_take_value_intrinsic[T](payload_id: Int, marker: Option[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1384,7 +1394,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "take_payload_bytes(payload_id: Int) -> Result[Bytes, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_for_channel[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -3774,12 +3794,22 @@
     {
       "module": "std.net",
       "kind": "enum",
-      "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io, ConnectionClosed }"
+      "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io, ConnectionClosed, Cancelled }"
     },
     {
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_async_accept_submit_intrinsic(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_cancel_int_intrinsic(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -3834,6 +3864,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "aic_net_tcp_get_keepalive_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_nodelay_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_recv_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_send_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "aic_net_tcp_listen_intrinsic(addr: String) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -3855,6 +3905,26 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_tcp_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_keepalive_intrinsic(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_nodelay_intrinsic(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_recv_buffer_size_intrinsic(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_send_buffer_size_intrinsic(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -3894,6 +3964,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }"
     },
     {
@@ -3915,6 +4005,16 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
     },
     {
       "module": "std.net",
@@ -3964,6 +4064,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_listen(addr: String) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -3989,6 +4109,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream(handle: Int) -> TcpStream"
     },
     {
@@ -4000,6 +4140,26 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4044,6 +4204,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "udp_bind(addr: String) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -4074,7 +4254,17 @@
     {
       "module": "std.net",
       "kind": "struct",
+      "signature": "AsyncIntSelection { index: Int, value: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
       "signature": "AsyncStringOp { handle: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "AsyncStringSelection { index: Int, payload: Bytes }"
     },
     {
       "module": "std.net",
@@ -5459,7 +5649,7 @@
     {
       "module": "std.tls",
       "kind": "enum",
-      "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Io, Timeout }"
+      "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Cancelled, Io, Timeout }"
     },
     {
       "module": "std.tls",
@@ -5470,6 +5660,16 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_accept_intrinsic(listener_handle: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_cancel_int_intrinsic(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }"
     },
     {
       "module": "std.tls",
@@ -5629,6 +5829,26 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }"
     },
     {
@@ -5650,6 +5870,16 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
     },
     {
       "module": "std.tls",
@@ -5695,6 +5925,11 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_io_error() -> TlsError"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_is_timeout_error(err: TlsError) -> Bool"
     },
     {
       "module": "std.tls",
@@ -5769,6 +6004,11 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_timeout_error() -> TlsError"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
     },
     {
@@ -5780,6 +6020,16 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
+      "signature": "TlsAsyncIntSelection { index: Int, value: Int }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
+      "signature": "TlsAsyncStringSelection { index: Int, payload: Bytes }"
     },
     {
       "module": "std.tls",

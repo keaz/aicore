@@ -16,6 +16,7 @@ enum NetError {
     InvalidInput,
     Io,
     ConnectionClosed,
+    Cancelled,
 }
 
 struct UdpPacket {
@@ -25,6 +26,24 @@ struct UdpPacket {
 
 struct TcpStream {
     handle: Int,
+}
+
+struct AsyncIntOp {
+    handle: Int,
+}
+
+struct AsyncStringOp {
+    handle: Int,
+}
+
+struct AsyncIntSelection {
+    index: Int,
+    value: Int,
+}
+
+struct AsyncStringSelection {
+    index: Int,
+    payload: Bytes,
 }
 ```
 
@@ -64,6 +83,21 @@ fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result
 fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
+fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
+fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }
+fn async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
+fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }
+fn async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }
+fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }
+fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
+fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }
+fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
 
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
@@ -81,6 +115,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - `timeout_ms` is explicit in accept/connect/recv APIs for liveness control.
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce timeout-bounded write loops.
 - `tcp_recv` reports `ConnectionClosed` on peer EOF/close; `Timeout` remains distinct.
+- `async_cancel_*` keeps peer-close separate by surfacing `Cancelled` from cancelled waits.
 - DNS reverse may legitimately return `NotFound` for unmapped addresses.
 - Exact stream reads are deadline-based: `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is met.
 - Framed stream reads are length-prefixed: `tcp_stream_recv_framed*` consumes a 4-byte big-endian frame length and enforces `max_frame_bytes`.
@@ -88,6 +123,10 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `tcp_set/get_nodelay` toggles Nagle behavior.
   - `tcp_set/get_keepalive` toggles keepalive probes.
   - `tcp_set/get_send_buffer_size` and `tcp_set/get_recv_buffer_size` tune kernel buffers (read-back may differ from requested size).
+- Async lifecycle control is explicit and typed:
+  - `async_cancel_*` returns whether cancellation was applied.
+  - `async_poll_*` maps pending state to `Option::None`.
+  - `async_wait_any_*` provides deterministic two-op select helpers.
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.
@@ -98,6 +137,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 
 - `examples/io/tcp_echo.aic`
 - `examples/io/tcp_socket_tuning.aic`
+- `examples/io/async_lifecycle_controls.aic`
 
 ## `std.time` (`effects { time }`)
 

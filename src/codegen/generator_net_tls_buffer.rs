@@ -51,6 +51,8 @@ impl<'a> Generator<'a> {
             }
             "async_wait_int" | "aic_net_async_wait_int_intrinsic" => "async_wait_int",
             "aic_net_async_wait_string_intrinsic" => "async_wait_string",
+            "aic_net_async_cancel_int_intrinsic" => "async_cancel_int",
+            "aic_net_async_cancel_string_intrinsic" => "async_cancel_string",
             "async_shutdown" | "aic_net_async_shutdown_intrinsic" => "async_shutdown",
             _ => return None,
         };
@@ -321,6 +323,32 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_net_async_wait_string_call(name, args, span, fctx))
             }
+            "async_cancel_int"
+                if self.sig_matches_shape(name, &["AsyncIntOp"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_async_cancel_call(
+                    name,
+                    args,
+                    "AsyncIntOp",
+                    "async_cancel_int",
+                    "aic_rt_net_async_cancel",
+                    span,
+                    fctx,
+                ))
+            }
+            "async_cancel_string"
+                if self.sig_matches_shape(name, &["AsyncStringOp"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_async_cancel_call(
+                    name,
+                    args,
+                    "AsyncStringOp",
+                    "async_cancel_string",
+                    "aic_rt_net_async_cancel",
+                    span,
+                    fctx,
+                ))
+            }
             "async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, NetError]") => {
                 Some(self.gen_net_async_shutdown_call(name, args, span, fctx))
             }
@@ -346,6 +374,8 @@ impl<'a> Generator<'a> {
             "aic_tls_async_recv_submit_intrinsic" => "tls_async_recv_submit",
             "aic_tls_async_wait_int_intrinsic" => "tls_async_wait_int",
             "aic_tls_async_wait_string_intrinsic" => "tls_async_wait_string",
+            "aic_tls_async_cancel_int_intrinsic" => "tls_async_cancel_int",
+            "aic_tls_async_cancel_string_intrinsic" => "tls_async_cancel_string",
             "aic_tls_async_shutdown_intrinsic" => "tls_async_shutdown",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
@@ -451,6 +481,30 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_tls_async_wait_string_call(name, args, span, fctx))
+            }
+            "tls_async_cancel_int"
+                if self.sig_matches_shape(name, &["AsyncIntOp"], "Result[Bool, TlsError]") =>
+            {
+                Some(self.gen_tls_async_cancel_call(
+                    name,
+                    args,
+                    "AsyncIntOp",
+                    "aic_tls_async_cancel_int_intrinsic",
+                    span,
+                    fctx,
+                ))
+            }
+            "tls_async_cancel_string"
+                if self.sig_matches_shape(name, &["AsyncStringOp"], "Result[Bool, TlsError]") =>
+            {
+                Some(self.gen_tls_async_cancel_call(
+                    name,
+                    args,
+                    "AsyncStringOp",
+                    "aic_tls_async_cancel_string_intrinsic",
+                    span,
+                    fctx,
+                ))
             }
             "tls_async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, TlsError]") => {
                 Some(self.gen_tls_async_shutdown_call(name, args, span, fctx))
@@ -1299,6 +1353,67 @@ impl<'a> Generator<'a> {
                 span,
                 fctx,
             )?
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_cancel_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        op_ty_name: &str,
+        context_name: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context_name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            op_ty_name,
+            context_name,
+            args[0].span,
+            fctx,
+        )?;
+
+        let cancelled_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", cancelled_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_cancel(i64 {}, i64* {})",
+            err, op_handle, cancelled_slot
+        ));
+        let cancelled_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            cancelled_raw, cancelled_slot
+        ));
+        let cancelled = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            cancelled, cancelled_raw
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(cancelled),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
         };
         self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
     }
@@ -4160,6 +4275,68 @@ impl<'a> Generator<'a> {
             data_value
         } else {
             self.build_bytes_value_from_data(&ok_ty, data_value, "async_wait_string", span, fctx)?
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_async_cancel_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        op_ty_name: &str,
+        context_name: &str,
+        runtime_symbol: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{context_name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            op_ty_name,
+            context_name,
+            args[0].span,
+            fctx,
+        )?;
+
+        let cancelled_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", cancelled_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64* {})",
+            err, runtime_symbol, op_handle, cancelled_slot
+        ));
+        let cancelled_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            cancelled_raw, cancelled_slot
+        ));
+        let cancelled = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = icmp ne i64 {}, 0",
+            cancelled, cancelled_raw
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(cancelled),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
         };
         self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
     }

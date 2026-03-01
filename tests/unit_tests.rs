@@ -2492,6 +2492,20 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &net_source,
         "std/net.aic",
+        "async_cancel_int",
+        "aic_net_async_cancel_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_cancel_string",
+        "aic_net_async_cancel_string_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
         "async_shutdown",
         "aic_net_async_shutdown_intrinsic",
         0,
@@ -2525,6 +2539,8 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_net_async_recv_submit_intrinsic", 3usize),
         ("aic_net_async_wait_int_intrinsic", 2usize),
         ("aic_net_async_wait_string_intrinsic", 2usize),
+        ("aic_net_async_cancel_int_intrinsic", 1usize),
+        ("aic_net_async_cancel_string_intrinsic", 1usize),
         ("aic_net_async_shutdown_intrinsic", 0usize),
     ] {
         assert_intrinsic_declaration(&net_source, "std/net.aic", name, arity);
@@ -2923,6 +2939,20 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         source.contains("fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError]"),
         "std/tls.aic must expose tls_peer_cn helper"
     );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_async_cancel_int",
+        "aic_tls_async_cancel_int_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_async_cancel_string",
+        "aic_tls_async_cancel_string_intrinsic",
+        1,
+    );
 
     for (intrinsic, arity) in [
         ("aic_tls_connect_intrinsic", 10usize),
@@ -2935,6 +2965,8 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_tls_async_recv_submit_intrinsic", 3usize),
         ("aic_tls_async_wait_int_intrinsic", 2usize),
         ("aic_tls_async_wait_string_intrinsic", 2usize),
+        ("aic_tls_async_cancel_int_intrinsic", 1usize),
+        ("aic_tls_async_cancel_string_intrinsic", 1usize),
         ("aic_tls_async_shutdown_intrinsic", 0usize),
         ("aic_tls_close_intrinsic", 1usize),
         ("aic_tls_peer_subject_intrinsic", 1usize),
@@ -2970,6 +3002,14 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         "std/tls.aic tls_async_wait_string must bridge runtime String into Bytes wrapper"
     );
     assert!(
+        source.contains("aic_tls_async_cancel_int_intrinsic(op)"),
+        "std/tls.aic tls_async_cancel_int must delegate to intrinsic"
+    );
+    assert!(
+        source.contains("aic_tls_async_cancel_string_intrinsic(op)"),
+        "std/tls.aic tls_async_cancel_string must delegate to intrinsic"
+    );
+    assert!(
         source.contains("aic_tls_async_shutdown_intrinsic()"),
         "std/tls.aic tls_async_shutdown must delegate to intrinsic"
     );
@@ -2980,6 +3020,24 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         source.contains("Ok(op) => tls_async_wait_string(op, timeout_ms)"),
         "std/tls.aic tls_async_recv must compose submit + wait_string"
+    );
+    assert!(
+        source.contains(
+            "fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }"
+        ),
+        "std/tls.aic must expose tls_async_poll_int helper"
+    );
+    assert!(
+        source.contains(
+            "fn tls_async_wait_any_int(\n    op1: AsyncIntOp,\n    op2: AsyncIntOp,\n    timeout_ms: Int,\n) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
+        ),
+        "std/tls.aic must expose tls_async_wait_any_int selection helper"
+    );
+    assert!(
+        source.contains(
+            "fn tls_async_wait_any_string(\n    op1: AsyncStringOp,\n    op2: AsyncStringOp,\n    timeout_ms: Int,\n) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
+        ),
+        "std/tls.aic must expose tls_async_wait_any_string selection helper"
     );
     assert!(
         source.contains("verify_server: true"),
@@ -2996,6 +3054,10 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         source.contains("Timeout,"),
         "std/tls.aic TlsError must expose Timeout variant for typed timeout handling"
+    );
+    assert!(
+        source.contains("Cancelled,"),
+        "std/tls.aic TlsError must expose Cancelled variant for async lifecycle classification"
     );
     assert!(
         source.contains("verify_server: false"),
@@ -3266,12 +3328,20 @@ fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
         tls_source.contains("Timeout,"),
         "std/tls.aic must expose Timeout in TlsError variants"
     );
+    assert!(
+        tls_source.contains("Cancelled,"),
+        "std/tls.aic must expose Cancelled in TlsError variants"
+    );
 
     let codegen_source = fs::read_to_string("src/codegen/generator_json_regex.rs")
         .expect("read src/codegen/generator_json_regex.rs");
     assert!(
         codegen_source.contains("(8, \"Timeout\")"),
         "codegen must map TLS runtime timeout status code 8 to TlsError::Timeout"
+    );
+    assert!(
+        codegen_source.contains("(9, \"Cancelled\")"),
+        "codegen must map runtime cancel status code 9 to typed Cancelled variants"
     );
 
     let runtime_source =
@@ -3284,6 +3354,14 @@ fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
         !runtime_source.contains("has no Timeout variant"),
         "runtime must not carry stale comments that map TLS timeout to Io"
     );
+    assert!(
+        runtime_source.contains("if (net_error == 9) {\n        return 9;\n    }"),
+        "runtime TLS net->TLS mapping must preserve typed cancelled status codes"
+    );
+    assert!(
+        runtime_source.matches("op->err_code = 9;").count() >= 2,
+        "runtime async cancel paths must surface typed cancelled status for both net and tls"
+    );
 
     let io_api =
         fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
@@ -3295,12 +3373,25 @@ fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
         "io-api-reference must document typed TLS timeout behavior"
     );
     assert!(
+        io_api.contains("NetError::Cancelled") && io_api.contains("TlsError::Cancelled"),
+        "io-api-reference must document typed async cancellation behavior for net and tls"
+    );
+    assert!(
         tls_api.contains("TlsError::Timeout"),
         "std TLS API docs must document typed TLS timeout behavior"
     );
     assert!(
+        tls_api.contains("TlsError::Cancelled"),
+        "std TLS API docs must document typed TLS cancellation behavior"
+    );
+    assert!(
         async_runtime.contains("TlsError::Timeout"),
         "async-event-loop docs must document typed TLS async wait timeout behavior"
+    );
+    assert!(
+        async_runtime.contains("NetError::Cancelled")
+            && async_runtime.contains("TlsError::Cancelled"),
+        "async-event-loop docs must distinguish cancelled outcomes from peer-close outcomes"
     );
 }
 
@@ -3356,6 +3447,18 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "{name} must document tcp_get_send_buffer_size signature"
         );
         assert!(
+            doc.contains("fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }"),
+            "{name} must document async_cancel_int signature"
+        );
+        assert!(
+            doc.contains("fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }"),
+            "{name} must document async_poll_int signature"
+        );
+        assert!(
+            doc.contains("fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"),
+            "{name} must document async_wait_any_int signature"
+        );
+        assert!(
             !doc.contains("fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
             "{name} still documents stale string tcp_send signature"
         );
@@ -3374,6 +3477,20 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
         "async runtime docs must use bytes-first async_wait_string signature"
     );
     assert!(
+        async_runtime.contains("async_cancel_int(op) -> Result[Bool, NetError]"),
+        "async runtime docs must include async_cancel_int lifecycle helper"
+    );
+    assert!(
+        async_runtime.contains("async_poll_int(op) -> Result[Option[Int], NetError]"),
+        "async runtime docs must include async_poll_int lifecycle helper"
+    );
+    assert!(
+        async_runtime.contains(
+            "async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]"
+        ),
+        "async runtime docs must include async_wait_any_int helper"
+    );
+    assert!(
         !async_runtime.contains("async_wait_string(op, timeout_ms) -> Result[String, NetError]"),
         "async runtime docs still document stale string async_wait_string signature"
     );
@@ -3381,6 +3498,14 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
     assert!(
         lifecycle.contains("Timeout => Bytes { data: \"\" }"),
         "lifecycle network timeout template must use Bytes fallback values"
+    );
+    assert!(
+        io_api.contains("examples/io/async_lifecycle_controls.aic"),
+        "io api reference must include async lifecycle controls example"
+    );
+    assert!(
+        async_runtime.contains("examples/io/async_lifecycle_controls.aic"),
+        "async runtime docs must include async lifecycle controls example coverage"
     );
 }
 
@@ -3412,6 +3537,18 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
             "{name} must document tls_async_shutdown signature"
         );
         assert!(
+            doc.contains("fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_cancel_int signature"
+        );
+        assert!(
+            doc.contains("fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_poll_int signature"
+        );
+        assert!(
+            doc.contains("fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"),
+            "{name} must document tls_async_wait_any_int signature"
+        );
+        assert!(
             !doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"),
             "{name} still documents stale string tls_async_wait_string signature"
         );
@@ -3426,6 +3563,18 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
     assert!(
         async_runtime.contains("tls_async_wait_string(op, timeout_ms) -> Result[Bytes, TlsError]"),
         "async runtime docs must include bytes-first tls_async_wait_string"
+    );
+    assert!(
+        async_runtime.contains("tls_async_cancel_int(op) -> Result[Bool, TlsError]"),
+        "async runtime docs must include tls_async_cancel_int lifecycle helper"
+    );
+    assert!(
+        async_runtime.contains("tls_async_poll_int(op) -> Result[Option[Int], TlsError]"),
+        "async runtime docs must include tls_async_poll_int lifecycle helper"
+    );
+    assert!(
+        async_runtime.contains("tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]"),
+        "async runtime docs must include tls_async_wait_any_int helper"
     );
     assert!(
         io_api.contains("examples/io/tls_async_submit_wait.aic"),
@@ -7316,6 +7465,10 @@ fn unit_std_fs_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
 #[test]
 fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+    assert!(
+        net_source.contains("Cancelled,"),
+        "std/net.aic NetError must expose Cancelled variant for async lifecycle classification"
+    );
 
     assert!(
         net_source.contains("fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
@@ -7337,6 +7490,14 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         net_source.contains("fn aic_net_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, NetError] effects { net, concurrency }"),
         "std/net.aic async wait intrinsic must use runtime String payload"
     );
+    assert!(
+        net_source.contains("fn aic_net_async_cancel_int_intrinsic(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }"),
+        "std/net.aic async cancel int intrinsic must expose typed bool status"
+    );
+    assert!(
+        net_source.contains("fn aic_net_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }"),
+        "std/net.aic async cancel string intrinsic must expose typed bool status"
+    );
 
     assert!(
         net_source.contains("aic_net_tcp_send_intrinsic(handle, payload.data)"),
@@ -7357,6 +7518,36 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         net_source.contains("let raw = aic_net_async_wait_string_intrinsic(op, timeout_ms);"),
         "std/net.aic async_wait_string must bridge runtime String to Bytes"
+    );
+    assert!(
+        net_source.contains("aic_net_async_cancel_int_intrinsic(op)"),
+        "std/net.aic async_cancel_int must delegate to intrinsic"
+    );
+    assert!(
+        net_source.contains("aic_net_async_cancel_string_intrinsic(op)"),
+        "std/net.aic async_cancel_string must delegate to intrinsic"
+    );
+    assert!(
+        net_source.contains(
+            "fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }"
+        ),
+        "std/net.aic must expose async_poll_int helper"
+    );
+    assert!(
+        net_source.contains("Timeout => Ok(None()),"),
+        "std/net.aic async poll helpers must map timeout to Option::None"
+    );
+    assert!(
+        net_source.contains(
+            "fn async_wait_any_int(\n    op1: AsyncIntOp,\n    op2: AsyncIntOp,\n    timeout_ms: Int,\n) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"
+        ),
+        "std/net.aic must expose async_wait_any_int selection helper"
+    );
+    assert!(
+        net_source.contains(
+            "fn async_wait_any_string(\n    op1: AsyncStringOp,\n    op2: AsyncStringOp,\n    timeout_ms: Int,\n) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
+        ),
+        "std/net.aic must expose async_wait_any_string selection helper"
     );
     assert!(
         !net_source.contains("fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net } {"),

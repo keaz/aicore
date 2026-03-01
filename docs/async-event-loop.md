@@ -19,6 +19,12 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_tcp_recv_submit(handle, max_bytes, timeout_ms) -> Result[AsyncStringOp, NetError]`
 - `async_wait_int(op, timeout_ms) -> Result[Int, NetError]`
 - `async_wait_string(op, timeout_ms) -> Result[Bytes, NetError]`
+- `async_cancel_int(op) -> Result[Bool, NetError]`
+- `async_cancel_string(op) -> Result[Bool, NetError]`
+- `async_poll_int(op) -> Result[Option[Int], NetError]`
+- `async_poll_string(op) -> Result[Option[Bytes], NetError]`
+- `async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]`
+- `async_wait_any_string(op1, op2, timeout_ms) -> Result[AsyncStringSelection, NetError]`
 - `async_shutdown() -> Result[Bool, NetError]`
 - Convenience wrappers: `async_accept`, `async_tcp_send`, `async_tcp_recv`
 
@@ -28,6 +34,12 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `tls_async_recv_submit(stream, max_bytes, timeout_ms) -> Result[AsyncStringOp, TlsError]`
 - `tls_async_wait_int(op, timeout_ms) -> Result[Int, TlsError]`
 - `tls_async_wait_string(op, timeout_ms) -> Result[Bytes, TlsError]`
+- `tls_async_cancel_int(op) -> Result[Bool, TlsError]`
+- `tls_async_cancel_string(op) -> Result[Bool, TlsError]`
+- `tls_async_poll_int(op) -> Result[Option[Int], TlsError]`
+- `tls_async_poll_string(op) -> Result[Option[Bytes], TlsError]`
+- `tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]`
+- `tls_async_wait_any_string(op1, op2, timeout_ms) -> Result[TlsAsyncStringSelection, TlsError]`
 - `tls_async_shutdown() -> Result[Bool, TlsError]`
 - Convenience wrappers: `tls_async_send`, `tls_async_recv`
 
@@ -47,6 +59,9 @@ Language-level bridge:
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
 - TLS async wait follows the same retry model; timeout maps to `TlsError::Timeout`.
+- `async_cancel_*` / `tls_async_cancel_*` are idempotent and report whether cancellation was applied via `Bool`.
+- `async_poll_*` / `tls_async_poll_*` perform zero-timeout probes and return `Option` without blocking.
+- `async_wait_any_*` / `tls_async_wait_any_*` implement deterministic two-op select helpers for protocol orchestration.
 
 ## Await Submit Bridge Semantics
 
@@ -78,6 +93,7 @@ let socket = match accepted {
   - Fallback: `poll`
 - Active sockets are temporarily switched to non-blocking mode while an async op is in flight and restored when the op completes.
 - Completion data is published through per-operation condition variables.
+- Cancelled operations resolve as typed cancellation errors (`NetError::Cancelled` / `TlsError::Cancelled`).
 - `async_shutdown` enters drain mode:
   - new submissions are rejected with deterministic `NetError`,
   - queued + active operations are completed/drained,
@@ -103,6 +119,7 @@ let socket = match accepted {
   - `run_pass` (runtime gate)
 - CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
+- CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
 - Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
   - scenario: `rest_async_echo_1000_connections`
   - encoded load: `connections = 1000`

@@ -12,6 +12,7 @@ enum TlsError {
     HostnameMismatch,
     ProtocolError,
     ConnectionClosed,
+    Cancelled,
     Io,
     Timeout,
 }
@@ -31,6 +32,16 @@ struct TlsConfig {
 
 struct TlsStream {
     handle: Int,
+}
+
+struct TlsAsyncIntSelection {
+    index: Int,
+    value: Int,
+}
+
+struct TlsAsyncStringSelection {
+    index: Int,
+    payload: Bytes,
 }
 
 enum ByteStream {
@@ -68,6 +79,12 @@ fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Res
 fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
 fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
+fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
+fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
@@ -220,7 +237,11 @@ fn main() -> Int effects { net } capabilities { net } {
 - `tls_send_timeout`/`tls_send_bytes_timeout` enforce timeout-bounded TLS writes.
 - TLS write timeout expiry maps to `TlsError::Timeout`.
 - TLS async submit/wait wrappers are bytes-first (`tls_async_*`) and require `effects { net, concurrency }`.
+- `tls_async_cancel_*` returns `Ok(true)` if cancellation is applied and `Ok(false)` if the operation already completed.
+- `tls_async_poll_*` maps pending ops to `Ok(None())` using zero-timeout wait probes.
+- `tls_async_wait_any_*` returns the first-ready result with deterministic index selection.
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
+- `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
 - Runnable async submit/wait usage example: `examples/io/tls_async_submit_wait.aic`.
 - Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.

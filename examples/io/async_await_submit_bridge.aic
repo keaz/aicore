@@ -10,6 +10,7 @@ fn err_code(err: NetError) -> Int {
         AddressInUse => 5,
         InvalidInput => 6,
         ConnectionClosed => 8,
+        Cancelled => 9,
         Io => 7,
     }
 }

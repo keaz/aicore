@@ -812,6 +812,22 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         ],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_cancel_int_intrinsic",
+        runtime_symbol: "aic_rt_net_async_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncIntOp"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_cancel_string_intrinsic",
+        runtime_symbol: "aic_rt_net_async_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncStringOp"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_net_async_shutdown_intrinsic",
         runtime_symbol: "aic_rt_net_async_shutdown",
         signatures: &[IntrinsicSignatureShape {
@@ -912,6 +928,22 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
                 ret: "Result[Bytes, TlsError]",
             },
         ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_cancel_int_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncIntOp"],
+            ret: "Result[Bool, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_cancel_string_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncStringOp"],
+            ret: "Result[Bool, TlsError]",
+        }],
     },
     IntrinsicBindingExpectation {
         intrinsic: "aic_tls_async_shutdown_intrinsic",
@@ -3389,12 +3421,16 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_tcp_recv_submit") => Some("aic_net_async_recv_submit_intrinsic"),
         ("net", "async_wait_int") => Some("aic_net_async_wait_int_intrinsic"),
         ("net", "async_wait_string") => Some("aic_net_async_wait_string_intrinsic"),
+        ("net", "async_cancel_int") => Some("aic_net_async_cancel_int_intrinsic"),
+        ("net", "async_cancel_string") => Some("aic_net_async_cancel_string_intrinsic"),
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
         ("tls", "tls_send_timeout") => Some("aic_tls_send_timeout_intrinsic"),
         ("tls", "tls_async_send_submit") => Some("aic_tls_async_send_submit_intrinsic"),
         ("tls", "tls_async_recv_submit") => Some("aic_tls_async_recv_submit_intrinsic"),
         ("tls", "tls_async_wait_int") => Some("aic_tls_async_wait_int_intrinsic"),
         ("tls", "tls_async_wait_string") => Some("aic_tls_async_wait_string_intrinsic"),
+        ("tls", "tls_async_cancel_int") => Some("aic_tls_async_cancel_int_intrinsic"),
+        ("tls", "tls_async_cancel_string") => Some("aic_tls_async_cancel_string_intrinsic"),
         ("tls", "tls_async_shutdown") => Some("aic_tls_async_shutdown_intrinsic"),
         ("buffer", "new_buffer") => Some("aic_buffer_new_intrinsic"),
         ("buffer", "new_growable_buffer") => Some("aic_buffer_new_growable_intrinsic"),

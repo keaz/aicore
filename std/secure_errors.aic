@@ -129,6 +129,7 @@ fn tls_error_info(err: TlsError) -> SecureErrorInfo {
         HostnameMismatch => secure_error_info("tls", "TLS_HOSTNAME_MISMATCH", "security", false),
         ProtocolError => secure_error_info("tls", "TLS_PROTOCOL_ERROR", "protocol", false),
         ConnectionClosed => secure_error_info("tls", "TLS_CONNECTION_CLOSED", "transport", true),
+        Cancelled => secure_error_info("tls", "TLS_CANCELLED", "lifecycle", false),
         Io => secure_error_info("tls", "TLS_IO", "transport", true),
         Timeout => secure_error_info("tls", "TLS_TIMEOUT", "timeout", true),
     }

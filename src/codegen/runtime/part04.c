@@ -1216,6 +1216,15 @@ long aic_rt_net_async_wait_string(
     return 7;
 }
 
+long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_cancel", 2);
+    (void)op_handle;
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
+    }
+    return 7;
+}
+
 long aic_rt_net_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
     return 7;
@@ -1281,6 +1290,15 @@ long aic_rt_tls_async_wait_string(
     }
     if (out_len != NULL) {
         *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_cancel", 2);
+    (void)op_handle;
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
     }
     return 5;
 }
@@ -3102,6 +3120,56 @@ long aic_rt_net_async_wait_string(
     return 0;
 }
 
+long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_cancel", 2);
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
+    }
+    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+        return 6;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+    if (!op->initialized) {
+        return 6;
+    }
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return 0;
+    }
+
+    long release_handle = 0;
+    if (op->nonblocking_held) {
+        release_handle = op->arg0;
+        op->nonblocking_held = 0;
+    }
+    op->err_code = 9;
+    op->out_int = 0;
+    if (op->out_string_ptr != NULL) {
+        free(op->out_string_ptr);
+        op->out_string_ptr = NULL;
+        op->out_string_len = 0;
+    }
+    op->done = 1;
+    if (out_cancelled != NULL) {
+        *out_cancelled = 1;
+    }
+    pthread_cond_broadcast(&op->cond);
+    pthread_mutex_unlock(&op->mutex);
+
+    if (release_handle > 0) {
+        aic_rt_net_async_release_nonblocking_for_handle(release_handle);
+    }
+    return 0;
+}
+
 long aic_rt_net_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
@@ -4272,6 +4340,9 @@ static long aic_rt_tls_map_net_error(long net_error) {
     if (net_error == 8) {
         return 6;
     }
+    if (net_error == 9) {
+        return 9;
+    }
     return 7;
 }
 
@@ -4669,6 +4740,46 @@ long aic_rt_tls_async_wait_string(
     if (out_len != NULL) {
         *out_len = text_len;
     }
+    return 0;
+}
+
+long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_cancel", 2);
+    if (out_cancelled != NULL) {
+        *out_cancelled = 0;
+    }
+    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+        return 5;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    if (!op->initialized) {
+        return 5;
+    }
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return 0;
+    }
+    op->err_code = 9;
+    op->out_int = 0;
+    if (op->out_string_ptr != NULL) {
+        free(op->out_string_ptr);
+        op->out_string_ptr = NULL;
+        op->out_string_len = 0;
+    }
+    op->done = 1;
+    if (out_cancelled != NULL) {
+        *out_cancelled = 1;
+    }
+    pthread_cond_broadcast(&op->cond);
+    pthread_mutex_unlock(&op->mutex);
     return 0;
 }
 

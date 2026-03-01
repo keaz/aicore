@@ -32,6 +32,8 @@ enum TlsError {
     ProtocolError,
     /// `ConnectionClosed` enum variant.
     ConnectionClosed,
+    /// `Cancelled` enum variant.
+    Cancelled,
     /// `Io` enum variant.
     Io,
     /// `Timeout` enum variant.
@@ -99,6 +101,28 @@ enum ByteStreamError {
     Net(NetError),
     /// `Tls` enum variant.
     Tls(TlsError),
+}
+
+/// `TlsAsyncIntSelection` is a `struct` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsAsyncIntSelection` through `std.tls` APIs.
+/// ```
+struct TlsAsyncIntSelection {
+    index: Int,
+    value: Int,
+}
+
+/// `TlsAsyncStringSelection` is a `struct` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Use `TlsAsyncStringSelection` through `std.tls` APIs.
+/// ```
+struct TlsAsyncStringSelection {
+    index: Int,
+    payload: Bytes,
 }
 
 /// `aic_tls_connect_intrinsic` in `std.tls`.
@@ -264,6 +288,32 @@ intrinsic fn aic_tls_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency };
+/// `aic_tls_async_cancel_int_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_cancel_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_cancel_int_intrinsic(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency };
+/// `aic_tls_async_cancel_string_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_cancel_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency };
 /// `aic_tls_async_shutdown_intrinsic` in `std.tls`.
 ///
 /// ## Example
@@ -715,6 +765,264 @@ fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, Tl
     }
 }
 
+/// `tls_async_cancel_int` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_cancel_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency } {
+    aic_tls_async_cancel_int_intrinsic(op)
+}
+
+/// `tls_async_cancel_string` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_cancel_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency } {
+    aic_tls_async_cancel_string_intrinsic(op)
+}
+
+/// `tls_async_poll_int` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_poll_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency } {
+    let waited = tls_async_wait_int(AsyncIntOp { handle: op.handle }, 0);
+    match waited {
+        Ok(value) => Ok(Some(value)),
+        Err(err) => if tls_is_timeout_error(err) {
+            Ok(None())
+        } else {
+            Err(err)
+        },
+    }
+}
+
+/// `tls_async_poll_string` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_poll_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency } {
+    let waited = tls_async_wait_string(AsyncStringOp { handle: op.handle }, 0);
+    match waited {
+        Ok(payload) => Ok(Some(payload)),
+        Err(err) => if tls_is_timeout_error(err) {
+            Ok(None())
+        } else {
+            Err(err)
+        },
+    }
+}
+
+/// `tls_async_wait_any_int` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_wait_any_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_wait_any_int(
+    op1: AsyncIntOp,
+    op2: AsyncIntOp,
+    timeout_ms: Int,
+) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time } {
+    if timeout_ms < 0 {
+        Err(ProtocolError())
+    } else {
+        let h1 = op1.handle;
+        let h2 = op2.handle;
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let mut done = false;
+        let mut selected = TlsAsyncIntSelection { index: 0, value: 0 };
+        let mut failed = false;
+        let mut failure: TlsError = tls_timeout_error();
+
+        while !done && !failed {
+            match tls_async_poll_int(AsyncIntOp { handle: h1 }) {
+                Ok(state) => match state {
+                    Some(value) => if true {
+                        done = true;
+                        selected = TlsAsyncIntSelection { index: 0, value: value };
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                Err(err) => if true {
+                    failed = true;
+                    failure = err;
+                } else {
+                    ()
+                },
+            };
+
+            if !done && !failed {
+                match tls_async_poll_int(AsyncIntOp { handle: h2 }) {
+                    Ok(state) => match state {
+                        Some(value) => if true {
+                            done = true;
+                            selected = TlsAsyncIntSelection { index: 1, value: value };
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    },
+                    Err(err) => if true {
+                        failed = true;
+                        failure = err;
+                    } else {
+                        ()
+                    },
+                };
+            } else {
+                ()
+            };
+
+            if !done && !failed {
+                if remaining_ms(deadline_ms) <= 0 {
+                    failed = true;
+                    failure = tls_timeout_error();
+                } else {
+                    sleep_ms(1);
+                };
+            } else {
+                ()
+            };
+        };
+
+        if done {
+            Ok(selected)
+        } else {
+            Err(failure)
+        }
+    }
+}
+
+/// `tls_async_wait_any_string` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_wait_any_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_wait_any_string(
+    op1: AsyncStringOp,
+    op2: AsyncStringOp,
+    timeout_ms: Int,
+) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time } {
+    if timeout_ms < 0 {
+        Err(ProtocolError())
+    } else {
+        let h1 = op1.handle;
+        let h2 = op2.handle;
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let mut done = false;
+        let mut selected = TlsAsyncStringSelection { index: 0, payload: empty() };
+        let mut failed = false;
+        let mut failure: TlsError = tls_timeout_error();
+
+        while !done && !failed {
+            match tls_async_poll_string(AsyncStringOp { handle: h1 }) {
+                Ok(state) => match state {
+                    Some(payload) => if true {
+                        done = true;
+                        selected = TlsAsyncStringSelection { index: 0, payload: payload };
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                Err(err) => if true {
+                    failed = true;
+                    failure = err;
+                } else {
+                    ()
+                },
+            };
+
+            if !done && !failed {
+                match tls_async_poll_string(AsyncStringOp { handle: h2 }) {
+                    Ok(state) => match state {
+                        Some(payload) => if true {
+                            done = true;
+                            selected = TlsAsyncStringSelection { index: 1, payload: payload };
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    },
+                    Err(err) => if true {
+                        failed = true;
+                        failure = err;
+                    } else {
+                        ()
+                    },
+                };
+            } else {
+                ()
+            };
+
+            if !done && !failed {
+                if remaining_ms(deadline_ms) <= 0 {
+                    failed = true;
+                    failure = tls_timeout_error();
+                } else {
+                    sleep_ms(1);
+                };
+            } else {
+                ()
+            };
+        };
+
+        if done {
+            Ok(selected)
+        } else {
+            Err(failure)
+        }
+    }
+}
+
 /// `tls_async_send` in `std.tls`.
 ///
 /// ## Example
@@ -849,6 +1157,41 @@ fn tls_recv_framed_payload(stream: TlsStream, frame_header: Bytes, max_frame_byt
 /// Returns module-defined error variants when the operation fails.
 fn tls_io_error() -> TlsError {
     Io()
+}
+
+/// `tls_timeout_error` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_timeout_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_timeout_error() -> TlsError {
+    Timeout()
+}
+
+/// `tls_is_timeout_error` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_is_timeout_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_is_timeout_error(err: TlsError) -> Bool {
+    match err {
+        Timeout => true,
+        _ => false,
+    }
 }
 
 /// `tls_connection_closed_error` in `std.tls`.

@@ -308,6 +308,7 @@ fn err_code(err: NetError) -> Int {
     match err {
         Timeout => 4,
         ConnectionClosed => 8,
+        Cancelled => 9,
         InvalidInput => 6,
         _ => 7,
     }
@@ -7180,6 +7181,7 @@ fn err_code(err: NetError) -> Int {
         AddressInUse => 5,
         InvalidInput => 6,
         ConnectionClosed => 8,
+        Cancelled => 9,
         _ => 7,
     }
 }
@@ -7223,6 +7225,7 @@ fn err_code(err: NetError) -> Int {
         AddressInUse => 5,
         InvalidInput => 6,
         ConnectionClosed => 8,
+        Cancelled => 9,
         _ => 7,
     }
 }
@@ -7351,6 +7354,7 @@ fn err_code(err: NetError) -> Int {
         InvalidInput => 6,
         Io => 7,
         ConnectionClosed => 8,
+        Cancelled => 9,
     }
 }
 
@@ -7375,6 +7379,20 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     let addr = match tcp_local_addr(listener) {
         Ok(value) => value,
         Err(_) => "",
+    };
+
+    let cancel_op = match async_accept_submit(listener, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let cancel_handle = cancel_op.handle;
+    let cancel_applied = match async_cancel_int(AsyncIntOp { handle: cancel_handle }) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let cancel_wait = match async_wait_int(AsyncIntOp { handle: cancel_handle }, 2000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
     };
 
     let accept_op = match async_accept_submit(listener, 2000) {
@@ -7444,12 +7462,14 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     let accept_rewait_ok = if accept_rewait == 1 { 1 } else { 0 };
     let recv_timeout_ok = if recv_timeout == 4 { 1 } else { 0 };
     let recv_rewait_ok = if recv_rewait == 1 { 1 } else { 0 };
+    let cancel_applied_ok = if cancel_applied == 1 { 1 } else { 0 };
+    let cancel_wait_ok = if cancel_wait == 9 { 1 } else { 0 };
     let close_ok = if close_count == 3 { 1 } else { 0 };
-    let score = invalid_int_ok + invalid_string_ok + accept_timeout_ok +
-        accept_rewait_ok + recv_timeout_ok + sent_ok + recv_ok + recv_rewait_ok +
-        shutdown_ok + close_ok;
+    let score = invalid_int_ok + invalid_string_ok + cancel_applied_ok +
+        cancel_wait_ok + accept_timeout_ok + accept_rewait_ok + recv_timeout_ok +
+        sent_ok + recv_ok + recv_rewait_ok + shutdown_ok + close_ok;
 
-    if score == 10 {
+    if score == 12 {
         print_int(42);
     } else {
         print_int(0);
@@ -7458,6 +7478,16 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
 }
 "#;
     let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_async_lifecycle_controls_example_smoke() {
+    let src = fs::read_to_string("examples/io/async_lifecycle_controls.aic")
+        .expect("read examples/io/async_lifecycle_controls.aic");
+    let (code, stdout, stderr) = compile_and_run(&src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
 }
@@ -10367,6 +10397,7 @@ fn tls_code(err: TlsError) -> Int {
         ConnectionClosed => 6,
         Io => 7,
         Timeout => 8,
+        Cancelled => 9,
     }
 }
 
@@ -10462,6 +10493,163 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
                     "-www",
                     "-naccept",
                     "8",
+                    "-quiet",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("start tls server");
+
+            let addr = format!("127.0.0.1:{port}");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if std::net::TcpStream::connect(&addr).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_tls_async_cancel_reports_typed_cancelled_error() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if !(backend_enabled && openssl_cli_available) {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.net;
+import std.time;
+import std.env;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, net, env, concurrency, time } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    let cfg = TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    };
+
+    let result = match tls_connect_addr(addr, cfg, 5000) {
+        Err(_) => 0,
+        Ok(stream) => if true {
+            let op = match tls_async_recv_submit(stream, 64, 2000) {
+                Ok(value) => value,
+                Err(_) => AsyncStringOp { handle: 0 },
+            };
+            let handle = op.handle;
+            let cancel_ok = match tls_async_cancel_string(AsyncStringOp { handle: handle }) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            let wait_code = match tls_async_wait_string(AsyncStringOp { handle: handle }, 500) {
+                Ok(_) => 0,
+                Err(err) => tls_code(err),
+            };
+            sleep_ms(100);
+            let close_ok = match tls_close(stream) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            if cancel_ok == 1 && wait_code == 9 && close_ok == 1 {
+                42
+            } else {
+                cancel_ok * 100 + wait_code * 10 + close_ok
+            }
+        } else {
+            0
+        },
+    };
+
+    print_int(result);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls cancel listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            let cert_path = root.join("tls_cert.pem");
+            let key_path = root.join("tls_key.pem");
+            let req_status = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-sha256",
+                    "-nodes",
+                    "-days",
+                    "8",
+                    "-subj",
+                    "/CN=localhost",
+                    "-keyout",
+                    key_path.to_str().expect("key path"),
+                    "-out",
+                    cert_path.to_str().expect("cert path"),
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("generate tls cert");
+            assert!(req_status.success(), "openssl req failed");
+
+            let port_flag = port.to_string();
+            let _server = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "s_server",
+                    "-accept",
+                    port_flag.as_str(),
+                    "-cert",
+                    "tls_cert.pem",
+                    "-key",
+                    "tls_key.pem",
+                    "-naccept",
+                    "2",
                     "-quiet",
                 ])
                 .stdout(Stdio::null())
@@ -10629,6 +10817,7 @@ fn tls_code(err: TlsError) -> Int {
         ConnectionClosed => 6,
         Io => 7,
         Timeout => 8,
+        Cancelled => 9,
     }
 }
 

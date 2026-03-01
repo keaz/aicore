@@ -365,6 +365,7 @@ enum NetError {
     InvalidInput,
     Io,
     ConnectionClosed,
+    Cancelled,
 }
 
 struct UdpPacket {
@@ -374,6 +375,24 @@ struct UdpPacket {
 
 struct TcpStream {
     handle: Int,
+}
+
+struct AsyncIntOp {
+    handle: Int,
+}
+
+struct AsyncStringOp {
+    handle: Int,
+}
+
+struct AsyncIntSelection {
+    index: Int,
+    value: Int,
+}
+
+struct AsyncStringSelection {
+    index: Int,
+    payload: Bytes,
 }
 
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
@@ -409,6 +428,21 @@ fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result
 fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
+fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
+fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }
+fn async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
+fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }
+fn async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }
+fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }
+fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
+fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }
+fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
+fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }
@@ -422,14 +456,20 @@ Notes:
 
 - Network-handle table capacity is bounded (`128` runtime slots).
 - `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
+- `async_cancel_*` keeps peer-close distinct by surfacing `NetError::Cancelled` on cancelled waits.
 - On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce a total write timeout budget.
 - `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is satisfied or the deadline expires.
 - `tcp_stream_recv_framed*` expects a 4-byte big-endian length prefix and enforces `max_frame_bytes`.
 - `tcp_set_nodelay` and `tcp_set_keepalive` toggle runtime socket flags and can be read back with `tcp_get_*`.
 - `tcp_set_send_buffer_size` and `tcp_set_recv_buffer_size` request kernel buffer sizes; read-back values may differ by platform/kernel.
+- Async lifecycle control surface is protocol-neutral:
+  - `async_cancel_*` returns `Ok(true)` when cancellation is applied and `Ok(false)` when the op already completed.
+  - `async_poll_*` maps pending state to `Ok(None())` via zero-timeout waits.
+  - `async_wait_any_*` returns the winning operation index and payload/value.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
+- Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
 
 ## `std.tls`
 
@@ -441,6 +481,7 @@ enum TlsError {
     HostnameMismatch,
     ProtocolError,
     ConnectionClosed,
+    Cancelled,
     Io,
     Timeout,
 }
@@ -455,6 +496,16 @@ struct TlsConfig {
 
 struct TlsStream {
     handle: Int,
+}
+
+struct TlsAsyncIntSelection {
+    index: Int,
+    value: Int,
+}
+
+struct TlsAsyncStringSelection {
+    index: Int,
+    payload: Bytes,
 }
 
 enum TlsVersion {
@@ -480,6 +531,12 @@ fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Res
 fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
 fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
+fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
+fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
@@ -513,11 +570,13 @@ Notes:
 - TLS async submit/wait APIs are bytes-first and typed:
   - `tls_async_send_submit` / `tls_async_recv_submit`
   - `tls_async_wait_int` / `tls_async_wait_string`
+  - `tls_async_cancel_*` / `tls_async_poll_*` / `tls_async_wait_any_*`
   - convenience wrappers `tls_async_send` / `tls_async_recv`
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
 - `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Timeout`).
 - `tls_send_timeout` deadline expiry maps to `TlsError::Timeout`.
 - `tls_async_wait_*` timeout returns `TlsError::Timeout` and keeps the op pending so a later wait can retry.
+- `tls_async_cancel_*` marks pending ops as cancelled and surfaces `TlsError::Cancelled` from subsequent waits.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
 - Runnable async TLS submit/wait example: `examples/io/tls_async_submit_wait.aic`.
 - `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.
