@@ -22,6 +22,15 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label} after ${timeoutMs}ms`);
 }
 
+async function fetchCompletionLabels(uri: vscode.Uri): Promise<string[]> {
+  const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+    'vscode.executeCompletionItemProvider',
+    uri,
+    new vscode.Position(0, 0)
+  );
+  return (result?.items ?? []).map((item) => String(item.label));
+}
+
 suite('AICore VSCode Extension Integration', () => {
   let extension: vscode.Extension<unknown>;
   let workspaceRoot: string;
@@ -179,6 +188,30 @@ suite('AICore VSCode Extension Integration', () => {
     );
   });
 
+  test('changing server settings triggers automatic language server restart', async () => {
+    const config = vscode.workspace.getConfiguration('aic');
+
+    await config.update('server.path', '/definitely/missing/aic-binary', vscode.ConfigurationTarget.Global);
+    await waitFor(
+      'completion to stop exposing mock LSP entries after invalid server.path',
+      async () => {
+        const labels = await fetchCompletionLabels(mainUri);
+        return labels.includes('mockComplete') ? undefined : true;
+      },
+      20_000
+    );
+
+    await config.update('server.path', 'node', vscode.ConfigurationTarget.Global);
+    await waitFor(
+      'completion to recover after restoring valid server.path',
+      async () => {
+        const labels = await fetchCompletionLabels(mainUri);
+        return labels.includes('mockComplete') ? labels : undefined;
+      },
+      20_000
+    );
+  });
+
   test('debugger contribution and launch command are registered', async () => {
     const packageJson = extension.packageJSON as {
       contributes?: {
@@ -197,6 +230,39 @@ suite('AICore VSCode Extension Integration', () => {
       commandIds.includes('aic.debug.createLaunchJson'),
       'expected aic.debug.createLaunchJson command contribution to be present'
     );
+  });
+
+  test('language contribution defines packaged file icons for .aic', async () => {
+    const packageJson = extension.packageJSON as {
+      contributes?: {
+        languages?: Array<{
+          id?: string;
+          icon?: {
+            light?: string;
+            dark?: string;
+          };
+        }>;
+      };
+    };
+
+    const language = (packageJson.contributes?.languages ?? []).find((entry) => entry.id === 'aic');
+    assert.ok(language, 'expected contributes.languages to include aic');
+
+    const lightIcon = language?.icon?.light;
+    const darkIcon = language?.icon?.dark;
+    assert.ok(
+      typeof lightIcon === 'string' && lightIcon.length > 0,
+      'expected aic language contribution to define icon.light'
+    );
+    assert.ok(
+      typeof darkIcon === 'string' && darkIcon.length > 0,
+      'expected aic language contribution to define icon.dark'
+    );
+
+    const lightIconPath = path.join(extension.extensionPath, String(lightIcon));
+    const darkIconPath = path.join(extension.extensionPath, String(darkIcon));
+    assert.ok(fs.existsSync(lightIconPath), `expected light icon asset to exist: ${lightIconPath}`);
+    assert.ok(fs.existsSync(darkIconPath), `expected dark icon asset to exist: ${darkIconPath}`);
   });
 
   test('Create launch.json command writes default AICore debug config', async () => {

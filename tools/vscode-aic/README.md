@@ -9,6 +9,7 @@ aic lsp
 ## Features
 
 - Syntax highlighting for `.aic` files
+- AICore file icons in Explorer via language icon contribution
 - Autocomplete (language server completions + editor suggestions)
 - Doc-aware hover/completion (`///` summary in completion detail + full markdown docs in hover/completion docs)
 - Auto-import suggestions for unimported module symbols (completion inserts `import ...;`)
@@ -61,6 +62,8 @@ code --install-extension aic-language-tools-*.vsix
 - `aic.inlayHints.effectAnnotations` (default: `true`)
 - `aic.inlayHints.contractAnnotations` (default: `false`)
 
+Changes to `aic.server.path`, `aic.server.args`, and `aic.trace.server` automatically restart the language server.
+
 ### Formatter Consistency (VS Code vs terminal)
 
 If `aic fmt` in a terminal is correct but format-on-save in VS Code is different,
@@ -111,6 +114,7 @@ Generated configuration:
 Runtime behavior:
 
 - If `program` points to a `.aic` file, the extension runs `aic build <program> --debug-info` before launch.
+- The debug pre-launch build runs asynchronously with a cancellable progress notification.
 - Debug adapter process is `aic debug dap`, which delegates to `lldb-dap` or `lldb-vscode`.
 - Set `breakOnContractViolation` to `true` to inject a startup breakpoint at `aic_rt_panic`.
 

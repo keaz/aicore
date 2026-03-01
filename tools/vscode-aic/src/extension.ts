@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import type {
   LanguageClient,
   LanguageClientOptions,
@@ -18,6 +18,8 @@ let diagnosticsSummary: DiagnosticSummary = { errors: 0, warnings: 0 };
 let serverVersion = 'unknown';
 let statusDetail = '';
 let stoppingClient = false;
+let pendingRestartTimer: NodeJS.Timeout | undefined;
+let restartTask: Promise<void> | undefined;
 let errorLensDecorations: ErrorLensDecorations | undefined;
 let errorLensConfig: ErrorLensConfig = {
   enabled: true,
@@ -45,6 +47,15 @@ type ErrorLensDecorations = {
   hint: vscode.TextEditorDecorationType;
 };
 
+type ProcessRunResult = {
+  exitCode: number;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  errorMessage?: string;
+  cancelled: boolean;
+};
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   getOutputChannel(context);
   getStatusBarItem(context);
@@ -63,6 +74,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       renderErrorLensForActiveEditor();
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration('aic.server.path') ||
+        event.affectsConfiguration('aic.server.args') ||
+        event.affectsConfiguration('aic.trace.server')
+      ) {
+        queueClientRestart(context, 'AICore server settings changed');
+      }
       if (
         event.affectsConfiguration('aic.errorLens.enabled') ||
         event.affectsConfiguration('aic.errorLens.showOnlyFirstPerLine')
@@ -111,7 +129,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export async function deactivate(): Promise<void> {
+  clearPendingRestart();
   await stopClient();
+}
+
+function clearPendingRestart(): void {
+  if (!pendingRestartTimer) {
+    return;
+  }
+  clearTimeout(pendingRestartTimer);
+  pendingRestartTimer = undefined;
 }
 
 async function startClient(context: vscode.ExtensionContext): Promise<void> {
@@ -228,6 +255,34 @@ async function stopClient(): Promise<void> {
   } finally {
     stoppingClient = false;
     setStatusBarState('stopped', 'Language server stopped');
+  }
+}
+
+function queueClientRestart(context: vscode.ExtensionContext, reason: string): void {
+  clearPendingRestart();
+  pendingRestartTimer = setTimeout(() => {
+    pendingRestartTimer = undefined;
+    void restartClient(context, reason);
+  }, 250);
+}
+
+async function restartClient(context: vscode.ExtensionContext, reason: string): Promise<void> {
+  if (restartTask) {
+    logLine(`Restart requested while another restart is in progress (${reason}).`);
+    return restartTask;
+  }
+
+  restartTask = (async () => {
+    logLine(`Restarting language server after configuration change: ${reason}.`);
+    setStatusBarState('starting', reason);
+    await stopClient();
+    await startClient(context);
+  })();
+
+  try {
+    await restartTask;
+  } finally {
+    restartTask = undefined;
   }
 }
 
@@ -671,7 +726,7 @@ class AicDebugConfigurationProvider implements vscode.DebugConfigurationProvider
 
     const programPath = resolvePathVariables(normalized.program, folder);
     if (programPath.endsWith('.aic')) {
-      const builtProgram = buildAicDebugTarget(aicCommand, programPath, normalized.cwd, folder);
+      const builtProgram = await buildAicDebugTarget(aicCommand, programPath, normalized.cwd, folder);
       if (!builtProgram) {
         return undefined;
       }
@@ -779,12 +834,12 @@ function processEnvStrings(): { [key: string]: string } {
   return out;
 }
 
-function buildAicDebugTarget(
+async function buildAicDebugTarget(
   aicCommand: string,
   sourceProgram: string,
   cwd: unknown,
   folder: vscode.WorkspaceFolder | undefined
-): string | undefined {
+): Promise<string | undefined> {
   const cwdValue =
     typeof cwd === 'string' && cwd.trim().length > 0
       ? resolvePathVariables(cwd, folder)
@@ -795,15 +850,27 @@ function buildAicDebugTarget(
   const outputPath = path.join(outDir, outputName);
 
   const args = ['build', sourceProgram, '--debug-info', '-o', outputPath];
-  const result = spawnSync(aicCommand, args, {
-    cwd: cwdValue,
-    encoding: 'utf8',
-    env: process.env,
-  });
-  if (result.status !== 0) {
-    const stdout = (result.stdout ?? '').trim();
-    const stderr = (result.stderr ?? '').trim();
-    const details = [stdout, stderr].filter((value) => value.length > 0).join('\n');
+  logLine(`Starting debug pre-launch build: ${aicCommand} ${args.join(' ')}`);
+
+  const result = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `AICore: building ${path.basename(sourceProgram)} for debug`,
+      cancellable: true,
+    },
+    async (_progress, token) => runProcess(aicCommand, args, cwdValue, token)
+  );
+
+  if (result.cancelled) {
+    logLine('Debug pre-launch build cancelled by user.');
+    void vscode.window.showWarningMessage('AICore debug build was cancelled.');
+    return undefined;
+  }
+
+  if (result.exitCode !== 0) {
+    const details = [result.errorMessage, result.stdout.trim(), result.stderr.trim()]
+      .filter((value) => typeof value === 'string' && value.length > 0)
+      .join('\n');
     logLine(
       `Debug pre-launch build failed (${aicCommand} ${args.join(' ')}): ${details || 'unknown error'}`
     );
@@ -812,8 +879,72 @@ function buildAicDebugTarget(
     );
     return undefined;
   }
+
   logLine(`Debug pre-launch build completed: ${outputPath}`);
   return outputPath;
+}
+
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  cancellationToken: vscode.CancellationToken
+): Promise<ProcessRunResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let stdout = '';
+    let stderr = '';
+    let cancelled = false;
+    let cancellationDisposable: vscode.Disposable | undefined;
+
+    const finish = (result: ProcessRunResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cancellationDisposable?.dispose();
+      resolve(result);
+    };
+
+    const child = spawn(command, args, {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    cancellationDisposable = cancellationToken.onCancellationRequested(() => {
+      cancelled = true;
+      child.kill();
+    });
+
+    child.on('error', (error) => {
+      finish({
+        exitCode: -1,
+        signal: null,
+        stdout,
+        stderr,
+        errorMessage: error.message,
+        cancelled,
+      });
+    });
+
+    child.on('close', (code, signal) => {
+      finish({
+        exitCode: typeof code === 'number' ? code : -1,
+        signal,
+        stdout,
+        stderr,
+        cancelled,
+      });
+    });
+  });
 }
 
 async function createLaunchJsonTemplate(): Promise<void> {

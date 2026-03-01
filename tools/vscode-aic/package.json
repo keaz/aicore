@@ -2,7 +2,7 @@
   "name": "aic-language-tools",
   "displayName": "AICore Language Tools",
   "description": "VS Code integration for AICore via aic lsp",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "publisher": "keaz",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -50,6 +50,10 @@
         "extensions": [
           ".aic"
         ],
+        "icon": {
+          "light": "./assets/aic-file-light.svg",
+          "dark": "./assets/aic-file-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
