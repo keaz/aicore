@@ -61,6 +61,18 @@ code --install-extension aic-language-tools-*.vsix
 - `aic.inlayHints.effectAnnotations` (default: `true`)
 - `aic.inlayHints.contractAnnotations` (default: `false`)
 
+### Formatter Consistency (VS Code vs terminal)
+
+If `aic fmt` in a terminal is correct but format-on-save in VS Code is different,
+VS Code is usually launching a different `aic` binary than your shell.
+
+Use one of these:
+
+- Set `aic.server.path` to an absolute path for the intended binary.
+- Open `AICore: Show Language Server Output` and verify the logged `Resolved server executable`.
+
+The extension also prefers resolving bare command names (for example `aic`) from your user shell PATH before VS Code's process PATH to reduce mismatches.
+
 ## Development
 
 ```bash

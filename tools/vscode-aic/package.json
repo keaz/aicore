@@ -177,7 +177,7 @@
         "aic.server.path": {
           "type": "string",
           "default": "aic",
-          "description": "Path to AICore executable"
+          "description": "Path to AICore executable. For bare command names (for example `aic`), the extension prefers the executable resolved from your user shell PATH."
         },
         "aic.server.args": {
           "type": "array",

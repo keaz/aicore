@@ -264,7 +264,14 @@ function resolveServerCommand(configuredCommand: string): string | undefined {
     return isExecutable(resolved) ? resolved : undefined;
   }
 
-  return findOnPath(expanded);
+  const shellResolved = findOnUserShellPath(expanded);
+  const envResolved = findOnPath(expanded);
+  if (shellResolved && envResolved && shellResolved !== envResolved) {
+    logLine(
+      `Resolved "${expanded}" from user shell as "${shellResolved}" (VS Code PATH resolves to "${envResolved}").`
+    );
+  }
+  return shellResolved ?? envResolved;
 }
 
 function expandHome(p: string): string {
@@ -307,6 +314,54 @@ function findOnPath(command: string): string | undefined {
     }
   }
 
+  return undefined;
+}
+
+function findOnUserShellPath(command: string): string | undefined {
+  if (process.platform === 'win32') {
+    const probe = spawnSync('where', [command], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (probe.status !== 0) {
+      return undefined;
+    }
+    const candidate = firstNonEmptyLine(probe.stdout);
+    return candidate && isExecutable(candidate) ? candidate : undefined;
+  }
+
+  const shell = (process.env.SHELL ?? (process.platform === 'darwin' ? '/bin/zsh' : '/bin/sh')).trim();
+  if (!shell || !isExecutable(shell)) {
+    return undefined;
+  }
+
+  const probe = spawnSync(
+    shell,
+    [
+      '-lc',
+      'cmd="$1"; IFS=":"; for dir in $PATH; do [ -z "$dir" ] && continue; candidate="$dir/$cmd"; if [ -f "$candidate" ] && [ -x "$candidate" ]; then printf "%s\\n" "$candidate"; exit 0; fi; done; exit 1',
+      'aic-resolve',
+      command,
+    ],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+    }
+  );
+  if (probe.status !== 0) {
+    return undefined;
+  }
+  const candidate = firstNonEmptyLine(probe.stdout);
+  return candidate && isExecutable(candidate) ? candidate : undefined;
+}
+
+function firstNonEmptyLine(text: string): string | undefined {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
   return undefined;
 }
 
