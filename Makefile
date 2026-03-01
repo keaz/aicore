@@ -180,6 +180,7 @@ docs-check:
 	@test -f docs/intrinsics-runtime-bindings.md
 	@test -f docs/io-runtime/README.md
 	@test -f docs/io-runtime/net-time-rand.md
+	@test -f docs/async-event-loop.md
 	@test -f docs/io-runtime/error-model.md
 	@test -f docs/io-runtime/integration-harness.md
 	@test -f docs/io-runtime/lifecycle-playbook.md
@@ -216,6 +217,14 @@ docs-check:
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
 	@python3 -m json.tool docs/errors/secure-networking-error-contract.v1.json >/dev/null
+	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
+	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md
+	@grep -Fq "fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
+	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-runtime/net-time-rand.md
+	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-runtime/net-time-rand.md
+	@grep -Fq "fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-runtime/net-time-rand.md
+	@grep -Fq "async_wait_string(op, timeout_ms) -> Result[Bytes, NetError]" docs/async-event-loop.md
+	@grep -Fq "Timeout => Bytes { data: \"\" }" docs/io-runtime/lifecycle-playbook.md
 	@if [ "$${AIC_REQUIRE_PROTOCOL_EXAMPLES:-0}" = "1" ]; then \
 		test -f docs/agent-recipes/secure-postgres-tls-scram-loop.md; \
 		test -f docs/security-ops/postgres-tls-scram-replay.v1.json; \

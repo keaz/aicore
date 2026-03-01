@@ -20,7 +20,7 @@ enum NetError {
 
 struct UdpPacket {
     from: String,
-    payload: String,
+    payload: Bytes,
 }
 
 struct TcpStream {
@@ -35,9 +35,9 @@ fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }
-fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }
+fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
-fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }
+fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream(handle: Int) -> TcpStream
 fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
@@ -51,7 +51,7 @@ fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
-fn udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }
+fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }
 fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 

@@ -52,8 +52,8 @@ match run("cmd") {
 match tcp_recv(conn, 4096, 1000) {
     Ok(payload) => payload,
     Err(err) => match err {
-        Timeout => "",
-        _ => "",
+        Timeout => Bytes { data: "" },
+        _ => Bytes { data: "" },
     },
 }
 ```

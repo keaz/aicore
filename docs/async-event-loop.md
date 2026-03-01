@@ -17,7 +17,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_tcp_send_submit(handle, payload) -> Result[AsyncIntOp, NetError]`
 - `async_tcp_recv_submit(handle, max_bytes, timeout_ms) -> Result[AsyncStringOp, NetError]`
 - `async_wait_int(op, timeout_ms) -> Result[Int, NetError]`
-- `async_wait_string(op, timeout_ms) -> Result[String, NetError]`
+- `async_wait_string(op, timeout_ms) -> Result[Bytes, NetError]`
 - `async_shutdown() -> Result[Bool, NetError]`
 - Convenience wrappers: `async_accept`, `async_tcp_send`, `async_tcp_recv`
 

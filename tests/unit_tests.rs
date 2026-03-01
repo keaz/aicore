@@ -3070,6 +3070,68 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
 }
 
 #[test]
+fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
+    let io_api =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let net_runtime = fs::read_to_string("docs/io-runtime/net-time-rand.md")
+        .expect("read docs/io-runtime/net-time-rand.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    let lifecycle = fs::read_to_string("docs/io-runtime/lifecycle-playbook.md")
+        .expect("read docs/io-runtime/lifecycle-playbook.md");
+
+    for (name, doc) in [
+        ("io-api-reference", &io_api),
+        ("net-time-rand", &net_runtime),
+    ] {
+        assert!(
+            doc.contains("payload: Bytes"),
+            "{name} must document UdpPacket payload as Bytes"
+        );
+        assert!(
+            doc.contains(
+                "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }"
+            ),
+            "{name} must document bytes-first tcp_send signature"
+        );
+        assert!(
+            doc.contains("fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"),
+            "{name} must document bytes-first tcp_recv signature"
+        );
+        assert!(
+            doc.contains("fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }"),
+            "{name} must document bytes-first udp_send_to signature"
+        );
+        assert!(
+            !doc.contains("fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
+            "{name} still documents stale string tcp_send signature"
+        );
+        assert!(
+            !doc.contains("fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"),
+            "{name} still documents stale string tcp_recv signature"
+        );
+        assert!(
+            !doc.contains("fn udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }"),
+            "{name} still documents stale string udp_send_to signature"
+        );
+    }
+
+    assert!(
+        async_runtime.contains("async_wait_string(op, timeout_ms) -> Result[Bytes, NetError]"),
+        "async runtime docs must use bytes-first async_wait_string signature"
+    );
+    assert!(
+        !async_runtime.contains("async_wait_string(op, timeout_ms) -> Result[String, NetError]"),
+        "async runtime docs still document stale string async_wait_string signature"
+    );
+
+    assert!(
+        lifecycle.contains("Timeout => Bytes { data: \"\" }"),
+        "lifecycle network timeout template must use Bytes fallback values"
+    );
+}
+
+#[test]
 fn unit_postgres_tls_scram_replay_contract_and_example_are_in_sync() {
     if !protocol_replay_tests_enabled() {
         return;

@@ -26,6 +26,11 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Pure functions cannot call IO runtime modules.
 - Transitive effects are enforced: if `A -> B -> C`, callers of `A` must declare effects needed by `C`.
 
+## External Client Libraries
+
+- Core runtime modules stay protocol-agnostic and expose generic transport/binary primitives.
+- Protocol implementations (PostgreSQL/Kafka/Redis/etc.) should be built as external libraries on top of these primitives.
+
 ## Resource Lifecycle (RAII Subset)
 
 - Compiler-managed resource locals (`FileHandle`, `Map[K, V]`, `Set[T]`, `TcpReader`, `IntChannel`, `IntMutex`) are automatically cleaned up on scope exit in deterministic reverse lexical order.
