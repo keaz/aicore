@@ -2359,6 +2359,62 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &net_source,
         "std/net.aic",
+        "tcp_set_nodelay",
+        "aic_net_tcp_set_nodelay_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_get_nodelay",
+        "aic_net_tcp_get_nodelay_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_set_keepalive",
+        "aic_net_tcp_set_keepalive_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_get_keepalive",
+        "aic_net_tcp_get_keepalive_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_set_send_buffer_size",
+        "aic_net_tcp_set_send_buffer_size_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_get_send_buffer_size",
+        "aic_net_tcp_get_send_buffer_size_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_set_recv_buffer_size",
+        "aic_net_tcp_set_recv_buffer_size_intrinsic",
+        2,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "tcp_get_recv_buffer_size",
+        "aic_net_tcp_get_recv_buffer_size_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
         "udp_bind",
         "aic_net_udp_bind_intrinsic",
         1,
@@ -2449,6 +2505,14 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_net_tcp_send_intrinsic", 2usize),
         ("aic_net_tcp_recv_intrinsic", 3usize),
         ("aic_net_tcp_close_intrinsic", 1usize),
+        ("aic_net_tcp_set_nodelay_intrinsic", 2usize),
+        ("aic_net_tcp_get_nodelay_intrinsic", 1usize),
+        ("aic_net_tcp_set_keepalive_intrinsic", 2usize),
+        ("aic_net_tcp_get_keepalive_intrinsic", 1usize),
+        ("aic_net_tcp_set_send_buffer_size_intrinsic", 2usize),
+        ("aic_net_tcp_get_send_buffer_size_intrinsic", 1usize),
+        ("aic_net_tcp_set_recv_buffer_size_intrinsic", 2usize),
+        ("aic_net_tcp_get_recv_buffer_size_intrinsic", 1usize),
         ("aic_net_udp_bind_intrinsic", 1usize),
         ("aic_net_udp_local_addr_intrinsic", 1usize),
         ("aic_net_udp_send_to_intrinsic", 3usize),
@@ -2494,6 +2558,54 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
         "std/net.aic must expose tcp_stream_close adapter API"
     );
     assert!(
+        net_source.contains(
+            "fn tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_nodelay adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_nodelay adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_keepalive adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_keepalive adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_send_buffer_size adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_send_buffer_size adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_recv_buffer_size adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_recv_buffer_size adapter API"
+    );
+    assert!(
         net_source.contains("tcp_send(stream.handle, payload)"),
         "std/net.aic tcp_stream_send must delegate to tcp_send"
     );
@@ -2504,6 +2616,38 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
     assert!(
         net_source.contains("tcp_close(stream.handle)"),
         "std/net.aic tcp_stream_close must delegate to tcp_close"
+    );
+    assert!(
+        net_source.contains("tcp_set_nodelay(stream.handle, enabled)"),
+        "std/net.aic tcp_stream_set_nodelay must delegate to tcp_set_nodelay"
+    );
+    assert!(
+        net_source.contains("tcp_get_nodelay(stream.handle)"),
+        "std/net.aic tcp_stream_get_nodelay must delegate to tcp_get_nodelay"
+    );
+    assert!(
+        net_source.contains("tcp_set_keepalive(stream.handle, enabled)"),
+        "std/net.aic tcp_stream_set_keepalive must delegate to tcp_set_keepalive"
+    );
+    assert!(
+        net_source.contains("tcp_get_keepalive(stream.handle)"),
+        "std/net.aic tcp_stream_get_keepalive must delegate to tcp_get_keepalive"
+    );
+    assert!(
+        net_source.contains("tcp_set_send_buffer_size(stream.handle, size_bytes)"),
+        "std/net.aic tcp_stream_set_send_buffer_size must delegate to tcp_set_send_buffer_size"
+    );
+    assert!(
+        net_source.contains("tcp_get_send_buffer_size(stream.handle)"),
+        "std/net.aic tcp_stream_get_send_buffer_size must delegate to tcp_get_send_buffer_size"
+    );
+    assert!(
+        net_source.contains("tcp_set_recv_buffer_size(stream.handle, size_bytes)"),
+        "std/net.aic tcp_stream_set_recv_buffer_size must delegate to tcp_set_recv_buffer_size"
+    );
+    assert!(
+        net_source.contains("tcp_get_recv_buffer_size(stream.handle)"),
+        "std/net.aic tcp_stream_get_recv_buffer_size must delegate to tcp_get_recv_buffer_size"
     );
 }
 
@@ -3128,6 +3272,24 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
         assert!(
             doc.contains("fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }"),
             "{name} must document bytes-first udp_send_to signature"
+        );
+        assert!(
+            doc.contains("fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"),
+            "{name} must document tcp_set_nodelay signature"
+        );
+        assert!(
+            doc.contains("fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"),
+            "{name} must document tcp_set_keepalive signature"
+        );
+        assert!(
+            doc.contains("fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"),
+            "{name} must document tcp_set_send_buffer_size signature"
+        );
+        assert!(
+            doc.contains(
+                "fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }"
+            ),
+            "{name} must document tcp_get_send_buffer_size signature"
         );
         assert!(
             !doc.contains("fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),

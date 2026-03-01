@@ -17,6 +17,22 @@ impl<'a> Generator<'a> {
             "tcp_send_timeout" | "aic_net_tcp_send_timeout_intrinsic" => "tcp_send_timeout",
             "aic_net_tcp_recv_intrinsic" => "tcp_recv",
             "tcp_close" | "aic_net_tcp_close_intrinsic" => "tcp_close",
+            "tcp_set_nodelay" | "aic_net_tcp_set_nodelay_intrinsic" => "tcp_set_nodelay",
+            "tcp_get_nodelay" | "aic_net_tcp_get_nodelay_intrinsic" => "tcp_get_nodelay",
+            "tcp_set_keepalive" | "aic_net_tcp_set_keepalive_intrinsic" => "tcp_set_keepalive",
+            "tcp_get_keepalive" | "aic_net_tcp_get_keepalive_intrinsic" => "tcp_get_keepalive",
+            "tcp_set_send_buffer_size" | "aic_net_tcp_set_send_buffer_size_intrinsic" => {
+                "tcp_set_send_buffer_size"
+            }
+            "tcp_get_send_buffer_size" | "aic_net_tcp_get_send_buffer_size_intrinsic" => {
+                "tcp_get_send_buffer_size"
+            }
+            "tcp_set_recv_buffer_size" | "aic_net_tcp_set_recv_buffer_size_intrinsic" => {
+                "tcp_set_recv_buffer_size"
+            }
+            "tcp_get_recv_buffer_size" | "aic_net_tcp_get_recv_buffer_size_intrinsic" => {
+                "tcp_get_recv_buffer_size"
+            }
             "udp_bind" | "aic_net_udp_bind_intrinsic" => "udp_bind",
             "udp_local_addr" | "aic_net_udp_local_addr_intrinsic" => "udp_local_addr",
             "udp_send_to" | "aic_net_udp_send_to_intrinsic" => "udp_send_to",
@@ -128,6 +144,94 @@ impl<'a> Generator<'a> {
             }
             "tcp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") => {
                 Some(self.gen_net_close_call(name, "aic_rt_net_tcp_close", args, span, fctx))
+            }
+            "tcp_set_nodelay"
+                if self.sig_matches_shape(name, &["Int", "Bool"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_bool_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_nodelay",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_nodelay"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_bool_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_nodelay",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_keepalive"
+                if self.sig_matches_shape(name, &["Int", "Bool"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_bool_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_keepalive",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_keepalive"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_bool_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_keepalive",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_send_buffer_size"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_send_buffer_size",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_send_buffer_size"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_send_buffer_size",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_recv_buffer_size"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_recv_buffer_size",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_recv_buffer_size"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_recv_buffer_size",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "udp_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") => {
                 Some(self.gen_net_close_call(name, "aic_rt_net_udp_close", args, span, fctx))
@@ -3216,6 +3320,226 @@ impl<'a> Generator<'a> {
         let ok_payload = Value {
             ty: LType::Bool,
             repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_set_socket_bool_option_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Int, Bool)"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let enabled = self.gen_expr(&args[1], fctx)?;
+        let enabled_i64 = self.bool_arg_to_i64(&enabled, name, args[1].span, fctx)?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64 {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            enabled_i64
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_get_socket_bool_option_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64* {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out_raw = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_raw, out_slot));
+        let out_bool = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", out_bool, out_raw));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some(out_bool),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_set_socket_int_option_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let size_bytes = self.gen_expr(&args[1], fctx)?;
+        if handle.ty != LType::Int || size_bytes.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects (Int, Int)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64 {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            size_bytes.repr.clone().unwrap_or_else(|| "0".to_string())
+        ));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_get_socket_int_option_call(
+        &mut self,
+        name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i64* {})",
+            err,
+            runtime_fn,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_value),
         };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(

@@ -6415,6 +6415,132 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_tcp_socket_tuning_roundtrip_and_negative_paths() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn is_invalid_input(err: NetError) -> Bool {
+    match err {
+        InvalidInput => true,
+        _ => false,
+    }
+}
+
+fn is_io(err: NetError) -> Bool {
+    match err {
+        Io => true,
+        _ => false,
+    }
+}
+
+fn option_bool_score(set_result: Result[Bool, NetError], get_result: Result[Bool, NetError], expected: Bool) -> Int {
+    match set_result {
+        Ok(done) => if done {
+            match get_result {
+                Ok(value) => bool_to_int(value == expected),
+                Err(_) => 0,
+            }
+        } else {
+            0
+        },
+        Err(err) => bool_to_int(is_io(err)),
+    }
+}
+
+fn option_int_score(set_result: Result[Bool, NetError], get_result: Result[Int, NetError]) -> Int {
+    match set_result {
+        Ok(done) => if done {
+            match get_result {
+                Ok(size_bytes) => bool_to_int(size_bytes > 0),
+                Err(_) => 0,
+            }
+        } else {
+            0
+        },
+        Err(err) => bool_to_int(is_io(err)),
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let client_stream = tcp_stream(client);
+    let server_stream = tcp_stream(server);
+
+    let nodelay_ok = option_bool_score(
+        tcp_stream_set_nodelay(client_stream, true),
+        tcp_stream_get_nodelay(client_stream),
+        true,
+    );
+    let keepalive_ok = option_bool_score(
+        tcp_set_keepalive(server, true),
+        tcp_get_keepalive(server),
+        true,
+    );
+    let send_buffer_ok = option_int_score(
+        tcp_set_send_buffer_size(client, 8192),
+        tcp_get_send_buffer_size(client),
+    );
+    let recv_buffer_ok = option_int_score(
+        tcp_stream_set_recv_buffer_size(server_stream, 8192),
+        tcp_stream_get_recv_buffer_size(server_stream),
+    );
+
+    let invalid_size_ok = match tcp_set_send_buffer_size(client, 0) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let wrong_handle_ok = match tcp_set_nodelay(listener, true) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+
+    let close_ok = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    } + match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if nodelay_ok + keepalive_ok + send_buffer_ok + recv_buffer_ok + invalid_size_ok + wrong_handle_ok + close_ok == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_tcp_stream_exact_and_framed_reads_with_deadlines() {
     let src = r#"
 import std.io;

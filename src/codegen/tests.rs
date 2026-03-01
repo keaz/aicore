@@ -1709,6 +1709,30 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_set_nodelay(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_get_nodelay(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_set_keepalive(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_get_keepalive(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_set_send_buffer_size(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_get_send_buffer_size(i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_set_recv_buffer_size(i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_get_recv_buffer_size(i64, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_net_udp_recv_from(i64, i64, i64, i8**, i64*, i8**, i64*)"));
     assert!(output
         .llvm_ir
@@ -2076,6 +2100,14 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->value"));
     assert!(runtime_c_source().contains("atomic_fetch_sub_explicit(&slot->value"));
     assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_nodelay("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_nodelay("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_keepalive("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_keepalive("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_send_buffer_size("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_send_buffer_size("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_recv_buffer_size("));
+    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_recv_buffer_size("));
     assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
     assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_accept_submit("));

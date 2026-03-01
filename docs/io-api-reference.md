@@ -384,6 +384,14 @@ fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net 
 fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }
+fn tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }
+fn tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
 fn tcp_stream(handle: Int) -> TcpStream
 fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
@@ -393,6 +401,14 @@ fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int
 fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }
@@ -410,6 +426,10 @@ Notes:
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce a total write timeout budget.
 - `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is satisfied or the deadline expires.
 - `tcp_stream_recv_framed*` expects a 4-byte big-endian length prefix and enforces `max_frame_bytes`.
+- `tcp_set_nodelay` and `tcp_set_keepalive` toggle runtime socket flags and can be read back with `tcp_get_*`.
+- `tcp_set_send_buffer_size` and `tcp_set_recv_buffer_size` request kernel buffer sizes; read-back values may differ by platform/kernel.
+- Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
+- For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 
 ## `std.tls`
 

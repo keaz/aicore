@@ -418,6 +418,14 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_tcp_send_timeout(i64, i8*, i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_recv(i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_close(i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_nodelay(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_nodelay(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_keepalive(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_keepalive(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_send_buffer_size(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_send_buffer_size(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_recv_buffer_size(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_recv_buffer_size(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_udp_bind(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_udp_local_addr(i64, i8**, i64*)\n");
         text.push_str(

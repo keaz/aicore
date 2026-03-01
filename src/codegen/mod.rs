@@ -634,6 +634,70 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_nodelay_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_nodelay",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Bool"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_nodelay_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_nodelay",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_keepalive_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_keepalive",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Bool"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_keepalive_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_keepalive",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_send_buffer_size_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_send_buffer_size",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_send_buffer_size_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_send_buffer_size",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_recv_buffer_size_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_recv_buffer_size",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_recv_buffer_size_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_recv_buffer_size",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_net_udp_bind_intrinsic",
         runtime_symbol: "aic_rt_net_udp_bind",
         signatures: &[IntrinsicSignatureShape {
@@ -3305,6 +3369,14 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "tcp_send_timeout") => Some("aic_net_tcp_send_timeout_intrinsic"),
         ("net", "tcp_recv") => Some("aic_net_tcp_recv_intrinsic"),
         ("net", "tcp_close") => Some("aic_net_tcp_close_intrinsic"),
+        ("net", "tcp_set_nodelay") => Some("aic_net_tcp_set_nodelay_intrinsic"),
+        ("net", "tcp_get_nodelay") => Some("aic_net_tcp_get_nodelay_intrinsic"),
+        ("net", "tcp_set_keepalive") => Some("aic_net_tcp_set_keepalive_intrinsic"),
+        ("net", "tcp_get_keepalive") => Some("aic_net_tcp_get_keepalive_intrinsic"),
+        ("net", "tcp_set_send_buffer_size") => Some("aic_net_tcp_set_send_buffer_size_intrinsic"),
+        ("net", "tcp_get_send_buffer_size") => Some("aic_net_tcp_get_send_buffer_size_intrinsic"),
+        ("net", "tcp_set_recv_buffer_size") => Some("aic_net_tcp_set_recv_buffer_size_intrinsic"),
+        ("net", "tcp_get_recv_buffer_size") => Some("aic_net_tcp_get_recv_buffer_size_intrinsic"),
         ("net", "udp_bind") => Some("aic_net_udp_bind_intrinsic"),
         ("net", "udp_local_addr") => Some("aic_net_udp_local_addr_intrinsic"),
         ("net", "udp_send_to") => Some("aic_net_udp_send_to_intrinsic"),

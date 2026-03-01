@@ -964,6 +964,70 @@ long aic_rt_net_tcp_close(long handle) {
     return 7;
 }
 
+long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_nodelay", 2);
+    (void)handle;
+    (void)enabled;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_nodelay", 2);
+    (void)handle;
+    if (out_enabled != NULL) {
+        *out_enabled = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive", 2);
+    (void)handle;
+    (void)enabled;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive", 2);
+    (void)handle;
+    if (out_enabled != NULL) {
+        *out_enabled = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_send_buffer_size", 2);
+    (void)handle;
+    (void)size_bytes;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_send_buffer_size", 2);
+    (void)handle;
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_recv_buffer_size", 2);
+    (void)handle;
+    (void)size_bytes;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_recv_buffer_size", 2);
+    (void)handle;
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = 0;
+    }
+    return 7;
+}
+
 long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
     AIC_RT_SANDBOX_BLOCK_NET("udp_bind", 2);
     (void)addr_ptr;
@@ -3493,6 +3557,188 @@ long aic_rt_net_tcp_close(long handle) {
     int fd = slot->fd;
     aic_rt_net_reset_slot(slot);
     return aic_rt_net_close_fd(fd);
+}
+
+long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_nodelay", 2);
+    if (enabled != 0 && enabled != 1) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_NODELAY
+    int flag = (enabled != 0) ? 1 : 0;
+    if (setsockopt(slot->fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_nodelay", 2);
+    if (out_enabled != NULL) {
+        *out_enabled = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_NODELAY
+    int flag = 0;
+    socklen_t flag_len = (socklen_t)sizeof(flag);
+    if (getsockopt(slot->fd, IPPROTO_TCP, TCP_NODELAY, &flag, &flag_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_enabled != NULL) {
+        *out_enabled = (flag != 0) ? 1 : 0;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive", 2);
+    if (enabled != 0 && enabled != 1) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_KEEPALIVE
+    int flag = (enabled != 0) ? 1 : 0;
+    if (setsockopt(slot->fd, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive", 2);
+    if (out_enabled != NULL) {
+        *out_enabled = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_KEEPALIVE
+    int flag = 0;
+    socklen_t flag_len = (socklen_t)sizeof(flag);
+    if (getsockopt(slot->fd, SOL_SOCKET, SO_KEEPALIVE, &flag, &flag_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_enabled != NULL) {
+        *out_enabled = (flag != 0) ? 1 : 0;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_send_buffer_size", 2);
+    if (size_bytes <= 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_SNDBUF
+    int size = (int)size_bytes;
+    if ((long)size != size_bytes) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_send_buffer_size", 2);
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_SNDBUF
+    int size = 0;
+    socklen_t size_len = (socklen_t)sizeof(size);
+    if (getsockopt(slot->fd, SOL_SOCKET, SO_SNDBUF, &size, &size_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = (long)size;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_recv_buffer_size", 2);
+    if (size_bytes <= 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_RCVBUF
+    int size = (int)size_bytes;
+    if ((long)size != size_bytes) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_recv_buffer_size", 2);
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef SO_RCVBUF
+    int size = 0;
+    socklen_t size_len = (socklen_t)sizeof(size);
+    if (getsockopt(slot->fd, SOL_SOCKET, SO_RCVBUF, &size, &size_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_size_bytes != NULL) {
+        *out_size_bytes = (long)size;
+    }
+    return 0;
+#else
+    return 7;
+#endif
 }
 
 long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {

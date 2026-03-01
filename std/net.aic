@@ -180,6 +180,110 @@ intrinsic fn aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms:
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_close_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_set_nodelay_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_nodelay_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_nodelay_intrinsic(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_nodelay_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_nodelay_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_nodelay_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_set_keepalive_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_keepalive_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_keepalive_intrinsic(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_keepalive_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_keepalive_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_keepalive_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_set_send_buffer_size_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_send_buffer_size_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_send_buffer_size_intrinsic(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_send_buffer_size_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_send_buffer_size_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_send_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_set_recv_buffer_size_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_recv_buffer_size_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_recv_buffer_size_intrinsic(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_recv_buffer_size_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_recv_buffer_size_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_recv_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };
 /// `aic_net_udp_bind_intrinsic` in `std.net`.
 ///
 /// ## Example
@@ -710,6 +814,134 @@ fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
     tcp_close(stream.handle)
 }
 
+/// `tcp_stream_set_nodelay` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_set_nodelay` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net } {
+    tcp_set_nodelay(stream.handle, enabled)
+}
+
+/// `tcp_stream_get_nodelay` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_get_nodelay` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_get_nodelay(stream.handle)
+}
+
+/// `tcp_stream_set_keepalive` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_set_keepalive` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive(stream.handle, enabled)
+}
+
+/// `tcp_stream_get_keepalive` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_get_keepalive` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_get_keepalive(stream.handle)
+}
+
+/// `tcp_stream_set_send_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_set_send_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
+    tcp_set_send_buffer_size(stream.handle, size_bytes)
+}
+
+/// `tcp_stream_get_send_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_get_send_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net } {
+    tcp_get_send_buffer_size(stream.handle)
+}
+
+/// `tcp_stream_set_recv_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_set_recv_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
+    tcp_set_recv_buffer_size(stream.handle, size_bytes)
+}
+
+/// `tcp_stream_get_recv_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_get_recv_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net } {
+    tcp_get_recv_buffer_size(stream.handle)
+}
+
 /// `tcp_send` in `std.net`.
 ///
 /// ## Example
@@ -776,6 +1008,134 @@ fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetEr
 /// Returns module-defined error variants when the operation fails.
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
     aic_net_tcp_close_intrinsic(handle)
+}
+
+/// `tcp_set_nodelay` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_set_nodelay` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_nodelay_intrinsic(handle, enabled)
+}
+
+/// `tcp_get_nodelay` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_get_nodelay` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_get_nodelay_intrinsic(handle)
+}
+
+/// `tcp_set_keepalive` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_set_keepalive` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_keepalive_intrinsic(handle, enabled)
+}
+
+/// `tcp_get_keepalive` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_get_keepalive` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_get_keepalive_intrinsic(handle)
+}
+
+/// `tcp_set_send_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_set_send_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_send_buffer_size_intrinsic(handle, size_bytes)
+}
+
+/// `tcp_get_send_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_get_send_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_get_send_buffer_size_intrinsic(handle)
+}
+
+/// `tcp_set_recv_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_set_recv_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_recv_buffer_size_intrinsic(handle, size_bytes)
+}
+
+/// `tcp_get_recv_buffer_size` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_get_recv_buffer_size` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_get_recv_buffer_size_intrinsic(handle)
 }
 
 /// `udp_bind` in `std.net`.
