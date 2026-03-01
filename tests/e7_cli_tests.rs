@@ -1519,10 +1519,71 @@ fn explain_and_contract_commands_work() {
         .expect("run stable flags")
         .iter()
         .any(|flag| flag == "--profile-output"));
+    let debug_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "debug")
+        .expect("debug command contract");
+    assert!(debug_contract["stable_flags"]
+        .as_array()
+        .expect("debug stable flags")
+        .iter()
+        .any(|flag| flag == "subcommands:dap"));
+    assert!(debug_contract["stable_flags"]
+        .as_array()
+        .expect("debug stable flags")
+        .iter()
+        .any(|flag| flag == "dap --adapter"));
     for phase in ["parse", "ast", "check", "build", "fix"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
     }
+}
+
+#[test]
+fn debug_dap_reports_missing_backend_when_path_is_empty() {
+    let output = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .args(["debug", "dap"])
+        .current_dir(repo_root())
+        .env("PATH", "")
+        .env_remove("AIC_DEBUG_ADAPTER")
+        .output()
+        .expect("run aic debug dap with empty PATH");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unable to locate a debug adapter backend"),
+        "expected missing-backend guidance in stderr, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn debug_dap_accepts_explicit_adapter_path() {
+    let adapter = if PathBuf::from("/usr/bin/true").is_file() {
+        PathBuf::from("/usr/bin/true")
+    } else {
+        PathBuf::from("/bin/true")
+    };
+    if !adapter.is_file() {
+        return;
+    }
+
+    let adapter_arg = adapter.to_string_lossy().to_string();
+    let output = run_aic(&["debug", "dap", "--adapter", &adapter_arg]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

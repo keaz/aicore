@@ -1,0 +1,41 @@
+module vscode.doc_hover_completion_showcase;
+import std.io;
+
+/// Compute the canonical completion value for VSCode hover demos.
+/// Parameters:
+/// - `seed` initial integer value
+/// Returns: `seed + 1`
+/// Effects: io
+/// Example:
+/// ```
+/// let out = increment(41);
+/// print_int(out);
+/// ```
+fn increment(seed: Int) -> Int {
+    seed + 1
+}
+
+/// Demo status values surfaced via enum-variant completion docs.
+enum DemoStatus {
+    /// The operation completed successfully.
+    Ok,
+    /// The operation timed out while waiting for IO.
+    Timeout,
+}
+
+/// A descriptor used by completion and hover for struct docs.
+struct Endpoint {
+    port: Int,
+}
+
+/// Trait contract for endpoint providers.
+trait EndpointProvider {
+    /// Resolve the current endpoint.
+    fn resolve(port: Int) -> Endpoint;
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let next = increment(41);
+    print_int(next);
+    0
+}

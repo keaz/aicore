@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -318,6 +320,10 @@ enum Command {
         #[arg(long, conflicts_with = "ebnf", required_unless_present = "ebnf")]
         json: bool,
     },
+    Debug {
+        #[command(subcommand)]
+        command: DebugSubcommand,
+    },
     Release {
         #[command(subcommand)]
         command: ReleaseCommand,
@@ -403,6 +409,16 @@ enum DiagSubcommand {
         offline: bool,
         #[arg(long)]
         warn_unused: bool,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum DebugSubcommand {
+    Dap {
+        #[arg(long, value_name = "PATH")]
+        adapter: Option<PathBuf>,
+        #[arg(last = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 
@@ -1954,6 +1970,9 @@ fn run_cli() -> anyhow::Result<i32> {
             }
             EXIT_OK
         }
+        Command::Debug { command } => match command {
+            DebugSubcommand::Dap { adapter, args } => run_debug_dap(adapter, &args)?,
+        },
         Command::Contract {
             json,
             accept_versions,
@@ -2285,6 +2304,111 @@ fn run_cli() -> anyhow::Result<i32> {
     };
 
     Ok(exit)
+}
+
+fn run_debug_dap(adapter: Option<PathBuf>, args: &[String]) -> anyhow::Result<i32> {
+    let adapter_path = resolve_debug_adapter_executable(adapter.as_deref())?;
+    let mut command = ProcessCommand::new(&adapter_path);
+    command
+        .args(args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let status = command
+        .status()
+        .map_err(|err| anyhow::anyhow!("failed to start `{}`: {err}", adapter_path.display()))?;
+    Ok(status.code().unwrap_or(EXIT_INTERNAL_ERROR))
+}
+
+fn resolve_debug_adapter_executable(explicit: Option<&Path>) -> anyhow::Result<PathBuf> {
+    if let Some(path) = explicit {
+        if is_executable_file(path) {
+            return Ok(path.to_path_buf());
+        }
+        anyhow::bail!(
+            "debug adapter path is not executable: {}",
+            path.to_string_lossy()
+        );
+    }
+
+    if let Some(raw) = env::var_os("AIC_DEBUG_ADAPTER") {
+        let path = PathBuf::from(raw);
+        if is_executable_file(&path) {
+            return Ok(path);
+        }
+        anyhow::bail!(
+            "AIC_DEBUG_ADAPTER is set but not executable: {}",
+            path.to_string_lossy()
+        );
+    }
+
+    for candidate in ["lldb-dap", "lldb-vscode"] {
+        if let Some(path) = find_executable_on_path(candidate) {
+            return Ok(path);
+        }
+    }
+
+    anyhow::bail!(
+        "unable to locate a debug adapter backend. Install `lldb-dap` (or `lldb-vscode`) \
+and ensure it is on PATH, or pass `aic debug dap --adapter /path/to/lldb-dap`"
+    );
+}
+
+fn find_executable_on_path(command: &str) -> Option<PathBuf> {
+    let path_value = env::var_os("PATH")?;
+    let has_extension = Path::new(command).extension().is_some();
+    #[cfg(windows)]
+    let path_exts = env::var_os("PATHEXT")
+        .and_then(|raw| raw.into_string().ok())
+        .unwrap_or_else(|| ".EXE;.CMD;.BAT;.COM".to_string())
+        .split(';')
+        .filter_map(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_ascii_lowercase())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for dir in env::split_paths(&path_value) {
+        if cfg!(windows) && !has_extension {
+            #[cfg(windows)]
+            {
+                for ext in &path_exts {
+                    let candidate = dir.join(format!("{command}{ext}"));
+                    if is_executable_file(&candidate) {
+                        return Some(candidate);
+                    }
+                }
+            }
+        } else {
+            let candidate = dir.join(command);
+            if is_executable_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

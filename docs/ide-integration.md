@@ -22,10 +22,10 @@ For deterministic tooling artifacts:
 Implemented LSP capabilities:
 
 - diagnostics (`textDocument/publishDiagnostics`)
-- hover (`textDocument/hover`)
+- hover (`textDocument/hover`, including `///` markdown docs with fenced `aic` examples)
 - go-to-definition (`textDocument/definition`)
 - formatting (`textDocument/formatting`)
-- completion (`textDocument/completion`)
+- completion (`textDocument/completion`, including `///` summary + full docs)
 - rename (`textDocument/rename`)
 - code actions (`textDocument/codeAction`)
 - semantic tokens (`textDocument/semanticTokens/full`)
@@ -92,6 +92,18 @@ npm install
 npm run build
 ```
 
+Create debugger launch template (command palette):
+
+```text
+AICore: Create launch.json
+```
+
+Debugger runtime path:
+
+- VSCode extension starts DAP with `aic debug dap`.
+- `aic debug dap` resolves `lldb-dap`/`lldb-vscode` (or `--adapter <path>`).
+- For `.aic` launch targets, extension performs `aic build --debug-info` before launching.
+
 ## Neovim setup (`nvim-lspconfig`)
 
 ```lua
@@ -115,3 +127,5 @@ Use:
 
 - `examples/e7/lsp_project/` for hover/definition/formatting smoke
 - `examples/agent/lsp_workspace/` for completion/rename/semantic token/code-action workflow checks
+- `examples/vscode/doc_hover_completion_showcase.aic` for doc-aware hover/completion behavior
+- `examples/vscode/debugger_launch_demo.aic` for debugger launch/step variable inspection workflow

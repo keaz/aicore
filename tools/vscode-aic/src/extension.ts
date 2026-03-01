@@ -86,7 +86,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showInformationMessage('AICore language server restarted.');
   });
 
-  context.subscriptions.push(showOutput, restart);
+  const createLaunchJson = vscode.commands.registerCommand('aic.debug.createLaunchJson', async () => {
+    await createLaunchJsonTemplate();
+  });
+
+  const debugConfigProvider = new AicDebugConfigurationProvider();
+  const debugAdapterFactory = new AicDebugAdapterDescriptorFactory();
+  const debugConfigRegistration = vscode.debug.registerDebugConfigurationProvider(
+    'aic',
+    debugConfigProvider
+  );
+  const debugAdapterRegistration = vscode.debug.registerDebugAdapterDescriptorFactory(
+    'aic',
+    debugAdapterFactory
+  );
+
+  context.subscriptions.push(
+    showOutput,
+    restart,
+    createLaunchJson,
+    debugConfigRegistration,
+    debugAdapterRegistration
+  );
 }
 
 export async function deactivate(): Promise<void> {
@@ -566,6 +587,224 @@ function truncateErrorLensMessage(message: string, maxLength: number): string {
     return normalized.slice(0, maxLength);
   }
   return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+class AicDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+  provideDebugConfigurations(folder: vscode.WorkspaceFolder | undefined): vscode.DebugConfiguration[] {
+    return [defaultAicLaunchConfiguration(folder)];
+  }
+
+  async resolveDebugConfiguration(
+    folder: vscode.WorkspaceFolder | undefined,
+    config: vscode.DebugConfiguration
+  ): Promise<vscode.DebugConfiguration | undefined> {
+    const normalized = normalizeAicLaunchConfiguration(folder, config);
+    const aicCommand = resolveAicExecutableForDebug();
+    if (!aicCommand) {
+      void vscode.window.showErrorMessage(
+        'AICore debugger requires a valid "aic.server.path" executable. Set it to your aic binary.'
+      );
+      return undefined;
+    }
+
+    if (typeof normalized.program !== 'string' || normalized.program.trim().length === 0) {
+      void vscode.window.showErrorMessage(
+        'AICore debug configuration is missing "program". Use "AICore: Create launch.json".'
+      );
+      return undefined;
+    }
+
+    const programPath = resolvePathVariables(normalized.program, folder);
+    if (programPath.endsWith('.aic')) {
+      const builtProgram = buildAicDebugTarget(aicCommand, programPath, normalized.cwd, folder);
+      if (!builtProgram) {
+        return undefined;
+      }
+      normalized.program = builtProgram;
+      normalized.cwd = folder?.uri.fsPath ?? path.dirname(builtProgram);
+    } else {
+      normalized.program = programPath;
+      if (typeof normalized.cwd === 'string' && normalized.cwd.length > 0) {
+        normalized.cwd = resolvePathVariables(normalized.cwd, folder);
+      }
+    }
+
+    if (normalized.breakOnContractViolation === true) {
+      const current = Array.isArray(normalized.initCommands)
+        ? normalized.initCommands.map((value) => String(value))
+        : [];
+      if (!current.some((entry) => entry.includes('aic_rt_panic'))) {
+        current.push('breakpoint set --name aic_rt_panic');
+      }
+      normalized.initCommands = current;
+    }
+
+    return normalized;
+  }
+}
+
+class AicDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+  createDebugAdapterDescriptor(
+    _session: vscode.DebugSession,
+    _executable: vscode.DebugAdapterExecutable | undefined
+  ): vscode.DebugAdapterDescriptor | undefined {
+    const aicCommand = resolveAicExecutableForDebug();
+    if (!aicCommand) {
+      void vscode.window.showErrorMessage(
+        'AICore debugger could not resolve the aic executable. Update "aic.server.path".'
+      );
+      return undefined;
+    }
+
+    const config = vscode.workspace.getConfiguration('aic');
+    const adapterPath = config.get<string>('debug.adapterPath', '').trim();
+    const args = ['debug', 'dap'];
+    if (adapterPath.length > 0) {
+      args.push('--adapter', resolvePathVariables(adapterPath, vscode.workspace.workspaceFolders?.[0]));
+    }
+    return new vscode.DebugAdapterExecutable(aicCommand, args, { env: processEnvStrings() });
+  }
+}
+
+function defaultAicLaunchConfiguration(folder: vscode.WorkspaceFolder | undefined): vscode.DebugConfiguration {
+  const workspaceProgram = folder ? '${workspaceFolder}/src/main.aic' : 'src/main.aic';
+  return {
+    type: 'aic',
+    request: 'launch',
+    name: 'Debug AICore',
+    program: workspaceProgram,
+    args: [],
+    cwd: folder ? '${workspaceFolder}' : '${workspaceFolder}',
+    stopOnEntry: false,
+    breakOnContractViolation: false,
+  };
+}
+
+function normalizeAicLaunchConfiguration(
+  folder: vscode.WorkspaceFolder | undefined,
+  config: vscode.DebugConfiguration
+): vscode.DebugConfiguration {
+  const normalized = {
+    ...defaultAicLaunchConfiguration(folder),
+    ...config,
+  } as vscode.DebugConfiguration;
+  normalized.type = 'aic';
+  normalized.request = 'launch';
+  if (!Array.isArray(normalized.args)) {
+    normalized.args = [];
+  }
+  return normalized;
+}
+
+function resolveAicExecutableForDebug(): string | undefined {
+  const config = vscode.workspace.getConfiguration('aic');
+  const configured = config.get<string>('server.path', 'aic');
+  return resolveServerCommand(configured);
+}
+
+function resolvePathVariables(input: string, folder: vscode.WorkspaceFolder | undefined): string {
+  const workspacePath = folder?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  let value = expandHome(input);
+  if (workspacePath) {
+    value = value.replace(/\$\{workspaceFolder\}/g, workspacePath);
+  }
+  if (path.isAbsolute(value)) {
+    return value;
+  }
+  return path.resolve(workspacePath ?? process.cwd(), value);
+}
+
+function processEnvStrings(): { [key: string]: string } {
+  const out: { [key: string]: string } = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function buildAicDebugTarget(
+  aicCommand: string,
+  sourceProgram: string,
+  cwd: unknown,
+  folder: vscode.WorkspaceFolder | undefined
+): string | undefined {
+  const cwdValue =
+    typeof cwd === 'string' && cwd.trim().length > 0
+      ? resolvePathVariables(cwd, folder)
+      : folder?.uri.fsPath ?? path.dirname(sourceProgram);
+  const outDir = path.join(cwdValue, '.aic-cache', 'debug');
+  fs.mkdirSync(outDir, { recursive: true });
+  const outputName = `${path.parse(sourceProgram).name}${process.platform === 'win32' ? '.exe' : ''}`;
+  const outputPath = path.join(outDir, outputName);
+
+  const args = ['build', sourceProgram, '--debug-info', '-o', outputPath];
+  const result = spawnSync(aicCommand, args, {
+    cwd: cwdValue,
+    encoding: 'utf8',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    const stdout = (result.stdout ?? '').trim();
+    const stderr = (result.stderr ?? '').trim();
+    const details = [stdout, stderr].filter((value) => value.length > 0).join('\n');
+    logLine(
+      `Debug pre-launch build failed (${aicCommand} ${args.join(' ')}): ${details || 'unknown error'}`
+    );
+    void vscode.window.showErrorMessage(
+      `AICore debug build failed. ${details || 'See AICore language server output for details.'}`
+    );
+    return undefined;
+  }
+  logLine(`Debug pre-launch build completed: ${outputPath}`);
+  return outputPath;
+}
+
+async function createLaunchJsonTemplate(): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    void vscode.window.showErrorMessage('Open a workspace folder before creating launch.json.');
+    return;
+  }
+
+  const launchPath = path.join(folder.uri.fsPath, '.vscode', 'launch.json');
+  fs.mkdirSync(path.dirname(launchPath), { recursive: true });
+
+  const template = defaultAicLaunchConfiguration(folder);
+  let launchJson: { version: string; configurations: vscode.DebugConfiguration[] } = {
+    version: '0.2.0',
+    configurations: [],
+  };
+
+  if (fs.existsSync(launchPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(launchPath, 'utf8')) as {
+        version?: string;
+        configurations?: vscode.DebugConfiguration[];
+      };
+      launchJson = {
+        version: typeof parsed.version === 'string' ? parsed.version : '0.2.0',
+        configurations: Array.isArray(parsed.configurations) ? parsed.configurations : [],
+      };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      void vscode.window.showErrorMessage(`Unable to parse existing launch.json: ${detail}`);
+      return;
+    }
+  }
+
+  const exists = launchJson.configurations.some(
+    (entry) => entry.type === 'aic' && entry.name === 'Debug AICore'
+  );
+  if (!exists) {
+    launchJson.configurations.push(template);
+  }
+
+  fs.writeFileSync(launchPath, `${JSON.stringify(launchJson, null, 2)}${os.EOL}`, 'utf8');
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(launchPath));
+  await vscode.window.showTextDocument(doc);
+  void vscode.window.showInformationMessage('Created AICore debug launch configuration.');
 }
 
 function readServerVersion(command: string): string {

@@ -1,0 +1,19 @@
+module vscode.debugger_launch_demo;
+import std.io;
+
+fn add_step(value: Int) -> Int {
+    value + 1
+}
+
+fn compute(seed: Int) -> Int {
+    let first = add_step(seed);
+    let second = add_step(first);
+    second
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let x = 40;
+    let y = compute(x);
+    print_int(y);
+    0
+}

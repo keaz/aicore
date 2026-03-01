@@ -97,6 +97,40 @@ suite('AICore VSCode Extension Integration', () => {
     );
   });
 
+  test('hover provider returns markdown docs with aic code fences', async () => {
+    const hovers = await waitFor(
+      'hover response',
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.Hover[]>(
+          'vscode.executeHoverProvider',
+          mainUri,
+          new vscode.Position(7, 17)
+        );
+        if (!result || result.length === 0) {
+          return undefined;
+        }
+        return result;
+      },
+      20_000
+    );
+
+    const hoverText = hovers
+      .flatMap((hover) => hover.contents)
+      .map((content) => {
+        if (content instanceof vscode.MarkdownString) {
+          return content.value;
+        }
+        if (typeof content === 'string') {
+          return content;
+        }
+        const marked = content as { value?: string };
+        return typeof marked.value === 'string' ? marked.value : '';
+      })
+      .join('\n');
+    assert.ok(hoverText.includes('mockComplete'));
+    assert.ok(hoverText.includes('```aic'));
+  });
+
   test('diagnostics appear for invalid code', async () => {
     const invalidDocument = await vscode.workspace.openTextDocument(invalidUri);
     await vscode.window.showTextDocument(invalidDocument);
@@ -143,6 +177,69 @@ suite('AICore VSCode Extension Integration', () => {
       labels.includes('mockComplete'),
       `expected completion list after restart to include mockComplete, got [${labels.join(', ')}]`
     );
+  });
+
+  test('debugger contribution and launch command are registered', async () => {
+    const packageJson = extension.packageJSON as {
+      contributes?: {
+        debuggers?: Array<{ type?: string }>;
+        commands?: Array<{ command?: string }>;
+      };
+    };
+    const debuggerTypes = (packageJson.contributes?.debuggers ?? []).map((entry) => entry.type);
+    assert.ok(
+      debuggerTypes.includes('aic'),
+      `expected contributes.debuggers to include aic, got [${debuggerTypes.join(', ')}]`
+    );
+
+    const commandIds = (packageJson.contributes?.commands ?? []).map((entry) => entry.command);
+    assert.ok(
+      commandIds.includes('aic.debug.createLaunchJson'),
+      'expected aic.debug.createLaunchJson command contribution to be present'
+    );
+  });
+
+  test('Create launch.json command writes default AICore debug config', async () => {
+    const launchDir = path.join(workspaceRoot, '.vscode');
+    const launchPath = path.join(launchDir, 'launch.json');
+    if (fs.existsSync(launchPath)) {
+      fs.unlinkSync(launchPath);
+    }
+    if (fs.existsSync(launchDir) && fs.readdirSync(launchDir).length === 0) {
+      fs.rmdirSync(launchDir);
+    }
+
+    await vscode.commands.executeCommand('aic.debug.createLaunchJson');
+
+    const launchJson = await waitFor(
+      'launch.json generation',
+      async () => {
+        if (!fs.existsSync(launchPath)) {
+          return undefined;
+        }
+        const raw = fs.readFileSync(launchPath, 'utf8');
+        const parsed = JSON.parse(raw) as {
+          version?: string;
+          configurations?: Array<Record<string, unknown>>;
+        };
+        if (!Array.isArray(parsed.configurations) || parsed.configurations.length === 0) {
+          return undefined;
+        }
+        return parsed;
+      },
+      20_000
+    );
+
+    assert.equal(launchJson.version, '0.2.0');
+    const config = (launchJson.configurations ?? []).find(
+      (entry) =>
+        entry.type === 'aic' &&
+        entry.request === 'launch' &&
+        entry.name === 'Debug AICore'
+    );
+    assert.ok(config, 'expected launch.json to include Debug AICore configuration');
+    assert.equal(config?.program, '${workspaceFolder}/src/main.aic');
+    assert.deepEqual(config?.args, []);
   });
 
   test('TextMate grammar keeps keyword rules for AICore syntax highlighting', async () => {

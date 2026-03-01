@@ -82,3 +82,26 @@ Notes:
 - Confirm build used `--debug-info` (without it, symbol/line mapping is reduced).
 - Keep the source tree at the same paths used during build so debugger source lookup works.
 - Use a deterministic output path (`-o target/debug/<name>`) so repeated sessions reuse symbols.
+
+## 5. DAP bridge for editors
+
+AICore exposes a DAP bridge command:
+
+```bash
+aic debug dap
+```
+
+Backend resolution order:
+
+1. `--adapter <path>`
+2. `AIC_DEBUG_ADAPTER`
+3. `lldb-dap` on `PATH`
+4. `lldb-vscode` on `PATH`
+
+For VSCode, use `tools/vscode-aic` and run the command palette action:
+
+```text
+AICore: Create launch.json
+```
+
+The extension launches `aic debug dap` and auto-builds `.aic` entry files with `--debug-info`.

@@ -40,6 +40,8 @@ struct SymbolDecl {
     name: String,
     kind: String,
     signature: String,
+    doc_summary: Option<String>,
+    doc_markdown: Option<String>,
     module: Option<String>,
     file: PathBuf,
     span: Span,
@@ -499,12 +501,20 @@ impl LspServer {
         let Some(decls) = declarations.get(&symbol) else {
             return Ok(Value::Null);
         };
-        let first = &decls[0];
+        let first = pick_hover_decl_for_path(decls, &path);
+        let mut markdown = format!("```aic\n{}\n```", first.signature);
+        if let Some(doc) = &first.doc_markdown {
+            markdown.push_str("\n\n---\n\n");
+            markdown.push_str(doc);
+        } else {
+            markdown.push_str("\n\n");
+            markdown.push_str(&first.kind);
+        }
 
         Ok(json!({
             "contents": {
                 "kind": "markdown",
-                "value": format!("`{}`\n\n{}", first.signature, first.kind)
+                "value": markdown
             }
         }))
     }
@@ -992,12 +1002,23 @@ impl LspServer {
         let mut items = Vec::new();
         for (name, decls) in declarations {
             let first = &decls[0];
+            let detail = if let Some(summary) = &first.doc_summary {
+                format!("{} - {}", first.signature, summary)
+            } else {
+                first.signature.clone()
+            };
             let mut item = json!({
                 "label": name,
                 "kind": completion_kind(&first.kind),
-                "detail": first.signature,
+                "detail": detail,
                 "sortText": format!("1-{}", first.name)
             });
+            if let Some(doc) = &first.doc_markdown {
+                item["documentation"] = json!({
+                    "kind": "markdown",
+                    "value": doc
+                });
+            }
             if let Some(edit) = completion_import_edit_for_decls(&decls, &import_context) {
                 item["additionalTextEdits"] = json!([edit]);
             }
@@ -1869,49 +1890,134 @@ fn build_symbol_index(entry_path: &Path) -> anyhow::Result<BTreeMap<String, Vec<
         let module_name = program.module.as_ref().map(|module| module.path.join("."));
 
         for item in program.items {
-            let decl = match item {
-                ast::Item::Function(func) => SymbolDecl {
-                    name: func.name.clone(),
-                    kind: "function".to_string(),
-                    signature: render_function_signature(&func),
-                    module: module_name.clone(),
-                    file: file.clone(),
-                    span: func.span,
-                },
-                ast::Item::Struct(strukt) => SymbolDecl {
-                    name: strukt.name.clone(),
-                    kind: "struct".to_string(),
-                    signature: render_struct_signature(&strukt),
-                    module: module_name.clone(),
-                    file: file.clone(),
-                    span: strukt.span,
-                },
-                ast::Item::Enum(enm) => SymbolDecl {
-                    name: enm.name.clone(),
-                    kind: "enum".to_string(),
-                    signature: render_enum_signature(&enm),
-                    module: module_name.clone(),
-                    file: file.clone(),
-                    span: enm.span,
-                },
-                ast::Item::Trait(trait_def) => SymbolDecl {
-                    name: trait_def.name.clone(),
-                    kind: "trait".to_string(),
-                    signature: render_trait_signature(&trait_def),
-                    module: module_name.clone(),
-                    file: file.clone(),
-                    span: trait_def.span,
-                },
-                ast::Item::Impl(impl_def) => SymbolDecl {
-                    name: impl_def.trait_name.clone(),
-                    kind: "impl".to_string(),
-                    signature: render_impl_signature(&impl_def),
-                    module: module_name.clone(),
-                    file: file.clone(),
-                    span: impl_def.span,
-                },
+            match item {
+                ast::Item::Function(func) => {
+                    let (doc_summary, doc_markdown) =
+                        symbol_docs_for_offset(&source, func.span.start);
+                    let decl = SymbolDecl {
+                        name: func.name.clone(),
+                        kind: "function".to_string(),
+                        signature: render_function_signature(&func),
+                        doc_summary,
+                        doc_markdown,
+                        module: module_name.clone(),
+                        file: file.clone(),
+                        span: func.span,
+                    };
+                    map.entry(decl.name.clone()).or_default().push(decl);
+                }
+                ast::Item::Struct(strukt) => {
+                    let (doc_summary, doc_markdown) =
+                        symbol_docs_for_offset(&source, strukt.span.start);
+                    let decl = SymbolDecl {
+                        name: strukt.name.clone(),
+                        kind: "struct".to_string(),
+                        signature: render_struct_signature(&strukt),
+                        doc_summary,
+                        doc_markdown,
+                        module: module_name.clone(),
+                        file: file.clone(),
+                        span: strukt.span,
+                    };
+                    map.entry(decl.name.clone()).or_default().push(decl);
+                }
+                ast::Item::Enum(enm) => {
+                    let (doc_summary, doc_markdown) =
+                        symbol_docs_for_offset(&source, enm.span.start);
+                    let decl = SymbolDecl {
+                        name: enm.name.clone(),
+                        kind: "enum".to_string(),
+                        signature: render_enum_signature(&enm),
+                        doc_summary,
+                        doc_markdown,
+                        module: module_name.clone(),
+                        file: file.clone(),
+                        span: enm.span,
+                    };
+                    map.entry(decl.name.clone()).or_default().push(decl);
+                    for variant in &enm.variants {
+                        let (doc_summary, doc_markdown) =
+                            symbol_docs_for_offset(&source, variant.span.start);
+                        let variant_decl = SymbolDecl {
+                            name: variant.name.clone(),
+                            kind: "enumVariant".to_string(),
+                            signature: render_enum_variant_signature(&enm.name, variant),
+                            doc_summary,
+                            doc_markdown,
+                            module: module_name.clone(),
+                            file: file.clone(),
+                            span: variant.span,
+                        };
+                        map.entry(variant_decl.name.clone())
+                            .or_default()
+                            .push(variant_decl);
+                    }
+                }
+                ast::Item::Trait(trait_def) => {
+                    let (doc_summary, doc_markdown) =
+                        symbol_docs_for_offset(&source, trait_def.span.start);
+                    let decl = SymbolDecl {
+                        name: trait_def.name.clone(),
+                        kind: "trait".to_string(),
+                        signature: render_trait_signature(&trait_def),
+                        doc_summary,
+                        doc_markdown,
+                        module: module_name.clone(),
+                        file: file.clone(),
+                        span: trait_def.span,
+                    };
+                    map.entry(decl.name.clone()).or_default().push(decl);
+                    for method in &trait_def.methods {
+                        let (doc_summary, doc_markdown) =
+                            symbol_docs_for_offset(&source, method.span.start);
+                        let method_decl = SymbolDecl {
+                            name: method.name.clone(),
+                            kind: "function".to_string(),
+                            signature: render_function_signature(method),
+                            doc_summary,
+                            doc_markdown,
+                            module: module_name.clone(),
+                            file: file.clone(),
+                            span: method.span,
+                        };
+                        map.entry(method_decl.name.clone())
+                            .or_default()
+                            .push(method_decl);
+                    }
+                }
+                ast::Item::Impl(impl_def) => {
+                    let (doc_summary, doc_markdown) =
+                        symbol_docs_for_offset(&source, impl_def.span.start);
+                    let decl = SymbolDecl {
+                        name: impl_def.trait_name.clone(),
+                        kind: "impl".to_string(),
+                        signature: render_impl_signature(&impl_def),
+                        doc_summary,
+                        doc_markdown,
+                        module: module_name.clone(),
+                        file: file.clone(),
+                        span: impl_def.span,
+                    };
+                    map.entry(decl.name.clone()).or_default().push(decl);
+                    for method in &impl_def.methods {
+                        let (doc_summary, doc_markdown) =
+                            symbol_docs_for_offset(&source, method.span.start);
+                        let method_decl = SymbolDecl {
+                            name: method.name.clone(),
+                            kind: "function".to_string(),
+                            signature: render_function_signature(method),
+                            doc_summary,
+                            doc_markdown,
+                            module: module_name.clone(),
+                            file: file.clone(),
+                            span: method.span,
+                        };
+                        map.entry(method_decl.name.clone())
+                            .or_default()
+                            .push(method_decl);
+                    }
+                }
             };
-            map.entry(decl.name.clone()).or_default().push(decl);
         }
 
         for decl in extract_text_symbol_decls(&source, &file, module_name.clone()) {
@@ -2955,10 +3061,13 @@ fn extract_text_symbol_decls(
                 .collect::<String>();
             if !name.is_empty() {
                 let start = offset + leading + "module ".len();
+                let (doc_summary, doc_markdown) = symbol_docs_for_offset(source, start);
                 decls.push(SymbolDecl {
                     name: name.clone(),
                     kind: "module".to_string(),
                     signature: format!("module {}", name),
+                    doc_summary,
+                    doc_markdown,
                     module: module_name.clone(),
                     file: file.to_path_buf(),
                     span: Span::new(start, start + name.len()),
@@ -2973,10 +3082,13 @@ fn extract_text_symbol_decls(
                 .collect::<String>();
             if !name.is_empty() {
                 let start = offset + leading + "const ".len();
+                let (doc_summary, doc_markdown) = symbol_docs_for_offset(source, start);
                 decls.push(SymbolDecl {
                     name: name.clone(),
                     kind: "constant".to_string(),
                     signature: format!("const {}", name),
+                    doc_summary,
+                    doc_markdown,
                     module: module_name.clone(),
                     file: file.to_path_buf(),
                     span: Span::new(start, start + name.len()),
@@ -3671,6 +3783,19 @@ fn render_enum_signature(enm: &ast::EnumDef) -> String {
     format!("enum {}{} {{ {} }}", enm.name, generics, variants)
 }
 
+fn render_enum_variant_signature(enum_name: &str, variant: &ast::VariantDef) -> String {
+    if let Some(payload) = &variant.payload {
+        format!(
+            "{}::{}({})",
+            enum_name,
+            variant.name,
+            render_type_expr(payload)
+        )
+    } else {
+        format!("{}::{}", enum_name, variant.name)
+    }
+}
+
 fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
     let generics = render_generic_params(&trait_def.generics, "<", ">");
     if trait_def.methods.is_empty() {
@@ -3758,12 +3883,189 @@ fn render_type_expr(ty: &ast::TypeExpr) -> String {
     }
 }
 
+fn symbol_docs_for_offset(source: &str, decl_offset: usize) -> (Option<String>, Option<String>) {
+    let Some(lines) = extract_doc_comment_lines_above(source, decl_offset) else {
+        return (None, None);
+    };
+    let summary = doc_summary_from_lines(&lines);
+    let markdown = doc_markdown_from_lines(&lines);
+    (summary, markdown)
+}
+
+fn extract_doc_comment_lines_above(source: &str, decl_offset: usize) -> Option<Vec<String>> {
+    let line_index = offset_to_line_char(source, decl_offset).0;
+    let lines = source.lines().collect::<Vec<_>>();
+    if line_index == 0 || lines.is_empty() {
+        return None;
+    }
+    let mut cursor = line_index.min(lines.len()) as isize - 1;
+    let mut docs_rev = Vec::new();
+    let mut collecting = false;
+
+    while cursor >= 0 {
+        let raw = lines[cursor as usize];
+        let trimmed_start = raw.trim_start();
+        let trimmed = trimmed_start.trim();
+
+        if trimmed_start.starts_with("///") {
+            let content = trimmed_start
+                .strip_prefix("///")
+                .unwrap_or_default()
+                .strip_prefix(' ')
+                .unwrap_or_else(|| trimmed_start.strip_prefix("///").unwrap_or_default())
+                .to_string();
+            docs_rev.push(content);
+            collecting = true;
+            cursor -= 1;
+            continue;
+        }
+
+        if !collecting && trimmed.starts_with("#[") {
+            cursor -= 1;
+            continue;
+        }
+        if collecting && trimmed.starts_with("#[") {
+            cursor -= 1;
+            continue;
+        }
+
+        break;
+    }
+
+    if docs_rev.is_empty() {
+        return None;
+    }
+    docs_rev.reverse();
+    Some(docs_rev)
+}
+
+fn doc_summary_from_lines(lines: &[String]) -> Option<String> {
+    let mut in_code = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("```") {
+            in_code = !in_code;
+            continue;
+        }
+        if in_code {
+            continue;
+        }
+        if is_doc_section_heading(trimmed) {
+            continue;
+        }
+        return Some(trimmed.to_string());
+    }
+    None
+}
+
+fn doc_markdown_from_lines(lines: &[String]) -> Option<String> {
+    let mut rendered = Vec::new();
+    let mut in_code = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            if !in_code {
+                let lang = trimmed.trim_start_matches('`').trim();
+                if lang.is_empty() {
+                    rendered.push("```aic".to_string());
+                } else {
+                    rendered.push(trimmed.to_string());
+                }
+                in_code = true;
+            } else {
+                rendered.push("```".to_string());
+                in_code = false;
+            }
+            continue;
+        }
+
+        if in_code {
+            rendered.push(line.to_string());
+            continue;
+        }
+
+        rendered.push(format_doc_section_line(line));
+    }
+
+    let markdown = rendered.join("\n").trim().to_string();
+    if markdown.is_empty() {
+        None
+    } else {
+        Some(markdown)
+    }
+}
+
+fn format_doc_section_line(line: &str) -> String {
+    let trimmed = line.trim();
+    if let Some((prefix, tail)) = trimmed.split_once(':') {
+        let normalized = prefix.trim().to_ascii_lowercase();
+        let title = match normalized.as_str() {
+            "parameters" => Some("Parameters"),
+            "returns" => Some("Returns"),
+            "effects" => Some("Effects"),
+            "errors" => Some("Errors"),
+            "example" | "examples" => Some("Example"),
+            _ => None,
+        };
+        if let Some(title) = title {
+            let rest = tail.trim();
+            if rest.is_empty() {
+                return format!("**{title}:**");
+            }
+            if normalized == "effects" && !rest.contains('`') {
+                let rendered = rest
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                    .map(|part| format!("`{part}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !rendered.is_empty() {
+                    return format!("**{title}:** {rendered}");
+                }
+            }
+            return format!("**{title}:** {rest}");
+        }
+    }
+    line.to_string()
+}
+
+fn is_doc_section_heading(line: &str) -> bool {
+    let Some((prefix, _)) = line.split_once(':') else {
+        return false;
+    };
+    matches!(
+        prefix.trim().to_ascii_lowercase().as_str(),
+        "parameters" | "returns" | "effects" | "errors" | "example" | "examples"
+    )
+}
+
+fn pick_hover_decl_for_path<'a>(decls: &'a [SymbolDecl], active_path: &Path) -> &'a SymbolDecl {
+    if decls.len() <= 1 {
+        return &decls[0];
+    }
+    let canonical_active =
+        fs::canonicalize(active_path).unwrap_or_else(|_| active_path.to_path_buf());
+    for decl in decls {
+        let canonical_decl = fs::canonicalize(&decl.file).unwrap_or_else(|_| decl.file.clone());
+        if canonical_decl == canonical_active {
+            return decl;
+        }
+    }
+    &decls[0]
+}
+
 fn symbol_kind(kind: &str) -> i32 {
     match kind {
         "module" => 2,
         "function" => 12,
         "struct" => 23,
         "enum" => 10,
+        "enumVariant" => 22,
         "trait" => 11,
         "impl" => 5,
         "constant" => 14,
@@ -3892,6 +4194,7 @@ fn completion_kind(kind: &str) -> i32 {
         "function" => 3,
         "struct" => 22,
         "enum" => 13,
+        "enumVariant" => 20,
         "trait" => 8,
         "impl" => 9,
         _ => 1,
@@ -4465,6 +4768,218 @@ fn tcp_connect() -> Int {
         assert!(
             tcp_connect.get("additionalTextEdits").is_none(),
             "completion should not add import edit when module is already imported"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn hover_and_completion_include_doc_comments_for_symbols() {
+        let workspace = temp_workspace("hover_completion_docs");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+        let main_path = src_dir.join("main.aic");
+        let main_source = r#"module sample.docs;
+
+/// Connect to a TCP server at the given address.
+/// Parameters:
+/// - `addr` host and port
+/// - `timeout_ms` connection timeout in milliseconds
+/// Returns: Socket file descriptor on success
+/// Effects: net
+/// Errors:
+/// - `Timeout` connection timed out
+/// Example:
+/// ```
+/// let socket = tcp_connect("localhost:5432", 250);
+/// ```
+fn tcp_connect(addr: String, timeout_ms: Int) -> Int effects { net } {
+    let timeout_copy = timeout_ms;
+    let addr_copy = addr;
+    timeout_copy;
+    addr_copy;
+    0
+}
+
+/// Error variants for outbound connectivity.
+enum ConnectError {
+    /// Timeout while waiting for server response.
+    Timeout,
+    /// Connection refused by remote peer.
+    Refused,
+}
+
+/// A network endpoint record.
+struct Endpoint {
+    host: String,
+}
+
+/// Connector behavior contract.
+trait Connector {
+    /// Open a transport channel.
+    fn open(addr: String) -> Int;
+}
+
+fn main() -> Int {
+    let _fd = tcp_connect("localhost:5432", 500);
+    let state = Timeout;
+    match state {
+        Timeout => 1,
+        Refused => 0,
+    }
+}
+"#;
+        fs::write(&main_path, main_source).expect("write main source");
+
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+        let tcp_call_offset = main_source
+            .find("tcp_connect(\"localhost:5432\", 500)")
+            .expect("tcp call offset");
+        let (tcp_call_line, tcp_call_char) = offset_to_line_char(main_source, tcp_call_offset + 2);
+        let timeout_usage_offset = main_source
+            .find("let state = Timeout;")
+            .expect("timeout usage");
+        let timeout_symbol_offset = timeout_usage_offset + "let state = ".len() + 2;
+        let (timeout_line, timeout_char) = offset_to_line_char(main_source, timeout_symbol_offset);
+
+        let mut server = LspServer::default();
+        let _ = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+
+        let hover_fn_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/hover",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": tcp_call_line, "character": tcp_call_char }
+                }
+            }))
+            .expect("hover function response");
+        let hover_fn_value = hover_fn_response[0]["result"]["contents"]["value"]
+            .as_str()
+            .expect("hover markdown value");
+        assert!(
+            hover_fn_value.contains("```aic\nfn tcp_connect"),
+            "hover should include fenced signature block"
+        );
+        assert!(
+            hover_fn_value.contains("**Effects:** `net`"),
+            "hover should render effects section"
+        );
+        assert!(
+            hover_fn_value
+                .contains("```aic\nlet socket = tcp_connect(\"localhost:5432\", 250);\n```"),
+            "hover should rewrite doc examples as fenced aic code blocks"
+        );
+
+        let hover_variant_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "textDocument/hover",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": timeout_line, "character": timeout_char }
+                }
+            }))
+            .expect("hover enum variant response");
+        let hover_variant_value = hover_variant_response[0]["result"]["contents"]["value"]
+            .as_str()
+            .expect("variant hover markdown value");
+        assert!(
+            hover_variant_value.contains("ConnectError::Timeout"),
+            "hover should include enum variant signature"
+        );
+        assert!(
+            hover_variant_value.contains("Timeout while waiting for server response."),
+            "hover should include enum variant docs"
+        );
+
+        let completion_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": tcp_call_line, "character": tcp_call_char }
+                }
+            }))
+            .expect("completion response");
+        let items = completion_response[0]["result"]
+            .as_array()
+            .expect("completion item array");
+
+        let tcp_connect_item = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("tcp_connect"))
+            .expect("tcp_connect completion item");
+        let tcp_detail = tcp_connect_item["detail"]
+            .as_str()
+            .expect("tcp_connect detail string");
+        assert!(
+            tcp_detail.contains("Connect to a TCP server at the given address."),
+            "completion detail should include doc summary"
+        );
+        assert_eq!(
+            tcp_connect_item["documentation"]["kind"],
+            json!("markdown"),
+            "completion documentation should be markdown markup content"
+        );
+        let tcp_doc_value = tcp_connect_item["documentation"]["value"]
+            .as_str()
+            .expect("tcp_connect completion documentation value");
+        assert!(
+            tcp_doc_value.contains("**Parameters:**"),
+            "completion docs should preserve section formatting"
+        );
+
+        let timeout_item = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("Timeout"))
+            .expect("Timeout completion item");
+        assert_eq!(timeout_item["kind"], json!(20));
+        assert!(
+            timeout_item["detail"]
+                .as_str()
+                .expect("Timeout detail")
+                .contains("Timeout while waiting for server response."),
+            "enum variant completion should include doc summary"
+        );
+
+        let endpoint_item = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("Endpoint"))
+            .expect("Endpoint completion item");
+        assert!(
+            endpoint_item["detail"]
+                .as_str()
+                .expect("Endpoint detail")
+                .contains("A network endpoint record."),
+            "struct completion should include doc summary"
+        );
+
+        let connector_item = items
+            .iter()
+            .find(|item| item["label"].as_str() == Some("Connector"))
+            .expect("Connector completion item");
+        assert!(
+            connector_item["detail"]
+                .as_str()
+                .expect("Connector detail")
+                .contains("Connector behavior contract."),
+            "trait completion should include doc summary"
         );
 
         let _ = fs::remove_dir_all(workspace);

@@ -49,6 +49,7 @@ Published parse/check/build/fix schemas:
 - `aic std-compat`
 - `aic diff`
 - `aic lsp`
+- `aic debug` (`dap`)
 - `aic daemon`
 - `aic test`
 - `aic contract`
@@ -83,6 +84,10 @@ Stable `build` flags include:
 - `-O<LEVEL>` shorthand (for example `-O2`)
 - `--verify-hash <sha256>`
 - `--manifest <path>` (defaults to `build.json` for single-target builds)
+
+Stable `debug` flags include:
+
+- `dap --adapter <path>` (override debug adapter backend; defaults to `lldb-dap`/`lldb-vscode` lookup)
 
 Stable `test` flags include:
 

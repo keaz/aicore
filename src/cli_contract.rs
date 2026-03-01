@@ -194,6 +194,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["json-rpc"],
     },
     CommandContract {
+        name: "debug",
+        description: "Run Debug Adapter Protocol bridge (`aic debug dap`)",
+        stable_flags: &["subcommands:dap", "dap --adapter"],
+        output_modes: &["dap-stdio"],
+    },
+    CommandContract {
         name: "daemon",
         description: "Run deterministic incremental check/build daemon on stdio",
         stable_flags: &[],

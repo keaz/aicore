@@ -10,6 +10,7 @@ type CompletionItem = {
   label: string;
   kind: number;
   detail?: string;
+  documentation?: { kind: 'markdown'; value: string };
 };
 
 const documents = new Map<string, string>();
@@ -79,6 +80,7 @@ function handleMessage(message: LspMessage): void {
       sendResponse(message.id, {
         capabilities: {
           textDocumentSync: 1,
+          hoverProvider: true,
           completionProvider: {
             resolveProvider: false,
             triggerCharacters: ['.', ':'],
@@ -120,7 +122,23 @@ function handleMessage(message: LspMessage): void {
     case 'textDocument/completion': {
       const items: CompletionItem[] = [
         { label: 'fn', kind: 14, detail: 'keyword' },
-        { label: 'mockComplete', kind: 3, detail: 'mock symbol' },
+        {
+          label: 'mockComplete',
+          kind: 3,
+          detail: 'fn mockComplete() -> Int - Mock completion from test server.',
+          documentation: {
+            kind: 'markdown',
+            value: [
+              'Mock completion docs.',
+              '',
+              '```aic',
+              'fn mockComplete() -> Int {',
+              '    42',
+              '}',
+              '```',
+            ].join('\n'),
+          },
+        },
       ];
       sendResponse(message.id, {
         isIncomplete: false,
@@ -128,6 +146,25 @@ function handleMessage(message: LspMessage): void {
       });
       return;
     }
+    case 'textDocument/hover':
+      sendResponse(message.id, {
+        contents: {
+          kind: 'markdown',
+          value: [
+            '```aic',
+            'fn mockComplete() -> Int',
+            '```',
+            '',
+            'Mock hover docs from fixture server.',
+            '',
+            '**Example:**',
+            '```aic',
+            'let value = mockComplete();',
+            '```',
+          ].join('\n'),
+        },
+      });
+      return;
     case 'shutdown':
       sendResponse(message.id, null);
       return;

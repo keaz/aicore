@@ -515,6 +515,11 @@ Diagnostics:
   - `textDocument/hover`, `textDocument/definition`, `textDocument/formatting`
   - `textDocument/completion`, `textDocument/rename`
   - `textDocument/codeAction`, `textDocument/semanticTokens/full`
+- Doc comment pipeline (`[DOC-T2]`):
+  - symbol indexing extracts contiguous `///` blocks above declarations
+  - hover renders fenced `aic` signatures and markdown docs
+  - completion emits summary in `detail` and full markdown in `documentation`
+  - coverage includes functions, structs, enums, traits, and enum variants
 - Diagnostics parity:
   - LSP diagnostics are built from frontend diagnostics and filtered by file.
 - Autofix integration:
@@ -525,6 +530,20 @@ Diagnostics:
 - Sample workspace:
   - `examples/e7/lsp_project/`
   - `examples/agent/lsp_workspace/`
+  - `examples/vscode/doc_hover_completion_showcase.aic`
+
+### Debug adapter bridge (VSCODE-T9)
+
+- CLI bridge command: `aic debug dap`
+  - resolves backend in order: `--adapter`, `AIC_DEBUG_ADAPTER`, `lldb-dap`, `lldb-vscode`
+  - forwards stdio directly to backend for DAP launch/step/breakpoint/variables/stack operations
+- VSCode extension integration:
+  - debug type contribution: `aic`
+  - command: `aic.debug.createLaunchJson`
+  - launch resolution auto-builds `.aic` targets with `aic build --debug-info`
+  - optional `breakOnContractViolation` injects startup breakpoint at `aic_rt_panic`
+- Example:
+  - `examples/vscode/debugger_launch_demo.aic`
 
 ### Built-in fixture harness (E7-T5)
 

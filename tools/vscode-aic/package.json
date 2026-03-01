@@ -33,7 +33,10 @@
   "activationEvents": [
     "onLanguage:aic",
     "onCommand:aic.showLanguageServerOutput",
-    "onCommand:aic.restartLanguageServer"
+    "onCommand:aic.restartLanguageServer",
+    "onCommand:aic.debug.createLaunchJson",
+    "onDebugInitialConfigurations",
+    "onDebugResolve:aic"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -105,6 +108,67 @@
       {
         "command": "aic.restartLanguageServer",
         "title": "AICore: Restart Language Server"
+      },
+      {
+        "command": "aic.debug.createLaunchJson",
+        "title": "AICore: Create launch.json"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "aic",
+        "label": "AICore",
+        "languages": [
+          "aic"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to an AICore source (.aic) or already-built debug executable."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "Arguments passed to the debug target."
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${workspaceFolder}",
+                "description": "Working directory for the debug session."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": false,
+                "description": "Stop immediately at program entry."
+              },
+              "breakOnContractViolation": {
+                "type": "boolean",
+                "default": false,
+                "description": "Insert an initial breakpoint at AICore runtime panic handler."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "aic",
+            "request": "launch",
+            "name": "Debug AICore",
+            "program": "${workspaceFolder}/src/main.aic",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "breakOnContractViolation": false
+          }
+        ]
       }
     ],
     "configuration": {
@@ -134,6 +198,11 @@
           ],
           "default": "off",
           "description": "Trace level for AICore language server"
+        },
+        "aic.debug.adapterPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to a DAP backend binary (lldb-dap/lldb-vscode) used by `aic debug dap`."
         },
         "aic.errorLens.enabled": {
           "type": "boolean",
