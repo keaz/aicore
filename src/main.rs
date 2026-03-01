@@ -65,6 +65,7 @@ use aicore::std_policy::{
 };
 use aicore::telemetry;
 use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode, ReplayMetadata};
+use aicore::toolchain::install_std;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,10 @@ enum Command {
     Init {
         #[arg(default_value = ".")]
         path: PathBuf,
+    },
+    Setup {
+        #[arg(long, value_name = "PATH")]
+        std_root: Option<PathBuf>,
     },
     Check {
         #[arg(default_value = "src/main.aic")]
@@ -924,6 +929,14 @@ fn run_cli() -> anyhow::Result<i32> {
         Command::Init { path } => {
             init_project(&path)?;
             println!("initialized AICore project at {}", path.display());
+            EXIT_OK
+        }
+        Command::Setup { std_root } => {
+            let installed = install_std(std_root.as_deref())?;
+            println!(
+                "installed AICore standard library at {}",
+                installed.display()
+            );
             EXIT_OK
         }
         Command::Check {

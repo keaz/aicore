@@ -7,6 +7,7 @@ use crate::diagnostics::Diagnostic;
 use crate::package_workflow::{resolve_dependency_context, PackageOptions};
 use crate::parser;
 use crate::span::Span;
+use crate::toolchain;
 
 #[derive(Debug, Clone)]
 pub struct PackageLoadResult {
@@ -379,12 +380,7 @@ impl Loader {
     }
 
     fn std_roots(&self) -> Vec<PathBuf> {
-        let mut roots = vec![self.project_root.join("std")];
-        let builtin_std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std");
-        if !roots.iter().any(|r| r == &builtin_std) {
-            roots.push(builtin_std);
-        }
-        roots
+        toolchain::std_import_roots(&self.project_root)
     }
 
     fn ensure_parsed(&mut self, file: &Path) -> anyhow::Result<()> {

@@ -42,5 +42,6 @@ pub mod suggest_contracts;
 pub mod suggest_effects;
 pub mod telemetry;
 pub mod test_harness;
+pub mod toolchain;
 pub mod typecheck;
 pub mod unused_analysis;

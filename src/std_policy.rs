@@ -207,7 +207,7 @@ pub fn compare_snapshots(current: &StdApiSnapshot, baseline: &StdApiSnapshot) ->
 }
 
 pub fn default_std_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std")
+    crate::toolchain::default_std_root_for_tools()
 }
 
 fn collect_std_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> {

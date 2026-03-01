@@ -35,6 +35,12 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text"],
     },
     CommandContract {
+        name: "setup",
+        description: "Install AICore standard library into global toolchain location",
+        stable_flags: &["--std-root"],
+        output_modes: &["text"],
+    },
+    CommandContract {
         name: "check",
         description: "Type/effect/contracts checks without compilation",
         stable_flags: &["--json", "--sarif", "--offline", "--warn-unused"],

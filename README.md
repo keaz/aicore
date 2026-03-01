@@ -29,6 +29,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
 - [How AICore Addresses Large-Project Agent Challenges](#how-aicore-addresses-large-project-agent-challenges)
 - [Status](#status)
 - [Getting Started](#getting-started)
+  - [Local Machine Setup Guide](#local-machine-setup-guide)
   - [Prerequisites](#prerequisites)
   - [Build](#build)
   - [Hello World](#hello-world)
@@ -516,6 +517,12 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 
 ## Getting Started
 
+### Local Machine Setup Guide
+
+For full local installation and verification steps, see:
+
+- `docs/local-machine-setup.md`
+
 ### Prerequisites
 
 - **Rust** (stable) — compiler is written in Rust
@@ -528,6 +535,18 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 ```bash
 cargo build
 ```
+
+### Toolchain Setup
+
+Install the standard library into the global AIC toolchain location (default: `~/.aic/toolchains/<aic-version>/std`):
+
+```bash
+cargo run -- setup
+```
+
+Overrides:
+- `AIC_STD_ROOT`: use an explicit std install directory.
+- `AIC_HOME`: change the default base directory used for global toolchains.
 
 ### Hello World
 
@@ -561,7 +580,8 @@ cargo run -- build hello.aic -o hello
 ## CLI Reference
 
 ```bash
-aic init <project>          # Initialize a new project
+aic init <project>          # Initialize a new project (no local std copy)
+aic setup [--std-root <p>]  # Install std into global toolchain location
 aic check <file> [--json]   # Type/effect check with structured diagnostics
 aic fmt <file>              # Deterministic formatting from IR
 aic build <file> -o <out>   # Compile to native binary via LLVM
