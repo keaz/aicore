@@ -2127,6 +2127,21 @@ typedef struct {
 #endif
 } AicProcSlot;
 static AicProcSlot aic_rt_proc_table[AIC_RT_PROC_TABLE_CAP];
+static long aic_rt_proc_table_limit = AIC_RT_PROC_TABLE_CAP;
+static pthread_once_t aic_rt_proc_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_proc_limits_init(void) {
+    aic_rt_proc_table_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_PROC_HANDLES",
+        AIC_RT_PROC_TABLE_CAP,
+        1,
+        AIC_RT_PROC_TABLE_CAP
+    );
+}
+
+static void aic_rt_proc_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_proc_limits_once, aic_rt_proc_limits_init);
+}
 
 long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_cap, long* out_handle) {
     (void)command_cap;
@@ -2143,6 +2158,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
     free(command);
     return 4;
 #else
+    aic_rt_proc_limits_ensure();
     pid_t pid = fork();
     if (pid < 0) {
         long mapped = aic_rt_proc_map_errno(errno);
@@ -2156,7 +2172,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
     free(command);
 
     long slot = -1;
-    for (long i = 0; i < AIC_RT_PROC_TABLE_CAP; ++i) {
+    for (long i = 0; i < aic_rt_proc_table_limit; ++i) {
         if (!aic_rt_proc_table[i].active) {
             slot = i;
             break;
@@ -2185,7 +2201,8 @@ long aic_rt_proc_wait(long handle, long* out_status) {
     (void)handle;
     return 5;
 #else
-    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
     long slot = handle - 1;
@@ -2214,7 +2231,8 @@ long aic_rt_proc_is_running(long handle, long* out_running) {
     (void)handle;
     return 5;
 #else
-    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
     long slot = handle - 1;
@@ -2274,7 +2292,8 @@ long aic_rt_proc_kill(long handle) {
     (void)handle;
     return 5;
 #else
-    if (handle <= 0 || handle > AIC_RT_PROC_TABLE_CAP) {
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
     long slot = handle - 1;
@@ -3154,6 +3173,35 @@ static AicConcThreadLocalSlot aic_rt_conc_tls[AIC_RT_CONC_TL_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
+static long aic_rt_conc_task_limit = AIC_RT_CONC_TASK_CAP;
+static long aic_rt_conc_channel_limit = AIC_RT_CONC_CHANNEL_CAP;
+static long aic_rt_conc_mutex_limit = AIC_RT_CONC_MUTEX_CAP;
+static pthread_once_t aic_rt_conc_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_conc_limits_init(void) {
+    aic_rt_conc_task_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_CONC_TASKS",
+        AIC_RT_CONC_TASK_CAP,
+        1,
+        AIC_RT_CONC_TASK_CAP
+    );
+    aic_rt_conc_channel_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_CONC_CHANNELS",
+        AIC_RT_CONC_CHANNEL_CAP,
+        1,
+        AIC_RT_CONC_CHANNEL_CAP
+    );
+    aic_rt_conc_mutex_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_CONC_MUTEXES",
+        AIC_RT_CONC_MUTEX_CAP,
+        1,
+        AIC_RT_CONC_MUTEX_CAP
+    );
+}
+
+static void aic_rt_conc_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_conc_limits_once, aic_rt_conc_limits_init);
+}
 
 static long aic_rt_conc_map_errno(int err) {
     switch (err) {
@@ -3288,7 +3336,8 @@ static int aic_rt_conc_scope_is_active(long scope_id) {
 }
 
 static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
-    if (handle <= 0 || handle > AIC_RT_CONC_TASK_CAP) {
+    aic_rt_conc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_conc_task_limit) {
         return NULL;
     }
     AicConcTaskSlot* slot = &aic_rt_conc_tasks[handle - 1];
@@ -3299,7 +3348,8 @@ static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
 }
 
 static AicConcChannelSlot* aic_rt_conc_get_channel(long handle) {
-    if (handle <= 0 || handle > AIC_RT_CONC_CHANNEL_CAP) {
+    aic_rt_conc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_conc_channel_limit) {
         return NULL;
     }
     AicConcChannelSlot* slot = &aic_rt_conc_channels[handle - 1];
@@ -3310,7 +3360,8 @@ static AicConcChannelSlot* aic_rt_conc_get_channel(long handle) {
 }
 
 static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
-    if (handle <= 0 || handle > AIC_RT_CONC_MUTEX_CAP) {
+    aic_rt_conc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_conc_mutex_limit) {
         return NULL;
     }
     AicConcMutexSlot* slot = &aic_rt_conc_mutexes[handle - 1];
@@ -3527,7 +3578,8 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
         slot_index = *(long*)raw_slot;
     }
     free(raw_slot);
-    if (slot_index < 0 || slot_index >= AIC_RT_CONC_TASK_CAP) {
+    aic_rt_conc_limits_ensure();
+    if (slot_index < 0 || slot_index >= aic_rt_conc_task_limit) {
         return NULL;
     }
     AicConcTaskSlot* slot = &aic_rt_conc_tasks[slot_index];
@@ -3612,6 +3664,7 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
 }
 
 static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_id, long* out_handle) {
+    aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -3622,7 +3675,7 @@ static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_i
         return 3;
     }
     long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
         if (!aic_rt_conc_tasks[i].active) {
             slot_index = i;
             break;
@@ -3682,6 +3735,7 @@ static long aic_rt_conc_spawn_fn_with_scope(
     long name_len,
     long* out_handle
 ) {
+    aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -3696,7 +3750,7 @@ static long aic_rt_conc_spawn_fn_with_scope(
     }
 
     long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
         if (!aic_rt_conc_tasks[i].active) {
             slot_index = i;
             break;
@@ -3918,12 +3972,13 @@ long aic_rt_conc_cancel(long handle, long* out_cancelled) {
 }
 
 long aic_rt_conc_scope_join_all(long scope_id) {
+    aic_rt_conc_limits_ensure();
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         return 4;
     }
     long handles[AIC_RT_CONC_TASK_CAP];
     long handle_count = 0;
-    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
         AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
         if (!slot->active || slot->scope_id != scope_id) {
             continue;
@@ -3943,11 +3998,12 @@ long aic_rt_conc_scope_join_all(long scope_id) {
 }
 
 long aic_rt_conc_scope_cancel(long scope_id) {
+    aic_rt_conc_limits_ensure();
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         return 4;
     }
     aic_rt_conc_scope_cancel_internal(scope_id);
-    for (long i = 0; i < AIC_RT_CONC_TASK_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
         AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
         if (!slot->active || slot->scope_id != scope_id) {
             continue;
@@ -4169,6 +4225,7 @@ long aic_rt_conc_select_first(
 }
 
 long aic_rt_conc_channel_int(long capacity, long* out_handle) {
+    aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -4177,7 +4234,7 @@ long aic_rt_conc_channel_int(long capacity, long* out_handle) {
     }
 
     long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_CHANNEL_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_channel_limit; ++i) {
         if (!aic_rt_conc_channels[i].active) {
             slot_index = i;
             break;
@@ -4478,12 +4535,13 @@ long aic_rt_conc_close_channel(long handle) {
 }
 
 long aic_rt_conc_mutex_int(long initial, long* out_handle) {
+    aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
 
     long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_MUTEX_CAP; ++i) {
+    for (long i = 0; i < aic_rt_conc_mutex_limit; ++i) {
         if (!aic_rt_conc_mutexes[i].active) {
             slot_index = i;
             break;

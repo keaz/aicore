@@ -2181,6 +2181,25 @@ static int aic_rt_env_parse_long(const char* name, long* out_value) {
     return 1;
 }
 
+static long aic_rt_env_parse_bounded_long(
+    const char* name,
+    long fallback,
+    long min_value,
+    long max_value
+) {
+    if (min_value <= 0 || max_value < min_value) {
+        return fallback;
+    }
+    long parsed = 0;
+    if (!aic_rt_env_parse_long(name, &parsed)) {
+        return fallback;
+    }
+    if (parsed < min_value || parsed > max_value) {
+        return fallback;
+    }
+    return parsed;
+}
+
 long aic_rt_time_now_ms(void) {
     if (!aic_rt_sandbox_allow_time()) {
         (void)aic_rt_sandbox_violation("time", "now_ms", 5);
@@ -4044,9 +4063,25 @@ typedef struct {
     FILE* file;
 } AicFsFileSlot;
 static AicFsFileSlot aic_rt_fs_file_table[AIC_RT_FS_FILE_TABLE_CAP];
+static long aic_rt_fs_file_table_limit = AIC_RT_FS_FILE_TABLE_CAP;
+static pthread_once_t aic_rt_fs_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_fs_limits_init(void) {
+    aic_rt_fs_file_table_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_FS_FILES",
+        AIC_RT_FS_FILE_TABLE_CAP,
+        1,
+        AIC_RT_FS_FILE_TABLE_CAP
+    );
+}
+
+static void aic_rt_fs_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_fs_limits_once, aic_rt_fs_limits_init);
+}
 
 static AicFsFileSlot* aic_rt_fs_file_slot(long handle) {
-    if (handle <= 0 || handle > AIC_RT_FS_FILE_TABLE_CAP) {
+    aic_rt_fs_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_fs_file_table_limit) {
         return NULL;
     }
     AicFsFileSlot* slot = &aic_rt_fs_file_table[handle - 1];
@@ -4063,7 +4098,8 @@ static long aic_rt_fs_store_file_handle(FILE* file, long* out_handle) {
     if (file == NULL) {
         return 5;
     }
-    for (long i = 0; i < AIC_RT_FS_FILE_TABLE_CAP; ++i) {
+    aic_rt_fs_limits_ensure();
+    for (long i = 0; i < aic_rt_fs_file_table_limit; ++i) {
         if (!aic_rt_fs_file_table[i].in_use) {
             aic_rt_fs_file_table[i].in_use = 1;
             aic_rt_fs_file_table[i].file = file;

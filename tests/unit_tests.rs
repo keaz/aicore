@@ -7558,3 +7558,54 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         "std/net.aic async wait intrinsic must remain declaration-only"
     );
 }
+
+#[test]
+fn unit_runtime_handle_limits_are_env_configurable_and_documented() {
+    let rt_part01 = fs::read_to_string("src/codegen/runtime/part01.c")
+        .expect("read src/codegen/runtime/part01.c");
+    let rt_part03 = fs::read_to_string("src/codegen/runtime/part03.c")
+        .expect("read src/codegen/runtime/part03.c");
+    let rt_part04 = fs::read_to_string("src/codegen/runtime/part04.c")
+        .expect("read src/codegen/runtime/part04.c");
+
+    for key in ["AIC_RT_LIMIT_FS_FILES"] {
+        assert!(
+            rt_part01.contains(key),
+            "runtime fs layer must expose {key} env override"
+        );
+    }
+    for key in [
+        "AIC_RT_LIMIT_PROC_HANDLES",
+        "AIC_RT_LIMIT_CONC_TASKS",
+        "AIC_RT_LIMIT_CONC_CHANNELS",
+        "AIC_RT_LIMIT_CONC_MUTEXES",
+    ] {
+        assert!(
+            rt_part03.contains(key),
+            "runtime proc/concurrency layer must expose {key} env override"
+        );
+    }
+    for key in [
+        "AIC_RT_LIMIT_NET_HANDLES",
+        "AIC_RT_LIMIT_NET_ASYNC_OPS",
+        "AIC_RT_LIMIT_NET_ASYNC_QUEUE",
+        "AIC_RT_LIMIT_TLS_HANDLES",
+        "AIC_RT_LIMIT_TLS_ASYNC_OPS",
+    ] {
+        assert!(
+            rt_part04.contains(key),
+            "runtime net/tls layer must expose {key} env override"
+        );
+    }
+
+    let io_api_doc =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    assert!(
+        io_api_doc.contains("Runtime handle limits are configurable at process start"),
+        "io api reference must document runtime handle-limit configuration"
+    );
+    assert!(
+        io_api_doc.contains("Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS`"),
+        "io api reference must include capacity planning guidance for async runtime limits"
+    );
+}

@@ -455,6 +455,15 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 Notes:
 
 - Network-handle table capacity is bounded (`128` runtime slots).
+- Runtime handle limits are configurable at process start (invalid/out-of-range values fall back to defaults):
+  - `AIC_RT_LIMIT_FS_FILES` (default/max: `1024`)
+  - `AIC_RT_LIMIT_PROC_HANDLES` (default/max: `64`)
+  - `AIC_RT_LIMIT_NET_HANDLES` (default/max: `128`)
+  - `AIC_RT_LIMIT_NET_ASYNC_OPS` (default/max: `512`)
+  - `AIC_RT_LIMIT_NET_ASYNC_QUEUE` (default/max: `64`)
+  - `AIC_RT_LIMIT_TLS_HANDLES` (default/max: `128`)
+  - `AIC_RT_LIMIT_TLS_ASYNC_OPS` (default/max: `256`)
+  - `AIC_RT_LIMIT_CONC_TASKS` / `AIC_RT_LIMIT_CONC_CHANNELS` / `AIC_RT_LIMIT_CONC_MUTEXES` (default/max: `128` each)
 - `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
 - `async_cancel_*` keeps peer-close distinct by surfacing `NetError::Cancelled` on cancelled waits.
 - On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
@@ -468,6 +477,7 @@ Notes:
   - `async_poll_*` maps pending state to `Ok(None())` via zero-timeout waits.
   - `async_wait_any_*` returns the winning operation index and payload/value.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
+- Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process and size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions.
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
 

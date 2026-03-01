@@ -1645,6 +1645,21 @@ typedef struct {
 } AicNetSlot;
 
 static AicNetSlot aic_rt_net_table[AIC_RT_NET_TABLE_CAP];
+static long aic_rt_net_table_limit = AIC_RT_NET_TABLE_CAP;
+static pthread_once_t aic_rt_net_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_net_limits_init(void) {
+    aic_rt_net_table_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_NET_HANDLES",
+        AIC_RT_NET_TABLE_CAP,
+        1,
+        AIC_RT_NET_TABLE_CAP
+    );
+}
+
+static void aic_rt_net_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_net_limits_once, aic_rt_net_limits_init);
+}
 
 static void aic_rt_net_reset_slot(AicNetSlot* slot) {
     if (slot == NULL) {
@@ -1663,7 +1678,8 @@ static long aic_rt_net_close_fd(int fd) {
 }
 
 static AicNetSlot* aic_rt_net_get_slot(long handle) {
-    if (handle <= 0 || handle > AIC_RT_NET_TABLE_CAP) {
+    aic_rt_net_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return NULL;
     }
     AicNetSlot* slot = &aic_rt_net_table[handle - 1];
@@ -1677,7 +1693,8 @@ static long aic_rt_net_alloc_handle(int fd, int kind, long* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
-    for (long i = 0; i < AIC_RT_NET_TABLE_CAP; ++i) {
+    aic_rt_net_limits_ensure();
+    for (long i = 0; i < aic_rt_net_table_limit; ++i) {
         if (!aic_rt_net_table[i].active) {
             aic_rt_net_table[i].active = 1;
             aic_rt_net_table[i].fd = fd;
@@ -1937,6 +1954,31 @@ static int aic_rt_net_async_shutdown_requested = 0;
 static int aic_rt_net_async_worker_joinable = 0;
 static int aic_rt_net_async_nonblock_refs[AIC_RT_NET_TABLE_CAP];
 static int aic_rt_net_async_nonblock_prev_flags[AIC_RT_NET_TABLE_CAP];
+static long aic_rt_net_async_op_limit = AIC_RT_NET_ASYNC_OP_CAP;
+static long aic_rt_net_async_queue_limit = AIC_RT_NET_ASYNC_QUEUE_CAP;
+static long aic_rt_net_async_watcher_limit = AIC_RT_NET_TABLE_CAP;
+static pthread_once_t aic_rt_net_async_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_net_async_limits_init(void) {
+    aic_rt_net_limits_ensure();
+    aic_rt_net_async_op_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_NET_ASYNC_OPS",
+        AIC_RT_NET_ASYNC_OP_CAP,
+        1,
+        AIC_RT_NET_ASYNC_OP_CAP
+    );
+    aic_rt_net_async_queue_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_NET_ASYNC_QUEUE",
+        AIC_RT_NET_ASYNC_QUEUE_CAP,
+        1,
+        AIC_RT_NET_ASYNC_QUEUE_CAP
+    );
+    aic_rt_net_async_watcher_limit = aic_rt_net_table_limit;
+}
+
+static void aic_rt_net_async_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_net_async_limits_once, aic_rt_net_async_limits_init);
+}
 
 static void aic_rt_net_async_reset_op(AicNetAsyncOp* op) {
     if (op == NULL) {
@@ -2025,7 +2067,8 @@ static long aic_rt_net_async_deadline_for_timeout(long timeout_ms) {
 }
 
 static long aic_rt_net_async_enable_nonblocking_for_handle(long handle) {
-    if (handle <= 0 || handle > AIC_RT_NET_TABLE_CAP) {
+    aic_rt_net_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return 6;
     }
     long idx = handle - 1;
@@ -2050,7 +2093,8 @@ static long aic_rt_net_async_enable_nonblocking_for_handle(long handle) {
 }
 
 static void aic_rt_net_async_release_nonblocking_for_handle(long handle) {
-    if (handle <= 0 || handle > AIC_RT_NET_TABLE_CAP) {
+    aic_rt_net_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return;
     }
     long idx = handle - 1;
@@ -2075,7 +2119,7 @@ static void aic_rt_net_async_complete_op(
     char* out_ptr,
     long out_len
 ) {
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         if (out_ptr != NULL) {
             free(out_ptr);
         }
@@ -2117,7 +2161,7 @@ static void aic_rt_net_async_complete_op(
 }
 
 static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long* active_len) {
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2196,7 +2240,7 @@ static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long*
     op->nonblocking_held = 1;
     pthread_mutex_unlock(&op->mutex);
 
-    if (*active_len >= AIC_RT_NET_ASYNC_OP_CAP) {
+    if (*active_len >= aic_rt_net_async_op_limit) {
         aic_rt_net_async_complete_op(op_handle, 4, 0, NULL, 0);
         return;
     }
@@ -2213,7 +2257,7 @@ static void aic_rt_net_async_build_watchers(
     *watcher_len = 0;
     for (long i = 0; i < active_len; ++i) {
         long op_handle = active_ops[i];
-        if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+        if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
             continue;
         }
         AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2243,7 +2287,7 @@ static void aic_rt_net_async_build_watchers(
             watchers[found].events |= events;
             continue;
         }
-        if (*watcher_len >= AIC_RT_NET_ASYNC_WATCHER_CAP) {
+        if (*watcher_len >= aic_rt_net_async_watcher_limit) {
             continue;
         }
         watchers[*watcher_len].fd = fd;
@@ -2296,7 +2340,7 @@ static int aic_rt_net_async_reactor_wait(
             if (setup_ok) {
                 struct epoll_event ready_events[AIC_RT_NET_ASYNC_WATCHER_CAP];
                 int ready_n =
-                    epoll_wait(epfd, ready_events, AIC_RT_NET_ASYNC_WATCHER_CAP, (int)timeout_ms);
+                    epoll_wait(epfd, ready_events, (int)aic_rt_net_async_watcher_limit, (int)timeout_ms);
                 if (ready_n < 0) {
                     if (errno == EINTR) {
                         ready_n = 0;
@@ -2375,7 +2419,7 @@ static int aic_rt_net_async_reactor_wait(
                 changes,
                 change_n,
                 ready_events,
-                AIC_RT_NET_ASYNC_WATCHER_CAP * 2,
+                (int)(aic_rt_net_async_watcher_limit * 2),
                 timeout_ptr
             );
             if (ready_n < 0) {
@@ -2444,7 +2488,7 @@ static int aic_rt_net_async_reactor_wait(
 }
 
 static int aic_rt_net_async_op_matches_fd(long op_handle, int fd) {
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 0;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2461,7 +2505,7 @@ static int aic_rt_net_async_op_matches_fd(long op_handle, int fd) {
 }
 
 static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 1;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2597,7 +2641,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
 }
 
 static int aic_rt_net_async_handle_timeout(long op_handle, long now_ms) {
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 1;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2624,7 +2668,7 @@ static long aic_rt_net_async_compute_wait_timeout(const long* active_ops, long a
     long best = -1;
     for (long i = 0; i < active_len; ++i) {
         long op_handle = active_ops[i];
-        if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+        if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
             continue;
         }
         AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -2659,6 +2703,7 @@ static long aic_rt_net_async_compute_wait_timeout(const long* active_ops, long a
 
 static void* aic_rt_net_async_worker_main(void* raw) {
     (void)raw;
+    aic_rt_net_async_limits_ensure();
     long active_ops[AIC_RT_NET_ASYNC_OP_CAP];
     long active_len = 0;
     AicNetAsyncWatcher watchers[AIC_RT_NET_ASYNC_WATCHER_CAP];
@@ -2682,7 +2727,7 @@ static void* aic_rt_net_async_worker_main(void* raw) {
             if (aic_rt_net_async_queue_len > 0) {
                 queued_op = aic_rt_net_async_queue[aic_rt_net_async_queue_head];
                 aic_rt_net_async_queue_head =
-                    (aic_rt_net_async_queue_head + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+                    (aic_rt_net_async_queue_head + 1) % aic_rt_net_async_queue_limit;
                 aic_rt_net_async_queue_len -= 1;
                 pthread_cond_signal(&aic_rt_net_async_queue_not_full);
             } else if (active_len == 0 && aic_rt_net_async_shutdown_requested) {
@@ -2709,7 +2754,7 @@ static void* aic_rt_net_async_worker_main(void* raw) {
             if (aic_rt_net_async_queue_len > 0) {
                 queued_op = aic_rt_net_async_queue[aic_rt_net_async_queue_head];
                 aic_rt_net_async_queue_head =
-                    (aic_rt_net_async_queue_head + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+                    (aic_rt_net_async_queue_head + 1) % aic_rt_net_async_queue_limit;
                 aic_rt_net_async_queue_len -= 1;
                 pthread_cond_signal(&aic_rt_net_async_queue_not_full);
             }
@@ -2794,7 +2839,8 @@ static int aic_rt_net_async_ensure_worker_locked(void) {
 }
 
 static long aic_rt_net_async_alloc_slot_locked(void) {
-    for (long i = 0; i < AIC_RT_NET_ASYNC_OP_CAP; ++i) {
+    aic_rt_net_async_limits_ensure();
+    for (long i = 0; i < aic_rt_net_async_op_limit; ++i) {
         if (!aic_rt_net_async_ops[i].active) {
             AicNetAsyncOp* op = &aic_rt_net_async_ops[i];
             if (!op->initialized) {
@@ -2815,6 +2861,7 @@ static long aic_rt_net_async_alloc_slot_locked(void) {
 
 long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op) {
     AIC_RT_SANDBOX_BLOCK_NET("async_accept_submit", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_op != NULL) {
         *out_op = 0;
     }
@@ -2834,7 +2881,7 @@ long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
     }
-    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+    if (aic_rt_net_async_queue_len >= aic_rt_net_async_queue_limit) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
@@ -2853,7 +2900,7 @@ long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op
     long op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
-        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+        (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
     aic_rt_net_async_queue_len += 1;
     pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
     pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
@@ -2873,6 +2920,7 @@ long aic_rt_net_async_send_submit(
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("async_send_submit", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_op != NULL) {
         *out_op = 0;
     }
@@ -2892,7 +2940,7 @@ long aic_rt_net_async_send_submit(
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
     }
-    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+    if (aic_rt_net_async_queue_len >= aic_rt_net_async_queue_limit) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
@@ -2917,7 +2965,7 @@ long aic_rt_net_async_send_submit(
     long op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
-        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+        (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
     aic_rt_net_async_queue_len += 1;
     pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
     pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
@@ -2930,6 +2978,7 @@ long aic_rt_net_async_send_submit(
 
 long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, long* out_op) {
     AIC_RT_SANDBOX_BLOCK_NET("async_recv_submit", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_op != NULL) {
         *out_op = 0;
     }
@@ -2949,7 +2998,7 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
     }
-    if (aic_rt_net_async_queue_len >= AIC_RT_NET_ASYNC_QUEUE_CAP) {
+    if (aic_rt_net_async_queue_len >= aic_rt_net_async_queue_limit) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
@@ -2969,7 +3018,7 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
     long op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
-        (aic_rt_net_async_queue_tail + 1) % AIC_RT_NET_ASYNC_QUEUE_CAP;
+        (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
     aic_rt_net_async_queue_len += 1;
     pthread_cond_signal(&aic_rt_net_async_queue_not_empty);
     pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
@@ -2982,10 +3031,11 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
 
 long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("async_wait_int", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_value != NULL) {
         *out_value = 0;
     }
-    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 6;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -3047,13 +3097,14 @@ long aic_rt_net_async_wait_string(
     long* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("async_wait_string", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 6;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -3122,10 +3173,11 @@ long aic_rt_net_async_wait_string(
 
 long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
     AIC_RT_SANDBOX_BLOCK_NET("async_cancel", 2);
+    aic_rt_net_async_limits_ensure();
     if (out_cancelled != NULL) {
         *out_cancelled = 0;
     }
-    if (op_handle <= 0 || op_handle > AIC_RT_NET_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 6;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
@@ -3172,6 +3224,7 @@ long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
 
 long aic_rt_net_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
+    aic_rt_net_async_limits_ensure();
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
     if (lock_rc != 0) {
         return aic_rt_net_map_errno(lock_rc);
@@ -4240,10 +4293,32 @@ typedef struct {
 static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
 static AicTlsAsyncOp aic_rt_tls_async_ops[AIC_RT_TLS_ASYNC_OP_CAP];
 static pthread_mutex_t aic_rt_tls_async_ops_mutex = PTHREAD_MUTEX_INITIALIZER;
+static long aic_rt_tls_table_limit = AIC_RT_TLS_TABLE_CAP;
+static long aic_rt_tls_async_op_limit = AIC_RT_TLS_ASYNC_OP_CAP;
+static pthread_once_t aic_rt_tls_limits_once = PTHREAD_ONCE_INIT;
 #if AIC_RT_TLS_OPENSSL
 static int aic_rt_tls_initialized = 0;
 static int aic_rt_tls_warned_insecure = 0;
 #endif
+
+static void aic_rt_tls_limits_init(void) {
+    aic_rt_tls_table_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_TLS_HANDLES",
+        AIC_RT_TLS_TABLE_CAP,
+        1,
+        AIC_RT_TLS_TABLE_CAP
+    );
+    aic_rt_tls_async_op_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_TLS_ASYNC_OPS",
+        AIC_RT_TLS_ASYNC_OP_CAP,
+        1,
+        AIC_RT_TLS_ASYNC_OP_CAP
+    );
+}
+
+static void aic_rt_tls_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_tls_limits_once, aic_rt_tls_limits_init);
+}
 
 static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
     if (slot == NULL) {
@@ -4259,7 +4334,8 @@ static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
 }
 
 static AicTlsSlot* aic_rt_tls_get_slot(long handle) {
-    if (handle <= 0 || handle > AIC_RT_TLS_TABLE_CAP) {
+    aic_rt_tls_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_tls_table_limit) {
         return NULL;
     }
     AicTlsSlot* slot = &aic_rt_tls_table[handle - 1];
@@ -4278,10 +4354,11 @@ static long aic_rt_tls_alloc_slot(
     long consumed_net_handle,
     long* out_tls_handle
 ) {
+    aic_rt_tls_limits_ensure();
     if (out_tls_handle != NULL) {
         *out_tls_handle = 0;
     }
-    for (long i = 0; i < AIC_RT_TLS_TABLE_CAP; ++i) {
+    for (long i = 0; i < aic_rt_tls_table_limit; ++i) {
         AicTlsSlot* slot = &aic_rt_tls_table[i];
         if (!slot->active) {
             slot->active = 1;
@@ -4379,7 +4456,7 @@ static void aic_rt_tls_async_complete_op(
     char* out_ptr,
     long out_len
 ) {
-    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         if (out_ptr != NULL) {
             free(out_ptr);
         }
@@ -4408,7 +4485,7 @@ static void aic_rt_tls_async_complete_op(
 
 static void* aic_rt_tls_async_worker_main(void* raw) {
     long op_handle = (long)(intptr_t)raw;
-    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return NULL;
     }
     AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
@@ -4464,7 +4541,8 @@ static void* aic_rt_tls_async_worker_main(void* raw) {
 }
 
 static long aic_rt_tls_async_alloc_slot_locked(void) {
-    for (long i = 0; i < AIC_RT_TLS_ASYNC_OP_CAP; ++i) {
+    aic_rt_tls_limits_ensure();
+    for (long i = 0; i < aic_rt_tls_async_op_limit; ++i) {
         AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
         if (op->active) {
             continue;
@@ -4496,6 +4574,7 @@ long aic_rt_tls_async_send_submit(
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_send_submit", 2);
+    aic_rt_tls_limits_ensure();
     if (out_op != NULL) {
         *out_op = 0;
     }
@@ -4553,6 +4632,7 @@ long aic_rt_tls_async_recv_submit(
     long* out_op
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_recv_submit", 2);
+    aic_rt_tls_limits_ensure();
     if (out_op != NULL) {
         *out_op = 0;
     }
@@ -4599,10 +4679,11 @@ long aic_rt_tls_async_recv_submit(
 
 long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_int", 2);
+    aic_rt_tls_limits_ensure();
     if (out_value != NULL) {
         *out_value = 0;
     }
-    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return 5;
     }
     AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
@@ -4667,13 +4748,14 @@ long aic_rt_tls_async_wait_string(
     long* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_string", 2);
+    aic_rt_tls_limits_ensure();
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return 5;
     }
     AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
@@ -4745,10 +4827,11 @@ long aic_rt_tls_async_wait_string(
 
 long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_cancel", 2);
+    aic_rt_tls_limits_ensure();
     if (out_cancelled != NULL) {
         *out_cancelled = 0;
     }
-    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+    if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return 5;
     }
     AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
@@ -4785,11 +4868,12 @@ long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
 
 long aic_rt_tls_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
+    aic_rt_tls_limits_ensure();
     int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
     if (lock_rc != 0) {
         return 7;
     }
-    for (long i = 0; i < AIC_RT_TLS_ASYNC_OP_CAP; ++i) {
+    for (long i = 0; i < aic_rt_tls_async_op_limit; ++i) {
         AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
         if (!op->active || !op->done || op->claimed) {
             continue;

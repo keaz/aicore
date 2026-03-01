@@ -11032,3 +11032,225 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         "expected handshake success (42) or deterministic fallback (43), got stdout={stdout:?} stderr={stderr}"
     );
 }
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_net_handle_limit_override_is_enforced() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn net_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let first = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let second_code = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => if true {
+            let ignored_close = tcp_close(handle);
+            0
+        } else {
+            0
+        },
+        Err(err) => net_code(err),
+    };
+    let close_first = match tcp_close(first) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    if first > 0 && second_code == 7 && close_first == 1 {
+        print_int(42);
+    } else {
+        print_int(second_code * 10 + close_first);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_NET_HANDLES", "1")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_proc_handle_limit_override_is_enforced() {
+    let src = r#"
+import std.io;
+import std.proc;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn proc_code(err: ProcError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        InvalidInput => 3,
+        Io => 4,
+        UnknownProcess => 5,
+    }
+}
+
+fn main() -> Int effects { io, proc, env } capabilities { io, proc, env } {
+    let first = match spawn("sleep 5") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+
+    let second_code = match spawn("sleep 5") {
+        Ok(handle) => if true {
+            let ignored_kill = kill(handle);
+            0
+        } else {
+            0
+        },
+        Err(err) => proc_code(err),
+    };
+
+    let cleanup = if first > 0 {
+        let ignored_kill_first = kill(first);
+        1
+    } else {
+        0
+    };
+
+    if cleanup == 1 && second_code == 4 {
+        print_int(42);
+    } else {
+        print_int(second_code * 10 + cleanup);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_PROC_HANDLES", "1")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_concurrency_limits_override_is_enforced() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+
+fn conc_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let first_task = spawn_task(7, 2000);
+    let second_task_code = match spawn_task(9, 2000) {
+        Ok(task) => if true {
+            let ignored_cancel = cancel_task(task);
+            0
+        } else {
+            0
+        },
+        Err(err) => conc_code(err),
+    };
+
+    let first_channel = channel_int(1);
+    let second_channel_code = match channel_int(1) {
+        Ok(ch) => if true {
+            let ignored_close_channel = close_channel(ch);
+            0
+        } else {
+            0
+        },
+        Err(err) => conc_code(err),
+    };
+
+    let first_mutex = mutex_int(1);
+    let second_mutex_code = match mutex_int(2) {
+        Ok(m) => if true {
+            let ignored_close_mutex = close_mutex(m);
+            0
+        } else {
+            0
+        },
+        Err(err) => conc_code(err),
+    };
+
+    let cleanup_task = match first_task {
+        Ok(task) => if true {
+            let ignored_cleanup_cancel = cancel_task(task);
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+    let cleanup_channel = match first_channel {
+        Ok(ch) => if true {
+            let ignored_cleanup_channel = close_channel(ch);
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+    let cleanup_mutex = match first_mutex {
+        Ok(m) => if true {
+            let ignored_cleanup_mutex = close_mutex(m);
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    if second_task_code == 7 && second_channel_code == 7 && second_mutex_code == 7 &&
+        cleanup_task + cleanup_channel + cleanup_mutex == 3 {
+        print_int(42);
+    } else {
+        print_int(second_task_code * 100 + second_channel_code * 10 + second_mutex_code);
+    };
+    0
+}
+"#;
+
+    let envs = [
+        ("AIC_RT_LIMIT_CONC_TASKS", "1"),
+        ("AIC_RT_LIMIT_CONC_CHANNELS", "1"),
+        ("AIC_RT_LIMIT_CONC_MUTEXES", "1"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}

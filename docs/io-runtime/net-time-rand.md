@@ -112,6 +112,12 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 ### Runtime Behavior
 
 - TCP/UDP handles are bounded runtime resources; always close handles.
+- Runtime handle ceilings are process-start configurable:
+  - `AIC_RT_LIMIT_FS_FILES`, `AIC_RT_LIMIT_PROC_HANDLES`
+  - `AIC_RT_LIMIT_NET_HANDLES`, `AIC_RT_LIMIT_NET_ASYNC_OPS`, `AIC_RT_LIMIT_NET_ASYNC_QUEUE`
+  - `AIC_RT_LIMIT_TLS_HANDLES`, `AIC_RT_LIMIT_TLS_ASYNC_OPS`
+  - `AIC_RT_LIMIT_CONC_TASKS`, `AIC_RT_LIMIT_CONC_CHANNELS`, `AIC_RT_LIMIT_CONC_MUTEXES`
+  - values outside the accepted range fall back to deterministic defaults.
 - `timeout_ms` is explicit in accept/connect/recv APIs for liveness control.
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce timeout-bounded write loops.
 - `tcp_recv` reports `ConnectionClosed` on peer EOF/close; `Timeout` remains distinct.
@@ -131,6 +137,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.
   - Start buffer sizing with moderate values (for example `8192`-`65536`) and tune by measured throughput/latency.
+  - Size `AIC_RT_LIMIT_NET_ASYNC_OPS` for peak in-flight async requests and `AIC_RT_LIMIT_NET_ASYNC_QUEUE` for expected submit bursts.
 - Unsupported socket-option paths return `NetError::Io` deterministically (including current Windows runtime behavior).
 
 ### Example

@@ -84,7 +84,7 @@ let socket = match accepted {
 
 ## Runtime Architecture
 
-- Queue capacity is fixed (`AIC_RT_NET_ASYNC_QUEUE_CAP`) and enforced on submit.
+- Queue capacity is configurable at process start via `AIC_RT_LIMIT_NET_ASYNC_QUEUE` (bounded by compile-time hard maximum) and enforced on submit.
 - Submit paths enqueue opaque operation handles and operation metadata.
 - A dedicated worker thread activates operations and advances them through a reactor.
 - Reactor backends:
