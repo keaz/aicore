@@ -100,6 +100,13 @@ fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
 fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }
+fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
+fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
+fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
+fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
+fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }
+fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }
+fn recv_bytes_timeout(rx: Receiver[Bytes], timeout_ms: Int) -> Result[Bytes, ChannelError] effects { concurrency }
 fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency }
 fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }
 fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
@@ -293,6 +300,7 @@ Sunset policy:
   - Channel runtime transports payload IDs (`Int`) across thread boundaries.
   - `recv[T]`/`try_recv[T]`/`recv_timeout[T]` load payload text and decode back to `T`.
   - On send failure paths, staged payloads are dropped to avoid payload-slot leaks.
+  - `send_bytes`/`try_send_bytes` and `recv_bytes`/`try_recv_bytes`/`recv_bytes_timeout` provide a binary path for `Bytes` payloads without JSON stringify/parse overhead.
 - Backpressure when full:
   - `send_int` blocks while channel is full, up to `timeout_ms`.
   - If no space is available before deadline, `send_int` returns `Err(Timeout)`.

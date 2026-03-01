@@ -1,3 +1,4 @@
+import std.bytes;
 import std.concurrent;
 import std.io;
 import std.string;
@@ -13,6 +14,14 @@ fn vec_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env } {
     let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
     let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
     if vec.vec_len(values) == 3 && a == 4 && b == 5 && c == 6 { 1 } else { 0 }
+}
+
+fn bytes_values_ok(data: Bytes) -> Int effects { env } capabilities { env } {
+    let values = bytes.to_byte_values(data);
+    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    if vec.vec_len(values) == 3 && a == 0 && b == 255 && c == 16 { 1 } else { 0 }
 }
 
 fn channel_string_ok() -> Int effects { concurrency } capabilities { concurrency } {
@@ -89,8 +98,39 @@ fn channel_struct_ok() -> Int effects { concurrency } capabilities { concurrency
     if sent + recv_ok + close_tx + close_rx == 4 { 1 } else { 0 }
 }
 
+fn channel_bytes_ok() -> Int effects { concurrency, env } capabilities { concurrency, env } {
+    let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_bytes_channel(2);
+    let tx = pair.0;
+    let rx = pair.1;
+    let mut raw: Vec[Int] = vec.new_vec();
+    raw = vec.push(raw, 0);
+    raw = vec.push(raw, 255);
+    raw = vec.push(raw, 16);
+    let payload = match bytes.from_byte_values(raw) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let sent = match send_bytes(tx, payload) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recv_ok = match recv_bytes(rx) {
+        Ok(data) => bytes_values_ok(data),
+        Err(_) => 0,
+    };
+    let close_tx = match close_sender(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    if sent + recv_ok + close_tx + close_rx == 4 { 1 } else { 0 }
+}
+
 fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
-    if channel_string_ok() + channel_vec_ok() + channel_struct_ok() == 3 {
+    if channel_string_ok() + channel_vec_ok() + channel_struct_ok() + channel_bytes_ok() == 4 {
         print_int(42);
     } else {
         print_int(0);

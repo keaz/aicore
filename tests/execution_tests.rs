@@ -4513,6 +4513,166 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_concurrency_bytes_channel_path_roundtrips_binary_payloads() {
+    let src = r#"
+import std.bytes;
+import std.concurrent;
+import std.io;
+import std.vec;
+
+fn make_payload() -> Bytes effects { env } capabilities { env } {
+    let mut raw: Vec[Int] = vec.new_vec();
+    raw = vec.push(raw, 0);
+    raw = vec.push(raw, 255);
+    raw = vec.push(raw, 16);
+    match bytes.from_byte_values(raw) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn payload_ok(data: Bytes) -> Int effects { env } capabilities { env } {
+    let values = bytes.to_byte_values(data);
+    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    if vec.vec_len(values) == 3 && a == 0 && b == 255 && c == 16 { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_bytes_channel(2);
+    let tx = pair.0;
+    let rx = pair.1;
+
+    let sent = match send_bytes(tx, make_payload()) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recv_ok = match recv_bytes(rx) {
+        Ok(data) => payload_ok(data),
+        Err(_) => 0,
+    };
+    let try_send_ok = match try_send_bytes(tx, make_payload()) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let timeout_recv_ok = match recv_bytes_timeout(rx, 1000) {
+        Ok(data) => payload_ok(data),
+        Err(_) => 0,
+    };
+    let empty_ok = match try_recv_bytes(rx) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    let close_tx = match close_sender(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent + recv_ok + try_send_ok + timeout_recv_ok + empty_ok + close_tx + close_rx == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_bytes_channel_benchmark_reduces_overhead_vs_json_path() {
+    let src = r#"
+import std.bytes;
+import std.concurrent;
+import std.io;
+import std.time;
+
+fn payload_template() -> Bytes {
+    bytes.from_string("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+}
+
+fn run_json_path(iterations: Int) -> Int effects { concurrency, time } capabilities { concurrency, time } {
+    let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_channel(64);
+    let tx = pair.0;
+    let rx = pair.1;
+    let expected_len = bytes.byte_len(payload_template());
+    let started = monotonic_ms();
+    let mut i = 0;
+    let mut ok = 1;
+    while i < iterations {
+        let sent = match send(tx, payload_template()) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        };
+        let recv_ok = match recv(rx) {
+            Ok(value) => if bytes.byte_len(value) == expected_len { 1 } else { 0 },
+            Err(_) => 0,
+        };
+        ok = ok * sent * recv_ok;
+        i = i + 1;
+    };
+    let elapsed = monotonic_ms() - started;
+    let _close_tx = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+    if ok == 1 { elapsed } else { -1 }
+}
+
+fn run_binary_path(iterations: Int) -> Int effects { concurrency, time } capabilities { concurrency, time } {
+    let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_bytes_channel(64);
+    let tx = pair.0;
+    let rx = pair.1;
+    let expected_len = bytes.byte_len(payload_template());
+    let started = monotonic_ms();
+    let mut i = 0;
+    let mut ok = 1;
+    while i < iterations {
+        let sent = match send_bytes(tx, payload_template()) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        };
+        let recv_ok = match recv_bytes(rx) {
+            Ok(value) => if bytes.byte_len(value) == expected_len { 1 } else { 0 },
+            Err(_) => 0,
+        };
+        ok = ok * sent * recv_ok;
+        i = i + 1;
+    };
+    let elapsed = monotonic_ms() - started;
+    let _close_tx = close_sender(tx);
+    let _close_rx = close_receiver(rx);
+    if ok == 1 { elapsed } else { -1 }
+}
+
+fn main() -> Int effects { io, concurrency, time } capabilities { io, concurrency, time } {
+    let iterations = 2500;
+    let json_elapsed = run_json_path(iterations);
+    let binary_elapsed = run_binary_path(iterations);
+    let measured = if json_elapsed >= 0 && binary_elapsed >= 0 { 1 } else { 0 };
+    let improved = if binary_elapsed <= json_elapsed { 1 } else { 0 };
+    if measured == 1 && improved == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_generic_mutex_supports_map_and_vec_payloads() {
     let src = r#"
 import std.concurrent;

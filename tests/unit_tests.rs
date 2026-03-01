@@ -3997,6 +3997,27 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(
         source.contains("fn tl_set[T](tl: ThreadLocal[T], value: T) -> () effects { concurrency }")
     );
+    assert!(source.contains(
+        "fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains("fn recv_bytes_timeout("));
+    assert!(source.contains("match aic_conc_payload_store_intrinsic(value.data)"));
+    assert!(source.contains("Ok(payload) => Ok(Bytes { data: payload })"));
 
     assert_delegate_call(
         &source,

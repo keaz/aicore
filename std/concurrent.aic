@@ -6,6 +6,7 @@
 /// ```
 module std.concurrent;
 
+import std.bytes;
 import std.json;
 import std.option;
 import std.result;
@@ -1089,6 +1090,25 @@ fn take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects 
     }
 }
 
+/// `take_payload_bytes` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `take_payload_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn take_payload_bytes(payload_id: Int) -> Result[Bytes, ChannelError] effects { concurrency } {
+    match take_payload_string(payload_id) {
+        Ok(payload) => Ok(Bytes { data: payload }),
+        Err(err) => Err(err),
+    }
+}
+
 /// `json_stringify_payload` in `std.concurrent`.
 ///
 /// ## Example
@@ -1497,6 +1517,38 @@ fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects 
     close_channel(IntChannel { handle: rx.handle })
 }
 
+/// `bytes_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `bytes_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency } {
+    channel()
+}
+
+/// `buffered_bytes_channel` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `buffered_bytes_channel` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency } {
+    buffered_channel(capacity)
+}
+
 /// `send_cleanup_error` in `std.concurrent`.
 ///
 /// ## Example
@@ -1536,6 +1588,32 @@ fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { conc
             Err(err) => Err(map_concurrency_to_channel_error(err)),
         },
         Err(_) => Err(channel_closed()),
+    }
+}
+
+/// `send_bytes` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `send_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency } {
+    match aic_conc_payload_store_intrinsic(value.data) {
+        Ok(payload_id) => match aic_conc_send_int_intrinsic(
+            IntChannel { handle: tx.handle },
+            payload_id,
+            default_blocking_timeout_ms(),
+        ) {
+            Ok(_) => Ok(true),
+            Err(err) => Err(send_cleanup_error(payload_id, err)),
+        },
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
     }
 }
 
@@ -1581,6 +1659,28 @@ fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { 
     }
 }
 
+/// `try_send_bytes` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_send_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency } {
+    match aic_conc_payload_store_intrinsic(value.data) {
+        Ok(payload_id) => match aic_conc_try_send_int_intrinsic(IntChannel { handle: tx.handle }, payload_id) {
+            Ok(_) => Ok(true),
+            Err(err) => Err(try_send_cleanup_error(payload_id, err)),
+        },
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
 /// `recv` in `std.concurrent`.
 ///
 /// ## Example
@@ -1607,6 +1707,22 @@ fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency } {
         },
         Err(err) => Err(map_concurrency_to_channel_error(err)),
     }
+}
+
+/// `recv_bytes` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `recv_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency } {
+    recv_bytes_timeout(rx, default_blocking_timeout_ms())
 }
 
 /// `try_recv` in `std.concurrent`.
@@ -1637,6 +1753,25 @@ fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency
     }
 }
 
+/// `try_recv_bytes` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `try_recv_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency } {
+    match aic_conc_try_recv_int_intrinsic(IntChannel { handle: rx.handle }) {
+        Ok(payload_id) => take_payload_bytes(payload_id),
+        Err(err) => Err(err),
+    }
+}
+
 /// `recv_timeout` in `std.concurrent`.
 ///
 /// ## Example
@@ -1661,6 +1796,28 @@ fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] 
             },
             Err(err) => Err(err),
         },
+        Err(err) => Err(map_concurrency_to_channel_error(err)),
+    }
+}
+
+/// `recv_bytes_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `recv_bytes_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn recv_bytes_timeout(
+    rx: Receiver[Bytes],
+    timeout_ms: Int,
+) -> Result[Bytes, ChannelError] effects { concurrency } {
+    match aic_conc_recv_int_intrinsic(IntChannel { handle: rx.handle }, timeout_ms) {
+        Ok(payload_id) => take_payload_bytes(payload_id),
         Err(err) => Err(map_concurrency_to_channel_error(err)),
     }
 }
