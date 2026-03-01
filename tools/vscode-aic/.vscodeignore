@@ -4,3 +4,4 @@ src/
 .gitignore
 .github/
 tsconfig.json
+node_modules/

@@ -238,6 +238,11 @@ impl<'a> Generator<'a> {
             "aic_tls_send_intrinsic" => "tls_send",
             "aic_tls_send_timeout_intrinsic" => "tls_send_timeout",
             "aic_tls_recv_intrinsic" => "tls_recv",
+            "aic_tls_async_send_submit_intrinsic" => "tls_async_send_submit",
+            "aic_tls_async_recv_submit_intrinsic" => "tls_async_recv_submit",
+            "aic_tls_async_wait_int_intrinsic" => "tls_async_wait_int",
+            "aic_tls_async_wait_string_intrinsic" => "tls_async_wait_string",
+            "aic_tls_async_shutdown_intrinsic" => "tls_async_shutdown",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
             "aic_tls_version_intrinsic" => "tls_version",
@@ -302,6 +307,49 @@ impl<'a> Generator<'a> {
                 ) =>
             {
                 Some(self.gen_tls_recv_call(name, args, span, fctx))
+            }
+            "tls_async_send_submit"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "String", "Int"],
+                    "Result[AsyncIntOp, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_async_send_submit_call(name, args, span, fctx))
+            }
+            "tls_async_recv_submit"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[AsyncStringOp, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_async_recv_submit_call(name, args, span, fctx))
+            }
+            "tls_async_wait_int"
+                if self.sig_matches_shape(
+                    name,
+                    &["AsyncIntOp", "Int"],
+                    "Result[Int, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_async_wait_int_call(name, args, span, fctx))
+            }
+            "tls_async_wait_string"
+                if self.sig_matches_shape(
+                    name,
+                    &["AsyncStringOp", "Int"],
+                    "Result[String, TlsError]",
+                ) || self.sig_matches_shape(
+                    name,
+                    &["AsyncStringOp", "Int"],
+                    "Result[Bytes, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_async_wait_string_call(name, args, span, fctx))
+            }
+            "tls_async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, TlsError]") => {
+                Some(self.gen_tls_async_shutdown_call(name, args, span, fctx))
             }
             "tls_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, TlsError]") => {
                 Some(self.gen_tls_close_call(name, args, span, fctx))
@@ -880,6 +928,300 @@ impl<'a> Generator<'a> {
             out_len_slot
         ));
         let ok_payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_send_submit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_send_submit_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_async_send_submit_intrinsic expects (Int, String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (payload_ptr, payload_len, payload_cap) =
+            self.string_parts(&payload, args[1].span, fctx)?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_send_submit(i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            payload_ptr,
+            payload_len,
+            payload_cap,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_net_async_handle_payload(&result_ty, "AsyncIntOp", &out, span, fctx)?;
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_recv_submit_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_recv_submit_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let max_bytes = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || max_bytes.ty != LType::Int || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_async_recv_submit_intrinsic expects (Int, Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_recv_submit(i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload =
+            self.build_net_async_handle_payload(&result_ty, "AsyncStringOp", &out, span, fctx)?;
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_wait_int_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_wait_int_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_async_wait_int_intrinsic expects (AsyncIntOp, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            "AsyncIntOp",
+            "aic_tls_async_wait_int_intrinsic",
+            args[0].span,
+            fctx,
+        )?;
+        let out_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_wait_int(i64 {}, i64 {}, i64* {})",
+            err,
+            op_handle,
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_slot
+        ));
+        let out = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out, out_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_wait_string_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_wait_string_intrinsic expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op = self.gen_expr(&args[0], fctx)?;
+        let timeout = self.gen_expr(&args[1], fctx)?;
+        if timeout.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_async_wait_string_intrinsic expects (AsyncStringOp, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let op_handle = self.extract_named_handle_from_value(
+            &op,
+            "AsyncStringOp",
+            "aic_tls_async_wait_string_intrinsic",
+            args[0].span,
+            fctx,
+        )?;
+        let out_ptr_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_wait_string(i64 {}, i64 {}, i8** {}, i64* {})",
+            err,
+            op_handle,
+            timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_ptr_slot,
+            out_len_slot
+        ));
+        let out_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+        let out_len = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let ok_payload = if ok_ty == LType::String {
+            data_value
+        } else {
+            self.build_bytes_value_from_data(
+                &ok_ty,
+                data_value,
+                "aic_tls_async_wait_string_intrinsic",
+                span,
+                fctx,
+            )?
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_shutdown_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_shutdown_intrinsic expects no arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let err = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = call i64 @aic_rt_tls_async_shutdown()", err));
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",

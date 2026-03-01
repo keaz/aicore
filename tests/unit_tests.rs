@@ -2785,7 +2785,13 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_tls_connect_addr_intrinsic", 11usize),
         ("aic_tls_accept_intrinsic", 9usize),
         ("aic_tls_send_intrinsic", 2usize),
+        ("aic_tls_send_timeout_intrinsic", 3usize),
         ("aic_tls_recv_intrinsic", 3usize),
+        ("aic_tls_async_send_submit_intrinsic", 3usize),
+        ("aic_tls_async_recv_submit_intrinsic", 3usize),
+        ("aic_tls_async_wait_int_intrinsic", 2usize),
+        ("aic_tls_async_wait_string_intrinsic", 2usize),
+        ("aic_tls_async_shutdown_intrinsic", 0usize),
         ("aic_tls_close_intrinsic", 1usize),
         ("aic_tls_peer_subject_intrinsic", 1usize),
         ("aic_tls_version_intrinsic", 1usize),
@@ -2809,6 +2815,27 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         source.contains("Ok(data) => Ok(Bytes { data: data })"),
         "std/tls.aic tls_recv_bytes must wrap String payload as Bytes"
+    );
+    assert!(
+        source
+            .contains("aic_tls_async_send_submit_intrinsic(stream.handle, data.data, timeout_ms)"),
+        "std/tls.aic tls_async_send_submit must pass Bytes.data into intrinsic boundary"
+    );
+    assert!(
+        source.contains("let raw = aic_tls_async_wait_string_intrinsic(op, timeout_ms);"),
+        "std/tls.aic tls_async_wait_string must bridge runtime String into Bytes wrapper"
+    );
+    assert!(
+        source.contains("aic_tls_async_shutdown_intrinsic()"),
+        "std/tls.aic tls_async_shutdown must delegate to intrinsic"
+    );
+    assert!(
+        source.contains("Ok(op) => tls_async_wait_int(op, timeout_ms)"),
+        "std/tls.aic tls_async_send must compose submit + wait_int"
+    );
+    assert!(
+        source.contains("Ok(op) => tls_async_wait_string(op, timeout_ms)"),
+        "std/tls.aic tls_async_recv must compose submit + wait_string"
     );
     assert!(
         source.contains("verify_server: true"),
@@ -3128,6 +3155,63 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
     assert!(
         lifecycle.contains("Timeout => Bytes { data: \"\" }"),
         "lifecycle network timeout template must use Bytes fallback values"
+    );
+}
+
+#[test]
+fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
+    let io_api =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let tls_api = fs::read_to_string("docs/std-api/tls.md").expect("read docs/std-api/tls.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+
+    for (name, doc) in [("io-api-reference", &io_api), ("std-api-tls", &tls_api)] {
+        assert!(
+            doc.contains("fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_send_submit bytes-first signature"
+        );
+        assert!(
+            doc.contains("fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_recv_submit signature"
+        );
+        assert!(
+            doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_wait_string bytes-first signature"
+        );
+        assert!(
+            doc.contains(
+                "fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }"
+            ),
+            "{name} must document tls_async_shutdown signature"
+        );
+        assert!(
+            !doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"),
+            "{name} still documents stale string tls_async_wait_string signature"
+        );
+    }
+
+    assert!(
+        async_runtime.contains(
+            "tls_async_send_submit(stream, data, timeout_ms) -> Result[AsyncIntOp, TlsError]"
+        ),
+        "async runtime docs must include tls_async_send_submit"
+    );
+    assert!(
+        async_runtime.contains("tls_async_wait_string(op, timeout_ms) -> Result[Bytes, TlsError]"),
+        "async runtime docs must include bytes-first tls_async_wait_string"
+    );
+    assert!(
+        io_api.contains("examples/io/tls_async_submit_wait.aic"),
+        "io api reference must include the runnable tls async submit/wait example"
+    );
+    assert!(
+        tls_api.contains("examples/io/tls_async_submit_wait.aic"),
+        "std tls docs must include the runnable tls async submit/wait example"
+    );
+    assert!(
+        async_runtime.contains("examples/io/tls_async_submit_wait.aic"),
+        "async runtime docs must include tls async submit/wait example coverage"
     );
 }
 

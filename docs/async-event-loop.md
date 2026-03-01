@@ -8,6 +8,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - Bounded operation queue with deterministic backpressure.
 - Reactor-based non-blocking socket progress for async TCP accept/send/recv.
 - Async submit/wait API surface for TCP accept/send/recv.
+- TLS async submit/wait API surface for TLS send/recv.
 
 ## API Surface
 
@@ -20,6 +21,15 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_wait_string(op, timeout_ms) -> Result[Bytes, NetError]`
 - `async_shutdown() -> Result[Bool, NetError]`
 - Convenience wrappers: `async_accept`, `async_tcp_send`, `async_tcp_recv`
+
+`std/tls.aic` now exposes:
+
+- `tls_async_send_submit(stream, data, timeout_ms) -> Result[AsyncIntOp, TlsError]`
+- `tls_async_recv_submit(stream, max_bytes, timeout_ms) -> Result[AsyncStringOp, TlsError]`
+- `tls_async_wait_int(op, timeout_ms) -> Result[Int, TlsError]`
+- `tls_async_wait_string(op, timeout_ms) -> Result[Bytes, TlsError]`
+- `tls_async_shutdown() -> Result[Bool, TlsError]`
+- Convenience wrappers: `tls_async_send`, `tls_async_recv`
 
 Language-level bridge:
 
@@ -36,6 +46,7 @@ Language-level bridge:
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
+- TLS async wait follows the same retry model; timeout maps to `TlsError::Io`.
 
 ## Await Submit Bridge Semantics
 
@@ -91,6 +102,7 @@ let socket = match accepted {
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)
 - CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
+- CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
   - scenario: `rest_async_echo_1000_connections`
   - encoded load: `connections = 1000`

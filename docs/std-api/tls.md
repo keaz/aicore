@@ -63,6 +63,13 @@ fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Resu
 fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }
+fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
+fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
+fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
+fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
 fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
@@ -211,5 +218,9 @@ fn main() -> Int effects { net } capabilities { net } {
 - `ByteStream` provides protocol-agnostic byte I/O by adapting `TcpStream` and `TlsStream`.
 - `tls_send_timeout`/`tls_send_bytes_timeout` enforce timeout-bounded TLS writes.
 - TLS write timeout expiry maps to `TlsError::Io` because `TlsError` has no `Timeout` variant.
+- TLS async submit/wait wrappers are bytes-first (`tls_async_*`) and require `effects { net, concurrency }`.
+- `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Io` while keeping the operation pending for retry.
+- Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
+- Runnable async submit/wait usage example: `examples/io/tls_async_submit_wait.aic`.
 - Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.
 - Framed read APIs (`*_recv_framed*`) decode a 4-byte big-endian length prefix, enforce `max_frame_bytes`, then read the exact payload.

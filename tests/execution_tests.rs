@@ -9960,6 +9960,7 @@ fn exec_tls_local_server_handshake_and_certificate_paths() {
 import std.io;
 import std.tls;
 import std.env;
+import std.net;
 import std.string;
 import std.bytes;
 import std.net;
@@ -10457,6 +10458,79 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
         + bool_to_int(version_ok)
         + bool_to_int(accept_ok);
     if score == 11 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_tls_async_invalid_handle_paths_are_typed() {
+    let src = r#"
+import std.io;
+import std.tls;
+import std.net;
+import std.bytes;
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+    }
+}
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let invalid_int_wait = match tls_async_wait_int(AsyncIntOp { handle: 0 }, 10) {
+        Ok(_) => 0,
+        Err(err) => tls_code(err),
+    };
+    let invalid_string_wait = match tls_async_wait_string(AsyncStringOp { handle: 0 }, 10) {
+        Ok(_) => 0,
+        Err(err) => tls_code(err),
+    };
+
+    let bad = TlsStream { handle: 9999 };
+    let send_path = match tls_async_send_submit(bad, bytes.from_string("x"), 100) {
+        Ok(op) => match tls_async_wait_int(op, 1000) {
+            Ok(_) => 0,
+            Err(err) => tls_code(err),
+        },
+        Err(err) => tls_code(err),
+    };
+    let recv_path = match tls_async_recv_submit(bad, 8, 100) {
+        Ok(op) => match tls_async_wait_string(op, 1000) {
+            Ok(_) => 0,
+            Err(err) => tls_code(err),
+        },
+        Err(err) => tls_code(err),
+    };
+    let shutdown_ok = match tls_async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    let score = (if invalid_int_wait == 5 { 1 } else { 0 })
+        + (if invalid_string_wait == 5 { 1 } else { 0 })
+        + (if send_path == 5 { 1 } else { 0 })
+        + (if recv_path == 5 { 1 } else { 0 })
+        + shutdown_ok;
+    if score == 5 {
         print_int(42);
     } else {
         print_int(score);

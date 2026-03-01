@@ -210,6 +210,71 @@ intrinsic fn aic_tls_send_timeout_intrinsic(handle: Int, payload: String, timeou
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_async_send_submit_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_send_submit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_send_submit_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency };
+/// `aic_tls_async_recv_submit_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_recv_submit_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_recv_submit_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency };
+/// `aic_tls_async_wait_int_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_wait_int_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency };
+/// `aic_tls_async_wait_string_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_wait_string_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency };
+/// `aic_tls_async_shutdown_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_shutdown_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_shutdown_intrinsic() -> Result[Bool, TlsError] effects { net, concurrency };
 /// `aic_tls_close_intrinsic` in `std.tls`.
 ///
 /// ## Example
@@ -578,6 +643,130 @@ fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
         Ok(data) => Ok(Bytes { data: data }),
         Err(err) => Err(err),
     }
+}
+
+/// `tls_async_send_submit` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_send_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency } {
+    aic_tls_async_send_submit_intrinsic(stream.handle, data.data, timeout_ms)
+}
+
+/// `tls_async_recv_submit` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_recv_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency } {
+    aic_tls_async_recv_submit_intrinsic(stream.handle, max_bytes, timeout_ms)
+}
+
+/// `tls_async_wait_int` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_wait_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency } {
+    aic_tls_async_wait_int_intrinsic(op, timeout_ms)
+}
+
+/// `tls_async_wait_string` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_wait_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency } {
+    let raw = aic_tls_async_wait_string_intrinsic(op, timeout_ms);
+    match raw {
+        Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tls_async_send` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_send` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency } {
+    let submitted = tls_async_send_submit(stream, data, timeout_ms);
+    match submitted {
+        Ok(op) => tls_async_wait_int(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tls_async_recv` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_recv` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency } {
+    let submitted = tls_async_recv_submit(stream, max_bytes, timeout_ms);
+    match submitted {
+        Ok(op) => tls_async_wait_string(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tls_async_shutdown` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_shutdown` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency } {
+    aic_tls_async_shutdown_intrinsic()
 }
 
 /// `tls_frame_len_be` in `std.tls`.

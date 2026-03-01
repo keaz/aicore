@@ -1,0 +1,60 @@
+import std.bytes;
+import std.io;
+import std.net;
+import std.tls;
+
+fn touched_async_int_result(r: Result[AsyncIntOp, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_async_string_result(r: Result[AsyncStringOp, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_int_result(r: Result[Int, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_bytes_result(r: Result[Bytes, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_bool_result(r: Result[Bool, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let bad_stream = TlsStream { handle: -1 };
+    let score = touched_async_int_result(tls_async_send_submit(
+            bad_stream,
+            bytes.from_string("ping"),
+            10,
+        ))
+        + touched_async_string_result(tls_async_recv_submit(bad_stream, 8, 10))
+        + touched_int_result(tls_async_send(bad_stream, bytes.from_string("pong"), 10))
+        + touched_bytes_result(tls_async_recv(bad_stream, 8, 10))
+        + touched_int_result(tls_async_wait_int(AsyncIntOp { handle: -1 }, 10))
+        + touched_bytes_result(tls_async_wait_string(AsyncStringOp { handle: -1 }, 10))
+        + touched_bool_result(tls_async_shutdown());
+    if score == 7 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}

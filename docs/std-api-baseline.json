@@ -9,12 +9,52 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "aic_buffer_close_intrinsic(buf: ByteBuffer) -> Result[Bool, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "aic_buffer_from_bytes_intrinsic(data: Bytes) -> ByteBuffer"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "aic_buffer_new_growable_intrinsic(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "aic_buffer_new_intrinsic(capacity: Int) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -65,6 +105,36 @@
       "module": "std.buffer",
       "kind": "fn",
       "signature": "aic_buffer_read_length_prefixed_intrinsic(buf: ByteBuffer) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -139,7 +209,72 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_close(buf: ByteBuffer) -> Result[Bool, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -195,6 +330,36 @@
       "module": "std.buffer",
       "kind": "fn",
       "signature": "buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_u64_le(buf: ByteBuffer) -> Result[Int, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -274,6 +439,36 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_write_u64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
     },
     {
@@ -290,6 +485,11 @@
       "module": "std.buffer",
       "kind": "fn",
       "signature": "new_buffer(capacity: Int) -> ByteBuffer"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -829,12 +1029,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "buffered_bytes_channel(capacity: Int) -> Tuple[Sender[Bytes], Receiver[Bytes]] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "buffered_channel[T](capacity: Int) -> Tuple[Sender[T], Receiver[T]] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "bytes_channel() -> Tuple[Sender[Bytes], Receiver[Bytes]] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -890,6 +1100,16 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "concurrency_closed() -> ConcurrencyError"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "concurrency_timeout() -> ConcurrencyError"
     },
     {
       "module": "std.concurrent",
@@ -1044,6 +1264,16 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "recv_bytes_timeout(rx: Receiver[Bytes], timeout_ms: Int) -> Result[Bytes, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -1094,6 +1324,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "select_closed[A, B]() -> SelectResult[A, B]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -1104,7 +1339,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "select_timeout[A, B]() -> SelectResult[A, B]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1135,6 +1380,11 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "spawn_task(value: Int, delay_ms: Int) -> Result[Task[Int], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_bytes(payload_id: Int) -> Result[Bytes, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1174,12 +1424,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -2827,6 +3087,191 @@
       "signature": "TcpReader { handle: Int, max_bytes: Int, timeout_ms: Int }"
     },
     {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "chain_state_next[T, LS, RS](state: ChainState[T, LS, RS]) -> IterStep[T, ChainState[T, LS, RS]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "deque_next[T](values: Deque[T]) -> IterStep[T, Deque[T]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "enumerate_state_next[T, S](state: EnumerateState[T, S]) -> IterStep[EnumeratedValue[T], EnumerateState[T, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "filter_state_next[T, S](state: FilterState[T, S]) -> IterStep[T, FilterState[T, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "from_state[T, S](state: S, next_fn: Fn[S, IterStep[T, S]]) -> LazyIter[T, S]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "lazy_next[T, S](iter: LazyIter[T, S]) -> IterStep[T, LazyIter[T, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "map_next[K, V](values: Map[K, V]) -> IterStep[MapEntry[K, V], Map[K, V]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "map_state_next[T, U, S](state: MapState[T, U, S]) -> IterStep[U, MapState[T, U, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "set_next[T](values: Set[T]) -> IterStep[T, Set[T]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "skip_state_next[T, S](state: SkipState[T, S]) -> IterStep[T, SkipState[T, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "take_state_next[T, S](state: TakeState[T, S]) -> IterStep[T, TakeState[T, S]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "vec_next[T](values: Vec[T]) -> IterStep[T, Vec[T]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "fn",
+      "signature": "zip_state_next[T, U, LS, RS](state: ZipState[T, U, LS, RS]) -> IterStep[ZipPair[T, U], ZipState[T, U, LS, RS]]"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterable[Deque[T], T, Deque[T]];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterable[Map[K, V], MapEntry[K, V], Map[K, V]];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterable[Set[T], T, Set[T]];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterable[Vec[T], T, Vec[T]];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterator[Deque[T], T];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterator[LazyIter[T, S], T];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterator[Map[K, V], MapEntry[K, V]];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterator[Set[T], T];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "Iterator[Vec[T], T];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "impl",
+      "signature": "LazyIterOps[LazyIter[T, S], T, S];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "ChainState[T, LS, RS] { left: LazyIter[T, LS], right: LazyIter[T, RS], in_left: Bool }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "EnumerateState[T, S] { base: LazyIter[T, S], index: Int }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "EnumeratedValue[T] { index: Int, value: T }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "FilterState[T, S] { base: LazyIter[T, S], predicate: Fn[T, Bool] }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "IterStep[T, S] { item: Option[T], iter: S }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "LazyIter[T, S] { state: S, next_fn: Fn[S, IterStep[T, S]] }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "MapState[T, U, S] { base: LazyIter[T, S], mapper: Fn[T, U] }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "SkipState[T, S] { base: LazyIter[T, S], remaining: Int }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "TakeState[T, S] { base: LazyIter[T, S], remaining: Int }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "ZipPair[T, U] { left: T, right: U }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "struct",
+      "signature": "ZipState[T, U, LS, RS] { left: LazyIter[T, LS], right: LazyIter[U, RS] }"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "trait",
+      "signature": "Iterable[Collection, Item, State];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "trait",
+      "signature": "Iterator[State, Item];"
+    },
+    {
+      "module": "std.iterator",
+      "kind": "trait",
+      "signature": "LazyIterOps[IterType, Item, State];"
+    },
+    {
       "module": "std.json",
       "kind": "enum",
       "signature": "JsonError { InvalidJson, InvalidType, MissingField, InvalidNumber, InvalidString, InvalidInput, Internal }"
@@ -3409,6 +3854,11 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "aic_net_tcp_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "aic_net_udp_bind_intrinsic(addr: String) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -3489,6 +3939,16 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "net_io_error() -> NetError"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_timeout_error() -> NetError"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -3524,6 +3984,66 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream(handle: Int) -> TcpStream"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_framed_payload(stream: TcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "udp_bind(addr: String) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -3555,6 +4075,11 @@
       "module": "std.net",
       "kind": "struct",
       "signature": "AsyncStringOp { handle: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "TcpStream { handle: Int }"
     },
     {
       "module": "std.net",
@@ -4924,6 +5449,16 @@
     {
       "module": "std.tls",
       "kind": "enum",
+      "signature": "ByteStream { Tcp(TcpStream), Tls(TlsStream) }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "enum",
+      "signature": "ByteStreamError { Net(NetError), Tls(TlsError) }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "enum",
       "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Io }"
     },
     {
@@ -4935,6 +5470,31 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_accept_intrinsic(listener_handle: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_recv_submit_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_send_submit_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_shutdown_intrinsic() -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_wait_int_intrinsic(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_wait_string_intrinsic(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"
     },
     {
       "module": "std.tls",
@@ -4969,7 +5529,77 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "aic_tls_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "aic_tls_version_intrinsic(handle: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_from_tcp(handle: Int) -> ByteStream"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_from_tcp_stream(stream: TcpStream) -> ByteStream"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_from_tls(stream: TlsStream) -> ByteStream"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_map_net[T](raw: Result[T, NetError]) -> Result[T, ByteStreamError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_map_tls[T](raw: Result[T, TlsError]) -> Result[T, ByteStreamError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -4999,6 +5629,41 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }"
     },
     {
@@ -5015,6 +5680,21 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_connect_with_config(tcp_fd: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_connection_closed_error() -> TlsError"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_frame_len_be(header: Bytes) -> Result[Int, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_io_error() -> TlsError"
     },
     {
       "module": "std.tls",
@@ -5039,12 +5719,47 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_framed_payload(stream: TlsStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
     },
     {
       "module": "std.tls",

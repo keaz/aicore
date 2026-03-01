@@ -455,6 +455,13 @@ fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Resu
 fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }
+fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
+fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
+fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
+fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
 fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
@@ -482,9 +489,16 @@ Notes:
 - `tls_accept` / `tls_accept_timeout` provide server-side TLS wrapping over listener handles.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
 - `tls_send_timeout` / `tls_send_bytes_timeout` provide timeout-bounded TLS write APIs.
+- TLS async submit/wait APIs are bytes-first and typed:
+  - `tls_async_send_submit` / `tls_async_recv_submit`
+  - `tls_async_wait_int` / `tls_async_wait_string`
+  - convenience wrappers `tls_async_send` / `tls_async_recv`
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
 - `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Io`).
 - `tls_send_timeout` deadline expiry maps to `TlsError::Io` because `TlsError` currently has no `Timeout` variant.
+- `tls_async_wait_*` timeout returns `TlsError::Io` and keeps the op pending so a later wait can retry.
+- Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
+- Runnable async TLS submit/wait example: `examples/io/tls_async_submit_wait.aic`.
 - `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.
 - `tls_recv_framed*` and `byte_stream_recv_framed*` decode a 4-byte big-endian length prefix and enforce frame-size bounds.
 - `tls_version` reports negotiated protocol (`Tls12` or `Tls13`).

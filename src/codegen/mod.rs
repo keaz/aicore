@@ -796,6 +796,52 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_send_submit_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_send_submit",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "String", "Int"],
+            ret: "Result[AsyncIntOp, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_recv_submit_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_recv_submit",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[AsyncStringOp, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_wait_int_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_wait_int",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["AsyncIntOp", "Int"],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_wait_string_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_wait_string",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["AsyncStringOp", "Int"],
+                ret: "Result[String, TlsError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["AsyncStringOp", "Int"],
+                ret: "Result[Bytes, TlsError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_shutdown_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_shutdown",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Bool, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_tls_close_intrinsic",
         runtime_symbol: "aic_rt_tls_close",
         signatures: &[IntrinsicSignatureShape {
@@ -3257,6 +3303,11 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_wait_string") => Some("aic_net_async_wait_string_intrinsic"),
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
         ("tls", "tls_send_timeout") => Some("aic_tls_send_timeout_intrinsic"),
+        ("tls", "tls_async_send_submit") => Some("aic_tls_async_send_submit_intrinsic"),
+        ("tls", "tls_async_recv_submit") => Some("aic_tls_async_recv_submit_intrinsic"),
+        ("tls", "tls_async_wait_int") => Some("aic_tls_async_wait_int_intrinsic"),
+        ("tls", "tls_async_wait_string") => Some("aic_tls_async_wait_string_intrinsic"),
+        ("tls", "tls_async_shutdown") => Some("aic_tls_async_shutdown_intrinsic"),
         ("buffer", "new_buffer") => Some("aic_buffer_new_intrinsic"),
         ("buffer", "new_growable_buffer") => Some("aic_buffer_new_growable_intrinsic"),
         ("buffer", "buffer_from_bytes") => Some("aic_buffer_from_bytes_intrinsic"),

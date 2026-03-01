@@ -1748,6 +1748,21 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_send_submit(i64, i8*, i64, i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_recv_submit(i64, i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_wait_int(i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_wait_string(i64, i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_shutdown()"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_tls_close(i64)"));
     assert!(output
         .llvm_ir
@@ -2074,6 +2089,14 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_tls_accept("));
     assert!(runtime_c_source().contains("long aic_rt_tls_send("));
     assert!(runtime_c_source().contains("long aic_rt_tls_recv("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_send_submit("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_recv_submit("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_int("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_string("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_shutdown(void)"));
+    assert!(runtime_c_source().contains("AIC_RT_TLS_ASYNC_OP_CAP"));
+    assert!(runtime_c_source().contains("if (wait_rc == ETIMEDOUT)"));
+    assert!(runtime_c_source().contains("op->claimed = 0;"));
     assert!(runtime_c_source().contains("long aic_rt_tls_close("));
     assert!(runtime_c_source().contains("long aic_rt_tls_peer_subject("));
     assert!(runtime_c_source().contains("long aic_rt_tls_version("));

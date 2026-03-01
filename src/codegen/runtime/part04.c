@@ -1157,6 +1157,75 @@ long aic_rt_net_async_shutdown(void) {
     return 7;
 }
 
+long aic_rt_tls_async_send_submit(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_op
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_send_submit", 2);
+    (void)tls_handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    (void)timeout_ms;
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_async_recv_submit(
+    long tls_handle,
+    long max_bytes,
+    long timeout_ms,
+    long* out_op
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_recv_submit", 2);
+    (void)tls_handle;
+    (void)max_bytes;
+    (void)timeout_ms;
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_int", 2);
+    (void)op_handle;
+    (void)timeout_ms;
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_async_wait_string(
+    long op_handle,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_string", 2);
+    (void)op_handle;
+    (void)timeout_ms;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_async_shutdown(void) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
+    return 5;
+}
+
 long aic_rt_tls_connect(
     long tcp_handle,
     long verify_server,
@@ -1710,6 +1779,21 @@ long aic_rt_net_tcp_send_timeout(
 );
 long aic_rt_net_tcp_recv(
     long handle,
+    long max_bytes,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+);
+long aic_rt_tls_send_timeout(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_sent
+);
+long aic_rt_tls_recv(
+    long tls_handle,
     long max_bytes,
     long timeout_ms,
     char** out_ptr,
@@ -3805,6 +3889,9 @@ long aic_rt_net_dns_reverse(
 }
 
 #define AIC_RT_TLS_TABLE_CAP 128
+#define AIC_RT_TLS_ASYNC_OP_CAP 256
+#define AIC_RT_TLS_ASYNC_OP_SEND 1
+#define AIC_RT_TLS_ASYNC_OP_RECV 2
 
 typedef struct {
     int active;
@@ -3816,7 +3903,29 @@ typedef struct {
     long consumed_net_handle;
 } AicTlsSlot;
 
+typedef struct {
+    int initialized;
+    int active;
+    int done;
+    int claimed;
+    int op_kind;
+    long tls_handle;
+    long max_bytes;
+    long timeout_ms;
+    char* payload_ptr;
+    long payload_len;
+    long err_code;
+    long out_int;
+    char* out_string_ptr;
+    long out_string_len;
+    pthread_t worker;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} AicTlsAsyncOp;
+
 static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
+static AicTlsAsyncOp aic_rt_tls_async_ops[AIC_RT_TLS_ASYNC_OP_CAP];
+static pthread_mutex_t aic_rt_tls_async_ops_mutex = PTHREAD_MUTEX_INITIALIZER;
 #if AIC_RT_TLS_OPENSSL
 static int aic_rt_tls_initialized = 0;
 static int aic_rt_tls_warned_insecure = 0;
@@ -3915,6 +4024,427 @@ static long aic_rt_tls_map_net_error(long net_error) {
         return 6;
     }
     return 7;
+}
+
+static void aic_rt_tls_async_reset_op(AicTlsAsyncOp* op) {
+    if (op == NULL) {
+        return;
+    }
+    if (op->payload_ptr != NULL) {
+        free(op->payload_ptr);
+        op->payload_ptr = NULL;
+    }
+    if (op->out_string_ptr != NULL) {
+        free(op->out_string_ptr);
+        op->out_string_ptr = NULL;
+    }
+    op->active = 0;
+    op->done = 0;
+    op->claimed = 0;
+    op->op_kind = 0;
+    op->tls_handle = 0;
+    op->max_bytes = 0;
+    op->timeout_ms = 0;
+    op->payload_len = 0;
+    op->err_code = 0;
+    op->out_int = 0;
+    op->out_string_len = 0;
+    op->worker = (pthread_t)0;
+}
+
+static void aic_rt_tls_async_complete_op(
+    long op_handle,
+    long err_code,
+    long out_int,
+    char* out_ptr,
+    long out_len
+) {
+    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+        if (out_ptr != NULL) {
+            free(out_ptr);
+        }
+        return;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        if (out_ptr != NULL) {
+            free(out_ptr);
+        }
+        return;
+    }
+    if (op->active && !op->done) {
+        op->err_code = err_code;
+        op->out_int = out_int;
+        op->out_string_ptr = out_ptr;
+        op->out_string_len = out_len;
+        op->done = 1;
+        pthread_cond_broadcast(&op->cond);
+    } else if (out_ptr != NULL) {
+        free(out_ptr);
+    }
+    pthread_mutex_unlock(&op->mutex);
+}
+
+static void* aic_rt_tls_async_worker_main(void* raw) {
+    long op_handle = (long)(intptr_t)raw;
+    if (op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+        return NULL;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    long op_kind = 0;
+    long tls_handle = 0;
+    long max_bytes = 0;
+    long timeout_ms = 0;
+    const char* payload_ptr = NULL;
+    long payload_len = 0;
+
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return NULL;
+    }
+    if (!op->active || op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return NULL;
+    }
+    op_kind = op->op_kind;
+    tls_handle = op->tls_handle;
+    max_bytes = op->max_bytes;
+    timeout_ms = op->timeout_ms;
+    payload_ptr = op->payload_ptr;
+    payload_len = op->payload_len;
+    pthread_mutex_unlock(&op->mutex);
+
+    long err = 5;
+    long out_int = 0;
+    char* out_string_ptr = NULL;
+    long out_string_len = 0;
+
+    if (op_kind == AIC_RT_TLS_ASYNC_OP_SEND) {
+        err = aic_rt_tls_send_timeout(
+            tls_handle,
+            payload_ptr,
+            payload_len,
+            payload_len,
+            timeout_ms,
+            &out_int
+        );
+    } else if (op_kind == AIC_RT_TLS_ASYNC_OP_RECV) {
+        err = aic_rt_tls_recv(
+            tls_handle,
+            max_bytes,
+            timeout_ms,
+            &out_string_ptr,
+            &out_string_len
+        );
+    }
+
+    aic_rt_tls_async_complete_op(op_handle, err, out_int, out_string_ptr, out_string_len);
+    return NULL;
+}
+
+static long aic_rt_tls_async_alloc_slot_locked(void) {
+    for (long i = 0; i < AIC_RT_TLS_ASYNC_OP_CAP; ++i) {
+        AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
+        if (op->active) {
+            continue;
+        }
+        if (!op->initialized) {
+            if (pthread_mutex_init(&op->mutex, NULL) != 0) {
+                continue;
+            }
+            if (pthread_cond_init(&op->cond, NULL) != 0) {
+                pthread_mutex_destroy(&op->mutex);
+                continue;
+            }
+            op->initialized = 1;
+        }
+        aic_rt_tls_async_reset_op(op);
+        op->active = 1;
+        return i;
+    }
+    return -1;
+}
+
+long aic_rt_tls_async_send_submit(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_op
+) {
+    (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_send_submit", 2);
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    if (payload_len < 0 || timeout_ms < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 5;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    long slot_index = aic_rt_tls_async_alloc_slot_locked();
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+        return 7;
+    }
+
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[slot_index];
+    op->op_kind = AIC_RT_TLS_ASYNC_OP_SEND;
+    op->tls_handle = tls_handle;
+    op->timeout_ms = timeout_ms;
+    op->payload_ptr = aic_rt_copy_bytes(payload_ptr, (size_t)payload_len);
+    if (payload_len > 0 && op->payload_ptr == NULL) {
+        aic_rt_tls_async_reset_op(op);
+        pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+        return 7;
+    }
+    op->payload_len = payload_len;
+    long op_handle = slot_index + 1;
+
+    int create_rc = pthread_create(
+        &op->worker,
+        NULL,
+        aic_rt_tls_async_worker_main,
+        (void*)(intptr_t)op_handle
+    );
+    if (create_rc != 0) {
+        aic_rt_tls_async_reset_op(op);
+        pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+        return 7;
+    }
+    (void)pthread_detach(op->worker);
+    pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+
+    if (out_op != NULL) {
+        *out_op = op_handle;
+    }
+    return 0;
+}
+
+long aic_rt_tls_async_recv_submit(
+    long tls_handle,
+    long max_bytes,
+    long timeout_ms,
+    long* out_op
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_recv_submit", 2);
+    if (out_op != NULL) {
+        *out_op = 0;
+    }
+    if (max_bytes < 0 || timeout_ms < 0) {
+        return 5;
+    }
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    long slot_index = aic_rt_tls_async_alloc_slot_locked();
+    if (slot_index < 0) {
+        pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+        return 7;
+    }
+
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[slot_index];
+    op->op_kind = AIC_RT_TLS_ASYNC_OP_RECV;
+    op->tls_handle = tls_handle;
+    op->max_bytes = max_bytes;
+    op->timeout_ms = timeout_ms;
+    long op_handle = slot_index + 1;
+
+    int create_rc = pthread_create(
+        &op->worker,
+        NULL,
+        aic_rt_tls_async_worker_main,
+        (void*)(intptr_t)op_handle
+    );
+    if (create_rc != 0) {
+        aic_rt_tls_async_reset_op(op);
+        pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+        return 7;
+    }
+    (void)pthread_detach(op->worker);
+    pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+
+    if (out_op != NULL) {
+        *out_op = op_handle;
+    }
+    return 0;
+}
+
+long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_int", 2);
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+        return 5;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    if (!op->initialized) {
+        return 5;
+    }
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->op_kind != AIC_RT_TLS_ASYNC_OP_SEND) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    op->claimed = 1;
+
+    struct timespec deadline;
+    int deadline_rc = aic_rt_net_async_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        op->claimed = 0;
+        pthread_mutex_unlock(&op->mutex);
+        return 7;
+    }
+    while (!op->done) {
+        int wait_rc = pthread_cond_timedwait(&op->cond, &op->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 7;
+        }
+#endif
+        if (wait_rc != 0) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 7;
+        }
+    }
+
+    long err = op->err_code;
+    long out = op->out_int;
+    aic_rt_tls_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0 && out_value != NULL) {
+        *out_value = out;
+    }
+    return err;
+}
+
+long aic_rt_tls_async_wait_string(
+    long op_handle,
+    long timeout_ms,
+    char** out_ptr,
+    long* out_len
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_string", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (timeout_ms < 0 || op_handle <= 0 || op_handle > AIC_RT_TLS_ASYNC_OP_CAP) {
+        return 5;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    if (!op->initialized) {
+        return 5;
+    }
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->op_kind != AIC_RT_TLS_ASYNC_OP_RECV) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    op->claimed = 1;
+
+    struct timespec deadline;
+    int deadline_rc = aic_rt_net_async_make_deadline(timeout_ms, &deadline);
+    if (deadline_rc != 0) {
+        op->claimed = 0;
+        pthread_mutex_unlock(&op->mutex);
+        return 7;
+    }
+    while (!op->done) {
+        int wait_rc = pthread_cond_timedwait(&op->cond, &op->mutex, &deadline);
+#ifdef ETIMEDOUT
+        if (wait_rc == ETIMEDOUT) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 7;
+        }
+#endif
+        if (wait_rc != 0) {
+            op->claimed = 0;
+            pthread_mutex_unlock(&op->mutex);
+            return 7;
+        }
+    }
+
+    long err = op->err_code;
+    char* text = op->out_string_ptr;
+    long text_len = op->out_string_len;
+    op->out_string_ptr = NULL;
+    op->out_string_len = 0;
+    aic_rt_tls_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err != 0) {
+        free(text);
+        return err;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = text;
+    } else {
+        free(text);
+    }
+    if (out_len != NULL) {
+        *out_len = text_len;
+    }
+    return 0;
+}
+
+long aic_rt_tls_async_shutdown(void) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
+    int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    for (long i = 0; i < AIC_RT_TLS_ASYNC_OP_CAP; ++i) {
+        AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
+        if (!op->active || !op->done || op->claimed) {
+            continue;
+        }
+        int op_lock_rc = pthread_mutex_lock(&op->mutex);
+        if (op_lock_rc != 0) {
+            continue;
+        }
+        if (op->active && op->done && !op->claimed) {
+            aic_rt_tls_async_reset_op(op);
+        }
+        pthread_mutex_unlock(&op->mutex);
+    }
+    pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+    return 0;
 }
 
 #if AIC_RT_TLS_OPENSSL

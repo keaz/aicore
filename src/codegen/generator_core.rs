@@ -447,6 +447,11 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_send_timeout(i64, i8*, i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_async_send_submit(i64, i8*, i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_async_recv_submit(i64, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_async_wait_int(i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_async_wait_string(i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_async_shutdown()\n");
         text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
         text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_tls_version(i64, i64*)\n\n");
