@@ -21,6 +21,7 @@
       "TLS_HOSTNAME_MISMATCH": { "category": "security", "retryable": false },
       "TLS_PROTOCOL_ERROR": { "category": "protocol", "retryable": false },
       "TLS_CONNECTION_CLOSED": { "category": "transport", "retryable": true },
+      "TLS_TIMEOUT": { "category": "timeout", "retryable": true },
       "TLS_IO": { "category": "transport", "retryable": true }
     },
     "pool": {

@@ -2994,6 +2994,10 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         "std/tls.aic must expose explicit unsafe override helper"
     );
     assert!(
+        source.contains("Timeout,"),
+        "std/tls.aic TlsError must expose Timeout variant for typed timeout handling"
+    );
+    assert!(
         source.contains("verify_server: false"),
         "std/tls.aic unsafe override helper must explicitly disable server verification"
     );
@@ -3218,6 +3222,11 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
         source.contains("fn pool_error_info(err: PoolErrorContract) -> SecureErrorInfo"),
         "std/secure_errors.aic must map pool contract errors"
     );
+    assert!(
+        source
+            .contains("Timeout => secure_error_info(\"tls\", \"TLS_TIMEOUT\", \"timeout\", true)"),
+        "std/secure_errors.aic must map TLS timeout to TLS_TIMEOUT contract code"
+    );
 
     let manifest_text = fs::read_to_string("docs/errors/secure-networking-error-contract.v1.json")
         .expect("read docs/errors/secure-networking-error-contract.v1.json");
@@ -3237,6 +3246,61 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
             .and_then(|v| v.as_str()),
         Some("protocol"),
         "TLS_PROTOCOL_ERROR category must stay protocol"
+    );
+    assert_eq!(
+        manifest
+            .get("modules")
+            .and_then(|v| v.get("tls"))
+            .and_then(|v| v.get("TLS_TIMEOUT"))
+            .and_then(|v| v.get("category"))
+            .and_then(|v| v.as_str()),
+        Some("timeout"),
+        "TLS_TIMEOUT category must stay timeout"
+    );
+}
+
+#[test]
+fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
+    let tls_source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
+    assert!(
+        tls_source.contains("Timeout,"),
+        "std/tls.aic must expose Timeout in TlsError variants"
+    );
+
+    let codegen_source = fs::read_to_string("src/codegen/generator_json_regex.rs")
+        .expect("read src/codegen/generator_json_regex.rs");
+    assert!(
+        codegen_source.contains("(8, \"Timeout\")"),
+        "codegen must map TLS runtime timeout status code 8 to TlsError::Timeout"
+    );
+
+    let runtime_source =
+        fs::read_to_string("src/codegen/runtime/part04.c").expect("read runtime part04");
+    assert!(
+        runtime_source.contains("if (net_error == 4) {\n        return 8;\n    }"),
+        "runtime TLS net->TLS mapping must map NetError::Timeout to TlsError::Timeout"
+    );
+    assert!(
+        !runtime_source.contains("has no Timeout variant"),
+        "runtime must not carry stale comments that map TLS timeout to Io"
+    );
+
+    let io_api =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let tls_api = fs::read_to_string("docs/std-api/tls.md").expect("read docs/std-api/tls.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    assert!(
+        io_api.contains("TlsError::Timeout"),
+        "io-api-reference must document typed TLS timeout behavior"
+    );
+    assert!(
+        tls_api.contains("TlsError::Timeout"),
+        "std TLS API docs must document typed TLS timeout behavior"
+    );
+    assert!(
+        async_runtime.contains("TlsError::Timeout"),
+        "async-event-loop docs must document typed TLS async wait timeout behavior"
     );
 }
 

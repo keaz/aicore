@@ -11,6 +11,7 @@ fn fallback_ok(err: TlsError) -> Bool {
     match err {
         ProtocolError => true,
         Io => true,
+        Timeout => true,
         _ => false,
     }
 }

@@ -13,6 +13,7 @@ enum TlsError {
     ProtocolError,
     ConnectionClosed,
     Io,
+    Timeout,
 }
 
 enum TlsVersion {
@@ -212,14 +213,14 @@ fn main() -> Int effects { net } capabilities { net } {
 
 - `default_tls_config()` is secure-by-default (`verify_server: true`).
 - `unsafe_insecure_tls_config(...)` must only be used in explicitly audited scenarios.
-- `tls_recv` / `tls_recv_bytes` surface peer EOF/close as `TlsError::ConnectionClosed`; timeout remains the non-close path (`TlsError::Io`).
+- `tls_recv` / `tls_recv_bytes` surface peer EOF/close as `TlsError::ConnectionClosed`; timeout remains the non-close path (`TlsError::Timeout`).
 - `TlsStream` participates in resource protocol checking (`E2006`) after `tls_close`.
 - `TlsStream` also participates in runtime handle cleanup on scope drop (RAII close path).
 - `ByteStream` provides protocol-agnostic byte I/O by adapting `TcpStream` and `TlsStream`.
 - `tls_send_timeout`/`tls_send_bytes_timeout` enforce timeout-bounded TLS writes.
-- TLS write timeout expiry maps to `TlsError::Io` because `TlsError` has no `Timeout` variant.
+- TLS write timeout expiry maps to `TlsError::Timeout`.
 - TLS async submit/wait wrappers are bytes-first (`tls_async_*`) and require `effects { net, concurrency }`.
-- `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Io` while keeping the operation pending for retry.
+- `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
 - Runnable async submit/wait usage example: `examples/io/tls_async_submit_wait.aic`.
 - Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.

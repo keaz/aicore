@@ -50,7 +50,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen/mod.r
 | `EnvError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io` |
 | `ProcError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io`, `5=UnknownProcess` |
 | `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io`, `8=ConnectionClosed` |
-| `TlsError` | `1=HandshakeFailed`, `2=CertificateInvalid`, `3=CertificateExpired`, `4=HostnameMismatch`, `5=ProtocolError`, `6=ConnectionClosed`, `7=Io` |
+| `TlsError` | `1=HandshakeFailed`, `2=CertificateInvalid`, `3=CertificateExpired`, `4=HostnameMismatch`, `5=ProtocolError`, `6=ConnectionClosed`, `7=Io`, `8=Timeout` |
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
 | `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
 | `BufferError` | `1=Underflow`, `2=Overflow`, `3=InvalidUtf8`, `4=InvalidInput` |
@@ -442,6 +442,7 @@ enum TlsError {
     ProtocolError,
     ConnectionClosed,
     Io,
+    Timeout,
 }
 
 struct TlsConfig {
@@ -514,9 +515,9 @@ Notes:
   - `tls_async_wait_int` / `tls_async_wait_string`
   - convenience wrappers `tls_async_send` / `tls_async_recv`
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
-- `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Io`).
-- `tls_send_timeout` deadline expiry maps to `TlsError::Io` because `TlsError` currently has no `Timeout` variant.
-- `tls_async_wait_*` timeout returns `TlsError::Io` and keeps the op pending so a later wait can retry.
+- `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Timeout`).
+- `tls_send_timeout` deadline expiry maps to `TlsError::Timeout`.
+- `tls_async_wait_*` timeout returns `TlsError::Timeout` and keeps the op pending so a later wait can retry.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
 - Runnable async TLS submit/wait example: `examples/io/tls_async_submit_wait.aic`.
 - `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.

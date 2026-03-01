@@ -10366,6 +10366,7 @@ fn tls_code(err: TlsError) -> Int {
         ProtocolError => 5,
         ConnectionClosed => 6,
         Io => 7,
+        Timeout => 8,
     }
 }
 
@@ -10386,7 +10387,7 @@ fn score_connected(stream: TlsStream) -> Int effects { net } capabilities { net 
         Err(_) => 0,
     };
 
-    if timeout_code == 7 && send_ok == 1 && local_close_ok == 1 {
+    if timeout_code == 8 && send_ok == 1 && local_close_ok == 1 {
         42
     } else {
         timeout_code * 100 + send_ok * 10 + local_close_ok
@@ -10627,6 +10628,7 @@ fn tls_code(err: TlsError) -> Int {
         ProtocolError => 5,
         ConnectionClosed => 6,
         Io => 7,
+        Timeout => 8,
     }
 }
 
@@ -10793,6 +10795,7 @@ fn fallback(err: TlsError) -> Bool {
     match err {
         ProtocolError => true,
         Io => true,
+        Timeout => true,
         _ => false,
     }
 }

@@ -4190,6 +4190,7 @@ impl<'a> Generator<'a> {
                 (5, "ProtocolError"),
                 (6, "ConnectionClosed"),
                 (7, "Io"),
+                (8, "Timeout"),
             ],
             "Io",
             err_code,

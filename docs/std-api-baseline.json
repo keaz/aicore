@@ -5459,7 +5459,7 @@
     {
       "module": "std.tls",
       "kind": "enum",
-      "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Io }"
+      "signature": "TlsError { HandshakeFailed, CertificateInvalid, CertificateExpired, HostnameMismatch, ProtocolError, ConnectionClosed, Io, Timeout }"
     },
     {
       "module": "std.tls",

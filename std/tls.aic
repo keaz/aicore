@@ -34,6 +34,8 @@ enum TlsError {
     ConnectionClosed,
     /// `Io` enum variant.
     Io,
+    /// `Timeout` enum variant.
+    Timeout,
 }
 
 /// `TlsVersion` is a `enum` in `std.tls`.

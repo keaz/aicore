@@ -46,7 +46,7 @@ Language-level bridge:
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
-- TLS async wait follows the same retry model; timeout maps to `TlsError::Io`.
+- TLS async wait follows the same retry model; timeout maps to `TlsError::Timeout`.
 
 ## Await Submit Bridge Semantics
 

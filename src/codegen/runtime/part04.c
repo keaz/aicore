@@ -4263,6 +4263,9 @@ static long aic_rt_tls_map_net_error(long net_error) {
     if (net_error == 0) {
         return 0;
     }
+    if (net_error == 4) {
+        return 8;
+    }
     if (net_error == 6) {
         return 5;
     }
@@ -4566,7 +4569,7 @@ long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value)
         if (wait_rc == ETIMEDOUT) {
             op->claimed = 0;
             pthread_mutex_unlock(&op->mutex);
-            return 7;
+            return 8;
         }
 #endif
         if (wait_rc != 0) {
@@ -4637,7 +4640,7 @@ long aic_rt_tls_async_wait_string(
         if (wait_rc == ETIMEDOUT) {
             op->claimed = 0;
             pthread_mutex_unlock(&op->mutex);
-            return 7;
+            return 8;
         }
 #endif
         if (wait_rc != 0) {
@@ -5433,8 +5436,7 @@ long aic_rt_tls_send_timeout(
                         if (out_sent != NULL) {
                             *out_sent = (long)total;
                         }
-                        // TlsError currently has no Timeout variant; map deadline expiry to Io.
-                        return 7;
+                        return 8;
                     }
                     wait_timeout = deadline_ms - now_ms;
                 }
@@ -5506,7 +5508,7 @@ long aic_rt_tls_recv(
             if (now_ms >= 0) {
                 if (now_ms >= deadline_ms) {
                     free(buffer);
-                    return 7;
+                    return 8;
                 }
                 wait_timeout = deadline_ms - now_ms;
             }
