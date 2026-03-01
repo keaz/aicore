@@ -208,12 +208,12 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
 
     if let Some(req) = &f.requires {
         out.push_str(" requires ");
-        format_expr(out, req, 0, type_map);
+        format_expr(out, req, 0, type_map, 0);
     }
 
     if let Some(ens) = &f.ensures {
         out.push_str(" ensures ");
-        format_expr(out, ens, 0, type_map);
+        format_expr(out, ens, 0, type_map, 0);
     }
 
     out.push(' ');
@@ -247,7 +247,7 @@ fn format_const(
     out.push_str(&display_type(type_map, &f.ret_type));
     out.push_str(" = ");
     if let Some(expr) = &f.body.tail {
-        format_expr(out, expr, 0, type_map);
+        format_expr(out, expr, 0, type_map, 0);
     } else {
         out.push_str("()");
     }
@@ -269,7 +269,7 @@ fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::Ty
     out.push('}');
     if let Some(inv) = &s.invariant {
         out.push_str(" invariant ");
-        format_expr(out, inv, 0, type_map);
+        format_expr(out, inv, 0, type_map, 0);
     }
     out.push('\n');
 }
@@ -399,11 +399,11 @@ fn format_method_signature(
     }
     if let Some(req) = &method.requires {
         out.push_str(" requires ");
-        format_expr(out, req, 0, type_map);
+        format_expr(out, req, 0, type_map, 0);
     }
     if let Some(ens) = &method.ensures {
         out.push_str(" ensures ");
-        format_expr(out, ens, 0, type_map);
+        format_expr(out, ens, 0, type_map, 0);
     }
 }
 
@@ -455,30 +455,30 @@ fn format_block(
                     out.push_str(&display_type(type_map, ty));
                 }
                 out.push_str(" = ");
-                format_expr(out, expr, 0, type_map);
+                format_expr(out, expr, 0, type_map, indent + 4);
                 out.push_str(";\n");
             }
             ir::Stmt::Assign { target, expr, .. } => {
                 out.push_str(target);
                 out.push_str(" = ");
-                format_expr(out, expr, 0, type_map);
+                format_expr(out, expr, 0, type_map, indent + 4);
                 out.push_str(";\n");
             }
             ir::Stmt::Expr { expr, .. } => {
-                format_expr(out, expr, 0, type_map);
+                format_expr(out, expr, 0, type_map, indent + 4);
                 out.push_str(";\n");
             }
             ir::Stmt::Return { expr, .. } => {
                 out.push_str("return");
                 if let Some(expr) = expr {
                     out.push(' ');
-                    format_expr(out, expr, 0, type_map);
+                    format_expr(out, expr, 0, type_map, indent + 4);
                 }
                 out.push_str(";\n");
             }
             ir::Stmt::Assert { expr, message, .. } => {
                 out.push_str("assert ");
-                format_expr(out, expr, 0, type_map);
+                format_expr(out, expr, 0, type_map, indent + 4);
                 out.push_str("; // ");
                 out.push_str(message);
                 out.push('\n');
@@ -488,7 +488,7 @@ fn format_block(
 
     if let Some(tail) = &block.tail {
         out.push_str(&" ".repeat(indent + 4));
-        format_expr(out, tail, 0, type_map);
+        format_expr(out, tail, 0, type_map, indent + 4);
         out.push('\n');
     }
     out.push_str(&" ".repeat(indent));
@@ -500,21 +500,22 @@ fn format_expr(
     expr: &ir::Expr,
     parent_prec: u8,
     type_map: &BTreeMap<ir::TypeId, String>,
+    indent: usize,
 ) {
     if let Some(rendered_for) = extract_for_syntax(expr) {
         out.push_str("for ");
         out.push_str(&rendered_for.binding);
         out.push_str(" in ");
         match rendered_for.iterable {
-            RenderedIterable::Expr(iterable) => format_expr(out, &iterable, 0, type_map),
+            RenderedIterable::Expr(iterable) => format_expr(out, &iterable, 0, type_map, indent),
             RenderedIterable::Range { start, end } => {
-                format_expr(out, &start, 0, type_map);
+                format_expr(out, &start, 0, type_map, indent);
                 out.push_str("..");
-                format_expr(out, &end, 0, type_map);
+                format_expr(out, &end, 0, type_map, indent);
             }
         }
         out.push(' ');
-        format_block(out, &rendered_for.body, type_map, 0);
+        format_block(out, &rendered_for.body, type_map, indent);
         return;
     }
 
@@ -535,7 +536,7 @@ fn format_expr(
             args,
             arg_names,
         } => {
-            format_expr(out, callee, 10, type_map);
+            format_expr(out, callee, 10, type_map, indent);
             out.push('(');
             for (idx, arg) in args.iter().enumerate() {
                 if idx > 0 {
@@ -545,7 +546,7 @@ fn format_expr(
                     out.push_str(name);
                     out.push_str(": ");
                 }
-                format_expr(out, arg, 0, type_map);
+                format_expr(out, arg, 0, type_map, indent);
             }
             out.push(')');
         }
@@ -569,7 +570,7 @@ fn format_expr(
             out.push_str(" -> ");
             out.push_str(&display_type(type_map, ret_type));
             out.push(' ');
-            format_block(out, body, type_map, 0);
+            format_block(out, body, type_map, indent);
         }
         ir::ExprKind::If {
             cond,
@@ -577,45 +578,46 @@ fn format_expr(
             else_block,
         } => {
             out.push_str("if ");
-            format_expr(out, cond, 0, type_map);
+            format_expr(out, cond, 0, type_map, indent);
             out.push(' ');
-            format_block(out, then_block, type_map, 0);
+            format_block(out, then_block, type_map, indent);
             out.push_str(" else ");
-            format_block(out, else_block, type_map, 0);
+            format_block(out, else_block, type_map, indent);
         }
         ir::ExprKind::While { cond, body } => {
             out.push_str("while ");
-            format_expr(out, cond, 0, type_map);
+            format_expr(out, cond, 0, type_map, indent);
             out.push(' ');
-            format_block(out, body, type_map, 0);
+            format_block(out, body, type_map, indent);
         }
         ir::ExprKind::Loop { body } => {
             out.push_str("loop ");
-            format_block(out, body, type_map, 0);
+            format_block(out, body, type_map, indent);
         }
         ir::ExprKind::Break { expr } => {
             out.push_str("break");
             if let Some(expr) = expr {
                 out.push(' ');
-                format_expr(out, expr, 0, type_map);
+                format_expr(out, expr, 0, type_map, indent);
             }
         }
         ir::ExprKind::Continue => out.push_str("continue"),
         ir::ExprKind::Match { expr, arms } => {
             out.push_str("match ");
-            format_expr(out, expr, 0, type_map);
+            format_expr(out, expr, 0, type_map, indent);
             out.push_str(" {\n");
             for arm in arms {
-                out.push_str("    ");
+                out.push_str(&" ".repeat(indent + 4));
                 format_pattern(out, &arm.pattern);
                 if let Some(guard) = &arm.guard {
                     out.push_str(" if ");
-                    format_expr(out, guard, 0, type_map);
+                    format_expr(out, guard, 0, type_map, indent + 4);
                 }
                 out.push_str(" => ");
-                format_expr(out, &arm.body, 0, type_map);
+                format_expr(out, &arm.body, 0, type_map, indent + 4);
                 out.push_str(",\n");
             }
+            out.push_str(&" ".repeat(indent));
             out.push('}');
         }
         ir::ExprKind::Binary { op, lhs, rhs } => {
@@ -624,11 +626,11 @@ fn format_expr(
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, lhs, prec, type_map);
+            format_expr(out, lhs, prec, type_map, indent);
             out.push(' ');
             out.push_str(op_str);
             out.push(' ');
-            format_expr(out, rhs, prec + 1, type_map);
+            format_expr(out, rhs, prec + 1, type_map, indent);
             if needs_paren {
                 out.push(')');
             }
@@ -640,14 +642,14 @@ fn format_expr(
                 UnaryOp::BitNot => "~",
             };
             out.push_str(token);
-            format_expr(out, expr, 9, type_map);
+            format_expr(out, expr, 9, type_map, indent);
         }
         ir::ExprKind::Borrow { mutable, expr } => {
             out.push('&');
             if *mutable {
                 out.push_str("mut ");
             }
-            format_expr(out, expr, 9, type_map);
+            format_expr(out, expr, 9, type_map, indent);
         }
         ir::ExprKind::Await { expr } => {
             let needs_paren = matches!(
@@ -658,7 +660,7 @@ fn format_expr(
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, expr, 9, type_map);
+            format_expr(out, expr, 9, type_map, indent);
             if needs_paren {
                 out.push(')');
             }
@@ -671,7 +673,7 @@ fn format_expr(
             if needs_paren {
                 out.push('(');
             }
-            format_expr(out, expr, 10, type_map);
+            format_expr(out, expr, 10, type_map, indent);
             if needs_paren {
                 out.push(')');
             }
@@ -679,7 +681,7 @@ fn format_expr(
         }
         ir::ExprKind::UnsafeBlock { block } => {
             out.push_str("unsafe ");
-            format_block(out, block, type_map, 0);
+            format_block(out, block, type_map, indent);
         }
         ir::ExprKind::StructInit { name, fields } => {
             if name == TUPLE_INTERNAL_NAME {
@@ -695,7 +697,7 @@ fn format_expr(
                     if idx > 0 {
                         out.push_str(", ");
                     }
-                    format_expr(out, expr, 0, type_map);
+                    format_expr(out, expr, 0, type_map, indent);
                 }
                 if indexed.len() == 1 {
                     out.push(',');
@@ -710,13 +712,13 @@ fn format_expr(
                     }
                     out.push_str(field);
                     out.push_str(": ");
-                    format_expr(out, expr, 0, type_map);
+                    format_expr(out, expr, 0, type_map, indent);
                 }
                 out.push('}');
             }
         }
         ir::ExprKind::FieldAccess { base, field } => {
-            format_expr(out, base, 10, type_map);
+            format_expr(out, base, 10, type_map, indent);
             out.push('.');
             out.push_str(field);
         }
@@ -1137,5 +1139,58 @@ mod tests {
         let a = format_program(&ir);
         let b = format_program(&ir);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn formats_nested_if_and_match_with_block_indentation() {
+        let src = r#"module sample.main;
+
+import std.io;
+
+fn maybe_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 {
+    Some(x)
+} else {
+    None()
+}
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let v = maybe_even(10);
+    let out = match v {
+    Some(n) => n,
+    None => 0,
+};
+    print_int(out);
+    0
+}
+"#;
+        let expected = r#"module sample.main;
+
+import std.io;
+
+fn maybe_even(x: Int) -> Option[Int] {
+    if x % 2 == 0 {
+        Some(x)
+    } else {
+        None()
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let v = maybe_even(10);
+    let out = match v {
+        Some(n) => n,
+        None => 0,
+    };
+    print_int(out);
+    0
+}
+"#;
+
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        assert_eq!(format_program(&ir), expected);
     }
 }
