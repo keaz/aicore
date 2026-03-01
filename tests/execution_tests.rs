@@ -138,18 +138,23 @@ fn compile_and_run_or_backend_diags(
     ))
 }
 
-fn assert_set_ops_succeeds_or_reports_string_key_limit(source: &str) {
+fn assert_program_prints_42(source: &str) {
+    let (code, stdout, stderr) = compile_and_run(source);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+fn assert_unsupported_map_key_diagnostic(source: &str) {
     match compile_and_run_or_backend_diags(source) {
-        Ok((code, stdout, stderr)) => {
-            assert_eq!(code, 0, "stderr={stderr}");
-            assert_eq!(stdout, "42\n");
-        }
+        Ok((code, stdout, stderr)) => panic!(
+            "expected backend key-type diagnostic, got success: code={code} stdout={stdout:?} stderr={stderr:?}"
+        ),
         Err(diags) => {
             assert!(
                 diags.iter().any(|d| {
                     d.code == "E5011"
-                        && (d.message.contains("String key")
-                            || d.message.contains("String keys only"))
+                        && d.message
+                            .contains("supports only map keys String, Int, and Bool")
                 }),
                 "diags={diags:#?}"
             );
@@ -3535,6 +3540,95 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_map_int_string_key_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.vec;
+import std.option;
+import std.string;
+
+fn opt_text_or(v: Option[String], fallback: String) -> String {
+    match v {
+        Some(text) => text,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[Int, String] = map.new_map();
+    let m1 = map.insert(m0, 20, "beta");
+    let m2 = map.insert(m1, 10, "alpha");
+    let m3 = map.insert(m2, 30, "gamma");
+    let m4 = map.insert(m3, 20, "beta2");
+    let m5 = map.remove(m4, 10);
+
+    let key_vec = map.keys(m5);
+    let k0 = match vec.get(key_vec, 0) { Some(v) => v, None => -1 };
+    let k1 = match vec.get(key_vec, 1) { Some(v) => v, None => -1 };
+    let v20 = opt_text_or(map.get(m5, 20), "");
+    let has_30 = if map.contains_key(m5, 30) { 1 } else { 0 };
+    let missing_10 = if map.contains_key(m5, 10) { 0 } else { 1 };
+    let size_ok = if map.size(m5) == 2 { 1 } else { 0 };
+    let values_ok = if vec_len(map.values(m5)) == 2 { 1 } else { 0 };
+
+    if k0 == 20 && k1 == 30 && len(v20) == 5 && has_30 + missing_10 + size_ok + values_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_map_bool_int_key_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.vec;
+import std.option;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[Bool, Int] = map.new_map();
+    let m1 = map.insert(m0, true, 7);
+    let m2 = map.insert(m1, false, 9);
+    let m3 = map.insert(m2, true, 70);
+
+    let keys = map.keys(m3);
+    let k0 = match vec.get(keys, 0) { Some(v) => if v { 1 } else { 2 }, None => 0 };
+    let k1 = match vec.get(keys, 1) { Some(v) => if v { 1 } else { 2 }, None => 0 };
+
+    let v_true = opt_int_or(map.get(m3, true), 0);
+    let v_false = opt_int_or(map.get(m3, false), 0);
+    let has_true = if map.contains_key(m3, true) { 1 } else { 0 };
+    let removed = map.remove(m3, false);
+    let removed_ok = if map.contains_key(removed, false) { 0 } else { 1 };
+    let size_ok = if map.size(removed) == 1 { 1 } else { 0 };
+
+    if k0 == 2 && k1 == 1 && v_true == 70 && v_false == 9 && has_true + removed_ok + size_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
 fn exec_set_ops_are_deterministic() {
     let src = r#"
 import std.io;
@@ -3590,7 +3684,7 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
-fn exec_set_int_ops_work_or_emit_string_key_diagnostic() {
+fn exec_set_int_ops_are_deterministic() {
     let src = r#"
 import std.io;
 import std.set;
@@ -3626,11 +3720,11 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 "#;
 
-    assert_set_ops_succeeds_or_reports_string_key_limit(src);
+    assert_program_prints_42(src);
 }
 
 #[test]
-fn exec_set_bool_ops_work_or_emit_string_key_diagnostic() {
+fn exec_set_bool_ops_are_deterministic() {
     let src = r#"
 import std.io;
 import std.set;
@@ -3664,7 +3758,28 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 "#;
 
-    assert_set_ops_succeeds_or_reports_string_key_limit(src);
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_set_float_keys_report_explicit_unsupported_key_diagnostic() {
+    let src = r#"
+import std.io;
+import std.set;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let s0: Set[Float] = set.new_set();
+    let s1 = set.add(s0, 1.5);
+    if set.has(s1, 1.5) {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_unsupported_map_key_diagnostic(src);
 }
 
 #[test]

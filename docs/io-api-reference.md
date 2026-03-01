@@ -238,7 +238,8 @@ Notes:
 
 - `add`/`has`/`discard` are the supported mutator/query APIs.
 - `to_vec` is deterministic and returns members in ascending key order.
-- Current backend limitation is deterministic: non-`String` key specializations fail with backend diagnostic `E5011` (`...String key...`) until key support is widened.
+- Supported key specializations for map/set paths are `String`, `Int`, and `Bool`.
+- Unsupported key kinds remain deterministic and emit backend diagnostic `E5011` with explicit key-support guidance.
 
 ## `std.log`
 

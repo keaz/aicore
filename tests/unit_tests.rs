@@ -7647,3 +7647,37 @@ fn unit_client_runtime_sustained_load_suite_is_wired_and_documented() {
         "pool runtime docs must reference sustained churn regression test"
     );
 }
+
+#[test]
+fn unit_map_set_key_support_is_documented_and_execution_covered() {
+    let exec_tests =
+        fs::read_to_string("tests/execution_tests.rs").expect("read tests/execution_tests.rs");
+    for test_name in [
+        "fn exec_map_int_string_key_ops_are_deterministic()",
+        "fn exec_map_bool_int_key_ops_are_deterministic()",
+        "fn exec_set_int_ops_are_deterministic()",
+        "fn exec_set_bool_ops_are_deterministic()",
+        "fn exec_set_float_keys_report_explicit_unsupported_key_diagnostic()",
+    ] {
+        assert!(
+            exec_tests.contains(test_name),
+            "execution coverage must include map/set scalar-key support and unsupported-key diagnostics: {test_name}"
+        );
+    }
+
+    let io_ref =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    assert!(
+        io_ref.contains(
+            "Supported key specializations for map/set paths are `String`, `Int`, and `Bool`."
+        ),
+        "io api reference must document supported scalar map/set key kinds"
+    );
+
+    let agent_impl = fs::read_to_string("docs/ai-agent-implementation.md")
+        .expect("read docs/ai-agent-implementation.md");
+    assert!(
+        agent_impl.contains("set/map key paths includes `String`, `Int`, and `Bool`"),
+        "ai-agent implementation doc must describe expanded map/set key support"
+    );
+}
