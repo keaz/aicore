@@ -21,6 +21,30 @@ impl<'a> Generator<'a> {
             "tcp_get_nodelay" | "aic_net_tcp_get_nodelay_intrinsic" => "tcp_get_nodelay",
             "tcp_set_keepalive" | "aic_net_tcp_set_keepalive_intrinsic" => "tcp_set_keepalive",
             "tcp_get_keepalive" | "aic_net_tcp_get_keepalive_intrinsic" => "tcp_get_keepalive",
+            "tcp_set_keepalive_idle_secs" | "aic_net_tcp_set_keepalive_idle_secs_intrinsic" => {
+                "tcp_set_keepalive_idle_secs"
+            }
+            "tcp_get_keepalive_idle_secs" | "aic_net_tcp_get_keepalive_idle_secs_intrinsic" => {
+                "tcp_get_keepalive_idle_secs"
+            }
+            "tcp_set_keepalive_interval_secs"
+            | "aic_net_tcp_set_keepalive_interval_secs_intrinsic" => {
+                "tcp_set_keepalive_interval_secs"
+            }
+            "tcp_get_keepalive_interval_secs"
+            | "aic_net_tcp_get_keepalive_interval_secs_intrinsic" => {
+                "tcp_get_keepalive_interval_secs"
+            }
+            "tcp_set_keepalive_count" | "aic_net_tcp_set_keepalive_count_intrinsic" => {
+                "tcp_set_keepalive_count"
+            }
+            "tcp_get_keepalive_count" | "aic_net_tcp_get_keepalive_count_intrinsic" => {
+                "tcp_get_keepalive_count"
+            }
+            "tcp_peer_addr" | "aic_net_tcp_peer_addr_intrinsic" => "tcp_peer_addr",
+            "tcp_shutdown" | "aic_net_tcp_shutdown_intrinsic" => "tcp_shutdown",
+            "tcp_shutdown_read" | "aic_net_tcp_shutdown_read_intrinsic" => "tcp_shutdown_read",
+            "tcp_shutdown_write" | "aic_net_tcp_shutdown_write_intrinsic" => "tcp_shutdown_write",
             "tcp_set_send_buffer_size" | "aic_net_tcp_set_send_buffer_size_intrinsic" => {
                 "tcp_set_send_buffer_size"
             }
@@ -93,6 +117,17 @@ impl<'a> Generator<'a> {
                 Some(self.gen_net_local_addr_call(
                     name,
                     "aic_rt_net_udp_local_addr",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_peer_addr"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, NetError]") =>
+            {
+                Some(self.gen_net_local_addr_call(
+                    name,
+                    "aic_rt_net_tcp_peer_addr",
                     args,
                     span,
                     fctx,
@@ -186,6 +221,97 @@ impl<'a> Generator<'a> {
                 Some(self.gen_net_get_socket_bool_option_call(
                     name,
                     "aic_rt_net_tcp_get_keepalive",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_keepalive_idle_secs"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_keepalive_idle_secs",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_keepalive_idle_secs"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_keepalive_idle_secs",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_keepalive_interval_secs"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_keepalive_interval_secs",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_keepalive_interval_secs"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_keepalive_interval_secs",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_set_keepalive_count"
+                if self.sig_matches_shape(name, &["Int", "Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_set_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_set_keepalive_count",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_get_keepalive_count"
+                if self.sig_matches_shape(name, &["Int"], "Result[Int, NetError]") =>
+            {
+                Some(self.gen_net_get_socket_int_option_call(
+                    name,
+                    "aic_rt_net_tcp_get_keepalive_count",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_shutdown" if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") => {
+                Some(self.gen_net_close_call(name, "aic_rt_net_tcp_shutdown", args, span, fctx))
+            }
+            "tcp_shutdown_read"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_close_call(
+                    name,
+                    "aic_rt_net_tcp_shutdown_read",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "tcp_shutdown_write"
+                if self.sig_matches_shape(name, &["Int"], "Result[Bool, NetError]") =>
+            {
+                Some(self.gen_net_close_call(
+                    name,
+                    "aic_rt_net_tcp_shutdown_write",
                     args,
                     span,
                     fctx,

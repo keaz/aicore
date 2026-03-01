@@ -422,6 +422,16 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_tcp_get_nodelay(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_set_keepalive(i64, i64)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_get_keepalive(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_keepalive_idle_secs(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_keepalive_idle_secs(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_keepalive_interval_secs(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_keepalive_interval_secs(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_set_keepalive_count(i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_get_keepalive_count(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_peer_addr(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_shutdown(i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_shutdown_read(i64)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_shutdown_write(i64)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_set_send_buffer_size(i64, i64)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_get_send_buffer_size(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_set_recv_buffer_size(i64, i64)\n");

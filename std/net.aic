@@ -256,6 +256,136 @@ intrinsic fn aic_net_tcp_set_keepalive_intrinsic(handle: Int, enabled: Bool) -> 
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_get_keepalive_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_set_keepalive_idle_secs_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_keepalive_idle_secs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_keepalive_idle_secs_intrinsic(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_keepalive_idle_secs_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_keepalive_idle_secs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_keepalive_idle_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_set_keepalive_interval_secs_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_keepalive_interval_secs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_keepalive_interval_secs_intrinsic(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_keepalive_interval_secs_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_keepalive_interval_secs_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_keepalive_interval_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_set_keepalive_count_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_set_keepalive_count_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_set_keepalive_count_intrinsic(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_get_keepalive_count_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_get_keepalive_count_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_get_keepalive_count_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_peer_addr_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_peer_addr_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_peer_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net };
+/// `aic_net_tcp_shutdown_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_shutdown_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_shutdown_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_shutdown_read_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_shutdown_read_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_shutdown_read_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
+/// `aic_net_tcp_shutdown_write_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_shutdown_write_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_shutdown_write_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net };
 /// `aic_net_tcp_set_send_buffer_size_intrinsic` in `std.net`.
 ///
 /// ## Example
@@ -928,6 +1058,56 @@ fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects
     tcp_get_keepalive(stream.handle)
 }
 
+/// `tcp_stream_set_keepalive_idle_secs` in `std.net`.
+fn tcp_stream_set_keepalive_idle_secs(stream: TcpStream, idle_secs: Int) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_idle_secs(stream.handle, idle_secs)
+}
+
+/// `tcp_stream_get_keepalive_idle_secs` in `std.net`.
+fn tcp_stream_get_keepalive_idle_secs(stream: TcpStream) -> Result[Int, NetError] effects { net } {
+    tcp_get_keepalive_idle_secs(stream.handle)
+}
+
+/// `tcp_stream_set_keepalive_interval_secs` in `std.net`.
+fn tcp_stream_set_keepalive_interval_secs(stream: TcpStream, interval_secs: Int) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_interval_secs(stream.handle, interval_secs)
+}
+
+/// `tcp_stream_get_keepalive_interval_secs` in `std.net`.
+fn tcp_stream_get_keepalive_interval_secs(stream: TcpStream) -> Result[Int, NetError] effects { net } {
+    tcp_get_keepalive_interval_secs(stream.handle)
+}
+
+/// `tcp_stream_set_keepalive_count` in `std.net`.
+fn tcp_stream_set_keepalive_count(stream: TcpStream, probe_count: Int) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_count(stream.handle, probe_count)
+}
+
+/// `tcp_stream_get_keepalive_count` in `std.net`.
+fn tcp_stream_get_keepalive_count(stream: TcpStream) -> Result[Int, NetError] effects { net } {
+    tcp_get_keepalive_count(stream.handle)
+}
+
+/// `tcp_stream_peer_addr` in `std.net`.
+fn tcp_stream_peer_addr(stream: TcpStream) -> Result[String, NetError] effects { net } {
+    tcp_peer_addr(stream.handle)
+}
+
+/// `tcp_stream_shutdown` in `std.net`.
+fn tcp_stream_shutdown(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_shutdown(stream.handle)
+}
+
+/// `tcp_stream_shutdown_read` in `std.net`.
+fn tcp_stream_shutdown_read(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_shutdown_read(stream.handle)
+}
+
+/// `tcp_stream_shutdown_write` in `std.net`.
+fn tcp_stream_shutdown_write(stream: TcpStream) -> Result[Bool, NetError] effects { net } {
+    tcp_shutdown_write(stream.handle)
+}
+
 /// `tcp_stream_set_send_buffer_size` in `std.net`.
 ///
 /// ## Example
@@ -1122,6 +1302,56 @@ fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effec
 /// Returns module-defined error variants when the operation fails.
 fn tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net } {
     aic_net_tcp_get_keepalive_intrinsic(handle)
+}
+
+/// `tcp_set_keepalive_idle_secs` in `std.net`.
+fn tcp_set_keepalive_idle_secs(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_keepalive_idle_secs_intrinsic(handle, idle_secs)
+}
+
+/// `tcp_get_keepalive_idle_secs` in `std.net`.
+fn tcp_get_keepalive_idle_secs(handle: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_get_keepalive_idle_secs_intrinsic(handle)
+}
+
+/// `tcp_set_keepalive_interval_secs` in `std.net`.
+fn tcp_set_keepalive_interval_secs(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_keepalive_interval_secs_intrinsic(handle, interval_secs)
+}
+
+/// `tcp_get_keepalive_interval_secs` in `std.net`.
+fn tcp_get_keepalive_interval_secs(handle: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_get_keepalive_interval_secs_intrinsic(handle)
+}
+
+/// `tcp_set_keepalive_count` in `std.net`.
+fn tcp_set_keepalive_count(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_set_keepalive_count_intrinsic(handle, probe_count)
+}
+
+/// `tcp_get_keepalive_count` in `std.net`.
+fn tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_get_keepalive_count_intrinsic(handle)
+}
+
+/// `tcp_peer_addr` in `std.net`.
+fn tcp_peer_addr(handle: Int) -> Result[String, NetError] effects { net } {
+    aic_net_tcp_peer_addr_intrinsic(handle)
+}
+
+/// `tcp_shutdown` in `std.net`.
+fn tcp_shutdown(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_shutdown_intrinsic(handle)
+}
+
+/// `tcp_shutdown_read` in `std.net`.
+fn tcp_shutdown_read(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_shutdown_read_intrinsic(handle)
+}
+
+/// `tcp_shutdown_write` in `std.net`.
+fn tcp_shutdown_write(handle: Int) -> Result[Bool, NetError] effects { net } {
+    aic_net_tcp_shutdown_write_intrinsic(handle)
 }
 
 /// `tcp_set_send_buffer_size` in `std.net`.

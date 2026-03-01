@@ -666,6 +666,86 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_keepalive_idle_secs_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_keepalive_idle_secs",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_keepalive_idle_secs_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_keepalive_idle_secs",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_keepalive_interval_secs_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_keepalive_interval_secs",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_keepalive_interval_secs_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_keepalive_interval_secs",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_set_keepalive_count_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_set_keepalive_count",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_get_keepalive_count_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_get_keepalive_count",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Int, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_peer_addr_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_peer_addr",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_shutdown_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_shutdown",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_shutdown_read_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_shutdown_read",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_shutdown_write_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_shutdown_write",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_net_tcp_set_send_buffer_size_intrinsic",
         runtime_symbol: "aic_rt_net_tcp_set_send_buffer_size",
         signatures: &[IntrinsicSignatureShape {
@@ -3405,6 +3485,24 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "tcp_get_nodelay") => Some("aic_net_tcp_get_nodelay_intrinsic"),
         ("net", "tcp_set_keepalive") => Some("aic_net_tcp_set_keepalive_intrinsic"),
         ("net", "tcp_get_keepalive") => Some("aic_net_tcp_get_keepalive_intrinsic"),
+        ("net", "tcp_set_keepalive_idle_secs") => {
+            Some("aic_net_tcp_set_keepalive_idle_secs_intrinsic")
+        }
+        ("net", "tcp_get_keepalive_idle_secs") => {
+            Some("aic_net_tcp_get_keepalive_idle_secs_intrinsic")
+        }
+        ("net", "tcp_set_keepalive_interval_secs") => {
+            Some("aic_net_tcp_set_keepalive_interval_secs_intrinsic")
+        }
+        ("net", "tcp_get_keepalive_interval_secs") => {
+            Some("aic_net_tcp_get_keepalive_interval_secs_intrinsic")
+        }
+        ("net", "tcp_set_keepalive_count") => Some("aic_net_tcp_set_keepalive_count_intrinsic"),
+        ("net", "tcp_get_keepalive_count") => Some("aic_net_tcp_get_keepalive_count_intrinsic"),
+        ("net", "tcp_peer_addr") => Some("aic_net_tcp_peer_addr_intrinsic"),
+        ("net", "tcp_shutdown") => Some("aic_net_tcp_shutdown_intrinsic"),
+        ("net", "tcp_shutdown_read") => Some("aic_net_tcp_shutdown_read_intrinsic"),
+        ("net", "tcp_shutdown_write") => Some("aic_net_tcp_shutdown_write_intrinsic"),
         ("net", "tcp_set_send_buffer_size") => Some("aic_net_tcp_set_send_buffer_size_intrinsic"),
         ("net", "tcp_get_send_buffer_size") => Some("aic_net_tcp_get_send_buffer_size_intrinsic"),
         ("net", "tcp_set_recv_buffer_size") => Some("aic_net_tcp_set_recv_buffer_size_intrinsic"),

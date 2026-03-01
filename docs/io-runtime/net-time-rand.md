@@ -62,6 +62,16 @@ fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects
 fn tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_keepalive_idle_secs(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_get_keepalive_idle_secs(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_set_keepalive_interval_secs(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_get_keepalive_interval_secs(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_set_keepalive_count(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_peer_addr(handle: Int) -> Result[String, NetError] effects { net }
+fn tcp_shutdown(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_shutdown_read(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_shutdown_write(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
 fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
@@ -79,6 +89,16 @@ fn tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetE
 fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_keepalive_idle_secs(stream: TcpStream, idle_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_keepalive_idle_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_set_keepalive_interval_secs(stream: TcpStream, interval_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_keepalive_interval_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_set_keepalive_count(stream: TcpStream, probe_count: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_get_keepalive_count(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_peer_addr(stream: TcpStream) -> Result[String, NetError] effects { net }
+fn tcp_stream_shutdown(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_shutdown_read(stream: TcpStream) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_shutdown_write(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
@@ -128,7 +148,10 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - Socket tuning is explicit and typed:
   - `tcp_set/get_nodelay` toggles Nagle behavior.
   - `tcp_set/get_keepalive` toggles keepalive probes.
+  - `tcp_set/get_keepalive_idle_secs`, `tcp_set/get_keepalive_interval_secs`, and `tcp_set/get_keepalive_count` tune keepalive probe behavior where supported.
   - `tcp_set/get_send_buffer_size` and `tcp_set/get_recv_buffer_size` tune kernel buffers (read-back may differ from requested size).
+  - `tcp_peer_addr` / `tcp_stream_peer_addr` expose remote endpoint identity for telemetry and policy checks.
+  - `tcp_shutdown*` / `tcp_stream_shutdown*` expose half-close/full-close controls for protocol flow control.
 - Async lifecycle control is explicit and typed:
   - `async_cancel_*` returns whether cancellation was applied.
   - `async_poll_*` maps pending state to `Option::None`.
@@ -136,6 +159,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.
+  - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
   - Start buffer sizing with moderate values (for example `8192`-`65536`) and tune by measured throughput/latency.
   - Size `AIC_RT_LIMIT_NET_ASYNC_OPS` for peak in-flight async requests and `AIC_RT_LIMIT_NET_ASYNC_QUEUE` for expected submit bursts.
 - Sustained-load lifecycle verification is CI-gated:
@@ -143,6 +167,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free`
   - both tests run repeated submit/wait/cancel cycles under low runtime limits to catch handle/op leak regressions.
 - Unsupported socket-option paths return `NetError::Io` deterministically (including current Windows runtime behavior).
+- Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 
 ### Example
 

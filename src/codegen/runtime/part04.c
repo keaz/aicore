@@ -996,6 +996,84 @@ long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
     return 7;
 }
 
+long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_idle_secs", 2);
+    (void)handle;
+    (void)idle_secs;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_idle_secs", 2);
+    (void)handle;
+    if (out_idle_secs != NULL) {
+        *out_idle_secs = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_interval_secs", 2);
+    (void)handle;
+    (void)interval_secs;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_interval_secs", 2);
+    (void)handle;
+    if (out_interval_secs != NULL) {
+        *out_interval_secs = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_count", 2);
+    (void)handle;
+    (void)probe_count;
+    return 7;
+}
+
+long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_count", 2);
+    (void)handle;
+    if (out_probe_count != NULL) {
+        *out_probe_count = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_peer_addr", 2);
+    (void)handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 7;
+}
+
+long aic_rt_net_tcp_shutdown(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown", 2);
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_net_tcp_shutdown_read(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_read", 2);
+    (void)handle;
+    return 7;
+}
+
+long aic_rt_net_tcp_shutdown_write(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_write", 2);
+    (void)handle;
+    return 7;
+}
+
 long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_send_buffer_size", 2);
     (void)handle;
@@ -3764,6 +3842,241 @@ long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
     }
     return 0;
 #else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_idle_secs", 2);
+    if (idle_secs <= 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#if defined(TCP_KEEPIDLE)
+    int value = (int)idle_secs;
+    if ((long)value != idle_secs) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPIDLE, &value, sizeof(value)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#elif defined(TCP_KEEPALIVE)
+    int value = (int)idle_secs;
+    if ((long)value != idle_secs) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPALIVE, &value, sizeof(value)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_idle_secs", 2);
+    if (out_idle_secs != NULL) {
+        *out_idle_secs = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#if defined(TCP_KEEPIDLE)
+    int value = 0;
+    socklen_t value_len = (socklen_t)sizeof(value);
+    if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPIDLE, &value, &value_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_idle_secs != NULL) {
+        *out_idle_secs = (long)value;
+    }
+    return 0;
+#elif defined(TCP_KEEPALIVE)
+    int value = 0;
+    socklen_t value_len = (socklen_t)sizeof(value);
+    if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPALIVE, &value, &value_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_idle_secs != NULL) {
+        *out_idle_secs = (long)value;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_interval_secs", 2);
+    if (interval_secs <= 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_KEEPINTVL
+    int value = (int)interval_secs;
+    if ((long)value != interval_secs) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPINTVL, &value, sizeof(value)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_secs) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_interval_secs", 2);
+    if (out_interval_secs != NULL) {
+        *out_interval_secs = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_KEEPINTVL
+    int value = 0;
+    socklen_t value_len = (socklen_t)sizeof(value);
+    if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPINTVL, &value, &value_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_interval_secs != NULL) {
+        *out_interval_secs = (long)value;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_count", 2);
+    if (probe_count <= 0) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_KEEPCNT
+    int value = (int)probe_count;
+    if ((long)value != probe_count) {
+        return 6;
+    }
+    if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPCNT, &value, sizeof(value)) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_count", 2);
+    if (out_probe_count != NULL) {
+        *out_probe_count = 0;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+#ifdef TCP_KEEPCNT
+    int value = 0;
+    socklen_t value_len = (socklen_t)sizeof(value);
+    if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPCNT, &value, &value_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    if (out_probe_count != NULL) {
+        *out_probe_count = (long)value;
+    }
+    return 0;
+#else
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_peer_addr", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+
+    struct sockaddr_storage addr;
+    socklen_t addr_len = (socklen_t)sizeof(addr);
+    if (getpeername(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
+    if (text == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = text;
+    } else {
+        free(text);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)strlen(text);
+    }
+    return 0;
+}
+
+static long aic_rt_net_tcp_shutdown_mode(long handle, int how) {
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+    if (shutdown(slot->fd, how) != 0) {
+        return aic_rt_net_map_errno(errno);
+    }
+    return 0;
+}
+
+long aic_rt_net_tcp_shutdown(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown", 2);
+#ifdef SHUT_RDWR
+    return aic_rt_net_tcp_shutdown_mode(handle, SHUT_RDWR);
+#else
+    (void)handle;
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_shutdown_read(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_read", 2);
+#ifdef SHUT_RD
+    return aic_rt_net_tcp_shutdown_mode(handle, SHUT_RD);
+#else
+    (void)handle;
+    return 7;
+#endif
+}
+
+long aic_rt_net_tcp_shutdown_write(long handle) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_write", 2);
+#ifdef SHUT_WR
+    return aic_rt_net_tcp_shutdown_mode(handle, SHUT_WR);
+#else
+    (void)handle;
     return 7;
 #endif
 }

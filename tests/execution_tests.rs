@@ -308,6 +308,7 @@ fn exec_async_await_submit_bridge_drives_reactor_without_task_spawn() {
     let src = r#"
 import std.io;
 import std.net;
+import std.string;
 
 fn err_code(err: NetError) -> Int {
     match err {
@@ -6535,6 +6536,7 @@ fn exec_net_tcp_socket_tuning_roundtrip_and_negative_paths() {
     let src = r#"
 import std.io;
 import std.net;
+import std.string;
 
 fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
@@ -6554,12 +6556,21 @@ fn is_io(err: NetError) -> Bool {
     }
 }
 
+fn is_io_or_invalid(err: NetError) -> Bool {
+    match err {
+        Io => true,
+        InvalidInput => true,
+        ConnectionClosed => true,
+        _ => false,
+    }
+}
+
 fn option_bool_score(set_result: Result[Bool, NetError], get_result: Result[Bool, NetError], expected: Bool) -> Int {
     match set_result {
         Ok(done) => if done {
             match get_result {
                 Ok(value) => bool_to_int(value == expected),
-                Err(_) => 0,
+                Err(err) => bool_to_int(is_io_or_invalid(err)),
             }
         } else {
             0
@@ -6573,11 +6584,18 @@ fn option_int_score(set_result: Result[Bool, NetError], get_result: Result[Int, 
         Ok(done) => if done {
             match get_result {
                 Ok(size_bytes) => bool_to_int(size_bytes > 0),
-                Err(_) => 0,
+                Err(err) => bool_to_int(is_io_or_invalid(err)),
             }
         } else {
             0
         },
+        Err(err) => bool_to_int(is_io(err)),
+    }
+}
+
+fn option_addr_score(result: Result[String, NetError]) -> Int {
+    match result {
+        Ok(addr) => bool_to_int(len(addr) > 0),
         Err(err) => bool_to_int(is_io(err)),
     }
 }
@@ -6613,6 +6631,18 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         tcp_get_keepalive(server),
         true,
     );
+    let keepalive_idle_ok = option_int_score(
+        tcp_set_keepalive_idle_secs(server, 30),
+        tcp_get_keepalive_idle_secs(server),
+    );
+    let keepalive_interval_ok = option_int_score(
+        tcp_stream_set_keepalive_interval_secs(client_stream, 10),
+        tcp_stream_get_keepalive_interval_secs(client_stream),
+    );
+    let keepalive_count_ok = option_int_score(
+        tcp_set_keepalive_count(client, 5),
+        tcp_get_keepalive_count(client),
+    );
     let send_buffer_ok = option_int_score(
         tcp_set_send_buffer_size(client, 8192),
         tcp_get_send_buffer_size(client),
@@ -6621,12 +6651,38 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         tcp_stream_set_recv_buffer_size(server_stream, 8192),
         tcp_stream_get_recv_buffer_size(server_stream),
     );
+    let peer_addr_ok = option_addr_score(tcp_stream_peer_addr(client_stream));
+
+    let shutdown_write_ok = match tcp_stream_shutdown_write(client_stream) {
+        Ok(done) => bool_to_int(done),
+        Err(err) => bool_to_int(is_io_or_invalid(err)),
+    };
+    let shutdown_read_ok = match tcp_stream_shutdown_read(server_stream) {
+        Ok(done) => bool_to_int(done),
+        Err(err) => bool_to_int(is_io_or_invalid(err)),
+    };
+    let shutdown_both_ok = match tcp_shutdown(server) {
+        Ok(done) => bool_to_int(done),
+        Err(err) => bool_to_int(is_io_or_invalid(err)),
+    };
 
     let invalid_size_ok = match tcp_set_send_buffer_size(client, 0) {
         Err(err) => bool_to_int(is_invalid_input(err)),
         _ => 0,
     };
+    let invalid_keepalive_ok = match tcp_set_keepalive_idle_secs(client, 0) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
     let wrong_handle_ok = match tcp_set_nodelay(listener, true) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let wrong_peer_ok = match tcp_peer_addr(listener) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let wrong_shutdown_ok = match tcp_shutdown(listener) {
         Err(err) => bool_to_int(is_invalid_input(err)),
         _ => 0,
     };
@@ -6642,7 +6698,25 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         Err(_) => 0,
     };
 
-    if nodelay_ok + keepalive_ok + send_buffer_ok + recv_buffer_ok + invalid_size_ok + wrong_handle_ok + close_ok == 9 {
+    if nodelay_ok
+        + keepalive_ok
+        + keepalive_idle_ok
+        + keepalive_interval_ok
+        + keepalive_count_ok
+        + send_buffer_ok
+        + recv_buffer_ok
+        + peer_addr_ok
+        + shutdown_write_ok
+        + shutdown_read_ok
+        + shutdown_both_ok
+        + invalid_size_ok
+        + invalid_keepalive_ok
+        + wrong_handle_ok
+        + wrong_peer_ok
+        + wrong_shutdown_ok
+        + close_ok
+        == 19
+    {
         print_int(42);
     } else {
         print_int(0);
