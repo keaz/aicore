@@ -7609,3 +7609,41 @@ fn unit_runtime_handle_limits_are_env_configurable_and_documented() {
         "io api reference must include capacity planning guidance for async runtime limits"
     );
 }
+
+#[test]
+fn unit_client_runtime_sustained_load_suite_is_wired_and_documented() {
+    let exec_tests =
+        fs::read_to_string("tests/execution_tests.rs").expect("read tests/execution_tests.rs");
+    for test_name in [
+        "fn exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free()",
+        "fn exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free()",
+        "fn exec_runtime_pool_churn_sustained_cycles_are_leak_free()",
+    ] {
+        assert!(
+            exec_tests.contains(test_name),
+            "execution suite must include sustained-load regression coverage: {test_name}"
+        );
+    }
+
+    let net_doc = fs::read_to_string("docs/io-runtime/net-time-rand.md")
+        .expect("read docs/io-runtime/net-time-rand.md");
+    assert!(
+        net_doc.contains("Sustained-load lifecycle verification is CI-gated"),
+        "net runtime docs must describe sustained-load lifecycle verification"
+    );
+    assert!(
+        net_doc.contains("exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free"),
+        "net runtime docs must reference net sustained-load test"
+    );
+    assert!(
+        net_doc.contains("exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free"),
+        "net runtime docs must reference tls sustained-load test"
+    );
+
+    let pool_doc = fs::read_to_string("docs/io-runtime/connection-pool.md")
+        .expect("read docs/io-runtime/connection-pool.md");
+    assert!(
+        pool_doc.contains("exec_runtime_pool_churn_sustained_cycles_are_leak_free"),
+        "pool runtime docs must reference sustained churn regression test"
+    );
+}

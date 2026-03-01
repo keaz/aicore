@@ -121,3 +121,4 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
   - `exec_pool_ten_workers_share_five_connections_without_leaks`
   - `exec_pool_idle_connections_are_recycled_after_timeout`
   - `exec_pool_discarded_connection_is_replaced`
+  - `exec_runtime_pool_churn_sustained_cycles_are_leak_free`

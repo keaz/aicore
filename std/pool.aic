@@ -1089,6 +1089,7 @@ fn pool_handle_request[T](
         Acquire(payload) => if true {
             let acquired = pool_state_acquire(request_handle, state, config, create);
             let _sent = send(payload.reply, acquired.1);
+            let _closed_reply = close_sender(payload.reply);
             RequestOut {
                 state: acquired.0,
                 close_loop: false,
@@ -1109,6 +1110,7 @@ fn pool_handle_request[T](
         },
         Stats(payload) => if true {
             let _sent = send(payload.reply, pool_state_stats(state));
+            let _closed_reply = close_sender(payload.reply);
             RequestOut {
                 state: state,
                 close_loop: false,
@@ -1122,6 +1124,7 @@ fn pool_handle_request[T](
         Close(payload) => if true {
             let closed = pool_state_close_all(state, destroy);
             let _sent = send(payload.reply, true);
+            let _closed_reply = close_sender(payload.reply);
             RequestOut {
                 state: closed,
                 close_loop: true,
@@ -1408,6 +1411,8 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
                     ()
                 },
             };
+            let _closed_reply_rx = close_receiver(reply_rx);
+            let _closed_reply_tx = close_sender(reply_tx);
         };
         out
     }
@@ -1504,15 +1509,17 @@ fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency } {
             handle: request_handle,
         };
         let reply: (Sender[PoolStats], Receiver[PoolStats]) = buffered_channel(1);
+        let reply_tx = reply.0;
+        let reply_rx = reply.1;
         let stats_req: PoolRequest[T] = Stats(StatsReq {
-            reply: reply.0,
+            reply: reply_tx,
         });
         let sent = send(
             tx,
             stats_req,
         );
-        match sent {
-            Ok(_) => match recv_timeout(reply.1, 20) {
+        let out = match sent {
+            Ok(_) => match recv_timeout(reply_rx, 20) {
                 Ok(stats) => stats,
                 Err(_) => PoolStats {
                     total: 0,
@@ -1529,7 +1536,10 @@ fn pool_stats[T](pool: Pool[T]) -> PoolStats effects { concurrency } {
                 created: 0,
                 destroyed: 0,
             },
-        }
+        };
+        let _closed_reply_rx = close_receiver(reply_rx);
+        let _closed_reply_tx = close_sender(reply_tx);
+        out
     }
 }
 
@@ -1552,14 +1562,18 @@ fn close_pool[T](pool: Pool[T]) -> () effects { concurrency } {
             handle: request_handle,
         };
         let reply: (Sender[Bool], Receiver[Bool]) = buffered_channel(1);
+        let reply_tx = reply.0;
+        let reply_rx = reply.1;
         let close_req: PoolRequest[T] = Close(CloseReq {
-            reply: reply.0,
+            reply: reply_tx,
         });
         let _sent = send(
             tx,
             close_req,
         );
-        let _ack = recv_timeout(reply.1, 50);
+        let _ack = recv_timeout(reply_rx, 50);
+        let _closed_reply_rx = close_receiver(reply_rx);
+        let _closed_reply_tx = close_sender(reply_tx);
         let _closed = close_sender(tx);
     } else {
         ();

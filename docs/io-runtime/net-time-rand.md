@@ -138,6 +138,10 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.
   - Start buffer sizing with moderate values (for example `8192`-`65536`) and tune by measured throughput/latency.
   - Size `AIC_RT_LIMIT_NET_ASYNC_OPS` for peak in-flight async requests and `AIC_RT_LIMIT_NET_ASYNC_QUEUE` for expected submit bursts.
+- Sustained-load lifecycle verification is CI-gated:
+  - `exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free`
+  - `exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free`
+  - both tests run repeated submit/wait/cancel cycles under low runtime limits to catch handle/op leak regressions.
 - Unsupported socket-option paths return `NetError::Io` deterministically (including current Windows runtime behavior).
 
 ### Example

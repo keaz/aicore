@@ -11254,3 +11254,366 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
 }
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn net_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn cycle_once() -> Int effects { net, concurrency } capabilities { net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    if listener == 0 {
+        0
+    } else {
+        let timeout_ok = match async_accept_submit(listener, 10) {
+            Ok(op) => match async_wait_int(op, 200) {
+                Ok(_) => 0,
+                Err(err) => if net_code(err) == 4 { 1 } else { 0 },
+            },
+            Err(_) => 0,
+        };
+
+        let cancel_ok = match async_accept_submit(listener, 1000) {
+            Ok(op) => if true {
+                let cancelled = match async_cancel_int(op) {
+                    Ok(value) => bool_to_int(value),
+                    Err(_) => 0,
+                };
+                let waited = match async_wait_int(op, 200) {
+                    Ok(_) => 0,
+                    Err(err) => if net_code(err) == 9 { 1 } else { 0 },
+                };
+                if cancelled == 1 && waited == 1 { 1 } else { 0 }
+            } else {
+                0
+            },
+            Err(_) => 0,
+        };
+
+        let close_ok = match tcp_close(listener) {
+            Ok(value) => bool_to_int(value),
+            Err(_) => 0,
+        };
+
+        if timeout_ok + cancel_ok + close_ok == 3 { 1 } else { 0 }
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let mut ok = 0;
+    let mut i = 0;
+    while i < 64 {
+        ok = ok + cycle_once();
+        i = i + 1;
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    if ok == 64 && shutdown_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(ok * 10 + shutdown_ok);
+    };
+    0
+}
+"#;
+
+    let envs = [
+        ("AIC_RT_LIMIT_NET_HANDLES", "8"),
+        ("AIC_RT_LIMIT_NET_ASYNC_OPS", "8"),
+        ("AIC_RT_LIMIT_NET_ASYNC_QUEUE", "8"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if !(backend_enabled && openssl_cli_available) {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.env;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn main() -> Int effects { io, env, net, concurrency } capabilities { io, env, net, concurrency } {
+    let mut ok = 0;
+    let mut i = 0;
+    while i < 24 {
+        let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+        let cfg = TlsConfig {
+            verify_server: false,
+            ca_cert_path: none_string(),
+            client_cert_path: none_string(),
+            client_key_path: none_string(),
+            server_name: Some("localhost"),
+        };
+
+        let cycle_ok = match tls_connect_addr(addr, cfg, 5000) {
+            Err(_) => 0,
+            Ok(stream) => if true {
+                let op = match tls_async_recv_submit(stream, 64, 2000) {
+                    Ok(value) => value,
+                    Err(_) => AsyncStringOp { handle: 0 },
+                };
+                let handle = op.handle;
+                let cancel_ok = match tls_async_cancel_string(AsyncStringOp { handle: handle }) {
+                    Ok(value) => bool_to_int(value),
+                    Err(_) => 0,
+                };
+                let wait_code = match tls_async_wait_string(AsyncStringOp { handle: handle }, 500) {
+                    Ok(_) => 0,
+                    Err(err) => tls_code(err),
+                };
+                let close_ok = match tls_close(stream) {
+                    Ok(value) => bool_to_int(value),
+                    Err(_) => 0,
+                };
+                if cancel_ok == 1 && wait_code == 9 && close_ok == 1 {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            },
+        };
+
+        ok = ok + cycle_ok;
+        i = i + 1;
+    };
+
+    let shutdown_ok = match tls_async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    if ok == 24 && shutdown_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(ok * 10 + shutdown_ok);
+    };
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls churn listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [
+        ("AIC_TLS_ADDR", addr_env.as_str()),
+        ("AIC_RT_LIMIT_TLS_HANDLES", "4"),
+        ("AIC_RT_LIMIT_TLS_ASYNC_OPS", "4"),
+        ("AIC_RT_LIMIT_NET_HANDLES", "8"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            let cert_path = root.join("tls_cert.pem");
+            let key_path = root.join("tls_key.pem");
+            let req_status = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-sha256",
+                    "-nodes",
+                    "-days",
+                    "8",
+                    "-subj",
+                    "/CN=localhost",
+                    "-keyout",
+                    key_path.to_str().expect("key path"),
+                    "-out",
+                    cert_path.to_str().expect("cert path"),
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("generate tls cert");
+            assert!(req_status.success(), "openssl req failed");
+
+            let port_flag = port.to_string();
+            let _server = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "s_server",
+                    "-accept",
+                    port_flag.as_str(),
+                    "-cert",
+                    "tls_cert.pem",
+                    "-key",
+                    "tls_key.pem",
+                    "-naccept",
+                    "64",
+                    "-quiet",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("start tls server");
+
+            let addr = format!("127.0.0.1:{port}");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if std::net::TcpStream::connect(&addr).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_pool_churn_sustained_cycles_are_leak_free() {
+    let src = r#"
+import std.io;
+import std.pool;
+import std.concurrent;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created: AtomicInt = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 1,
+            max_size: 2,
+            acquire_timeout_ms: 30,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let mut release_ok = 0;
+    let mut i = 0;
+    while i < 100 {
+        let released = match acquire(pool) {
+            Ok(conn) => if true {
+                release(conn);
+                1
+            } else {
+                0
+            },
+            Err(_) => 0,
+        };
+        release_ok = release_ok + released;
+        i = i + 1;
+    };
+
+    let stats = pool_stats(pool);
+    close_pool(pool);
+
+    if release_ok == 100 && stats.in_use == 0 && stats.total <= 2 {
+        print_int(42);
+    } else {
+        print_int(release_ok * 10 + stats.total);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
