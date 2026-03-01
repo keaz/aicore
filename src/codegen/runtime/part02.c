@@ -3633,7 +3633,32 @@ static long aic_rt_buffer_write_span(
     }
     size_t end = slot->pos + count;
     if (end > slot->cap) {
-        return 2;
+        if (!slot->growable) {
+            return 2;
+        }
+        if (end > slot->max_cap) {
+            return 2;
+        }
+        size_t next = slot->cap == 0 ? 1 : slot->cap;
+        while (next < end) {
+            if (next > slot->max_cap / 2) {
+                next = slot->max_cap;
+                break;
+            }
+            next *= 2;
+        }
+        if (next < end) {
+            return 2;
+        }
+        unsigned char* grown = (unsigned char*)realloc(slot->data, next);
+        if (grown == NULL) {
+            return 4;
+        }
+        if (next > slot->cap) {
+            memset(grown + slot->cap, 0, next - slot->cap);
+        }
+        slot->data = grown;
+        slot->cap = next;
     }
     if (count > 0 && slot->data == NULL) {
         return 2;
@@ -3646,6 +3671,20 @@ static long aic_rt_buffer_write_span(
         slot->len = end;
     }
     return 0;
+}
+
+static void aic_rt_buffer_release_slot(AicBufferSlot* slot) {
+    if (slot == NULL) {
+        return;
+    }
+    free(slot->data);
+    slot->data = NULL;
+    slot->len = 0;
+    slot->cap = 0;
+    slot->max_cap = 0;
+    slot->pos = 0;
+    slot->growable = 0;
+    slot->in_use = 0;
 }
 
 long aic_rt_buffer_new(long capacity, long* out_handle) {
@@ -3675,7 +3714,46 @@ long aic_rt_buffer_new(long capacity, long* out_handle) {
     slot->data = data;
     slot->len = 0;
     slot->cap = cap;
+    slot->max_cap = cap;
     slot->pos = 0;
+    slot->growable = 0;
+    if (out_handle != NULL) {
+        *out_handle = handle;
+    }
+    return 0;
+}
+
+long aic_rt_buffer_new_growable(long initial_capacity, long max_capacity, long* out_handle) {
+    if (out_handle != NULL) {
+        *out_handle = 0;
+    }
+    if (initial_capacity < 0 || max_capacity < 0 || initial_capacity > max_capacity) {
+        return 4;
+    }
+    size_t cap = (size_t)initial_capacity;
+    size_t max_cap = (size_t)max_capacity;
+    unsigned char* data = NULL;
+    if (cap > 0) {
+        data = (unsigned char*)malloc(cap);
+        if (data == NULL) {
+            return 4;
+        }
+        memset(data, 0, cap);
+    }
+
+    AicBufferSlot* slot = NULL;
+    long handle = 0;
+    long alloc_err = aic_rt_buffer_alloc_slot(&slot, &handle);
+    if (alloc_err != 0) {
+        free(data);
+        return alloc_err;
+    }
+    slot->data = data;
+    slot->len = 0;
+    slot->cap = cap;
+    slot->max_cap = max_cap;
+    slot->pos = 0;
+    slot->growable = 1;
     if (out_handle != NULL) {
         *out_handle = handle;
     }
@@ -3715,10 +3793,28 @@ long aic_rt_buffer_from_bytes(
     slot->data = data;
     slot->len = len;
     slot->cap = len;
+    slot->max_cap = len;
     slot->pos = 0;
+    slot->growable = 0;
     if (out_handle != NULL) {
         *out_handle = handle;
     }
+    return 0;
+}
+
+long aic_rt_buffer_close(long handle) {
+    if (handle <= 0) {
+        return 0;
+    }
+    size_t index = (size_t)(handle - 1);
+    if (index >= aic_rt_buffers_len) {
+        return 0;
+    }
+    AicBufferSlot* slot = &aic_rt_buffers[index];
+    if (!slot->in_use) {
+        return 0;
+    }
+    aic_rt_buffer_release_slot(slot);
     return 0;
 }
 

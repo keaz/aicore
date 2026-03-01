@@ -844,6 +844,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_new_growable_intrinsic",
+        runtime_symbol: "aic_rt_buffer_new_growable",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[ByteBuffer, BufferError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_from_bytes_intrinsic",
         runtime_symbol: "aic_rt_buffer_from_bytes",
         signatures: &[IntrinsicSignatureShape {
@@ -889,6 +897,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         signatures: &[IntrinsicSignatureShape {
             params: &["ByteBuffer"],
             ret: "()",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_buffer_close_intrinsic",
+        runtime_symbol: "aic_rt_buffer_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["ByteBuffer"],
+            ret: "Result[Bool, BufferError]",
         }],
     },
     IntrinsicBindingExpectation {
@@ -2681,6 +2697,7 @@ enum ResourceDropAction {
     SetCloseInnerMap,
     NetTcpClose,
     NetTlsClose,
+    BufferClose,
     ConcurrencyCloseChannel,
     ConcurrencyCloseMutex,
     ConcurrencyCloseRwLock,
@@ -3097,12 +3114,14 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
         ("tls", "tls_send_timeout") => Some("aic_tls_send_timeout_intrinsic"),
         ("buffer", "new_buffer") => Some("aic_buffer_new_intrinsic"),
+        ("buffer", "new_growable_buffer") => Some("aic_buffer_new_growable_intrinsic"),
         ("buffer", "buffer_from_bytes") => Some("aic_buffer_from_bytes_intrinsic"),
         ("buffer", "buffer_to_bytes") => Some("aic_buffer_to_bytes_intrinsic"),
         ("buffer", "buf_position") => Some("aic_buffer_position_intrinsic"),
         ("buffer", "buf_remaining") => Some("aic_buffer_remaining_intrinsic"),
         ("buffer", "buf_seek") => Some("aic_buffer_seek_intrinsic"),
         ("buffer", "buf_reset") => Some("aic_buffer_reset_intrinsic"),
+        ("buffer", "buf_close") => Some("aic_buffer_close_intrinsic"),
         ("buffer", "buf_read_u8") => Some("aic_buffer_read_u8_intrinsic"),
         ("buffer", "buf_read_i16_be") => Some("aic_buffer_read_i16_be_intrinsic"),
         ("buffer", "buf_read_i32_be") => Some("aic_buffer_read_i32_be_intrinsic"),
@@ -3318,6 +3337,7 @@ fn resource_drop_action_for_type(ty: &LType) -> Option<ResourceDropAction> {
         "Set" => Some(ResourceDropAction::SetCloseInnerMap),
         "TcpReader" => Some(ResourceDropAction::NetTcpClose),
         "TlsStream" => Some(ResourceDropAction::NetTlsClose),
+        "ByteBuffer" => Some(ResourceDropAction::BufferClose),
         "IntChannel" => Some(ResourceDropAction::ConcurrencyCloseChannel),
         "IntMutex" => Some(ResourceDropAction::ConcurrencyCloseMutex),
         "IntRwLock" => Some(ResourceDropAction::ConcurrencyCloseRwLock),
@@ -3332,6 +3352,7 @@ fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
         ResourceDropAction::MapClose | ResourceDropAction::SetCloseInnerMap => "aic_rt_map_close",
         ResourceDropAction::NetTcpClose => "aic_rt_net_tcp_close",
         ResourceDropAction::NetTlsClose => "aic_rt_tls_close",
+        ResourceDropAction::BufferClose => "aic_rt_buffer_close",
         ResourceDropAction::ConcurrencyCloseChannel => "aic_rt_conc_close_channel",
         ResourceDropAction::ConcurrencyCloseMutex => "aic_rt_conc_mutex_close",
         ResourceDropAction::ConcurrencyCloseRwLock => "aic_rt_conc_rwlock_close",

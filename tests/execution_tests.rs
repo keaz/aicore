@@ -9458,6 +9458,77 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_buffer_growable_mode_and_explicit_close_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.buffer;
+import std.bytes;
+
+fn is_ok_unit(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+fn is_ok_true(v: Result[Bool, BufferError]) -> Bool {
+    match v {
+        Ok(value) => value,
+        Err(_) => false,
+    }
+}
+
+fn is_overflow(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            Overflow => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_input(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn unwrap_growable(v: Result[ByteBuffer, BufferError]) -> ByteBuffer {
+    match v {
+        Ok(buf) => buf,
+        Err(_) => new_buffer(1),
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let growable = unwrap_growable(new_growable_buffer(2, 12));
+    let payload = bytes.from_string("ABCDEFGH");
+    let write_payload_ok = is_ok_unit(buf_write_bytes(growable, payload));
+    let write_marker_ok = is_ok_unit(buf_write_u8(growable, 66));
+    let cap_limit_hit = is_overflow(buf_write_i32_be(growable, 7));
+
+    let close_ok = is_ok_true(buf_close(growable));
+    let write_after_close_invalid = is_invalid_input(buf_write_u8(growable, 1));
+
+    if write_payload_ok && write_marker_ok && cap_limit_hit && close_ok && write_after_close_invalid {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_crypto_vectors_roundtrip_and_secure_compare_paths() {
     let src = r#"
 import std.io;

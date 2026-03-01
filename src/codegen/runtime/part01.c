@@ -88,9 +88,11 @@ typedef struct {
 
 typedef struct {
     int in_use;
+    int growable;
     unsigned char* data;
     size_t len;
     size_t cap;
+    size_t max_cap;
     size_t pos;
 } AicBufferSlot;
 

@@ -1146,12 +1146,14 @@ impl<'a> Generator<'a> {
     ) -> Option<Option<Value>> {
         let canonical = match name {
             "new_buffer" | "aic_buffer_new_intrinsic" => "new_buffer",
+            "new_growable_buffer" | "aic_buffer_new_growable_intrinsic" => "new_growable_buffer",
             "buffer_from_bytes" | "aic_buffer_from_bytes_intrinsic" => "buffer_from_bytes",
             "buffer_to_bytes" | "aic_buffer_to_bytes_intrinsic" => "buffer_to_bytes",
             "buf_position" | "aic_buffer_position_intrinsic" => "buf_position",
             "buf_remaining" | "aic_buffer_remaining_intrinsic" => "buf_remaining",
             "buf_seek" | "aic_buffer_seek_intrinsic" => "buf_seek",
             "buf_reset" | "aic_buffer_reset_intrinsic" => "buf_reset",
+            "buf_close" | "aic_buffer_close_intrinsic" => "buf_close",
             "buf_read_u8" | "aic_buffer_read_u8_intrinsic" => "buf_read_u8",
             "buf_read_i16_be" | "aic_buffer_read_i16_be_intrinsic" => "buf_read_i16_be",
             "buf_read_i32_be" | "aic_buffer_read_i32_be_intrinsic" => "buf_read_i32_be",
@@ -1182,6 +1184,15 @@ impl<'a> Generator<'a> {
         match canonical {
             "new_buffer" if self.sig_matches_shape(name, &["Int"], "ByteBuffer") => {
                 Some(self.gen_buffer_new_call(name, args, span, fctx))
+            }
+            "new_growable_buffer"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int"],
+                    "Result[ByteBuffer, BufferError]",
+                ) =>
+            {
+                Some(self.gen_buffer_new_growable_call(name, args, span, fctx))
             }
             "buffer_from_bytes" if self.sig_matches_shape(name, &["Bytes"], "ByteBuffer") => {
                 Some(self.gen_buffer_from_bytes_call(name, args, span, fctx))
@@ -1215,6 +1226,11 @@ impl<'a> Generator<'a> {
                     || self.sig_matches_shape(name, &["ByteBuffer"], "()") =>
             {
                 Some(self.gen_buffer_reset_call(name, args, span, fctx))
+            }
+            "buf_close"
+                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Bool, BufferError]") =>
+            {
+                Some(self.gen_buffer_close_call(name, args, span, fctx))
             }
             "buf_read_u8"
                 if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
@@ -1539,6 +1555,64 @@ impl<'a> Generator<'a> {
         self.build_buffer_value_from_handle(&result_ty, &handle, "new_buffer", span, fctx)
     }
 
+    pub(super) fn gen_buffer_new_growable_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "new_growable_buffer expects two arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let initial_capacity = self.gen_expr(&args[0], fctx)?;
+        let max_capacity = self.gen_expr(&args[1], fctx)?;
+        if initial_capacity.ty != LType::Int || max_capacity.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "new_growable_buffer expects (Int, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let out_handle_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_handle_slot));
+        fctx.lines
+            .push(format!("  store i64 0, i64* {}", out_handle_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_new_growable(i64 {}, i64 {}, i64* {})",
+            err,
+            initial_capacity
+                .repr
+                .clone()
+                .unwrap_or_else(|| "0".to_string()),
+            max_capacity.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_handle_slot
+        ));
+        let handle = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", handle, out_handle_slot));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let buffer_ty = self.parse_type_repr("ByteBuffer", span)?;
+        let ok_payload = self.build_buffer_value_from_handle(
+            &buffer_ty,
+            &handle,
+            "new_growable_buffer",
+            span,
+            fctx,
+        )?;
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
     pub(super) fn gen_buffer_from_bytes_call(
         &mut self,
         name: &str,
@@ -1761,6 +1835,43 @@ impl<'a> Generator<'a> {
             ty: LType::Unit,
             repr: None,
         })
+    }
+
+    pub(super) fn gen_buffer_close_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "buf_close expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let buffer = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &buffer,
+            "ByteBuffer",
+            "buf_close",
+            args[0].span,
+            fctx,
+        )?;
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_buffer_close(i64 {})",
+            err, handle
+        ));
+        let result_ty = self.buffer_result_ty(name, span)?;
+        let ok_payload = Value {
+            ty: LType::Bool,
+            repr: Some("1".to_string()),
+        };
+        self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
     pub(super) fn gen_buffer_read_int_call(

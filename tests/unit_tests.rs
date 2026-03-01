@@ -6590,6 +6590,11 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
     for (wrapper, intrinsic, arity) in [
         ("new_buffer", "aic_buffer_new_intrinsic", 1usize),
         (
+            "new_growable_buffer",
+            "aic_buffer_new_growable_intrinsic",
+            2usize,
+        ),
+        (
             "buffer_from_bytes",
             "aic_buffer_from_bytes_intrinsic",
             1usize,
@@ -6599,6 +6604,7 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
         ("buf_remaining", "aic_buffer_remaining_intrinsic", 1usize),
         ("buf_seek", "aic_buffer_seek_intrinsic", 2usize),
         ("buf_reset", "aic_buffer_reset_intrinsic", 1usize),
+        ("buf_close", "aic_buffer_close_intrinsic", 1usize),
         ("buf_read_u8", "aic_buffer_read_u8_intrinsic", 1usize),
         (
             "buf_read_i16_be",
@@ -6693,12 +6699,14 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
 
     for (intrinsic, arity) in [
         ("aic_buffer_new_intrinsic", 1usize),
+        ("aic_buffer_new_growable_intrinsic", 2usize),
         ("aic_buffer_from_bytes_intrinsic", 1usize),
         ("aic_buffer_to_bytes_intrinsic", 1usize),
         ("aic_buffer_position_intrinsic", 1usize),
         ("aic_buffer_remaining_intrinsic", 1usize),
         ("aic_buffer_seek_intrinsic", 2usize),
         ("aic_buffer_reset_intrinsic", 1usize),
+        ("aic_buffer_close_intrinsic", 1usize),
         ("aic_buffer_read_u8_intrinsic", 1usize),
         ("aic_buffer_read_i16_be_intrinsic", 1usize),
         ("aic_buffer_read_i32_be_intrinsic", 1usize),

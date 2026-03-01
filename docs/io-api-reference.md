@@ -684,6 +684,7 @@ struct ByteBuffer {
 }
 
 fn new_buffer(capacity: Int) -> ByteBuffer
+fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]
 fn buffer_from_bytes(data: Bytes) -> ByteBuffer
 fn buffer_to_bytes(buf: ByteBuffer) -> Bytes
 
@@ -692,6 +693,7 @@ fn buf_remaining(buf: ByteBuffer) -> Int
 fn buf_size(buf: ByteBuffer) -> Int
 fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]
 fn buf_reset(buf: ByteBuffer) -> ()
+fn buf_close(buf: ByteBuffer) -> Result[Bool, BufferError]
 fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]
 fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]
 
@@ -722,10 +724,12 @@ Notes:
 
 - APIs are pure (no effect declaration required).
 - `new_buffer(capacity)` is fixed-capacity; writes past capacity return `Overflow`.
+- `new_growable_buffer(initial_capacity, max_capacity)` grows automatically up to `max_capacity`; writes beyond that cap return `Overflow`.
 - Reads past available bytes return `Underflow` (never panic).
 - `buf_read_cstring` requires null-terminated valid UTF-8; invalid payload returns `InvalidUtf8`.
 - `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
+- `buf_close` releases buffer storage explicitly; drop cleanup is idempotent and safe after explicit close.
 - `buf_peek_u8` reads at absolute position without changing cursor state.
 - `buf_size` returns total bytes currently stored in the buffer.
 - `buf_slice` returns a `ByteBuffer` for a validated sub-range (`start`, `length`) using byte-level slicing.

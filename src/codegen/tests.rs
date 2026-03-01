@@ -1760,6 +1760,9 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_buffer_new(i64, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_new_growable(i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
@@ -1767,6 +1770,9 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_buffer_read_length_prefixed(i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_buffer_close(i64)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_buffer_write_string_prefixed(i64, i8*, i64, i64)"));
@@ -1908,12 +1914,15 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("static int aic_rt_map_string_storage_replace("));
     assert!(runtime_c_source().contains("AIC_RT_DISABLE_MAP_SSO"));
     assert!(runtime_c_source().contains("long aic_rt_buffer_new(long capacity, long* out_handle)"));
+    assert!(runtime_c_source()
+        .contains("long aic_rt_buffer_new_growable(long initial_capacity, long max_capacity, long* out_handle)"));
     assert!(runtime_c_source().contains("long aic_rt_buffer_from_bytes("));
     assert!(runtime_c_source()
         .contains("long aic_rt_buffer_to_bytes(long handle, char** out_ptr, long* out_len)"));
     assert!(runtime_c_source().contains(
         "long aic_rt_buffer_read_length_prefixed(long handle, char** out_ptr, long* out_len)"
     ));
+    assert!(runtime_c_source().contains("long aic_rt_buffer_close(long handle)"));
     assert!(runtime_c_source().contains("long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_len, long s_cap)"));
     assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
     assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));

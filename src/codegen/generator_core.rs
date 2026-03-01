@@ -321,12 +321,14 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_bytes_byte_at(i8*, i64, i64, i64)\n");
         text.push_str("declare void @aic_rt_bytes_from_byte_values(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_new(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_buffer_new_growable(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_to_bytes(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_position(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_remaining(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_seek(i64, i64)\n");
         text.push_str("declare i64 @aic_rt_buffer_reset(i64)\n");
+        text.push_str("declare i64 @aic_rt_buffer_close(i64)\n");
         text.push_str("declare i64 @aic_rt_buffer_read_u8(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_read_i16_be(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_read_i32_be(i64, i64*)\n");

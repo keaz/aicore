@@ -129,26 +129,32 @@ Use `ByteBuffer` for protocol layouts that require endian-aware integers, null-t
 ```aic
 import std.buffer;
 
-fn frame() -> ByteBuffer {
-    let buf = new_buffer(128);
-    let write_len = buf_write_i32_be(buf, 0);
-    let write_kind = buf_write_u8(buf, 1);
-    let write_tag = buf_write_cstring(buf, "msg");
-    let end = buf_position(buf);
-    let seek_header = buf_seek(buf, 0);
-    let patch_len = buf_write_i32_be(buf, end);
-    let seek_end = buf_seek(buf, end);
-    let _a = write_len;
-    let _b = write_kind;
-    let _c = write_tag;
-    let _d = seek_header;
-    let _e = patch_len;
-    let _f = seek_end;
-    buf
+fn frame() -> Result[ByteBuffer, BufferError] {
+    match new_growable_buffer(32, 512) {
+        Err(err) => Err(err),
+        Ok(buf) => {
+            let write_len = buf_write_i32_be(buf, 0);
+            let write_kind = buf_write_u8(buf, 1);
+            let write_tag = buf_write_cstring(buf, "msg");
+            let end = buf_position(buf);
+            let seek_header = buf_seek(buf, 0);
+            let patch_len = buf_write_i32_be(buf, end);
+            let seek_end = buf_seek(buf, end);
+            let _a = write_len;
+            let _b = write_kind;
+            let _c = write_tag;
+            let _d = seek_header;
+            let _e = patch_len;
+            let _f = seek_end;
+            Ok(buf)
+        }
+    }
 }
 ```
 
 Reference: `examples/data/binary_protocol.aic`.
+
+Use `buf_close` when a frame buffer is no longer needed in long-lived workers to release memory eagerly.
 
 ## 8. Crypto Patterns (Hashes, HMAC, PBKDF2)
 

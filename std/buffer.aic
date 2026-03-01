@@ -49,6 +49,19 @@ struct ByteBuffer {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_new_intrinsic(capacity: Int) -> ByteBuffer;
+/// `aic_buffer_new_growable_intrinsic` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `aic_buffer_new_growable_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_buffer_new_growable_intrinsic(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError];
 /// `aic_buffer_from_bytes_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -127,6 +140,19 @@ intrinsic fn aic_buffer_seek_intrinsic(buf: ByteBuffer, position: Int) -> Result
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_reset_intrinsic(buf: ByteBuffer) -> ();
+/// `aic_buffer_close_intrinsic` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `aic_buffer_close_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_buffer_close_intrinsic(buf: ByteBuffer) -> Result[Bool, BufferError];
 /// `aic_buffer_read_u8_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -404,6 +430,22 @@ fn new_buffer(capacity: Int) -> ByteBuffer {
     aic_buffer_new_intrinsic(capacity)
 }
 
+/// `new_growable_buffer` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `new_growable_buffer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError] {
+    aic_buffer_new_growable_intrinsic(initial_capacity, max_capacity)
+}
+
 /// `buffer_from_bytes` in `std.buffer`.
 ///
 /// ## Example
@@ -498,6 +540,22 @@ fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_reset(buf: ByteBuffer) -> () {
     aic_buffer_reset_intrinsic(buf)
+}
+
+/// `buf_close` in `std.buffer`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.buffer` and call `buf_close` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn buf_close(buf: ByteBuffer) -> Result[Bool, BufferError] {
+    aic_buffer_close_intrinsic(buf)
 }
 
 /// `buf_read_u8` in `std.buffer`.

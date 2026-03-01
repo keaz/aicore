@@ -904,11 +904,15 @@ Verifier-focused examples:
   - `std/buffer.aic`
   - `BufferError` variants: `Underflow`, `Overflow`, `InvalidUtf8`, `InvalidInput`
   - Cursor APIs: `buf_position`, `buf_remaining`, `buf_seek`, `buf_reset`
+  - Lifecycle APIs: `buf_close` and drop-safe cleanup of `ByteBuffer` resources
+  - Builder APIs: `new_buffer` (fixed) and `new_growable_buffer(initial_capacity, max_capacity)` (bounded auto-grow)
   - Framing APIs: endian-aware read/write (`u8`, `i16/i32/i64` BE/LE), `buf_read_cstring`, `buf_read_length_prefixed`, `buf_write_cstring`, `buf_write_string_prefixed`
 - Runtime ABI surface:
   - `aic_rt_buffer_new`
+  - `aic_rt_buffer_new_growable`
   - `aic_rt_buffer_from_bytes`
   - `aic_rt_buffer_to_bytes`
+  - `aic_rt_buffer_close`
   - `aic_rt_buffer_seek` / `aic_rt_buffer_reset`
   - `aic_rt_buffer_read_*` / `aic_rt_buffer_write_*`
 - Deterministic failure semantics:
@@ -920,6 +924,7 @@ Verifier-focused examples:
   - `tests/execution_tests.rs`:
     - `exec_buffer_binary_protocol_roundtrip`
     - `exec_buffer_negative_paths_are_typed_and_deterministic`
+    - `exec_buffer_growable_mode_and_explicit_close_are_deterministic`
   - `make verify-intrinsics`
 - Example and CI integration:
   - `examples/data/binary_protocol.aic`
