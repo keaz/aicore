@@ -11,8 +11,8 @@ fn main() -> Int {
     let left = pair.0;
     let right = pair.1;
     let matched = match pair {
-    (40, value) => value,
-    _ => 0,
-};
+        (40, value) => value,
+        _ => 0,
+    };
     tuple_first((left + matched, right))
 }

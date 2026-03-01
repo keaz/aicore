@@ -17,8 +17,8 @@ impl User {
 fn main() -> Int {
     let user = User::new(30);
     if user.is_adult() {
-    user.age_plus()
-} else {
-    0
-}
+        user.age_plus()
+    } else {
+        0
+    }
 }

@@ -1,6 +1,6 @@
 fn to_int(b: Bool) -> Int {
     match b {
-    true => 1,
-    false => 0,
-}
+        true => 1,
+        false => 0,
+    }
 }

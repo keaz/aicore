@@ -5,8 +5,8 @@ fn parse_num(x: Int) -> Result[Int, Int] {
 fn bump(x: Int) -> Result[Int, Int] {
     let value = parse_num(x)?;
     if true {
-    Ok(value + 1)
-} else {
-    Err(0)
-}
+        Ok(value + 1)
+    } else {
+        Err(0)
+    }
 }

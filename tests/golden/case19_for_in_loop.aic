@@ -3,51 +3,51 @@ import std.vec;
 fn sum(n: Int, values: Vec[Int]) -> Int {
     let mut total = 0;
     for i in 0..n {
-    total = total + i;
-};
+        total = total + i;
+    };
     if true {
-    let mut aic_for_iter_1 = aic_for_into_iter(range(0, n));
-    loop {
-    let aic_for_step_1 = aic_for_next_iter(aic_for_iter_1);
-    match aic_for_step_1.item {
-    Some(j) => if true {
-    aic_for_iter_1 = aic_for_step_1.iter;
-    if j == 1 {
-    continue;
-} else {
-    ()
-};
-    total = total + j;
-} else {
-    ()
-},
-    None => break,
-};
-}
-} else {
-    ()
-};
+        let mut aic_for_iter_1 = aic_for_into_iter(range(0, n));
+        loop {
+            let aic_for_step_1 = aic_for_next_iter(aic_for_iter_1);
+            match aic_for_step_1.item {
+                Some(j) => if true {
+                    aic_for_iter_1 = aic_for_step_1.iter;
+                    if j == 1 {
+                        continue;
+                    } else {
+                        ()
+                    };
+                    total = total + j;
+                } else {
+                    ()
+                },
+                None => break,
+            };
+        }
+    } else {
+        ()
+    };
     if true {
-    let mut aic_for_iter_2 = aic_for_into_iter(values);
-    loop {
-    let aic_for_step_2 = aic_for_next_iter(aic_for_iter_2);
-    match aic_for_step_2.item {
-    Some(item) => if true {
-    aic_for_iter_2 = aic_for_step_2.iter;
-    if item == 99 {
-    break;
-} else {
-    ()
-};
-    total = total + item;
-} else {
-    ()
-},
-    None => break,
-};
-}
-} else {
-    ()
-};
+        let mut aic_for_iter_2 = aic_for_into_iter(values);
+        loop {
+            let aic_for_step_2 = aic_for_next_iter(aic_for_iter_2);
+            match aic_for_step_2.item {
+                Some(item) => if true {
+                    aic_for_iter_2 = aic_for_step_2.iter;
+                    if item == 99 {
+                        break;
+                    } else {
+                        ()
+                    };
+                    total = total + item;
+                } else {
+                    ()
+                },
+                None => break,
+            };
+        }
+    } else {
+        ()
+    };
     total
 }

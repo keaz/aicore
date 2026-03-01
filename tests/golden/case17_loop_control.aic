@@ -1,15 +1,15 @@
 fn main() -> Int {
     let mut i = 3;
     while i > 0 {
-    if i == 2 {
-    i = i - 1;
-    continue;
-} else {
-    ()
-};
-    i = i - 1;
-};
+        if i == 2 {
+            i = i - 1;
+            continue;
+        } else {
+            ()
+        };
+        i = i - 1;
+    };
     loop {
-    break 42
-}
+        break 42
+    }
 }

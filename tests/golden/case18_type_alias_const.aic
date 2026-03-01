@@ -13,7 +13,7 @@ fn wrap(v: Count) -> Score[Count] {
 fn main() -> Count {
     let result: Score[Count] = wrap(BONUS);
     match result {
-    Ok(n) => n,
-    Err(e) => e,
-}
+        Ok(n) => n,
+        Err(e) => e,
+    }
 }

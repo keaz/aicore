@@ -1,6 +1,6 @@
 fn unwrap_or_zero(x: Option[Int]) -> Int {
     match x {
-    None => 0,
-    Some(v) => v,
-}
+        None => 0,
+        Some(v) => v,
+    }
 }

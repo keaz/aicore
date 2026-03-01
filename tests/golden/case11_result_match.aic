@@ -1,6 +1,6 @@
 fn pick(x: Result[Int, Int]) -> Int {
     match x {
-    Ok(v) => v,
-    Err(e) => e,
-}
+        Ok(v) => v,
+        Err(e) => e,
+    }
 }

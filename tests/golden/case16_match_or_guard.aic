@@ -1,6 +1,6 @@
 fn classify(x: Option[Int], ready: Bool) -> Int {
     match x {
-    None | Some(_) if ready => 1,
-    _ => 0,
-}
+        None | Some(_) if ready => 1,
+        _ => 0,
+    }
 }
