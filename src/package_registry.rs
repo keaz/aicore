@@ -1168,11 +1168,32 @@ fn copy_tree_recursive(src: &Path, dst: &Path) -> Result<(), Diagnostic> {
     Ok(())
 }
 
-fn parse_inline_dependency_path(value: &str) -> Option<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DependencyUpdate {
+    path: String,
+    resolved_version: Option<String>,
+    source_provenance: Option<String>,
+}
+
+fn parse_quoted_string(value: &str) -> Option<String> {
+    let raw = value.trim();
+    if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
+        Some(raw[1..raw.len() - 1].to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_inline_dependency(value: &str) -> Option<DependencyUpdate> {
     let text = value.trim();
     if !text.starts_with('{') || !text.ends_with('}') {
         return None;
     }
+
+    let mut path = None;
+    let mut resolved_version = None;
+    let mut source_provenance = None;
+
     let inner = text[1..text.len() - 1].trim();
     for part in inner.split(',') {
         let part = part.trim();
@@ -1182,17 +1203,24 @@ fn parse_inline_dependency_path(value: &str) -> Option<String> {
         let Some((key, value)) = part.split_once('=') else {
             continue;
         };
-        if key.trim() == "path" {
-            let raw = value.trim();
-            if raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"') {
-                return Some(raw[1..raw.len() - 1].to_string());
-            }
+        let Some(parsed) = parse_quoted_string(value) else {
+            continue;
+        };
+        match key.trim() {
+            "path" => path = Some(parsed),
+            "resolved_version" => resolved_version = Some(parsed),
+            "source_provenance" => source_provenance = Some(parsed),
+            _ => {}
         }
     }
-    None
+    path.map(|path| DependencyUpdate {
+        path,
+        resolved_version,
+        source_provenance,
+    })
 }
 
-fn parse_existing_dependencies(text: &str) -> BTreeMap<String, String> {
+fn parse_existing_dependencies(text: &str) -> BTreeMap<String, DependencyUpdate> {
     let mut section = String::new();
     let mut dependencies = BTreeMap::new();
 
@@ -1218,22 +1246,46 @@ fn parse_existing_dependencies(text: &str) -> BTreeMap<String, String> {
         let key = raw_key.trim();
         let value = raw_value.trim();
 
-        if let Some(path) = parse_inline_dependency_path(value) {
-            dependencies.insert(key.to_string(), path);
+        if let Some(dep) = parse_inline_dependency(value) {
+            dependencies.insert(key.to_string(), dep);
             continue;
         }
 
-        if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
-            dependencies.insert(key.to_string(), value[1..value.len() - 1].to_string());
+        if let Some(path) = parse_quoted_string(value) {
+            dependencies.insert(
+                key.to_string(),
+                DependencyUpdate {
+                    path,
+                    resolved_version: None,
+                    source_provenance: None,
+                },
+            );
         }
     }
 
     dependencies
 }
 
+fn format_dependency_update(name: &str, dep: &DependencyUpdate) -> String {
+    let mut fields = vec![format!("path = \"{}\"", dep.path.replace('\\', "/"))];
+    if let Some(version) = &dep.resolved_version {
+        fields.push(format!(
+            "resolved_version = \"{}\"",
+            version.replace('\\', "/")
+        ));
+    }
+    if let Some(provenance) = &dep.source_provenance {
+        fields.push(format!(
+            "source_provenance = \"{}\"",
+            provenance.replace('\\', "/")
+        ));
+    }
+    format!("{name} = {{ {} }}", fields.join(", "))
+}
+
 fn rewrite_dependencies_section(
     manifest_path: &Path,
-    updates: &BTreeMap<String, String>,
+    updates: &BTreeMap<String, DependencyUpdate>,
 ) -> Result<(), Diagnostic> {
     let text = fs::read_to_string(manifest_path).map_err(|err| {
         diag_with_help(
@@ -1280,7 +1332,7 @@ fn rewrite_dependencies_section(
 
     let dep_lines = merged
         .iter()
-        .map(|(name, path)| format!("{name} = {{ path = \"{}\" }}", path.replace('\\', "/")))
+        .map(|(name, dep)| format_dependency_update(name, dep))
         .collect::<Vec<_>>();
 
     let output = if let Some(start) = dep_start {
@@ -1693,7 +1745,15 @@ pub fn install_with_options(
         grouped.entry(spec.package.clone()).or_default().push(spec);
     }
 
-    let mut selected = Vec::<(String, String, String, String, PathBuf, TrustAuditRecord)>::new();
+    let mut selected = Vec::<(
+        String,
+        String,
+        String,
+        String,
+        PathBuf,
+        String,
+        TrustAuditRecord,
+    )>::new();
     for (package, requirements) in grouped {
         let registry = resolve_registry(&project_root, Some(&package), options)?;
         authorize_registry("install", &registry, options)?;
@@ -1761,7 +1821,7 @@ pub fn install_with_options(
             ));
         };
 
-        let mut chosen: Option<(PathBuf, String, RegistryRelease)> = None;
+        let mut chosen: Option<(PathBuf, String, RegistryRelease, String)> = None;
         let mut checksum_mismatch: Option<(PathBuf, String, String)> = None;
         for source in sources {
             let source_path = package_version_path(&source.root, &package, &version_text);
@@ -1783,10 +1843,16 @@ pub fn install_with_options(
                 })?;
 
             if source_checksum == source.release.checksum {
+                let provenance = format!(
+                    "registry_root={};index={}",
+                    normalize_path(&source.root),
+                    normalize_path(&source.index_path)
+                );
                 chosen = Some((
                     source_path,
                     source.release.checksum.clone(),
                     source.release.clone(),
+                    provenance,
                 ));
                 break;
             }
@@ -1798,7 +1864,9 @@ pub fn install_with_options(
             ));
         }
 
-        let Some((resolved_source, resolved_checksum, resolved_release)) = chosen else {
+        let Some((resolved_source, resolved_checksum, resolved_release, source_provenance)) =
+            chosen
+        else {
             if let Some((source_path, expected, actual)) = checksum_mismatch {
                 return Err(diag_with_help(
                     "E2116",
@@ -1896,6 +1964,7 @@ pub fn install_with_options(
             version_text,
             resolved_checksum,
             resolved_source,
+            source_provenance,
             TrustAuditRecord {
                 package: String::new(),
                 version: String::new(),
@@ -1910,17 +1979,26 @@ pub fn install_with_options(
 
     selected.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut dep_updates = BTreeMap::<String, String>::new();
+    let mut dep_updates = BTreeMap::<String, DependencyUpdate>::new();
     let mut installed = Vec::<InstalledPackage>::new();
     let mut audit = Vec::<TrustAuditRecord>::new();
-    for (package, requirement, version, _checksum, source, mut audit_record) in selected {
+    for (package, requirement, version, _checksum, source, source_provenance, mut audit_record) in
+        selected
+    {
         let rel_path = PathBuf::from(DEPS_DIR).join(&package);
         let destination = project_root.join(&rel_path);
         copy_tree(&source, &destination)?;
 
         audit_record.package = package.clone();
         audit_record.version = version.clone();
-        dep_updates.insert(package.clone(), normalize_path(&rel_path));
+        dep_updates.insert(
+            package.clone(),
+            DependencyUpdate {
+                path: normalize_path(&rel_path),
+                resolved_version: Some(version.clone()),
+                source_provenance: Some(source_provenance),
+            },
+        );
         installed.push(InstalledPackage {
             package,
             requirement,
@@ -1951,14 +2029,16 @@ pub fn install_with_options(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
 
     use tempfile::tempdir;
 
     use super::{
-        install, install_with_options, package_index_path, parse_spec, publish, search,
-        RegistryClientOptions, SemVer, VersionReq,
+        install, install_with_options, package_index_path, parse_existing_dependencies, parse_spec,
+        publish, rewrite_dependencies_section, search, DependencyUpdate, RegistryClientOptions,
+        SemVer, VersionReq,
     };
 
     fn write_package(root: &Path, name: &str, version: &str, module: &str, value: i32) {
@@ -2044,6 +2124,83 @@ mod tests {
         assert!(installed.audit[0].checksum_verified);
         assert!(consumer.path().join("deps/http_client/aic.toml").exists());
         assert!(consumer.path().join("aic.lock").exists());
+
+        let manifest = fs::read_to_string(consumer.path().join("aic.toml")).expect("manifest");
+        assert!(
+            manifest.contains("resolved_version = \"1.2.0\""),
+            "manifest={manifest}"
+        );
+        assert!(
+            manifest.contains("source_provenance = \"registry_root="),
+            "manifest={manifest}"
+        );
+
+        let lock: crate::package_workflow::Lockfile = serde_json::from_str(
+            &fs::read_to_string(consumer.path().join("aic.lock")).expect("lock"),
+        )
+        .expect("parse lock");
+        let dep = lock
+            .dependencies
+            .iter()
+            .find(|dep| dep.name == "http_client")
+            .expect("http_client dependency");
+        assert_eq!(dep.resolved_version.as_deref(), Some("1.2.0"));
+        assert!(dep
+            .source_provenance
+            .as_deref()
+            .unwrap_or_default()
+            .contains("registry_root="));
+    }
+
+    #[test]
+    fn rewrite_dependencies_section_preserves_traceability_metadata() {
+        let project = tempdir().expect("project");
+        let manifest_path = project.path().join("aic.toml");
+        fs::write(
+            &manifest_path,
+            concat!(
+                "[package]\n",
+                "name = \"app\"\n",
+                "version = \"0.1.0\"\n",
+                "main = \"src/main.aic\"\n\n",
+                "[dependencies]\n",
+                "alpha = { path = \"deps/alpha\", resolved_version = \"1.0.0\", source_provenance = \"registry_root=/tmp/r1;index=/tmp/r1/index/alpha.json\" }\n",
+                "beta = { path = \"deps/beta\" }\n",
+            ),
+        )
+        .expect("write manifest");
+
+        let mut updates = BTreeMap::new();
+        updates.insert(
+            "beta".to_string(),
+            DependencyUpdate {
+                path: "deps/beta".to_string(),
+                resolved_version: Some("2.1.0".to_string()),
+                source_provenance: Some(
+                    "registry_root=/tmp/r2;index=/tmp/r2/index/beta.json".to_string(),
+                ),
+            },
+        );
+        rewrite_dependencies_section(&manifest_path, &updates).expect("rewrite dependencies");
+
+        let parsed = parse_existing_dependencies(
+            &fs::read_to_string(&manifest_path).expect("read rewritten manifest"),
+        );
+        let alpha = parsed.get("alpha").expect("alpha dependency");
+        assert_eq!(alpha.path, "deps/alpha");
+        assert_eq!(alpha.resolved_version.as_deref(), Some("1.0.0"));
+        assert_eq!(
+            alpha.source_provenance.as_deref(),
+            Some("registry_root=/tmp/r1;index=/tmp/r1/index/alpha.json")
+        );
+
+        let beta = parsed.get("beta").expect("beta dependency");
+        assert_eq!(beta.path, "deps/beta");
+        assert_eq!(beta.resolved_version.as_deref(), Some("2.1.0"));
+        assert_eq!(
+            beta.source_provenance.as_deref(),
+            Some("registry_root=/tmp/r2;index=/tmp/r2/index/beta.json")
+        );
     }
 
     #[test]

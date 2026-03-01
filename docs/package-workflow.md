@@ -36,9 +36,12 @@ aic lock <project-dir>
 
 `aic.lock` stores deterministic dependency entries:
 
+- schema version (`2`)
 - name
 - resolved path
 - package checksum (`sha256:...`)
+- resolved version (when available from install resolution metadata)
+- source provenance (when available; for example registry root/index origin)
 
 ## Registry CLI (PKG-T1)
 
@@ -60,6 +63,12 @@ Version requirement forms:
 
 Install writes dependencies to `aic.toml` (`[dependencies]`) and regenerates `aic.lock`.
 Resolver behavior is deterministic: matching versions are sorted by semantic version and the highest compatible version is selected.
+Install now persists `resolved_version` and `source_provenance` in dependency tables so lock generation can preserve traceability metadata for audits and rollback.
+
+Lockfile migration behavior:
+
+- schema version `1` lockfiles are read and migrated in-memory.
+- regenerated lockfiles are emitted as schema version `2`.
 
 Example consumer source: `examples/pkg/consume_http_client.aic`
 

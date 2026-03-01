@@ -237,7 +237,7 @@ fn demo() -> Int {
 
 - Parses `aic.toml` package/dependency metadata.
 - Generates deterministic `aic.lock` via `aic lock`.
-- Lockfile entries include dependency name, resolved path, checksum.
+- Lockfile entries include dependency name, resolved path, checksum, resolved version (when available), and source provenance (when available).
 - Build/check/run consume lockfile through package loader when present.
 
 Diagnostics:

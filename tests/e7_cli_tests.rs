@@ -3075,6 +3075,32 @@ fn pkg_install_lockfile_is_deterministic() {
     ]);
     assert_eq!(install_1.status.code(), Some(0));
     let first_lock = fs::read_to_string(consumer.path().join("aic.lock")).expect("lock 1");
+    let first_manifest = fs::read_to_string(consumer.path().join("aic.toml")).expect("manifest 1");
+    assert!(
+        first_manifest.contains("resolved_version = \"1.1.0\""),
+        "manifest missing resolved_version metadata: {first_manifest}"
+    );
+    assert!(
+        first_manifest.contains("source_provenance = \"registry_root="),
+        "manifest missing source_provenance metadata: {first_manifest}"
+    );
+    let first_lock_json: serde_json::Value =
+        serde_json::from_str(&first_lock).expect("parse lock 1 json");
+    assert_eq!(first_lock_json["schema_version"], 2);
+    let first_dep = first_lock_json["dependencies"]
+        .as_array()
+        .expect("dependencies array")
+        .iter()
+        .find(|dep| dep["name"] == "utilpkg")
+        .expect("utilpkg lock dependency");
+    assert_eq!(first_dep["resolved_version"], "1.1.0");
+    assert!(
+        first_dep["source_provenance"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("registry_root="),
+        "lock missing source_provenance metadata: {first_dep:#?}"
+    );
 
     let install_2 = run_aic(&[
         "pkg",

@@ -13,7 +13,7 @@ use crate::span::Span;
 const LOCKFILE_NAME: &str = "aic.lock";
 const WORKSPACE_MANIFEST_NAME: &str = "aic.workspace.toml";
 const CACHE_DIR_NAME: &str = ".aic-cache";
-const LOCKFILE_SCHEMA_VERSION: u32 = 1;
+const LOCKFILE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PackageOptions {
@@ -60,6 +60,8 @@ pub struct WorkspaceBuildMember {
 pub struct ManifestDependency {
     pub name: String,
     pub path: String,
+    pub resolved_version: Option<String>,
+    pub source_provenance: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -83,6 +85,10 @@ pub struct LockedDependency {
     pub name: String,
     pub path: String,
     pub checksum: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_provenance: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -834,14 +840,21 @@ fn read_lockfile(project_root: &Path) -> anyhow::Result<Option<Lockfile>> {
         return Ok(None);
     }
     let text = fs::read_to_string(&path)?;
-    let lock = serde_json::from_str::<Lockfile>(&text)
+    let mut lock = serde_json::from_str::<Lockfile>(&text)
         .map_err(|err| anyhow::anyhow!("invalid lockfile '{}': {}", path.display(), err))?;
-    if lock.schema_version != LOCKFILE_SCHEMA_VERSION {
-        anyhow::bail!(
-            "unsupported lockfile schema version {} in {}",
-            lock.schema_version,
-            path.display()
-        );
+    match lock.schema_version {
+        1 => {
+            // Schema v1 did not include dependency traceability metadata.
+            lock.schema_version = LOCKFILE_SCHEMA_VERSION;
+        }
+        LOCKFILE_SCHEMA_VERSION => {}
+        _ => {
+            anyhow::bail!(
+                "unsupported lockfile schema version {} in {}",
+                lock.schema_version,
+                path.display()
+            );
+        }
     }
     Ok(Some(lock))
 }
@@ -956,6 +969,8 @@ fn generate_lockfile_from_manifest(
             project_root,
             dep_root,
             dep.name,
+            dep.resolved_version,
+            dep.source_provenance,
             &mut visited,
             &mut dependencies,
         )?;
@@ -976,6 +991,8 @@ fn collect_dependency_nodes(
     project_root: &Path,
     dep_root: PathBuf,
     fallback_name: String,
+    resolved_version: Option<String>,
+    source_provenance: Option<String>,
     visited: &mut BTreeSet<PathBuf>,
     dependencies: &mut Vec<LockedDependency>,
 ) -> anyhow::Result<()> {
@@ -997,14 +1014,24 @@ fn collect_dependency_nodes(
         name: dep_package_name,
         path: rel_path,
         checksum,
+        resolved_version,
+        source_provenance,
     });
 
     if let Some(manifest) = dep_manifest {
         let mut children = manifest.dependencies;
         children.sort();
         for child in children {
-            let child_root = canonical_or_self(dep_root.join(child.path));
-            collect_dependency_nodes(project_root, child_root, child.name, visited, dependencies)?;
+            let child_root = canonical_or_self(dep_root.join(&child.path));
+            collect_dependency_nodes(
+                project_root,
+                child_root,
+                child.name,
+                child.resolved_version,
+                child.source_provenance,
+                visited,
+                dependencies,
+            )?;
         }
     }
 
@@ -1047,14 +1074,16 @@ fn parse_manifest(text: &str, path: &Path) -> anyhow::Result<Manifest> {
         }
 
         if section == "dependencies" {
-            let dep_path = if value.starts_with('{') {
-                parse_inline_dep_path(value, path, line_no + 1)?
+            let (dep_path, resolved_version, source_provenance) = if value.starts_with('{') {
+                parse_inline_dependency_fields(value, path, line_no + 1)?
             } else {
-                parse_string(value, path, line_no + 1)?
+                (parse_string(value, path, line_no + 1)?, None, None)
             };
             dependencies.push(ManifestDependency {
                 name: key.to_string(),
                 path: dep_path,
+                resolved_version,
+                source_provenance,
             });
             continue;
         }
@@ -1149,16 +1178,23 @@ fn parse_workspace_manifest(text: &str, path: &Path) -> anyhow::Result<Workspace
     Ok(WorkspaceManifest { members })
 }
 
-fn parse_inline_dep_path(value: &str, path: &Path, line_no: usize) -> anyhow::Result<String> {
+fn parse_inline_dependency_fields(
+    value: &str,
+    path: &Path,
+    line_no: usize,
+) -> anyhow::Result<(String, Option<String>, Option<String>)> {
     let inner = value.trim();
     if !inner.starts_with('{') || !inner.ends_with('}') {
         anyhow::bail!(
-            "invalid dependency table at {}:{} (expected {{ path = \"...\" }})",
+            "invalid dependency table at {}:{} (expected {{ path = \"...\", ... }})",
             path.display(),
             line_no
         );
     }
     let inner = inner[1..inner.len() - 1].trim();
+    let mut dep_path = None;
+    let mut resolved_version = None;
+    let mut source_provenance = None;
     for part in inner.split(',') {
         let part = part.trim();
         if part.is_empty() {
@@ -1167,15 +1203,23 @@ fn parse_inline_dep_path(value: &str, path: &Path, line_no: usize) -> anyhow::Re
         let Some((key, value)) = part.split_once('=') else {
             continue;
         };
-        if key.trim() == "path" {
-            return parse_string(value.trim(), path, line_no);
+        let key = key.trim();
+        let parsed = parse_string(value.trim(), path, line_no)?;
+        match key {
+            "path" => dep_path = Some(parsed),
+            "resolved_version" => resolved_version = Some(parsed),
+            "source_provenance" => source_provenance = Some(parsed),
+            _ => {}
         }
     }
-    anyhow::bail!(
-        "dependency table missing `path` at {}:{}",
-        path.display(),
-        line_no
-    )
+    let Some(dep_path) = dep_path else {
+        anyhow::bail!(
+            "dependency table missing `path` at {}:{}",
+            path.display(),
+            line_no
+        );
+    };
+    Ok((dep_path, resolved_version, source_provenance))
 }
 
 fn parse_string(value: &str, path: &Path, line_no: usize) -> anyhow::Result<String> {
@@ -1353,8 +1397,9 @@ mod tests {
 
     use super::{
         compute_package_checksum, generate_and_write_lockfile, generate_lockfile, lockfile_path,
-        metrics_thresholds_for_input, native_link_config, read_manifest, read_workspace_manifest,
-        resolve_dependency_context, workspace_build_plan, PackageOptions,
+        metrics_thresholds_for_input, native_link_config, read_lockfile, read_manifest,
+        read_workspace_manifest, resolve_dependency_context, workspace_build_plan, PackageOptions,
+        LOCKFILE_SCHEMA_VERSION,
     };
 
     fn write_workspace_demo(root: &std::path::Path) {
@@ -1420,6 +1465,7 @@ main = "src/main.aic"
 [dependencies]
 util = { path = "deps/util" }
 net = "deps/net"
+http = { path = "deps/http", resolved_version = "1.2.3", source_provenance = "registry_root=/tmp/registry;index=/tmp/registry/index/http.json" }
 "#,
         )
         .expect("write manifest");
@@ -1429,7 +1475,18 @@ net = "deps/net"
             .expect("manifest present");
         assert_eq!(manifest.package_name, "app");
         assert_eq!(manifest.main, "src/main.aic");
-        assert_eq!(manifest.dependencies.len(), 2);
+        assert_eq!(manifest.dependencies.len(), 3);
+        let http_dep = manifest
+            .dependencies
+            .iter()
+            .find(|dep| dep.name == "http")
+            .expect("http dependency");
+        assert_eq!(http_dep.path, "deps/http");
+        assert_eq!(http_dep.resolved_version.as_deref(), Some("1.2.3"));
+        assert_eq!(
+            http_dep.source_provenance.as_deref(),
+            Some("registry_root=/tmp/registry;index=/tmp/registry/index/http.json")
+        );
     }
 
     #[test]
@@ -1654,7 +1711,7 @@ max_cyclomatic = 11
 
         fs::write(
             dir.path().join("aic.toml"),
-            "[package]\nname = \"app\"\nmain = \"src/main.aic\"\n\n[dependencies]\nutil = { path = \"deps/util\" }\n",
+            "[package]\nname = \"app\"\nmain = \"src/main.aic\"\n\n[dependencies]\nutil = { path = \"deps/util\", resolved_version = \"1.0.0\", source_provenance = \"registry_root=/tmp/registry;index=/tmp/registry/index/util.json\" }\n",
         )
         .expect("write app manifest");
         fs::write(dir.path().join("src/main.aic"), "fn main() -> Int { 0 }\n").expect("write app");
@@ -1673,6 +1730,46 @@ max_cyclomatic = 11
         let lock1 = generate_lockfile(dir.path()).expect("lockfile");
         let lock2 = generate_lockfile(dir.path()).expect("lockfile");
         assert_eq!(lock1, lock2);
+        assert_eq!(lock1.schema_version, LOCKFILE_SCHEMA_VERSION);
+        let util = lock1
+            .dependencies
+            .iter()
+            .find(|dep| dep.name == "util")
+            .expect("util dependency");
+        assert_eq!(util.resolved_version.as_deref(), Some("1.0.0"));
+        assert_eq!(
+            util.source_provenance.as_deref(),
+            Some("registry_root=/tmp/registry;index=/tmp/registry/index/util.json")
+        );
+    }
+
+    #[test]
+    fn read_lockfile_migrates_schema_version_one() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("aic.lock"),
+            r#"{
+  "schema_version": 1,
+  "package": "app",
+  "dependencies": [
+    {
+      "name": "util",
+      "path": "deps/util",
+      "checksum": "sha256:1234"
+    }
+  ]
+}
+"#,
+        )
+        .expect("write lockfile");
+
+        let lock = read_lockfile(dir.path())
+            .expect("read lockfile")
+            .expect("lockfile present");
+        assert_eq!(lock.schema_version, LOCKFILE_SCHEMA_VERSION);
+        assert_eq!(lock.dependencies.len(), 1);
+        assert_eq!(lock.dependencies[0].resolved_version, None);
+        assert_eq!(lock.dependencies[0].source_provenance, None);
     }
 
     #[test]

@@ -33,7 +33,14 @@ Behavior guarantees:
 - dependency package name
 - resolved path
 - dependency checksum (`sha256:...`)
+- resolved version (when dependency metadata is available)
+- source provenance (when dependency metadata is available)
 - workspace metadata (when generated from workspace)
+
+Schema compatibility:
+
+- schema version `1` lockfiles remain readable.
+- new writes use schema version `2` with traceability metadata fields.
 
 Offline mode:
 
