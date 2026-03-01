@@ -11,6 +11,7 @@ import std.net;
 import std.option;
 import std.result;
 import std.string;
+import std.time;
 
 /// `TlsError` is a `enum` in `std.tls`.
 ///
@@ -183,6 +184,19 @@ intrinsic fn aic_tls_accept_intrinsic(
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_send_intrinsic(handle: Int, payload: String) -> Result[Int, TlsError] effects { net };
+/// `aic_tls_send_timeout_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_send_timeout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net };
 /// `aic_tls_recv_intrinsic` in `std.tls`.
 ///
 /// ## Example
@@ -498,6 +512,38 @@ fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effec
     aic_tls_send_intrinsic(stream.handle, data.data)
 }
 
+/// `tls_send_timeout` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_send_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net } {
+    aic_tls_send_timeout_intrinsic(stream.handle, payload, timeout_ms)
+}
+
+/// `tls_send_bytes_timeout` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_send_bytes_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net } {
+    aic_tls_send_timeout_intrinsic(stream.handle, data.data, timeout_ms)
+}
+
 /// `tls_recv` in `std.tls`.
 ///
 /// ## Example
@@ -532,6 +578,221 @@ fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
         Ok(data) => Ok(Bytes { data: data }),
         Err(err) => Err(err),
     }
+}
+
+/// `tls_frame_len_be` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_frame_len_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_frame_len_be(header: Bytes) -> Result[Int, TlsError] {
+    if byte_len(header) != 4 {
+        Err(ProtocolError())
+    } else {
+        let b0 = match byte_at(header, 0) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b1 = match byte_at(header, 1) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b2 = match byte_at(header, 2) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b3 = match byte_at(header, 3) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
+            Err(ProtocolError())
+        } else {
+            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
+        }
+    }
+}
+
+/// `tls_recv_framed_payload` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_framed_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_recv_framed_payload(stream: TlsStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
+    let frame_len = tls_frame_len_be(frame_header);
+    match frame_len {
+        Err(err) => Err(err),
+        Ok(payload_len) => if payload_len < 0 || payload_len > max_frame_bytes {
+            Err(ProtocolError())
+        } else {
+            tls_recv_exact_deadline(stream, payload_len, deadline_ms)
+        },
+    }
+}
+
+/// `tls_io_error` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_io_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_io_error() -> TlsError {
+    Io()
+}
+
+/// `tls_connection_closed_error` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_connection_closed_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_connection_closed_error() -> TlsError {
+    ConnectionClosed()
+}
+
+/// `tls_recv_exact_deadline` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_exact_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
+    if expected_bytes < 0 {
+        Err(ProtocolError())
+    } else {
+        let mut remaining = expected_bytes;
+        let mut out = empty();
+        let mut failed = false;
+        let mut failure: TlsError = tls_io_error();
+        while remaining > 0 && !failed {
+            let timeout_ms = remaining_ms(deadline_ms);
+            if timeout_ms <= 0 {
+                failed = true;
+                failure = tls_io_error();
+            } else {
+                let next = tls_recv_bytes(stream, remaining, timeout_ms);
+                let next_failed = match next {
+                    Err(_) => true,
+                    Ok(_) => false,
+                };
+                if next_failed {
+                    failed = true;
+                    failure = match next {
+                        Err(err) => err,
+                        Ok(_) => tls_io_error(),
+                    };
+                } else {
+                    let chunk = match next {
+                        Ok(value) => value,
+                        Err(_) => empty(),
+                    };
+                    let read_count = byte_len(chunk);
+                    if read_count <= 0 {
+                        failed = true;
+                        failure = tls_connection_closed_error();
+                    } else {
+                        out = concat(out, chunk);
+                        remaining = remaining - read_count;
+                    }
+                };
+            }
+        };
+        if failed {
+            Err(failure)
+        } else {
+            Ok(out)
+        }
+    }
+}
+
+/// `tls_recv_exact` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_exact` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tls_recv_exact_deadline(stream, expected_bytes, deadline_ms)
+}
+
+/// `tls_recv_framed_deadline` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_framed_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
+    if max_frame_bytes < 0 {
+        Err(ProtocolError())
+    } else {
+        let header = tls_recv_exact_deadline(stream, 4, deadline_ms);
+        match header {
+            Err(err) => Err(err),
+            Ok(frame_header) => tls_recv_framed_payload(stream, frame_header, max_frame_bytes, deadline_ms),
+        }
+    }
+}
+
+/// `tls_recv_framed` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_recv_framed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tls_recv_framed_deadline(stream, max_frame_bytes, deadline_ms)
 }
 
 /// `tls_close` in `std.tls`.
@@ -655,6 +916,25 @@ fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStrea
     }
 }
 
+/// `byte_stream_send_timeout` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_send_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_send_timeout(tcp, payload, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_send_bytes_timeout(tls, payload, timeout_ms)),
+    }
+}
+
 /// `byte_stream_recv` in `std.tls`.
 ///
 /// ## Example
@@ -671,6 +951,82 @@ fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Resu
     match stream {
         Tcp(tcp) => byte_stream_map_net(tcp_stream_recv(tcp, max_bytes, timeout_ms)),
         Tls(tls) => byte_stream_map_tls(tls_recv_bytes(tls, max_bytes, timeout_ms)),
+    }
+}
+
+/// `byte_stream_recv_exact_deadline` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_recv_exact_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_deadline(tcp, expected_bytes, deadline_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_exact_deadline(tls, expected_bytes, deadline_ms)),
+    }
+}
+
+/// `byte_stream_recv_exact` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_recv_exact` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact(tcp, expected_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_exact(tls, expected_bytes, timeout_ms)),
+    }
+}
+
+/// `byte_stream_recv_framed_deadline` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_recv_framed_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed_deadline(tcp, max_frame_bytes, deadline_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_framed_deadline(tls, max_frame_bytes, deadline_ms)),
+    }
+}
+
+/// `byte_stream_recv_framed` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `byte_stream_recv_framed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed(tcp, max_frame_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_framed(tls, max_frame_bytes, timeout_ms)),
     }
 }
 

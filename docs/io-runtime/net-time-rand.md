@@ -15,11 +15,16 @@ enum NetError {
     AddressInUse,
     InvalidInput,
     Io,
+    ConnectionClosed,
 }
 
 struct UdpPacket {
     from: String,
     payload: String,
+}
+
+struct TcpStream {
+    handle: Int,
 }
 ```
 
@@ -31,8 +36,18 @@ fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }
+fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream(handle: Int) -> TcpStream
+fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
+fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
+fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
+fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
@@ -48,7 +63,11 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 
 - TCP/UDP handles are bounded runtime resources; always close handles.
 - `timeout_ms` is explicit in accept/connect/recv APIs for liveness control.
+- `tcp_send_timeout` and `tcp_stream_send_timeout` enforce timeout-bounded write loops.
+- `tcp_recv` reports `ConnectionClosed` on peer EOF/close; `Timeout` remains distinct.
 - DNS reverse may legitimately return `NotFound` for unmapped addresses.
+- Exact stream reads are deadline-based: `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is met.
+- Framed stream reads are length-prefixed: `tcp_stream_recv_framed*` consumes a 4-byte big-endian frame length and enforces `max_frame_bytes`.
 
 ### Example
 

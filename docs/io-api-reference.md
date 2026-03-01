@@ -49,7 +49,7 @@ The backend maps runtime status codes to typed error enums in `src/codegen/mod.r
 | `FsError` | `1=NotFound`, `2=PermissionDenied`, `3=AlreadyExists`, `4=InvalidInput`, `5=Io` |
 | `EnvError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io` |
 | `ProcError` | `1=NotFound`, `2=PermissionDenied`, `3=InvalidInput`, `4=Io`, `5=UnknownProcess` |
-| `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io` |
+| `NetError` | `1=NotFound`, `2=PermissionDenied`, `3=Refused`, `4=Timeout`, `5=AddressInUse`, `6=InvalidInput`, `7=Io`, `8=ConnectionClosed` |
 | `TlsError` | `1=HandshakeFailed`, `2=CertificateInvalid`, `3=CertificateExpired`, `4=HostnameMismatch`, `5=ProtocolError`, `6=ConnectionClosed`, `7=Io` |
 | `TimeError` | `1=InvalidFormat`, `2=InvalidDate`, `3=InvalidTime`, `4=InvalidOffset`, `5=InvalidInput`, `6=Internal` |
 | `SignalError` | `1=UnsupportedPlatform`, `2=InvalidSignal`, `3=PermissionDenied`, `4=Internal` |
@@ -364,6 +364,7 @@ enum NetError {
     AddressInUse,
     InvalidInput,
     Io,
+    ConnectionClosed,
 }
 
 struct UdpPacket {
@@ -371,13 +372,27 @@ struct UdpPacket {
     payload: String,
 }
 
+struct TcpStream {
+    handle: Int,
+}
+
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }
+fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream(handle: Int) -> TcpStream
+fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
+fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
+fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
+fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn udp_send_to(handle: Int, addr: String, payload: String) -> Result[Int, NetError] effects { net }
@@ -390,7 +405,11 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 Notes:
 
 - Network-handle table capacity is bounded (`128` runtime slots).
+- `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
 - On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
+- `tcp_send_timeout` and `tcp_stream_send_timeout` enforce a total write timeout budget.
+- `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is satisfied or the deadline expires.
+- `tcp_stream_recv_framed*` expects a 4-byte big-endian length prefix and enforces `max_frame_bytes`.
 
 ## `std.tls`
 
@@ -432,9 +451,20 @@ fn tls_accept_timeout(listener_handle: Int, config: TlsConfig, timeout_ms: Int) 
 fn tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }
 fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }
+fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
+fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
+fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }
@@ -451,6 +481,12 @@ Notes:
 - `tls_connect_addr` performs TCP connect + TLS handshake in one call.
 - `tls_accept` / `tls_accept_timeout` provide server-side TLS wrapping over listener handles.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
+- `tls_send_timeout` / `tls_send_bytes_timeout` provide timeout-bounded TLS write APIs.
+- `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
+- `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Io`).
+- `tls_send_timeout` deadline expiry maps to `TlsError::Io` because `TlsError` currently has no `Timeout` variant.
+- `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.
+- `tls_recv_framed*` and `byte_stream_recv_framed*` decode a 4-byte big-endian length prefix and enforce frame-size bounds.
 - `tls_version` reports negotiated protocol (`Tls12` or `Tls13`).
 - `tls_peer_cn` extracts the peer certificate common name from the subject string.
 - Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.

@@ -204,8 +204,20 @@ fn is_empty(data: Bytes) -> Bool {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn concat(left: Bytes, right: Bytes) -> Bytes {
-    Bytes {
-        data: aic_bytes_concat_intrinsic(left.data, right.data),
+    let mut values = to_byte_values(left);
+    let right_values = to_byte_values(right);
+    let mut i = 0;
+    while i < right_values.len {
+        let value = match aic_vec_get_intrinsic(right_values, i) {
+            Some(v) => v,
+            None => 0,
+        };
+        values = aic_vec_push_intrinsic(values, value);
+        i = i + 1;
+    };
+    match from_byte_values(values) {
+        Ok(data) => data,
+        Err(_) => empty(),
     }
 }
 

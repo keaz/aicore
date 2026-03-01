@@ -4162,6 +4162,7 @@ impl<'a> Generator<'a> {
                 (5, "AddressInUse"),
                 (6, "InvalidInput"),
                 (7, "Io"),
+                (8, "ConnectionClosed"),
             ],
             "Io",
             err_code,

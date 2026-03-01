@@ -885,6 +885,7 @@ fn from_fs_error(err: FsError) -> IoError {
 fn from_net_error(err: NetError) -> IoError {
     match err {
         Timeout => io_end_of_input(),
+        ConnectionClosed => io_end_of_input(),
         InvalidInput => io_invalid_input(),
         _ => io_other(),
     }
@@ -1046,6 +1047,7 @@ fn net_error_name(err: NetError) -> String {
         AddressInUse => "net.AddressInUse",
         InvalidInput => "net.InvalidInput",
         Io => "net.Io",
+        ConnectionClosed => "net.ConnectionClosed",
     }
 }
 
@@ -1170,6 +1172,7 @@ fn from_net_error_with_context(err: NetError, context: String) -> IoErrorContext
         AddressInUse => mapped_error_with_context(io_other(), context, "net.AddressInUse"),
         InvalidInput => mapped_error_with_context(io_invalid_input(), context, "net.InvalidInput"),
         Io => mapped_error_with_context(io_other(), context, "net.Io"),
+        ConnectionClosed => mapped_error_with_context(io_end_of_input(), context, "net.ConnectionClosed"),
     }
 }
 

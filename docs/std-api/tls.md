@@ -59,15 +59,26 @@ fn tls_accept(listener_handle: Int, config: TlsConfig) -> Result[TlsStream, TlsE
 
 fn tls_send(stream: TlsStream, payload: String) -> Result[Int, TlsError] effects { net }
 fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effects { net }
+fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
+fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
 
 fn byte_stream_from_tcp(handle: Int) -> ByteStream
 fn byte_stream_from_tcp_stream(stream: TcpStream) -> ByteStream
 fn byte_stream_from_tls(stream: TlsStream) -> ByteStream
 fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net }
+fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }
 fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
+fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effects { net }
 
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
@@ -194,6 +205,11 @@ fn main() -> Int effects { net } capabilities { net } {
 
 - `default_tls_config()` is secure-by-default (`verify_server: true`).
 - `unsafe_insecure_tls_config(...)` must only be used in explicitly audited scenarios.
+- `tls_recv` / `tls_recv_bytes` surface peer EOF/close as `TlsError::ConnectionClosed`; timeout remains the non-close path (`TlsError::Io`).
 - `TlsStream` participates in resource protocol checking (`E2006`) after `tls_close`.
 - `TlsStream` also participates in runtime handle cleanup on scope drop (RAII close path).
 - `ByteStream` provides protocol-agnostic byte I/O by adapting `TcpStream` and `TlsStream`.
+- `tls_send_timeout`/`tls_send_bytes_timeout` enforce timeout-bounded TLS writes.
+- TLS write timeout expiry maps to `TlsError::Io` because `TlsError` has no `Timeout` variant.
+- Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.
+- Framed read APIs (`*_recv_framed*`) decode a 4-byte big-endian length prefix, enforce `max_frame_bytes`, then read the exact payload.

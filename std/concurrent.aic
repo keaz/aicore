@@ -961,6 +961,40 @@ fn channel_timeout() -> ChannelError {
     out
 }
 
+/// `concurrency_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `concurrency_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn concurrency_timeout() -> ConcurrencyError {
+    let out: ConcurrencyError = Timeout();
+    out
+}
+
+/// `concurrency_closed` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `concurrency_closed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn concurrency_closed() -> ConcurrencyError {
+    let out: ConcurrencyError = Closed();
+    out
+}
+
 /// `map_concurrency_to_channel_error` in `std.concurrent`.
 ///
 /// ## Example
@@ -995,11 +1029,45 @@ fn map_concurrency_to_channel_error(err: ConcurrencyError) -> ChannelError {
 /// Returns module-defined error variants when the operation fails.
 fn map_channel_to_concurrency_error(err: ChannelError) -> ConcurrencyError {
     match err {
-        Timeout => Timeout(),
-        Closed => Closed(),
+        Timeout => concurrency_timeout(),
+        Closed => concurrency_closed(),
         Full => InvalidInput(),
         Empty => NotFound(),
     }
+}
+
+/// `select_timeout` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn select_timeout[A, B]() -> SelectResult[A, B] {
+    let out: SelectResult[A, B] = Timeout();
+    out
+}
+
+/// `select_closed` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `select_closed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn select_closed[A, B]() -> SelectResult[A, B] {
+    let out: SelectResult[A, B] = Closed();
+    out
 }
 
 /// `take_payload_string` in `std.concurrent`.
@@ -2004,18 +2072,18 @@ fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectR
         Ok(selection) => if selection.channel_index == 0 {
             match decode_payload_for_receiver(selection.value, rx1) {
                 Ok(value) => First(value),
-                Err(_) => Closed(),
+                Err(_) => select_closed(),
             }
         } else {
             match decode_payload_for_receiver(selection.value, rx2) {
                 Ok(value) => Second(value),
-                Err(_) => Closed(),
+                Err(_) => select_closed(),
             }
         },
         Err(err) => match err {
-            Timeout => Timeout(),
-            Closed => Closed(),
-            _ => Closed(),
+            Timeout => select_timeout(),
+            Closed => select_closed(),
+            _ => select_closed(),
         },
     }
 }

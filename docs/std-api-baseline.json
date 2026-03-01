@@ -3329,7 +3329,7 @@
     {
       "module": "std.net",
       "kind": "enum",
-      "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io }"
+      "signature": "NetError { NotFound, PermissionDenied, Refused, Timeout, AddressInUse, InvalidInput, Io, ConnectionClosed }"
     },
     {
       "module": "std.net",

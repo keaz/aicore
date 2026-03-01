@@ -294,6 +294,7 @@ fn cli_help_snapshots_are_stable() {
     assert!(main_help_text.contains("Usage: aic <COMMAND>"));
     for command in [
         "init",
+        "setup",
         "check",
         "ast",
         "impact",

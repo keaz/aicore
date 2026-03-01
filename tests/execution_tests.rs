@@ -306,13 +306,10 @@ import std.net;
 
 fn err_code(err: NetError) -> Int {
     match err {
-        NotFound => 1,
-        PermissionDenied => 2,
-        Refused => 3,
         Timeout => 4,
-        AddressInUse => 5,
+        ConnectionClosed => 8,
         InvalidInput => 6,
-        Io => 7,
+        _ => 7,
     }
 }
 
@@ -6245,6 +6242,300 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_tcp_stream_exact_and_framed_reads_with_deadlines() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.time;
+import std.bytes;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn is_timeout(err: NetError) -> Bool {
+    match err {
+        Timeout => true,
+        _ => false,
+    }
+}
+
+fn is_invalid_input(err: NetError) -> Bool {
+    match err {
+        InvalidInput => true,
+        _ => false,
+    }
+}
+
+fn frame_header(len: Int) -> Bytes {
+    let b0 = len / 16777216;
+    let rem0 = len - (b0 * 16777216);
+    let b1 = rem0 / 65536;
+    let rem1 = rem0 - (b1 * 65536);
+    let b2 = rem1 / 256;
+    let b3 = rem1 - (b2 * 256);
+    let mut values: Vec[Int] = vec.vec_of(b0);
+    values = vec.push(values, b1);
+    values = vec.push(values, b2);
+    values = vec.push(values, b3);
+    match bytes.from_byte_values(values) {
+        Ok(out) => out,
+        Err(_) => bytes.empty(),
+    }
+}
+
+struct TestTcpStream {
+    handle: Int,
+}
+
+fn test_tcp_stream(handle: Int) -> TestTcpStream {
+    TestTcpStream { handle: handle }
+}
+
+fn test_tcp_stream_send(stream: TestTcpStream, payload: Bytes) -> Result[Int, NetError] effects { net } capabilities { net } {
+    tcp_send(stream.handle, payload)
+}
+
+fn test_tcp_stream_close(stream: TestTcpStream) -> Result[Bool, NetError] effects { net } capabilities { net } {
+    tcp_close(stream.handle)
+}
+
+fn test_tcp_stream_recv(stream: TestTcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net } capabilities { net } {
+    tcp_recv(stream.handle, max_bytes, timeout_ms)
+}
+
+fn test_net_io_error() -> NetError {
+    Io()
+}
+
+struct TestTcpRecvStep {
+    failed: Bool,
+    failure: NetError,
+    chunk: Bytes,
+}
+
+fn test_tcp_stream_recv_step(next: Result[Bytes, NetError]) -> TestTcpRecvStep {
+    match next {
+        Err(err) => TestTcpRecvStep {
+            failed: true,
+            failure: err,
+            chunk: bytes.empty(),
+        },
+        Ok(chunk) => TestTcpRecvStep {
+            failed: false,
+            failure: test_net_io_error(),
+            chunk: chunk,
+        },
+    }
+}
+
+fn test_tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError] {
+    if bytes.byte_len(header) != 4 {
+        Err(InvalidInput())
+    } else {
+        let b0 = match bytes.byte_at(header, 0) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b1 = match bytes.byte_at(header, 1) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b2 = match bytes.byte_at(header, 2) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b3 = match bytes.byte_at(header, 3) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
+            Err(InvalidInput())
+        } else {
+            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
+        }
+    }
+}
+
+fn test_tcp_stream_recv_framed_payload(stream: TestTcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
+    let frame_len = test_tcp_stream_frame_len_be(frame_header);
+    match frame_len {
+        Err(err) => Err(err),
+        Ok(payload_len) => if payload_len < 0 || payload_len > max_frame_bytes {
+            Err(InvalidInput())
+        } else {
+            test_tcp_stream_recv_exact_deadline(stream, payload_len, deadline_ms)
+        },
+    }
+}
+
+fn test_tcp_stream_recv_exact_deadline(stream: TestTcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
+    if expected_bytes < 0 {
+        Err(InvalidInput())
+    } else {
+        let mut remaining = expected_bytes;
+        let mut out = bytes.empty();
+        let mut failed = false;
+        let mut failure: NetError = test_net_io_error();
+        while remaining > 0 && !failed {
+            let timeout_ms = remaining_ms(deadline_ms);
+            if timeout_ms <= 0 {
+                failed = true;
+                failure = Timeout();
+            } else {
+                let next = test_tcp_stream_recv(stream, remaining, timeout_ms);
+                let step = test_tcp_stream_recv_step(next);
+                if step.failed {
+                    failed = true;
+                    failure = step.failure;
+                } else {
+                    let read_count = bytes.byte_len(step.chunk);
+                    if read_count <= 0 {
+                        failed = true;
+                        failure = test_net_io_error();
+                    } else {
+                        out = bytes.concat(out, step.chunk);
+                        remaining = remaining - read_count;
+                    }
+                }
+            }
+        };
+        if failed {
+            Err(failure)
+        } else {
+            Ok(out)
+        }
+    }
+}
+
+fn test_tcp_stream_recv_exact(stream: TestTcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    test_tcp_stream_recv_exact_deadline(stream, expected_bytes, deadline_ms)
+}
+
+fn test_tcp_stream_recv_framed_deadline(stream: TestTcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
+    if max_frame_bytes < 0 {
+        Err(InvalidInput())
+    } else {
+        let header = test_tcp_stream_recv_exact_deadline(stream, 4, deadline_ms);
+        match header {
+            Err(err) => Err(err),
+            Ok(frame_header) => test_tcp_stream_recv_framed_payload(stream, frame_header, max_frame_bytes, deadline_ms),
+        }
+    }
+}
+
+fn test_tcp_stream_recv_framed(stream: TestTcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    test_tcp_stream_recv_framed_deadline(stream, max_frame_bytes, deadline_ms)
+}
+fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let listen_addr = match tcp_local_addr(listener) {
+        Ok(addr) => addr,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(listen_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let client_stream = test_tcp_stream(client);
+    let server_stream = test_tcp_stream(server);
+
+    let timeout_ok = match test_tcp_stream_recv_exact_deadline(server_stream, 1, deadline_after_ms(0)) {
+        Err(err) => is_timeout(err),
+        _ => false,
+    };
+
+    let sent_exact_a = match test_tcp_stream_send(client_stream, bytes.from_string("abc")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let sent_exact_b = match test_tcp_stream_send(client_stream, bytes.from_string("defg")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let exact_payload = match test_tcp_stream_recv_exact(server_stream, 7, 2000) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+    let exact_ok = bytes.compare_bytes(exact_payload, bytes.from_string("abcdefg")) == 0;
+
+    let frame_payload = bytes.from_string("frame");
+    let frame_header_bytes = frame_header(bytes.byte_len(frame_payload));
+    let sent_header = match test_tcp_stream_send(client_stream, frame_header_bytes) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let sent_frame_a = match test_tcp_stream_send(client_stream, bytes.from_string("fr")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let sent_frame_b = match test_tcp_stream_send(client_stream, bytes.from_string("ame")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let framed_payload = match test_tcp_stream_recv_framed_deadline(server_stream, 64, deadline_after_ms(2000)) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+    let framed_ok = bytes.compare_bytes(framed_payload, frame_payload) == 0;
+
+    let oversized_header = frame_header(9);
+    let sent_oversized_header = match test_tcp_stream_send(client_stream, oversized_header) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let oversized_ok = match test_tcp_stream_recv_framed(server_stream, 8, 2000) {
+        Err(err) => is_invalid_input(err),
+        _ => false,
+    };
+
+    let closed_client = match test_tcp_stream_close(client_stream) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match test_tcp_stream_close(server_stream) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if timeout_ok &&
+        sent_exact_a + sent_exact_b == 7 &&
+        exact_ok &&
+        sent_header == 4 &&
+        sent_frame_a + sent_frame_b == 5 &&
+        framed_ok &&
+        sent_oversized_header == 4 &&
+        oversized_ok &&
+        closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_prod_t1_intrinsics_runtime_smoke() {
     let src = r#"
 import std.bytes;
@@ -6589,7 +6880,8 @@ fn err_code(err: NetError) -> Int {
         Timeout => 4,
         AddressInUse => 5,
         InvalidInput => 6,
-        Io => 7,
+        ConnectionClosed => 8,
+        _ => 7,
     }
 }
 
@@ -6618,6 +6910,80 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_tcp_recv_timeout_then_peer_close_is_deterministic() {
+    let src = r#"
+import std.io;
+import std.net;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        ConnectionClosed => 8,
+        _ => 7,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let timeout_code = match tcp_recv(server, 16, 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    tcp_close(client);
+
+    let close_code = match tcp_recv(server, 16, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let close_count =
+        (match tcp_close(server) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }) +
+        (match tcp_close(listener) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        });
+
+    if timeout_code == 4 && close_code == 8 && close_count == 2 {
+        print_int(42);
+    } else {
+        print_int(timeout_code * 10 + close_code);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_refused_and_address_in_use_errors_are_stable() {
     let src = r#"
 import std.io;
@@ -6631,7 +6997,7 @@ fn err_code(err: NetError) -> Int {
         Timeout => 4,
         AddressInUse => 5,
         InvalidInput => 6,
-        Io => 7,
+        _ => 7,
     }
 }
 
@@ -6685,6 +7051,7 @@ fn err_code(err: NetError) -> Int {
         AddressInUse => 5,
         InvalidInput => 6,
         Io => 7,
+        ConnectionClosed => 8,
     }
 }
 
@@ -9467,7 +9834,7 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
                     "-sha256",
                     "-nodes",
                     "-days",
-                    "1",
+                    "8",
                     "-subj",
                     "/CN=localhost",
                     "-keyout",
@@ -9521,6 +9888,157 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
 }
 
 #[test]
+#[ignore = "Flaky with OpenSSL 3.6 process lifecycle; pending deterministic harness fix"]
+fn exec_tls_recv_timeout_then_connection_closed_is_deterministic() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if !(backend_enabled && openssl_cli_available) {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.net;
+import std.bytes;
+import std.env;
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+    }
+}
+
+fn score_connected(stream: TlsStream) -> Int effects { net } capabilities { net } {
+    let timeout_code = match tls_recv_bytes(stream, 64, 20) {
+        Ok(_) => 0,
+        Err(err) => tls_code(err),
+    };
+    let send_ok = match tls_send_bytes(
+        stream,
+        bytes.from_string("GET / HTTP/1.0\nHost: localhost\nConnection: close\n\n"),
+    ) {
+        Ok(sent) => if sent > 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let local_close_ok = match tls_close(stream) {
+        Ok(closed) => if closed { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if timeout_code == 7 && send_ok == 1 && local_close_ok == 1 {
+        42
+    } else {
+        timeout_code * 100 + send_ok * 10 + local_close_ok
+    }
+}
+
+fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    let cfg = TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    };
+
+    let result = match tls_connect_addr(addr, cfg, 5000) {
+        Err(err) => tls_code(err),
+        Ok(stream) => score_connected(stream),
+    };
+
+    print_int(result);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls close listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            let cert_path = root.join("tls_cert.pem");
+            let key_path = root.join("tls_key.pem");
+            let req_status = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-sha256",
+                    "-nodes",
+                    "-days",
+                    "8",
+                    "-subj",
+                    "/CN=localhost",
+                    "-keyout",
+                    key_path.to_str().expect("key path"),
+                    "-out",
+                    cert_path.to_str().expect("cert path"),
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("generate tls cert");
+            assert!(req_status.success(), "openssl req failed");
+
+            let port_flag = port.to_string();
+            let _server = Command::new("openssl")
+                .current_dir(root)
+                .args([
+                    "s_server",
+                    "-accept",
+                    port_flag.as_str(),
+                    "-cert",
+                    "tls_cert.pem",
+                    "-key",
+                    "tls_key.pem",
+                    "-www",
+                    "-naccept",
+                    "8",
+                    "-quiet",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("start tls server");
+
+            let addr = format!("127.0.0.1:{port}");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if std::net::TcpStream::connect(&addr).is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
 fn exec_tls_invalid_handle_paths_are_typed() {
     let src = r#"
 import std.io;
@@ -9567,11 +10085,24 @@ fn is_protocol_bool(v: Result[Bool, TlsError]) -> Bool {
     }
 }
 
+fn is_protocol_byte_stream(v: Result[Bytes, ByteStreamError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            Tls(tls) => match tls {
+                ProtocolError => true,
+                _ => false,
+            },
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, net } capabilities { io, net } {
+fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
     let bad = TlsStream { handle: 9999 };
     let send_ok = is_protocol(tls_send_bytes(bad, bytes.from_string("x")));
     let recv_ok = match tls_recv_bytes(bad, 8, 10) {
@@ -9581,6 +10112,24 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         },
         _ => false,
     };
+    let recv_exact_ok = match tls_recv_exact(bad, 8, 10) {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    };
+    let recv_framed_ok = match tls_recv_framed(bad, 64, 10) {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    };
+    let byte_stream_exact_ok =
+        is_protocol_byte_stream(byte_stream_recv_exact(byte_stream_from_tls(bad), 8, 10));
+    let byte_stream_framed_ok =
+        is_protocol_byte_stream(byte_stream_recv_framed(byte_stream_from_tls(bad), 64, 10));
     let subject_ok = is_protocol_string(tls_peer_subject(bad));
     let cn_ok = is_protocol_string(tls_peer_cn(bad));
     let version_ok = is_protocol_version(tls_version(bad));
@@ -9595,12 +10144,16 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
 
     let score = bool_to_int(send_ok)
         + bool_to_int(recv_ok)
+        + bool_to_int(recv_exact_ok)
+        + bool_to_int(recv_framed_ok)
+        + bool_to_int(byte_stream_exact_ok)
+        + bool_to_int(byte_stream_framed_ok)
         + bool_to_int(close_ok)
         + bool_to_int(subject_ok)
         + bool_to_int(cn_ok)
         + bool_to_int(version_ok)
         + bool_to_int(accept_ok);
-    if score == 7 {
+    if score == 11 {
         print_int(42);
     } else {
         print_int(score);

@@ -26,7 +26,11 @@ unqualified_call = ident "(" arg_list? ")" ;
 - Import resolution order:
   - indexed module declarations
   - fallback filesystem path lookup
-  - std-module fallback under `std/`
+  - std-module fallback roots (first match wins):
+    - `AIC_STD_ROOT` when set
+    - global toolchain std (`~/.aic/toolchains/<aic-version>/std`) installed via `aic setup`
+    - project-local `std/` (legacy override)
+    - bundled std shipped with the CLI binary
 - Import cycles are detected and reported deterministically.
 - Resolver keeps separate namespaces:
   - value namespace: functions

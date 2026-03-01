@@ -918,6 +918,26 @@ long aic_rt_net_tcp_send(
     return 7;
 }
 
+long aic_rt_net_tcp_send_timeout(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_sent
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_send_timeout", 2);
+    (void)handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    (void)timeout_ms;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    return 7;
+}
+
 long aic_rt_net_tcp_recv(
     long handle,
     long max_bytes,
@@ -1293,6 +1313,26 @@ long aic_rt_tls_send(
     return 5;
 }
 
+long aic_rt_tls_send_timeout(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_sent
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_send_timeout", 2);
+    (void)tls_handle;
+    (void)payload_ptr;
+    (void)payload_len;
+    (void)payload_cap;
+    (void)timeout_ms;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    return 5;
+}
+
 long aic_rt_tls_recv(
     long tls_handle,
     long max_bytes,
@@ -1368,6 +1408,18 @@ static long aic_rt_net_map_errno(int err) {
 #ifdef EADDRINUSE
         case EADDRINUSE:
             return 5;  // AddressInUse
+#endif
+#ifdef ECONNRESET
+        case ECONNRESET:
+            return 8;  // ConnectionClosed
+#endif
+#ifdef EPIPE
+        case EPIPE:
+            return 8;  // ConnectionClosed
+#endif
+#ifdef ENOTCONN
+        case ENOTCONN:
+            return 8;  // ConnectionClosed
 #endif
         case EINVAL:
 #ifdef ENAMETOOLONG
@@ -1646,6 +1698,14 @@ long aic_rt_net_tcp_send(
     const char* payload_ptr,
     long payload_len,
     long payload_cap,
+    long* out_sent
+);
+long aic_rt_net_tcp_send_timeout(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
     long* out_sent
 );
 long aic_rt_net_tcp_recv(
@@ -2354,6 +2414,11 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
                 return 0;
             }
             aic_rt_net_async_complete_op(op_handle, aic_rt_net_map_errno(err), 0, NULL, 0);
+            return 1;
+        }
+        if (n == 0) {
+            free(buffer);
+            aic_rt_net_async_complete_op(op_handle, 8, 0, NULL, 0);
             return 1;
         }
         buffer[(size_t)n] = '\0';
@@ -3183,6 +3248,106 @@ long aic_rt_net_tcp_send(
     return 0;
 }
 
+long aic_rt_net_tcp_send_timeout(
+    long handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_sent
+) {
+    (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tcp_send_timeout", 2);
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (payload_len < 0 || timeout_ms < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 6;
+    }
+    AicNetSlot* slot = aic_rt_net_get_slot(handle);
+    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
+        return 6;
+    }
+
+    long deadline_ms = -1;
+    long start_ms = aic_rt_time_monotonic_ms();
+    if (start_ms >= 0) {
+        if (timeout_ms > LONG_MAX - start_ms) {
+            deadline_ms = LONG_MAX;
+        } else {
+            deadline_ms = start_ms + timeout_ms;
+        }
+    }
+
+    size_t remaining = (size_t)payload_len;
+    const char* cursor = payload_ptr;
+    size_t total = 0;
+    while (remaining > 0) {
+        long wait_timeout = timeout_ms;
+        if (deadline_ms >= 0) {
+            long now_ms = aic_rt_time_monotonic_ms();
+            if (now_ms >= 0) {
+                if (now_ms >= deadline_ms) {
+                    if (out_sent != NULL) {
+                        *out_sent = (long)total;
+                    }
+                    return 4;
+                }
+                wait_timeout = deadline_ms - now_ms;
+            }
+        }
+
+        long waited = aic_rt_net_wait_fd(slot->fd, 0, wait_timeout);
+        if (waited != 0) {
+            if (out_sent != NULL) {
+                *out_sent = (long)total;
+            }
+            return waited;
+        }
+
+#ifdef MSG_NOSIGNAL
+        int flags = MSG_NOSIGNAL;
+#else
+        int flags = 0;
+#endif
+        ssize_t n = send(slot->fd, cursor, remaining, flags);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+#ifdef EAGAIN
+            if (errno == EAGAIN) {
+                continue;
+            }
+#endif
+#ifdef EWOULDBLOCK
+#if !defined(EAGAIN) || EWOULDBLOCK != EAGAIN
+            if (errno == EWOULDBLOCK) {
+                continue;
+            }
+#endif
+#endif
+            if (out_sent != NULL) {
+                *out_sent = (long)total;
+            }
+            return aic_rt_net_map_errno(errno);
+        }
+        if (n == 0) {
+            if (out_sent != NULL) {
+                *out_sent = (long)total;
+            }
+            return 8;
+        }
+        cursor += (size_t)n;
+        remaining -= (size_t)n;
+        total += (size_t)n;
+    }
+    if (out_sent != NULL) {
+        *out_sent = (long)total;
+    }
+    return 0;
+}
+
 long aic_rt_net_tcp_recv(
     long handle,
     long max_bytes,
@@ -3218,6 +3383,10 @@ long aic_rt_net_tcp_recv(
         int err = errno;
         free(buffer);
         return aic_rt_net_map_errno(err);
+    }
+    if (n == 0) {
+        free(buffer);
+        return 8;
     }
     buffer[(size_t)n] = '\0';
     if (out_ptr != NULL) {
@@ -3741,6 +3910,9 @@ static long aic_rt_tls_map_net_error(long net_error) {
     }
     if (net_error == 6) {
         return 5;
+    }
+    if (net_error == 8) {
+        return 6;
     }
     return 7;
 }
@@ -4383,6 +4555,7 @@ long aic_rt_tls_send(
     size_t total = 0;
     while (remaining > 0) {
         size_t chunk = remaining > (size_t)INT_MAX ? (size_t)INT_MAX : remaining;
+        errno = 0;
         int rc = SSL_write(slot->ssl, cursor, (int)chunk);
         if (rc > 0) {
             total += (size_t)rc;
@@ -4394,11 +4567,114 @@ long aic_rt_tls_send(
         if (ssl_error == SSL_ERROR_ZERO_RETURN) {
             return 6;
         }
-        if (ssl_error == SSL_ERROR_SYSCALL && errno == 0) {
-            return 6;
+        if (ssl_error == SSL_ERROR_SYSCALL) {
+            if (errno == 0) {
+                return 6;
+            }
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
             continue;
+        }
+        return 7;
+    }
+    if (out_sent != NULL) {
+        *out_sent = (long)total;
+    }
+    return 0;
+#endif
+}
+
+long aic_rt_tls_send_timeout(
+    long tls_handle,
+    const char* payload_ptr,
+    long payload_len,
+    long payload_cap,
+    long timeout_ms,
+    long* out_sent
+) {
+    (void)payload_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("tls_send_timeout", 2);
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (payload_len < 0 || timeout_ms < 0 || (payload_len > 0 && payload_ptr == NULL)) {
+        return 5;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL || slot->fd < 0) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    long deadline_ms = -1;
+    long start_ms = aic_rt_time_monotonic_ms();
+    if (start_ms >= 0) {
+        if (timeout_ms > LONG_MAX - start_ms) {
+            deadline_ms = LONG_MAX;
+        } else {
+            deadline_ms = start_ms + timeout_ms;
+        }
+    }
+
+    size_t remaining = (size_t)payload_len;
+    const unsigned char* cursor = (const unsigned char*)payload_ptr;
+    size_t total = 0;
+    while (remaining > 0) {
+        size_t chunk = remaining > (size_t)INT_MAX ? (size_t)INT_MAX : remaining;
+        errno = 0;
+        int rc = SSL_write(slot->ssl, cursor, (int)chunk);
+        if (rc > 0) {
+            total += (size_t)rc;
+            cursor += (size_t)rc;
+            remaining -= (size_t)rc;
+            continue;
+        }
+
+        int ssl_error = SSL_get_error(slot->ssl, rc);
+        if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+            if (out_sent != NULL) {
+                *out_sent = (long)total;
+            }
+            return 6;
+        }
+        if (ssl_error == SSL_ERROR_SYSCALL) {
+            if (out_sent != NULL) {
+                *out_sent = (long)total;
+            }
+            if (errno == 0) {
+                return 6;
+            }
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
+        }
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            long wait_timeout = timeout_ms;
+            if (deadline_ms >= 0) {
+                long now_ms = aic_rt_time_monotonic_ms();
+                if (now_ms >= 0) {
+                    if (now_ms >= deadline_ms) {
+                        if (out_sent != NULL) {
+                            *out_sent = (long)total;
+                        }
+                        // TlsError currently has no Timeout variant; map deadline expiry to Io.
+                        return 7;
+                    }
+                    wait_timeout = deadline_ms - now_ms;
+                }
+            }
+            int want_read = ssl_error == SSL_ERROR_WANT_READ ? 1 : 0;
+            long waited = aic_rt_net_wait_fd(slot->fd, want_read, wait_timeout);
+            if (waited != 0) {
+                if (out_sent != NULL) {
+                    *out_sent = (long)total;
+                }
+                return aic_rt_tls_map_net_error(waited);
+            }
+            continue;
+        }
+        if (out_sent != NULL) {
+            *out_sent = (long)total;
         }
         return 7;
     }
@@ -4433,9 +4709,12 @@ long aic_rt_tls_recv(
 #if !AIC_RT_TLS_OPENSSL
     return 5;
 #else
-    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
-    if (waited != 0) {
-        return aic_rt_tls_map_net_error(waited);
+    long deadline_ms = -1;
+    if (timeout_ms > 0) {
+        long now_ms = aic_rt_time_monotonic_ms();
+        if (now_ms >= 0 && now_ms <= LONG_MAX - timeout_ms) {
+            deadline_ms = now_ms + timeout_ms;
+        }
     }
 
     size_t cap = (size_t)max_bytes;
@@ -4444,31 +4723,58 @@ long aic_rt_tls_recv(
         return 7;
     }
     int chunk = cap > (size_t)INT_MAX ? INT_MAX : (int)cap;
-    int rc = SSL_read(slot->ssl, buffer, chunk);
-    if (rc > 0) {
-        buffer[(size_t)rc] = '\0';
-        if (out_ptr != NULL) {
-            *out_ptr = buffer;
-        } else {
+    for (;;) {
+        long wait_timeout = timeout_ms;
+        if (deadline_ms >= 0) {
+            long now_ms = aic_rt_time_monotonic_ms();
+            if (now_ms >= 0) {
+                if (now_ms >= deadline_ms) {
+                    free(buffer);
+                    return 7;
+                }
+                wait_timeout = deadline_ms - now_ms;
+            }
+        }
+
+        long waited = aic_rt_net_wait_fd(slot->fd, 1, wait_timeout);
+        if (waited != 0) {
             free(buffer);
+            return aic_rt_tls_map_net_error(waited);
         }
-        if (out_len != NULL) {
-            *out_len = (long)rc;
+
+        errno = 0;
+        int rc = SSL_read(slot->ssl, buffer, chunk);
+        if (rc > 0) {
+            buffer[(size_t)rc] = '\0';
+            if (out_ptr != NULL) {
+                *out_ptr = buffer;
+            } else {
+                free(buffer);
+            }
+            if (out_len != NULL) {
+                *out_len = (long)rc;
+            }
+            return 0;
         }
-        return 0;
-    }
-    free(buffer);
-    int ssl_error = SSL_get_error(slot->ssl, rc);
-    if (ssl_error == SSL_ERROR_ZERO_RETURN) {
-        return 6;
-    }
-    if (ssl_error == SSL_ERROR_SYSCALL && errno == 0) {
-        return 6;
-    }
-    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+
+        int ssl_error = SSL_get_error(slot->ssl, rc);
+        if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+            free(buffer);
+            return 6;
+        }
+        if (ssl_error == SSL_ERROR_SYSCALL) {
+            free(buffer);
+            if (errno == 0) {
+                return 6;
+            }
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
+        }
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            continue;
+        }
+        free(buffer);
         return 7;
     }
-    return 7;
 #endif
 }
 

@@ -2508,6 +2508,60 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
 }
 
 #[test]
+fn unit_std_net_tcp_stream_exact_and_framed_reads_are_deadline_based() {
+    let source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+
+    assert!(
+        source.contains(
+            "fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+        ),
+        "std/net.aic must expose deadline-based exact stream reads"
+    );
+    assert!(
+        source.contains(
+            "fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+        ),
+        "std/net.aic must expose timeout-based exact stream reads"
+    );
+    assert!(
+        source.contains("deadline_after_ms(timeout_ms)"),
+        "std/net.aic timeout wrappers must build monotonic deadlines"
+    );
+    assert!(
+        source.contains("remaining_ms(deadline_ms)"),
+        "std/net.aic deadline APIs must compute per-iteration remaining budget"
+    );
+    assert!(
+        source.contains("fn tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError]"),
+        "std/net.aic must expose shared 4-byte big-endian frame parser"
+    );
+    assert!(
+        source.contains(
+            "fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+        ),
+        "std/net.aic must expose deadline-based framed reads"
+    );
+    assert!(
+        source.contains(
+            "fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+        ),
+        "std/net.aic must expose timeout-based framed reads"
+    );
+    assert!(
+        source.contains("tcp_stream_recv_exact_deadline(stream, 4, deadline_ms)"),
+        "std/net.aic framed reads must consume exact 4-byte frame headers"
+    );
+    assert!(
+        source.contains("tcp_stream_recv_exact_deadline(stream, payload_len, deadline_ms)"),
+        "std/net.aic framed reads must consume exact payload lengths"
+    );
+    assert!(
+        source.contains("failure = net_timeout_error();"),
+        "std/net.aic exact read deadline path must map budget exhaustion to Timeout"
+    );
+}
+
+#[test]
 fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
     let url_source = fs::read_to_string("std/url.aic").expect("read std/url.aic");
 
@@ -2845,6 +2899,76 @@ fn unit_std_tls_byte_stream_adapter_bridges_tcp_and_tls_byte_paths() {
     assert!(
         source.contains("Tls(tls) => byte_stream_map_tls(tls_close(tls))"),
         "std/tls.aic byte_stream_close must delegate TLS branch to tls_close"
+    );
+}
+
+#[test]
+fn unit_std_tls_exact_and_framed_reads_have_deadline_and_byte_stream_adapters() {
+    let source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
+
+    assert!(
+        source.contains(
+            "fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+        ),
+        "std/tls.aic must expose deadline-based exact TLS reads"
+    );
+    assert!(
+        source.contains(
+            "fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+        ),
+        "std/tls.aic must expose timeout-based exact TLS reads"
+    );
+    assert!(
+        source.contains(
+            "fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+        ),
+        "std/tls.aic must expose deadline-based framed TLS reads"
+    );
+    assert!(
+        source.contains(
+            "fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+        ),
+        "std/tls.aic must expose timeout-based framed TLS reads"
+    );
+    assert!(
+        source.contains("fn tls_frame_len_be(header: Bytes) -> Result[Int, TlsError]"),
+        "std/tls.aic must expose shared frame-header parser for TLS framed reads"
+    );
+    assert!(
+        source.contains("tls_recv_exact_deadline(stream, 4, deadline_ms)"),
+        "std/tls.aic framed reads must consume exact 4-byte frame headers"
+    );
+    assert!(
+        source.contains("tls_recv_exact_deadline(stream, payload_len, deadline_ms)"),
+        "std/tls.aic framed reads must consume exact payload lengths"
+    );
+    assert!(
+        source.contains(
+            "fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+        ),
+        "std/tls.aic must expose ByteStream deadline exact reads"
+    );
+    assert!(
+        source.contains(
+            "fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+        ),
+        "std/tls.aic must expose ByteStream deadline framed reads"
+    );
+    assert!(
+        source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_deadline(tcp, expected_bytes, deadline_ms))"),
+        "std/tls.aic ByteStream exact reads must delegate TCP branch to std.net exact reads"
+    );
+    assert!(
+        source.contains("Tls(tls) => byte_stream_map_tls(tls_recv_exact_deadline(tls, expected_bytes, deadline_ms))"),
+        "std/tls.aic ByteStream exact reads must delegate TLS branch to tls exact reads"
+    );
+    assert!(
+        source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed_deadline(tcp, max_frame_bytes, deadline_ms))"),
+        "std/tls.aic ByteStream framed reads must delegate TCP branch to std.net framed reads"
+    );
+    assert!(
+        source.contains("Tls(tls) => byte_stream_map_tls(tls_recv_framed_deadline(tls, max_frame_bytes, deadline_ms))"),
+        "std/tls.aic ByteStream framed reads must delegate TLS branch to tls framed reads"
     );
 }
 

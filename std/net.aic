@@ -8,6 +8,7 @@ module std.net;
 
 import std.bytes;
 import std.result;
+import std.time;
 
 /// `NetError` is a `enum` in `std.net`.
 ///
@@ -30,6 +31,8 @@ enum NetError {
     InvalidInput,
     /// `Io` enum variant.
     Io,
+    /// `ConnectionClosed` enum variant.
+    ConnectionClosed,
 }
 
 /// `UdpPacket` is a `struct` in `std.net`.
@@ -138,6 +141,19 @@ intrinsic fn aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Res
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net };
+/// `aic_net_tcp_send_timeout_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_tcp_send_timeout_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_tcp_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net };
 /// `aic_net_tcp_recv_intrinsic` in `std.net`.
 ///
 /// ## Example
@@ -430,6 +446,22 @@ fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] e
     tcp_send(stream.handle, payload)
 }
 
+/// `tcp_stream_send_timeout` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_send_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    tcp_send_timeout(stream.handle, payload, timeout_ms)
+}
+
 /// `tcp_stream_recv` in `std.net`.
 ///
 /// ## Example
@@ -444,6 +476,222 @@ fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] e
 /// Returns module-defined error variants when the operation fails.
 fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net } {
     tcp_recv(stream.handle, max_bytes, timeout_ms)
+}
+
+/// `tcp_stream_frame_len_be` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_frame_len_be` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError] {
+    if byte_len(header) != 4 {
+        Err(InvalidInput())
+    } else {
+        let b0 = match byte_at(header, 0) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b1 = match byte_at(header, 1) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b2 = match byte_at(header, 2) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        let b3 = match byte_at(header, 3) {
+            Ok(value) => value,
+            Err(_) => -1,
+        };
+        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
+            Err(InvalidInput())
+        } else {
+            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
+        }
+    }
+}
+
+/// `tcp_stream_recv_framed_payload` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv_framed_payload` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv_framed_payload(stream: TcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
+    let frame_len = tcp_stream_frame_len_be(frame_header);
+    match frame_len {
+        Err(err) => Err(err),
+        Ok(payload_len) => if payload_len < 0 || payload_len > max_frame_bytes {
+            Err(InvalidInput())
+        } else {
+            tcp_stream_recv_exact_deadline(stream, payload_len, deadline_ms)
+        },
+    }
+}
+
+/// `net_io_error` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `net_io_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn net_io_error() -> NetError {
+    Io()
+}
+
+/// `net_timeout_error` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `net_timeout_error` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn net_timeout_error() -> NetError {
+    let out: NetError = Timeout();
+    out
+}
+
+/// `tcp_stream_recv_exact_deadline` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv_exact_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
+    if expected_bytes < 0 {
+        Err(InvalidInput())
+    } else {
+        let mut remaining = expected_bytes;
+        let mut out = empty();
+        let mut failed = false;
+        let mut failure: NetError = net_io_error();
+        while remaining > 0 && !failed {
+            let timeout_ms = remaining_ms(deadline_ms);
+            if timeout_ms <= 0 {
+                failed = true;
+                failure = net_timeout_error();
+            } else {
+                let next = tcp_stream_recv(stream, remaining, timeout_ms);
+                let next_failed = match next {
+                    Err(_) => true,
+                    Ok(_) => false,
+                };
+                if next_failed {
+                    failed = true;
+                    failure = match next {
+                        Err(err) => err,
+                        Ok(_) => net_io_error(),
+                    };
+                } else {
+                    let chunk = match next {
+                        Ok(value) => value,
+                        Err(_) => empty(),
+                    };
+                    let read_count = byte_len(chunk);
+                    if read_count <= 0 {
+                        failed = true;
+                        failure = net_io_error();
+                    } else {
+                        out = concat(out, chunk);
+                        remaining = remaining - read_count;
+                    }
+                };
+            }
+        };
+        if failed {
+            Err(failure)
+        } else {
+            Ok(out)
+        }
+    }
+}
+
+/// `tcp_stream_recv_exact` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv_exact` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tcp_stream_recv_exact_deadline(stream, expected_bytes, deadline_ms)
+}
+
+/// `tcp_stream_recv_framed_deadline` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv_framed_deadline` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
+    if max_frame_bytes < 0 {
+        Err(InvalidInput())
+    } else {
+        let header = tcp_stream_recv_exact_deadline(stream, 4, deadline_ms);
+        match header {
+            Err(err) => Err(err),
+            Ok(frame_header) => tcp_stream_recv_framed_payload(stream, frame_header, max_frame_bytes, deadline_ms),
+        }
+    }
+}
+
+/// `tcp_stream_recv_framed` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_stream_recv_framed` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tcp_stream_recv_framed_deadline(stream, max_frame_bytes, deadline_ms)
 }
 
 /// `tcp_stream_close` in `std.net`.
@@ -476,6 +724,22 @@ fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 /// Returns module-defined error variants when the operation fails.
 fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_send_intrinsic(handle, payload.data)
+}
+
+/// `tcp_send_timeout` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `tcp_send_timeout` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    aic_net_tcp_send_timeout_intrinsic(handle, payload.data, timeout_ms)
 }
 
 /// `tcp_recv` in `std.net`.

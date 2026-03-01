@@ -14,6 +14,7 @@ impl<'a> Generator<'a> {
             "tcp_accept" | "aic_net_tcp_accept_intrinsic" => "tcp_accept",
             "tcp_connect" | "aic_net_tcp_connect_intrinsic" => "tcp_connect",
             "tcp_send" | "aic_net_tcp_send_intrinsic" => "tcp_send",
+            "tcp_send_timeout" | "aic_net_tcp_send_timeout_intrinsic" => "tcp_send_timeout",
             "aic_net_tcp_recv_intrinsic" => "tcp_recv",
             "tcp_close" | "aic_net_tcp_close_intrinsic" => "tcp_close",
             "udp_bind" | "aic_net_udp_bind_intrinsic" => "udp_bind",
@@ -98,6 +99,19 @@ impl<'a> Generator<'a> {
                     ) =>
             {
                 Some(self.gen_net_tcp_send_call(name, args, span, fctx))
+            }
+            "tcp_send_timeout"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Bytes", "Int"],
+                    "Result[Int, NetError]",
+                ) || self.sig_matches_shape(
+                    name,
+                    &["Int", "String", "Int"],
+                    "Result[Int, NetError]",
+                ) =>
+            {
+                Some(self.gen_net_tcp_send_timeout_call(name, args, span, fctx))
             }
             "tcp_recv"
                 if self.sig_matches_shape(
@@ -222,6 +236,7 @@ impl<'a> Generator<'a> {
             "aic_tls_connect_addr_intrinsic" => "tls_connect_addr",
             "aic_tls_accept_intrinsic" => "tls_accept",
             "aic_tls_send_intrinsic" => "tls_send",
+            "aic_tls_send_timeout_intrinsic" => "tls_send_timeout",
             "aic_tls_recv_intrinsic" => "tls_recv",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
@@ -269,6 +284,15 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["Int", "String"], "Result[Int, TlsError]") =>
             {
                 Some(self.gen_tls_send_call(name, args, span, fctx))
+            }
+            "tls_send_timeout"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "String", "Int"],
+                    "Result[Int, TlsError]",
+                ) =>
+            {
+                Some(self.gen_tls_send_timeout_call(name, args, span, fctx))
             }
             "tls_recv"
                 if self.sig_matches_shape(
@@ -730,6 +754,68 @@ impl<'a> Generator<'a> {
             payload_ptr,
             payload_len,
             payload_cap,
+            out_sent_slot
+        ));
+        let out_sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_sent, out_sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(out_sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_send_timeout_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_send_timeout_intrinsic expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || payload.ty != LType::String || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "aic_tls_send_timeout_intrinsic expects (Int, String, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (payload_ptr, payload_len, payload_cap) =
+            self.string_parts(&payload, args[1].span, fctx)?;
+        let out_sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", out_sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_send_timeout(i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            payload_ptr,
+            payload_len,
+            payload_cap,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
             out_sent_slot
         ));
         let out_sent = self.new_temp();
@@ -2229,6 +2315,71 @@ impl<'a> Generator<'a> {
             pptr,
             plen,
             pcap,
+            sent_slot
+        ));
+        let sent = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", sent, sent_slot));
+        let ok_payload = Value {
+            ty: LType::Int,
+            repr: Some(sent),
+        };
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_tcp_send_timeout_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 3 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "tcp_send_timeout expects three arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        let payload = self.gen_expr(&args[1], fctx)?;
+        let timeout_ms = self.gen_expr(&args[2], fctx)?;
+        if handle.ty != LType::Int || timeout_ms.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "tcp_send_timeout expects (Int, Bytes, Int)",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (pptr, plen, pcap) = if payload.ty == LType::String {
+            self.string_parts(&payload, args[1].span, fctx)?
+        } else {
+            self.bytes_parts(&payload, "tcp_send_timeout", args[1].span, fctx)?
+        };
+        let sent_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", sent_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_tcp_send_timeout(i64 {}, i8* {}, i64 {}, i64 {}, i64 {}, i64* {})",
+            err,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            pptr,
+            plen,
+            pcap,
+            timeout_ms.repr.clone().unwrap_or_else(|| "0".to_string()),
             sent_slot
         ));
         let sent = self.new_temp();

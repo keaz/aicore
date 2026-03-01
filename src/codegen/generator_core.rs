@@ -395,6 +395,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_tcp_accept(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_connect(i8*, i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_send(i64, i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_tcp_send_timeout(i64, i8*, i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_recv(i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_tcp_close(i64)\n");
         text.push_str("declare i64 @aic_rt_net_udp_bind(i8*, i64, i64, i64*)\n");
@@ -424,6 +425,7 @@ impl<'a> Generator<'a> {
             "declare i64 @aic_rt_tls_accept(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64*)\n",
         );
         text.push_str("declare i64 @aic_rt_tls_send(i64, i8*, i64, i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_send_timeout(i64, i8*, i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_recv(i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
         text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n\n");

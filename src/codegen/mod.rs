@@ -582,6 +582,20 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         ],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_tcp_send_timeout_intrinsic",
+        runtime_symbol: "aic_rt_net_tcp_send_timeout",
+        signatures: &[
+            IntrinsicSignatureShape {
+                params: &["Int", "String", "Int"],
+                ret: "Result[Int, NetError]",
+            },
+            IntrinsicSignatureShape {
+                params: &["Int", "Bytes", "Int"],
+                ret: "Result[Int, NetError]",
+            },
+        ],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_net_tcp_recv_intrinsic",
         runtime_symbol: "aic_rt_net_tcp_recv",
         signatures: &[
@@ -762,6 +776,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         runtime_symbol: "aic_rt_tls_send",
         signatures: &[IntrinsicSignatureShape {
             params: &["Int", "String"],
+            ret: "Result[Int, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_send_timeout_intrinsic",
+        runtime_symbol: "aic_rt_tls_send_timeout",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "String", "Int"],
             ret: "Result[Int, TlsError]",
         }],
     },
@@ -3057,6 +3079,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "tcp_accept") => Some("aic_net_tcp_accept_intrinsic"),
         ("net", "tcp_connect") => Some("aic_net_tcp_connect_intrinsic"),
         ("net", "tcp_send") => Some("aic_net_tcp_send_intrinsic"),
+        ("net", "tcp_send_timeout") => Some("aic_net_tcp_send_timeout_intrinsic"),
         ("net", "tcp_recv") => Some("aic_net_tcp_recv_intrinsic"),
         ("net", "tcp_close") => Some("aic_net_tcp_close_intrinsic"),
         ("net", "udp_bind") => Some("aic_net_udp_bind_intrinsic"),
@@ -3072,6 +3095,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_wait_int") => Some("aic_net_async_wait_int_intrinsic"),
         ("net", "async_wait_string") => Some("aic_net_async_wait_string_intrinsic"),
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
+        ("tls", "tls_send_timeout") => Some("aic_tls_send_timeout_intrinsic"),
         ("buffer", "new_buffer") => Some("aic_buffer_new_intrinsic"),
         ("buffer", "buffer_from_bytes") => Some("aic_buffer_from_bytes_intrinsic"),
         ("buffer", "buffer_to_bytes") => Some("aic_buffer_to_bytes_intrinsic"),
