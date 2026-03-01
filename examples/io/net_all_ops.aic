@@ -4,6 +4,7 @@ import std.io;
 import std.net;
 import std.string;
 import std.bytes;
+import std.vec;
 
 fn err_code(err: NetError) -> Int {
     match err {
@@ -14,10 +15,12 @@ fn err_code(err: NetError) -> Int {
         AddressInUse => 5,
         InvalidInput => 6,
         Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
     }
 }
 
-fn main() -> Int effects { io, net } {
+fn main() -> Int effects { io, net } capabilities { io, net } {
     let listener = match tcp_listen("127.0.0.1:0") {
         Ok(h) => h,
         Err(_) => 0,
@@ -87,6 +90,14 @@ fn main() -> Int effects { io, net } {
         Ok(ip) => len(ip),
         Err(_) => 0,
     };
+    let lookup_all_count = match dns_lookup_all("localhost") {
+        Ok(addrs) => vec.vec_len(addrs),
+        Err(_) => 0,
+    };
+    let single_lookup_checked = match dns_lookup_all("127.0.0.1") {
+        Ok(addrs) => if vec.vec_len(addrs) == 1 { 1 } else { 0 },
+        Err(_) => 0,
+    };
     let reverse_checked = match dns_reverse("127.0.0.1") {
         Ok(name) => if len(name) > 0 { 1 } else { 0 },
         Err(err) => match err {
@@ -96,20 +107,17 @@ fn main() -> Int effects { io, net } {
     };
 
     let timeout_code = match tcp_listen("127.0.0.1:0") {
-        Ok(h) => {
-            let code = match tcp_accept(h, 0) {
-                Ok(_) => 0,
-                Err(err) => err_code(err),
-            };
-            tcp_close(h);
-            code
+        Ok(h) => match tcp_accept(h, 0) {
+            Ok(_) => 0,
+            Err(err) => err_code(err),
         },
         Err(_) => 0,
     };
 
     if tcp_sent == 4 && tcp_recv_len == 4 && tcp_close_ok == 3 &&
         udp_sent == 4 && udp_payload_len == 4 && udp_close_ok == 2 &&
-        lookup_len > 0 && reverse_checked == 1 && timeout_code == 4 {
+        lookup_len > 0 && lookup_all_count > 0 &&
+        single_lookup_checked == 1 && reverse_checked == 1 && timeout_code == 4 {
         print_int(42);
     } else {
         print_int(0);

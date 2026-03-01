@@ -832,6 +832,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_dns_lookup_all_intrinsic",
+        runtime_symbol: "aic_rt_net_dns_lookup_all",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Vec[String], NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_net_dns_reverse_intrinsic",
         runtime_symbol: "aic_rt_net_dns_reverse",
         signatures: &[IntrinsicSignatureShape {
@@ -3513,6 +3521,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "udp_recv_from") => Some("aic_net_udp_recv_from_intrinsic"),
         ("net", "udp_close") => Some("aic_net_udp_close_intrinsic"),
         ("net", "dns_lookup") => Some("aic_net_dns_lookup_intrinsic"),
+        ("net", "dns_lookup_all") => Some("aic_net_dns_lookup_all_intrinsic"),
         ("net", "dns_reverse") => Some("aic_net_dns_reverse_intrinsic"),
         ("net", "async_accept_submit") => Some("aic_net_async_accept_submit_intrinsic"),
         ("net", "async_tcp_send_submit") => Some("aic_net_async_send_submit_intrinsic"),

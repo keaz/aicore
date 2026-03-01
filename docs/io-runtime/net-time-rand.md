@@ -126,6 +126,7 @@ fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPack
 fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net }
+fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }
 fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 ```
 
@@ -142,6 +143,8 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce timeout-bounded write loops.
 - `tcp_recv` reports `ConnectionClosed` on peer EOF/close; `Timeout` remains distinct.
 - `async_cancel_*` keeps peer-close separate by surfacing `Cancelled` from cancelled waits.
+- `dns_lookup_all` returns de-duplicated numeric host addresses in deterministic lexicographic order.
+- Protocol clients can pair `dns_lookup_all` with retry/timeout budgets to attempt each address deterministically.
 - DNS reverse may legitimately return `NotFound` for unmapped addresses.
 - Exact stream reads are deadline-based: `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is met.
 - Framed stream reads are length-prefixed: `tcp_stream_recv_framed*` consumes a 4-byte big-endian frame length and enforces `max_frame_bytes`.

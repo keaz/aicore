@@ -516,6 +516,19 @@ intrinsic fn aic_net_udp_close_intrinsic(handle: Int) -> Result[Bool, NetError] 
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_net_dns_lookup_intrinsic(host: String) -> Result[String, NetError] effects { net };
+/// `aic_net_dns_lookup_all_intrinsic` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `aic_net_dns_lookup_all_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_net_dns_lookup_all_intrinsic(host: String) -> Result[Vec[String], NetError] effects { net };
 /// `aic_net_dns_reverse_intrinsic` in `std.net`.
 ///
 /// ## Example
@@ -1512,6 +1525,22 @@ fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net } {
 /// Returns module-defined error variants when the operation fails.
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net } {
     aic_net_dns_lookup_intrinsic(host)
+}
+
+/// `dns_lookup_all` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `dns_lookup_all` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net } {
+    aic_net_dns_lookup_all_intrinsic(host)
 }
 
 /// `dns_reverse` in `std.net`.

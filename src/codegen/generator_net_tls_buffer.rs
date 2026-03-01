@@ -63,6 +63,7 @@ impl<'a> Generator<'a> {
             "udp_recv_from" | "aic_net_udp_recv_from_intrinsic" => "udp_recv_from",
             "udp_close" | "aic_net_udp_close_intrinsic" => "udp_close",
             "dns_lookup" | "aic_net_dns_lookup_intrinsic" => "dns_lookup",
+            "dns_lookup_all" | "aic_net_dns_lookup_all_intrinsic" => "dns_lookup_all",
             "dns_reverse" | "aic_net_dns_reverse_intrinsic" => "dns_reverse",
             "async_accept_submit" | "aic_net_async_accept_submit_intrinsic" => {
                 "async_accept_submit"
@@ -390,6 +391,11 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["String"], "Result[String, NetError]") =>
             {
                 Some(self.gen_net_dns_call(name, "aic_rt_net_dns_lookup", args, span, fctx))
+            }
+            "dns_lookup_all"
+                if self.sig_matches_shape(name, &["String"], "Result[Vec[String], NetError]") =>
+            {
+                Some(self.gen_net_dns_lookup_all_call(name, args, span, fctx))
             }
             "dns_reverse"
                 if self.sig_matches_shape(name, &["String"], "Result[String, NetError]") =>
@@ -4042,6 +4048,68 @@ impl<'a> Generator<'a> {
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
         let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_dns_lookup_all_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let input = self.gen_expr(&args[0], fctx)?;
+        if input.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (ptr, len, cap) = self.string_parts(&input, args[0].span, fctx)?;
+        let out_items_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_dns_lookup_all(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            err, ptr, len, cap, out_items_slot, out_count_slot
+        ));
+        let out_items = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+        let ok_payload =
+            self.build_vec_string_payload_from_ptr(&out_items, &out_count, span, fctx)?;
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",

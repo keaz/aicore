@@ -7119,6 +7119,7 @@ import std.io;
 import std.net;
 import std.string;
 import std.bytes;
+import std.vec;
 
 fn main() -> Int effects { io, net } capabilities { io, net  } {
     let receiver = match udp_bind("127.0.0.1:0") {
@@ -7154,6 +7155,28 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
         Ok(ip) => ip,
         Err(_) => "",
     };
+    let lookup_all_count = match dns_lookup_all("localhost") {
+        Ok(addrs) => vec.vec_len(addrs),
+        Err(_) => 0,
+    };
+    let single_lookup_checked = match dns_lookup_all("127.0.0.1") {
+        Ok(addrs) => if vec.vec_len(addrs) == 1 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let not_found_checked = match dns_lookup_all("aicore.invalid") {
+        Ok(addrs) => if vec.vec_len(addrs) == 0 { 1 } else { 0 },
+        Err(err) => match err {
+            NotFound => 1,
+            _ => 0,
+        },
+    };
+    let invalid_input_checked = match dns_lookup_all("") {
+        Err(err) => match err {
+            InvalidInput => 1,
+            _ => 0,
+        },
+        Ok(_) => 0,
+    };
     let reverse_checked = match dns_reverse("127.0.0.1") {
         Ok(name) => if len(name) > 0 { 1 } else { 0 },
         Err(err) => match err {
@@ -7163,7 +7186,9 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     };
 
     if sent == 4 && bytes.byte_len(packet.payload) == 4 && len(packet.from) > 0 &&
-        len(lookup) > 0 && reverse_checked == 1 && closed_sender + closed_receiver == 2 {
+        len(lookup) > 0 && lookup_all_count > 0 &&
+        single_lookup_checked == 1 && not_found_checked == 1 && invalid_input_checked == 1 &&
+        reverse_checked == 1 && closed_sender + closed_receiver == 2 {
         print_int(42);
     } else {
         print_int(0);

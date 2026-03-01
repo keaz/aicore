@@ -1207,6 +1207,26 @@ long aic_rt_net_dns_lookup(
     return 7;
 }
 
+long aic_rt_net_dns_lookup_all(
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    char** out_ptr,
+    long* out_count
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup_all", 2);
+    (void)host_ptr;
+    (void)host_len;
+    (void)host_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    return 7;
+}
+
 long aic_rt_net_dns_reverse(
     const char* addr_ptr,
     long addr_len,
@@ -4426,21 +4446,41 @@ long aic_rt_net_udp_close(long handle) {
     return aic_rt_net_close_fd(fd);
 }
 
-long aic_rt_net_dns_lookup(
+static int aic_rt_net_contains_string_item(const AicString* items, size_t count, const char* value) {
+    if (items == NULL || value == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (items[i].ptr != NULL && strcmp(items[i].ptr, value) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int aic_rt_net_compare_string_items(const void* lhs, const void* rhs) {
+    const AicString* left = (const AicString*)lhs;
+    const AicString* right = (const AicString*)rhs;
+    const char* left_text = (left != NULL && left->ptr != NULL) ? left->ptr : "";
+    const char* right_text = (right != NULL && right->ptr != NULL) ? right->ptr : "";
+    return strcmp(left_text, right_text);
+}
+
+static long aic_rt_net_dns_collect_lookup_all(
     const char* host_ptr,
     long host_len,
-    long host_cap,
-    char** out_ptr,
-    long* out_len
+    AicString** out_items,
+    size_t* out_count
 ) {
-    (void)host_cap;
-    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
+    if (out_items == NULL || out_count == NULL) {
+        return 6;
     }
-    if (out_len != NULL) {
-        *out_len = 0;
+    *out_items = NULL;
+    *out_count = 0;
+    if (host_len < 0 || (host_len > 0 && host_ptr == NULL)) {
+        return 6;
     }
+
     char* host = aic_rt_fs_copy_slice(host_ptr, host_len);
     if (host == NULL || host[0] == '\0') {
         free(host);
@@ -4458,7 +4498,9 @@ long aic_rt_net_dns_lookup(
         return aic_rt_net_map_gai_error(rc);
     }
 
-    long result = 1;
+    AicString* items = NULL;
+    size_t len = 0;
+    size_t cap = 0;
     int last_name_rc = 0;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
         char numeric[NI_MAXHOST];
@@ -4471,30 +4513,97 @@ long aic_rt_net_dns_lookup(
             0,
             NI_NUMERICHOST
         );
-        if (name_rc == 0) {
-            char* out = aic_rt_copy_bytes(numeric, strlen(numeric));
-            if (out == NULL) {
-                result = 7;
-            } else {
-                if (out_ptr != NULL) {
-                    *out_ptr = out;
-                } else {
-                    free(out);
-                }
-                if (out_len != NULL) {
-                    *out_len = (long)strlen(numeric);
-                }
-                result = 0;
-            }
-            break;
+        if (name_rc != 0) {
+            last_name_rc = name_rc;
+            continue;
         }
-        last_name_rc = name_rc;
+        if (aic_rt_net_contains_string_item(items, len, numeric)) {
+            continue;
+        }
+        long push_rc = aic_rt_fs_push_string_item(&items, &len, &cap, numeric);
+        if (push_rc != 0) {
+            freeaddrinfo(infos);
+            aic_rt_fs_free_string_items(items, len);
+            return push_rc == 4 ? 6 : 7;
+        }
     }
     freeaddrinfo(infos);
-    if (result != 0 && last_name_rc != 0) {
-        return aic_rt_net_map_gai_error(last_name_rc);
+
+    if (len == 0) {
+        aic_rt_fs_free_string_items(items, len);
+        if (last_name_rc != 0) {
+            return aic_rt_net_map_gai_error(last_name_rc);
+        }
+        return 1;
     }
-    return result;
+
+    qsort(items, len, sizeof(AicString), aic_rt_net_compare_string_items);
+    *out_items = items;
+    *out_count = len;
+    return 0;
+}
+
+long aic_rt_net_dns_lookup(
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)host_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicString* items = NULL;
+    size_t count = 0;
+    long collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
+    if (collect_rc != 0) {
+        return collect_rc;
+    }
+    char* first = aic_rt_copy_bytes(items[0].ptr, (size_t)items[0].len);
+    long first_len = items[0].len;
+    aic_rt_fs_free_string_items(items, count);
+    if (first == NULL && first_len > 0) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = first;
+    } else {
+        free(first);
+    }
+    if (out_len != NULL) {
+        *out_len = first_len;
+    }
+    return 0;
+}
+
+long aic_rt_net_dns_lookup_all(
+    const char* host_ptr,
+    long host_len,
+    long host_cap,
+    char** out_ptr,
+    long* out_count
+) {
+    (void)host_cap;
+    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup_all", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    AicString* items = NULL;
+    size_t count = 0;
+    long collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
+    if (collect_rc != 0) {
+        return collect_rc;
+    }
+    aic_rt_fs_write_string_items(out_ptr, out_count, items, count);
+    return 0;
 }
 
 long aic_rt_net_dns_reverse(

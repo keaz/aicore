@@ -446,6 +446,7 @@ impl<'a> Generator<'a> {
         );
         text.push_str("declare i64 @aic_rt_net_udp_close(i64)\n");
         text.push_str("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_net_dns_lookup_all(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_dns_reverse(i8*, i64, i64, i8**, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_net_async_accept_submit(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_send_submit(i64, i8*, i64, i64, i64*)\n");

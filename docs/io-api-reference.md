@@ -470,6 +470,7 @@ fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetErro
 fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }
 fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net }
+fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }
 fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 ```
 
@@ -487,6 +488,7 @@ Notes:
   - `AIC_RT_LIMIT_CONC_TASKS` / `AIC_RT_LIMIT_CONC_CHANNELS` / `AIC_RT_LIMIT_CONC_MUTEXES` (default/max: `128` each)
 - `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
 - `async_cancel_*` keeps peer-close distinct by surfacing `NetError::Cancelled` on cancelled waits.
+- `dns_lookup_all` returns de-duplicated numeric addresses sorted lexicographically for deterministic failover iteration.
 - On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce a total write timeout budget.
 - `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is satisfied or the deadline expires.
@@ -503,6 +505,7 @@ Notes:
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
 - Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process and size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions.
+- Failover baseline: call `dns_lookup_all(host)` once per retry window, then iterate returned addresses in order while applying your per-attempt timeout budget.
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.

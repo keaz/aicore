@@ -886,12 +886,13 @@ Verifier-focused examples:
   - `aic_rt_net_udp_recv_from`
   - `aic_rt_net_udp_close`
   - `aic_rt_net_dns_lookup`
+  - `aic_rt_net_dns_lookup_all`
   - `aic_rt_net_dns_reverse`
 - Error model:
   - `errno`/`getaddrinfo` mapping to `NetError` is deterministic and shared by sync/async paths.
   - Timeouts are explicit (`Timeout`), bind conflicts map to `AddressInUse`, and refused connects map to `Refused`.
 - Verification:
-  - `tests/execution_tests.rs` includes TCP loopback, UDP/DNS helpers, timeout/invalid-input diagnostics, and refused/address-in-use stability coverage.
+  - `tests/execution_tests.rs` includes TCP loopback, UDP/DNS helpers, deterministic multi-address DNS lookup coverage, timeout/invalid-input diagnostics, and refused/address-in-use stability coverage.
   - async bridge tests validate `async_accept_submit`, `async_tcp_send_submit`, `async_tcp_recv_submit`, `async_wait_*`, and `async_shutdown`.
 - Examples:
   - `examples/io/tcp_echo.aic`

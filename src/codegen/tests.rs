@@ -1739,6 +1739,9 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_net_dns_lookup(i8*, i64, i64, i8**, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_net_dns_lookup_all(i8*, i64, i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_net_async_accept_submit(i64, i64, i64*)"));
     assert!(output
         .llvm_ir
@@ -2110,6 +2113,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_recv_buffer_size("));
     assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
     assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
+    assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup_all("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_accept_submit("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_send_submit("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_recv_submit("));

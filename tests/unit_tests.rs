@@ -2457,6 +2457,13 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
     assert_delegate_call(
         &net_source,
         "std/net.aic",
+        "dns_lookup_all",
+        "aic_net_dns_lookup_all_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
         "dns_reverse",
         "aic_net_dns_reverse_intrinsic",
         1,
@@ -2533,6 +2540,7 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_net_udp_recv_from_intrinsic", 3usize),
         ("aic_net_udp_close_intrinsic", 1usize),
         ("aic_net_dns_lookup_intrinsic", 1usize),
+        ("aic_net_dns_lookup_all_intrinsic", 1usize),
         ("aic_net_dns_reverse_intrinsic", 1usize),
         ("aic_net_async_accept_submit_intrinsic", 2usize),
         ("aic_net_async_send_submit_intrinsic", 2usize),
@@ -3427,6 +3435,12 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
         assert!(
             doc.contains("fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }"),
             "{name} must document bytes-first udp_send_to signature"
+        );
+        assert!(
+            doc.contains(
+                "fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }"
+            ),
+            "{name} must document dns_lookup_all signature"
         );
         assert!(
             doc.contains("fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"),
@@ -4968,6 +4982,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _udp_recv = udp_recv_from(1, 16, 1);
     let _udp_close = udp_close(1);
     let _dns = dns_lookup("localhost");
+    let _dns_all = dns_lookup_all("localhost");
     let _dns_rev = dns_reverse("127.0.0.1");
     let _srv_listen = http_server.listen("127.0.0.1:0");
     let _srv_accept = http_server.accept(1, 1);
