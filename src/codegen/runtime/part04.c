@@ -1620,6 +1620,42 @@ long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
     return 5;
 }
 
+long aic_rt_tls_peer_issuer(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_issuer", 2);
+    (void)tls_handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_peer_fingerprint_sha256(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_fingerprint_sha256", 2);
+    (void)tls_handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    return 5;
+}
+
+long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_san_entries", 2);
+    (void)tls_handle;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    return 5;
+}
+
 long aic_rt_tls_version(long tls_handle, long* out_version) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_version", 2);
     (void)tls_handle;
@@ -6201,6 +6237,82 @@ long aic_rt_tls_close(long tls_handle) {
     return 0;
 }
 
+static long aic_rt_tls_push_string_item_slice(
+    AicString** items,
+    size_t* len,
+    size_t* cap,
+    const char* text,
+    size_t text_len
+) {
+    if (items == NULL || len == NULL || cap == NULL) {
+        return 7;
+    }
+    if (text_len > (size_t)LONG_MAX) {
+        return 7;
+    }
+    if (*len >= *cap) {
+        size_t next_cap = *cap == 0 ? 8 : *cap;
+        while (next_cap <= *len) {
+            if (next_cap > SIZE_MAX / 2) {
+                return 7;
+            }
+            next_cap *= 2;
+        }
+        if (next_cap > SIZE_MAX / sizeof(AicString)) {
+            return 7;
+        }
+        AicString* grown = (AicString*)realloc(*items, next_cap * sizeof(AicString));
+        if (grown == NULL) {
+            return 7;
+        }
+        for (size_t i = *cap; i < next_cap; ++i) {
+            grown[i].ptr = NULL;
+            grown[i].len = 0;
+            grown[i].cap = 0;
+        }
+        *items = grown;
+        *cap = next_cap;
+    }
+
+    const char* source = text == NULL ? "" : text;
+    char* copy = aic_rt_fs_copy_slice(source, (long)text_len);
+    if (copy == NULL) {
+        return 7;
+    }
+    (*items)[*len].ptr = copy;
+    (*items)[*len].len = (long)text_len;
+    (*items)[*len].cap = (long)text_len;
+    *len += 1;
+    return 0;
+}
+
+#if AIC_RT_TLS_OPENSSL
+static long aic_rt_tls_peer_name_copy(X509_NAME* name, char** out_ptr, long* out_len) {
+    if (name == NULL) {
+        return 7;
+    }
+    char* raw = X509_NAME_oneline(name, NULL, 0);
+    if (raw == NULL) {
+        return 7;
+    }
+    long raw_len = (long)strlen(raw);
+    char* out = aic_rt_copy_bytes(raw, (size_t)raw_len);
+    OPENSSL_free(raw);
+    if (out == NULL) {
+        return 7;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_len != NULL) {
+        *out_len = raw_len;
+    }
+    return 0;
+}
+#endif
+
 long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_peer_subject", 2);
     if (out_ptr != NULL) {
@@ -6220,25 +6332,196 @@ long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
     if (cert == NULL) {
         return 6;
     }
-    char* subject = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+    long rc = aic_rt_tls_peer_name_copy(X509_get_subject_name(cert), out_ptr, out_len);
     X509_free(cert);
-    if (subject == NULL) {
+    return rc;
+#endif
+}
+
+long aic_rt_tls_peer_issuer(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_issuer", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    X509* cert = SSL_get_peer_certificate(slot->ssl);
+    if (cert == NULL) {
+        return 6;
+    }
+    long rc = aic_rt_tls_peer_name_copy(X509_get_issuer_name(cert), out_ptr, out_len);
+    X509_free(cert);
+    return rc;
+#endif
+}
+
+long aic_rt_tls_peer_fingerprint_sha256(long tls_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_fingerprint_sha256", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    X509* cert = SSL_get_peer_certificate(slot->ssl);
+    if (cert == NULL) {
+        return 6;
+    }
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+    int digest_rc = X509_digest(cert, EVP_sha256(), digest, &digest_len);
+    X509_free(cert);
+    if (digest_rc != 1 || digest_len == 0) {
         return 7;
     }
-    long subject_len = (long)strlen(subject);
-    char* out = aic_rt_copy_bytes(subject, (size_t)subject_len);
-    OPENSSL_free(subject);
+
+    size_t out_n = ((size_t)digest_len * 3) - 1;
+    char* out = (char*)malloc(out_n + 1);
     if (out == NULL) {
         return 7;
     }
+    static const char* hex = "0123456789ABCDEF";
+    for (unsigned int i = 0; i < digest_len; ++i) {
+        size_t offset = (size_t)i * 3;
+        unsigned char byte = digest[i];
+        out[offset] = hex[(byte >> 4) & 0x0F];
+        out[offset + 1] = hex[byte & 0x0F];
+        if (i + 1 < digest_len) {
+            out[offset + 2] = ':';
+        }
+    }
+    out[out_n] = '\0';
     if (out_ptr != NULL) {
         *out_ptr = out;
     } else {
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = subject_len;
+        *out_len = (long)out_n;
     }
+    return 0;
+#endif
+}
+
+long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_count) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_san_entries", 2);
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
+    if (slot == NULL) {
+        return 5;
+    }
+#if !AIC_RT_TLS_OPENSSL
+    return 5;
+#else
+    X509* cert = SSL_get_peer_certificate(slot->ssl);
+    if (cert == NULL) {
+        return 6;
+    }
+
+    GENERAL_NAMES* sans =
+        (GENERAL_NAMES*)X509_get_ext_d2i(cert, NID_subject_alt_name, NULL, NULL);
+    if (sans == NULL) {
+        X509_free(cert);
+        return 0;
+    }
+
+    AicString* items = NULL;
+    size_t len = 0;
+    size_t cap = 0;
+    long result = 0;
+
+    int san_count = sk_GENERAL_NAME_num(sans);
+    for (int i = 0; i < san_count; ++i) {
+        GENERAL_NAME* name = sk_GENERAL_NAME_value(sans, i);
+        if (name == NULL) {
+            continue;
+        }
+
+        if (name->type == GEN_DNS) {
+            ASN1_IA5STRING* dns = name->d.dNSName;
+            if (dns == NULL) {
+                continue;
+            }
+            int dns_len = ASN1_STRING_length((ASN1_STRING*)dns);
+            const unsigned char* dns_ptr = ASN1_STRING_get0_data((ASN1_STRING*)dns);
+            if (dns_ptr == NULL || dns_len <= 0) {
+                continue;
+            }
+            result = aic_rt_tls_push_string_item_slice(
+                &items,
+                &len,
+                &cap,
+                (const char*)dns_ptr,
+                (size_t)dns_len
+            );
+            if (result != 0) {
+                break;
+            }
+            continue;
+        }
+
+        if (name->type == GEN_IPADD) {
+            ASN1_OCTET_STRING* ip = name->d.iPAddress;
+            if (ip == NULL) {
+                continue;
+            }
+            int ip_len = ASN1_STRING_length((ASN1_STRING*)ip);
+            const unsigned char* ip_ptr = ASN1_STRING_get0_data((ASN1_STRING*)ip);
+            if (ip_ptr == NULL) {
+                continue;
+            }
+            char ip_text[INET6_ADDRSTRLEN];
+            const char* converted = NULL;
+            if (ip_len == 4) {
+                converted = inet_ntop(AF_INET, ip_ptr, ip_text, sizeof(ip_text));
+            } else if (ip_len == 16) {
+                converted = inet_ntop(AF_INET6, ip_ptr, ip_text, sizeof(ip_text));
+            }
+            if (converted == NULL) {
+                continue;
+            }
+            result = aic_rt_tls_push_string_item_slice(
+                &items,
+                &len,
+                &cap,
+                converted,
+                strlen(converted)
+            );
+            if (result != 0) {
+                break;
+            }
+        }
+    }
+
+    GENERAL_NAMES_free(sans);
+    X509_free(cert);
+
+    if (result != 0) {
+        aic_rt_fs_free_string_items(items, len);
+        return result;
+    }
+    aic_rt_fs_write_string_items(out_ptr, out_count, items, len);
     return 0;
 #endif
 }

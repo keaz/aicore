@@ -511,6 +511,9 @@ impl<'a> Generator<'a> {
             "aic_tls_async_shutdown_intrinsic" => "tls_async_shutdown",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
+            "aic_tls_peer_issuer_intrinsic" => "tls_peer_issuer",
+            "aic_tls_peer_fingerprint_sha256_intrinsic" => "tls_peer_fingerprint_sha256",
+            "aic_tls_peer_san_entries_intrinsic" => "tls_peer_san_entries",
             "aic_tls_version_intrinsic" => "tls_version",
             _ => return None,
         };
@@ -648,6 +651,21 @@ impl<'a> Generator<'a> {
                 if self.sig_matches_shape(name, &["Int"], "Result[String, TlsError]") =>
             {
                 Some(self.gen_tls_peer_subject_call(name, args, span, fctx))
+            }
+            "tls_peer_issuer"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, TlsError]") =>
+            {
+                Some(self.gen_tls_peer_issuer_call(name, args, span, fctx))
+            }
+            "tls_peer_fingerprint_sha256"
+                if self.sig_matches_shape(name, &["Int"], "Result[String, TlsError]") =>
+            {
+                Some(self.gen_tls_peer_fingerprint_sha256_call(name, args, span, fctx))
+            }
+            "tls_peer_san_entries"
+                if self.sig_matches_shape(name, &["Int"], "Result[Vec[String], TlsError]") =>
+            {
+                Some(self.gen_tls_peer_san_entries_call(name, args, span, fctx))
             }
             "tls_version" if self.sig_matches_shape(name, &["Int"], "Result[Int, TlsError]") => {
                 Some(self.gen_tls_version_call(name, args, span, fctx))
@@ -1633,17 +1651,19 @@ impl<'a> Generator<'a> {
         self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
-    pub(super) fn gen_tls_peer_subject_call(
+    pub(super) fn gen_tls_peer_string_call(
         &mut self,
         name: &str,
         args: &[ir::Expr],
+        runtime_symbol: &str,
+        intrinsic_name: &str,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if args.len() != 1 {
             self.diagnostics.push(Diagnostic::error(
                 "E5010",
-                "aic_tls_peer_subject_intrinsic expects one argument",
+                format!("{intrinsic_name} expects one argument"),
                 self.file,
                 span,
             ));
@@ -1653,7 +1673,7 @@ impl<'a> Generator<'a> {
         if handle.ty != LType::Int {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "aic_tls_peer_subject_intrinsic expects Int",
+                format!("{intrinsic_name} expects Int"),
                 self.file,
                 args[0].span,
             ));
@@ -1665,8 +1685,9 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
         let err = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_tls_peer_subject(i64 {}, i8** {}, i64* {})",
+            "  {} = call i64 @{}(i64 {}, i8** {}, i64* {})",
             err,
+            runtime_symbol,
             handle.repr.clone().unwrap_or_else(|| "0".to_string()),
             out_ptr_slot,
             out_len_slot
@@ -1682,6 +1703,141 @@ impl<'a> Generator<'a> {
             return None;
         };
         self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_peer_vec_string_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        runtime_symbol: &str,
+        intrinsic_name: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{intrinsic_name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let handle = self.gen_expr(&args[0], fctx)?;
+        if handle.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{intrinsic_name} expects Int"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let out_items_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_items_slot));
+        let out_count_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_count_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i64 {}, i8** {}, i64* {})",
+            err,
+            runtime_symbol,
+            handle.repr.clone().unwrap_or_else(|| "0".to_string()),
+            out_items_slot,
+            out_count_slot
+        ));
+        let out_items = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_items, out_items_slot
+        ));
+        let out_count = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_count, out_count_slot
+        ));
+        let ok_payload =
+            self.build_vec_string_payload_from_ptr(&out_items, &out_count, span, fctx)?;
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_peer_subject_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.gen_tls_peer_string_call(
+            name,
+            args,
+            "aic_rt_tls_peer_subject",
+            "aic_tls_peer_subject_intrinsic",
+            span,
+            fctx,
+        )
+    }
+
+    pub(super) fn gen_tls_peer_issuer_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.gen_tls_peer_string_call(
+            name,
+            args,
+            "aic_rt_tls_peer_issuer",
+            "aic_tls_peer_issuer_intrinsic",
+            span,
+            fctx,
+        )
+    }
+
+    pub(super) fn gen_tls_peer_fingerprint_sha256_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.gen_tls_peer_string_call(
+            name,
+            args,
+            "aic_rt_tls_peer_fingerprint_sha256",
+            "aic_tls_peer_fingerprint_sha256_intrinsic",
+            span,
+            fctx,
+        )
+    }
+
+    pub(super) fn gen_tls_peer_san_entries_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        self.gen_tls_peer_vec_string_call(
+            name,
+            args,
+            "aic_rt_tls_peer_san_entries",
+            "aic_tls_peer_san_entries_intrinsic",
+            span,
+            fctx,
+        )
     }
 
     pub(super) fn gen_tls_version_call(

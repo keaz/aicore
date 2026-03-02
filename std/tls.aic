@@ -353,6 +353,45 @@ intrinsic fn aic_tls_close_intrinsic(handle: Int) -> Result[Bool, TlsError] effe
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_peer_subject_intrinsic(handle: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_peer_issuer_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_peer_issuer_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_peer_issuer_intrinsic(handle: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_peer_fingerprint_sha256_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_peer_fingerprint_sha256_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_peer_fingerprint_sha256_intrinsic(handle: Int) -> Result[String, TlsError] effects { net };
+/// `aic_tls_peer_san_entries_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_peer_san_entries_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_peer_san_entries_intrinsic(handle: Int) -> Result[Vec[String], TlsError] effects { net };
 /// `aic_tls_version_intrinsic` in `std.tls`.
 ///
 /// ## Example
@@ -1597,6 +1636,54 @@ fn byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effect
 /// Returns module-defined error variants when the operation fails.
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net } {
     aic_tls_peer_subject_intrinsic(stream.handle)
+}
+
+/// `tls_peer_issuer` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_peer_issuer` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net } {
+    aic_tls_peer_issuer_intrinsic(stream.handle)
+}
+
+/// `tls_peer_fingerprint_sha256` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_peer_fingerprint_sha256` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_peer_fingerprint_sha256(stream: TlsStream) -> Result[String, TlsError] effects { net } {
+    aic_tls_peer_fingerprint_sha256_intrinsic(stream.handle)
+}
+
+/// `tls_peer_san_entries` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_peer_san_entries` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effects { net } {
+    aic_tls_peer_san_entries_intrinsic(stream.handle)
 }
 
 /// `tls_version` in `std.tls`.

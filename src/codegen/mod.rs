@@ -1058,6 +1058,30 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_peer_issuer_intrinsic",
+        runtime_symbol: "aic_rt_tls_peer_issuer",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_peer_fingerprint_sha256_intrinsic",
+        runtime_symbol: "aic_rt_tls_peer_fingerprint_sha256",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[String, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_peer_san_entries_intrinsic",
+        runtime_symbol: "aic_rt_tls_peer_san_entries",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Vec[String], TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_tls_version_intrinsic",
         runtime_symbol: "aic_rt_tls_version",
         signatures: &[IntrinsicSignatureShape {

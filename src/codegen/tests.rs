@@ -1796,6 +1796,15 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_tls_peer_issuer(i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_peer_fingerprint_sha256(i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_peer_san_entries(i64, i8**, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_tls_version(i64, i64*)"));
     assert!(output
         .llvm_ir
@@ -2135,6 +2144,9 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("op->claimed = 0;"));
     assert!(runtime_c_source().contains("long aic_rt_tls_close("));
     assert!(runtime_c_source().contains("long aic_rt_tls_peer_subject("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_peer_issuer("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_peer_fingerprint_sha256("));
+    assert!(runtime_c_source().contains("long aic_rt_tls_peer_san_entries("));
     assert!(runtime_c_source().contains("long aic_rt_tls_version("));
     assert!(runtime_c_source().contains("long aic_rt_async_poll_int(long op_handle"));
     assert!(runtime_c_source().contains("long aic_rt_async_poll_string(long op_handle"));

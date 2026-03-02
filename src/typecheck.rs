@@ -8188,6 +8188,27 @@ fn resource_protocol_op(name: &str) -> Option<ResourceProtocolOp> {
             first_param_base_type: "TlsStream",
             required_effect: "net",
         }),
+        "tls_peer_issuer" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_peer_issuer",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_peer_fingerprint_sha256" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_peer_fingerprint_sha256",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
+        "tls_peer_san_entries" => Some(ResourceProtocolOp {
+            kind: ResourceKind::TlsStream,
+            terminal: false,
+            api: "tls_peer_san_entries",
+            first_param_base_type: "TlsStream",
+            required_effect: "net",
+        }),
         "tls_peer_cn" => Some(ResourceProtocolOp {
             kind: ResourceKind::TlsStream,
             terminal: false,

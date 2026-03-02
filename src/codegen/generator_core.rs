@@ -474,7 +474,10 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_tls_async_cancel(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_async_shutdown()\n");
         text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
-        text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n\n");
+        text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_peer_issuer(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_peer_fingerprint_sha256(i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_tls_peer_san_entries(i64, i8**, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_tls_version(i64, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_async_poll_int(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)\n\n");

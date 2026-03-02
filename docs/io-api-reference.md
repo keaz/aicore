@@ -590,6 +590,9 @@ fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, de
 fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_peer_fingerprint_sha256(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effects { net }
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }
 ```
@@ -618,6 +621,9 @@ Notes:
 - `tls_async_cancel_*` marks pending ops as cancelled and surfaces `TlsError::Cancelled` from subsequent waits.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
 - Runnable async TLS submit/wait example: `examples/io/tls_async_submit_wait.aic`.
+- TLS peer metadata APIs (`tls_peer_subject`, `tls_peer_issuer`, `tls_peer_fingerprint_sha256`, `tls_peer_san_entries`) expose generic inputs for external pinning/compliance policies.
+- `tls_peer_san_entries` returns an empty vector when SAN is absent while unsupported metadata paths map to `TlsError::ProtocolError`.
+- Generic TLS metadata pinning scaffold example: `examples/io/tls_metadata_pinning_scaffold.aic`.
 - `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.
 - `tls_recv_framed*` and `byte_stream_recv_framed*` decode a 4-byte big-endian length prefix and enforce frame-size bounds.
 - `tls_version` reports negotiated protocol (`Tls12` or `Tls13`).

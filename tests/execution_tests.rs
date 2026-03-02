@@ -10347,6 +10347,7 @@ import std.net;
 import std.string;
 import std.bytes;
 import std.net;
+import std.vec;
 
 fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
@@ -10380,6 +10381,22 @@ fn none_string() -> Option[String] {
     None()
 }
 
+fn san_entries_ok(entries: Vec[String]) -> Bool effects { net } capabilities { net } {
+    if vec.vec_len(entries) == 0 {
+        true
+    } else {
+        let mut found = false;
+        for entry in entries {
+            found = if string.contains(entry, "localhost") {
+                true
+            } else {
+                found
+            };
+        };
+        found
+    }
+}
+
 fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int effects { net } capabilities { net } {
     let write_ok = match tls_send_bytes(
         stream,
@@ -10399,6 +10416,18 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
     };
     let cn_ok = match tls_peer_cn(stream) {
         Ok(cn) => string.contains(cn, "localhost"),
+        Err(_) => false,
+    };
+    let issuer_ok = match tls_peer_issuer(stream) {
+        Ok(issuer) => string.contains(issuer, "localhost"),
+        Err(_) => false,
+    };
+    let fingerprint_ok = match tls_peer_fingerprint_sha256(stream) {
+        Ok(value) => string.contains(value, ":") && len(value) >= 64,
+        Err(_) => false,
+    };
+    let san_ok = match tls_peer_san_entries(stream) {
+        Ok(entries) => san_entries_ok(entries),
         Err(_) => false,
     };
     let version_ok = match tls_version(stream) {
@@ -10455,13 +10484,16 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
         + bool_to_int(response_ok)
         + bool_to_int(subject_ok)
         + bool_to_int(cn_ok)
+        + bool_to_int(issuer_ok)
+        + bool_to_int(fingerprint_ok)
+        + bool_to_int(san_ok)
         + bool_to_int(version_ok)
         + bool_to_int(close_ok)
         + bool_to_int(secure_ok)
         + bool_to_int(default_cert_reject)
         + bool_to_int(wrapped_ok)
         + bool_to_int(upgraded_ok);
-    if score == 10 { 42 } else { score }
+    if score == 13 { 42 } else { score }
 }
 
 fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
@@ -10921,6 +10953,16 @@ fn is_protocol_string(v: Result[String, TlsError]) -> Bool {
     }
 }
 
+fn is_protocol_string_vec(v: Result[Vec[String], TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn is_protocol_bool(v: Result[Bool, TlsError]) -> Bool {
     match v {
         Err(err) => match err {
@@ -10978,6 +11020,9 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
         is_protocol_byte_stream(byte_stream_recv_framed(byte_stream_from_tls(bad), 64, 10));
     let subject_ok = is_protocol_string(tls_peer_subject(bad));
     let cn_ok = is_protocol_string(tls_peer_cn(bad));
+    let issuer_ok = is_protocol_string(tls_peer_issuer(bad));
+    let fingerprint_ok = is_protocol_string(tls_peer_fingerprint_sha256(bad));
+    let san_ok = is_protocol_string_vec(tls_peer_san_entries(bad));
     let version_ok = is_protocol_version(tls_version(bad));
     let close_ok = is_protocol_bool(tls_close(bad));
     let accept_ok = match tls_accept(9999, default_tls_config()) {
@@ -10997,9 +11042,12 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
         + bool_to_int(close_ok)
         + bool_to_int(subject_ok)
         + bool_to_int(cn_ok)
+        + bool_to_int(issuer_ok)
+        + bool_to_int(fingerprint_ok)
+        + bool_to_int(san_ok)
         + bool_to_int(version_ok)
         + bool_to_int(accept_ok);
-    if score == 11 {
+    if score == 14 {
         print_int(42);
     } else {
         print_int(score);

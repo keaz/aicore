@@ -2939,6 +2939,27 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         "aic_tls_peer_subject_intrinsic",
         1,
     );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_peer_issuer",
+        "aic_tls_peer_issuer_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_peer_fingerprint_sha256",
+        "aic_tls_peer_fingerprint_sha256_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_peer_san_entries",
+        "aic_tls_peer_san_entries_intrinsic",
+        1,
+    );
     assert!(
         source.contains("let raw = aic_tls_version_intrinsic(stream.handle);"),
         "std/tls.aic tls_version must call the TLS version intrinsic"
@@ -2978,6 +2999,9 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_tls_async_shutdown_intrinsic", 0usize),
         ("aic_tls_close_intrinsic", 1usize),
         ("aic_tls_peer_subject_intrinsic", 1usize),
+        ("aic_tls_peer_issuer_intrinsic", 1usize),
+        ("aic_tls_peer_fingerprint_sha256_intrinsic", 1usize),
+        ("aic_tls_peer_san_entries_intrinsic", 1usize),
         ("aic_tls_version_intrinsic", 1usize),
     ] {
         assert_intrinsic_declaration(&source, "std/tls.aic", intrinsic, arity);

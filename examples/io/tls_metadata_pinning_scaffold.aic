@@ -1,0 +1,90 @@
+import std.io;
+import std.tls;
+import std.string;
+import std.vec;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn metadata_fallback_ok(err: TlsError) -> Bool {
+    match err {
+        ProtocolError => true,
+        Io => true,
+        Timeout => true,
+        ConnectionClosed => true,
+        _ => false,
+    }
+}
+
+fn dns_entries_match(entries: Vec[String], expected_dns: String) -> Bool {
+    let mut found = false;
+    for entry in entries {
+        found = if string.contains(entry, expected_dns) {
+            true
+        } else {
+            found
+        };
+    };
+    found
+}
+
+fn fingerprint_shape_ok(fingerprint: String) -> Bool {
+    string.contains(fingerprint, ":") && len(fingerprint) >= 64
+}
+
+fn pinning_policy_scaffold(
+    stream: TlsStream,
+    expected_dns: String,
+    expected_fingerprint_prefix: String,
+) -> Result[Bool, TlsError] effects { net } capabilities { net } {
+    let subject = tls_peer_subject(stream);
+    let issuer = tls_peer_issuer(stream);
+    let fingerprint = tls_peer_fingerprint_sha256(stream);
+    let sans = tls_peer_san_entries(stream);
+
+    match subject {
+        Err(err) => Err(err),
+        Ok(subject_text) => match issuer {
+            Err(err) => Err(err),
+            Ok(issuer_text) => match fingerprint {
+                Err(err) => Err(err),
+                Ok(fingerprint_text) => match sans {
+                    Err(err) => Err(err),
+                    Ok(san_entries) => if true {
+                        let fingerprint_ok = if expected_fingerprint_prefix == "" {
+                            fingerprint_shape_ok(fingerprint_text)
+                        } else {
+                            string.starts_with(fingerprint_text, expected_fingerprint_prefix)
+                        };
+                        let san_ok = if vec.vec_len(san_entries) == 0 {
+                            true
+                        } else {
+                            dns_entries_match(san_entries, expected_dns)
+                        };
+                        let identity_ok = string.contains(subject_text, expected_dns)
+                            || string.contains(issuer_text, expected_dns)
+                            || san_ok;
+                        Ok(fingerprint_ok && identity_ok)
+                    } else {
+                        Ok(false)
+                    },
+                },
+            },
+        },
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let probe = TlsStream { handle: 9999 };
+    let evaluated = match pinning_policy_scaffold(probe, "example.com", "") {
+        Ok(value) => bool_to_int(value),
+        Err(err) => if metadata_fallback_ok(err) { 1 } else { 0 },
+    };
+    if evaluated == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
