@@ -1,0 +1,114 @@
+import std.io;
+import std.net;
+import std.time;
+import std.tls;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn net_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn should_throttle(p: AsyncRuntimePressure) -> Bool {
+    let used = p.active_ops + p.queue_depth;
+    let budget = if p.op_limit <= 0 { 1 } else { p.op_limit };
+    used * 10 >= budget * 8
+}
+
+fn zero_pressure() -> AsyncRuntimePressure {
+    AsyncRuntimePressure {
+        active_ops: 0,
+        queue_depth: 0,
+        op_limit: 0,
+        queue_limit: 0,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+
+    let mut submitted = 0;
+    let mut i = 0;
+    while i < 12 {
+        let pressure = match async_runtime_pressure() {
+            Ok(value) => value,
+            Err(_) => zero_pressure(),
+        };
+        if should_throttle(pressure) {
+            sleep_ms(1);
+        } else {
+            let op = match async_accept_submit(listener, 2000) {
+                Ok(value) => value,
+                Err(_) => AsyncIntOp { handle: 0 },
+            };
+            let cancelled = match async_cancel_int(op) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            let cancelled_wait = match async_wait_int(op, 2000) {
+                Ok(_) => 0,
+                Err(err) => if net_code(err) == 9 { 1 } else { 0 },
+            };
+            if cancelled == 1 && cancelled_wait == 1 {
+                submitted = submitted + 1;
+            } else {
+                ()
+            };
+        };
+        i = i + 1;
+    };
+
+    let tls_pressure_ok = match tls_async_runtime_pressure() {
+        Ok(value) => if value.op_limit > 0 && value.queue_depth == 0 && value.queue_limit == 0 {
+            1
+        } else {
+            0
+        },
+        Err(err) => if tls_code(err) == 5 { 1 } else { 0 },
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+    let close_ok = match tcp_close(listener) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    if submitted > 0 && tls_pressure_ok == 1 && shutdown_ok == 1 && close_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -1760,6 +1760,9 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_net_async_shutdown()"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_net_async_pressure(i64*, i64*, i64*, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_tls_connect(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
@@ -1788,6 +1791,9 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_tls_async_shutdown()"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_tls_async_pressure(i64*, i64*, i64*, i64*)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_tls_close(i64)"));
@@ -2129,6 +2135,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_net_async_wait_int("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
+    assert!(runtime_c_source().contains("long aic_rt_net_async_pressure("));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect("));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect_addr("));
     assert!(runtime_c_source().contains("long aic_rt_tls_accept("));
@@ -2139,6 +2146,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_int("));
     assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_string("));
     assert!(runtime_c_source().contains("long aic_rt_tls_async_shutdown(void)"));
+    assert!(runtime_c_source().contains("long aic_rt_tls_async_pressure("));
     assert!(runtime_c_source().contains("AIC_RT_TLS_ASYNC_OP_CAP"));
     assert!(runtime_c_source().contains("if (wait_rc == ETIMEDOUT)"));
     assert!(runtime_c_source().contains("op->claimed = 0;"));

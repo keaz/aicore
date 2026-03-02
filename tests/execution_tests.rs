@@ -7381,6 +7381,145 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_async_runtime_pressure_snapshots_are_typed_and_configurable() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.tls;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn net_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn zero_pressure() -> AsyncRuntimePressure {
+    AsyncRuntimePressure {
+        active_ops: 0,
+        queue_depth: 0,
+        op_limit: 0,
+        queue_limit: 0,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let baseline = match async_runtime_pressure() {
+        Ok(value) => value,
+        Err(_) => zero_pressure(),
+    };
+    let baseline_ok = if baseline.active_ops == 0 &&
+        baseline.queue_depth == 0 &&
+        baseline.op_limit == 3 &&
+        baseline.queue_limit == 2 {
+        1
+    } else {
+        0
+    };
+
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let op = match async_accept_submit(listener, 2000) {
+        Ok(value) => value,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+
+    let inflight = match async_runtime_pressure() {
+        Ok(value) => value,
+        Err(_) => zero_pressure(),
+    };
+    let inflight_ok = if inflight.op_limit == 3 &&
+        inflight.queue_limit == 2 &&
+        inflight.active_ops + inflight.queue_depth >= 1 {
+        1
+    } else {
+        0
+    };
+
+    let cancel_ok = match async_cancel_int(op) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+    let cancel_wait_ok = match async_wait_int(op, 2000) {
+        Ok(_) => 0,
+        Err(err) => if net_code(err) == 9 { 1 } else { 0 },
+    };
+
+    let after = match async_runtime_pressure() {
+        Ok(value) => value,
+        Err(_) => zero_pressure(),
+    };
+    let after_ok = if after.active_ops == 0 && after.queue_depth == 0 { 1 } else { 0 };
+
+    let tls_ok = match tls_async_runtime_pressure() {
+        Ok(value) => if value.queue_depth == 0 && value.queue_limit == 0 && value.op_limit == 4 {
+            1
+        } else {
+            0
+        },
+        Err(err) => if tls_code(err) == 5 { 1 } else { 0 },
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+    let close_ok = match tcp_close(listener) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    let score = baseline_ok + inflight_ok + cancel_ok + cancel_wait_ok +
+        after_ok + tls_ok + shutdown_ok + close_ok;
+    if score == 8 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let envs = [
+        ("AIC_RT_LIMIT_NET_ASYNC_OPS", "3"),
+        ("AIC_RT_LIMIT_NET_ASYNC_QUEUE", "2"),
+        ("AIC_RT_LIMIT_TLS_ASYNC_OPS", "4"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_timeout_and_invalid_input_errors_are_stable() {
     let src = r#"
 import std.io;

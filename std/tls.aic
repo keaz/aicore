@@ -327,6 +327,19 @@ intrinsic fn aic_tls_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_tls_async_shutdown_intrinsic() -> Result[Bool, TlsError] effects { net, concurrency };
+/// `aic_tls_async_pressure_intrinsic` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `aic_tls_async_pressure_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_tls_async_pressure_intrinsic() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency };
 /// `aic_tls_close_intrinsic` in `std.tls`.
 ///
 /// ## Example
@@ -1116,6 +1129,22 @@ fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
 /// Returns module-defined error variants when the operation fails.
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency } {
     aic_tls_async_shutdown_intrinsic()
+}
+
+/// `tls_async_runtime_pressure` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_async_runtime_pressure` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency } {
+    aic_tls_async_pressure_intrinsic()
 }
 
 /// `tls_frame_len_be` in `std.tls`.

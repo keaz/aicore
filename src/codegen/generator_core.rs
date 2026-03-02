@@ -455,6 +455,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_net_async_wait_string(i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_cancel(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_net_async_shutdown()\n\n");
+        text.push_str("declare i64 @aic_rt_net_async_pressure(i64*, i64*, i64*, i64*)\n\n");
         text.push_str(
             "declare i64 @aic_rt_tls_connect(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64*)\n",
         );
@@ -473,6 +474,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_tls_async_wait_string(i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_async_cancel(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_async_shutdown()\n");
+        text.push_str("declare i64 @aic_rt_tls_async_pressure(i64*, i64*, i64*, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_close(i64)\n");
         text.push_str("declare i64 @aic_rt_tls_peer_subject(i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_tls_peer_issuer(i64, i8**, i64*)\n");

@@ -25,6 +25,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_poll_string(op) -> Result[Option[Bytes], NetError]`
 - `async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]`
 - `async_wait_any_string(op1, op2, timeout_ms) -> Result[AsyncStringSelection, NetError]`
+- `async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError]`
 - `async_shutdown() -> Result[Bool, NetError]`
 - Convenience wrappers: `async_accept`, `async_tcp_send`, `async_tcp_recv`
 
@@ -40,6 +41,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `tls_async_poll_string(op) -> Result[Option[Bytes], TlsError]`
 - `tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]`
 - `tls_async_wait_any_string(op1, op2, timeout_ms) -> Result[TlsAsyncStringSelection, TlsError]`
+- `tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError]`
 - `tls_async_shutdown() -> Result[Bool, TlsError]`
 - Convenience wrappers: `tls_async_send`, `tls_async_recv`
 
@@ -104,6 +106,8 @@ let socket = match accepted {
 - Queue-full submission returns `NetError::Timeout`.
 - Wait calls are single-consumer per operation handle.
 - Timeout while waiting does not destroy the in-flight operation; later wait can retry.
+- `async_runtime_pressure` snapshots expose `active_ops`, `queue_depth`, `op_limit`, and `queue_limit`.
+- `tls_async_runtime_pressure` snapshots expose `active_ops` and `op_limit`; current TLS runtime reports `queue_depth = 0` and `queue_limit = 0`.
 - All failures map through existing `NetError` code mapping.
 
 ## CI and Perf Gate Mapping
@@ -120,6 +124,7 @@ let socket = match accepted {
 - CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
+- Runnable pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 - Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
   - scenario: `rest_async_echo_1000_connections`
   - encoded load: `connections = 1000`

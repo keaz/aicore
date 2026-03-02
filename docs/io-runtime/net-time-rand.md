@@ -45,6 +45,13 @@ struct AsyncStringSelection {
     index: Int,
     payload: Bytes,
 }
+
+struct AsyncRuntimePressure {
+    active_ops: Int,
+    queue_depth: Int,
+    op_limit: Int,
+    queue_limit: Int,
+}
 ```
 
 ### API
@@ -114,6 +121,7 @@ fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net
 fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
 fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }
 fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }
 fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
 fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
@@ -159,6 +167,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `async_cancel_*` returns whether cancellation was applied.
   - `async_poll_*` maps pending state to `Option::None`.
   - `async_wait_any_*` provides deterministic two-op select helpers.
+  - `async_runtime_pressure` reports active/queued snapshots and configured limits for adaptive submit gating.
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.

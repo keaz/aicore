@@ -2517,6 +2517,13 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_async_shutdown_intrinsic",
         0,
     );
+    assert_delegate_call(
+        &net_source,
+        "std/net.aic",
+        "async_runtime_pressure",
+        "aic_net_async_pressure_intrinsic",
+        0,
+    );
 
     for (name, arity) in [
         ("aic_net_tcp_listen_intrinsic", 1usize),
@@ -2550,6 +2557,7 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_net_async_cancel_int_intrinsic", 1usize),
         ("aic_net_async_cancel_string_intrinsic", 1usize),
         ("aic_net_async_shutdown_intrinsic", 0usize),
+        ("aic_net_async_pressure_intrinsic", 0usize),
     ] {
         assert_intrinsic_declaration(&net_source, "std/net.aic", name, arity);
     }
@@ -2982,6 +2990,13 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         "aic_tls_async_cancel_string_intrinsic",
         1,
     );
+    assert_delegate_call(
+        &source,
+        "std/tls.aic",
+        "tls_async_runtime_pressure",
+        "aic_tls_async_pressure_intrinsic",
+        0,
+    );
 
     for (intrinsic, arity) in [
         ("aic_tls_connect_intrinsic", 10usize),
@@ -2997,6 +3012,7 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         ("aic_tls_async_cancel_int_intrinsic", 1usize),
         ("aic_tls_async_cancel_string_intrinsic", 1usize),
         ("aic_tls_async_shutdown_intrinsic", 0usize),
+        ("aic_tls_async_pressure_intrinsic", 0usize),
         ("aic_tls_close_intrinsic", 1usize),
         ("aic_tls_peer_subject_intrinsic", 1usize),
         ("aic_tls_peer_issuer_intrinsic", 1usize),
@@ -3044,6 +3060,14 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         source.contains("aic_tls_async_shutdown_intrinsic()"),
         "std/tls.aic tls_async_shutdown must delegate to intrinsic"
+    );
+    assert!(
+        source.contains("fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }"),
+        "std/tls.aic must expose tls_async_runtime_pressure helper"
+    );
+    assert!(
+        source.contains("aic_tls_async_pressure_intrinsic()"),
+        "std/tls.aic tls_async_runtime_pressure must delegate to intrinsic"
     );
     assert!(
         source.contains("Ok(op) => tls_async_wait_int(op, timeout_ms)"),
@@ -3497,6 +3521,10 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "{name} must document async_wait_any_int signature"
         );
         assert!(
+            doc.contains("fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"),
+            "{name} must document async_runtime_pressure signature"
+        );
+        assert!(
             !doc.contains("fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
             "{name} still documents stale string tcp_send signature"
         );
@@ -3527,6 +3555,11 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]"
         ),
         "async runtime docs must include async_wait_any_int helper"
+    );
+    assert!(
+        async_runtime
+            .contains("async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError]"),
+        "async runtime docs must include async_runtime_pressure helper"
     );
     assert!(
         !async_runtime.contains("async_wait_string(op, timeout_ms) -> Result[String, NetError]"),
@@ -3587,6 +3620,10 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
             "{name} must document tls_async_wait_any_int signature"
         );
         assert!(
+            doc.contains("fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }"),
+            "{name} must document tls_async_runtime_pressure signature"
+        );
+        assert!(
             !doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"),
             "{name} still documents stale string tls_async_wait_string signature"
         );
@@ -3613,6 +3650,11 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
     assert!(
         async_runtime.contains("tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]"),
         "async runtime docs must include tls_async_wait_any_int helper"
+    );
+    assert!(
+        async_runtime
+            .contains("tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError]"),
+        "async runtime docs must include tls_async_runtime_pressure helper"
     );
     assert!(
         io_api.contains("examples/io/tls_async_submit_wait.aic"),
@@ -7537,6 +7579,10 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         net_source.contains("fn aic_net_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }"),
         "std/net.aic async cancel string intrinsic must expose typed bool status"
     );
+    assert!(
+        net_source.contains("fn aic_net_async_pressure_intrinsic() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"),
+        "std/net.aic async pressure intrinsic must expose typed runtime-pressure snapshots"
+    );
 
     assert!(
         net_source.contains("aic_net_tcp_send_intrinsic(handle, payload.data)"),
@@ -7565,6 +7611,14 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         net_source.contains("aic_net_async_cancel_string_intrinsic(op)"),
         "std/net.aic async_cancel_string must delegate to intrinsic"
+    );
+    assert!(
+        net_source.contains("fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"),
+        "std/net.aic must expose async_runtime_pressure helper"
+    );
+    assert!(
+        net_source.contains("aic_net_async_pressure_intrinsic()"),
+        "std/net.aic async_runtime_pressure must delegate to intrinsic"
     );
     assert!(
         net_source.contains(

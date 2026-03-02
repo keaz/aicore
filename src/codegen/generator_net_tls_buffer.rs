@@ -79,6 +79,9 @@ impl<'a> Generator<'a> {
             "aic_net_async_cancel_int_intrinsic" => "async_cancel_int",
             "aic_net_async_cancel_string_intrinsic" => "async_cancel_string",
             "async_shutdown" | "aic_net_async_shutdown_intrinsic" => "async_shutdown",
+            "async_runtime_pressure" | "aic_net_async_pressure_intrinsic" => {
+                "async_runtime_pressure"
+            }
             _ => return None,
         };
 
@@ -484,6 +487,11 @@ impl<'a> Generator<'a> {
             "async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, NetError]") => {
                 Some(self.gen_net_async_shutdown_call(name, args, span, fctx))
             }
+            "async_runtime_pressure"
+                if self.sig_matches_shape(name, &[], "Result[AsyncRuntimePressure, NetError]") =>
+            {
+                Some(self.gen_net_async_pressure_call(name, args, span, fctx))
+            }
             _ => None,
         }
     }
@@ -509,6 +517,7 @@ impl<'a> Generator<'a> {
             "aic_tls_async_cancel_int_intrinsic" => "tls_async_cancel_int",
             "aic_tls_async_cancel_string_intrinsic" => "tls_async_cancel_string",
             "aic_tls_async_shutdown_intrinsic" => "tls_async_shutdown",
+            "aic_tls_async_pressure_intrinsic" => "tls_async_runtime_pressure",
             "aic_tls_close_intrinsic" => "tls_close",
             "aic_tls_peer_subject_intrinsic" => "tls_peer_subject",
             "aic_tls_peer_issuer_intrinsic" => "tls_peer_issuer",
@@ -643,6 +652,11 @@ impl<'a> Generator<'a> {
             }
             "tls_async_shutdown" if self.sig_matches_shape(name, &[], "Result[Bool, TlsError]") => {
                 Some(self.gen_tls_async_shutdown_call(name, args, span, fctx))
+            }
+            "tls_async_runtime_pressure"
+                if self.sig_matches_shape(name, &[], "Result[AsyncRuntimePressure, TlsError]") =>
+            {
+                Some(self.gen_tls_async_pressure_call(name, args, span, fctx))
             }
             "tls_close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, TlsError]") => {
                 Some(self.gen_tls_close_call(name, args, span, fctx))
@@ -1600,6 +1614,81 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
+        self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_tls_async_pressure_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "aic_tls_async_pressure_intrinsic expects no arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let active_ops_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", active_ops_slot));
+        let queue_depth_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", queue_depth_slot));
+        let op_limit_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", op_limit_slot));
+        let queue_limit_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", queue_limit_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_tls_async_pressure(i64* {}, i64* {}, i64* {}, i64* {})",
+            err, active_ops_slot, queue_depth_slot, op_limit_slot, queue_limit_slot
+        ));
+
+        let active_ops = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            active_ops, active_ops_slot
+        ));
+        let queue_depth = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            queue_depth, queue_depth_slot
+        ));
+        let op_limit = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", op_limit, op_limit_slot));
+        let queue_limit = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            queue_limit, queue_limit_slot
+        ));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_async_runtime_pressure_payload(
+            &result_ty,
+            "tls_async_runtime_pressure",
+            &active_ops,
+            &queue_depth,
+            &op_limit,
+            &queue_limit,
+            span,
+            fctx,
+        )?;
         self.wrap_tls_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
@@ -4321,6 +4410,69 @@ impl<'a> Generator<'a> {
         )
     }
 
+    pub(super) fn build_async_runtime_pressure_payload(
+        &mut self,
+        result_ty: &LType,
+        context_name: &str,
+        active_ops: &str,
+        queue_depth: &str,
+        op_limit: &str,
+        queue_limit: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(result_ty, span) else {
+            return None;
+        };
+        let LType::Struct(layout) = ok_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context_name} expects Result[AsyncRuntimePressure, ...] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "AsyncRuntimePressure"
+            || layout.fields.len() != 4
+            || layout.fields[0].ty != LType::Int
+            || layout.fields[1].ty != LType::Int
+            || layout.fields[2].ty != LType::Int
+            || layout.fields[3].ty != LType::Int
+        {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context_name} expects Result[AsyncRuntimePressure, ...] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.build_struct_value(
+            &layout,
+            &[
+                Value {
+                    ty: LType::Int,
+                    repr: Some(active_ops.to_string()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(queue_depth.to_string()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(op_limit.to_string()),
+                },
+                Value {
+                    ty: LType::Int,
+                    repr: Some(queue_limit.to_string()),
+                },
+            ],
+            span,
+            fctx,
+        )
+    }
+
     pub(super) fn gen_net_async_accept_submit_call(
         &mut self,
         name: &str,
@@ -4723,6 +4875,81 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
+        self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_net_async_pressure_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "async_runtime_pressure expects no arguments",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let active_ops_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", active_ops_slot));
+        let queue_depth_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", queue_depth_slot));
+        let op_limit_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", op_limit_slot));
+        let queue_limit_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i64", queue_limit_slot));
+
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_net_async_pressure(i64* {}, i64* {}, i64* {}, i64* {})",
+            err, active_ops_slot, queue_depth_slot, op_limit_slot, queue_limit_slot
+        ));
+
+        let active_ops = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            active_ops, active_ops_slot
+        ));
+        let queue_depth = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            queue_depth, queue_depth_slot
+        ));
+        let op_limit = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", op_limit, op_limit_slot));
+        let queue_limit = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            queue_limit, queue_limit_slot
+        ));
+
+        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5012",
+                format!("unknown function '{name}' in codegen"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let ok_payload = self.build_async_runtime_pressure_payload(
+            &result_ty,
+            "async_runtime_pressure",
+            &active_ops,
+            &queue_depth,
+            &op_limit,
+            &queue_limit,
+            span,
+            fctx,
+        )?;
         self.wrap_net_result(&result_ty, ok_payload, &err, span, fctx)
     }
 

@@ -1328,6 +1328,28 @@ long aic_rt_net_async_shutdown(void) {
     return 7;
 }
 
+long aic_rt_net_async_pressure(
+    long* out_active_ops,
+    long* out_queue_depth,
+    long* out_op_limit,
+    long* out_queue_limit
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_pressure", 2);
+    if (out_active_ops != NULL) {
+        *out_active_ops = 0;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = 0;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = 0;
+    }
+    return 7;
+}
+
 long aic_rt_tls_async_send_submit(
     long tls_handle,
     const char* payload_ptr,
@@ -1403,6 +1425,28 @@ long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
 
 long aic_rt_tls_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
+    return 5;
+}
+
+long aic_rt_tls_async_pressure(
+    long* out_active_ops,
+    long* out_queue_depth,
+    long* out_op_limit,
+    long* out_queue_limit
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_pressure", 2);
+    if (out_active_ops != NULL) {
+        *out_active_ops = 0;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = 0;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = 0;
+    }
     return 5;
 }
 
@@ -3378,6 +3422,73 @@ long aic_rt_net_async_shutdown(void) {
     return 0;
 }
 
+long aic_rt_net_async_pressure(
+    long* out_active_ops,
+    long* out_queue_depth,
+    long* out_op_limit,
+    long* out_queue_limit
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_pressure", 2);
+    aic_rt_net_async_limits_ensure();
+
+    if (out_active_ops != NULL) {
+        *out_active_ops = 0;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = aic_rt_net_async_op_limit;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = aic_rt_net_async_queue_limit;
+    }
+
+    long active_ops = 0;
+    long queue_depth = 0;
+    long op_limit = aic_rt_net_async_op_limit;
+    long queue_limit = aic_rt_net_async_queue_limit;
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    queue_depth = aic_rt_net_async_queue_len;
+    op_limit = aic_rt_net_async_op_limit;
+    queue_limit = aic_rt_net_async_queue_limit;
+
+    for (long i = 0; i < op_limit; ++i) {
+        AicNetAsyncOp* op = &aic_rt_net_async_ops[i];
+        if (!op->initialized) {
+            continue;
+        }
+        int op_lock_rc = pthread_mutex_lock(&op->mutex);
+        if (op_lock_rc != 0) {
+            pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+            return aic_rt_net_map_errno(op_lock_rc);
+        }
+        if (op->active && !op->done) {
+            active_ops += 1;
+        }
+        pthread_mutex_unlock(&op->mutex);
+    }
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
+
+    if (out_active_ops != NULL) {
+        *out_active_ops = active_ops;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = queue_depth;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = op_limit;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = queue_limit;
+    }
+    return 0;
+}
+
 long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
     (void)addr_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tcp_listen", 2);
@@ -5346,6 +5457,68 @@ long aic_rt_tls_async_shutdown(void) {
         pthread_mutex_unlock(&op->mutex);
     }
     pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+    return 0;
+}
+
+long aic_rt_tls_async_pressure(
+    long* out_active_ops,
+    long* out_queue_depth,
+    long* out_op_limit,
+    long* out_queue_limit
+) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_pressure", 2);
+    aic_rt_tls_limits_ensure();
+
+    if (out_active_ops != NULL) {
+        *out_active_ops = 0;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = aic_rt_tls_async_op_limit;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = 0;
+    }
+
+    long active_ops = 0;
+    long op_limit = aic_rt_tls_async_op_limit;
+
+    int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    op_limit = aic_rt_tls_async_op_limit;
+    for (long i = 0; i < op_limit; ++i) {
+        AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
+        if (!op->initialized) {
+            continue;
+        }
+        int op_lock_rc = pthread_mutex_lock(&op->mutex);
+        if (op_lock_rc != 0) {
+            pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+            return 7;
+        }
+        if (op->active && !op->done) {
+            active_ops += 1;
+        }
+        pthread_mutex_unlock(&op->mutex);
+    }
+    pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
+
+    if (out_active_ops != NULL) {
+        *out_active_ops = active_ops;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = op_limit;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = 0;
+    }
     return 0;
 }
 

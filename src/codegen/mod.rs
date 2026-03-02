@@ -924,6 +924,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_net_async_pressure_intrinsic",
+        runtime_symbol: "aic_rt_net_async_pressure",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[AsyncRuntimePressure, NetError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_tls_connect_intrinsic",
         runtime_symbol: "aic_rt_tls_connect",
         signatures: &[IntrinsicSignatureShape {
@@ -1039,6 +1047,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         signatures: &[IntrinsicSignatureShape {
             params: &[],
             ret: "Result[Bool, TlsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_tls_async_pressure_intrinsic",
+        runtime_symbol: "aic_rt_tls_async_pressure",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[AsyncRuntimePressure, TlsError]",
         }],
     },
     IntrinsicBindingExpectation {

@@ -396,6 +396,13 @@ struct AsyncStringSelection {
     payload: Bytes,
 }
 
+struct AsyncRuntimePressure {
+    active_ops: Int,
+    queue_depth: Int,
+    op_limit: Int,
+    queue_limit: Int,
+}
+
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
@@ -460,6 +467,7 @@ fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net
 fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
 fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }
 fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }
 fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
 fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
@@ -502,6 +510,7 @@ Notes:
   - `async_cancel_*` returns `Ok(true)` when cancellation is applied and `Ok(false)` when the op already completed.
   - `async_poll_*` maps pending state to `Ok(None())` via zero-timeout waits.
   - `async_wait_any_*` returns the winning operation index and payload/value.
+  - `async_runtime_pressure` exposes active/queued snapshot metrics and configured limits for adaptive submit gating.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
 - Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process and size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions.
@@ -509,6 +518,7 @@ Notes:
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
+- Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 
 ## `std.tls`
 
@@ -576,6 +586,7 @@ fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects {
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
@@ -613,6 +624,7 @@ Notes:
   - `tls_async_send_submit` / `tls_async_recv_submit`
   - `tls_async_wait_int` / `tls_async_wait_string`
   - `tls_async_cancel_*` / `tls_async_poll_*` / `tls_async_wait_any_*`
+  - `tls_async_runtime_pressure` for runtime capacity snapshots (`queue_depth` and `queue_limit` are `0` on current TLS backend)
   - convenience wrappers `tls_async_send` / `tls_async_recv`
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
 - `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Timeout`).

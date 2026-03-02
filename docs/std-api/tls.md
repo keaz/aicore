@@ -85,6 +85,7 @@ fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects {
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
@@ -243,6 +244,7 @@ fn main() -> Int effects { net } capabilities { net } {
 - `tls_async_cancel_*` returns `Ok(true)` if cancellation is applied and `Ok(false)` if the operation already completed.
 - `tls_async_poll_*` maps pending ops to `Ok(None())` using zero-timeout wait probes.
 - `tls_async_wait_any_*` returns the first-ready result with deterministic index selection.
+- `tls_async_runtime_pressure` reports runtime load snapshots for adaptive orchestration (`queue_depth`/`queue_limit` are `0` on current TLS backend).
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
