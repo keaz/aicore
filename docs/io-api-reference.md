@@ -322,10 +322,9 @@ Notes:
 - `run`/`pipe` success is about launch/execution plumbing; check `ProcOutput.status` for command exit status.
 - Spawned-handle table capacity is bounded (`64` runtime slots).
 - Windows caveats:
-  - `spawn` returns `ProcError::Io`.
-  - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
-  - `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
-- `run`, `pipe`, and `current_pid` remain available.
+  - Process APIs are available on Windows (`spawn`, `wait`, `kill`, `is_running`, `run_with`, `run_timeout`, `pipe_chain`).
+  - `run_with` environment overrides currently reject entries containing `"` or line breaks with `ProcError::InvalidInput`.
+  - Command behavior follows `cmd.exe /C` semantics for shell syntax and exit-status propagation.
 
 ## `std.signal`
 

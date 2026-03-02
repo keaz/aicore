@@ -42,7 +42,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 
 - Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/retry/concurrency.
 - Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
-- Windows: process/network/concurrency runtime paths currently return stable unsupported-style errors via enum mapping; for channel try/select, branch on `ChannelError` values (for example `Closed`) instead of assuming success.
+- Windows: process runtime APIs are available (spawn/run/wait/kill/is_running/run_with/run_timeout/pipe_chain); network and concurrency runtime paths are still unsupported-style and map deterministically via enum codes.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 
 ## Quick-Start Templates

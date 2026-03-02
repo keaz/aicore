@@ -6330,6 +6330,56 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     assert_eq!(stdout, "");
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn exec_proc_run_pipe_spawn_wait_and_kill() {
+    let src = r#"
+import std.proc;
+import std.string;
+
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
+    let run_out = match run("echo out & echo err 1>&2 & exit /B 7") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let pipe_out = match pipe("echo 42", "findstr 42") {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let spawned = match spawn("exit /B 5") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let waited = match wait(spawned) {
+        Ok(code) => code,
+        Err(_) => -1,
+    };
+    let kill_missing = match kill(999999) {
+        Ok(_) => 0,
+        Err(err) => match err {
+            UnknownProcess => 1,
+            _ => 0,
+        },
+    };
+
+    let run_status_ok = if run_out.status == 7 { 1 } else { 0 };
+    let run_stdout_ok = if string.contains(run_out.stdout, "out") { 1 } else { 0 };
+    let run_stderr_ok = if string.contains(run_out.stderr, "err") { 1 } else { 0 };
+    let pipe_ok = if pipe_out.status == 0 && string.contains(pipe_out.stdout, "42") { 1 } else { 0 };
+    let wait_ok = if waited == 5 { 1 } else { 0 };
+
+    if run_status_ok + run_stdout_ok + run_stderr_ok + pipe_ok + wait_ok + kill_missing == 6 {
+        42
+    } else {
+        0
+    }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_proc_run_with_stdin_env_cwd_and_timeout() {
@@ -6401,6 +6451,77 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     assert_eq!(stdout, "");
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn exec_proc_run_with_stdin_env_cwd_and_timeout() {
+    let src = r#"
+import std.proc;
+import std.string;
+import std.vec;
+
+fn invalid_input_code(err: ProcError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
+    let opts = RunOptions {
+        stdin: "from-stdin",
+        cwd: "workdir",
+        env: vec.vec_of("AIC_PROC_ENV=from-env"),
+        timeout_ms: 0,
+    };
+    let out = match run_with("type input.txt & set /p =\"|\" <NUL & set /p =\"%AIC_PROC_ENV%|\" <NUL & set /p STDINVAL= & echo %STDINVAL%", opts) {
+        Ok(value) => value,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+
+    let empty_env: Vec[String] = vec.new_vec();
+    let timeout_opts = RunOptions {
+        stdin: "",
+        cwd: "",
+        env: empty_env,
+        timeout_ms: 50,
+    };
+    let run_with_timeout = match run_with("ping -n 6 127.0.0.1 >NUL", timeout_opts) {
+        Ok(value) => if value.status == 124 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let run_timeout_ok = match run_timeout("ping -n 6 127.0.0.1 >NUL", 50) {
+        Ok(value) => if value.status == 124 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let invalid_timeout = match run_timeout("echo ok", -1) {
+        Ok(_) => 0,
+        Err(err) => invalid_input_code(err),
+    };
+
+    let run_with_ok = if out.status == 0 &&
+        string.contains(out.stdout, "cwd-data|from-env|from-stdin") &&
+        len(out.stderr) == 0 {
+        1
+    } else {
+        0
+    };
+
+    if run_with_ok + run_with_timeout + run_timeout_ok + invalid_timeout == 4 {
+        42
+    } else {
+        0
+    }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        let workdir = root.join("workdir");
+        fs::create_dir_all(&workdir).expect("mkdir workdir");
+        fs::write(workdir.join("input.txt"), "cwd-data").expect("write workdir input");
+    });
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_proc_pipe_chain_is_running_and_current_pid() {
@@ -6435,6 +6556,75 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     };
 
     let handle = match spawn("sleep 1") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let running_now = match is_running(handle) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let waited = match wait(handle) {
+        Ok(code) => if code == 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let running_after_wait = match is_running(handle) {
+        Ok(_) => 0,
+        Err(err) => match err {
+            UnknownProcess => 1,
+            _ => 0,
+        },
+    };
+    let pid_ok = match current_pid() {
+        Ok(pid) => if pid > 1 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if chain_ok + empty_chain + running_now + waited + running_after_wait + pid_ok == 6 {
+        42
+    } else {
+        0
+    }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(stdout, "");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn exec_proc_pipe_chain_is_running_and_current_pid() {
+    let src = r#"
+import std.proc;
+import std.string;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn invalid_input_code(err: ProcError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { proc, env } capabilities { proc, env  } {
+    let mut stages: Vec[String] = vec.vec_of("echo beta");
+    stages = vec.push(stages, "findstr beta");
+    let chained = match pipe_chain(stages) {
+        Ok(out) => out,
+        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+    };
+    let chain_ok = if chained.status == 0 && string.contains(chained.stdout, "beta") { 1 } else { 0 };
+    let empty_stages: Vec[String] = vec.new_vec();
+    let empty_chain = match pipe_chain(empty_stages) {
+        Ok(_) => 0,
+        Err(err) => invalid_input_code(err),
+    };
+
+    let handle = match spawn("ping -n 6 127.0.0.1 >NUL") {
         Ok(h) => h,
         Err(_) => 0,
     };

@@ -1503,6 +1503,34 @@ static long aic_rt_proc_map_errno(int err) {
     }
 }
 
+#ifdef _WIN32
+static long aic_rt_proc_map_win_error(unsigned long err) {
+    switch (err) {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
+        case ERROR_INVALID_DRIVE:
+        case ERROR_BAD_PATHNAME:
+        case ERROR_DIRECTORY:
+            return 1;  // NotFound
+        case ERROR_ACCESS_DENIED:
+        case ERROR_SHARING_VIOLATION:
+        case ERROR_PRIVILEGE_NOT_HELD:
+            return 2;  // PermissionDenied
+        case ERROR_INVALID_PARAMETER:
+        case ERROR_INVALID_NAME:
+        case ERROR_BAD_ARGUMENTS:
+        case ERROR_BAD_ENVIRONMENT:
+            return 3;  // InvalidInput
+        case ERROR_INVALID_HANDLE:
+        case ERROR_NOT_FOUND:
+        case ERROR_NO_MORE_FILES:
+            return 5;  // UnknownProcess
+        default:
+            return 4;  // Io
+    }
+}
+#endif
+
 static char* aic_rt_proc_read_text_file(const char* path, long* out_len) {
     if (out_len != NULL) {
         *out_len = 0;
@@ -1649,6 +1677,293 @@ static long aic_rt_proc_validate_env_items(const AicString* items, long count) {
     }
     return 0;
 }
+
+#ifdef _WIN32
+static long aic_rt_proc_run_windows_command(
+    const char* command_line,
+    const char* cwd,
+    long timeout_ms,
+    long* out_status,
+    int* out_timed_out
+) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+    if (out_timed_out != NULL) {
+        *out_timed_out = 0;
+    }
+    if (command_line == NULL || command_line[0] == '\0' || timeout_ms < 0) {
+        return 3;
+    }
+
+    size_t command_len = strlen(command_line);
+    char* mutable_command = (char*)malloc(command_len + 1);
+    if (mutable_command == NULL) {
+        return 4;
+    }
+    memcpy(mutable_command, command_line, command_len + 1);
+
+    STARTUPINFOA startup;
+    PROCESS_INFORMATION process_info;
+    ZeroMemory(&startup, sizeof(startup));
+    ZeroMemory(&process_info, sizeof(process_info));
+    startup.cb = (DWORD)sizeof(startup);
+
+    const char* launch_cwd = (cwd != NULL && cwd[0] != '\0') ? cwd : NULL;
+    BOOL created = CreateProcessA(
+        NULL,
+        mutable_command,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_NO_WINDOW,
+        NULL,
+        launch_cwd,
+        &startup,
+        &process_info
+    );
+    free(mutable_command);
+    if (!created) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    CloseHandle(process_info.hThread);
+
+    DWORD wait_budget = timeout_ms == 0 ? INFINITE : (DWORD)timeout_ms;
+    DWORD wait_rc = WaitForSingleObject(process_info.hProcess, wait_budget);
+    int timed_out = 0;
+    if (wait_rc == WAIT_TIMEOUT) {
+        timed_out = 1;
+        (void)TerminateProcess(process_info.hProcess, 124);
+        wait_rc = WaitForSingleObject(process_info.hProcess, INFINITE);
+    }
+    if (wait_rc == WAIT_FAILED) {
+        DWORD wait_err = GetLastError();
+        CloseHandle(process_info.hProcess);
+        return aic_rt_proc_map_win_error(wait_err);
+    }
+
+    DWORD exit_code = 0;
+    if (!GetExitCodeProcess(process_info.hProcess, &exit_code)) {
+        DWORD code_err = GetLastError();
+        CloseHandle(process_info.hProcess);
+        return aic_rt_proc_map_win_error(code_err);
+    }
+    CloseHandle(process_info.hProcess);
+
+    if (out_timed_out != NULL) {
+        *out_timed_out = timed_out;
+    }
+    if (out_status != NULL) {
+        *out_status = timed_out ? 124 : (long)exit_code;
+    }
+    return 0;
+}
+
+static long aic_rt_proc_run_shell_with_options(
+    const char* command,
+    const char* stdin_text,
+    const char* cwd,
+    const AicString* env_items,
+    long env_count,
+    long timeout_ms,
+    long* out_status,
+    char** out_stdout_ptr,
+    long* out_stdout_len,
+    char** out_stderr_ptr,
+    long* out_stderr_len
+) {
+    if (out_status != NULL) {
+        *out_status = 0;
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = NULL;
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = 0;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = NULL;
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = 0;
+    }
+    if (command == NULL || command[0] == '\0' || timeout_ms < 0) {
+        return 3;
+    }
+
+    long env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
+    if (env_valid != 0) {
+        return env_valid;
+    }
+
+    char* stdout_path = NULL;
+    char* stderr_path = NULL;
+    char* stdin_path = NULL;
+    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    if (mk_out != 0) {
+        free(stdout_path);
+        return mk_out;
+    }
+    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    if (mk_err != 0) {
+        remove(stdout_path);
+        free(stdout_path);
+        free(stderr_path);
+        return mk_err;
+    }
+    long mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
+    if (mk_in != 0) {
+        remove(stdout_path);
+        remove(stderr_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return mk_in;
+    }
+    long wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
+    if (wrote != 0) {
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return wrote;
+    }
+
+    size_t env_prefix_n = 0;
+    size_t env_count_n = env_count > 0 ? (size_t)env_count : 0;
+    for (size_t i = 0; i < env_count_n; ++i) {
+        size_t item_n = (size_t)env_items[i].len;
+        if (memchr(env_items[i].ptr, '"', item_n) != NULL ||
+            memchr(env_items[i].ptr, '\n', item_n) != NULL ||
+            memchr(env_items[i].ptr, '\r', item_n) != NULL) {
+            remove(stdout_path);
+            remove(stderr_path);
+            remove(stdin_path);
+            free(stdout_path);
+            free(stderr_path);
+            free(stdin_path);
+            return 3;
+        }
+        env_prefix_n += 5 + item_n + 5;
+    }
+
+    size_t body_n = env_prefix_n + strlen(command) + strlen(stdin_path) +
+                    strlen(stdout_path) + strlen(stderr_path) + 64;
+    char* body = (char*)malloc(body_n);
+    if (body == NULL) {
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return 4;
+    }
+
+    size_t pos = 0;
+    for (size_t i = 0; i < env_count_n; ++i) {
+        size_t item_n = (size_t)env_items[i].len;
+        memcpy(body + pos, "set \"", 5);
+        pos += 5;
+        memcpy(body + pos, env_items[i].ptr, item_n);
+        pos += item_n;
+        memcpy(body + pos, "\" && ", 5);
+        pos += 5;
+    }
+    int written_n = snprintf(
+        body + pos,
+        body_n - pos,
+        "( %s ) <\"%s\" >\"%s\" 2>\"%s\"",
+        command,
+        stdin_path,
+        stdout_path,
+        stderr_path
+    );
+    if (written_n < 0 || (size_t)written_n >= body_n - pos) {
+        free(body);
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return 4;
+    }
+    pos += (size_t)written_n;
+
+    size_t command_n = 11 + pos + 1;
+    char* command_line = (char*)malloc(command_n);
+    if (command_line == NULL) {
+        free(body);
+        remove(stdout_path);
+        remove(stderr_path);
+        remove(stdin_path);
+        free(stdout_path);
+        free(stderr_path);
+        free(stdin_path);
+        return 4;
+    }
+    memcpy(command_line, "cmd.exe /C ", 11);
+    memcpy(command_line + 11, body, pos);
+    command_line[11 + pos] = '\0';
+    free(body);
+
+    long run_status = 0;
+    int timed_out = 0;
+    long run_rc = aic_rt_proc_run_windows_command(
+        command_line,
+        cwd,
+        timeout_ms,
+        &run_status,
+        &timed_out
+    );
+    free(command_line);
+
+    long stdout_n = 0;
+    long stderr_n = 0;
+    char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
+    char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
+    remove(stdout_path);
+    remove(stderr_path);
+    remove(stdin_path);
+    free(stdout_path);
+    free(stderr_path);
+    free(stdin_path);
+    if (run_rc != 0) {
+        free(stdout_text);
+        free(stderr_text);
+        return run_rc;
+    }
+    if (stdout_text == NULL || stderr_text == NULL) {
+        free(stdout_text);
+        free(stderr_text);
+        return 4;
+    }
+
+    if (out_status != NULL) {
+        *out_status = timed_out ? 124 : run_status;
+    }
+    if (out_stdout_ptr != NULL) {
+        *out_stdout_ptr = stdout_text;
+    } else {
+        free(stdout_text);
+    }
+    if (out_stdout_len != NULL) {
+        *out_stdout_len = stdout_n;
+    }
+    if (out_stderr_ptr != NULL) {
+        *out_stderr_ptr = stderr_text;
+    } else {
+        free(stderr_text);
+    }
+    if (out_stderr_len != NULL) {
+        *out_stderr_len = stderr_n;
+    }
+    return 0;
+}
+#endif
 
 #ifndef _WIN32
 static long aic_rt_proc_apply_env_items(const AicString* items, long count) {
@@ -2122,13 +2437,18 @@ typedef struct {
     int active;
 #ifdef _WIN32
     long pid;
+    HANDLE process;
 #else
     pid_t pid;
 #endif
 } AicProcSlot;
 static AicProcSlot aic_rt_proc_table[AIC_RT_PROC_TABLE_CAP];
 static long aic_rt_proc_table_limit = AIC_RT_PROC_TABLE_CAP;
+#ifdef _WIN32
+static volatile LONG aic_rt_proc_limits_initialized = 0;
+#else
 static pthread_once_t aic_rt_proc_limits_once = PTHREAD_ONCE_INIT;
+#endif
 
 static void aic_rt_proc_limits_init(void) {
     aic_rt_proc_table_limit = aic_rt_env_parse_bounded_long(
@@ -2140,7 +2460,13 @@ static void aic_rt_proc_limits_init(void) {
 }
 
 static void aic_rt_proc_limits_ensure(void) {
+#ifdef _WIN32
+    if (InterlockedCompareExchange(&aic_rt_proc_limits_initialized, 1, 0) == 0) {
+        aic_rt_proc_limits_init();
+    }
+#else
     (void)pthread_once(&aic_rt_proc_limits_once, aic_rt_proc_limits_init);
+#endif
 }
 
 long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_cap, long* out_handle) {
@@ -2155,8 +2481,59 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
         return 3;
     }
 #ifdef _WIN32
+    aic_rt_proc_limits_ensure();
+    size_t wrapped_n = strlen(command) + 12;
+    char* wrapped = (char*)malloc(wrapped_n);
+    if (wrapped == NULL) {
+        free(command);
+        return 4;
+    }
+    snprintf(wrapped, wrapped_n, "cmd.exe /C %s", command);
+
+    STARTUPINFOA startup;
+    PROCESS_INFORMATION process_info;
+    ZeroMemory(&startup, sizeof(startup));
+    ZeroMemory(&process_info, sizeof(process_info));
+    startup.cb = (DWORD)sizeof(startup);
+    BOOL created = CreateProcessA(
+        NULL,
+        wrapped,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_NO_WINDOW,
+        NULL,
+        NULL,
+        &startup,
+        &process_info
+    );
+    free(wrapped);
     free(command);
-    return 4;
+    if (!created) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    CloseHandle(process_info.hThread);
+
+    long slot = -1;
+    for (long i = 0; i < aic_rt_proc_table_limit; ++i) {
+        if (!aic_rt_proc_table[i].active) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        (void)TerminateProcess(process_info.hProcess, 1);
+        (void)WaitForSingleObject(process_info.hProcess, INFINITE);
+        CloseHandle(process_info.hProcess);
+        return 4;
+    }
+    aic_rt_proc_table[slot].active = 1;
+    aic_rt_proc_table[slot].pid = (long)process_info.dwProcessId;
+    aic_rt_proc_table[slot].process = process_info.hProcess;
+    if (out_handle != NULL) {
+        *out_handle = slot + 1;
+    }
+    return 0;
 #else
     aic_rt_proc_limits_ensure();
     pid_t pid = fork();
@@ -2198,8 +2575,28 @@ long aic_rt_proc_wait(long handle, long* out_status) {
         *out_status = 0;
     }
 #ifdef _WIN32
-    (void)handle;
-    return 5;
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    DWORD wait_rc = WaitForSingleObject(aic_rt_proc_table[slot].process, INFINITE);
+    if (wait_rc == WAIT_FAILED) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    DWORD exit_code = 0;
+    if (!GetExitCodeProcess(aic_rt_proc_table[slot].process, &exit_code)) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    CloseHandle(aic_rt_proc_table[slot].process);
+    memset(&aic_rt_proc_table[slot], 0, sizeof(AicProcSlot));
+    if (out_status != NULL) {
+        *out_status = (long)exit_code;
+    }
+    return 0;
 #else
     aic_rt_proc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
@@ -2228,8 +2625,35 @@ long aic_rt_proc_is_running(long handle, long* out_running) {
         *out_running = 0;
     }
 #ifdef _WIN32
-    (void)handle;
-    return 5;
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    DWORD wait_rc = WaitForSingleObject(aic_rt_proc_table[slot].process, 0);
+    if (wait_rc == WAIT_TIMEOUT) {
+        if (out_running != NULL) {
+            *out_running = 1;
+        }
+        return 0;
+    }
+    if (wait_rc == WAIT_OBJECT_0) {
+        CloseHandle(aic_rt_proc_table[slot].process);
+        memset(&aic_rt_proc_table[slot], 0, sizeof(AicProcSlot));
+        if (out_running != NULL) {
+            *out_running = 0;
+        }
+        return 0;
+    }
+    DWORD err = GetLastError();
+    if (err == ERROR_INVALID_HANDLE) {
+        memset(&aic_rt_proc_table[slot], 0, sizeof(AicProcSlot));
+        return 5;
+    }
+    return aic_rt_proc_map_win_error(err);
 #else
     aic_rt_proc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
@@ -2289,8 +2713,27 @@ long aic_rt_proc_current_pid(long* out_pid) {
 long aic_rt_proc_kill(long handle) {
     AIC_RT_SANDBOX_BLOCK_PROC("kill", 2);
 #ifdef _WIN32
-    (void)handle;
-    return 5;
+    aic_rt_proc_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_proc_table_limit) {
+        return 5;
+    }
+    long slot = handle - 1;
+    if (!aic_rt_proc_table[slot].active) {
+        return 5;
+    }
+    if (!TerminateProcess(aic_rt_proc_table[slot].process, 143)) {
+        DWORD err = GetLastError();
+        if (err != ERROR_ACCESS_DENIED) {
+            return aic_rt_proc_map_win_error(err);
+        }
+    }
+    DWORD wait_rc = WaitForSingleObject(aic_rt_proc_table[slot].process, INFINITE);
+    if (wait_rc == WAIT_FAILED) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    CloseHandle(aic_rt_proc_table[slot].process);
+    memset(&aic_rt_proc_table[slot], 0, sizeof(AicProcSlot));
+    return 0;
 #else
     aic_rt_proc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
@@ -2429,18 +2872,6 @@ long aic_rt_proc_run_with(
         env_items = (const AicString*)(const void*)env_ptr;
     }
 
-#ifdef _WIN32
-    (void)timeout_ms;
-    (void)out_status;
-    (void)out_stdout_ptr;
-    (void)out_stdout_len;
-    (void)out_stderr_ptr;
-    (void)out_stderr_len;
-    free(command);
-    free(stdin_text);
-    free(cwd);
-    return 4;
-#else
     long result = aic_rt_proc_run_shell_with_options(
         command,
         stdin_text,
@@ -2458,7 +2889,6 @@ long aic_rt_proc_run_with(
     free(stdin_text);
     free(cwd);
     return result;
-#endif
 }
 
 long aic_rt_proc_run_timeout(
@@ -2479,16 +2909,6 @@ long aic_rt_proc_run_timeout(
         free(command);
         return 3;
     }
-#ifdef _WIN32
-    (void)timeout_ms;
-    (void)out_status;
-    (void)out_stdout_ptr;
-    (void)out_stdout_len;
-    (void)out_stderr_ptr;
-    (void)out_stderr_len;
-    free(command);
-    return 4;
-#else
     long result = aic_rt_proc_run_shell_with_options(
         command,
         "",
@@ -2504,7 +2924,6 @@ long aic_rt_proc_run_timeout(
     );
     free(command);
     return result;
-#endif
 }
 
 long aic_rt_proc_pipe_chain(
@@ -2522,14 +2941,6 @@ long aic_rt_proc_pipe_chain(
     if (stages_len <= 0 || stages_ptr == NULL) {
         return 3;
     }
-#ifdef _WIN32
-    (void)out_status;
-    (void)out_stdout_ptr;
-    (void)out_stdout_len;
-    (void)out_stderr_ptr;
-    (void)out_stderr_len;
-    return 4;
-#else
     const AicString* stages = (const AicString*)(const void*)stages_ptr;
     size_t count = (size_t)stages_len;
     size_t total = 0;
@@ -2581,7 +2992,6 @@ long aic_rt_proc_pipe_chain(
     );
     free(command);
     return result;
-#endif
 }
 
 #ifdef _WIN32
