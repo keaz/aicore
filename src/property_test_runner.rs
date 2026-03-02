@@ -231,16 +231,12 @@ fn run_property_case(case: &PropertyCase, seed: u64) -> anyhow::Result<String> {
     ))
 }
 
-fn compile_property_case(_file: &Path, transformed: &str) -> anyhow::Result<PropertyBinary> {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "aicore-property-test-{}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos(),
+fn compile_property_case(file: &Path, transformed: &str) -> anyhow::Result<PropertyBinary> {
+    let temp_dir = create_harness_temp_dir(
+        file,
+        "aicore-property-test",
         PROPERTY_TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
-    ));
-    fs::create_dir_all(&temp_dir)?;
+    )?;
 
     let test_file = temp_dir.join("property_case.aic");
     fs::write(&test_file, transformed)?;
@@ -259,6 +255,34 @@ fn compile_property_case(_file: &Path, transformed: &str) -> anyhow::Result<Prop
     compile_with_clang(&llvm.llvm_ir, &exe, &temp_dir)?;
 
     Ok(PropertyBinary { temp_dir, exe })
+}
+
+fn create_harness_temp_dir(
+    case_file: &Path,
+    prefix: &str,
+    counter: u64,
+) -> anyhow::Result<PathBuf> {
+    let base = package_cache_root(case_file).unwrap_or_else(std::env::temp_dir);
+    let parent = base.join("harness").join(prefix);
+    fs::create_dir_all(&parent)?;
+    let temp_dir = parent.join(format!(
+        "{prefix}-{}-{}-{counter}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos(),
+    ));
+    fs::create_dir_all(&temp_dir)?;
+    Ok(temp_dir)
+}
+
+fn package_cache_root(file: &Path) -> Option<PathBuf> {
+    for ancestor in file.ancestors() {
+        if ancestor.join("aic.toml").exists() {
+            return Some(ancestor.join(".aic-cache"));
+        }
+    }
+    None
 }
 fn run_property_binary(exe: &Path, args: &Value, seed: u64) -> Result<(), PropertyRunFailure> {
     let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
@@ -1262,5 +1286,38 @@ fn prop_fails(x: Int) -> () {
             "case={failing:#?}"
         );
         assert!(failing.details.contains("shrunk="), "case={failing:#?}");
+    }
+
+    #[test]
+    fn runs_property_tests_with_package_local_imports() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("aic.toml"),
+            "[package]\nname = \"sample\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("write manifest");
+        fs::create_dir_all(dir.path().join("src/pg")).expect("mkdir src");
+        fs::create_dir_all(dir.path().join("tests")).expect("mkdir tests");
+        fs::write(
+            dir.path().join("src/pg/math.aic"),
+            "module pg.math;\npub fn add_one(x: Int) -> Int { x + 1 }\n",
+        )
+        .expect("write module");
+        fs::write(
+            dir.path().join("tests/property_tests.aic"),
+            r#"
+import pg.math;
+
+#[property(iterations = 4)]
+fn prop_imported_module_works(x: Int) -> () {
+    assert_eq(add_one(x) - 1, x);
+}
+"#,
+        )
+        .expect("write tests");
+
+        let report = run_property_tests(&dir.path().join("tests"), None, 19).expect("run tests");
+        assert_eq!(report.total, 1, "report={report:#?}");
+        assert_eq!(report.failed, 0, "report={report:#?}");
     }
 }

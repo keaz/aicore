@@ -5925,6 +5925,49 @@ pub fn answer() -> Int {
 }
 
 #[test]
+fn unit_non_entry_module_keeps_its_own_std_imports() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.math;
+
+fn main() -> Int {
+    if math.render() == "v=42" {
+        0
+    } else {
+        1
+    }
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/math.aic"),
+        r#"module app.math;
+import std.string;
+import std.vec;
+
+pub fn render() -> String {
+    string.format("v={0}", vec_of("42"))
+}
+"#,
+    )
+    .expect("write math");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_qualified_module_call_resolves() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();

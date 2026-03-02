@@ -224,15 +224,11 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     let source = fs::read_to_string(&case.file)?;
     let transformed = transform_source_for_test(&source, &case.name)?;
 
-    let temp_dir = std::env::temp_dir().join(format!(
-        "aicore-attr-test-{}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos(),
+    let temp_dir = create_harness_temp_dir(
+        &case.file,
+        "aicore-attr-test",
         ATTR_TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
-    ));
-    fs::create_dir_all(&temp_dir)?;
+    )?;
 
     let test_file = temp_dir.join("test_case.aic");
     fs::write(&test_file, transformed)?;
@@ -297,6 +293,34 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     }
 
     Ok("passed".to_string())
+}
+
+fn create_harness_temp_dir(
+    case_file: &Path,
+    prefix: &str,
+    counter: u64,
+) -> anyhow::Result<PathBuf> {
+    let base = package_cache_root(case_file).unwrap_or_else(std::env::temp_dir);
+    let parent = base.join("harness").join(prefix);
+    fs::create_dir_all(&parent)?;
+    let temp_dir = parent.join(format!(
+        "{prefix}-{}-{}-{counter}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos(),
+    ));
+    fs::create_dir_all(&temp_dir)?;
+    Ok(temp_dir)
+}
+
+fn package_cache_root(file: &Path) -> Option<PathBuf> {
+    for ancestor in file.ancestors() {
+        if ancestor.join("aic.toml").exists() {
+            return Some(ancestor.join(".aic-cache"));
+        }
+    }
+    None
 }
 
 fn transform_source_for_test(source: &str, test_name: &str) -> anyhow::Result<String> {
@@ -558,5 +582,38 @@ fn test_division_by_zero() -> () {
         let filtered = run_attribute_tests(dir.path(), Some("addition"), 0).expect("run filtered");
         assert_eq!(filtered.total, 1, "report={filtered:#?}");
         assert_eq!(filtered.failed, 0, "report={filtered:#?}");
+    }
+
+    #[test]
+    fn runs_attribute_tests_with_package_local_imports() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("aic.toml"),
+            "[package]\nname = \"sample\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("write manifest");
+        fs::create_dir_all(dir.path().join("src/pg")).expect("mkdir src");
+        fs::create_dir_all(dir.path().join("tests")).expect("mkdir tests");
+        fs::write(
+            dir.path().join("src/pg/util.aic"),
+            "module pg.util;\npub fn answer() -> Int { 42 }\n",
+        )
+        .expect("write module");
+        fs::write(
+            dir.path().join("tests/core_tests.aic"),
+            r#"
+import pg.util;
+
+#[test]
+fn test_imported_package_module() -> () {
+    assert_eq(answer(), 42);
+}
+"#,
+        )
+        .expect("write tests");
+
+        let report = run_attribute_tests(&dir.path().join("tests"), None, 11).expect("run tests");
+        assert_eq!(report.total, 1, "report={report:#?}");
+        assert_eq!(report.failed, 0, "report={report:#?}");
     }
 }

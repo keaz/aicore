@@ -9,6 +9,8 @@ use crate::parser;
 use crate::span::Span;
 use crate::toolchain;
 
+const ROOT_MODULE: &str = "<root>";
+
 #[derive(Debug, Clone)]
 pub struct PackageLoadResult {
     pub program: Option<ast::Program>,
@@ -16,6 +18,7 @@ pub struct PackageLoadResult {
     pub module_order: Vec<Vec<String>>,
     pub parsed_module_count: usize,
     pub item_modules: Vec<Option<Vec<String>>>,
+    pub module_imports: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -109,7 +112,7 @@ impl Loader {
             .filter_map(|path| self.module_path_by_file.get(path).cloned())
             .collect::<Vec<_>>();
 
-        let (program, item_modules) = self.merge_program();
+        let (program, item_modules, module_imports) = self.merge_program();
         let parsed_module_count = self.parse_cache.len();
 
         PackageLoadResult {
@@ -118,6 +121,7 @@ impl Loader {
             module_order,
             parsed_module_count,
             item_modules,
+            module_imports,
         }
     }
 
@@ -194,19 +198,39 @@ impl Loader {
         self.visit_path(self.entry_path.clone(), true)
     }
 
-    fn merge_program(&self) -> (Option<ast::Program>, Vec<Option<Vec<String>>>) {
+    fn merge_program(
+        &self,
+    ) -> (
+        Option<ast::Program>,
+        Vec<Option<Vec<String>>>,
+        BTreeMap<String, BTreeSet<String>>,
+    ) {
         let Some(entry) = self.parse_cache.get(&self.entry_path) else {
-            return (None, Vec::new());
+            return (None, Vec::new(), BTreeMap::new());
         };
         let Some(entry_program) = entry.program.as_ref() else {
-            return (None, Vec::new());
+            return (None, Vec::new(), BTreeMap::new());
         };
 
         let mut merged_items = Vec::new();
         let mut item_modules = Vec::new();
+        let mut merged_imports: BTreeMap<String, ast::ImportDecl> = BTreeMap::new();
+        let mut module_imports: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for path in &self.ordered {
             if let Some(parsed) = self.parse_cache.get(path) {
                 if let Some(program) = &parsed.program {
+                    let module_name = program
+                        .module
+                        .as_ref()
+                        .map(|m| m.path.join("."))
+                        .unwrap_or_else(|| ROOT_MODULE.to_string());
+                    let imports_for_module = module_imports.entry(module_name).or_default();
+                    for import in &program.imports {
+                        merged_imports
+                            .entry(import.path.join("."))
+                            .or_insert_with(|| import.clone());
+                        imports_for_module.insert(import.path.join("."));
+                    }
                     merged_items.extend(program.items.clone());
                     for _ in &program.items {
                         item_modules.push(program.module.as_ref().map(|m| m.path.clone()));
@@ -218,11 +242,12 @@ impl Loader {
         (
             Some(ast::Program {
                 module: entry_program.module.clone(),
-                imports: entry_program.imports.clone(),
+                imports: merged_imports.into_values().collect(),
                 items: merged_items,
                 span: entry_program.span,
             }),
             item_modules,
+            module_imports,
         )
     }
 

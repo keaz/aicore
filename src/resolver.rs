@@ -15,6 +15,7 @@ pub struct Resolution {
     pub traits: BTreeMap<String, TraitInfo>,
     pub trait_impls: BTreeMap<String, BTreeSet<String>>,
     pub imports: BTreeSet<String>,
+    pub module_imports: BTreeMap<String, BTreeSet<String>>,
     pub entry_module: Option<String>,
     pub function_modules: BTreeMap<String, BTreeSet<String>>,
     pub module_functions: BTreeMap<String, BTreeSet<String>>,
@@ -22,6 +23,8 @@ pub struct Resolution {
     pub visible_functions: BTreeSet<String>,
     pub import_aliases: BTreeMap<String, String>,
     pub ambiguous_import_aliases: BTreeSet<String>,
+    pub module_import_aliases: BTreeMap<String, BTreeMap<String, String>>,
+    pub module_ambiguous_import_aliases: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +213,15 @@ pub fn resolve_with_item_modules(
     file: &str,
     item_modules: Option<&[Option<Vec<String>>]>,
 ) -> (Resolution, Vec<Diagnostic>) {
+    resolve_with_item_modules_and_imports(program, file, item_modules, None)
+}
+
+pub fn resolve_with_item_modules_and_imports(
+    program: &ir::Program,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_imports: Option<&BTreeMap<String, BTreeSet<String>>>,
+) -> (Resolution, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
 
     let mut functions = BTreeMap::new();
@@ -224,28 +236,31 @@ pub fn resolve_with_item_modules(
         .map(|ty| (ty.id, ty.repr.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    let mut imports = BTreeSet::new();
+    let mut imports_from_program = BTreeSet::new();
     for path in &program.imports {
-        imports.insert(path.join("."));
+        imports_from_program.insert(path.join("."));
     }
 
     let entry_module = program.module.as_ref().map(|m| m.join("."));
+    let mut module_imports_map = module_imports.cloned().unwrap_or_default();
+    let entry_module_name = entry_module
+        .clone()
+        .unwrap_or_else(|| ROOT_MODULE.to_string());
+    let imports = module_imports_map
+        .get(&entry_module_name)
+        .cloned()
+        .unwrap_or(imports_from_program);
+    module_imports_map
+        .entry(entry_module_name)
+        .or_insert_with(|| imports.clone());
 
-    let mut import_aliases = BTreeMap::new();
-    let mut ambiguous_import_aliases = BTreeSet::new();
-    for import in &imports {
-        let alias = import.rsplit('.').next().unwrap_or(import).to_string();
-        if alias.is_empty() {
-            continue;
-        }
-        if let Some(existing) = import_aliases.get(&alias) {
-            if existing != import {
-                ambiguous_import_aliases.insert(alias.clone());
-                import_aliases.remove(&alias);
-            }
-        } else if !ambiguous_import_aliases.contains(&alias) {
-            import_aliases.insert(alias, import.clone());
-        }
+    let (import_aliases, ambiguous_import_aliases) = alias_maps_for_imports(&imports);
+    let mut module_import_aliases = BTreeMap::new();
+    let mut module_ambiguous_import_aliases = BTreeMap::new();
+    for (module_name, module_import_set) in &module_imports_map {
+        let (aliases, ambiguous) = alias_maps_for_imports(module_import_set);
+        module_import_aliases.insert(module_name.clone(), aliases);
+        module_ambiguous_import_aliases.insert(module_name.clone(), ambiguous);
     }
 
     let mut function_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -711,6 +726,16 @@ pub fn resolve_with_item_modules(
         );
     }
 
+    for module_name in module_functions.keys() {
+        module_imports_map.entry(module_name.clone()).or_default();
+        module_import_aliases
+            .entry(module_name.clone())
+            .or_default();
+        module_ambiguous_import_aliases
+            .entry(module_name.clone())
+            .or_default();
+    }
+
     (
         Resolution {
             functions,
@@ -720,6 +745,7 @@ pub fn resolve_with_item_modules(
             traits,
             trait_impls,
             imports,
+            module_imports: module_imports_map,
             entry_module,
             function_modules,
             module_functions,
@@ -727,9 +753,33 @@ pub fn resolve_with_item_modules(
             visible_functions,
             import_aliases,
             ambiguous_import_aliases,
+            module_import_aliases,
+            module_ambiguous_import_aliases,
         },
         diagnostics,
     )
+}
+
+fn alias_maps_for_imports(
+    imports: &BTreeSet<String>,
+) -> (BTreeMap<String, String>, BTreeSet<String>) {
+    let mut import_aliases = BTreeMap::new();
+    let mut ambiguous_import_aliases = BTreeSet::new();
+    for import in imports {
+        let alias = import.rsplit('.').next().unwrap_or(import).to_string();
+        if alias.is_empty() {
+            continue;
+        }
+        if let Some(existing) = import_aliases.get(&alias) {
+            if existing != import {
+                ambiguous_import_aliases.insert(alias.clone());
+                import_aliases.remove(&alias);
+            }
+        } else if !ambiguous_import_aliases.contains(&alias) {
+            import_aliases.insert(alias, import.clone());
+        }
+    }
+    (import_aliases, ambiguous_import_aliases)
 }
 
 fn trait_method_signature_mismatch(

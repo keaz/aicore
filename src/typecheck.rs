@@ -647,7 +647,7 @@ impl<'a> Checker<'a> {
 
     fn check_function(&mut self, func: &ir::Function) {
         let previous_enforce = self.enforce_import_visibility;
-        let previous_function = self.current_function.replace(func.name.clone());
+        let previous_function = self.current_function.clone();
         let previous_module = self.current_module.clone();
         let previous_async = self.current_function_is_async;
         let previous_unsafe = self.current_function_is_unsafe;
@@ -660,12 +660,16 @@ impl<'a> Checker<'a> {
             .cloned()
             .or_else(|| self.resolution.entry_module.clone())
             .or_else(|| Some("<root>".to_string()));
+        let current_function_key = self.current_function_key_for(&func.name);
+        self.current_function = Some(current_function_key.clone());
         self.current_function_is_async = func.is_async;
         self.current_function_is_unsafe = func.is_unsafe;
         self.unsafe_depth = 0;
-        self.call_graph.entry(func.name.clone()).or_default();
+        self.call_graph
+            .entry(current_function_key.clone())
+            .or_default();
         self.function_spans
-            .insert(func.name.clone(), (func.span, func.body.span));
+            .insert(current_function_key.clone(), (func.span, func.body.span));
         self.current_param_positions.clear();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
@@ -714,7 +718,8 @@ impl<'a> Checker<'a> {
 
         if func.is_extern {
             self.check_extern_function_signature(func, &ret_type, &locals);
-            self.effect_usage.insert(func.name.clone(), BTreeSet::new());
+            self.effect_usage
+                .insert(current_function_key.clone(), BTreeSet::new());
             self.current_param_positions.clear();
             self.enforce_import_visibility = previous_enforce;
             self.current_function = previous_function;
@@ -728,7 +733,8 @@ impl<'a> Checker<'a> {
 
         if func.is_intrinsic {
             self.check_intrinsic_function_signature(func);
-            self.effect_usage.insert(func.name.clone(), BTreeSet::new());
+            self.effect_usage
+                .insert(current_function_key.clone(), BTreeSet::new());
             self.current_param_positions.clear();
             self.enforce_import_visibility = previous_enforce;
             self.current_function = previous_function;
@@ -888,7 +894,7 @@ impl<'a> Checker<'a> {
         }
 
         self.effect_usage
-            .insert(func.name.clone(), body_ctx.effects_used);
+            .insert(current_function_key.clone(), body_ctx.effects_used);
 
         let param_inferred = (0..func.params.len())
             .map(|idx| {
@@ -931,6 +937,68 @@ impl<'a> Checker<'a> {
 
     fn module_matches_current(&self, module: &str) -> bool {
         self.current_module.as_deref() == Some(module)
+    }
+
+    fn current_module_name(&self) -> String {
+        self.current_module
+            .clone()
+            .or_else(|| self.resolution.entry_module.clone())
+            .unwrap_or_else(|| "<root>".to_string())
+    }
+
+    fn imports_for_current_module(&self) -> &BTreeSet<String> {
+        let module = self.current_module_name();
+        self.resolution
+            .module_imports
+            .get(&module)
+            .unwrap_or(&self.resolution.imports)
+    }
+
+    fn module_aliases_for_current_module(&self) -> Option<&BTreeMap<String, String>> {
+        let module = self.current_module_name();
+        self.resolution.module_import_aliases.get(&module)
+    }
+
+    fn ambiguous_aliases_for_current_module(&self) -> Option<&BTreeSet<String>> {
+        let module = self.current_module_name();
+        self.resolution.module_ambiguous_import_aliases.get(&module)
+    }
+
+    fn module_is_imported_in_current_scope(&self, module: &str) -> bool {
+        self.module_matches_current(module) || self.imports_for_current_module().contains(module)
+    }
+
+    fn qualified_function_key(module: &str, name: &str) -> String {
+        if module == "<root>" {
+            name.to_string()
+        } else {
+            format!("{module}::{name}")
+        }
+    }
+
+    fn current_function_key_for(&self, name: &str) -> String {
+        let module = self.current_module.as_deref().unwrap_or("<root>");
+        Self::qualified_function_key(module, name)
+    }
+
+    fn fn_sig_for_key(&self, key: &str) -> Option<&FnSig> {
+        if let Some((module, name)) = key.rsplit_once("::") {
+            return self
+                .module_functions
+                .get(&(module.to_string(), name.to_string()))
+                .or_else(|| self.functions.get(name));
+        }
+        self.functions.get(key)
+    }
+
+    fn resolution_has_function_key(&self, key: &str) -> bool {
+        if let Some((module, name)) = key.rsplit_once("::") {
+            return self
+                .resolution
+                .module_function_infos
+                .contains_key(&(module.to_string(), name.to_string()));
+        }
+        self.resolution.functions.contains_key(key)
     }
 
     fn visibility_allows_cross_module_access(&self, visibility: Visibility) -> bool {
@@ -1305,9 +1373,8 @@ impl<'a> Checker<'a> {
             });
     }
 
-    fn check_transitive_effects(&mut self) {
-        let user_functions = self
-            .program
+    fn user_function_entries(&self) -> Vec<(String, String)> {
+        self.program
             .items
             .iter()
             .filter_map(|item| match item {
@@ -1315,39 +1382,80 @@ impl<'a> Checker<'a> {
                     if decode_internal_type_alias(&func.name).is_none()
                         && decode_internal_const(&func.name).is_none() =>
                 {
-                    Some(func.name.clone())
+                    let module = self
+                        .function_module_by_symbol
+                        .get(&func.symbol)
+                        .cloned()
+                        .or_else(|| self.resolution.entry_module.clone())
+                        .unwrap_or_else(|| "<root>".to_string());
+                    Some((
+                        func.name.clone(),
+                        Self::qualified_function_key(&module, &func.name),
+                    ))
                 }
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    }
 
-        let mut memo = BTreeMap::new();
-        for function in &user_functions {
-            let mut visiting = BTreeSet::new();
-            let closure = self.compute_effect_closure(function, &mut visiting, &mut memo);
-            self.effect_usage.insert(function.clone(), closure);
+    fn resolved_function_key(&self, resolved_name: &str, resolved_module: Option<&str>) -> String {
+        if let Some(module_name) = resolved_module {
+            return Self::qualified_function_key(module_name, resolved_name);
         }
 
-        for function in &user_functions {
+        if let Some(current_module) = self.current_module.as_ref() {
+            if self
+                .module_functions
+                .contains_key(&(current_module.clone(), resolved_name.to_string()))
+            {
+                return Self::qualified_function_key(current_module, resolved_name);
+            }
+        }
+
+        if let Some(modules) = self.resolution.function_modules.get(resolved_name) {
+            if modules.len() == 1 {
+                if let Some(module_name) = modules.iter().next() {
+                    return Self::qualified_function_key(module_name, resolved_name);
+                }
+            }
+        }
+
+        resolved_name.to_string()
+    }
+
+    fn check_transitive_effects(&mut self) {
+        let user_functions = self.user_function_entries();
+
+        let mut memo = BTreeMap::new();
+        for (_, function_key) in &user_functions {
+            let mut visiting = BTreeSet::new();
+            let closure = self.compute_effect_closure(function_key, &mut visiting, &mut memo);
+            self.effect_usage.insert(function_key.clone(), closure);
+        }
+
+        for (function_name, function_key) in &user_functions {
             let declared = self
-                .functions
-                .get(function)
+                .fn_sig_for_key(function_key)
                 .map(|sig| sig.effects.clone())
                 .unwrap_or_default();
-            let closure = self.effect_usage.get(function).cloned().unwrap_or_default();
+            let closure = self
+                .effect_usage
+                .get(function_key)
+                .cloned()
+                .unwrap_or_default();
             let mut reasons = BTreeMap::new();
             for effect in &closure {
                 let nodes = self
-                    .find_effect_path(function, effect)
+                    .find_effect_path(function_key, effect)
                     .map(|path| path.nodes)
-                    .unwrap_or_else(|| vec![function.clone()]);
+                    .unwrap_or_else(|| vec![function_name.clone()]);
                 reasons.insert(effect.clone(), nodes);
             }
-            self.effect_reasons.insert(function.clone(), reasons);
+            self.effect_reasons.insert(function_key.clone(), reasons);
 
             let missing = closure.difference(&declared).cloned().collect::<Vec<_>>();
             for effect in missing {
-                let Some(path) = self.find_effect_path(function, &effect) else {
+                let Some(path) = self.find_effect_path(function_key, &effect) else {
                     continue;
                 };
                 if path.nodes.len() < 3 {
@@ -1357,7 +1465,7 @@ impl<'a> Checker<'a> {
                     "E2005",
                     format!(
                         "function '{}' requires transitive effect '{}' via call path {}",
-                        function,
+                        function_name,
                         effect,
                         path.nodes.join(" -> ")
                     ),
@@ -1366,13 +1474,17 @@ impl<'a> Checker<'a> {
                 )
                 .with_help(format!(
                     "declare `effects {{ {} }}` on '{}' or refactor the call chain",
-                    effect, function
+                    effect, function_name
                 ));
-                if let Some((function_span, body_span)) = self.function_spans.get(function).copied()
+                if let Some((function_span, body_span)) =
+                    self.function_spans.get(function_key).copied()
                 {
-                    if let Some(fix) =
-                        self.effect_declaration_fix(function, function_span, body_span, &closure)
-                    {
+                    if let Some(fix) = self.effect_declaration_fix(
+                        function_name,
+                        function_span,
+                        body_span,
+                        &closure,
+                    ) {
                         diagnostic = diagnostic.with_fix(fix);
                     }
                 }
@@ -1382,31 +1494,21 @@ impl<'a> Checker<'a> {
     }
 
     fn check_capability_authority(&mut self) {
-        let user_functions = self
-            .program
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                ir::Item::Function(func)
-                    if decode_internal_type_alias(&func.name).is_none()
-                        && decode_internal_const(&func.name).is_none() =>
-                {
-                    Some(func.name.clone())
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let user_functions = self.user_function_entries();
 
-        for function in &user_functions {
-            if self.is_std_function(function) {
+        for (function_name, function_key) in &user_functions {
+            if self.is_std_function(function_key) {
                 continue;
             }
             let declared_capabilities = self
-                .functions
-                .get(function)
+                .fn_sig_for_key(function_key)
                 .map(|sig| sig.capabilities.clone())
                 .unwrap_or_default();
-            let required_effects = self.effect_usage.get(function).cloned().unwrap_or_default();
+            let required_effects = self
+                .effect_usage
+                .get(function_key)
+                .cloned()
+                .unwrap_or_default();
             let missing = required_effects
                 .difference(&declared_capabilities)
                 .cloned()
@@ -1414,13 +1516,13 @@ impl<'a> Checker<'a> {
 
             for capability in missing {
                 let mut diagnostic = if let Some(path) =
-                    self.find_effect_path(function, &capability)
+                    self.find_effect_path(function_key, &capability)
                 {
                     Diagnostic::error(
                         "E2009",
                         format!(
                             "function '{}' requires capability '{}' via call path {}",
-                            function,
+                            function_name,
                             capability,
                             path.nodes.join(" -> ")
                         ),
@@ -1429,31 +1531,32 @@ impl<'a> Checker<'a> {
                     )
                     .with_help(format!(
                         "declare `capabilities {{ {} }}` on '{}' and thread authority through callers",
-                        capability, function
+                        capability, function_name
                     ))
                 } else {
                     Diagnostic::error(
                         "E2009",
                         format!(
                             "function '{}' declares effect '{}' but is missing capability '{}'",
-                            function, capability, capability
+                            function_name, capability, capability
                         ),
                         self.file,
                         self.function_spans
-                            .get(function)
+                            .get(function_key)
                             .map(|(span, _)| *span)
                             .unwrap_or(crate::span::Span::new(0, 0)),
                     )
                     .with_help(format!(
                         "declare `capabilities {{ {} }}` on '{}'",
-                        capability, function
+                        capability, function_name
                     ))
                 };
 
-                if let Some((function_span, body_span)) = self.function_spans.get(function).copied()
+                if let Some((function_span, body_span)) =
+                    self.function_spans.get(function_key).copied()
                 {
                     if let Some(fix) = self.capability_declaration_fix(
-                        function,
+                        function_name,
                         function_span,
                         body_span,
                         &required_effects,
@@ -1468,6 +1571,9 @@ impl<'a> Checker<'a> {
     }
 
     fn is_std_function(&self, function: &str) -> bool {
+        if let Some((module, _)) = function.rsplit_once("::") {
+            return module == "std" || module.starts_with("std.");
+        }
         self.resolution
             .functions
             .get(function)
@@ -1487,24 +1593,22 @@ impl<'a> Checker<'a> {
 
         if !visiting.insert(function.to_string()) {
             return self
-                .functions
-                .get(function)
+                .fn_sig_for_key(function)
                 .map(|sig| sig.effects.clone())
                 .unwrap_or_default();
         }
 
         let mut required = self
-            .functions
-            .get(function)
+            .fn_sig_for_key(function)
             .map(|sig| sig.effects.clone())
             .unwrap_or_default();
 
         if let Some(edges) = self.call_graph.get(function) {
             for edge in edges {
-                if let Some(sig) = self.functions.get(&edge.callee) {
+                if let Some(sig) = self.fn_sig_for_key(&edge.callee) {
                     required.extend(sig.effects.iter().cloned());
                 }
-                if self.resolution.functions.contains_key(&edge.callee) {
+                if self.resolution_has_function_key(&edge.callee) {
                     required.extend(self.compute_effect_closure(&edge.callee, visiting, memo));
                 }
             }
@@ -1531,8 +1635,7 @@ impl<'a> Checker<'a> {
                 let span = first_span.unwrap_or(edge.span);
 
                 if self
-                    .functions
-                    .get(&edge.callee)
+                    .fn_sig_for_key(&edge.callee)
                     .map(|sig| sig.effects.contains(effect))
                     .unwrap_or(false)
                 {
@@ -1542,7 +1645,7 @@ impl<'a> Checker<'a> {
                     });
                 }
 
-                if !self.resolution.functions.contains_key(&edge.callee) {
+                if !self.resolution_has_function_key(&edge.callee) {
                     continue;
                 }
                 if visited.insert(edge.callee.clone()) {
@@ -3553,7 +3656,7 @@ impl<'a> Checker<'a> {
                         return "<?>".to_string();
                     };
 
-                    if !self.resolution.imports.contains(&module) {
+                    if !self.module_is_imported_in_current_scope(&module) {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E2102",
@@ -3673,9 +3776,7 @@ impl<'a> Checker<'a> {
                             modules
                                 .iter()
                                 .filter(|module| {
-                                    if !self.resolution.imports.contains(*module)
-                                        && !self.module_matches_current(module)
-                                    {
+                                    if !self.module_is_imported_in_current_scope(module) {
                                         return false;
                                     }
                                     self.resolution
@@ -3792,7 +3893,7 @@ impl<'a> Checker<'a> {
                         || resolved_name == "print_float"
                         || resolved_name == "panic"
                     {
-                        if !self.resolution.imports.contains("std.io") {
+                        if !self.imports_for_current_module().contains("std.io") {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1300",
@@ -3804,7 +3905,9 @@ impl<'a> Checker<'a> {
                             );
                         }
                     }
-                    if resolved_name == "len" && !self.resolution.imports.contains("std.string") {
+                    if resolved_name == "len"
+                        && !self.imports_for_current_module().contains("std.string")
+                    {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1301",
@@ -4134,7 +4237,9 @@ impl<'a> Checker<'a> {
                     }
 
                     if !contract_mode {
-                        self.record_call_edge(&resolved_name, expr.span);
+                        let callee_key =
+                            self.resolved_function_key(&resolved_name, resolved_module.as_deref());
+                        self.record_call_edge(&callee_key, expr.span);
                     }
 
                     let mut ret_ty =
@@ -5391,16 +5496,24 @@ impl<'a> Checker<'a> {
 
         if qualifier.len() == 1 {
             let alias = &qualifier[0];
-            if self.resolution.ambiguous_import_aliases.contains(alias) {
+            let alias_is_ambiguous = self
+                .ambiguous_aliases_for_current_module()
+                .map(|set| set.contains(alias))
+                .unwrap_or_else(|| self.resolution.ambiguous_import_aliases.contains(alias));
+            if alias_is_ambiguous {
                 return None;
             }
-            if let Some(module) = self.resolution.import_aliases.get(alias) {
+            if let Some(module) = self
+                .module_aliases_for_current_module()
+                .and_then(|aliases| aliases.get(alias))
+                .or_else(|| self.resolution.import_aliases.get(alias))
+            {
                 return Some(module.clone());
             }
         }
 
         let full = qualifier.join(".");
-        if self.resolution.imports.contains(&full) {
+        if self.module_is_imported_in_current_scope(&full) {
             return Some(full);
         }
 

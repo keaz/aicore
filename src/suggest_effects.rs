@@ -27,9 +27,19 @@ pub struct FunctionEffectSuggestion {
 pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
     let mut functions = collect_user_functions(&front.ir);
     functions.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut module_by_symbol = BTreeMap::new();
+    for ((module, _), info) in &front.resolution.module_function_infos {
+        module_by_symbol
+            .entry(info.symbol)
+            .or_insert(module.clone());
+    }
 
     let mut suggestions = Vec::new();
     for function in functions {
+        let function_key = module_by_symbol
+            .get(&function.symbol)
+            .map(|module| qualified_function_key(module, &function.name))
+            .unwrap_or_else(|| function.name.clone());
         let current = function
             .effects
             .iter()
@@ -38,7 +48,10 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
         let required = front
             .typecheck
             .function_effect_usage
-            .get(&function.name)
+            .get(&function_key)
+            .or_else(|| {
+                lookup_function_entry(&front.typecheck.function_effect_usage, &function.name)
+            })
             .cloned()
             .unwrap_or_else(|| current.clone());
         let missing = required.difference(&current).cloned().collect::<Vec<_>>();
@@ -60,7 +73,13 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
         let required_effects = required.into_iter().collect::<Vec<_>>();
         let current_capabilities = current_capabilities.into_iter().collect::<Vec<_>>();
         let required_capabilities = required_capabilities.into_iter().collect::<Vec<_>>();
-        let reasons_for_function = front.typecheck.function_effect_reasons.get(&function.name);
+        let reasons_for_function = front
+            .typecheck
+            .function_effect_reasons
+            .get(&function_key)
+            .or_else(|| {
+                lookup_function_entry(&front.typecheck.function_effect_reasons, &function.name)
+            });
         let reason = required_effects
             .iter()
             .map(|effect| {
@@ -68,7 +87,14 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
                     .and_then(|by_effect| by_effect.get(effect))
                     .cloned()
                     .unwrap_or_else(|| vec![function.name.clone()]);
-                (effect.clone(), chain.join(" -> "))
+                (
+                    effect.clone(),
+                    chain
+                        .into_iter()
+                        .map(|node| display_function_name(&node))
+                        .collect::<Vec<_>>()
+                        .join(" -> "),
+                )
             })
             .collect::<BTreeMap<_, _>>();
         let capability_reason = required_capabilities
@@ -78,7 +104,14 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
                     .and_then(|by_effect| by_effect.get(capability))
                     .cloned()
                     .unwrap_or_else(|| vec![function.name.clone()]);
-                (capability.clone(), chain.join(" -> "))
+                (
+                    capability.clone(),
+                    chain
+                        .into_iter()
+                        .map(|node| display_function_name(&node))
+                        .collect::<Vec<_>>()
+                        .join(" -> "),
+                )
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -96,6 +129,39 @@ pub fn analyze(front: &FrontendOutput) -> SuggestEffectsResponse {
     }
 
     SuggestEffectsResponse { suggestions }
+}
+
+fn lookup_function_entry<'a, T>(
+    map: &'a BTreeMap<String, T>,
+    function_name: &str,
+) -> Option<&'a T> {
+    if let Some(entry) = map.get(function_name) {
+        return Some(entry);
+    }
+
+    let suffix = format!(".{function_name}");
+    let mut matches = map
+        .iter()
+        .filter_map(|(key, value)| key.ends_with(&suffix).then_some(value));
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first)
+}
+
+fn qualified_function_key(module: &str, name: &str) -> String {
+    if module == "<root>" {
+        name.to_string()
+    } else {
+        format!("{module}::{name}")
+    }
+}
+
+fn display_function_name(name: &str) -> String {
+    name.rsplit_once("::")
+        .map(|(_, function)| function.to_string())
+        .unwrap_or_else(|| name.to_string())
 }
 
 fn collect_user_functions(program: &ir::Program) -> Vec<&ir::Function> {

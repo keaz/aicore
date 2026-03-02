@@ -117,6 +117,7 @@ pub fn run_frontend_with_options(
                 traits: Default::default(),
                 trait_impls: Default::default(),
                 imports: Default::default(),
+                module_imports: Default::default(),
                 entry_module: None,
                 function_modules: Default::default(),
                 module_functions: Default::default(),
@@ -124,6 +125,8 @@ pub fn run_frontend_with_options(
                 visible_functions: Default::default(),
                 import_aliases: Default::default(),
                 ambiguous_import_aliases: Default::default(),
+                module_import_aliases: Default::default(),
+                module_ambiguous_import_aliases: Default::default(),
             },
             typecheck: TypecheckOutput::default(),
             diagnostics,
@@ -141,8 +144,12 @@ pub fn run_frontend_with_options(
     timings.effect_normalize_ms = elapsed_ms(normalize_started);
 
     let resolve_started = Instant::now();
-    let (resolution, resolve_diags) =
-        resolver::resolve_with_item_modules(&ir, &file, Some(&load.item_modules));
+    let (resolution, resolve_diags) = resolver::resolve_with_item_modules_and_imports(
+        &ir,
+        &file,
+        Some(&load.item_modules),
+        Some(&load.module_imports),
+    );
     timings.resolve_ms = elapsed_ms(resolve_started);
     diagnostics.extend(resolve_diags);
 
