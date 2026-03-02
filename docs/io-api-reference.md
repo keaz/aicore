@@ -465,6 +465,8 @@ fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, con
 fn async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }
 fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }
 fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
+fn async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
 fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }
@@ -509,7 +511,8 @@ Notes:
 - Async lifecycle control surface is protocol-neutral:
   - `async_cancel_*` returns `Ok(true)` when cancellation is applied and `Ok(false)` when the op already completed.
   - `async_poll_*` maps pending state to `Ok(None())` via zero-timeout waits.
-  - `async_wait_any_*` returns the winning operation index and payload/value.
+  - `async_wait_many_*` returns the winning operation index and payload/value across arbitrary in-flight op sets.
+  - `async_wait_any_*` is a compatibility wrapper over `async_wait_many_*` for two-op selection.
   - `async_runtime_pressure` exposes active/queued snapshot metrics and configured limits for adaptive submit gating.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
@@ -518,6 +521,7 @@ Notes:
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
+- Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 
 ## `std.tls`
@@ -584,6 +588,8 @@ fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net,
 fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }
 fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
+fn tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
@@ -623,7 +629,8 @@ Notes:
 - TLS async submit/wait APIs are bytes-first and typed:
   - `tls_async_send_submit` / `tls_async_recv_submit`
   - `tls_async_wait_int` / `tls_async_wait_string`
-  - `tls_async_cancel_*` / `tls_async_poll_*` / `tls_async_wait_any_*`
+  - `tls_async_cancel_*` / `tls_async_poll_*` / `tls_async_wait_many_*`
+  - `tls_async_wait_any_*` compatibility wrappers over `tls_async_wait_many_*` for two-op selection
   - `tls_async_runtime_pressure` for runtime capacity snapshots (`queue_depth` and `queue_limit` are `0` on current TLS backend)
   - convenience wrappers `tls_async_send` / `tls_async_recv`
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.

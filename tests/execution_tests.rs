@@ -7837,6 +7837,216 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_async_wait_many_paths_are_stable() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.bytes;
+import std.vec;
+
+fn err_code(err: NetError) -> Int {
+    match err {
+        NotFound => 1,
+        PermissionDenied => 2,
+        Refused => 3,
+        Timeout => 4,
+        AddressInUse => 5,
+        InvalidInput => 6,
+        Io => 7,
+        ConnectionClosed => 8,
+        Cancelled => 9,
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
+    let listener1 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let listener2 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let listener3 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let addr3 = match tcp_local_addr(listener3) { Ok(v) => v, Err(_) => "" };
+
+    let op_int1 = match async_accept_submit(listener1, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+    let op_int2 = match async_accept_submit(listener2, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+    let op_int3 = match async_accept_submit(listener3, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+    let client_int = match tcp_connect(addr3, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    let mut int_ops: Vec[AsyncIntOp] = vec.new_vec();
+    int_ops = vec.push(int_ops, op_int1);
+    int_ops = vec.push(int_ops, op_int2);
+    int_ops = vec.push(int_ops, op_int3);
+
+    let int_select_ok = match async_wait_many_int(int_ops, 1000) {
+        Ok(sel) => if sel.index == 2 && sel.value > 0 {
+            match tcp_close(sel.value) {
+                Ok(closed) => bool_to_int(closed),
+                Err(_) => 0,
+            }
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let cancel_int_1 = match async_cancel_int(op_int1) { Ok(v) => bool_to_int(v), Err(_) => 0 };
+    let cancel_int_2 = match async_cancel_int(op_int2) { Ok(v) => bool_to_int(v), Err(_) => 0 };
+    let ignored_wait_int_1 = async_wait_int(op_int1, 50);
+    let ignored_wait_int_2 = async_wait_int(op_int2, 50);
+
+    let listener_timeout = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let op_timeout_int = match async_accept_submit(listener_timeout, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let timeout_int = match async_wait_many_int(vec.vec_of(op_timeout_int), 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let ignored_timeout_cancel = async_cancel_int(op_timeout_int);
+    let ignored_timeout_wait = async_wait_int(op_timeout_int, 50);
+
+    let listener_cancel = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let op_cancel_int = match async_accept_submit(listener_cancel, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncIntOp { handle: 0 },
+    };
+    let cancel_int_applied = match async_cancel_int(op_cancel_int) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let cancel_int_code = match async_wait_many_int(vec.vec_of(op_cancel_int), 2000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let invalid_int_code = match async_wait_many_int(vec.vec_of(AsyncIntOp { handle: 0 }), 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let recv_listener = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let recv_addr = match tcp_local_addr(recv_listener) { Ok(v) => v, Err(_) => "" };
+    let recv_client1 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server1 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_client2 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server2 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_client3 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server3 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    let recv_op1 = match async_tcp_recv_submit(recv_server1, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let recv_op2 = match async_tcp_recv_submit(recv_server2, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let recv_op3 = match async_tcp_recv_submit(recv_server3, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+
+    let sent_wait_many = match tcp_send(recv_client3, bytes.from_string("xyz")) {
+        Ok(sent) => if sent == 3 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let mut string_ops: Vec[AsyncStringOp] = vec.new_vec();
+    string_ops = vec.push(string_ops, recv_op1);
+    string_ops = vec.push(string_ops, recv_op2);
+    string_ops = vec.push(string_ops, recv_op3);
+
+    let string_select_ok = match async_wait_many_string(string_ops, 1000) {
+        Ok(sel) => if sel.index == 2 && bytes.byte_len(sel.payload) == 3 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let cancel_string_1 = match async_cancel_string(recv_op1) { Ok(v) => bool_to_int(v), Err(_) => 0 };
+    let cancel_string_2 = match async_cancel_string(recv_op2) { Ok(v) => bool_to_int(v), Err(_) => 0 };
+    let ignored_wait_string_1 = async_wait_string(recv_op1, 50);
+    let ignored_wait_string_2 = async_wait_string(recv_op2, 50);
+
+    let timeout_string_op = match async_tcp_recv_submit(recv_server1, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let timeout_string_code = match async_wait_many_string(vec.vec_of(timeout_string_op), 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let ignored_timeout_string_cancel = async_cancel_string(timeout_string_op);
+    let ignored_timeout_string_wait = async_wait_string(timeout_string_op, 50);
+
+    let cancel_string_op = match async_tcp_recv_submit(recv_server2, 64, 2000) {
+        Ok(op) => op,
+        Err(_) => AsyncStringOp { handle: 0 },
+    };
+    let cancel_string_applied = match async_cancel_string(cancel_string_op) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let cancel_string_code = match async_wait_many_string(vec.vec_of(cancel_string_op), 2000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let invalid_string_code = match async_wait_many_string(vec.vec_of(AsyncStringOp { handle: 0 }), 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let close_count =
+        (match tcp_close(client_int) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener_timeout) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener_cancel) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_listener) { Ok(v) => bool_to_int(v), Err(_) => 0 });
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    let score = int_select_ok +
+        (if timeout_int == 4 { 1 } else { 0 }) +
+        cancel_int_applied +
+        (if cancel_int_code == 9 { 1 } else { 0 }) +
+        (if invalid_int_code == 6 { 1 } else { 0 }) +
+        sent_wait_many +
+        string_select_ok +
+        (if timeout_string_code == 4 { 1 } else { 0 }) +
+        cancel_string_applied +
+        (if cancel_string_code == 9 { 1 } else { 0 }) +
+        (if invalid_string_code == 6 { 1 } else { 0 }) +
+        (if close_count == 13 { 1 } else { 0 }) +
+        shutdown_ok;
+
+    if score == 13 && cancel_int_1 + cancel_int_2 == 2 && cancel_string_1 + cancel_string_2 == 2 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_async_lifecycle_controls_example_smoke() {
     let src = fs::read_to_string("examples/io/async_lifecycle_controls.aic")
         .expect("read examples/io/async_lifecycle_controls.aic");
@@ -10759,6 +10969,8 @@ import std.io;
 import std.tls;
 import std.net;
 import std.bytes;
+import std.vec;
+import std.vec;
 import std.env;
 
 fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
@@ -10912,6 +11124,7 @@ import std.tls;
 import std.net;
 import std.time;
 import std.env;
+import std.vec;
 
 fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
@@ -10955,6 +11168,17 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
     let result = match tls_connect_addr(addr, cfg, 5000) {
         Err(_) => 0,
         Ok(stream) => if true {
+            let timeout_op = match tls_async_recv_submit(stream, 64, 2000) {
+                Ok(value) => value,
+                Err(_) => AsyncStringOp { handle: 0 },
+            };
+            let timeout_code = match tls_async_wait_many_string(vec.vec_of(timeout_op), 20) {
+                Ok(_) => 0,
+                Err(err) => tls_code(err),
+            };
+            let ignored_timeout_cancel = tls_async_cancel_string(timeout_op);
+            let ignored_timeout_wait = tls_async_wait_string(timeout_op, 500);
+
             let op = match tls_async_recv_submit(stream, 64, 2000) {
                 Ok(value) => value,
                 Err(_) => AsyncStringOp { handle: 0 },
@@ -10964,7 +11188,7 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
                 Ok(value) => bool_to_int(value),
                 Err(_) => 0,
             };
-            let wait_code = match tls_async_wait_string(AsyncStringOp { handle: handle }, 500) {
+            let wait_code = match tls_async_wait_many_string(vec.vec_of(AsyncStringOp { handle: handle }), 500) {
                 Ok(_) => 0,
                 Err(err) => tls_code(err),
             };
@@ -10973,10 +11197,11 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
                 Ok(value) => bool_to_int(value),
                 Err(_) => 0,
             };
-            if cancel_ok == 1 && wait_code == 9 && close_ok == 1 {
+            let timeout_ok = if timeout_code == 8 || timeout_code == 6 { 1 } else { 0 };
+            if timeout_ok == 1 && cancel_ok == 1 && wait_code == 9 && close_ok == 1 {
                 42
             } else {
-                cancel_ok * 100 + wait_code * 10 + close_ok
+                timeout_ok * 1000 + cancel_ok * 100 + wait_code * 10 + close_ok
             }
         } else {
             0
@@ -11207,6 +11432,7 @@ import std.io;
 import std.tls;
 import std.net;
 import std.bytes;
+import std.vec;
 
 fn tls_code(err: TlsError) -> Int {
     match err {
@@ -11226,12 +11452,20 @@ fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
 }
 
-fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
     let invalid_int_wait = match tls_async_wait_int(AsyncIntOp { handle: 0 }, 10) {
         Ok(_) => 0,
         Err(err) => tls_code(err),
     };
     let invalid_string_wait = match tls_async_wait_string(AsyncStringOp { handle: 0 }, 10) {
+        Ok(_) => 0,
+        Err(err) => tls_code(err),
+    };
+    let invalid_int_wait_many = match tls_async_wait_many_int(vec.vec_of(AsyncIntOp { handle: 0 }), 10) {
+        Ok(_) => 0,
+        Err(err) => tls_code(err),
+    };
+    let invalid_string_wait_many = match tls_async_wait_many_string(vec.vec_of(AsyncStringOp { handle: 0 }), 10) {
         Ok(_) => 0,
         Err(err) => tls_code(err),
     };
@@ -11258,10 +11492,12 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
 
     let score = (if invalid_int_wait == 5 { 1 } else { 0 })
         + (if invalid_string_wait == 5 { 1 } else { 0 })
+        + (if invalid_int_wait_many == 5 { 1 } else { 0 })
+        + (if invalid_string_wait_many == 5 { 1 } else { 0 })
         + (if send_path == 5 { 1 } else { 0 })
         + (if recv_path == 5 { 1 } else { 0 })
         + shutdown_ok;
-    if score == 5 {
+    if score == 7 {
         print_int(42);
     } else {
         print_int(score);

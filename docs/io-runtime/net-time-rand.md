@@ -119,6 +119,8 @@ fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, con
 fn async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }
 fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }
 fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
+fn async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
 fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
 fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }
@@ -166,7 +168,8 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - Async lifecycle control is explicit and typed:
   - `async_cancel_*` returns whether cancellation was applied.
   - `async_poll_*` maps pending state to `Option::None`.
-  - `async_wait_any_*` provides deterministic two-op select helpers.
+  - `async_wait_many_*` provides deterministic N-op selection helpers.
+  - `async_wait_any_*` remains a compatibility wrapper over `async_wait_many_*`.
   - `async_runtime_pressure` reports active/queued snapshots and configured limits for adaptive submit gating.
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
@@ -186,6 +189,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - `examples/io/tcp_echo.aic`
 - `examples/io/tcp_socket_tuning.aic`
 - `examples/io/async_lifecycle_controls.aic`
+- `examples/io/async_wait_many_orchestration.aic`
 
 ## `std.time` (`effects { time }`)
 

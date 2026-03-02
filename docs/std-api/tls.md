@@ -83,6 +83,8 @@ fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net,
 fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }
 fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
+fn tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
 fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
@@ -243,7 +245,8 @@ fn main() -> Int effects { net } capabilities { net } {
 - TLS async submit/wait wrappers are bytes-first (`tls_async_*`) and require `effects { net, concurrency }`.
 - `tls_async_cancel_*` returns `Ok(true)` if cancellation is applied and `Ok(false)` if the operation already completed.
 - `tls_async_poll_*` maps pending ops to `Ok(None())` using zero-timeout wait probes.
-- `tls_async_wait_any_*` returns the first-ready result with deterministic index selection.
+- `tls_async_wait_many_*` returns the first-ready result with deterministic index selection across arbitrary operation sets.
+- `tls_async_wait_any_*` remains a compatibility wrapper over `tls_async_wait_many_*`.
 - `tls_async_runtime_pressure` reports runtime load snapshots for adaptive orchestration (`queue_depth`/`queue_limit` are `0` on current TLS backend).
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.

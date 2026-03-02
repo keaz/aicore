@@ -1,0 +1,100 @@
+import std.io;
+import std.net;
+import std.bytes;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
+    let listener1 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let listener2 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let listener3 = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let addr3 = match tcp_local_addr(listener3) { Ok(v) => v, Err(_) => "" };
+
+    let op1 = match async_accept_submit(listener1, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+    let op2 = match async_accept_submit(listener2, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+    let op3 = match async_accept_submit(listener3, 2000) { Ok(op) => op, Err(_) => AsyncIntOp { handle: 0 } };
+
+    let client_int = match tcp_connect(addr3, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    let mut int_ops: Vec[AsyncIntOp] = vec.new_vec();
+    int_ops = vec.push(int_ops, op1);
+    int_ops = vec.push(int_ops, op2);
+    int_ops = vec.push(int_ops, op3);
+    let wait_many_int_ok = match async_wait_many_int(int_ops, 1000) {
+        Ok(sel) => if sel.index == 2 && sel.value > 0 {
+            match tcp_close(sel.value) {
+                Ok(closed) => bool_to_int(closed),
+                Err(_) => 0,
+            }
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let ignored_cancel1 = async_cancel_int(op1);
+    let ignored_cancel2 = async_cancel_int(op2);
+    let ignored_wait1 = async_wait_int(op1, 100);
+    let ignored_wait2 = async_wait_int(op2, 100);
+
+    let recv_listener = match tcp_listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let recv_addr = match tcp_local_addr(recv_listener) { Ok(v) => v, Err(_) => "" };
+
+    let recv_client1 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server1 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_client2 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server2 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_client3 = match tcp_connect(recv_addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let recv_server3 = match tcp_accept(recv_listener, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    let recv_op1 = match async_tcp_recv_submit(recv_server1, 64, 2000) { Ok(op) => op, Err(_) => AsyncStringOp { handle: 0 } };
+    let recv_op2 = match async_tcp_recv_submit(recv_server2, 64, 2000) { Ok(op) => op, Err(_) => AsyncStringOp { handle: 0 } };
+    let recv_op3 = match async_tcp_recv_submit(recv_server3, 64, 2000) { Ok(op) => op, Err(_) => AsyncStringOp { handle: 0 } };
+
+    let sent = match tcp_send(recv_client2, bytes.from_string("abc")) {
+        Ok(written) => if written == 3 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let mut string_ops: Vec[AsyncStringOp] = vec.new_vec();
+    string_ops = vec.push(string_ops, recv_op1);
+    string_ops = vec.push(string_ops, recv_op2);
+    string_ops = vec.push(string_ops, recv_op3);
+    let wait_many_string_ok = match async_wait_many_string(string_ops, 1000) {
+        Ok(sel) => if sel.index == 1 && bytes.byte_len(sel.payload) == 3 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let ignored_cancel_recv1 = async_cancel_string(recv_op1);
+    let ignored_cancel_recv3 = async_cancel_string(recv_op3);
+    let ignored_wait_recv1 = async_wait_string(recv_op1, 100);
+    let ignored_wait_recv3 = async_wait_string(recv_op3, 100);
+
+    let close_count =
+        (match tcp_close(client_int) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(listener3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_client3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server1) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server2) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_server3) { Ok(v) => bool_to_int(v), Err(_) => 0 }) +
+        (match tcp_close(recv_listener) { Ok(v) => bool_to_int(v), Err(_) => 0 });
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if wait_many_int_ok == 1 && sent == 1 && wait_many_string_ok == 1 && close_count == 11 && shutdown_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

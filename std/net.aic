@@ -1747,11 +1747,11 @@ fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effec
     }
 }
 
-/// `async_wait_any_int` in `std.net`.
+/// `async_wait_many_int` in `std.net`.
 ///
 /// ## Example
 /// ```aic
-/// // Import `std.net` and call `async_wait_any_int` with module-specific arguments.
+/// // Import `std.net` and call `async_wait_many_int` with module-specific arguments.
 /// ```
 ///
 /// ## Effects
@@ -1759,16 +1759,13 @@ fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effec
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn async_wait_any_int(
-    op1: AsyncIntOp,
-    op2: AsyncIntOp,
+fn async_wait_many_int(
+    ops: Vec[AsyncIntOp],
     timeout_ms: Int,
 ) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time } {
-    if timeout_ms < 0 {
+    if timeout_ms < 0 || ops.len == 0 {
         Err(InvalidInput())
     } else {
-        let h1 = op1.handle;
-        let h2 = op2.handle;
         let deadline_ms = deadline_after_ms(timeout_ms);
         let mut done = false;
         let mut selected = AsyncIntSelection { index: 0, value: 0 };
@@ -1776,44 +1773,29 @@ fn async_wait_any_int(
         let mut failure: NetError = net_timeout_error();
 
         while !done && !failed {
-            match async_poll_int(AsyncIntOp { handle: h1 }) {
-                Ok(state) => match state {
-                    Some(value) => if true {
-                        done = true;
-                        selected = AsyncIntSelection { index: 0, value: value };
-                    } else {
-                        ()
-                    },
-                    None => (),
-                },
-                Err(err) => if true {
-                    failed = true;
-                    failure = err;
-                } else {
-                    ()
-                },
-            };
-
-            if !done && !failed {
-                match async_poll_int(AsyncIntOp { handle: h2 }) {
-                    Ok(state) => match state {
-                        Some(value) => if true {
-                            done = true;
-                            selected = AsyncIntSelection { index: 1, value: value };
+            let mut i = 0;
+            while i < ops.len && !done && !failed {
+                match aic_vec_get_intrinsic(ops, i) {
+                    Some(op) => match async_poll_int(AsyncIntOp { handle: op.handle }) {
+                        Ok(state) => match state {
+                            Some(value) => if true {
+                                done = true;
+                                selected = AsyncIntSelection { index: i, value: value };
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        Err(err) => if true {
+                            failed = true;
+                            failure = err;
                         } else {
                             ()
                         },
-                        None => (),
                     },
-                    Err(err) => if true {
-                        failed = true;
-                        failure = err;
-                    } else {
-                        ()
-                    },
+                    None => (),
                 };
-            } else {
-                ()
+                i = i + 1;
             };
 
             if !done && !failed {
@@ -1836,11 +1818,11 @@ fn async_wait_any_int(
     }
 }
 
-/// `async_wait_any_string` in `std.net`.
+/// `async_wait_many_string` in `std.net`.
 ///
 /// ## Example
 /// ```aic
-/// // Import `std.net` and call `async_wait_any_string` with module-specific arguments.
+/// // Import `std.net` and call `async_wait_many_string` with module-specific arguments.
 /// ```
 ///
 /// ## Effects
@@ -1848,16 +1830,13 @@ fn async_wait_any_int(
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn async_wait_any_string(
-    op1: AsyncStringOp,
-    op2: AsyncStringOp,
+fn async_wait_many_string(
+    ops: Vec[AsyncStringOp],
     timeout_ms: Int,
 ) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time } {
-    if timeout_ms < 0 {
+    if timeout_ms < 0 || ops.len == 0 {
         Err(InvalidInput())
     } else {
-        let h1 = op1.handle;
-        let h2 = op2.handle;
         let deadline_ms = deadline_after_ms(timeout_ms);
         let mut done = false;
         let mut selected = AsyncStringSelection { index: 0, payload: empty() };
@@ -1865,44 +1844,29 @@ fn async_wait_any_string(
         let mut failure: NetError = net_timeout_error();
 
         while !done && !failed {
-            match async_poll_string(AsyncStringOp { handle: h1 }) {
-                Ok(state) => match state {
-                    Some(payload) => if true {
-                        done = true;
-                        selected = AsyncStringSelection { index: 0, payload: payload };
-                    } else {
-                        ()
-                    },
-                    None => (),
-                },
-                Err(err) => if true {
-                    failed = true;
-                    failure = err;
-                } else {
-                    ()
-                },
-            };
-
-            if !done && !failed {
-                match async_poll_string(AsyncStringOp { handle: h2 }) {
-                    Ok(state) => match state {
-                        Some(payload) => if true {
-                            done = true;
-                            selected = AsyncStringSelection { index: 1, payload: payload };
+            let mut i = 0;
+            while i < ops.len && !done && !failed {
+                match aic_vec_get_intrinsic(ops, i) {
+                    Some(op) => match async_poll_string(AsyncStringOp { handle: op.handle }) {
+                        Ok(state) => match state {
+                            Some(payload) => if true {
+                                done = true;
+                                selected = AsyncStringSelection { index: i, payload: payload };
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        Err(err) => if true {
+                            failed = true;
+                            failure = err;
                         } else {
                             ()
                         },
-                        None => (),
                     },
-                    Err(err) => if true {
-                        failed = true;
-                        failure = err;
-                    } else {
-                        ()
-                    },
+                    None => (),
                 };
-            } else {
-                ()
+                i = i + 1;
             };
 
             if !done && !failed {
@@ -1923,6 +1887,48 @@ fn async_wait_any_string(
             Err(failure)
         }
     }
+}
+
+/// `async_wait_any_int` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_wait_any_int` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_wait_any_int(
+    op1: AsyncIntOp,
+    op2: AsyncIntOp,
+    timeout_ms: Int,
+) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_int(ops, timeout_ms)
+}
+
+/// `async_wait_any_string` in `std.net`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.net` and call `async_wait_any_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_wait_any_string(
+    op1: AsyncStringOp,
+    op2: AsyncStringOp,
+    timeout_ms: Int,
+) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_string(ops, timeout_ms)
 }
 
 /// `async_shutdown` in `std.net`.

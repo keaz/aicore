@@ -3085,6 +3085,18 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     );
     assert!(
         source.contains(
+            "fn tls_async_wait_many_int(\n    ops: Vec[AsyncIntOp],\n    timeout_ms: Int,\n) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
+        ),
+        "std/tls.aic must expose tls_async_wait_many_int selection helper"
+    );
+    assert!(
+        source.contains(
+            "fn tls_async_wait_many_string(\n    ops: Vec[AsyncStringOp],\n    timeout_ms: Int,\n) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
+        ),
+        "std/tls.aic must expose tls_async_wait_many_string selection helper"
+    );
+    assert!(
+        source.contains(
             "fn tls_async_wait_any_int(\n    op1: AsyncIntOp,\n    op2: AsyncIntOp,\n    timeout_ms: Int,\n) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
         ),
         "std/tls.aic must expose tls_async_wait_any_int selection helper"
@@ -3094,6 +3106,18 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
             "fn tls_async_wait_any_string(\n    op1: AsyncStringOp,\n    op2: AsyncStringOp,\n    timeout_ms: Int,\n) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
         ),
         "std/tls.aic must expose tls_async_wait_any_string selection helper"
+    );
+    assert!(
+        source.contains("let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);"),
+        "std/tls.aic wait-any wrappers must construct op vectors via intrinsics"
+    );
+    assert!(
+        source.contains("tls_async_wait_many_int(ops, timeout_ms)"),
+        "std/tls.aic tls_async_wait_any_int must delegate to tls_async_wait_many_int wrapper"
+    );
+    assert!(
+        source.contains("tls_async_wait_many_string(ops, timeout_ms)"),
+        "std/tls.aic tls_async_wait_any_string must delegate to tls_async_wait_many_string wrapper"
     );
     assert!(
         source.contains("verify_server: true"),
@@ -3521,6 +3545,14 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "{name} must document async_wait_any_int signature"
         );
         assert!(
+            doc.contains("fn async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"),
+            "{name} must document async_wait_many_int signature"
+        );
+        assert!(
+            doc.contains("fn async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"),
+            "{name} must document async_wait_many_string signature"
+        );
+        assert!(
             doc.contains("fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"),
             "{name} must document async_runtime_pressure signature"
         );
@@ -3555,6 +3587,18 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]"
         ),
         "async runtime docs must include async_wait_any_int helper"
+    );
+    assert!(
+        async_runtime.contains(
+            "async_wait_many_int(ops, timeout_ms) -> Result[AsyncIntSelection, NetError]"
+        ),
+        "async runtime docs must include async_wait_many_int helper"
+    );
+    assert!(
+        async_runtime.contains(
+            "async_wait_many_string(ops, timeout_ms) -> Result[AsyncStringSelection, NetError]"
+        ),
+        "async runtime docs must include async_wait_many_string helper"
     );
     assert!(
         async_runtime
@@ -3620,6 +3664,14 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
             "{name} must document tls_async_wait_any_int signature"
         );
         assert!(
+            doc.contains("fn tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"),
+            "{name} must document tls_async_wait_many_int signature"
+        );
+        assert!(
+            doc.contains("fn tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"),
+            "{name} must document tls_async_wait_many_string signature"
+        );
+        assert!(
             doc.contains("fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }"),
             "{name} must document tls_async_runtime_pressure signature"
         );
@@ -3650,6 +3702,18 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
     assert!(
         async_runtime.contains("tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]"),
         "async runtime docs must include tls_async_wait_any_int helper"
+    );
+    assert!(
+        async_runtime.contains(
+            "tls_async_wait_many_int(ops, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]"
+        ),
+        "async runtime docs must include tls_async_wait_many_int helper"
+    );
+    assert!(
+        async_runtime.contains(
+            "tls_async_wait_many_string(ops, timeout_ms) -> Result[TlsAsyncStringSelection, TlsError]"
+        ),
+        "async runtime docs must include tls_async_wait_many_string helper"
     );
     assert!(
         async_runtime
@@ -7632,6 +7696,18 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     );
     assert!(
         net_source.contains(
+            "fn async_wait_many_int(\n    ops: Vec[AsyncIntOp],\n    timeout_ms: Int,\n) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"
+        ),
+        "std/net.aic must expose async_wait_many_int selection helper"
+    );
+    assert!(
+        net_source.contains(
+            "fn async_wait_many_string(\n    ops: Vec[AsyncStringOp],\n    timeout_ms: Int,\n) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
+        ),
+        "std/net.aic must expose async_wait_many_string selection helper"
+    );
+    assert!(
+        net_source.contains(
             "fn async_wait_any_int(\n    op1: AsyncIntOp,\n    op2: AsyncIntOp,\n    timeout_ms: Int,\n) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"
         ),
         "std/net.aic must expose async_wait_any_int selection helper"
@@ -7641,6 +7717,18 @@ fn unit_std_net_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
             "fn async_wait_any_string(\n    op1: AsyncStringOp,\n    op2: AsyncStringOp,\n    timeout_ms: Int,\n) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
         ),
         "std/net.aic must expose async_wait_any_string selection helper"
+    );
+    assert!(
+        net_source.contains("let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);"),
+        "std/net.aic wait-any wrappers must construct op vectors via intrinsics"
+    );
+    assert!(
+        net_source.contains("async_wait_many_int(ops, timeout_ms)"),
+        "std/net.aic async_wait_any_int must delegate to async_wait_many_int wrapper"
+    );
+    assert!(
+        net_source.contains("async_wait_many_string(ops, timeout_ms)"),
+        "std/net.aic async_wait_any_string must delegate to async_wait_many_string wrapper"
     );
     assert!(
         !net_source.contains("fn aic_net_tcp_send_intrinsic(handle: Int, payload: String) -> Result[Int, NetError] effects { net } {"),

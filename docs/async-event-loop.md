@@ -23,6 +23,8 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `async_cancel_string(op) -> Result[Bool, NetError]`
 - `async_poll_int(op) -> Result[Option[Int], NetError]`
 - `async_poll_string(op) -> Result[Option[Bytes], NetError]`
+- `async_wait_many_int(ops, timeout_ms) -> Result[AsyncIntSelection, NetError]`
+- `async_wait_many_string(ops, timeout_ms) -> Result[AsyncStringSelection, NetError]`
 - `async_wait_any_int(op1, op2, timeout_ms) -> Result[AsyncIntSelection, NetError]`
 - `async_wait_any_string(op1, op2, timeout_ms) -> Result[AsyncStringSelection, NetError]`
 - `async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError]`
@@ -39,6 +41,8 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `tls_async_cancel_string(op) -> Result[Bool, TlsError]`
 - `tls_async_poll_int(op) -> Result[Option[Int], TlsError]`
 - `tls_async_poll_string(op) -> Result[Option[Bytes], TlsError]`
+- `tls_async_wait_many_int(ops, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]`
+- `tls_async_wait_many_string(ops, timeout_ms) -> Result[TlsAsyncStringSelection, TlsError]`
 - `tls_async_wait_any_int(op1, op2, timeout_ms) -> Result[TlsAsyncIntSelection, TlsError]`
 - `tls_async_wait_any_string(op1, op2, timeout_ms) -> Result[TlsAsyncStringSelection, TlsError]`
 - `tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError]`
@@ -63,7 +67,8 @@ Language-level bridge:
 - TLS async wait follows the same retry model; timeout maps to `TlsError::Timeout`.
 - `async_cancel_*` / `tls_async_cancel_*` are idempotent and report whether cancellation was applied via `Bool`.
 - `async_poll_*` / `tls_async_poll_*` perform zero-timeout probes and return `Option` without blocking.
-- `async_wait_any_*` / `tls_async_wait_any_*` implement deterministic two-op select helpers for protocol orchestration.
+- `async_wait_many_*` / `tls_async_wait_many_*` scan operations in deterministic index order and return the winning index plus payload/value.
+- `async_wait_any_*` / `tls_async_wait_any_*` remain compatibility wrappers over `wait_many_*` for two-op selection.
 
 ## Await Submit Bridge Semantics
 
@@ -124,6 +129,7 @@ let socket = match accepted {
 - CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
+- Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Runnable pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 - Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
   - scenario: `rest_async_echo_1000_connections`
