@@ -165,7 +165,7 @@ intrinsic fn aic_buffer_close_intrinsic(buf: ByteBuffer) -> Result[Bool, BufferE
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[UInt8, BufferError];
 /// `aic_buffer_read_i16_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -178,9 +178,9 @@ intrinsic fn aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[Int, Buffer
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int16, BufferError];
 /// Unsigned big-endian 16-bit read intrinsic.
-intrinsic fn aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[UInt16, BufferError];
 /// `aic_buffer_read_i32_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -193,9 +193,9 @@ intrinsic fn aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int32, BufferError];
 /// Unsigned big-endian 32-bit read intrinsic.
-intrinsic fn aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[UInt32, BufferError];
 /// `aic_buffer_read_i64_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -208,9 +208,9 @@ intrinsic fn aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int64, BufferError];
 /// Unsigned big-endian 64-bit read intrinsic.
-intrinsic fn aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[UInt64, BufferError];
 /// `aic_buffer_read_i16_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -223,9 +223,9 @@ intrinsic fn aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int16, BufferError];
 /// Unsigned little-endian 16-bit read intrinsic.
-intrinsic fn aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[UInt16, BufferError];
 /// `aic_buffer_read_i32_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -238,9 +238,9 @@ intrinsic fn aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int32, BufferError];
 /// Unsigned little-endian 32-bit read intrinsic.
-intrinsic fn aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[UInt32, BufferError];
 /// `aic_buffer_read_i64_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -253,9 +253,9 @@ intrinsic fn aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[Int, Bu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int64, BufferError];
 /// Unsigned little-endian 64-bit read intrinsic.
-intrinsic fn aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError];
+intrinsic fn aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[UInt64, BufferError];
 /// `aic_buffer_read_bytes_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -307,7 +307,7 @@ intrinsic fn aic_buffer_read_length_prefixed_intrinsic(buf: ByteBuffer) -> Resul
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: UInt8) -> Result[(), BufferError];
 /// `aic_buffer_write_i16_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -320,9 +320,9 @@ intrinsic fn aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Resul
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int16) -> Result[(), BufferError];
 /// Unsigned big-endian 16-bit write intrinsic.
-intrinsic fn aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError];
 /// `aic_buffer_write_i32_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -335,9 +335,9 @@ intrinsic fn aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int32) -> Result[(), BufferError];
 /// Unsigned big-endian 32-bit write intrinsic.
-intrinsic fn aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError];
 /// `aic_buffer_write_i64_be_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -350,9 +350,9 @@ intrinsic fn aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int64) -> Result[(), BufferError];
 /// Unsigned big-endian 64-bit write intrinsic.
-intrinsic fn aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError];
 /// `aic_buffer_write_i16_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -365,9 +365,9 @@ intrinsic fn aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: Int) -> R
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int16) -> Result[(), BufferError];
 /// Unsigned little-endian 16-bit write intrinsic.
-intrinsic fn aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError];
 /// `aic_buffer_write_i32_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -380,9 +380,9 @@ intrinsic fn aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: Int) -> R
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int32) -> Result[(), BufferError];
 /// Unsigned little-endian 32-bit write intrinsic.
-intrinsic fn aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError];
 /// `aic_buffer_write_i64_le_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -395,9 +395,9 @@ intrinsic fn aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: Int) -> R
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int64) -> Result[(), BufferError];
 /// Unsigned little-endian 64-bit write intrinsic.
-intrinsic fn aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError];
 /// `aic_buffer_write_bytes_intrinsic` in `std.buffer`.
 ///
 /// ## Example
@@ -438,17 +438,17 @@ intrinsic fn aic_buffer_write_cstring_intrinsic(buf: ByteBuffer, s: String) -> R
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_buffer_write_string_prefixed_intrinsic(buf: ByteBuffer, s: String) -> Result[(), BufferError];
 /// Patch-at-offset unsigned big-endian 16-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError];
 /// Patch-at-offset unsigned big-endian 32-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError];
 /// Patch-at-offset unsigned big-endian 64-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError];
 /// Patch-at-offset unsigned little-endian 16-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError];
 /// Patch-at-offset unsigned little-endian 32-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError];
 /// Patch-at-offset unsigned little-endian 64-bit write intrinsic.
-intrinsic fn aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError];
+intrinsic fn aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError];
 
 /// `new_buffer` in `std.buffer`.
 ///
@@ -606,7 +606,7 @@ fn buf_close(buf: ByteBuffer) -> Result[Bool, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u8(buf: ByteBuffer) -> Result[UInt8, BufferError] {
     aic_buffer_read_u8_intrinsic(buf)
 }
 
@@ -622,7 +622,7 @@ fn buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int16, BufferError] {
     aic_buffer_read_i16_be_intrinsic(buf)
 }
 
@@ -638,7 +638,7 @@ fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u16_be(buf: ByteBuffer) -> Result[UInt16, BufferError] {
     aic_buffer_read_u16_be_intrinsic(buf)
 }
 
@@ -654,7 +654,7 @@ fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int32, BufferError] {
     aic_buffer_read_i32_be_intrinsic(buf)
 }
 
@@ -670,7 +670,7 @@ fn buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u32_be(buf: ByteBuffer) -> Result[UInt32, BufferError] {
     aic_buffer_read_u32_be_intrinsic(buf)
 }
 
@@ -686,7 +686,7 @@ fn buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int64, BufferError] {
     aic_buffer_read_i64_be_intrinsic(buf)
 }
 
@@ -702,7 +702,7 @@ fn buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u64_be(buf: ByteBuffer) -> Result[UInt64, BufferError] {
     aic_buffer_read_u64_be_intrinsic(buf)
 }
 
@@ -718,7 +718,7 @@ fn buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int16, BufferError] {
     aic_buffer_read_i16_le_intrinsic(buf)
 }
 
@@ -734,7 +734,7 @@ fn buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u16_le(buf: ByteBuffer) -> Result[UInt16, BufferError] {
     aic_buffer_read_u16_le_intrinsic(buf)
 }
 
@@ -750,7 +750,7 @@ fn buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int32, BufferError] {
     aic_buffer_read_i32_le_intrinsic(buf)
 }
 
@@ -766,7 +766,7 @@ fn buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u32_le(buf: ByteBuffer) -> Result[UInt32, BufferError] {
     aic_buffer_read_u32_le_intrinsic(buf)
 }
 
@@ -782,7 +782,7 @@ fn buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int64, BufferError] {
     aic_buffer_read_i64_le_intrinsic(buf)
 }
 
@@ -798,7 +798,7 @@ fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_read_u64_le(buf: ByteBuffer) -> Result[Int, BufferError] {
+fn buf_read_u64_le(buf: ByteBuffer) -> Result[UInt64, BufferError] {
     aic_buffer_read_u64_le_intrinsic(buf)
 }
 
@@ -862,7 +862,7 @@ fn buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u8(buf: ByteBuffer, value: UInt8) -> Result[(), BufferError] {
     aic_buffer_write_u8_intrinsic(buf, value)
 }
 
@@ -878,7 +878,7 @@ fn buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i16_be(buf: ByteBuffer, value: Int16) -> Result[(), BufferError] {
     aic_buffer_write_i16_be_intrinsic(buf, value)
 }
 
@@ -894,7 +894,7 @@ fn buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u16_be(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError] {
     aic_buffer_write_u16_be_intrinsic(buf, value)
 }
 
@@ -910,7 +910,7 @@ fn buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i32_be(buf: ByteBuffer, value: Int32) -> Result[(), BufferError] {
     aic_buffer_write_i32_be_intrinsic(buf, value)
 }
 
@@ -926,7 +926,7 @@ fn buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u32_be(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError] {
     aic_buffer_write_u32_be_intrinsic(buf, value)
 }
 
@@ -942,7 +942,7 @@ fn buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i64_be(buf: ByteBuffer, value: Int64) -> Result[(), BufferError] {
     aic_buffer_write_i64_be_intrinsic(buf, value)
 }
 
@@ -958,7 +958,7 @@ fn buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u64_be(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError] {
     aic_buffer_write_u64_be_intrinsic(buf, value)
 }
 
@@ -974,7 +974,7 @@ fn buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i16_le(buf: ByteBuffer, value: Int16) -> Result[(), BufferError] {
     aic_buffer_write_i16_le_intrinsic(buf, value)
 }
 
@@ -990,7 +990,7 @@ fn buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u16_le(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError] {
     aic_buffer_write_u16_le_intrinsic(buf, value)
 }
 
@@ -1006,7 +1006,7 @@ fn buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i32_le(buf: ByteBuffer, value: Int32) -> Result[(), BufferError] {
     aic_buffer_write_i32_le_intrinsic(buf, value)
 }
 
@@ -1022,7 +1022,7 @@ fn buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u32_le(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError] {
     aic_buffer_write_u32_le_intrinsic(buf, value)
 }
 
@@ -1038,7 +1038,7 @@ fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_i64_le(buf: ByteBuffer, value: Int64) -> Result[(), BufferError] {
     aic_buffer_write_i64_le_intrinsic(buf, value)
 }
 
@@ -1054,7 +1054,7 @@ fn buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_write_u64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError] {
+fn buf_write_u64_le(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError] {
     aic_buffer_write_u64_le_intrinsic(buf, value)
 }
 
@@ -1118,7 +1118,7 @@ fn buf_write_string_prefixed(buf: ByteBuffer, s: String) -> Result[(), BufferErr
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError] {
     aic_buffer_patch_u16_be_intrinsic(buf, offset, value)
 }
 
@@ -1134,7 +1134,7 @@ fn buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError] {
     aic_buffer_patch_u32_be_intrinsic(buf, offset, value)
 }
 
@@ -1150,7 +1150,7 @@ fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError] {
     aic_buffer_patch_u64_be_intrinsic(buf, offset, value)
 }
 
@@ -1166,7 +1166,7 @@ fn buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError] {
     aic_buffer_patch_u16_le_intrinsic(buf, offset, value)
 }
 
@@ -1182,7 +1182,7 @@ fn buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError] {
     aic_buffer_patch_u32_le_intrinsic(buf, offset, value)
 }
 
@@ -1198,7 +1198,7 @@ fn buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError] {
+fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError] {
     aic_buffer_patch_u64_le_intrinsic(buf, offset, value)
 }
 
@@ -1214,7 +1214,7 @@ fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), Buff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError] {
+fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError] {
     let current = buf_position(buf);
     let seek = buf_seek(buf, position);
     let out = match seek {
