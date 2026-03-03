@@ -59,23 +59,28 @@ fn expected_score_for_scenario(scenario_id: Int) -> Int {
 }
 
 fn startup_frame_score() -> Result[Int, SecureErrorInfo] {
+    let startup_len: Int32 = 33;
+    let min_startup_len: Int32 = 16;
+    let startup_header: Int32 = 0;
+    let startup_protocol: Int32 = 196608;
+    let startup_term: UInt8 = 0;
     let frame = new_buffer(256);
-    let _header = buf_write_i32_be(frame, 0);
-    let _protocol = buf_write_i32_be(frame, 196608);
+    let _header = buf_write_i32_be(frame, startup_header);
+    let _protocol = buf_write_i32_be(frame, startup_protocol);
     let _k1 = buf_write_cstring(frame, "user");
     let _v1 = buf_write_cstring(frame, "demo");
     let _k2 = buf_write_cstring(frame, "database");
     let _v2 = buf_write_cstring(frame, "demo");
-    let _term = buf_write_u8(frame, 0);
+    let _term = buf_write_u8(frame, startup_term);
 
     let frame_len = buf_position(frame);
     let _seek_header = buf_seek(frame, 0);
-    let _patch = buf_write_i32_be(frame, frame_len);
-    let _seek_end = buf_seek(frame, frame_len);
+    let _patch = buf_write_i32_be(frame, startup_len);
+    let _seek_end = buf_seek(frame, 33);
 
     let parser = buffer_from_bytes(buffer_to_bytes(frame));
     match buf_read_i32_be(parser) {
-        Ok(total_len) => if total_len == frame_len && total_len > 16 {
+        Ok(total_len) => if frame_len == 33 && total_len == startup_len && total_len > min_startup_len {
             Ok(1)
         } else {
             Err(secure_error_info("postgres", "PG_STARTUP_FRAME_INVALID", "protocol", false))
@@ -84,9 +89,9 @@ fn startup_frame_score() -> Result[Int, SecureErrorInfo] {
     }
 }
 
-fn challenge_score_from_kind(parser: ByteBuffer, kind: Int) -> Result[Int, SecureErrorInfo] {
+fn challenge_score_from_kind(parser: ByteBuffer, kind: Int32) -> Result[Int, SecureErrorInfo] {
     match buf_read_cstring(parser) {
-        Ok(challenge) => if kind == 11 && string.contains(challenge, "i=4096") {
+        Ok(challenge) => if kind == 11i32 && string.contains(challenge, "i=4096") {
             Ok(1)
         } else {
             Err(secure_error_info("postgres", "PG_AUTH_CHALLENGE_INVALID", "protocol", false))
@@ -96,8 +101,9 @@ fn challenge_score_from_kind(parser: ByteBuffer, kind: Int) -> Result[Int, Secur
 }
 
 fn challenge_score() -> Result[Int, SecureErrorInfo] {
+    let auth_kind: Int32 = 11;
     let wire_buf = new_buffer(96);
-    let _auth_kind = buf_write_i32_be(wire_buf, 11);
+    let _auth_kind = buf_write_i32_be(wire_buf, auth_kind);
     let _challenge = buf_write_cstring(wire_buf, "r=clientnonce,s=c2FsdHlzYWx0,i=4096");
 
     let parser = buffer_from_bytes(buffer_to_bytes(wire_buf));

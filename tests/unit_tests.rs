@@ -7346,13 +7346,14 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
         "std/bytes.aic must decode lossy via intrinsic-backed string API"
     );
     assert!(
-        bytes_source
-            .contains("intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int;"),
+        bytes_source.contains(
+            "intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> UInt8;"
+        ),
         "std/bytes.aic must declare byte_at runtime intrinsic binding"
     );
     assert!(
         bytes_source.contains(
-            "intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String;"
+            "intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[UInt8]) -> String;"
         ),
         "std/bytes.aic must declare from_byte_values runtime intrinsic binding"
     );
@@ -7366,11 +7367,19 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
     );
     assert!(
         bytes_source.contains("aic_bytes_from_byte_values_intrinsic(values)"),
-        "std/bytes.aic from_byte_values must bridge Vec[Int] through runtime intrinsic"
+        "std/bytes.aic from_byte_values must bridge Vec[UInt8] through runtime intrinsic"
     );
     assert!(
-        bytes_source.contains("fn to_byte_values(data: Bytes) -> Vec[Int]"),
+        bytes_source.contains("fn to_byte_values(data: Bytes) -> Vec[UInt8]"),
         "std/bytes.aic must expose byte-vector conversion helper"
+    );
+    assert!(
+        bytes_source.contains("fn byte_at(data: Bytes, index: Int) -> Result[UInt8, BytesError]"),
+        "std/bytes.aic byte_at API must expose UInt8 values"
+    );
+    assert!(
+        bytes_source.contains("fn find_byte(data: Bytes, value: UInt8) -> Option[Int]"),
+        "std/bytes.aic find_byte API must take UInt8 lookup values"
     );
 
     assert!(
@@ -7652,8 +7661,9 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
     }
 
     assert!(
-        source
-            .contains("fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError]"),
+        source.contains(
+            "fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError]"
+        ),
         "std/buffer.aic must expose buf_peek_u8 random-access helper"
     );
     assert!(
@@ -7665,7 +7675,9 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
         "std/buffer.aic must expose typed unsigned 32-bit read helper"
     );
     assert!(
-        source.contains("fn buf_write_u64_be(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"),
+        source.contains(
+            "fn buf_write_u64_be(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"
+        ),
         "std/buffer.aic must expose typed unsigned 64-bit write helper"
     );
     assert!(
@@ -7698,6 +7710,49 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
         source.contains("let sliced = byte_slice(raw, start, end);"),
         "std/buffer.aic buf_slice must compose through std.bytes byte_slice"
     );
+}
+
+#[test]
+fn unit_buffer_codegen_dispatch_uses_width_specific_matching_helpers() {
+    let source = fs::read_to_string("src/codegen/generator_net_tls_buffer.rs")
+        .expect("read src/codegen/generator_net_tls_buffer.rs");
+
+    for helper in [
+        "fn sig_matches_buffer_read_result(&mut self, name: &str, ok_ty: &str) -> bool",
+        "fn sig_matches_buffer_write_result(",
+        "fn sig_matches_buffer_patch_result(",
+        "\"buf_read_u8\" if self.sig_matches_buffer_read_result(name, \"UInt8\")",
+        "\"buf_read_i16_be\" if self.sig_matches_buffer_read_result(name, \"Int16\")",
+        "\"buf_read_u64_le\" if self.sig_matches_buffer_read_result(name, \"UInt64\")",
+        "\"buf_write_u8\" if self.sig_matches_buffer_write_result(name, \"UInt8\")",
+        "\"buf_write_i32_le\" if self.sig_matches_buffer_write_result(name, \"Int32\")",
+        "\"buf_write_u64_be\" if self.sig_matches_buffer_write_result(name, \"UInt64\")",
+        "\"buf_patch_u16_be\" if self.sig_matches_buffer_patch_result(name, \"UInt16\")",
+        "\"buf_patch_u32_le\" if self.sig_matches_buffer_patch_result(name, \"UInt32\")",
+        "\"buf_patch_u64_be\" if self.sig_matches_buffer_patch_result(name, \"UInt64\")",
+        "format!(\"{name} expects {expected_value_ty} value\")",
+        "format!(\"{name} expects (ByteBuffer, Int, {expected_value_ty})\")",
+    ] {
+        assert!(
+            source.contains(helper),
+            "buffer codegen must include typed helper/matcher: {helper}"
+        );
+    }
+
+    for legacy in [
+        "\"buf_read_u8\"\n                if self.sig_matches_shape(name, &[\"ByteBuffer\"], \"Result[Int, BufferError]\")",
+        "\"buf_write_u8\" if self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\"])",
+        "\"buf_patch_u16_be\"\n                if self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\", \"Int\"])",
+        "|| self.sig_matches_shape(name, &[\"ByteBuffer\"], \"Result[Int, BufferError]\")",
+        "|| self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\"])",
+        "|| self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\", \"Int\"])",
+        "value.ty != expected_ty && value.ty != LType::Int",
+    ] {
+        assert!(
+            !source.contains(legacy),
+            "buffer codegen should not dispatch typed buffer paths via legacy Int-only branch checks: {legacy}"
+        );
+    }
 }
 
 #[test]

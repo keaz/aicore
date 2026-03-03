@@ -1153,6 +1153,32 @@ fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effect
     aic_tls_async_pressure_intrinsic()
 }
 
+fn tls_zero_u8() -> UInt8 {
+    0
+}
+
+fn tls_one_u8() -> UInt8 {
+    1
+}
+
+fn tls_u8_to_int(value: UInt8) -> Int {
+    let mut out = 0;
+    let mut current: UInt8 = tls_zero_u8();
+    let one = tls_one_u8();
+    while current != value {
+        current = current + one;
+        out = out + 1;
+    };
+    out
+}
+
+fn tls_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, TlsError] {
+    match byte_at(header, index) {
+        Ok(value) => Ok(tls_u8_to_int(value)),
+        Err(_) => Err(ProtocolError()),
+    }
+}
+
 /// `tls_frame_len_be` in `std.tls`.
 ///
 /// ## Example
@@ -1169,26 +1195,18 @@ fn tls_frame_len_be(header: Bytes) -> Result[Int, TlsError] {
     if byte_len(header) != 4 {
         Err(ProtocolError())
     } else {
-        let b0 = match byte_at(header, 0) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b1 = match byte_at(header, 1) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b2 = match byte_at(header, 2) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b3 = match byte_at(header, 3) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
-            Err(ProtocolError())
-        } else {
-            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
+        match tls_frame_byte_to_int(header, 0) {
+            Err(err) => Err(err),
+            Ok(b0) => match tls_frame_byte_to_int(header, 1) {
+                Err(err) => Err(err),
+                Ok(b1) => match tls_frame_byte_to_int(header, 2) {
+                    Err(err) => Err(err),
+                    Ok(b2) => match tls_frame_byte_to_int(header, 3) {
+                        Err(err) => Err(err),
+                        Ok(b3) => Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3),
+                    },
+                },
+            },
         }
     }
 }

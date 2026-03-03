@@ -185,6 +185,54 @@ void aic_rt_bytes_from_byte_values(
     }
 }
 
+void aic_rt_bytes_from_u8_values(
+    const char* values_ptr,
+    long values_len,
+    long values_cap,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)values_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (values_len < 0 || (values_len > 0 && values_ptr == NULL)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    if (values_len == 0) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t count = (size_t)values_len;
+    if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    char* out = (char*)malloc(count + 1);
+    if (out == NULL) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    memcpy(out, values_ptr, count);
+    out[count] = '\0';
+    if (out_len != NULL) {
+        *out_len = (long)count;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = out;
+    } else {
+        free(out);
+    }
+}
+
 void aic_rt_string_split(
     const char* s_ptr,
     long s_len,

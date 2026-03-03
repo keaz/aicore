@@ -1217,7 +1217,7 @@ fn buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), B
 fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError] {
     let current = buf_position(buf);
     let seek = buf_seek(buf, position);
-    let out = match seek {
+    let out: Result[UInt8, BufferError] = match seek {
         Err(err) => Err(err),
         Ok(_) => buf_read_u8(buf),
     };

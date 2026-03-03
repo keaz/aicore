@@ -40,12 +40,15 @@ pub fn preferred_global_std_root() -> Option<PathBuf> {
 pub fn std_import_roots(project_root: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
-    if let Some(global_root) = preferred_global_std_root() {
-        roots.push(global_root);
+    if let Some(configured_root) = configured_std_root() {
+        roots.push(configured_root);
     }
 
     roots.push(project_root.join("std"));
     roots.push(bundled_std_root());
+    if let Some(global_root) = default_global_std_root() {
+        roots.push(global_root);
+    }
 
     dedup_paths(roots)
 }
@@ -144,7 +147,10 @@ fn non_empty_env(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{install_std, std_import_roots, ENV_AIC_STD_ROOT};
+    use super::{
+        bundled_std_root, default_global_std_root, install_std, std_import_roots, ENV_AIC_HOME,
+        ENV_AIC_STD_ROOT,
+    };
     use std::fs;
     use std::path::Path;
     use std::sync::{Mutex, OnceLock};
@@ -192,7 +198,59 @@ mod tests {
 
         assert!(!roots.is_empty());
         assert_eq!(roots[0], explicit_root);
-        assert!(roots.iter().any(|root| root == &project_root.join("std")));
+        let expected_project_std =
+            fs::canonicalize(project_root.join("std")).unwrap_or(project_root.join("std"));
+        assert!(roots.iter().any(|root| root == &expected_project_std));
+    }
+
+    #[test]
+    fn std_import_roots_prefer_project_and_bundled_before_default_global() {
+        let lock = env_lock();
+        let temp = tempdir().expect("tempdir");
+        let project_root = temp.path().join("project");
+        fs::create_dir_all(project_root.join("std")).expect("create project std");
+
+        let previous_std_root = std::env::var(ENV_AIC_STD_ROOT).ok();
+        let previous_home = std::env::var(ENV_AIC_HOME).ok();
+        std::env::remove_var(ENV_AIC_STD_ROOT);
+        std::env::set_var(
+            ENV_AIC_HOME,
+            temp.path().join("home").to_string_lossy().to_string(),
+        );
+
+        let roots = std_import_roots(&project_root);
+
+        if let Some(value) = previous_std_root {
+            std::env::set_var(ENV_AIC_STD_ROOT, value);
+        } else {
+            std::env::remove_var(ENV_AIC_STD_ROOT);
+        }
+        if let Some(value) = previous_home {
+            std::env::set_var(ENV_AIC_HOME, value);
+        } else {
+            std::env::remove_var(ENV_AIC_HOME);
+        }
+
+        drop(lock);
+
+        assert!(!roots.is_empty());
+        let expected_project_std =
+            fs::canonicalize(project_root.join("std")).unwrap_or(project_root.join("std"));
+        assert_eq!(roots[0], expected_project_std);
+        assert!(
+            roots.iter().any(|root| root == &bundled_std_root()),
+            "bundled std root should be present"
+        );
+        if let Some(default_global) = default_global_std_root() {
+            let bundled_idx = roots.iter().position(|root| root == &bundled_std_root());
+            let global_idx = roots.iter().position(|root| root == &default_global);
+            if let (Some(bundled_idx), Some(global_idx)) = (bundled_idx, global_idx) {
+                assert!(
+                    bundled_idx < global_idx,
+                    "bundled std should take precedence over default global std"
+                );
+            }
+        }
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {

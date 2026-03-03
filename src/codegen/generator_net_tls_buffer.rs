@@ -2075,6 +2075,19 @@ impl<'a> Generator<'a> {
             || self.sig_matches_shape(name, params, "Result[Unit, BufferError]")
     }
 
+    pub(super) fn sig_matches_buffer_read_result(&mut self, name: &str, ok_ty: &str) -> bool {
+        let typed = format!("Result[{ok_ty}, BufferError]");
+        self.sig_matches_shape(name, &["ByteBuffer"], &typed)
+    }
+
+    pub(super) fn sig_matches_buffer_write_result(&mut self, name: &str, value_ty: &str) -> bool {
+        self.sig_matches_buffer_unit_result(name, &["ByteBuffer", value_ty])
+    }
+
+    pub(super) fn sig_matches_buffer_patch_result(&mut self, name: &str, value_ty: &str) -> bool {
+        self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", value_ty])
+    }
+
     pub(super) fn gen_buffer_builtin_call(
         &mut self,
         name: &str,
@@ -2188,143 +2201,45 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_buffer_close_call(name, args, span, fctx))
             }
-            "buf_read_u8"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
+            "buf_read_u8" if self.sig_matches_buffer_read_result(name, "UInt8") => {
                 Some(self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u8", args, span, fctx))
             }
-            "buf_read_i16_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i16_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u16_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u16_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_i32_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i32_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u32_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u32_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_i64_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i64_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u64_be"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u64_be",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_i16_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i16_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u16_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u16_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_i32_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i32_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u32_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u32_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_i64_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_i64_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
-            "buf_read_u64_le"
-                if self.sig_matches_shape(name, &["ByteBuffer"], "Result[Int, BufferError]") =>
-            {
-                Some(self.gen_buffer_read_int_call(
-                    name,
-                    "aic_rt_buffer_read_u64_le",
-                    args,
-                    span,
-                    fctx,
-                ))
-            }
+            "buf_read_i16_be" if self.sig_matches_buffer_read_result(name, "Int16") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i16_be", args, span, fctx),
+            ),
+            "buf_read_u16_be" if self.sig_matches_buffer_read_result(name, "UInt16") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u16_be", args, span, fctx),
+            ),
+            "buf_read_i32_be" if self.sig_matches_buffer_read_result(name, "Int32") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i32_be", args, span, fctx),
+            ),
+            "buf_read_u32_be" if self.sig_matches_buffer_read_result(name, "UInt32") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u32_be", args, span, fctx),
+            ),
+            "buf_read_i64_be" if self.sig_matches_buffer_read_result(name, "Int64") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i64_be", args, span, fctx),
+            ),
+            "buf_read_u64_be" if self.sig_matches_buffer_read_result(name, "UInt64") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u64_be", args, span, fctx),
+            ),
+            "buf_read_i16_le" if self.sig_matches_buffer_read_result(name, "Int16") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i16_le", args, span, fctx),
+            ),
+            "buf_read_u16_le" if self.sig_matches_buffer_read_result(name, "UInt16") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u16_le", args, span, fctx),
+            ),
+            "buf_read_i32_le" if self.sig_matches_buffer_read_result(name, "Int32") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i32_le", args, span, fctx),
+            ),
+            "buf_read_u32_le" if self.sig_matches_buffer_read_result(name, "UInt32") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u32_le", args, span, fctx),
+            ),
+            "buf_read_i64_le" if self.sig_matches_buffer_read_result(name, "Int64") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_i64_le", args, span, fctx),
+            ),
+            "buf_read_u64_le" if self.sig_matches_buffer_read_result(name, "UInt64") => Some(
+                self.gen_buffer_read_int_call(name, "aic_rt_buffer_read_u64_le", args, span, fctx),
+            ),
             "buf_read_bytes"
                 if self.sig_matches_shape(
                     name,
@@ -2356,142 +2271,131 @@ impl<'a> Generator<'a> {
                     fctx,
                 ))
             }
-            "buf_write_u8" if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) => {
+            "buf_write_u8" if self.sig_matches_buffer_write_result(name, "UInt8") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u8",
+                    "UInt8",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i16_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i16_be" if self.sig_matches_buffer_write_result(name, "Int16") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i16_be",
+                    "Int16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u16_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u16_be" if self.sig_matches_buffer_write_result(name, "UInt16") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u16_be",
+                    "UInt16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i32_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i32_be" if self.sig_matches_buffer_write_result(name, "Int32") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i32_be",
+                    "Int32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u32_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u32_be" if self.sig_matches_buffer_write_result(name, "UInt32") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u32_be",
+                    "UInt32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i64_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i64_be" if self.sig_matches_buffer_write_result(name, "Int64") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i64_be",
+                    "Int64",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u64_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u64_be" if self.sig_matches_buffer_write_result(name, "UInt64") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u64_be",
+                    "UInt64",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i16_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i16_le" if self.sig_matches_buffer_write_result(name, "Int16") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i16_le",
+                    "Int16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u16_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u16_le" if self.sig_matches_buffer_write_result(name, "UInt16") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u16_le",
+                    "UInt16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i32_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i32_le" if self.sig_matches_buffer_write_result(name, "Int32") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i32_le",
+                    "Int32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u32_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u32_le" if self.sig_matches_buffer_write_result(name, "UInt32") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u32_le",
+                    "UInt32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_i64_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_i64_le" if self.sig_matches_buffer_write_result(name, "Int64") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_i64_le",
+                    "Int64",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_write_u64_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int"]) =>
-            {
+            "buf_write_u64_le" if self.sig_matches_buffer_write_result(name, "UInt64") => {
                 Some(self.gen_buffer_write_int_call(
                     name,
                     "aic_rt_buffer_write_u64_le",
+                    "UInt64",
                     args,
                     span,
                     fctx,
@@ -2524,67 +2428,61 @@ impl<'a> Generator<'a> {
                     fctx,
                 ))
             }
-            "buf_patch_u16_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u16_be" if self.sig_matches_buffer_patch_result(name, "UInt16") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u16_be",
+                    "UInt16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_patch_u32_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u32_be" if self.sig_matches_buffer_patch_result(name, "UInt32") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u32_be",
+                    "UInt32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_patch_u64_be"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u64_be" if self.sig_matches_buffer_patch_result(name, "UInt64") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u64_be",
+                    "UInt64",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_patch_u16_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u16_le" if self.sig_matches_buffer_patch_result(name, "UInt16") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u16_le",
+                    "UInt16",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_patch_u32_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u32_le" if self.sig_matches_buffer_patch_result(name, "UInt32") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u32_le",
+                    "UInt32",
                     args,
                     span,
                     fctx,
                 ))
             }
-            "buf_patch_u64_le"
-                if self.sig_matches_buffer_unit_result(name, &["ByteBuffer", "Int", "Int"]) =>
-            {
+            "buf_patch_u64_le" if self.sig_matches_buffer_patch_result(name, "UInt64") => {
                 Some(self.gen_buffer_patch_int_call(
                     name,
                     "aic_rt_buffer_patch_u64_le",
+                    "UInt64",
                     args,
                     span,
                     fctx,
@@ -3059,11 +2957,15 @@ impl<'a> Generator<'a> {
         let out_value = self.new_temp();
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", out_value, out_slot));
-        let ok_payload = Value {
-            ty: LType::Int,
-            repr: Some(out_value),
-        };
         let result_ty = self.buffer_result_ty(name, span)?;
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        let ok_repr = self.cast_i64_to_integral_repr(&out_value, &ok_ty, name, span, fctx)?;
+        let ok_payload = Value {
+            ty: ok_ty,
+            repr: Some(ok_repr),
+        };
         self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
     }
 
@@ -3185,6 +3087,7 @@ impl<'a> Generator<'a> {
         &mut self,
         name: &str,
         runtime_fn: &str,
+        expected_value_ty: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -3200,10 +3103,11 @@ impl<'a> Generator<'a> {
         }
         let buffer = self.gen_expr(&args[0], fctx)?;
         let value = self.gen_expr(&args[1], fctx)?;
-        if value.ty != LType::Int {
+        let expected_ty = self.parse_type_repr(expected_value_ty, args[1].span)?;
+        if value.ty != expected_ty {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                format!("{name} expects Int value"),
+                format!("{name} expects {expected_value_ty} value"),
                 self.file,
                 args[1].span,
             ));
@@ -3211,13 +3115,11 @@ impl<'a> Generator<'a> {
         }
         let handle =
             self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let runtime_value = self.cast_integral_value_to_i64(&value, name, args[1].span, fctx)?;
         let err = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i64 {}, i64 {})",
-            err,
-            runtime_fn,
-            handle,
-            value.repr.clone().unwrap_or_else(|| "0".to_string())
+            err, runtime_fn, handle, runtime_value
         ));
         let result_ty = self.buffer_result_ty(name, span)?;
         let ok_payload = Value {
@@ -3231,6 +3133,7 @@ impl<'a> Generator<'a> {
         &mut self,
         name: &str,
         runtime_fn: &str,
+        expected_value_ty: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -3247,10 +3150,11 @@ impl<'a> Generator<'a> {
         let buffer = self.gen_expr(&args[0], fctx)?;
         let offset = self.gen_expr(&args[1], fctx)?;
         let value = self.gen_expr(&args[2], fctx)?;
-        if offset.ty != LType::Int || value.ty != LType::Int {
+        let expected_ty = self.parse_type_repr(expected_value_ty, args[2].span)?;
+        if offset.ty != LType::Int || value.ty != expected_ty {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                format!("{name} expects (ByteBuffer, Int, Int)"),
+                format!("{name} expects (ByteBuffer, Int, {expected_value_ty})"),
                 self.file,
                 span,
             ));
@@ -3258,6 +3162,7 @@ impl<'a> Generator<'a> {
         }
         let handle =
             self.extract_named_handle_from_value(&buffer, "ByteBuffer", name, args[0].span, fctx)?;
+        let runtime_value = self.cast_integral_value_to_i64(&value, name, args[2].span, fctx)?;
         let err = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i64 {}, i64 {}, i64 {})",
@@ -3265,7 +3170,7 @@ impl<'a> Generator<'a> {
             runtime_fn,
             handle,
             offset.repr.clone().unwrap_or_else(|| "0".to_string()),
-            value.repr.clone().unwrap_or_else(|| "0".to_string())
+            runtime_value
         ));
         let result_ty = self.buffer_result_ty(name, span)?;
         let ok_payload = Value {
@@ -3273,6 +3178,75 @@ impl<'a> Generator<'a> {
             repr: None,
         };
         self.wrap_buffer_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn cast_integral_value_to_i64(
+        &mut self,
+        value: &Value,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let Some(width) = integer_width_bits(&value.ty) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects an integral value"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        if width == 64 {
+            return Some(repr);
+        }
+        let cast = self.new_temp();
+        let op = if is_unsigned_integer_type(&value.ty) {
+            "zext"
+        } else {
+            "sext"
+        };
+        fctx.lines.push(format!(
+            "  {} = {} {} {} to i64",
+            cast,
+            op,
+            llvm_type(&value.ty),
+            repr
+        ));
+        Some(cast)
+    }
+
+    pub(super) fn cast_i64_to_integral_repr(
+        &mut self,
+        value_i64: &str,
+        target_ty: &LType,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let Some(width) = integer_width_bits(target_ty) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{context} expects integral buffer result payload"),
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if width == 64 {
+            return Some(value_i64.to_string());
+        }
+        let cast = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = trunc i64 {} to {}",
+            cast,
+            value_i64,
+            llvm_type(target_ty)
+        ));
+        Some(cast)
     }
 
     pub(super) fn gen_buffer_write_bytes_call(

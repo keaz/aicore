@@ -1,6 +1,57 @@
 use super::*;
 
 impl<'a> Generator<'a> {
+    fn store_match_arm_value(
+        &mut self,
+        value: Value,
+        arm_span: crate::span::Span,
+        expected_hint: Option<&LType>,
+        result_slot: &mut Option<String>,
+        result_ty: &mut Option<LType>,
+        fctx: &mut FnCtx,
+    ) -> bool {
+        if value.ty == LType::Unit {
+            return true;
+        }
+
+        if result_slot.is_none() {
+            let slot_ty = expected_hint
+                .filter(|ty| **ty != LType::Unit)
+                .cloned()
+                .unwrap_or_else(|| value.ty.clone());
+            let ptr = self.alloc_entry_slot(&slot_ty, fctx);
+            *result_ty = Some(slot_ty);
+            *result_slot = Some(ptr);
+        }
+
+        let (Some(slot), Some(expected_ty)) = (result_slot.as_ref(), result_ty.as_ref()) else {
+            return false;
+        };
+
+        let Some(value) = self.coerce_value_to_expected(value, expected_ty, arm_span, fctx) else {
+            return false;
+        };
+        if value.ty != *expected_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "match arms resolved to incompatible types",
+                self.file,
+                arm_span,
+            ));
+            return false;
+        }
+
+        let repr = coerce_repr(&value, expected_ty);
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(expected_ty),
+            repr,
+            llvm_type(expected_ty),
+            slot
+        ));
+        true
+    }
+
     pub(super) fn build_no_payload_enum_with_tag(
         &mut self,
         layout: &EnumLayoutType,
@@ -74,9 +125,7 @@ impl<'a> Generator<'a> {
             }
         } else if template.generics.is_empty() {
             match self.parse_type_repr(name, span) {
-                Some(LType::Struct(layout)) if base_type_name(&layout.repr) == name => {
-                    Some(layout)
-                }
+                Some(LType::Struct(layout)) if base_type_name(&layout.repr) == name => Some(layout),
                 _ => None,
             }
         } else {
@@ -104,7 +153,8 @@ impl<'a> Generator<'a> {
                     .find(|info| info.name == *field_name)
                     .map(|info| &info.ty)
             });
-            let value = self.gen_expr_with_expected(field_expr, field_expected_from_layout, fctx)?;
+            let value =
+                self.gen_expr_with_expected(field_expr, field_expected_from_layout, fctx)?;
             provided.insert(field_name.clone(), (value, *field_span));
         }
 
@@ -1393,33 +1443,14 @@ impl<'a> Generator<'a> {
         let t_term = fctx.terminated;
         if !t_term {
             if let Some(tv) = tv {
-                if tv.ty != LType::Unit {
-                    if result_slot.is_none() {
-                        let ptr = self.alloc_entry_slot(&tv.ty, fctx);
-                        result_ty = Some(tv.ty.clone());
-                        result_slot = Some(ptr);
-                    }
-                    if let (Some(slot), Some(expected_ty)) =
-                        (result_slot.as_ref(), result_ty.as_ref())
-                    {
-                        if tv.ty != *expected_ty {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E5016",
-                                "match arms resolved to incompatible types",
-                                self.file,
-                                true_arm.span,
-                            ));
-                        }
-                        let repr = coerce_repr(&tv, expected_ty);
-                        fctx.lines.push(format!(
-                            "  store {} {}, {}* {}",
-                            llvm_type(expected_ty),
-                            repr,
-                            llvm_type(expected_ty),
-                            slot
-                        ));
-                    }
-                }
+                let _ = self.store_match_arm_value(
+                    tv,
+                    true_arm.span,
+                    expected_ty,
+                    &mut result_slot,
+                    &mut result_ty,
+                    fctx,
+                );
             }
             fctx.lines.push(format!("  br label %{}", cont_label));
         }
@@ -1433,33 +1464,14 @@ impl<'a> Generator<'a> {
         let e_term = fctx.terminated;
         if !e_term {
             if let Some(ev) = ev {
-                if ev.ty != LType::Unit {
-                    if result_slot.is_none() {
-                        let ptr = self.alloc_entry_slot(&ev.ty, fctx);
-                        result_ty = Some(ev.ty.clone());
-                        result_slot = Some(ptr);
-                    }
-                    if let (Some(slot), Some(expected_ty)) =
-                        (result_slot.as_ref(), result_ty.as_ref())
-                    {
-                        if ev.ty != *expected_ty {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E5016",
-                                "match arms resolved to incompatible types",
-                                self.file,
-                                false_arm.span,
-                            ));
-                        }
-                        let repr = coerce_repr(&ev, expected_ty);
-                        fctx.lines.push(format!(
-                            "  store {} {}, {}* {}",
-                            llvm_type(expected_ty),
-                            repr,
-                            llvm_type(expected_ty),
-                            slot
-                        ));
-                    }
-                }
+                let _ = self.store_match_arm_value(
+                    ev,
+                    false_arm.span,
+                    expected_ty,
+                    &mut result_slot,
+                    &mut result_ty,
+                    fctx,
+                );
             }
             fctx.lines.push(format!("  br label %{}", cont_label));
         }
@@ -1663,33 +1675,14 @@ impl<'a> Generator<'a> {
             if !arm_terminated {
                 terminated_all = false;
                 if let Some(value) = arm_value {
-                    if value.ty != LType::Unit {
-                        if result_slot.is_none() {
-                            let ptr = self.alloc_entry_slot(&value.ty, fctx);
-                            result_ty = Some(value.ty.clone());
-                            result_slot = Some(ptr);
-                        }
-                        if let (Some(slot), Some(expected_ty)) =
-                            (result_slot.as_ref(), result_ty.as_ref())
-                        {
-                            if value.ty != *expected_ty {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "E5016",
-                                    "match arms resolved to incompatible types",
-                                    self.file,
-                                    arm.span,
-                                ));
-                            }
-                            let repr = coerce_repr(&value, expected_ty);
-                            fctx.lines.push(format!(
-                                "  store {} {}, {}* {}",
-                                llvm_type(expected_ty),
-                                repr,
-                                llvm_type(expected_ty),
-                                slot
-                            ));
-                        }
-                    }
+                    let _ = self.store_match_arm_value(
+                        value,
+                        arm.span,
+                        expected_ty,
+                        &mut result_slot,
+                        &mut result_ty,
+                        fctx,
+                    );
                 }
                 fctx.lines.push(format!("  br label %{}", cont_label));
             }
@@ -1813,33 +1806,14 @@ impl<'a> Generator<'a> {
             let arm_terminated = fctx.terminated;
             if !arm_terminated {
                 if let Some(value) = arm_value {
-                    if value.ty != LType::Unit {
-                        if result_slot.is_none() {
-                            let ptr = self.alloc_entry_slot(&value.ty, fctx);
-                            result_ty = Some(value.ty.clone());
-                            result_slot = Some(ptr);
-                        }
-                        if let (Some(slot), Some(expected_ty)) =
-                            (result_slot.as_ref(), result_ty.as_ref())
-                        {
-                            if value.ty != *expected_ty {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "E5016",
-                                    "match arms resolved to incompatible types",
-                                    self.file,
-                                    arm.span,
-                                ));
-                            }
-                            let repr = coerce_repr(&value, expected_ty);
-                            fctx.lines.push(format!(
-                                "  store {} {}, {}* {}",
-                                llvm_type(expected_ty),
-                                repr,
-                                llvm_type(expected_ty),
-                                slot
-                            ));
-                        }
-                    }
+                    let _ = self.store_match_arm_value(
+                        value,
+                        arm.span,
+                        expected_ty,
+                        &mut result_slot,
+                        &mut result_ty,
+                        fctx,
+                    );
                 }
                 fctx.lines.push(format!("  br label %{}", cont_label));
             }
@@ -1892,19 +1866,27 @@ impl<'a> Generator<'a> {
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some("1".to_string()),
             ir::PatternKind::Int(v) => {
-                if value.ty != LType::Int {
+                if !is_integral_type(&value.ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E5017",
-                        "tuple match int pattern expects Int value",
+                        "tuple match int pattern expects integer value",
                         self.file,
                         pattern.span,
                     ));
                     return Some("0".to_string());
                 }
                 let reg = self.new_temp();
-                let repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
-                fctx.lines
-                    .push(format!("  {} = icmp eq i64 {}, {}", reg, repr, v));
+                let repr = value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&value.ty));
+                fctx.lines.push(format!(
+                    "  {} = icmp eq {} {}, {}",
+                    reg,
+                    llvm_type(&value.ty),
+                    repr,
+                    v
+                ));
                 Some(reg)
             }
             ir::PatternKind::Char(v) => {
@@ -2945,6 +2927,14 @@ impl<'a> Generator<'a> {
         let repr = normalized.trim();
         match repr {
             "Int" => return Some(LType::Int),
+            "Int8" => return Some(LType::Int8),
+            "Int16" => return Some(LType::Int16),
+            "Int32" => return Some(LType::Int32),
+            "Int64" => return Some(LType::Int64),
+            "UInt8" => return Some(LType::UInt8),
+            "UInt16" => return Some(LType::UInt16),
+            "UInt32" => return Some(LType::UInt32),
+            "UInt64" => return Some(LType::UInt64),
             "Float" => return Some(LType::Float),
             "Bool" => return Some(LType::Bool),
             "Char" => return Some(LType::Char),

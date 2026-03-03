@@ -35,6 +35,10 @@ struct Bytes {
     data: String,
 }
 
+fn zero_u8() -> UInt8 {
+    0
+}
+
 /// `aic_bytes_byte_at_intrinsic` in `std.bytes`.
 ///
 /// ## Example
@@ -47,7 +51,7 @@ struct Bytes {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int;
+intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> UInt8;
 /// `aic_bytes_from_byte_values_intrinsic` in `std.bytes`.
 ///
 /// ## Example
@@ -60,7 +64,7 @@ intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String;
+intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[UInt8]) -> String;
 
 /// `aic_bytes_len_intrinsic` in `std.bytes`.
 ///
@@ -210,7 +214,7 @@ fn concat(left: Bytes, right: Bytes) -> Bytes {
     while i < right_values.len {
         let value = match aic_vec_get_intrinsic(right_values, i) {
             Some(v) => v,
-            None => 0,
+            None => zero_u8(),
         };
         values = aic_vec_push_intrinsic(values, value);
         i = i + 1;
@@ -287,13 +291,13 @@ fn is_valid_utf8(data: Bytes) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn byte_at(data: Bytes, index: Int) -> Result[Int, BytesError] {
+fn byte_at(data: Bytes, index: Int) -> Result[UInt8, BytesError] {
     let len = byte_len(data);
     if index < 0 || index >= len {
-        let out: Result[Int, BytesError] = Err(InvalidInput());
+        let out: Result[UInt8, BytesError] = Err(InvalidInput());
         out
     } else {
-        let out: Result[Int, BytesError] = Ok(aic_bytes_byte_at_intrinsic(data.data, index));
+        let out: Result[UInt8, BytesError] = Ok(aic_bytes_byte_at_intrinsic(data.data, index));
         out
     }
 }
@@ -335,33 +339,28 @@ fn byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn find_byte(data: Bytes, value: Int) -> Option[Int] {
-    if value < 0 || value > 255 {
-        let out: Option[Int] = None();
+fn find_byte(data: Bytes, value: UInt8) -> Option[Int] {
+    let len = byte_len(data);
+    let mut i = 0;
+    let mut found = -1;
+    while i < len {
+        let b = match byte_at(data, i) {
+            Ok(v) => v,
+            Err(_) => zero_u8(),
+        };
+        if b == value && found < 0 {
+            found = i;
+        } else {
+            ();
+        };
+        i = i + 1;
+    };
+    if found >= 0 {
+        let out: Option[Int] = Some(found);
         out
     } else {
-        let len = byte_len(data);
-        let mut i = 0;
-        let mut found = -1;
-        while i < len {
-            let b = match byte_at(data, i) {
-                Ok(v) => v,
-                Err(_) => -1,
-            };
-            if b == value && found < 0 {
-                found = i;
-            } else {
-                ();
-            };
-            i = i + 1;
-        };
-        if found >= 0 {
-            let out: Option[Int] = Some(found);
-            out
-        } else {
-            let out: Option[Int] = None();
-            out
-        }
+        let out: Option[Int] = None();
+        out
     }
 }
 
@@ -418,11 +417,11 @@ fn compare_bytes(a: Bytes, b: Bytes) -> Int {
     while i < len_a && i < len_b && !done {
         let av = match byte_at(a, i) {
             Ok(v) => v,
-            Err(_) => 0,
+            Err(_) => zero_u8(),
         };
         let bv = match byte_at(b, i) {
             Ok(v) => v,
-            Err(_) => 0,
+            Err(_) => zero_u8(),
         };
         if av < bv {
             cmp = -1;
@@ -464,30 +463,11 @@ fn compare_bytes(a: Bytes, b: Bytes) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError] {
-    let mut i = 0;
-    let mut valid = true;
-    while i < values.len {
-        let v = match aic_vec_get_intrinsic(values, i) {
-            Some(byte) => byte,
-            None => -1,
-        };
-        if (v < 0 || v > 255) && valid {
-            valid = false;
-        } else {
-            ();
-        };
-        i = i + 1;
-    };
-    if valid {
-        let out: Result[Bytes, BytesError] = Ok(Bytes {
-            data: aic_bytes_from_byte_values_intrinsic(values),
-        });
-        out
-    } else {
-        let out: Result[Bytes, BytesError] = Err(InvalidInput());
-        out
-    }
+fn from_byte_values(values: Vec[UInt8]) -> Result[Bytes, BytesError] {
+    let out: Result[Bytes, BytesError] = Ok(Bytes {
+        data: aic_bytes_from_byte_values_intrinsic(values),
+    });
+    out
 }
 
 /// `to_byte_values` in `std.bytes`.
@@ -502,14 +482,14 @@ fn from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn to_byte_values(data: Bytes) -> Vec[Int] {
-    let mut out: Vec[Int] = vec.new_vec();
+fn to_byte_values(data: Bytes) -> Vec[UInt8] {
+    let mut out: Vec[UInt8] = vec.new_vec();
     let len = byte_len(data);
     let mut i = 0;
     while i < len {
         let value = match byte_at(data, i) {
             Ok(v) => v,
-            Err(_) => 0,
+            Err(_) => zero_u8(),
         };
         out = aic_vec_push_intrinsic(out, value);
         i = i + 1;

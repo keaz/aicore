@@ -801,6 +801,32 @@ fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result
     tcp_recv(stream.handle, max_bytes, timeout_ms)
 }
 
+fn net_zero_u8() -> UInt8 {
+    0
+}
+
+fn net_one_u8() -> UInt8 {
+    1
+}
+
+fn net_u8_to_int(value: UInt8) -> Int {
+    let mut out = 0;
+    let mut current: UInt8 = net_zero_u8();
+    let one = net_one_u8();
+    while current != value {
+        current = current + one;
+        out = out + 1;
+    };
+    out
+}
+
+fn tcp_stream_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, NetError] {
+    match byte_at(header, index) {
+        Ok(value) => Ok(net_u8_to_int(value)),
+        Err(_) => Err(InvalidInput()),
+    }
+}
+
 /// `tcp_stream_frame_len_be` in `std.net`.
 ///
 /// ## Example
@@ -817,26 +843,18 @@ fn tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError] {
     if byte_len(header) != 4 {
         Err(InvalidInput())
     } else {
-        let b0 = match byte_at(header, 0) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b1 = match byte_at(header, 1) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b2 = match byte_at(header, 2) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b3 = match byte_at(header, 3) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
-            Err(InvalidInput())
-        } else {
-            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
+        match tcp_stream_frame_byte_to_int(header, 0) {
+            Err(err) => Err(err),
+            Ok(b0) => match tcp_stream_frame_byte_to_int(header, 1) {
+                Err(err) => Err(err),
+                Ok(b1) => match tcp_stream_frame_byte_to_int(header, 2) {
+                    Err(err) => Err(err),
+                    Ok(b2) => match tcp_stream_frame_byte_to_int(header, 3) {
+                        Err(err) => Err(err),
+                        Ok(b3) => Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3),
+                    },
+                },
+            },
         }
     }
 }

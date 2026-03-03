@@ -203,10 +203,16 @@ impl<'a> Generator<'a> {
                     fctx,
                 ))
             }
-            "bytes_byte_at" if self.sig_matches_shape(name, &["String", "Int"], "Int") => {
-                Some(self.gen_bytes_byte_at_call(args, span, fctx))
+            "bytes_byte_at" if self.sig_matches_shape(name, &["String", "Int"], "UInt8") => {
+                Some(self.gen_bytes_byte_at_call(args, span, LType::UInt8, fctx))
             }
-            "bytes_from_byte_values" if self.sig_matches_shape(name, &["Vec[Int]"], "String") => {
+            "bytes_byte_at" if self.sig_matches_shape(name, &["String", "Int"], "Int") => {
+                Some(self.gen_bytes_byte_at_call(args, span, LType::Int, fctx))
+            }
+            "bytes_from_byte_values"
+                if self.sig_matches_shape(name, &["Vec[UInt8]"], "String")
+                    || self.sig_matches_shape(name, &["Vec[Int]"], "String") =>
+            {
                 Some(self.gen_bytes_from_byte_values_call(args, span, fctx))
             }
             "join" if self.sig_matches_shape(name, &["Vec[String]", "String"], "String") => {
@@ -540,6 +546,7 @@ impl<'a> Generator<'a> {
         &mut self,
         args: &[ir::Expr],
         span: crate::span::Span,
+        result_ty: LType,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if args.len() != 2 {
@@ -572,9 +579,22 @@ impl<'a> Generator<'a> {
             data_cap,
             index.repr.clone().unwrap_or_else(|| "0".to_string())
         ));
+
+        let repr = if result_ty == LType::Int {
+            out
+        } else {
+            let coerced = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = trunc i64 {} to {}",
+                coerced,
+                out,
+                llvm_type(&result_ty)
+            ));
+            coerced
+        };
         Some(Value {
-            ty: LType::Int,
-            repr: Some(out),
+            ty: result_ty,
+            repr: Some(repr),
         })
     }
 
@@ -599,10 +619,10 @@ impl<'a> Generator<'a> {
             "aic_bytes_from_byte_values_intrinsic",
             args[0].span,
         )?;
-        if elem_ty != LType::Int {
+        if elem_ty != LType::Int && elem_ty != LType::UInt8 {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "aic_bytes_from_byte_values_intrinsic expects Vec[Int]",
+                "aic_bytes_from_byte_values_intrinsic expects Vec[UInt8]",
                 self.file,
                 args[0].span,
             ));
@@ -620,9 +640,14 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
         let out_len_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let runtime_fn = if elem_ty == LType::UInt8 {
+            "aic_rt_bytes_from_u8_values"
+        } else {
+            "aic_rt_bytes_from_byte_values"
+        };
         fctx.lines.push(format!(
-            "  call void @aic_rt_bytes_from_byte_values(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
-            values_ptr, values_len, values_cap, out_ptr_slot, out_len_slot
+            "  call void @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            runtime_fn, values_ptr, values_len, values_cap, out_ptr_slot, out_len_slot
         ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }

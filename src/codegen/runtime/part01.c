@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdint.h>
 #include <math.h>
@@ -795,9 +796,9 @@ static void aic_rt_mock_write_stderr(const char* ptr, size_t len) {
         (void)aic_rt_mock_buffer_append(&aic_rt_mock_stderr, ptr, len);
     }
 }
-void aic_rt_print_int(long x) {
+void aic_rt_print_int(int64_t x) {
     char buf[64];
-    int written = snprintf(buf, sizeof(buf), "%ld\n", x);
+    int written = snprintf(buf, sizeof(buf), "%" PRId64 "\n", x);
     if (written <= 0) {
         return;
     }
@@ -950,7 +951,7 @@ long aic_rt_read_line(char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_read_int(long* out_value) {
+int64_t aic_rt_read_int(int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -976,8 +977,8 @@ long aic_rt_read_int(long* out_value) {
 
     errno = 0;
     char* tail = NULL;
-    long parsed = strtol(start, &tail, 10);
-    if (tail == start || errno == ERANGE) {
+    intmax_t parsed = strtoimax(start, &tail, 10);
+    if (tail == start || errno == ERANGE || parsed < INT64_MIN || parsed > INT64_MAX) {
         free(line);
         return 2;
     }
@@ -990,7 +991,7 @@ long aic_rt_read_int(long* out_value) {
     }
 
     if (out_value != NULL) {
-        *out_value = parsed;
+        *out_value = (int64_t)parsed;
     }
     free(line);
     return 0;
@@ -1138,9 +1139,9 @@ void aic_rt_eprint_str(const char* ptr, long len, long cap) {
     }
 }
 
-void aic_rt_eprint_int(long x) {
+void aic_rt_eprint_int(int64_t x) {
     char buf[64];
-    int written = snprintf(buf, sizeof(buf), "%ld", x);
+    int written = snprintf(buf, sizeof(buf), "%" PRId64, x);
     if (written <= 0) {
         return;
     }
@@ -1171,9 +1172,9 @@ void aic_rt_println_str(const char* ptr, long len, long cap) {
     }
 }
 
-void aic_rt_println_int(long x) {
+void aic_rt_println_int(int64_t x) {
     char buf[64];
-    int written = snprintf(buf, sizeof(buf), "%ld\n", x);
+    int written = snprintf(buf, sizeof(buf), "%" PRId64 "\n", x);
     if (written <= 0) {
         return;
     }
@@ -1183,7 +1184,7 @@ void aic_rt_println_int(long x) {
     }
 }
 
-void aic_rt_print_bool(long value) {
+void aic_rt_print_bool(int64_t value) {
     const char* text = value != 0 ? "true" : "false";
     size_t len = value != 0 ? 4 : 5;
     aic_rt_mock_write_stdout(text, len);
@@ -1192,7 +1193,7 @@ void aic_rt_print_bool(long value) {
     }
 }
 
-void aic_rt_println_bool(long value) {
+void aic_rt_println_bool(int64_t value) {
     const char* text = value != 0 ? "true\n" : "false\n";
     size_t len = value != 0 ? 5 : 6;
     aic_rt_mock_write_stdout(text, len);

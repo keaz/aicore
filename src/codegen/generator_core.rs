@@ -320,6 +320,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_map_entries_int_bool_key(i64, i8**, i64*)\n\n");
         text.push_str("declare i64 @aic_rt_bytes_byte_at(i8*, i64, i64, i64)\n");
         text.push_str("declare void @aic_rt_bytes_from_byte_values(i8*, i64, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_bytes_from_u8_values(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_new(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_new_growable(i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_buffer_from_bytes(i8*, i64, i64, i64*)\n");
@@ -1147,8 +1148,8 @@ impl<'a> Generator<'a> {
                     LType::Unit => fctx.lines.push("  ret void".to_string()),
                     _ => {
                         if let Some(value) = tail {
-                            let coerced =
-                                self.coerce_value_to_expected(value, &sig.ret, func.span, &mut fctx);
+                            let coerced = self
+                                .coerce_value_to_expected(value, &sig.ret, func.span, &mut fctx);
                             if let Some(value) = coerced {
                                 if value.ty == sig.ret {
                                     fctx.lines.push(format!(
@@ -1216,11 +1217,26 @@ impl<'a> Generator<'a> {
         self.out
             .push("  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)".to_string());
         match main_sig.ret {
-            LType::Int => {
+            ref ty if is_integral_type(ty) => {
                 let r = self.new_temp();
                 let c = self.new_temp();
-                self.out.push(format!("  {} = call i64 @aic_main()", r));
-                self.out.push(format!("  {} = trunc i64 {} to i32", c, r));
+                self.out
+                    .push(format!("  {} = call {} @aic_main()", r, llvm_type(ty)));
+                let width = integer_width_bits(ty).unwrap_or(64);
+                if width > 32 {
+                    self.out
+                        .push(format!("  {} = trunc {} {} to i32", c, llvm_type(ty), r));
+                } else if width < 32 {
+                    let cast = if is_unsigned_integer_type(ty) {
+                        "zext"
+                    } else {
+                        "sext"
+                    };
+                    self.out
+                        .push(format!("  {} = {} {} {} to i32", c, cast, llvm_type(ty), r));
+                } else {
+                    self.out.push(format!("  {} = add i32 {}, 0", c, r));
+                }
                 self.out.push(format!("  ret i32 {}", c));
             }
             LType::Bool => {
@@ -1242,7 +1258,7 @@ impl<'a> Generator<'a> {
                     llvm_type(&main_sig.ret)
                 ));
                 match inner.as_ref() {
-                    LType::Int => {
+                    ty if is_integral_type(ty) => {
                         let value = self.new_temp();
                         let c = self.new_temp();
                         self.out.push(format!(
@@ -1251,8 +1267,30 @@ impl<'a> Generator<'a> {
                             llvm_type(&main_sig.ret),
                             async_reg
                         ));
-                        self.out
-                            .push(format!("  {} = trunc i64 {} to i32", c, value));
+                        let width = integer_width_bits(ty).unwrap_or(64);
+                        if width > 32 {
+                            self.out.push(format!(
+                                "  {} = trunc {} {} to i32",
+                                c,
+                                llvm_type(ty),
+                                value
+                            ));
+                        } else if width < 32 {
+                            let cast = if is_unsigned_integer_type(ty) {
+                                "zext"
+                            } else {
+                                "sext"
+                            };
+                            self.out.push(format!(
+                                "  {} = {} {} {} to i32",
+                                c,
+                                cast,
+                                llvm_type(ty),
+                                value
+                            ));
+                        } else {
+                            self.out.push(format!("  {} = add i32 {}, 0", c, value));
+                        }
                         self.out.push(format!("  ret i32 {}", c));
                     }
                     LType::Bool => {
@@ -2313,6 +2351,22 @@ impl<'a> Generator<'a> {
             .position(|field| field.name == field_name)
     }
 
+    fn int_literal_type_hint(&self, expr: &ir::Expr, expected_ty: Option<&LType>) -> Option<LType> {
+        if let Some(meta) = expr.int_literal_metadata() {
+            return Some(match meta.suffix {
+                crate::ast::IntLiteralSuffix::I8 => LType::Int8,
+                crate::ast::IntLiteralSuffix::I16 => LType::Int16,
+                crate::ast::IntLiteralSuffix::I32 => LType::Int32,
+                crate::ast::IntLiteralSuffix::I64 => LType::Int64,
+                crate::ast::IntLiteralSuffix::U8 => LType::UInt8,
+                crate::ast::IntLiteralSuffix::U16 => LType::UInt16,
+                crate::ast::IntLiteralSuffix::U32 => LType::UInt32,
+                crate::ast::IntLiteralSuffix::U64 => LType::UInt64,
+            });
+        }
+        expected_ty.filter(|ty| is_integral_type(ty)).cloned()
+    }
+
     pub(super) fn gen_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> Option<Value> {
         self.gen_expr_with_expected(expr, None, fctx)
     }
@@ -2324,10 +2378,15 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         match &expr.kind {
-            ir::ExprKind::Int(v) => Some(Value {
-                ty: LType::Int,
-                repr: Some(v.to_string()),
-            }),
+            ir::ExprKind::Int(v) => {
+                let literal_ty = self
+                    .int_literal_type_hint(expr, expected_ty)
+                    .unwrap_or(LType::Int);
+                Some(Value {
+                    ty: literal_ty,
+                    repr: Some(v.to_string()),
+                })
+            }
             ir::ExprKind::Float(v) => Some(Value {
                 ty: LType::Float,
                 repr: Some(llvm_float_literal(*v)),
@@ -2387,12 +2446,13 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Unary { op, expr: inner } => {
                 let value = self.gen_expr(inner, fctx)?;
                 match (op, value.ty.clone()) {
-                    (UnaryOp::Neg, LType::Int) => {
+                    (UnaryOp::Neg, ty) if is_signed_integer_type(&ty) => {
                         let reg = self.new_temp();
-                        let repr = value.repr.unwrap_or_else(|| "0".to_string());
-                        fctx.lines.push(format!("  {} = sub i64 0, {}", reg, repr));
+                        let repr = value.repr.unwrap_or_else(|| default_value(&ty));
+                        fctx.lines
+                            .push(format!("  {} = sub {} 0, {}", reg, llvm_type(&ty), repr));
                         Some(Value {
-                            ty: LType::Int,
+                            ty,
                             repr: Some(reg),
                         })
                     }
@@ -2415,12 +2475,13 @@ impl<'a> Generator<'a> {
                             repr: Some(reg),
                         })
                     }
-                    (UnaryOp::BitNot, LType::Int) => {
+                    (UnaryOp::BitNot, ty) if is_integral_type(&ty) => {
                         let reg = self.new_temp();
-                        let repr = value.repr.unwrap_or_else(|| "0".to_string());
-                        fctx.lines.push(format!("  {} = xor i64 {}, -1", reg, repr));
+                        let repr = value.repr.unwrap_or_else(|| default_value(&ty));
+                        fctx.lines
+                            .push(format!("  {} = xor {} {}, -1", reg, llvm_type(&ty), repr));
                         Some(Value {
-                            ty: LType::Int,
+                            ty,
                             repr: Some(reg),
                         })
                     }
@@ -2513,26 +2574,55 @@ impl<'a> Generator<'a> {
     ) -> Option<Value> {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+                let mut lhs = lhs;
+                let mut rhs = rhs;
+                if is_integral_type(&lhs.ty) && is_integral_type(&rhs.ty) && lhs.ty != rhs.ty {
+                    if let Some(common_ty) = comparison_integral_common_type(&lhs.ty, &rhs.ty) {
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(lhs.clone(), &common_ty, span, fctx)
+                        {
+                            lhs = coerced;
+                        }
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(rhs.clone(), &common_ty, span, fctx)
+                        {
+                            rhs = coerced;
+                        }
+                    }
+                }
                 match (&lhs.ty, &rhs.ty) {
-                    (LType::Int, LType::Int) => {
+                    (lhs_ty, rhs_ty) if lhs_ty == rhs_ty && is_integral_type(lhs_ty) => {
                         let inst = match op {
                             BinOp::Add => "add",
                             BinOp::Sub => "sub",
                             BinOp::Mul => "mul",
-                            BinOp::Div => "sdiv",
-                            BinOp::Mod => "srem",
+                            BinOp::Div => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "udiv"
+                                } else {
+                                    "sdiv"
+                                }
+                            }
+                            BinOp::Mod => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "urem"
+                                } else {
+                                    "srem"
+                                }
+                            }
                             _ => unreachable!(),
                         };
                         let reg = self.new_temp();
                         fctx.lines.push(format!(
-                            "  {} = {} i64 {}, {}",
+                            "  {} = {} {} {}, {}",
                             reg,
                             inst,
+                            llvm_type(lhs_ty),
                             lhs.repr.unwrap_or_else(|| "0".to_string()),
                             rhs.repr.unwrap_or_else(|| "0".to_string())
                         ));
                         Some(Value {
-                            ty: LType::Int,
+                            ty: lhs_ty.clone(),
                             repr: Some(reg),
                         })
                     }
@@ -2560,7 +2650,7 @@ impl<'a> Generator<'a> {
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
                             "E5006",
-                            "arithmetic codegen expects matching Int or Float operands",
+                            "arithmetic codegen expects matching integer or Float operands",
                             self.file,
                             span,
                         ));
@@ -2574,10 +2664,10 @@ impl<'a> Generator<'a> {
             | BinOp::Shl
             | BinOp::Shr
             | BinOp::Ushr => {
-                if lhs.ty != LType::Int || rhs.ty != LType::Int {
+                if lhs.ty != rhs.ty || !is_integral_type(&lhs.ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E5006",
-                        "bitwise codegen only supports Int operands",
+                        "bitwise codegen only supports matching integer operands",
                         self.file,
                         span,
                     ));
@@ -2588,36 +2678,84 @@ impl<'a> Generator<'a> {
                     BinOp::BitOr => "or",
                     BinOp::BitXor => "xor",
                     BinOp::Shl => "shl",
-                    BinOp::Shr => "ashr",
+                    BinOp::Shr => {
+                        if is_unsigned_integer_type(&lhs.ty) {
+                            "lshr"
+                        } else {
+                            "ashr"
+                        }
+                    }
                     BinOp::Ushr => "lshr",
                     _ => unreachable!(),
                 };
                 let reg = self.new_temp();
                 fctx.lines.push(format!(
-                    "  {} = {} i64 {}, {}",
+                    "  {} = {} {} {}, {}",
                     reg,
                     inst,
+                    llvm_type(&lhs.ty),
                     lhs.repr.unwrap_or_else(|| "0".to_string()),
                     rhs.repr.unwrap_or_else(|| "0".to_string())
                 ));
                 Some(Value {
-                    ty: LType::Int,
+                    ty: lhs.ty,
                     repr: Some(reg),
                 })
             }
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let mut lhs = lhs;
+                let mut rhs = rhs;
+                if is_integral_type(&lhs.ty) && is_integral_type(&rhs.ty) && lhs.ty != rhs.ty {
+                    if let Some(common_ty) = comparison_integral_common_type(&lhs.ty, &rhs.ty) {
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(lhs.clone(), &common_ty, span, fctx)
+                        {
+                            lhs = coerced;
+                        }
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(rhs.clone(), &common_ty, span, fctx)
+                        {
+                            rhs = coerced;
+                        }
+                    }
+                }
+
                 let (cmp, ty) = match (&lhs.ty, &rhs.ty) {
-                    (LType::Int, LType::Int) => {
+                    (lhs_ty, rhs_ty) if lhs_ty == rhs_ty && is_integral_type(lhs_ty) => {
                         let cmp = match op {
                             BinOp::Eq => "eq",
                             BinOp::Ne => "ne",
-                            BinOp::Lt => "slt",
-                            BinOp::Le => "sle",
-                            BinOp::Gt => "sgt",
-                            BinOp::Ge => "sge",
+                            BinOp::Lt => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "ult"
+                                } else {
+                                    "slt"
+                                }
+                            }
+                            BinOp::Le => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "ule"
+                                } else {
+                                    "sle"
+                                }
+                            }
+                            BinOp::Gt => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "ugt"
+                                } else {
+                                    "sgt"
+                                }
+                            }
+                            BinOp::Ge => {
+                                if is_unsigned_integer_type(lhs_ty) {
+                                    "uge"
+                                } else {
+                                    "sge"
+                                }
+                            }
                             _ => unreachable!(),
                         };
-                        (cmp, "i64")
+                        (cmp, llvm_type(lhs_ty))
                     }
                     (LType::Float, LType::Float) => {
                         let cmp = match op {
@@ -2629,11 +2767,11 @@ impl<'a> Generator<'a> {
                             BinOp::Ge => "oge",
                             _ => unreachable!(),
                         };
-                        (cmp, "double")
+                        (cmp, "double".to_string())
                     }
                     (LType::Bool, LType::Bool) if matches!(op, BinOp::Eq | BinOp::Ne) => {
                         let cmp = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
-                        (cmp, "i1")
+                        (cmp, "i1".to_string())
                     }
                     (LType::Char, LType::Char) => {
                         let cmp = match op {
@@ -2645,7 +2783,7 @@ impl<'a> Generator<'a> {
                             BinOp::Ge => "sge",
                             _ => unreachable!(),
                         };
-                        (cmp, "i32")
+                        (cmp, "i32".to_string())
                     }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
@@ -3232,6 +3370,14 @@ impl<'a> Generator<'a> {
             }
             LType::Enum(layout) => Some(base_type_name(&layout.repr).to_string()),
             LType::Int => Some("Int".to_string()),
+            LType::Int8 => Some("Int8".to_string()),
+            LType::Int16 => Some("Int16".to_string()),
+            LType::Int32 => Some("Int32".to_string()),
+            LType::Int64 => Some("Int64".to_string()),
+            LType::UInt8 => Some("UInt8".to_string()),
+            LType::UInt16 => Some("UInt16".to_string()),
+            LType::UInt32 => Some("UInt32".to_string()),
+            LType::UInt64 => Some("UInt64".to_string()),
             LType::Float => Some("Float".to_string()),
             LType::Bool => Some("Bool".to_string()),
             LType::String => Some("String".to_string()),
@@ -3304,11 +3450,68 @@ impl<'a> Generator<'a> {
         if value.ty == *expected {
             return Some(value);
         }
+        if is_integral_type(&value.ty) && is_integral_type(expected) {
+            return Some(self.coerce_integral_value(value, expected, fctx));
+        }
         match expected {
             LType::DynTrait(trait_name) => {
                 self.coerce_value_to_dyn_trait(value, trait_name, span, fctx)
             }
             _ => Some(value),
+        }
+    }
+
+    fn coerce_integral_value(
+        &mut self,
+        value: Value,
+        expected: &LType,
+        fctx: &mut FnCtx,
+    ) -> Value {
+        let Some(src_bits) = integer_width_bits(&value.ty) else {
+            return value;
+        };
+        let Some(dst_bits) = integer_width_bits(expected) else {
+            return value;
+        };
+        let repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        if src_bits == dst_bits {
+            return Value {
+                ty: expected.clone(),
+                repr: Some(repr),
+            };
+        }
+
+        let casted = self.new_temp();
+        if src_bits > dst_bits {
+            fctx.lines.push(format!(
+                "  {} = trunc {} {} to {}",
+                casted,
+                llvm_type(&value.ty),
+                repr,
+                llvm_type(expected)
+            ));
+        } else {
+            let op = if is_unsigned_integer_type(&value.ty) {
+                "zext"
+            } else {
+                "sext"
+            };
+            fctx.lines.push(format!(
+                "  {} = {} {} {} to {}",
+                casted,
+                op,
+                llvm_type(&value.ty),
+                repr,
+                llvm_type(expected)
+            ));
+        }
+
+        Value {
+            ty: expected.clone(),
+            repr: Some(casted),
         }
     }
 

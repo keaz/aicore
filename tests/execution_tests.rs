@@ -4638,7 +4638,7 @@ import std.io;
 import std.vec;
 
 fn make_payload() -> Bytes effects { env } capabilities { env } {
-    let mut raw: Vec[Int] = vec.new_vec();
+    let mut raw: Vec[UInt8] = vec.new_vec();
     raw = vec.push(raw, 0);
     raw = vec.push(raw, 255);
     raw = vec.push(raw, 16);
@@ -4650,9 +4650,9 @@ fn make_payload() -> Bytes effects { env } capabilities { env } {
 
 fn payload_ok(data: Bytes) -> Int effects { env } capabilities { env } {
     let values = bytes.to_byte_values(data);
-    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
-    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
-    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    let a = match vec.get(values, 0) { Some(v) => v, None => 0 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => 0 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => 0 };
     if vec.vec_len(values) == 3 && a == 0 && b == 255 && c == 16 { 1 } else { 0 }
 }
 
@@ -6928,6 +6928,7 @@ import std.net;
 import std.time;
 import std.bytes;
 import std.vec;
+import std.buffer;
 
 fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
@@ -6947,21 +6948,11 @@ fn is_invalid_input(err: NetError) -> Bool {
     }
 }
 
-fn frame_header(len: Int) -> Bytes {
-    let b0 = len / 16777216;
-    let rem0 = len - (b0 * 16777216);
-    let b1 = rem0 / 65536;
-    let rem1 = rem0 - (b1 * 65536);
-    let b2 = rem1 / 256;
-    let b3 = rem1 - (b2 * 256);
-    let mut values: Vec[Int] = vec.vec_of(b0);
-    values = vec.push(values, b1);
-    values = vec.push(values, b2);
-    values = vec.push(values, b3);
-    match bytes.from_byte_values(values) {
-        Ok(out) => out,
-        Err(_) => bytes.empty(),
-    }
+fn frame_header_u32(len: UInt32) -> Bytes {
+    let header = new_buffer(4);
+    let wrote = buf_write_u32_be(header, len);
+    let _status = wrote;
+    buffer_to_bytes(header)
 }
 
 struct TestTcpStream {
@@ -7010,31 +7001,7 @@ fn test_tcp_stream_recv_step(next: Result[Bytes, NetError]) -> TestTcpRecvStep {
 }
 
 fn test_tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError] {
-    if bytes.byte_len(header) != 4 {
-        Err(InvalidInput())
-    } else {
-        let b0 = match bytes.byte_at(header, 0) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b1 = match bytes.byte_at(header, 1) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b2 = match bytes.byte_at(header, 2) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        let b3 = match bytes.byte_at(header, 3) {
-            Ok(value) => value,
-            Err(_) => -1,
-        };
-        if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
-            Err(InvalidInput())
-        } else {
-            Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3)
-        }
-    }
+    tcp_stream_frame_len_be(header)
 }
 
 fn test_tcp_stream_recv_framed_payload(stream: TestTcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time } capabilities { net, time } {
@@ -7150,7 +7117,7 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
     let exact_ok = bytes.compare_bytes(exact_payload, bytes.from_string("abcdefg")) == 0;
 
     let frame_payload = bytes.from_string("frame");
-    let frame_header_bytes = frame_header(bytes.byte_len(frame_payload));
+    let frame_header_bytes = frame_header_u32(5u32);
     let sent_header = match test_tcp_stream_send(client_stream, frame_header_bytes) {
         Ok(n) => n,
         Err(_) => 0,
@@ -7169,7 +7136,7 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
     };
     let framed_ok = bytes.compare_bytes(framed_payload, frame_payload) == 0;
 
-    let oversized_header = frame_header(9);
+    let oversized_header = frame_header_u32(9u32);
     let sent_oversized_header = match test_tcp_stream_send(client_stream, oversized_header) {
         Ok(n) => n,
         Err(_) => 0,
@@ -10138,14 +10105,14 @@ import std.bytes;
 import std.buffer;
 import std.vec;
 
-fn int_or(v: Result[Int, BytesError], fallback: Int) -> Int {
+fn int_or(v: Result[UInt8, BytesError], fallback: Int) -> Int {
     match v {
         Ok(value) => value,
         Err(_) => fallback,
     }
 }
 
-fn int_or_buf(v: Result[Int, BufferError], fallback: Int) -> Int {
+fn int_or_buf(v: Result[UInt8, BufferError], fallback: Int) -> Int {
     match v {
         Ok(value) => value,
         Err(_) => fallback,
@@ -10157,7 +10124,7 @@ fn bool_to_int(v: Bool) -> Int {
 }
 
 fn main() -> Int effects { io } capabilities { io } {
-    let mut values: Vec[Int] = vec.new_vec();
+    let mut values: Vec[UInt8] = vec.new_vec();
     values = vec.push(values, 65);
     values = vec.push(values, 66);
     values = vec.push(values, 67);
@@ -10195,6 +10162,16 @@ fn main() -> Int effects { io } capabilities { io } {
     };
     let vec_last = int_or(bytes.byte_at(rebuilt, 3), -1);
 
+    let mut edge_values: Vec[UInt8] = vec.new_vec();
+    edge_values = vec.push(edge_values, 0);
+    edge_values = vec.push(edge_values, 255);
+    let edge_payload = match bytes.from_byte_values(edge_values) {
+        Ok(data) => data,
+        Err(_) => bytes.empty(),
+    };
+    let edge_first = int_or(bytes.byte_at(edge_payload, 0), -1);
+    let edge_last = int_or(bytes.byte_at(edge_payload, 1), -1);
+
     let buf = buffer_from_bytes(payload);
     let peek = int_or_buf(buf_peek_u8(buf, 2), -1);
     let pos_after_peek = buf_position(buf);
@@ -10216,12 +10193,14 @@ fn main() -> Int effects { io } capabilities { io } {
         suffix_ok +
         vec_len_ok +
         bool_to_int(vec_last == 255) +
+        bool_to_int(edge_first == 0) +
+        bool_to_int(edge_last == 255) +
         bool_to_int(peek == 67) +
         bool_to_int(pos_after_peek == 0) +
         bool_to_int(size == 4) +
         sliced_buf_ok;
 
-    if score == 13 {
+    if score == 15 {
         print_int(42);
     } else {
         print_int(0);
@@ -10396,7 +10375,14 @@ import std.buffer;
 import std.bytes;
 import std.string;
 
-fn read_int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+fn read_i32_or(v: Result[Int32, BufferError], fallback: Int32) -> Int32 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn read_i16_or(v: Result[Int16, BufferError], fallback: Int16) -> Int16 {
     match v {
         Ok(value) => value,
         Err(_) => fallback,
@@ -10426,15 +10412,20 @@ fn bytes_to_text_or(v: Bytes, fallback: String) -> String {
 
 fn main() -> Int effects { io } capabilities { io  } {
     let buf = new_buffer(128);
-    let write_placeholder = buf_write_i32_be(buf, 0);
-    let write_little = buf_write_i16_le(buf, 0x1234);
+    let placeholder: Int32 = 0;
+    let little_value: Int16 = 0x1234;
+    let frame_len_patch: Int32 = 23;
+    let wire_len_fallback: Int32 = -1;
+    let little_fallback: Int16 = -1;
+    let write_placeholder = buf_write_i32_be(buf, placeholder);
+    let write_little = buf_write_i16_le(buf, little_value);
     let write_cstring = buf_write_cstring(buf, "hello");
     let write_payload = buf_write_string_prefixed(buf, "payload");
 
     let frame_len = buf_position(buf);
     let seek_to_header = buf_seek(buf, 0);
-    let backpatch_len = buf_write_i32_be(buf, frame_len);
-    let seek_to_tail = buf_seek(buf, frame_len);
+    let backpatch_len = buf_write_i32_be(buf, frame_len_patch);
+    let seek_to_tail = buf_seek(buf, 23);
     let _write_status = write_placeholder;
     let _little_status = write_little;
     let _cstring_status = write_cstring;
@@ -10444,8 +10435,8 @@ fn main() -> Int effects { io } capabilities { io  } {
     let _seek_tail_status = seek_to_tail;
 
     buf_reset(buf);
-    let wire_len = read_int_or(buf_read_i32_be(buf), -1);
-    let little = read_int_or(buf_read_i16_le(buf), -1);
+    let wire_len = read_i32_or(buf_read_i32_be(buf), wire_len_fallback);
+    let little = read_i16_or(buf_read_i16_le(buf), little_fallback);
     let cstring = read_string_or(buf_read_cstring(buf), "bad");
     let payload = read_bytes_or_empty(buf_read_length_prefixed(buf));
     let payload_text = bytes_to_text_or(payload, "bad");
@@ -10453,7 +10444,7 @@ fn main() -> Int effects { io } capabilities { io  } {
     let cstring_ok = string.len(cstring) == 5 && string.contains(cstring, "hello");
     let payload_ok = string.len(payload_text) == 7 && string.contains(payload_text, "payload");
 
-    if wire_len == frame_len && little == 0x1234 && cstring_ok && payload_ok {
+    if frame_len == 23 && wire_len == frame_len_patch && little == little_value && cstring_ok && payload_ok {
         print_int(42);
     } else {
         print_int(0);
@@ -10472,7 +10463,7 @@ fn exec_buffer_negative_paths_are_typed_and_deterministic() {
 import std.io;
 import std.buffer;
 
-fn is_underflow(v: Result[Int, BufferError]) -> Bool {
+fn is_underflow(v: Result[UInt8, BufferError]) -> Bool {
     match v {
         Err(err) => match err {
             Underflow => true,
@@ -10514,13 +10505,16 @@ fn is_invalid_input(v: Result[(), BufferError]) -> Bool {
 
 fn main() -> Int effects { io } capabilities { io  } {
     let tiny = new_buffer(2);
-    let overflow_ok = is_overflow(buf_write_i32_be(tiny, 7));
+    let overflow_probe: Int32 = 7;
+    let invalid_utf8_byte: UInt8 = 255;
+    let nul_byte: UInt8 = 0;
+    let overflow_ok = is_overflow(buf_write_i32_be(tiny, overflow_probe));
     let underflow_ok = is_underflow(buf_read_u8(tiny));
     let invalid_seek_ok = is_invalid_input(buf_seek(tiny, 99));
 
     let utf = new_buffer(4);
-    let write_invalid_utf8_byte = buf_write_u8(utf, 255);
-    let write_nul = buf_write_u8(utf, 0);
+    let write_invalid_utf8_byte = buf_write_u8(utf, invalid_utf8_byte);
+    let write_nul = buf_write_u8(utf, nul_byte);
     buf_reset(utf);
     let _utf_write_status = write_invalid_utf8_byte;
     let _nul_status = write_nul;
@@ -10589,13 +10583,16 @@ fn unwrap_growable(v: Result[ByteBuffer, BufferError]) -> ByteBuffer {
 
 fn main() -> Int effects { io } capabilities { io  } {
     let growable = unwrap_growable(new_growable_buffer(2, 12));
+    let marker_value: UInt8 = 66;
+    let cap_probe: Int32 = 7;
+    let post_close_probe: UInt8 = 1;
     let payload = bytes.from_string("ABCDEFGH");
     let write_payload_ok = is_ok_unit(buf_write_bytes(growable, payload));
-    let write_marker_ok = is_ok_unit(buf_write_u8(growable, 66));
-    let cap_limit_hit = is_overflow(buf_write_i32_be(growable, 7));
+    let write_marker_ok = is_ok_unit(buf_write_u8(growable, marker_value));
+    let cap_limit_hit = is_overflow(buf_write_i32_be(growable, cap_probe));
 
     let close_ok = is_ok_true(buf_close(growable));
-    let write_after_close_invalid = is_invalid_input(buf_write_u8(growable, 1));
+    let write_after_close_invalid = is_invalid_input(buf_write_u8(growable, post_close_probe));
 
     if write_payload_ok && write_marker_ok && cap_limit_hit && close_ok && write_after_close_invalid {
         print_int(42);
@@ -10616,7 +10613,21 @@ fn exec_buffer_unsigned_codecs_and_patch_helpers_are_stable() {
 import std.io;
 import std.buffer;
 
-fn int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+fn u16_or(v: Result[UInt16, BufferError], fallback: UInt16) -> UInt16 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn u32_or(v: Result[UInt32, BufferError], fallback: UInt32) -> UInt32 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn u64_or(v: Result[UInt64, BufferError], fallback: UInt64) -> UInt64 {
     match v {
         Ok(value) => value,
         Err(_) => fallback,
@@ -10633,7 +10644,7 @@ fn is_invalid_input_unit(v: Result[(), BufferError]) -> Bool {
     }
 }
 
-fn is_invalid_input_int(v: Result[Int, BufferError]) -> Bool {
+fn is_invalid_input_u64(v: Result[UInt64, BufferError]) -> Bool {
     match v {
         Err(err) => match err {
             InvalidInput => true,
@@ -10644,29 +10655,42 @@ fn is_invalid_input_int(v: Result[Int, BufferError]) -> Bool {
 }
 
 fn main() -> Int effects { io } capabilities { io  } {
+    let max_u16: UInt16 = 65535;
+    let zero_u32: UInt32 = 0;
+    let sample_u64: UInt64 = 9007199254740991;
+    let patched_len_expected: UInt32 = 14;
+    let closed_write_value: UInt16 = 7;
+    let invalid_patch_value: UInt32 = 7;
+    let signed_minus_one: Int64 = -1;
+    let fallback_u16: UInt16 = 0;
+    let fallback_u32: UInt32 = 0;
+    let fallback_u64: UInt64 = 0;
     let frame = new_buffer(64);
-    let _a = buf_write_u16_be(frame, 65535);
-    let _b = buf_write_u32_be(frame, 0);
-    let _c = buf_write_u64_le(frame, 9007199254740991);
+    let _a = buf_write_u16_be(frame, max_u16);
+    let _b = buf_write_u32_be(frame, zero_u32);
+    let _c = buf_write_u64_le(frame, sample_u64);
     let end = buf_position(frame);
-    let _patch_ok = buf_patch_u32_be(frame, 2, end);
+    let _patch_ok = buf_patch_u32_be(frame, 2, patched_len_expected);
 
     buf_reset(frame);
-    let u16 = int_or(buf_read_u16_be(frame), -1);
-    let patched_len = int_or(buf_read_u32_be(frame), -1);
-    let u64 = int_or(buf_read_u64_le(frame), -1);
+    let u16 = u16_or(buf_read_u16_be(frame), fallback_u16);
+    let patched_len = u32_or(buf_read_u32_be(frame), fallback_u32);
+    let u64 = u64_or(buf_read_u64_le(frame), fallback_u64);
 
-    let invalid_u16_write = is_invalid_input_unit(buf_write_u16_be(frame, 70000));
-    let invalid_patch_offset = is_invalid_input_unit(buf_patch_u32_be(frame, 200, 7));
+    let closed = new_buffer(8);
+    let _closed_once = buf_close(closed);
+    let invalid_u16_write = is_invalid_input_unit(buf_write_u16_be(closed, closed_write_value));
+    let invalid_patch_offset = is_invalid_input_unit(buf_patch_u32_be(frame, 200, invalid_patch_value));
 
     let signed = new_buffer(16);
-    let _signed_write = buf_write_i64_be(signed, -1);
+    let _signed_write = buf_write_i64_be(signed, signed_minus_one);
     buf_reset(signed);
-    let invalid_u64_read = is_invalid_input_int(buf_read_u64_be(signed));
+    let invalid_u64_read = is_invalid_input_u64(buf_read_u64_be(signed));
 
-    if u16 == 65535
-        && patched_len == end
-        && u64 == 9007199254740991
+    if end == 14
+        && u16 == max_u16
+        && patched_len == patched_len_expected
+        && u64 == sample_u64
         && invalid_u16_write
         && invalid_patch_offset
         && invalid_u64_read {

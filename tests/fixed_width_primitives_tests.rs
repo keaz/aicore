@@ -88,7 +88,11 @@ fn main() -> Int {
     );
 
     let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
-    assert!(!has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
 }
 
 #[test]
@@ -149,7 +153,66 @@ fn main() -> Int {
         );
 
         let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
-        assert!(!has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+        assert!(
+            !has_errors(&out.diagnostics),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    });
+}
+
+#[test]
+fn std_buffer_typed_result_helpers_typecheck() {
+    with_local_std_root(|| {
+        let dir = tempdir().expect("tempdir");
+        write_main(
+            dir.path(),
+            r#"module app.main;
+import std.buffer;
+
+fn u8_or(v: Result[UInt8, BufferError], fallback: UInt8) -> UInt8 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn u16_or(v: Result[UInt16, BufferError], fallback: UInt16) -> UInt16 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn i16_or(v: Result[Int16, BufferError], fallback: Int16) -> Int16 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int {
+    let buf = new_buffer(32);
+    let _w0 = buf_write_u8(buf, 9);
+    let _w1 = buf_write_u16_be(buf, 17);
+    let _w2 = buf_write_i16_le(buf, -3);
+    let _p0 = buf_patch_u16_le(buf, 0, 7);
+
+    buf_reset(buf);
+    let _r0: UInt8 = u8_or(buf_read_u8(buf), 0);
+    let _r1: UInt16 = u16_or(buf_read_u16_be(buf), 0);
+    let _r2: Int16 = i16_or(buf_read_i16_le(buf), 0);
+    0
+}
+"#,
+        );
+
+        let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+        assert!(
+            !has_errors(&out.diagnostics),
+            "diags={:#?}",
+            out.diagnostics
+        );
     });
 }
 
@@ -287,11 +350,7 @@ fn main(a: Int16, b: UInt16) -> Int {
 
     let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
     assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
-    let conversion_diags = out
-        .diagnostics
-        .iter()
-        .filter(|d| d.code == "E1204")
-        .count();
+    let conversion_diags = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
     assert!(
         conversion_diags >= 3,
         "expected conversion diagnostics, got {conversion_diags}: {:#?}",

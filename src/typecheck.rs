@@ -14,10 +14,7 @@ const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 8] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IntegerKind {
     Int,
-    Fixed {
-        signed: bool,
-        bits: u8,
-    },
+    Fixed { signed: bool, bits: u8 },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3326,6 +3323,55 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn expr_int_literal_value(&self, expr: &ir::Expr) -> Option<i128> {
+        match &expr.kind {
+            ir::ExprKind::Int(value) => Some(*value as i128),
+            ir::ExprKind::Unary {
+                op: crate::ast::UnaryOp::Neg,
+                expr: inner,
+            } => match inner.kind {
+                ir::ExprKind::Int(value) => Some(-(value as i128)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn integer_literal_fits_expected_type(&self, expr: &ir::Expr, expected_ty: &str) -> bool {
+        let Some(value) = self.expr_int_literal_value(expr) else {
+            return false;
+        };
+        let expected_norm = self.normalize_type(expected_ty);
+        let Some(kind) = parse_integer_kind(&expected_norm) else {
+            return false;
+        };
+        integer_value_fits_kind(value, kind)
+    }
+
+    fn argument_type_compatible(&self, expected: &str, found: &str, arg: &ir::Expr) -> bool {
+        self.types_compatible(expected, found)
+            || self.integer_literal_fits_expected_type(arg, expected)
+    }
+
+    fn generic_binding_accepts_integer_literal(
+        &self,
+        expected_norm: &str,
+        arg: &ir::Expr,
+        generic_bindings: &BTreeMap<String, String>,
+    ) -> bool {
+        let Some(value) = self.expr_int_literal_value(arg) else {
+            return false;
+        };
+        let Some(bound) = generic_bindings.get(expected_norm) else {
+            return false;
+        };
+        let bound_norm = self.normalize_type(bound);
+        let Some(kind) = parse_integer_kind(&bound_norm) else {
+            return false;
+        };
+        integer_value_fits_kind(value, kind)
+    }
+
     fn validate_integer_literal_range(
         &mut self,
         value: i128,
@@ -4135,26 +4181,12 @@ impl<'a> Checker<'a> {
                             .unwrap_or_else(|| "<?>".to_string());
                         let expected_norm = self.normalize_type(expected_raw);
                         let arg_norm = self.normalize_type(&arg_ty);
-                        let inferred = infer_generic_bindings(
+                        let _ = infer_generic_bindings(
                             &expected_norm,
                             &arg_norm,
                             &generic_set,
                             &mut generic_bindings,
                         );
-                        if !inferred {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E1214",
-                                format!(
-                                    "argument {} to '{}' expected '{}', found '{}'",
-                                    param_idx + 1,
-                                    rendered_path,
-                                    expected_raw,
-                                    arg_ty
-                                ),
-                                self.file,
-                                args[*arg_idx].span,
-                            ));
-                        }
                     }
 
                     if !sig.generic_params.is_empty() {
@@ -4307,7 +4339,7 @@ impl<'a> Checker<'a> {
                                 }
                             }
                         }
-                        if !self.types_compatible(expected, &observed_ty) {
+                        if !self.argument_type_compatible(expected, &observed_ty, &args[*arg_idx]) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1214",
                                 format!(
@@ -4941,7 +4973,7 @@ impl<'a> Checker<'a> {
                 } else {
                     let first = arm_types[0].clone();
                     for ty in arm_types.iter().skip(1) {
-                        if !self.types_compatible(&first, ty) {
+                        if !self.types_compatible(&first, ty) && !self.types_compatible(ty, &first) {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1221",
                                 format!(
@@ -5035,13 +5067,7 @@ impl<'a> Checker<'a> {
                             return "Float".to_string();
                         }
                         if let Some(kind) = parse_integer_kind(&ty_norm) {
-                            if matches!(
-                                kind,
-                                IntegerKind::Fixed {
-                                    signed: false,
-                                    ..
-                                }
-                            ) {
+                            if matches!(kind, IntegerKind::Fixed { signed: false, .. }) {
                                 self.diagnostics.push(
                                     Diagnostic::error(
                                         "E1222",
@@ -5668,7 +5694,7 @@ impl<'a> Checker<'a> {
             let Some(expected) = param_tys.get(idx) else {
                 continue;
             };
-            if !self.types_compatible(expected, &found) {
+            if !self.argument_type_compatible(expected, &found, arg) {
                 self.diagnostics.push(Diagnostic::error(
                     "E1214",
                     format!(
@@ -5888,7 +5914,7 @@ impl<'a> Checker<'a> {
                     expected,
                 );
                 if let Some(expected) = expected {
-                    if !self.types_compatible(expected, &found) {
+                    if !self.argument_type_compatible(expected, &found, arg) {
                         self.diagnostics.push(Diagnostic::error(
                             "E1214",
                             format!(
@@ -6249,7 +6275,7 @@ impl<'a> Checker<'a> {
                 expected,
             );
             if let Some(expected) = expected {
-                if !self.types_compatible(expected, &found) {
+                if !self.argument_type_compatible(expected, &found, arg) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1214",
                         format!(
@@ -9137,7 +9163,9 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     }
     let base = base_type_name(ty);
     (matches!(base, "Int" | "Bool" | "Float" | "Char")
-        || FIXED_WIDTH_INTEGER_PRIMITIVES.iter().any(|name| name == &base))
+        || FIXED_WIDTH_INTEGER_PRIMITIVES
+            .iter()
+            .any(|name| name == &base))
         && extract_generic_args(ty).is_none()
 }
 
@@ -10335,5 +10363,4 @@ fn main(x: UInt8, y: Int8) -> Int {
             out.diagnostics
         );
     }
-
 }

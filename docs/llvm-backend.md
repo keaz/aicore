@@ -27,8 +27,31 @@ Failure behavior:
 ### Primitive mappings
 
 - `Int` -> `i64`
+- `Int8` -> `i8`
+- `Int16` -> `i16`
+- `Int32` -> `i32`
+- `Int64` -> `i64`
+- `UInt8` -> `i8`
+- `UInt16` -> `i16`
+- `UInt32` -> `i32`
+- `UInt64` -> `i64`
 - `Bool` -> `i1`
 - `()` -> `void`
+
+### Integer lowering policy (fixed-width)
+
+- Fixed-width primitive identity is preserved in backend typing (`render_type`/`parse_type_repr`/`sig_matches_shape`).
+- Integer ops lower with width-aware LLVM ops:
+  - signed: `sdiv`/`srem`, signed comparisons (`slt`/`sle`/`sgt`/`sge`)
+  - unsigned: `udiv`/`urem`, unsigned comparisons (`ult`/`ule`/`ugt`/`uge`)
+  - shifts use arithmetic/logical behavior based on signedness (`ashr` vs `lshr`).
+- Extern wrappers use exact LLVM scalar widths from declared AIC types (`Int8..UInt64`), not `Int` fallback.
+
+### Runtime scalar ABI policy
+
+- LLVM bridge types remain explicit (`i8/i16/i32/i64`) at function boundaries.
+- Runtime C entrypoints representing AIC `Int`/`Bool` scalar values should use fixed-width C types (`int64_t`) rather than platform-dependent `long`.
+- Size/capacity/index runtime fields remain `i64`/`int64_t` in LLVM ABI and are range-checked in runtime helpers.
 
 ### String ABI (`ptr-len-cap`)
 

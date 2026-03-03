@@ -18,9 +18,9 @@ fn vec_values_ok(values: Vec[Int]) -> Int effects { env } capabilities { env } {
 
 fn bytes_values_ok(data: Bytes) -> Int effects { env } capabilities { env } {
     let values = bytes.to_byte_values(data);
-    let a = match vec.get(values, 0) { Some(v) => v, None => -1 };
-    let b = match vec.get(values, 1) { Some(v) => v, None => -1 };
-    let c = match vec.get(values, 2) { Some(v) => v, None => -1 };
+    let a = match vec.get(values, 0) { Some(v) => v, None => 0 };
+    let b = match vec.get(values, 1) { Some(v) => v, None => 0 };
+    let c = match vec.get(values, 2) { Some(v) => v, None => 0 };
     if vec.vec_len(values) == 3 && a == 0 && b == 255 && c == 16 { 1 } else { 0 }
 }
 
@@ -102,7 +102,7 @@ fn channel_bytes_ok() -> Int effects { concurrency, env } capabilities { concurr
     let pair: (Sender[Bytes], Receiver[Bytes]) = buffered_bytes_channel(2);
     let tx = pair.0;
     let rx = pair.1;
-    let mut raw: Vec[Int] = vec.new_vec();
+    let mut raw: Vec[UInt8] = vec.new_vec();
     raw = vec.push(raw, 0);
     raw = vec.push(raw, 255);
     raw = vec.push(raw, 16);

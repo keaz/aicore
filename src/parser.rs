@@ -2168,9 +2168,7 @@ impl<'a> Parser<'a> {
                         self.bump();
                         (name, span)
                     }
-                    TokenKind::Int(literal)
-                        if literal.value >= 0 && literal.suffix.is_none() =>
-                    {
+                    TokenKind::Int(literal) if literal.value >= 0 && literal.suffix.is_none() => {
                         let span = self.current_span();
                         self.bump();
                         (literal.value.to_string(), span)
@@ -4391,9 +4389,9 @@ fn bad_float() -> Float { 1.5u8 }
             "diags={diagnostics:#?}"
         );
         assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.code == "E0010" && d.message.contains("float literal cannot have suffix")),
+            diagnostics.iter().any(
+                |d| d.code == "E0010" && d.message.contains("float literal cannot have suffix")
+            ),
             "diags={diagnostics:#?}"
         );
     }

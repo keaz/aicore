@@ -17,14 +17,14 @@ Use constructors/helpers from `std.bytes`:
 - `empty() -> Bytes`
 - `from_string(s: String) -> Bytes`
 - `byte_len(data: Bytes) -> Int`
-- `byte_at(data: Bytes, index: Int) -> Result[Int, BytesError]`
+- `byte_at(data: Bytes, index: Int) -> Result[UInt8, BytesError]`
 - `byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError]`
-- `find_byte(data: Bytes, value: Int) -> Option[Int]`
+- `find_byte(data: Bytes, value: UInt8) -> Option[Int]`
 - `starts_with(data: Bytes, prefix: Bytes) -> Bool`
 - `ends_with(data: Bytes, suffix: Bytes) -> Bool`
 - `compare_bytes(a: Bytes, b: Bytes) -> Int`
-- `from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError]`
-- `to_byte_values(data: Bytes) -> Vec[Int]`
+- `from_byte_values(values: Vec[UInt8]) -> Result[Bytes, BytesError]`
+- `to_byte_values(data: Bytes) -> Vec[UInt8]`
 - `concat(left: Bytes, right: Bytes) -> Bytes`
 - `is_valid_utf8(data: Bytes) -> Bool`
 - `to_string(data: Bytes) -> Result[String, BytesError]`
@@ -36,8 +36,23 @@ Use constructors/helpers from `std.bytes`:
 Indexing/slicing semantics:
 - `byte_at` returns `Err(InvalidInput)` for out-of-bounds indexes.
 - `byte_slice` uses half-open ranges `[start, end)` and returns `Err(InvalidInput)` for invalid ranges.
-- `from_byte_values` validates every value is in `[0, 255]`.
+- `from_byte_values` accepts `Vec[UInt8]`; byte-range validation is enforced by the element type.
 - `compare_bytes` is lexicographic (`-1`, `0`, `1`).
+
+Boundary example:
+
+```aic
+import std.bytes;
+import std.vec;
+
+let mut raw: Vec[UInt8] = vec.new_vec();
+raw = vec.push(raw, 0);
+raw = vec.push(raw, 255);
+let payload = match bytes.from_byte_values(raw) {
+  Ok(v) => v,
+  Err(_) => bytes.empty(),
+};
+```
 
 ## Filesystem byte APIs
 

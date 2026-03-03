@@ -30,6 +30,72 @@ fn emits_basic_llvm() {
 }
 
 #[test]
+fn fixed_width_integer_functions_keep_exact_llvm_types() {
+    let src = r#"
+fn add_i8(a: Int8, b: Int8) -> Int8 { a + b }
+fn add_u16(a: UInt16, b: UInt16) -> UInt16 { a + b }
+fn div_u32(a: UInt32, b: UInt32) -> UInt32 { a / b }
+fn div_i16(a: Int16, b: Int16) -> Int16 { a / b }
+fn cmp_u32(a: UInt32, b: UInt32) -> Bool { a < b }
+fn shr_u16(a: UInt16, b: UInt16) -> UInt16 { a >> b }
+
+fn main() -> Int {
+    let _a: Int8 = add_i8(1, 2);
+    let _b: UInt16 = add_u16(3, 4);
+    let c: UInt32 = div_u32(8, 2);
+    let _d: Int16 = div_i16(8, 2);
+    let _e: UInt16 = shr_u16(8, 1);
+    if cmp_u32(c, 1) { 1 } else { 0 }
+}
+"#;
+    let (program, diags) = parse(src, "fixed_width_ops.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let output = emit_llvm(&lowered, "fixed_width_ops.aic").expect("llvm");
+    assert!(output.llvm_ir.contains("define i8 @aic_add_i8(i8"));
+    assert!(output.llvm_ir.contains("define i16 @aic_add_u16(i16"));
+    assert!(output.llvm_ir.contains("define i32 @aic_div_u32(i32"));
+    assert!(output.llvm_ir.contains("define i16 @aic_div_i16(i16"));
+    assert!(output.llvm_ir.contains("udiv i32"));
+    assert!(output.llvm_ir.contains("sdiv i16"));
+    assert!(output.llvm_ir.contains("icmp ult i32"));
+    assert!(output.llvm_ir.contains("lshr i16"));
+}
+
+#[test]
+fn extern_fixed_width_signatures_emit_exact_llvm_decls() {
+    let src = r#"
+extern "C" fn c_add_u16(a: UInt16, b: UInt16) -> UInt16;
+extern "C" fn c_neg_i8(a: Int8) -> Int8;
+
+fn main() -> Int { 0 }
+"#;
+    let (program, diags) = parse(src, "extern_fixed_width.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let output = emit_llvm(&lowered, "extern_fixed_width.aic").expect("llvm");
+    assert!(output.llvm_ir.contains("declare i16 @c_add_u16(i16, i16)"));
+    assert!(output.llvm_ir.contains("declare i8 @c_neg_i8(i8)"));
+}
+
+#[test]
+fn entry_wrapper_casts_fixed_width_main_returns_to_i32() {
+    let src = r#"
+fn main() -> UInt8 { 7 }
+"#;
+    let (program, diags) = parse(src, "main_u8_return.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let output = emit_llvm(&lowered, "main_u8_return.aic").expect("llvm");
+    assert!(output.llvm_ir.contains("define i8 @aic_main()"));
+    assert!(output.llvm_ir.contains("zext i8"));
+    assert!(output.llvm_ir.contains("ret i32"));
+}
+
+#[test]
 fn struct_literal_fields_provide_builtin_type_hints_without_outer_expected_layout() {
     let dir = tempdir().expect("tempdir");
     let file = dir.path().join("struct_holder.aic");

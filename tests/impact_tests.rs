@@ -115,7 +115,10 @@ fn impact_reports_direct_transitive_tests_contracts_and_blast_radius() {
     assert_eq!(payload["direct_callers"], json!([]));
     assert_eq!(payload["transitive_callers"], json!([]));
     assert_eq!(payload["affected_tests"], json!([]));
-    assert_eq!(payload["affected_contracts"], json!(["impact.math.normalize"]));
+    assert_eq!(
+        payload["affected_contracts"],
+        json!(["impact.math.normalize"])
+    );
     assert_eq!(payload["blast_radius"], "small");
 }
 

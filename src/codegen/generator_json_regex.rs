@@ -1518,7 +1518,15 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<ValueWithErr> {
         match &value.ty {
-            LType::Int => self.json_encode_int_runtime(value, span, fctx),
+            LType::Int
+            | LType::Int8
+            | LType::Int16
+            | LType::Int32
+            | LType::Int64
+            | LType::UInt8
+            | LType::UInt16
+            | LType::UInt32
+            | LType::UInt64 => self.json_encode_integral_runtime(value, span, fctx),
             LType::Float => self.json_encode_float_runtime(value, span, fctx),
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
             LType::Char => self.json_encode_char_runtime(value, span, fctx),
@@ -1804,7 +1812,15 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<ValueWithErr> {
         match target_ty {
-            LType::Int => self.json_decode_int_runtime(json, span, fctx),
+            LType::Int
+            | LType::Int8
+            | LType::Int16
+            | LType::Int32
+            | LType::Int64
+            | LType::UInt8
+            | LType::UInt16
+            | LType::UInt32
+            | LType::UInt64 => self.json_decode_integral_runtime(target_ty, json, span, fctx),
             LType::Float => self.json_decode_float_runtime(json, span, fctx),
             LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
             LType::Char => self.json_decode_char_runtime(json, span, fctx),
@@ -2176,7 +2192,15 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
     ) -> Option<String> {
         match ty {
-            LType::Int => Some("{\"kind\":\"int\"}".to_string()),
+            LType::Int
+            | LType::Int8
+            | LType::Int16
+            | LType::Int32
+            | LType::Int64
+            | LType::UInt8
+            | LType::UInt16
+            | LType::UInt32
+            | LType::UInt64 => Some("{\"kind\":\"int\"}".to_string()),
             LType::Float => Some("{\"kind\":\"float\"}".to_string()),
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
             LType::Char => Some("{\"kind\":\"char\"}".to_string()),
@@ -2299,6 +2323,53 @@ impl<'a> Generator<'a> {
         let int_value = Value {
             ty: LType::Int,
             repr: Some(char_i64),
+        };
+        self.json_encode_int_runtime(&int_value, span, fctx)
+    }
+
+    pub(super) fn json_encode_integral_runtime(
+        &mut self,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let Some(width) = integer_width_bits(&value.ty) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json encode expects integral input",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if value.ty == LType::Int {
+            return self.json_encode_int_runtime(value, span, fctx);
+        }
+        let repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let as_i64 = if width == 64 {
+            repr
+        } else {
+            let widened = self.new_temp();
+            let op = if is_unsigned_integer_type(&value.ty) {
+                "zext"
+            } else {
+                "sext"
+            };
+            fctx.lines.push(format!(
+                "  {} = {} {} {} to i64",
+                widened,
+                op,
+                llvm_type(&value.ty),
+                repr
+            ));
+            widened
+        };
+        let int_value = Value {
+            ty: LType::Int,
+            repr: Some(as_i64),
         };
         self.json_encode_int_runtime(&int_value, span, fctx)
     }
@@ -2676,6 +2747,89 @@ impl<'a> Generator<'a> {
             value: Value {
                 ty: LType::Int,
                 repr: Some(out),
+            },
+            err_code,
+        })
+    }
+
+    pub(super) fn json_decode_integral_runtime(
+        &mut self,
+        target_ty: &LType,
+        value: &Value,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<ValueWithErr> {
+        let decoded = self.json_decode_int_runtime(value, span, fctx)?;
+        if *target_ty == LType::Int {
+            return Some(decoded);
+        }
+
+        let Some(width) = integer_width_bits(target_ty) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "json decode expects integral target type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let decoded_repr = decoded
+            .value
+            .repr
+            .clone()
+            .unwrap_or_else(|| "0".to_string());
+
+        let in_range = if width == 64 {
+            if is_unsigned_integer_type(target_ty) {
+                let ge_zero = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = icmp sge i64 {}, 0", ge_zero, decoded_repr));
+                ge_zero
+            } else {
+                "1".to_string()
+            }
+        } else {
+            let (min, max) = if is_unsigned_integer_type(target_ty) {
+                (0_i128, (1_i128 << width) - 1)
+            } else {
+                (-(1_i128 << (width - 1)), (1_i128 << (width - 1)) - 1)
+            };
+            let ge_min = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp sge i64 {}, {}", ge_min, decoded_repr, min));
+            let le_max = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp sle i64 {}, {}", le_max, decoded_repr, max));
+            let in_range = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = and i1 {}, {}", in_range, ge_min, le_max));
+            in_range
+        };
+
+        let range_err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = select i1 {}, i64 0, i64 2",
+            range_err, in_range
+        ));
+        let err_code = self.combine_error_codes(&decoded.err_code, &range_err, fctx);
+
+        let repr = if width == 64 {
+            decoded_repr
+        } else {
+            let narrowed = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = trunc i64 {} to {}",
+                narrowed,
+                decoded_repr,
+                llvm_type(target_ty)
+            ));
+            narrowed
+        };
+
+        Some(ValueWithErr {
+            value: Value {
+                ty: target_ty.clone(),
+                repr: Some(repr),
             },
             err_code,
         })

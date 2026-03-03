@@ -32,16 +32,6 @@ mod generator_string_math;
 mod tests;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
-const FIXED_WIDTH_INTEGER_ALIASES: [(&str, &str); 8] = [
-    ("Int8", "Int"),
-    ("Int16", "Int"),
-    ("Int32", "Int"),
-    ("Int64", "Int"),
-    ("UInt8", "Int"),
-    ("UInt16", "Int"),
-    ("UInt32", "Int"),
-    ("UInt64", "Int"),
-];
 
 #[derive(Debug, Clone, Copy)]
 pub struct IntrinsicSignatureShape {
@@ -1120,14 +1110,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         runtime_symbol: "aic_rt_bytes_byte_at",
         signatures: &[IntrinsicSignatureShape {
             params: &["String", "Int"],
-            ret: "Int",
+            ret: "UInt8",
         }],
     },
     IntrinsicBindingExpectation {
         intrinsic: "aic_bytes_from_byte_values_intrinsic",
         runtime_symbol: "aic_rt_bytes_from_byte_values",
         signatures: &[IntrinsicSignatureShape {
-            params: &["Vec[Int]"],
+            params: &["Vec[UInt8]"],
             ret: "String",
         }],
     },
@@ -1629,6 +1619,14 @@ struct FnSig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LType {
     Int,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
     Float,
     Bool,
     Char,
@@ -2907,14 +2905,6 @@ fn collect_internal_aliases_and_consts(
         }
     }
 
-    for (alias_name, target) in FIXED_WIDTH_INTEGER_ALIASES {
-        aliases.entry(alias_name.to_string()).or_insert_with(|| AliasDef {
-            generics: Vec::new(),
-            target: target.to_string(),
-            span: crate::span::Span::new(0, 0),
-        });
-    }
-
     (aliases, consts)
 }
 fn collect_drop_impl_methods(
@@ -3721,9 +3711,75 @@ fn llvm_float_literal(value: f64) -> String {
     format!("0x{:016X}", value.to_bits())
 }
 
+fn integer_width_bits(ty: &LType) -> Option<u32> {
+    match ty {
+        LType::Int => Some(64),
+        LType::Int8 | LType::UInt8 => Some(8),
+        LType::Int16 | LType::UInt16 => Some(16),
+        LType::Int32 | LType::UInt32 => Some(32),
+        LType::Int64 | LType::UInt64 => Some(64),
+        _ => None,
+    }
+}
+
+fn is_integral_type(ty: &LType) -> bool {
+    integer_width_bits(ty).is_some()
+}
+
+fn is_signed_integer_type(ty: &LType) -> bool {
+    matches!(
+        ty,
+        LType::Int | LType::Int8 | LType::Int16 | LType::Int32 | LType::Int64
+    )
+}
+
+fn is_unsigned_integer_type(ty: &LType) -> bool {
+    matches!(
+        ty,
+        LType::UInt8 | LType::UInt16 | LType::UInt32 | LType::UInt64
+    )
+}
+
+fn integral_type_for_width(bits: u32, unsigned: bool) -> Option<LType> {
+    match (bits, unsigned) {
+        (8, true) => Some(LType::UInt8),
+        (16, true) => Some(LType::UInt16),
+        (32, true) => Some(LType::UInt32),
+        (64, true) => Some(LType::UInt64),
+        (8, false) => Some(LType::Int8),
+        (16, false) => Some(LType::Int16),
+        (32, false) => Some(LType::Int32),
+        (64, false) => Some(LType::Int),
+        _ => None,
+    }
+}
+
+fn comparison_integral_common_type(lhs: &LType, rhs: &LType) -> Option<LType> {
+    let lhs_bits = integer_width_bits(lhs)?;
+    let rhs_bits = integer_width_bits(rhs)?;
+    let lhs_unsigned = is_unsigned_integer_type(lhs);
+    let rhs_unsigned = is_unsigned_integer_type(rhs);
+    if lhs_unsigned == rhs_unsigned {
+        return integral_type_for_width(lhs_bits.max(rhs_bits), lhs_unsigned);
+    }
+
+    if !lhs_unsigned && lhs_bits > rhs_bits {
+        return Some(lhs.clone());
+    }
+    if !rhs_unsigned && rhs_bits > lhs_bits {
+        return Some(rhs.clone());
+    }
+
+    integral_type_for_width(lhs_bits.max(rhs_bits), true)
+}
+
 fn llvm_type(ty: &LType) -> String {
     match ty {
         LType::Int => "i64".to_string(),
+        LType::Int8 | LType::UInt8 => "i8".to_string(),
+        LType::Int16 | LType::UInt16 => "i16".to_string(),
+        LType::Int32 | LType::UInt32 => "i32".to_string(),
+        LType::Int64 | LType::UInt64 => "i64".to_string(),
         LType::Float => "double".to_string(),
         LType::Bool => "i1".to_string(),
         LType::Char => "i32".to_string(),
@@ -3773,6 +3829,14 @@ fn llvm_type(ty: &LType) -> String {
 fn default_value(ty: &LType) -> String {
     match ty {
         LType::Int => "0".to_string(),
+        LType::Int8
+        | LType::Int16
+        | LType::Int32
+        | LType::Int64
+        | LType::UInt8
+        | LType::UInt16
+        | LType::UInt32
+        | LType::UInt64 => "0".to_string(),
         LType::Float => llvm_float_literal(0.0_f64),
         LType::Bool => "0".to_string(),
         LType::Char => "0".to_string(),
@@ -3864,6 +3928,14 @@ fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
 fn render_type(ty: &LType) -> String {
     match ty {
         LType::Int => "Int".to_string(),
+        LType::Int8 => "Int8".to_string(),
+        LType::Int16 => "Int16".to_string(),
+        LType::Int32 => "Int32".to_string(),
+        LType::Int64 => "Int64".to_string(),
+        LType::UInt8 => "UInt8".to_string(),
+        LType::UInt16 => "UInt16".to_string(),
+        LType::UInt32 => "UInt32".to_string(),
+        LType::UInt64 => "UInt64".to_string(),
         LType::Float => "Float".to_string(),
         LType::Bool => "Bool".to_string(),
         LType::Char => "Char".to_string(),
@@ -4137,13 +4209,13 @@ fn json_escape_string(text: &str) -> String {
 }
 
 #[cfg(test)]
-mod fixed_width_alias_tests {
+mod fixed_width_type_tests {
     use crate::{contracts::lower_runtime_asserts, ir_builder::build, parser::parse};
 
     use super::emit_llvm;
 
     #[test]
-    fn fixed_width_integer_aliases_lower_without_unsupported_type_errors() {
+    fn fixed_width_primitives_preserve_llvm_widths() {
         let src = r#"
 fn consume_i8(x: Int8) -> Int { x }
 fn consume_u16(x: UInt16) -> Int { x }
@@ -4159,15 +4231,18 @@ fn main() -> Int {
 }
 "#;
         let (program, parse_diags) = parse(src, "fixed_width_codegen.aic");
-        assert!(
-            parse_diags.is_empty(),
-            "parse diagnostics={parse_diags:#?}"
-        );
+        assert!(parse_diags.is_empty(), "parse diagnostics={parse_diags:#?}");
 
         let ir = build(&program.expect("program"));
         let lowered = lower_runtime_asserts(&ir);
         match emit_llvm(&lowered, "fixed_width_codegen.aic") {
-            Ok(output) => assert!(output.llvm_ir.contains("define i64 @aic_main()")),
+            Ok(output) => {
+                assert!(output.llvm_ir.contains("define i64 @aic_main()"));
+                assert!(output.llvm_ir.contains("define i64 @aic_consume_i8(i8"));
+                assert!(output.llvm_ir.contains("define i64 @aic_consume_u16(i16"));
+                assert!(output.llvm_ir.contains("define i64 @aic_consume_i32(i32"));
+                assert!(output.llvm_ir.contains("define i64 @aic_consume_u64(i64"));
+            }
             Err(diags) => panic!("codegen diagnostics={diags:#?}"),
         }
     }

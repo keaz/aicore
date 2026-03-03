@@ -336,12 +336,8 @@ pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralM
 }
 
 pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
-    INT_LITERAL_METADATA_STORE.with(|store| {
-        store
-            .borrow()
-            .get(&(span.start, span.end, value))
-            .copied()
-    })
+    INT_LITERAL_METADATA_STORE
+        .with(|store| store.borrow().get(&(span.start, span.end, value)).copied())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
