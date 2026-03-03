@@ -51,21 +51,31 @@ enum ChannelError {
 trait Send[T];
 trait Sync[T];
 
+type ConcurrencyCapacityU32 = UInt32;
+type ConcurrencyIndexU32 = UInt32;
+type ConcurrencyHandleU32 = UInt32;
+type ConcurrencyPayloadIdU32 = UInt32;
+type ConcurrencyCountU32 = UInt32;
+
+enum GuardKind { MutexGuardKind, RwLockWriteGuardKind }
+
 struct Task[T] { handle: Int }
 struct Scope { handle: Int }
 struct Sender[T] { handle: Int }
 struct Receiver[T] { handle: Int }
 enum SelectResult[A, B] { First(A), Second(B), Timeout, Closed }
 struct IntTaskSelection { task_index: Int, value: Int }
+struct IntTaskSelectionU32 { task_index: ConcurrencyIndexU32, value: Int }
 struct IntChannel { handle: Int }
 struct IntChannelSelection { channel_index: Int, value: Int }
+struct IntChannelSelectionU32 { channel_index: ConcurrencyIndexU32, value: Int }
 struct IntMutex { handle: Int }
 struct Arc[T] { handle: Int }
 struct AtomicInt { handle: Int }
 struct AtomicBool { handle: Int }
 struct ThreadLocal[T] { handle: Int }
 struct Mutex[T] { handle: Int }
-struct MutexGuard[T] { handle: Int, guard_kind: Int, value: T }
+struct MutexGuard[T] { handle: Int, guard_kind: GuardKind, value: T }
 struct RwLock[T] { handle: Int }
 struct IntRwLock { handle: Int }
 ```
@@ -74,12 +84,17 @@ struct IntRwLock { handle: Int }
 
 Typechecker compatibility rule: `std.concurrent.spawn`, `spawn_named`, `scope_spawn`, `send`, and `try_send`
 enforce that payload type `T` is `Send` at compile time, while keeping stable public signatures.
+Fixed-width wrappers are additive: legacy `Int` signatures remain available for runtime/backward compatibility.
 
 ```aic
 fn spawn[T](f: Fn() -> T) -> Task[T] effects { concurrency }
 fn spawn_named[T](name: String, f: Fn() -> T) -> Task[T] effects { concurrency }
 fn join[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }
 fn join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency }
+fn task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]
+fn scope_handle_u32(scope: Scope) -> Result[ConcurrencyHandleU32, ConcurrencyError]
+fn sender_handle_u32[T](tx: Sender[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]
+fn receiver_handle_u32[T](rx: Receiver[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]
 
 fn scoped[T](f: Fn(Scope) -> T) -> T effects { concurrency }
 fn scope_spawn[T](scope: Scope, f: Fn() -> T) -> Task[T] effects { concurrency }
@@ -96,7 +111,7 @@ fn select_first_u32(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSel
 
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency }
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency }
-fn buffered_channel_u32[T](capacity: UInt32) -> (Sender[T], Receiver[T]) effects { concurrency }
+fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Receiver[T]) effects { concurrency }
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
@@ -104,7 +119,7 @@ fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }
 fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
 fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
-fn buffered_bytes_channel_u32(capacity: UInt32) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
+fn buffered_bytes_channel_u32(capacity: ConcurrencyCapacityU32) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
 fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
 fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
 fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }
@@ -112,16 +127,20 @@ fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { 
 fn recv_bytes_timeout(rx: Receiver[Bytes], timeout_ms: Int) -> Result[Bytes, ChannelError] effects { concurrency }
 fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency }
 fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }
-fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(UInt32, T), ChannelError] effects { concurrency, env }
+fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(ConcurrencyIndexU32, T), ChannelError] effects { concurrency, env }
 fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
+fn store_payload_for_channel_u32[T](value: T) -> Result[ConcurrencyPayloadIdU32, ChannelError] effects { concurrency }
+fn take_payload_string_u32(payload_id: ConcurrencyPayloadIdU32) -> Result[String, ChannelError] effects { concurrency }
+fn take_payload_for_channel_u32[T](payload_id: ConcurrencyPayloadIdU32, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
+fn store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency }
 
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
-fn channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
-fn buffered_channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
-fn channel_int_buffered_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn buffered_channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn channel_int_buffered_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
 fn try_send_int(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency }
@@ -137,8 +156,10 @@ fn close_mutex(mutex: IntMutex) -> Result[Bool, ConcurrencyError] effects { conc
 
 fn arc_new[T](value: T) -> Arc[T] effects { concurrency }
 fn arc_clone[T](a: Arc[T]) -> Arc[T] effects { concurrency }
+fn arc_handle_u32[T](a: Arc[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]
 fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }
 fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }
+fn arc_strong_count_u32[T](a: Arc[T]) -> Result[ConcurrencyCountU32, ConcurrencyError] effects { concurrency }
 fn atomic_int(initial: Int) -> AtomicInt effects { concurrency }
 fn atomic_load(a: AtomicInt) -> Int effects { concurrency }
 fn atomic_store(a: AtomicInt, value: Int) -> () effects { concurrency }
@@ -282,6 +303,7 @@ Sunset policy:
 
 - Generic task scheduler:
   - Runtime uses host threads with bounded handle tables and payload slots.
+  - Fixed-width wrapper surfaces expose those non-negative domains as `ConcurrencyHandleU32` and `ConcurrencyPayloadIdU32`.
   - `spawn(f)` executes closure `f` on a dedicated worker thread and returns `Task[T]`.
   - `join(task)` / `join_value(task)` block until completion and deserialize captured result payload as `T`.
   - `spawn_named(name, f)` behaves like `spawn`, additionally attaching best-effort OS thread names on supported platforms.
@@ -305,7 +327,8 @@ Sunset policy:
   - Capacity must be positive and within runtime limits.
 - Generic channel payload transport:
   - `send[T]` stores typed payload snapshots in concurrency payload slots via binary-safe value codec intrinsics.
-  - Channel runtime transports payload IDs (`Int`) across thread boundaries.
+  - Channel runtime transports payload IDs across thread boundaries.
+  - `ConcurrencyPayloadIdU32` wrappers provide the fixed-width view; legacy `Int` payload-id paths remain for ABI parity.
   - `recv[T]`/`try_recv[T]`/`recv_timeout[T]` decode payload snapshots back to `T` with runtime size checks.
   - On send failure paths, staged payloads are dropped to avoid payload-slot leaks.
   - `send_bytes`/`try_send_bytes` and `recv_bytes`/`try_recv_bytes`/`recv_bytes_timeout` remain the explicit binary-bytes fast path for protocol payloads.
@@ -327,11 +350,13 @@ Sunset policy:
     - `Timeout`: timeout.
     - `Closed`: channel closed/invalid payload path.
   - `select_any(receivers, timeout_ms)` supports fan-in for `N` same-typed receivers and returns `(receiver_index, value)` (`effects { concurrency, env }`).
-  - `select_any_u32(receivers, timeout_ms)` is the phase-1 fixed-width wrapper that returns `UInt32` indices.
+  - `select_any_u32(receivers, timeout_ms)` is the phase-1 fixed-width wrapper that returns `ConcurrencyIndexU32` indices.
   - `select_any` probes receivers in rotating order and uses bounded 1ms waits to avoid fixed-index starvation.
 - Fixed-width phase-1 wrappers:
-  - `*_u32` capacity wrappers migrate non-negative queue/capacity arguments to `UInt32`.
-  - `select_first_u32` / `select_recv_int_u32` migrate selection indices to `UInt32`.
+  - `*_u32` capacity wrappers migrate non-negative queue/capacity arguments to `ConcurrencyCapacityU32`.
+  - `select_first_u32` / `select_recv_int_u32` / `select_any_u32` migrate selection indices to `ConcurrencyIndexU32`.
+  - Handle/payload/counter domains now expose additive aliases: `ConcurrencyHandleU32`, `ConcurrencyPayloadIdU32`, and `ConcurrencyCountU32`.
+  - `arc_strong_count_u32` provides the fixed-width Arc strong-count surface.
   - Legacy `Int` signatures remain available for compatibility/runtime parity.
 - Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
 - Cancellation:
@@ -347,6 +372,7 @@ Sunset policy:
 - Locking and liveness:
   - `lock_int` uses bounded wait via `timeout_ms` and returns `Err(Timeout)` if lock cannot be acquired.
   - `Mutex[T]` stores typed payloads via concurrency payload slots and exposes updates through `MutexGuard[T]`.
+  - `MutexGuard[T].guard_kind` uses typed discriminator `GuardKind` (`MutexGuardKind` or `RwLockWriteGuardKind`) instead of raw sentinel integers.
   - `RwLock[T]` supports concurrent read access and exclusive write access.
   - Read paths clone payload handles to keep read operations non-destructive.
 - Arc shared ownership:
@@ -354,6 +380,7 @@ Sunset policy:
   - `arc_clone` increments Arc refcount with sequentially-consistent atomics (`fetch_add`).
   - `arc_release` is runtime-managed and decrements refcount with sequentially-consistent atomics (`fetch_sub`).
   - Arc payload storage is freed automatically when strong count reaches `0`.
+  - `arc_strong_count_u32` is additive and returns `Result[ConcurrencyCountU32, ConcurrencyError]`; `arc_strong_count` remains available for legacy `Int` callers.
   - `Arc[T]` is treated as a thread-safe wrapper and supports `Arc[Mutex[T]]` for shared mutable state.
 - Lock-free atomics:
   - `atomic_add`/`atomic_sub` lower to host `fetch_add`/`fetch_sub` with sequential consistency.
@@ -442,6 +469,8 @@ Codegen lowers to these runtime symbols:
 - `aic_rt_conc_tl_set`
 - `aic_rt_async_poll_int`
 - `aic_rt_async_poll_string`
+
+`arc_strong_count_u32` is a std-level fixed-width wrapper over `aic_rt_conc_arc_strong_count` to preserve runtime ABI stability.
 
 ## Platform Limitations
 

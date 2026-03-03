@@ -4265,16 +4265,98 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         .expect("read fixed-width taxonomy wave-2 doc");
 
     assert!(
-        runtime_doc.contains("fn buffered_channel_u32[T](capacity: UInt32) -> (Sender[T], Receiver[T]) effects { concurrency }"),
+        runtime_doc.contains("type ConcurrencyHandleU32 = UInt32;"),
+        "concurrency runtime docs must include fixed-width handle alias"
+    );
+    assert!(
+        runtime_doc.contains("type ConcurrencyPayloadIdU32 = UInt32;"),
+        "concurrency runtime docs must include fixed-width payload-id alias"
+    );
+    assert!(
+        runtime_doc.contains("type ConcurrencyCountU32 = UInt32;"),
+        "concurrency runtime docs must include fixed-width count alias"
+    );
+    assert!(
+        runtime_doc.contains("enum GuardKind { MutexGuardKind, RwLockWriteGuardKind }"),
+        "concurrency runtime docs must include typed guard-kind variants"
+    );
+    assert!(
+        runtime_doc.contains("fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Receiver[T]) effects { concurrency }"),
         "concurrency runtime docs must include fixed-width generic channel wrapper"
     );
     assert!(
-        runtime_doc.contains("fn channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"),
+        runtime_doc.contains("fn channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"),
         "concurrency runtime docs must include fixed-width int-channel wrapper"
     );
     assert!(
-        runtime_doc.contains("fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(UInt32, T), ChannelError] effects { concurrency, env }"),
+        runtime_doc.contains("fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(ConcurrencyIndexU32, T), ChannelError] effects { concurrency, env }"),
         "concurrency runtime docs must include fixed-width select-any wrapper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+        ),
+        "concurrency runtime docs must include task_handle_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn scope_handle_u32(scope: Scope) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+        ),
+        "concurrency runtime docs must include scope_handle_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn sender_handle_u32[T](tx: Sender[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+        ),
+        "concurrency runtime docs must include sender_handle_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn receiver_handle_u32[T](rx: Receiver[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+        ),
+        "concurrency runtime docs must include receiver_handle_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn arc_handle_u32[T](a: Arc[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+        ),
+        "concurrency runtime docs must include arc_handle_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains(
+            "fn arc_strong_count_u32[T](a: Arc[T]) -> Result[ConcurrencyCountU32, ConcurrencyError] effects { concurrency }"
+        ),
+        "concurrency runtime docs must include typed arc_strong_count_u32 helper"
+    );
+    assert!(
+        runtime_doc.contains("fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }"),
+        "concurrency runtime docs must retain legacy Int arc_strong_count helper"
+    );
+    assert!(
+        runtime_doc.contains("fn store_payload_for_channel_u32[T](value: T) -> Result[ConcurrencyPayloadIdU32, ChannelError] effects { concurrency }"),
+        "concurrency runtime docs must include typed payload store helper"
+    );
+    assert!(
+        runtime_doc.contains("fn take_payload_string_u32(payload_id: ConcurrencyPayloadIdU32) -> Result[String, ChannelError] effects { concurrency }"),
+        "concurrency runtime docs must include typed payload string helper"
+    );
+    assert!(
+        runtime_doc.contains("fn take_payload_for_channel_u32[T](payload_id: ConcurrencyPayloadIdU32, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"),
+        "concurrency runtime docs must include typed payload take helper"
+    );
+    assert!(
+        runtime_doc.contains("fn store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency }"),
+        "concurrency runtime docs must retain legacy Int payload-store helper"
+    );
+    assert!(
+        !runtime_doc.contains("enum GuardKind { Mutex, RwWrite }"),
+        "concurrency runtime docs still describe stale guard-kind variants"
+    );
+    assert!(
+        !runtime_doc.contains(
+            "fn arc_strong_count_u32[T](a: Arc[T]) -> ConcurrencyCountU32 effects { concurrency }"
+        ),
+        "concurrency runtime docs still describe stale non-Result arc_strong_count_u32 signature"
     );
     assert!(
         runtime_doc.contains("docs/io-fixed-width-taxonomy-wave2.md"),
@@ -5225,6 +5307,15 @@ fn unit_std_config_env_prefix_and_missing_key_paths_present() {
 fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/concurrent.aic").expect("read std/concurrent.aic");
 
+    assert!(source.contains("type ConcurrencyHandleU32 = UInt32;"));
+    assert!(source.contains("type ConcurrencyPayloadIdU32 = UInt32;"));
+    assert!(source.contains("type ConcurrencyCountU32 = UInt32;"));
+    assert!(source.contains("enum GuardKind {"));
+    assert!(source.contains("MutexGuardKind,"));
+    assert!(source.contains("RwLockWriteGuardKind,"));
+    assert!(source.contains("struct MutexGuard[T] {"));
+    assert!(source.contains("guard_kind: GuardKind,"));
+    assert!(!source.contains("guard_kind: Int,"));
     assert!(source.contains("enum SelectResult[A, B] {"));
     assert!(source.contains("First(A),"));
     assert!(source.contains("Second(B),"));
@@ -5251,6 +5342,7 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "fn arc_get[T](a: Arc[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
     ));
     assert!(source.contains("fn arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }"));
+    assert!(source.contains("fn arc_strong_count_u32[T](a: Arc[T]) -> Result[ConcurrencyCountU32, ConcurrencyError] effects { concurrency }"));
     assert!(source.contains("fn atomic_int(initial: Int) -> AtomicInt effects { concurrency }"));
     assert!(source.contains("fn atomic_load(a: AtomicInt) -> Int effects { concurrency }"));
     assert!(
@@ -5299,6 +5391,35 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }"
     ));
     assert!(source.contains("fn recv_bytes_timeout("));
+    assert!(source.contains(
+        "fn task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    ));
+    assert!(source.contains(
+        "fn scope_handle_u32(scope: Scope) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    ));
+    assert!(source.contains(
+        "fn sender_handle_u32[T](tx: Sender[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    ));
+    assert!(source.contains(
+        "fn receiver_handle_u32[T](rx: Receiver[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    ));
+    assert!(source.contains(
+        "fn arc_handle_u32[T](a: Arc[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    ));
+    assert!(source.contains("fn store_payload_for_channel_u32[T]("));
+    assert!(source
+        .contains(") -> Result[ConcurrencyPayloadIdU32, ChannelError] effects { concurrency }"));
+    assert!(source.contains("fn take_payload_string_u32("));
+    assert!(source.contains("payload_id: ConcurrencyPayloadIdU32,"));
+    assert!(source.contains("fn take_payload_for_channel_u32[T]("));
+    assert!(source.contains(
+        "fn store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains(
+        "fn take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects { concurrency }"
+    ));
+    assert!(source.contains("fn take_payload_for_channel[T]("));
+    assert!(source.contains("fn guard_set[T](g: MutexGuard[T], value: T) -> MutexGuard[T]"));
     assert!(source.contains(
         "intrinsic fn aic_conc_payload_store_value_intrinsic[T](payload: T) -> Result[Int, ConcurrencyError] effects { concurrency };"
     ));

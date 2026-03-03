@@ -4812,11 +4812,7 @@ import std.vec;
 
 fn map_write_guard(g: MutexGuard[Map[String, Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
     let next_map = map.insert(g.value, "count", 42);
-    let updated: MutexGuard[Map[String, Int]] = MutexGuard {
-        handle: g.handle,
-        guard_kind: g.guard_kind,
-        value: next_map,
-    };
+    let updated = guard_set(g, next_map);
     unlock_guard(updated);
     1
 }
@@ -4846,11 +4842,7 @@ fn map_read(m: Mutex[Map[String, Int]]) -> Int effects { concurrency, env } capa
 
 fn vec_write_guard(g: MutexGuard[Vec[Int]]) -> Int effects { concurrency, env } capabilities { concurrency, env  } {
     let next_vec = vec.push(g.value, 9);
-    let updated: MutexGuard[Vec[Int]] = MutexGuard {
-        handle: g.handle,
-        guard_kind: g.guard_kind,
-        value: next_vec,
-    };
+    let updated = guard_set(g, next_vec);
     unlock_guard(updated);
     1
 }
@@ -5166,8 +5158,12 @@ fn read_count(shared: Arc[Mutex[Map[String, Int]]]) -> Int effects { concurrency
 
 fn make_and_drop_clone(shared: Arc[Int]) -> Int effects { concurrency } capabilities { concurrency } {
     let cloned: Arc[Int] = arc_clone(shared);
-    let count = arc_strong_count(shared);
-    if cloned.handle > 0 && count == 2 { 1 } else { 0 }
+    let count_int = arc_strong_count(shared);
+    let count_u32 = match arc_strong_count_u32(shared) {
+        Ok(value) => if value == 2u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    if cloned.handle > 0 && count_int == 2 && count_u32 == 1 { 1 } else { 0 }
 }
 
 fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
@@ -5191,10 +5187,25 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
     let ref_shared: Arc[Int] = arc_new(9);
     let before = arc_strong_count(ref_shared);
+    let before_u32 = match arc_strong_count_u32(ref_shared) {
+        Ok(value) => if value == 1u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
     let inside = make_and_drop_clone(ref_shared);
     let after = arc_strong_count(ref_shared);
+    let after_u32 = match arc_strong_count_u32(ref_shared) {
+        Ok(value) => if value == 1u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
 
-    if joined == 2 && final_count == 2 && before == 1 && inside == 1 && after == 1 {
+    if joined == 2
+        && final_count == 2
+        && before == 1
+        && before_u32 == 1
+        && inside == 1
+        && after == 1
+        && after_u32 == 1
+    {
         print_int(42);
     } else {
         print_int(0);
@@ -7418,6 +7429,165 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
     };
 
     if sent + received + select_ok + any0 + any1 + close_0 + close_1 + close_2 + close_tx + close_rx == 10 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_u32_helper_surfaces_cover_conversion_and_readback_paths() {
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn is_invalid(err: ConcurrencyError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn is_closed(err: ChannelError) -> Int {
+    match err {
+        Closed => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let pair: (Sender[Int], Receiver[Int]) = channel();
+    let tx: Sender[Int] = pair.0;
+    let rx: Receiver[Int] = pair.1;
+
+    let tx_handle_ok = match sender_handle_u32(tx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let rx_handle_ok = match receiver_handle_u32(rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let task_value: Task[Int] = Task { handle: 1 };
+    let task_handle_ok = match task_handle_u32(task_value) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let scope_value: Scope = Scope { handle: 1 };
+    let scope_handle_ok = match scope_handle_u32(scope_value) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let shared_arc: Arc[Int] = arc_new(11);
+    let arc_handle_ok = match arc_handle_u32(shared_arc) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let arc_count_ok = match arc_strong_count_u32(shared_arc) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let payload_id = match store_payload_for_channel_u32("hello") {
+        Ok(id) => id,
+        Err(_) => 0u32,
+    };
+    let payload_text_ok = match take_payload_string_u32(payload_id) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let payload_pair: (Sender[Int], Receiver[Int]) = channel();
+    let payload_rx: Receiver[Int] = payload_pair.1;
+    let payload_id_int = match store_payload_for_channel_u32(77) {
+        Ok(id) => id,
+        Err(_) => 0u32,
+    };
+    let payload_int_ok = match take_payload_for_channel_u32(payload_id_int, payload_rx) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let invalid_task_value: Task[Int] = Task { handle: -1 };
+    let invalid_task = match task_handle_u32(invalid_task_value) {
+        Err(err) => is_invalid(err),
+        Ok(_) => 0,
+    };
+    let invalid_scope_value: Scope = Scope { handle: -1 };
+    let invalid_scope = match scope_handle_u32(invalid_scope_value) {
+        Err(err) => is_invalid(err),
+        Ok(_) => 0,
+    };
+    let invalid_sender_value: Sender[Int] = Sender { handle: -1 };
+    let invalid_sender = match sender_handle_u32(invalid_sender_value) {
+        Err(err) => is_invalid(err),
+        Ok(_) => 0,
+    };
+    let invalid_receiver_value: Receiver[Int] = Receiver { handle: -1 };
+    let invalid_receiver = match receiver_handle_u32(invalid_receiver_value) {
+        Err(err) => is_invalid(err),
+        Ok(_) => 0,
+    };
+    let invalid_arc_value: Arc[Int] = Arc { handle: -1 };
+    let invalid_arc = match arc_handle_u32(invalid_arc_value) {
+        Err(err) => is_invalid(err),
+        Ok(_) => 0,
+    };
+
+    let too_large: UInt32 = 2147483648u32;
+    let invalid_payload_string = match take_payload_string_u32(too_large) {
+        Err(err) => is_closed(err),
+        Ok(_) => 0,
+    };
+    let invalid_pair: (Sender[Int], Receiver[Int]) = channel();
+    let invalid_payload_rx: Receiver[Int] = invalid_pair.1;
+    let invalid_payload_take = match take_payload_for_channel_u32(too_large, invalid_payload_rx) {
+        Err(err) => is_closed(err),
+        Ok(_) => 0,
+    };
+
+    let close_tx = match close_sender(tx) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if tx_handle_ok
+        + rx_handle_ok
+        + task_handle_ok
+        + scope_handle_ok
+        + arc_handle_ok
+        + arc_count_ok
+        + payload_text_ok
+        + payload_int_ok
+        + invalid_task
+        + invalid_scope
+        + invalid_sender
+        + invalid_receiver
+        + invalid_arc
+        + invalid_payload_string
+        + invalid_payload_take
+        + close_tx
+        + close_rx
+        == 17
+    {
         print_int(42);
     } else {
         print_int(0);

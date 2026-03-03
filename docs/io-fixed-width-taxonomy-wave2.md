@@ -1,12 +1,12 @@
 # Wave 2 Fixed-Width Scalar Taxonomy (`std.net` / `std.tls` / `std.concurrent`)
 
-This artifact records phase-1 scalar migration choices for issue #311.
+This artifact records phase-1 scalar migration choices for issues #311 and #315.
 
 ## Migration Policy
 
 - Keep existing runtime/intrinsic signatures stable where lowering currently expects `Int`.
 - Add fixed-width wrappers for clearly non-negative domains first (`UInt32` in this phase).
-- Preserve timeout/deadline and index-position arguments as `Int` unless explicitly migrated by wrapper.
+- Preserve timeout/deadline arguments as `Int`; migrate index-position and counter domains only via explicit additive wrappers.
 
 ## Scalar Taxonomy Table
 
@@ -28,14 +28,20 @@ This artifact records phase-1 scalar migration choices for issue #311.
 | `std.tls.TlsAsync*SelectionU32.index` | `UInt32` | Async selection index is non-negative. |
 | `std.tls.tls_async_runtime_pressure_u32` | `Result[AsyncRuntimePressureU32, TlsError]` | Reuses shared unsigned pressure view for TLS async pressure snapshots. |
 | `std.concurrent.ConcurrencyCapacityU32` | `UInt32` | Channel capacity is a queue-size domain and cannot be negative. |
-| `std.concurrent.buffered_channel_u32` / `buffered_bytes_channel_u32` | `capacity: UInt32` | Generic/channel wrappers expose unsigned capacity while keeping legacy APIs. |
-| `std.concurrent.channel_int_u32` / `buffered_channel_int_u32` / `channel_int_buffered_u32` | `capacity: UInt32` | Phase-1 migration of explicit channel-capacity APIs. |
-| `std.concurrent.IntChannelSelectionU32.channel_index` | `UInt32` | Channel index in select results is non-negative. |
-| `std.concurrent.IntTaskSelectionU32.task_index` | `UInt32` | Task selection index is non-negative. |
-| `std.concurrent.select_any_u32` return index | `UInt32` | Fan-in receiver index is non-negative. |
+| `std.concurrent.ConcurrencyIndexU32` | `UInt32` | Selection/fan-in positions are non-negative domains. |
+| `std.concurrent.ConcurrencyHandleU32` | `UInt32` | Runtime handle IDs are non-negative table keys exposed by fixed-width wrappers. |
+| `std.concurrent.ConcurrencyPayloadIdU32` | `UInt32` | Concurrency payload-slot IDs are non-negative runtime identifiers. |
+| `std.concurrent.ConcurrencyCountU32` | `UInt32` | Refcount/counter surfaces are non-negative quantities. |
+| `std.concurrent.buffered_channel_u32` / `buffered_bytes_channel_u32` | `capacity: ConcurrencyCapacityU32` | Generic/channel wrappers expose typed unsigned capacity while keeping legacy APIs. |
+| `std.concurrent.channel_int_u32` / `buffered_channel_int_u32` / `channel_int_buffered_u32` | `capacity: ConcurrencyCapacityU32` | Phase-1 migration of explicit channel-capacity APIs. |
+| `std.concurrent.IntChannelSelectionU32.channel_index` | `ConcurrencyIndexU32` | Channel index in select results is non-negative. |
+| `std.concurrent.IntTaskSelectionU32.task_index` | `ConcurrencyIndexU32` | Task selection index is non-negative. |
+| `std.concurrent.select_any_u32` return index | `ConcurrencyIndexU32` | Fan-in receiver index is non-negative. |
+| `std.concurrent.arc_strong_count_u32` | `Result[ConcurrencyCountU32, ConcurrencyError]` | Additive fixed-width Arc strong-count view over legacy `arc_strong_count` ABI surface with explicit conversion/error signaling. |
 
 ## Compatibility Notes
 
 - Existing `Int` APIs remain available for runtime/backward compatibility.
-- New `*_u32` wrappers are deterministic and additive.
+- New `*_u32` wrappers and alias domains (`ConcurrencyCapacityU32`, `ConcurrencyIndexU32`, `ConcurrencyHandleU32`, `ConcurrencyPayloadIdU32`, `ConcurrencyCountU32`) are deterministic and additive.
+- `arc_strong_count_u32` is additive; `arc_strong_count` (`Int`) remains available for legacy callers.
 - Current lowering still expects some legacy `Int` payload structs (`AsyncRuntimePressure`, async-op handles), so phase-1 uses wrapper types instead of intrinsic signature replacement.
