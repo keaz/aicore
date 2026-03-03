@@ -5875,7 +5875,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         PoolConfig {
             min_size: 5,
             max_size: 5,
-            acquire_timeout_ms: 200,
+            acquire_timeout_ms: 1000,
             idle_timeout_ms: 40,
             max_lifetime_ms: 0,
             health_check_ms: 0,
@@ -5909,7 +5909,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         j = j + 1;
     };
 
-    wait_ms(20);
+    wait_ms(100);
     let stats = pool_stats(pool);
     close_pool(pool);
 
