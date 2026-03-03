@@ -6818,6 +6818,20 @@ fn option_int_score(set_result: Result[Bool, NetError], get_result: Result[Int, 
     }
 }
 
+fn option_u32_score(set_result: Result[Bool, NetError], get_result: Result[UInt32, NetError]) -> Int {
+    match set_result {
+        Ok(done) => if done {
+            match get_result {
+                Ok(size_bytes) => bool_to_int(size_bytes > 0u32),
+                Err(err) => bool_to_int(is_io_or_invalid(err)),
+            }
+        } else {
+            0
+        },
+        Err(err) => bool_to_int(is_io(err)),
+    }
+}
+
 fn option_addr_score(result: Result[String, NetError]) -> Int {
     match result {
         Ok(addr) => bool_to_int(len(addr) > 0),
@@ -6860,21 +6874,41 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         tcp_set_keepalive_idle_secs(server, 30),
         tcp_get_keepalive_idle_secs(server),
     );
+    let keepalive_idle_u32_ok = option_u32_score(
+        tcp_set_keepalive_idle_secs_u32(server, 30u32),
+        tcp_get_keepalive_idle_secs_u32(server),
+    );
     let keepalive_interval_ok = option_int_score(
         tcp_stream_set_keepalive_interval_secs(client_stream, 10),
         tcp_stream_get_keepalive_interval_secs(client_stream),
+    );
+    let keepalive_interval_u32_ok = option_u32_score(
+        tcp_stream_set_keepalive_interval_secs_u32(client_stream, 10u32),
+        tcp_stream_get_keepalive_interval_secs_u32(client_stream),
     );
     let keepalive_count_ok = option_int_score(
         tcp_set_keepalive_count(client, 5),
         tcp_get_keepalive_count(client),
     );
+    let keepalive_count_u32_ok = option_u32_score(
+        tcp_set_keepalive_count_u32(client, 5u32),
+        tcp_get_keepalive_count_u32(client),
+    );
     let send_buffer_ok = option_int_score(
         tcp_set_send_buffer_size(client, 8192),
         tcp_get_send_buffer_size(client),
     );
+    let send_buffer_u32_ok = option_u32_score(
+        tcp_set_send_buffer_size_u32(client, 8192u32),
+        tcp_get_send_buffer_size_u32(client),
+    );
     let recv_buffer_ok = option_int_score(
         tcp_stream_set_recv_buffer_size(server_stream, 8192),
         tcp_stream_get_recv_buffer_size(server_stream),
+    );
+    let recv_buffer_u32_ok = option_u32_score(
+        tcp_stream_set_recv_buffer_size_u32(server_stream, 8192u32),
+        tcp_stream_get_recv_buffer_size_u32(server_stream),
     );
     let peer_addr_ok = option_addr_score(tcp_stream_peer_addr(client_stream));
 
@@ -6896,6 +6930,14 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         _ => 0,
     };
     let invalid_keepalive_ok = match tcp_set_keepalive_idle_secs(client, 0) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let invalid_keepalive_u32_range_ok = match tcp_set_keepalive_idle_secs_u32(client, 2147483648u32) {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let invalid_send_buffer_u32_range_ok = match tcp_set_send_buffer_size_u32(client, 2147483648u32) {
         Err(err) => bool_to_int(is_invalid_input(err)),
         _ => 0,
     };
@@ -6926,21 +6968,28 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
     if nodelay_ok
         + keepalive_ok
         + keepalive_idle_ok
+        + keepalive_idle_u32_ok
         + keepalive_interval_ok
+        + keepalive_interval_u32_ok
         + keepalive_count_ok
+        + keepalive_count_u32_ok
         + send_buffer_ok
+        + send_buffer_u32_ok
         + recv_buffer_ok
+        + recv_buffer_u32_ok
         + peer_addr_ok
         + shutdown_write_ok
         + shutdown_read_ok
         + shutdown_both_ok
         + invalid_size_ok
         + invalid_keepalive_ok
+        + invalid_keepalive_u32_range_ok
+        + invalid_send_buffer_u32_range_ok
         + wrong_handle_ok
         + wrong_peer_ok
         + wrong_shutdown_ok
         + close_ok
-        == 19
+        == 26
     {
         print_int(42);
     } else {
@@ -9382,6 +9431,171 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_fixed_width_bridge_helpers_enforce_boundaries_across_std_modules() {
+    let src = r#"
+import std.env;
+import std.http;
+import std.http_server;
+import std.io;
+import std.proc;
+import std.url;
+
+fn proc_invalid_input(err: ProcError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn url_invalid_port(err: UrlError) -> Int {
+    match err {
+        InvalidPort => 1,
+        _ => 0,
+    }
+}
+
+fn http_invalid_status(err: HttpError) -> Int {
+    match err {
+        InvalidStatus => 1,
+        _ => 0,
+    }
+}
+
+fn http_server_internal(err: ServerError) -> Int {
+    match err {
+        Internal => 1,
+        _ => 0,
+    }
+}
+
+fn proc_handle_ok(v: Result[ProcHandle, ProcError], expected: ProcHandle) -> Int {
+    match v {
+        Ok(value) => if value == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn proc_handle_roundtrip(v: Result[ProcHandle, ProcError], expected: Int) -> Int {
+    match v {
+        Ok(value) => if proc_handle_to_int(value) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn proc_status_ok(v: Result[ProcExitStatus, ProcError], expected: ProcExitStatus) -> Int {
+    match v {
+        Ok(value) => if value == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn url_port_roundtrip(v: Result[Option[UInt16], UrlError], expected: Int) -> Int {
+    match v {
+        Ok(port) => if url_port_to_int(port) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn http_status_roundtrip(v: Result[UInt16, HttpError], expected: Int) -> Int {
+    match v {
+        Ok(status) => if http_status_to_int(status) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn http_server_status_roundtrip(v: Result[UInt16, ServerError], expected: Int) -> Int {
+    match v {
+        Ok(status) => if http_server_status_to_int(status) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let zero_i32 = proc_nonnegative_int_to_i32(0);
+    let one_i32 = proc_nonnegative_int_to_i32(1);
+    let max_i32 = proc_nonnegative_int_to_i32(2147483647);
+    let min_i32 = (zero_i32 - max_i32) - one_i32;
+    let max_handle: ProcHandle = 4294967295u32;
+
+    let proc_handle_zero = proc_handle_ok(proc_handle_from_int(0), 0u32);
+    let proc_handle_mid = proc_handle_roundtrip(proc_handle_from_int(65535), 65535);
+    let proc_handle_max = proc_handle_ok(proc_handle_from_int(4294967295), max_handle);
+    let proc_handle_negative = match proc_handle_from_int(-1) {
+        Ok(_) => 0,
+        Err(err) => proc_invalid_input(err),
+    };
+    let proc_handle_overflow = match proc_handle_from_int(4294967296) {
+        Ok(_) => 0,
+        Err(err) => proc_invalid_input(err),
+    };
+
+    let proc_status_min = proc_status_ok(proc_exit_status_from_int(-2147483648), min_i32);
+    let proc_status_max = proc_status_ok(proc_exit_status_from_int(2147483647), max_i32);
+    let proc_status_too_low = match proc_exit_status_from_int(-2147483649) {
+        Ok(_) => 0,
+        Err(err) => proc_invalid_input(err),
+    };
+    let proc_status_too_high = match proc_exit_status_from_int(2147483648) {
+        Ok(_) => 0,
+        Err(err) => proc_invalid_input(err),
+    };
+
+    let env_zero = if env_i32_to_int(zero_i32) == 0 { 1 } else { 0 };
+    let env_pos = if env_i32_to_int(proc_nonnegative_int_to_i32(32767)) == 32767 { 1 } else { 0 };
+    let env_negative_input = zero_i32 - proc_nonnegative_int_to_i32(32768);
+    let env_neg = if env_i32_to_int(env_negative_input) == -32768 { 1 } else { 0 };
+
+    let url_none = url_port_roundtrip(url_port_from_int(-1), -1);
+    let url_zero = url_port_roundtrip(url_port_from_int(0), 0);
+    let url_max = url_port_roundtrip(url_port_from_int(65535), 65535);
+    let url_over = match url_port_from_int(65536) {
+        Ok(_) => 0,
+        Err(err) => url_invalid_port(err),
+    };
+
+    let http_zero = http_status_roundtrip(http_status_from_int(0), 0);
+    let http_max = http_status_roundtrip(http_status_from_int(65535), 65535);
+    let http_neg = match http_status_from_int(-1) {
+        Ok(_) => 0,
+        Err(err) => http_invalid_status(err),
+    };
+    let http_over = match http_status_from_int(65536) {
+        Ok(_) => 0,
+        Err(err) => http_invalid_status(err),
+    };
+
+    let server_zero = http_server_status_roundtrip(http_server_status_from_int(0), 0);
+    let server_max = http_server_status_roundtrip(http_server_status_from_int(65535), 65535);
+    let server_neg = match http_server_status_from_int(-1) {
+        Ok(_) => 0,
+        Err(err) => http_server_internal(err),
+    };
+    let server_over = match http_server_status_from_int(65536) {
+        Ok(_) => 0,
+        Err(err) => http_server_internal(err),
+    };
+
+    let score =
+        proc_handle_zero + proc_handle_mid + proc_handle_max + proc_handle_negative + proc_handle_overflow +
+        proc_status_min + proc_status_max + proc_status_too_low + proc_status_too_high +
+        env_zero + env_pos + env_neg +
+        url_none + url_zero + url_max + url_over +
+        http_zero + http_max + http_neg + http_over +
+        server_zero + server_max + server_neg + server_over;
+    if score == 24 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_io_read_variants_and_prompt_behaviors() {
     let src = r#"
 import std.io;
@@ -11202,6 +11416,24 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
         },
         Err(_) => false,
     };
+    let version_code_ok = match tls_version_code(stream) {
+        Ok(code) => if code == tls_version_to_code(Tls12()) {
+            true
+        } else {
+            code == tls_version_to_code(Tls13())
+        },
+        Err(_) => false,
+    };
+    let version_bridge_ok = match tls_version_code(stream) {
+        Ok(code) => match tls_version_from_code(code) {
+            Ok(v) => match v {
+                Tls12 => true,
+                Tls13 => true,
+            },
+            Err(_) => false,
+        },
+        Err(_) => false,
+    };
     let close_ok = match tls_close(stream) {
         Ok(closed) => closed,
         Err(_) => false,
@@ -11253,12 +11485,14 @@ fn score_connected(stream: TlsStream, addr: String, secure: TlsConfig) -> Int ef
         + bool_to_int(fingerprint_ok)
         + bool_to_int(san_ok)
         + bool_to_int(version_ok)
+        + bool_to_int(version_code_ok)
+        + bool_to_int(version_bridge_ok)
         + bool_to_int(close_ok)
         + bool_to_int(secure_ok)
         + bool_to_int(default_cert_reject)
         + bool_to_int(wrapped_ok)
         + bool_to_int(upgraded_ok);
-    if score == 13 { 42 } else { score }
+    if score == 15 { 42 } else { score }
 }
 
 fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
@@ -11723,6 +11957,16 @@ fn is_protocol_version(v: Result[TlsVersion, TlsError]) -> Bool {
     }
 }
 
+fn is_protocol_version_code(v: Result[TlsVersionCode, TlsError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            ProtocolError => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn is_protocol_string(v: Result[String, TlsError]) -> Bool {
     match v {
         Err(err) => match err {
@@ -11804,6 +12048,7 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
     let fingerprint_ok = is_protocol_string(tls_peer_fingerprint_sha256(bad));
     let san_ok = is_protocol_string_vec(tls_peer_san_entries(bad));
     let version_ok = is_protocol_version(tls_version(bad));
+    let version_code_ok = is_protocol_version_code(tls_version_code(bad));
     let close_ok = is_protocol_bool(tls_close(bad));
     let accept_ok = match tls_accept(9999, default_tls_config()) {
         Err(err) => match err {
@@ -11826,8 +12071,9 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
         + bool_to_int(fingerprint_ok)
         + bool_to_int(san_ok)
         + bool_to_int(version_ok)
+        + bool_to_int(version_code_ok)
         + bool_to_int(accept_ok);
-    if score == 14 {
+    if score == 15 {
         print_int(42);
     } else {
         print_int(score);

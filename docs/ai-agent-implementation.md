@@ -256,7 +256,7 @@ Diagnostics:
   - `E2120`: missing/unsupported extern ABI
   - `E2121`: extern signature must be plain (no async/generics/effects/contracts)
   - `E2122`: calling `extern` or `unsafe fn` requires an explicit unsafe boundary
-  - `E2123`: unsupported C-ABI signature type (MVP support: `Int`, `Bool`, `()`)
+  - `E2123`: unsupported C-ABI signature type (MVP support: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, `()`)
 - Backend contract:
   - extern declarations lower to wrapper functions + raw native symbol declarations
   - backend emits `E5024` for unsupported extern ABI/lowering mismatches

@@ -33,4 +33,4 @@ type_list      = type ("," type)* ","? ;
 - Postfix `?` requires `Result[T, E]` and preserves `T` while checking `E` compatibility with the enclosing function return type.
 - Type inference is local and deterministic. When inference cannot resolve a concrete type, the checker reports an error and uses unresolved internal marker `<?>` for continued analysis.
 - `null` is forbidden both as a symbol and as a type fragment; use `Option[T]` for absence.
-- Extern C-ABI signatures currently accept only C-compatible scalar/value forms for parameters and returns (`Int`, `Bool`, `Float`, `()`, with no unresolved generics).
+- Extern C-ABI signatures currently accept only C-compatible scalar/value forms for parameters and returns (`Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()`, with no unresolved generics).

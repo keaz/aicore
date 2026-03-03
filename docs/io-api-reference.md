@@ -427,11 +427,17 @@ fn tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_keepalive(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_get_keepalive(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_keepalive_idle_secs(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_keepalive_idle_secs_u32(handle: Int, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_keepalive_idle_secs(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_get_keepalive_idle_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }
 fn tcp_set_keepalive_interval_secs(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_keepalive_interval_secs_u32(handle: Int, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_keepalive_interval_secs(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_get_keepalive_interval_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }
 fn tcp_set_keepalive_count(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_keepalive_count_u32(handle: Int, probe_count: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] effects { net }
 fn tcp_peer_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_shutdown(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_shutdown_read(handle: Int) -> Result[Bool, NetError] effects { net }
@@ -439,9 +445,11 @@ fn tcp_shutdown_write(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_send_buffer_size_u32(handle: Int, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_get_send_buffer_size_u32(handle: Int) -> Result[UInt32, NetError] effects { net }
 fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_recv_buffer_size_u32(handle: Int, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
+fn tcp_get_recv_buffer_size_u32(handle: Int) -> Result[UInt32, NetError] effects { net }
 fn tcp_stream(handle: Int) -> TcpStream
 fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
@@ -462,11 +470,17 @@ fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects {
 fn tcp_stream_set_keepalive(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_keepalive_idle_secs(stream: TcpStream, idle_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_keepalive_idle_secs_u32(stream: TcpStream, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_keepalive_idle_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_get_keepalive_idle_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }
 fn tcp_stream_set_keepalive_interval_secs(stream: TcpStream, interval_secs: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_keepalive_interval_secs_u32(stream: TcpStream, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_keepalive_interval_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_get_keepalive_interval_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }
 fn tcp_stream_set_keepalive_count(stream: TcpStream, probe_count: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_keepalive_count_u32(stream: TcpStream, probe_count: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_keepalive_count(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_get_keepalive_count_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }
 fn tcp_stream_peer_addr(stream: TcpStream) -> Result[String, NetError] effects { net }
 fn tcp_stream_shutdown(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_shutdown_read(stream: TcpStream) -> Result[Bool, NetError] effects { net }
@@ -474,9 +488,11 @@ fn tcp_stream_shutdown_write(stream: TcpStream) -> Result[Bool, NetError] effect
 fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_send_buffer_size_u32(stream: TcpStream, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_get_send_buffer_size_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size_u32(stream: TcpStream, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
+fn tcp_stream_get_recv_buffer_size_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }
 fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
 fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
 fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }
@@ -534,9 +550,11 @@ Notes:
 - `tcp_stream_recv_framed*` expects a 4-byte big-endian length prefix and enforces `max_frame_bytes`.
 - `tcp_set_nodelay` and `tcp_set_keepalive` toggle runtime socket flags and can be read back with `tcp_get_*`.
 - `tcp_set/get_keepalive_idle_secs`, `tcp_set/get_keepalive_interval_secs`, and `tcp_set/get_keepalive_count` tune keepalive probe behavior where supported.
+- Fixed-width wrappers (`*_u32`) are available for keepalive tunables and preserve deterministic `Int <-> UInt32` boundary checks.
 - `tcp_peer_addr` / `tcp_stream_peer_addr` expose remote endpoint identity for telemetry and policy checks.
 - `tcp_shutdown*` / `tcp_stream_shutdown*` expose half-close/full-close controls for protocol flow control.
 - `tcp_set_send_buffer_size` and `tcp_set_recv_buffer_size` request kernel buffer sizes; read-back values may differ by platform/kernel.
+- `tcp_get_send_buffer_size_u32` / `tcp_get_recv_buffer_size_u32` expose validated non-negative getter surfaces without changing runtime `Int` intrinsics.
 - Async lifecycle control surface is protocol-neutral:
   - `async_cancel_*` returns `Ok(true)` when cancellation is applied and `Ok(false)` when the op already completed.
   - `async_poll_*` maps pending state to `Ok(None())` via zero-timeout waits.
@@ -594,7 +612,7 @@ struct TlsAsyncStringSelection {
 
 struct TlsAsyncIntSelectionU32 {
     index: UInt32,
-    value: Int,
+    value: UInt32,
 }
 
 struct TlsAsyncStringSelectionU32 {
@@ -606,6 +624,8 @@ enum TlsVersion {
     Tls12,
     Tls13,
 }
+
+type TlsVersionCode = UInt8;
 
 fn default_tls_config() -> TlsConfig
 fn unsafe_insecure_tls_config(server_name: Option[String]) -> TlsConfig
@@ -672,6 +692,9 @@ fn tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net 
 fn tls_peer_fingerprint_sha256(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effects { net }
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_version_to_code(version: TlsVersion) -> TlsVersionCode
+fn tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError]
+fn tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net }
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }
 ```
 
@@ -707,7 +730,7 @@ Notes:
 - Generic TLS metadata pinning scaffold example: `examples/io/tls_metadata_pinning_scaffold.aic`.
 - `tls_recv_exact*` and `byte_stream_recv_exact*` are deadline-based exact byte readers.
 - `tls_recv_framed*` and `byte_stream_recv_framed*` decode a 4-byte big-endian length prefix and enforce frame-size bounds.
-- `tls_version` reports negotiated protocol (`Tls12` or `Tls13`).
+- `tls_version_code` reports bounded negotiated protocol codes (`12` or `13`) and `tls_version` remains the compatibility enum wrapper (`Tls12` or `Tls13`).
 - `tls_peer_cn` extracts the peer certificate common name from the subject string.
 - Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.
 - Replay contract: `docs/security-ops/postgres-tls-scram-replay.v1.json`.

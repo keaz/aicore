@@ -2056,6 +2056,18 @@ fn unit_std_env_public_apis_delegate_to_runtime_intrinsics() {
         env_source.contains("fn exit(code: Int32) -> () effects { env }"),
         "std/env.aic exit must expose bounded Int32 status codes"
     );
+    assert!(
+        env_source.contains("fn env_i32_to_int(value: Int32) -> Int"),
+        "std/env.aic must expose Int32->Int exit bridge helper"
+    );
+    assert!(
+        env_source.contains("if value < zero_i32"),
+        "std/env.aic must preserve signed Int32 conversion branches"
+    );
+    assert!(
+        env_source.contains("0 - out"),
+        "std/env.aic must preserve negative Int32 conversion semantics"
+    );
 }
 
 #[test]
@@ -2354,6 +2366,18 @@ fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
         proc_source.contains("if value < -2147483648 || value > 2147483647"),
         "std/proc.aic must enforce Int32 exit-status bounds"
     );
+    assert!(
+        proc_source.contains("if value == -2147483648"),
+        "std/proc.aic must preserve Int32 minimum boundary handling"
+    );
+    assert!(
+        proc_source.contains("else if value < 0"),
+        "std/proc.aic must preserve negative status conversion path"
+    );
+    assert!(
+        proc_source.contains("Ok(zero - magnitude)"),
+        "std/proc.aic must convert negative statuses without widening public type"
+    );
 
     for (name, arity) in [
         ("aic_proc_spawn_intrinsic", 1usize),
@@ -2444,6 +2468,102 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_tcp_get_keepalive_intrinsic",
         1,
     );
+    assert!(
+        net_source.contains(
+            "fn tcp_set_keepalive_idle_secs_u32(handle: Int, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive idle setter wrapper"
+    );
+    assert!(
+        net_source.contains("match net_u32_to_int(idle_secs)"),
+        "std/net.aic fixed-width keepalive idle setter must validate UInt32->Int conversion"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_get_keepalive_idle_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive idle getter wrapper"
+    );
+    assert!(
+        net_source.contains("Ok(idle_secs) => net_int_to_u32(idle_secs),"),
+        "std/net.aic fixed-width keepalive idle getter must validate Int->UInt32 conversion"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_set_keepalive_interval_secs_u32(\n    handle: Int,\n    interval_secs: UInt32,\n) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive interval setter wrapper"
+    );
+    assert!(
+        net_source.contains("match net_u32_to_int(interval_secs)"),
+        "std/net.aic fixed-width keepalive interval setter must validate UInt32->Int conversion"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_get_keepalive_interval_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive interval getter wrapper"
+    );
+    assert!(
+        net_source.contains("Ok(interval_secs) => net_int_to_u32(interval_secs),"),
+        "std/net.aic fixed-width keepalive interval getter must validate Int->UInt32 conversion"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_set_keepalive_count_u32(handle: Int, probe_count: UInt32) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive probe-count setter wrapper"
+    );
+    assert!(
+        net_source.contains("match net_u32_to_int(probe_count)"),
+        "std/net.aic fixed-width keepalive probe-count setter must validate UInt32->Int conversion"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width keepalive probe-count getter wrapper"
+    );
+    assert!(
+        net_source.contains("Ok(probe_count) => net_int_to_u32(probe_count),"),
+        "std/net.aic fixed-width keepalive probe-count getter must validate Int->UInt32 conversion"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_set_keepalive_idle_secs_intrinsic(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive idle intrinsic must keep Int runtime boundary signature"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_get_keepalive_idle_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive idle getter intrinsic must keep Int runtime boundary signature"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_set_keepalive_interval_secs_intrinsic(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive interval intrinsic must keep Int runtime boundary signature"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_get_keepalive_interval_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive interval getter intrinsic must keep Int runtime boundary signature"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_set_keepalive_count_intrinsic(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive count intrinsic must keep Int runtime boundary signature"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_get_keepalive_count_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };"
+        ),
+        "std/net.aic keepalive count getter intrinsic must keep Int runtime boundary signature"
+    );
     assert_delegate_call(
         &net_source,
         "std/net.aic",
@@ -2458,6 +2578,22 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_tcp_get_send_buffer_size_intrinsic",
         1,
     );
+    assert!(
+        net_source.contains(
+            "fn tcp_get_send_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width send-buffer getter wrapper"
+    );
+    assert!(
+        net_source.contains("match tcp_get_send_buffer_size(handle) {"),
+        "std/net.aic fixed-width send-buffer getter must delegate through Int getter for deterministic conversion"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_get_send_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };"
+        ),
+        "std/net.aic send-buffer getter intrinsic must keep Int runtime boundary signature"
+    );
     assert_delegate_call(
         &net_source,
         "std/net.aic",
@@ -2471,6 +2607,22 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "tcp_get_recv_buffer_size",
         "aic_net_tcp_get_recv_buffer_size_intrinsic",
         1,
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_get_recv_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose fixed-width recv-buffer getter wrapper"
+    );
+    assert!(
+        net_source.contains("match tcp_get_recv_buffer_size(handle) {"),
+        "std/net.aic fixed-width recv-buffer getter must delegate through Int getter for deterministic conversion"
+    );
+    assert!(
+        net_source.contains(
+            "intrinsic fn aic_net_tcp_get_recv_buffer_size_intrinsic(handle: Int) -> Result[Int, NetError] effects { net };"
+        ),
+        "std/net.aic recv-buffer getter intrinsic must keep Int runtime boundary signature"
     );
     assert_delegate_call(
         &net_source,
@@ -2687,6 +2839,36 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
     );
     assert!(
         net_source.contains(
+            "fn tcp_stream_set_keepalive_idle_secs_u32(\n    stream: TcpStream,\n    idle_secs: UInt32,\n) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_keepalive_idle_secs_u32 adapter API"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream_get_keepalive_idle_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "std/net.aic must expose tcp_stream_get_keepalive_idle_secs_u32 adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_set_keepalive_interval_secs_u32(\n    stream: TcpStream,\n    interval_secs: UInt32,\n) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_keepalive_interval_secs_u32 adapter API"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream_get_keepalive_interval_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "std/net.aic must expose tcp_stream_get_keepalive_interval_secs_u32 adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_set_keepalive_count_u32(\n    stream: TcpStream,\n    probe_count: UInt32,\n) -> Result[Bool, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_set_keepalive_count_u32 adapter API"
+    );
+    assert!(
+        net_source.contains("fn tcp_stream_get_keepalive_count_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "std/net.aic must expose tcp_stream_get_keepalive_count_u32 adapter API"
+    );
+    assert!(
+        net_source.contains(
             "fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
         ),
         "std/net.aic must expose tcp_stream_set_send_buffer_size adapter API"
@@ -2699,6 +2881,12 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
     );
     assert!(
         net_source.contains(
+            "fn tcp_stream_get_send_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_send_buffer_size_u32 adapter API"
+    );
+    assert!(
+        net_source.contains(
             "fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
         ),
         "std/net.aic must expose tcp_stream_set_recv_buffer_size adapter API"
@@ -2708,6 +2896,12 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
             "fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
         ),
         "std/net.aic must expose tcp_stream_get_recv_buffer_size adapter API"
+    );
+    assert!(
+        net_source.contains(
+            "fn tcp_stream_get_recv_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net }"
+        ),
+        "std/net.aic must expose tcp_stream_get_recv_buffer_size_u32 adapter API"
     );
     assert!(
         net_source.contains("tcp_send(stream.handle, payload)"),
@@ -2738,6 +2932,30 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
         "std/net.aic tcp_stream_get_keepalive must delegate to tcp_get_keepalive"
     );
     assert!(
+        net_source.contains("tcp_set_keepalive_idle_secs_u32(stream.handle, idle_secs)"),
+        "std/net.aic tcp_stream_set_keepalive_idle_secs_u32 must delegate to tcp_set_keepalive_idle_secs_u32"
+    );
+    assert!(
+        net_source.contains("tcp_get_keepalive_idle_secs_u32(stream.handle)"),
+        "std/net.aic tcp_stream_get_keepalive_idle_secs_u32 must delegate to tcp_get_keepalive_idle_secs_u32"
+    );
+    assert!(
+        net_source.contains("tcp_set_keepalive_interval_secs_u32(stream.handle, interval_secs)"),
+        "std/net.aic tcp_stream_set_keepalive_interval_secs_u32 must delegate to tcp_set_keepalive_interval_secs_u32"
+    );
+    assert!(
+        net_source.contains("tcp_get_keepalive_interval_secs_u32(stream.handle)"),
+        "std/net.aic tcp_stream_get_keepalive_interval_secs_u32 must delegate to tcp_get_keepalive_interval_secs_u32"
+    );
+    assert!(
+        net_source.contains("tcp_set_keepalive_count_u32(stream.handle, probe_count)"),
+        "std/net.aic tcp_stream_set_keepalive_count_u32 must delegate to tcp_set_keepalive_count_u32"
+    );
+    assert!(
+        net_source.contains("tcp_get_keepalive_count_u32(stream.handle)"),
+        "std/net.aic tcp_stream_get_keepalive_count_u32 must delegate to tcp_get_keepalive_count_u32"
+    );
+    assert!(
         net_source.contains("tcp_set_send_buffer_size(stream.handle, size_bytes)"),
         "std/net.aic tcp_stream_set_send_buffer_size must delegate to tcp_set_send_buffer_size"
     );
@@ -2746,12 +2964,20 @@ fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
         "std/net.aic tcp_stream_get_send_buffer_size must delegate to tcp_get_send_buffer_size"
     );
     assert!(
+        net_source.contains("tcp_get_send_buffer_size_u32(stream.handle)"),
+        "std/net.aic tcp_stream_get_send_buffer_size_u32 must delegate to tcp_get_send_buffer_size_u32"
+    );
+    assert!(
         net_source.contains("tcp_set_recv_buffer_size(stream.handle, size_bytes)"),
         "std/net.aic tcp_stream_set_recv_buffer_size must delegate to tcp_set_recv_buffer_size"
     );
     assert!(
         net_source.contains("tcp_get_recv_buffer_size(stream.handle)"),
         "std/net.aic tcp_stream_get_recv_buffer_size must delegate to tcp_get_recv_buffer_size"
+    );
+    assert!(
+        net_source.contains("tcp_get_recv_buffer_size_u32(stream.handle)"),
+        "std/net.aic tcp_stream_get_recv_buffer_size_u32 must delegate to tcp_get_recv_buffer_size_u32"
     );
 }
 
@@ -2862,6 +3088,18 @@ fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
     assert!(
         url_source.contains("port > 65535"),
         "std/url.aic must enforce UInt16 port bounds"
+    );
+    assert!(
+        url_source.contains("Ok(None())"),
+        "std/url.aic must preserve no-port sentinel mapping at the runtime bridge"
+    );
+    assert!(
+        url_source.contains("None => -1"),
+        "std/url.aic must roundtrip no-port sentinel through the runtime bridge"
+    );
+    assert!(
+        url_source.contains("Some(value) => url_u16_to_int(value)"),
+        "std/url.aic must roundtrip explicit UInt16 ports through the runtime bridge"
     );
 }
 
@@ -3074,6 +3312,28 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         "std/tls.aic tls_version must call the TLS version intrinsic"
     );
     assert!(
+        source.contains("type TlsVersionCode = UInt8;"),
+        "std/tls.aic must expose bounded TLS version code type alias"
+    );
+    assert!(
+        source.contains("fn tls_version_to_code(version: TlsVersion) -> TlsVersionCode"),
+        "std/tls.aic must expose enum-to-code TLS version helper"
+    );
+    assert!(
+        source.contains(
+            "fn tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError]"
+        ),
+        "std/tls.aic must expose code-to-enum TLS version helper"
+    );
+    assert!(
+        source.contains("fn tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net }"),
+        "std/tls.aic must expose bounded TLS version code helper"
+    );
+    assert!(
+        source.contains("match tls_version_code(stream) {"),
+        "std/tls.aic tls_version must bridge through tls_version_code for compatibility-safe evolution"
+    );
+    assert!(
         source.contains("fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError]"),
         "std/tls.aic must expose tls_peer_cn helper"
     );
@@ -3201,6 +3461,16 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
     assert!(
         source.contains("fn tls_async_wait_many_int_u32("),
         "std/tls.aic must expose fixed-width async wait-many int wrapper"
+    );
+    assert!(
+        source.contains(
+            "struct TlsAsyncIntSelectionU32 {\n    index: UInt32,\n    value: TlsByteCountU32,\n}"
+        ),
+        "std/tls.aic fixed-width int selection must keep both index and value in unsigned domains"
+    );
+    assert!(
+        source.contains("Ok(index) => match tls_int_to_u32(selection.value) {"),
+        "std/tls.aic fixed-width int selection wrapper must convert selected value into UInt32 domain"
     );
     assert!(
         source.contains(
@@ -3754,6 +4024,70 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
         !async_runtime.contains("async_wait_string(op, timeout_ms) -> Result[String, NetError]"),
         "async runtime docs still document stale string async_wait_string signature"
     );
+    assert!(
+        io_api.contains("fn tcp_set_keepalive_idle_secs_u32(handle: Int, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive idle setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_get_keepalive_idle_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive idle getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_set_keepalive_interval_secs_u32(handle: Int, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive interval setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_get_keepalive_interval_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive interval getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_set_keepalive_count_u32(handle: Int, probe_count: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive count setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width keepalive count getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_get_send_buffer_size_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width send-buffer getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_get_recv_buffer_size_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width recv-buffer getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_set_keepalive_idle_secs_u32(stream: TcpStream, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive idle setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_get_keepalive_idle_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive idle getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_set_keepalive_interval_secs_u32(stream: TcpStream, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive interval setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_get_keepalive_interval_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive interval getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_set_keepalive_count_u32(stream: TcpStream, probe_count: UInt32) -> Result[Bool, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive count setter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_get_keepalive_count_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream keepalive count getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_get_send_buffer_size_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream send-buffer getter"
+    );
+    assert!(
+        io_api.contains("fn tcp_stream_get_recv_buffer_size_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"),
+        "io-api-reference must document fixed-width stream recv-buffer getter"
+    );
 
     assert!(
         lifecycle.contains("Timeout => Bytes { data: \"\" }"),
@@ -3782,6 +4116,16 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
         fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
 
     for (name, doc) in [("io-api-reference", &io_api), ("std-api-tls", &tls_api)] {
+        assert!(
+            doc.contains("type TlsVersionCode = UInt8;"),
+            "{name} must document bounded TLS version code alias"
+        );
+        assert!(
+            doc.contains(
+                "struct TlsAsyncIntSelectionU32 {\n    index: UInt32,\n    value: UInt32,\n}"
+            ),
+            "{name} must document fixed-width TLS int selection with unsigned index and value"
+        );
         assert!(
             doc.contains("fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }"),
             "{name} must document tls_async_send_submit bytes-first signature"
@@ -3831,6 +4175,20 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
         assert!(
             doc.contains("fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }"),
             "{name} must document fixed-width tls async pressure wrapper"
+        );
+        assert!(
+            doc.contains("fn tls_version_to_code(version: TlsVersion) -> TlsVersionCode"),
+            "{name} must document enum-to-code TLS version helper"
+        );
+        assert!(
+            doc.contains(
+                "fn tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError]"
+            ),
+            "{name} must document code-to-enum TLS version helper"
+        );
+        assert!(
+            doc.contains("fn tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net }"),
+            "{name} must document bounded TLS version code helper"
         );
         assert!(
             !doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"),
@@ -3930,6 +4288,32 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         taxonomy.contains("UInt32"),
         "taxonomy artifact must enumerate fixed-width unsigned choices"
     );
+}
+
+#[test]
+fn unit_extern_abi_docs_track_fixed_width_scalar_contract() {
+    let types_doc =
+        fs::read_to_string("docs/reference/types.md").expect("read docs/reference/types.md");
+    let workflow_doc =
+        fs::read_to_string("docs/package-workflow.md").expect("read docs/package-workflow.md");
+
+    for (name, doc) in [
+        ("docs/reference/types.md", &types_doc),
+        ("docs/package-workflow.md", &workflow_doc),
+    ] {
+        assert!(
+            doc.contains("`Int8`")
+                && doc.contains("`UInt64`")
+                && doc.contains("`Float`")
+                && doc.contains("`Char`")
+                && doc.contains("`()`"),
+            "{name} must document fixed-width extern scalar coverage"
+        );
+        assert!(
+            !doc.contains("`Int`, `Bool`, and `()`"),
+            "{name} still documents stale pre-fixed-width extern scalar coverage"
+        );
+    }
 }
 
 #[test]
@@ -4424,6 +4808,10 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
         "std/http.aic must validate runtime Int status values"
     );
     assert!(
+        http_source.contains("fn http_status_to_int(status: UInt16) -> Int"),
+        "std/http.aic must expose UInt16->Int runtime status bridge"
+    );
+    assert!(
         http_source.contains("if status < 0 || status > 65535"),
         "std/http.aic must enforce UInt16 status bounds"
     );
@@ -4496,6 +4884,10 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
         source
             .contains("fn http_server_status_from_int(status: Int) -> Result[UInt16, ServerError]"),
         "std/http_server.aic must validate runtime Int status values"
+    );
+    assert!(
+        source.contains("fn http_server_status_to_int(status: UInt16) -> Int"),
+        "std/http_server.aic must expose UInt16->Int runtime status bridge"
     );
     assert!(
         source.contains("if status < 0 || status > 65535"),

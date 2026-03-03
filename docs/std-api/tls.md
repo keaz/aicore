@@ -22,6 +22,8 @@ enum TlsVersion {
     Tls13,
 }
 
+type TlsVersionCode = UInt8;
+
 struct TlsConfig {
     verify_server: Bool,
     ca_cert_path: Option[String],
@@ -46,7 +48,7 @@ struct TlsAsyncStringSelection {
 
 struct TlsAsyncIntSelectionU32 {
     index: UInt32,
-    value: Int,
+    value: UInt32,
 }
 
 struct TlsAsyncStringSelectionU32 {
@@ -143,6 +145,9 @@ fn tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net 
 fn tls_peer_fingerprint_sha256(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effects { net }
 fn tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }
+fn tls_version_to_code(version: TlsVersion) -> TlsVersionCode
+fn tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError]
+fn tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net }
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }
 ```
 
@@ -287,4 +292,5 @@ fn main() -> Int effects { net } capabilities { net } {
 - Generic metadata pinning scaffold example: `examples/io/tls_metadata_pinning_scaffold.aic`.
 - Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.
 - Framed read APIs (`*_recv_framed*`) decode a 4-byte big-endian length prefix, enforce `max_frame_bytes`, then read the exact payload.
+- `tls_version_code` exposes bounded negotiated protocol codes (`12` or `13`), and `tls_version` remains the compatibility enum wrapper.
 - Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.

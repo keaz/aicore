@@ -1302,9 +1302,22 @@ fn tcp_stream_set_keepalive_idle_secs(stream: TcpStream, idle_secs: Int) -> Resu
     tcp_set_keepalive_idle_secs(stream.handle, idle_secs)
 }
 
+/// `tcp_stream_set_keepalive_idle_secs_u32` in `std.net`.
+fn tcp_stream_set_keepalive_idle_secs_u32(
+    stream: TcpStream,
+    idle_secs: UInt32,
+) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_idle_secs_u32(stream.handle, idle_secs)
+}
+
 /// `tcp_stream_get_keepalive_idle_secs` in `std.net`.
 fn tcp_stream_get_keepalive_idle_secs(stream: TcpStream) -> Result[Int, NetError] effects { net } {
     tcp_get_keepalive_idle_secs(stream.handle)
+}
+
+/// `tcp_stream_get_keepalive_idle_secs_u32` in `std.net`.
+fn tcp_stream_get_keepalive_idle_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net } {
+    tcp_get_keepalive_idle_secs_u32(stream.handle)
 }
 
 /// `tcp_stream_set_keepalive_interval_secs` in `std.net`.
@@ -1312,9 +1325,22 @@ fn tcp_stream_set_keepalive_interval_secs(stream: TcpStream, interval_secs: Int)
     tcp_set_keepalive_interval_secs(stream.handle, interval_secs)
 }
 
+/// `tcp_stream_set_keepalive_interval_secs_u32` in `std.net`.
+fn tcp_stream_set_keepalive_interval_secs_u32(
+    stream: TcpStream,
+    interval_secs: UInt32,
+) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_interval_secs_u32(stream.handle, interval_secs)
+}
+
 /// `tcp_stream_get_keepalive_interval_secs` in `std.net`.
 fn tcp_stream_get_keepalive_interval_secs(stream: TcpStream) -> Result[Int, NetError] effects { net } {
     tcp_get_keepalive_interval_secs(stream.handle)
+}
+
+/// `tcp_stream_get_keepalive_interval_secs_u32` in `std.net`.
+fn tcp_stream_get_keepalive_interval_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net } {
+    tcp_get_keepalive_interval_secs_u32(stream.handle)
 }
 
 /// `tcp_stream_set_keepalive_count` in `std.net`.
@@ -1322,9 +1348,22 @@ fn tcp_stream_set_keepalive_count(stream: TcpStream, probe_count: Int) -> Result
     tcp_set_keepalive_count(stream.handle, probe_count)
 }
 
+/// `tcp_stream_set_keepalive_count_u32` in `std.net`.
+fn tcp_stream_set_keepalive_count_u32(
+    stream: TcpStream,
+    probe_count: UInt32,
+) -> Result[Bool, NetError] effects { net } {
+    tcp_set_keepalive_count_u32(stream.handle, probe_count)
+}
+
 /// `tcp_stream_get_keepalive_count` in `std.net`.
 fn tcp_stream_get_keepalive_count(stream: TcpStream) -> Result[Int, NetError] effects { net } {
     tcp_get_keepalive_count(stream.handle)
+}
+
+/// `tcp_stream_get_keepalive_count_u32` in `std.net`.
+fn tcp_stream_get_keepalive_count_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net } {
+    tcp_get_keepalive_count_u32(stream.handle)
 }
 
 /// `tcp_stream_peer_addr` in `std.net`.
@@ -1387,6 +1426,11 @@ fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] e
     tcp_get_send_buffer_size(stream.handle)
 }
 
+/// `tcp_stream_get_send_buffer_size_u32` in `std.net`.
+fn tcp_stream_get_send_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net } {
+    tcp_get_send_buffer_size_u32(stream.handle)
+}
+
 /// `tcp_stream_set_recv_buffer_size` in `std.net`.
 ///
 /// ## Example
@@ -1425,6 +1469,11 @@ fn tcp_stream_set_recv_buffer_size_u32(
 /// Returns module-defined error variants when the operation fails.
 fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net } {
     tcp_get_recv_buffer_size(stream.handle)
+}
+
+/// `tcp_stream_get_recv_buffer_size_u32` in `std.net`.
+fn tcp_stream_get_recv_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net } {
+    tcp_get_recv_buffer_size_u32(stream.handle)
 }
 
 /// `tcp_send` in `std.net`.
@@ -1576,9 +1625,25 @@ fn tcp_set_keepalive_idle_secs(handle: Int, idle_secs: Int) -> Result[Bool, NetE
     aic_net_tcp_set_keepalive_idle_secs_intrinsic(handle, idle_secs)
 }
 
+/// `tcp_set_keepalive_idle_secs_u32` in `std.net`.
+fn tcp_set_keepalive_idle_secs_u32(handle: Int, idle_secs: UInt32) -> Result[Bool, NetError] effects { net } {
+    match net_u32_to_int(idle_secs) {
+        Ok(idle_secs_int) => tcp_set_keepalive_idle_secs(handle, idle_secs_int),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_get_keepalive_idle_secs` in `std.net`.
 fn tcp_get_keepalive_idle_secs(handle: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_get_keepalive_idle_secs_intrinsic(handle)
+}
+
+/// `tcp_get_keepalive_idle_secs_u32` in `std.net`.
+fn tcp_get_keepalive_idle_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net } {
+    match tcp_get_keepalive_idle_secs(handle) {
+        Ok(idle_secs) => net_int_to_u32(idle_secs),
+        Err(err) => Err(err),
+    }
 }
 
 /// `tcp_set_keepalive_interval_secs` in `std.net`.
@@ -1586,9 +1651,28 @@ fn tcp_set_keepalive_interval_secs(handle: Int, interval_secs: Int) -> Result[Bo
     aic_net_tcp_set_keepalive_interval_secs_intrinsic(handle, interval_secs)
 }
 
+/// `tcp_set_keepalive_interval_secs_u32` in `std.net`.
+fn tcp_set_keepalive_interval_secs_u32(
+    handle: Int,
+    interval_secs: UInt32,
+) -> Result[Bool, NetError] effects { net } {
+    match net_u32_to_int(interval_secs) {
+        Ok(interval_secs_int) => tcp_set_keepalive_interval_secs(handle, interval_secs_int),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_get_keepalive_interval_secs` in `std.net`.
 fn tcp_get_keepalive_interval_secs(handle: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_get_keepalive_interval_secs_intrinsic(handle)
+}
+
+/// `tcp_get_keepalive_interval_secs_u32` in `std.net`.
+fn tcp_get_keepalive_interval_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net } {
+    match tcp_get_keepalive_interval_secs(handle) {
+        Ok(interval_secs) => net_int_to_u32(interval_secs),
+        Err(err) => Err(err),
+    }
 }
 
 /// `tcp_set_keepalive_count` in `std.net`.
@@ -1596,9 +1680,25 @@ fn tcp_set_keepalive_count(handle: Int, probe_count: Int) -> Result[Bool, NetErr
     aic_net_tcp_set_keepalive_count_intrinsic(handle, probe_count)
 }
 
+/// `tcp_set_keepalive_count_u32` in `std.net`.
+fn tcp_set_keepalive_count_u32(handle: Int, probe_count: UInt32) -> Result[Bool, NetError] effects { net } {
+    match net_u32_to_int(probe_count) {
+        Ok(probe_count_int) => tcp_set_keepalive_count(handle, probe_count_int),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_get_keepalive_count` in `std.net`.
 fn tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_get_keepalive_count_intrinsic(handle)
+}
+
+/// `tcp_get_keepalive_count_u32` in `std.net`.
+fn tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] effects { net } {
+    match tcp_get_keepalive_count(handle) {
+        Ok(probe_count) => net_int_to_u32(probe_count),
+        Err(err) => Err(err),
+    }
 }
 
 /// `tcp_peer_addr` in `std.net`.
@@ -1664,6 +1764,14 @@ fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net 
     aic_net_tcp_get_send_buffer_size_intrinsic(handle)
 }
 
+/// `tcp_get_send_buffer_size_u32` in `std.net`.
+fn tcp_get_send_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net } {
+    match tcp_get_send_buffer_size(handle) {
+        Ok(size_bytes) => net_int_to_u32(size_bytes),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_set_recv_buffer_size` in `std.net`.
 ///
 /// ## Example
@@ -1705,6 +1813,14 @@ fn tcp_set_recv_buffer_size_u32(
 /// Returns module-defined error variants when the operation fails.
 fn tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_get_recv_buffer_size_intrinsic(handle)
+}
+
+/// `tcp_get_recv_buffer_size_u32` in `std.net`.
+fn tcp_get_recv_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net } {
+    match tcp_get_recv_buffer_size(handle) {
+        Ok(size_bytes) => net_int_to_u32(size_bytes),
+        Err(err) => Err(err),
+    }
 }
 
 /// `udp_bind` in `std.net`.

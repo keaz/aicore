@@ -15,6 +15,7 @@ import std.time;
 
 type TlsByteCountU32 = UInt32;
 type TlsFrameLengthU32 = UInt32;
+type TlsVersionCode = UInt8;
 
 /// `TlsError` is a `enum` in `std.tls`.
 ///
@@ -131,7 +132,7 @@ struct TlsAsyncStringSelection {
 /// `TlsAsyncIntSelectionU32` is a `struct` in `std.tls`.
 struct TlsAsyncIntSelectionU32 {
     index: UInt32,
-    value: Int,
+    value: TlsByteCountU32,
 }
 
 /// `TlsAsyncStringSelectionU32` is a `struct` in `std.tls`.
@@ -1028,10 +1029,13 @@ fn tls_async_wait_many_int_u32(
         Err(err) => Err(err),
         Ok(selection) => match tls_int_to_u32(selection.index) {
             Err(err) => Err(err),
-            Ok(index) => Ok(TlsAsyncIntSelectionU32 {
-                index: index,
-                value: selection.value,
-            }),
+            Ok(index) => match tls_int_to_u32(selection.value) {
+                Err(err) => Err(err),
+                Ok(value) => Ok(TlsAsyncIntSelectionU32 {
+                    index: index,
+                    value: value,
+                }),
+            },
         },
     }
 }
@@ -2087,6 +2091,75 @@ fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effe
     aic_tls_peer_san_entries_intrinsic(stream.handle)
 }
 
+/// `tls_version_to_code` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_version_to_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_version_to_code(version: TlsVersion) -> TlsVersionCode {
+    match version {
+        Tls12 => 12,
+        Tls13 => 13,
+    }
+}
+
+/// `tls_version_from_code` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_version_from_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError] {
+    if code == tls_version_to_code(Tls13()) {
+        Ok(Tls13())
+    } else if code == tls_version_to_code(Tls12()) {
+        Ok(Tls12())
+    } else {
+        Err(ProtocolError())
+    }
+}
+
+/// `tls_version_code` in `std.tls`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.tls` and call `tls_version_code` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net } {
+    let raw = aic_tls_version_intrinsic(stream.handle);
+    match raw {
+        Ok(value) => if value == 13 {
+            Ok(tls_version_to_code(Tls13()))
+        } else {
+            if value == 12 {
+                Ok(tls_version_to_code(Tls12()))
+            } else {
+                Err(ProtocolError())
+            }
+        },
+        Err(err) => Err(err),
+    }
+}
+
 /// `tls_version` in `std.tls`.
 ///
 /// ## Example
@@ -2100,17 +2173,8 @@ fn tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effe
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net } {
-    let raw = aic_tls_version_intrinsic(stream.handle);
-    match raw {
-        Ok(value) => if value == 13 {
-            Ok(Tls13())
-        } else {
-            if value == 12 {
-                Ok(Tls12())
-            } else {
-                Err(ProtocolError())
-            }
-        },
+    match tls_version_code(stream) {
+        Ok(code) => tls_version_from_code(code),
         Err(err) => Err(err),
     }
 }

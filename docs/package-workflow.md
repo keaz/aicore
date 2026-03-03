@@ -124,7 +124,7 @@ Rules enforced by diagnostics:
 
 - only `extern "C"` is supported (`E2120`, backend guard `E5024`)
 - extern signatures must be plain declarations (no async/generics/effects/contracts) (`E2121`)
-- currently supported raw C ABI types are `Int`, `Bool`, and `()` (`E2123`)
+- currently supported raw C ABI scalar types are `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()` (`E2123`)
 - calls to `extern` (and `unsafe fn`) require an explicit unsafe boundary (`unsafe { ... }` or `unsafe fn`) (`E2122`)
 
 ### Manifest linkage
