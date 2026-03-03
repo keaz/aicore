@@ -16,11 +16,11 @@ fn ok_bool(v: Result[Bool, EnvError]) -> Int {
 fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
     let run_out = match run("echo out; echo err 1>&2; exit 7") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let pipe_out = match pipe("echo 42", "cat") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let waited = match spawn("exit 5") {
         Ok(handle) => match wait(handle) {
@@ -29,16 +29,20 @@ fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
         },
         Err(_) => 0,
     };
-    let sleep_handle = match spawn("sleep 1") {
-        Ok(handle) => handle,
-        Err(_) => 0,
-    };
-    let running_ok = match is_running(sleep_handle) {
-        Ok(v) => if v { 1 } else { 0 },
-        Err(_) => 0,
-    };
-    let sleep_wait_ok = match wait(sleep_handle) {
-        Ok(code) => if code == 0 { 1 } else { 0 },
+    let sleep_running_wait_ok = match spawn("sleep 1") {
+        Ok(handle) => if true {
+            let running_ok = match is_running(handle) {
+                Ok(v) => if v { 1 } else { 0 },
+                Err(_) => 0,
+            };
+            let sleep_wait_ok = match wait(handle) {
+                Ok(code) => if code == 0 { 1 } else { 0 },
+                Err(_) => 0,
+            };
+            running_ok + sleep_wait_ok
+        } else {
+            0
+        },
         Err(_) => 0,
     };
     let pid_ok = match current_pid() {
@@ -57,7 +61,7 @@ fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
         run_with_opts
     ) {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let run_with_ok = if run_with_out.status == 0 && string.contains(run_with_out.stdout, "|ok|demo") {
         1
@@ -74,7 +78,7 @@ fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
     stages = vec.push(stages, "tr a-z A-Z");
     let chain_out = match pipe_chain(stages) {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let chain_ok = if chain_out.status == 0 && string.contains(chain_out.stdout, "BETA") {
         1
@@ -103,7 +107,7 @@ fn main() -> Int effects { proc, env, fs } capabilities { proc, env, fs  } {
         0
     };
 
-    if status_ok + output_ok + waited + running_ok + sleep_wait_ok + pid_ok +
+    if status_ok + output_ok + waited + sleep_running_wait_ok + pid_ok +
         run_with_ok + timeout_ok + chain_ok + env_set + env_remove + path_ok == 12 {
         42
     } else {

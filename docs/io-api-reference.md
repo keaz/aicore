@@ -203,7 +203,7 @@ fn set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs }
 fn args() -> Vec[String] effects { env }
 fn arg_count() -> Int effects { env }
 fn arg_at(index: Int) -> Option[String] effects { env }
-fn exit(code: Int) -> () effects { env }
+fn exit(code: Int32) -> () effects { env }
 fn all_vars() -> Vec[EnvEntry] effects { env }
 fn home_dir() -> Result[String, EnvError] effects { env, fs }
 fn temp_dir() -> Result[String, EnvError] effects { env, fs }
@@ -292,8 +292,11 @@ enum ProcError {
     UnknownProcess,
 }
 
-struct ProcOutput {
-    status: Int,
+type ProcHandle = UInt32
+type ProcExitStatus = Int32
+
+struct ProcResult {
+    status: ProcExitStatus,
     stdout: String,
     stderr: String,
 }
@@ -305,21 +308,22 @@ struct RunOptions {
     timeout_ms: Int,
 }
 
-fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env }
-fn wait(handle: Int) -> Result[Int, ProcError] effects { proc }
-fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc }
-fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }
-fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }
-fn run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env }
-fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc }
-fn current_pid() -> Result[Int, ProcError] effects { proc }
-fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env }
-fn pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn spawn(command: String) -> Result[ProcHandle, ProcError] effects { proc, env }
+fn wait(handle: ProcHandle) -> Result[ProcExitStatus, ProcError] effects { proc }
+fn kill(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc }
+fn run(command: String) -> Result[ProcResult, ProcError] effects { proc, env }
+fn pipe(left: String, right: String) -> Result[ProcResult, ProcError] effects { proc, env }
+fn run_with(command: String, options: RunOptions) -> Result[ProcResult, ProcError] effects { proc, env }
+fn is_running(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc }
+fn current_pid() -> Result[ProcHandle, ProcError] effects { proc }
+fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcResult, ProcError] effects { proc, env }
+fn pipe_chain(stages: Vec[String]) -> Result[ProcResult, ProcError] effects { proc, env }
 ```
 
 Notes:
 
-- `run`/`pipe` success is about launch/execution plumbing; check `ProcOutput.status` for command exit status.
+- `run`/`pipe` success is about launch/execution plumbing; check `ProcResult.status` for command exit status.
+- Public wrappers validate runtime `Int` values at boundary conversion points (`UInt32` handles and `Int32` exit status).
 - Spawned-handle table capacity is bounded (`64` runtime slots).
 - Windows caveats:
   - Process APIs are available on Windows (`spawn`, `wait`, `kill`, `is_running`, `run_with`, `run_timeout`, `pipe_chain`).
@@ -402,6 +406,13 @@ struct AsyncRuntimePressure {
     queue_limit: Int,
 }
 
+struct AsyncRuntimePressureU32 {
+    active_ops: UInt32,
+    queue_depth: UInt32,
+    op_limit: UInt32,
+    queue_limit: UInt32,
+}
+
 fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net }
@@ -409,6 +420,7 @@ fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects {
 fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn tcp_send_timeout(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
+fn tcp_recv_u32(handle: Int, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
 fn tcp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }
@@ -425,17 +437,25 @@ fn tcp_shutdown(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_shutdown_read(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_shutdown_write(handle: Int) -> Result[Bool, NetError] effects { net }
 fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_send_buffer_size_u32(handle: Int, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
 fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_set_recv_buffer_size_u32(handle: Int, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_get_recv_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }
 fn tcp_stream(handle: Int) -> TcpStream
 fn tcp_stream_send(stream: TcpStream, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn tcp_stream_send_timeout(stream: TcpStream, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net }
 fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
+fn tcp_stream_recv_u32(stream: TcpStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }
+fn tcp_stream_frame_len_be_u32(header: Bytes) -> Result[UInt32, NetError]
 fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_exact_deadline_u32(stream: TcpStream, expected_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_exact_u32(stream: TcpStream, expected_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed_deadline_u32(stream: TcpStream, max_frame_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
+fn tcp_stream_recv_framed_u32(stream: TcpStream, max_frame_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }
 fn tcp_stream_close(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_nodelay(stream: TcpStream) -> Result[Bool, NetError] effects { net }
@@ -452,12 +472,15 @@ fn tcp_stream_shutdown(stream: TcpStream) -> Result[Bool, NetError] effects { ne
 fn tcp_stream_shutdown_read(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_shutdown_write(stream: TcpStream) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_send_buffer_size_u32(stream: TcpStream, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }
+fn tcp_stream_set_recv_buffer_size_u32(stream: TcpStream, size_bytes: UInt32) -> Result[Bool, NetError] effects { net }
 fn tcp_stream_get_recv_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }
 fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
 fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetError] effects { net, concurrency }
 fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }
+fn async_tcp_recv_submit_u32(handle: Int, max_bytes: UInt32, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }
 fn async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
 fn async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
 fn async_cancel_int(op: AsyncIntOp) -> Result[Bool, NetError] effects { net, concurrency }
@@ -465,18 +488,25 @@ fn async_cancel_string(op: AsyncStringOp) -> Result[Bool, NetError] effects { ne
 fn async_poll_int(op: AsyncIntOp) -> Result[Option[Int], NetError] effects { net, concurrency }
 fn async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], NetError] effects { net, concurrency }
 fn async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_many_int_u32(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time }
 fn async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_wait_many_string_u32(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time }
 fn async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }
+fn async_wait_any_int_u32(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time }
 fn async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }
+fn async_wait_any_string_u32(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time }
 fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }
+fn async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, NetError] effects { net, concurrency }
 fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }
 fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
 fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }
 fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
+fn async_tcp_recv_u32(handle: Int, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }
 fn udp_local_addr(handle: Int) -> Result[String, NetError] effects { net }
 fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }
 fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }
+fn udp_recv_from_u32(handle: Int, max_bytes: UInt32, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }
 fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net }
 fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }
@@ -513,6 +543,7 @@ Notes:
   - `async_wait_many_*` returns the winning operation index and payload/value across arbitrary in-flight op sets.
   - `async_wait_any_*` is a compatibility wrapper over `async_wait_many_*` for two-op selection.
   - `async_runtime_pressure` exposes active/queued snapshot metrics and configured limits for adaptive submit gating.
+  - Phase-1 fixed-width wrappers expose non-negative domains via `UInt32` (`*_u32` APIs) without breaking legacy `Int` signatures.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
 - Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process and size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions.
@@ -522,6 +553,7 @@ Notes:
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
+- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
 
 ## `std.tls`
 
@@ -560,6 +592,16 @@ struct TlsAsyncStringSelection {
     payload: Bytes,
 }
 
+struct TlsAsyncIntSelectionU32 {
+    index: UInt32,
+    value: Int,
+}
+
+struct TlsAsyncStringSelectionU32 {
+    index: UInt32,
+    payload: Bytes,
+}
+
 enum TlsVersion {
     Tls12,
     Tls13,
@@ -578,9 +620,12 @@ fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effec
 fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
+fn tls_recv_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_recv_bytes_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
 fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }
 fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
+fn tls_async_recv_submit_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
 fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }
@@ -588,22 +633,39 @@ fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects 
 fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
 fn tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_int_u32(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_string_u32(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_int_u32(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_string_u32(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
+fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_recv_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_frame_len_be_u32(header: Bytes) -> Result[UInt32, TlsError]
 fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact_deadline_u32(stream: TlsStream, expected_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact_u32(stream: TlsStream, expected_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_deadline_u32(stream: TlsStream, max_frame_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_u32(stream: TlsStream, max_frame_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
+fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
+fn byte_stream_recv_u32(stream: ByteStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
 fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact_deadline_u32(stream: ByteStream, expected_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact_u32(stream: ByteStream, expected_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_deadline_u32(stream: ByteStream, max_frame_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_u32(stream: ByteStream, max_frame_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
 fn tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net }
@@ -632,6 +694,7 @@ Notes:
   - `tls_async_wait_any_*` compatibility wrappers over `tls_async_wait_many_*` for two-op selection
   - `tls_async_runtime_pressure` for runtime capacity snapshots (`queue_depth` and `queue_limit` are `0` on current TLS backend)
   - convenience wrappers `tls_async_send` / `tls_async_recv`
+  - phase-1 fixed-width wrappers (`*_u32`) for byte-count, frame-length, selection-index, and pressure-counter domains.
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.
 - `tls_recv` / `tls_recv_bytes` return `TlsError::ConnectionClosed` on peer EOF/close while timeout remains non-close (`TlsError::Timeout`).
 - `tls_send_timeout` deadline expiry maps to `TlsError::Timeout`.
@@ -649,6 +712,7 @@ Notes:
 - Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.
 - Replay contract: `docs/security-ops/postgres-tls-scram-replay.v1.json`.
 - On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.
+- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
 
 ## `std.secure_errors`
 

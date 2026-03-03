@@ -44,6 +44,16 @@ struct TlsAsyncStringSelection {
     payload: Bytes,
 }
 
+struct TlsAsyncIntSelectionU32 {
+    index: UInt32,
+    value: Int,
+}
+
+struct TlsAsyncStringSelectionU32 {
+    index: UInt32,
+    payload: Bytes,
+}
+
 enum ByteStream {
     Tcp(TcpStream),
     Tls(TlsStream),
@@ -74,9 +84,12 @@ fn tls_send_bytes(stream: TlsStream, data: Bytes) -> Result[Int, TlsError] effec
 fn tls_send_timeout(stream: TlsStream, payload: String, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_send_bytes_timeout(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net }
 fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String, TlsError] effects { net }
+fn tls_recv_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[String, TlsError] effects { net }
 fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
+fn tls_recv_bytes_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }
 fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] effects { net, concurrency }
 fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
+fn tls_async_recv_submit_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }
 fn tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_cancel_int(op: AsyncIntOp) -> Result[Bool, TlsError] effects { net, concurrency }
@@ -84,17 +97,28 @@ fn tls_async_cancel_string(op: AsyncStringOp) -> Result[Bool, TlsError] effects 
 fn tls_async_poll_int(op: AsyncIntOp) -> Result[Option[Int], TlsError] effects { net, concurrency }
 fn tls_async_poll_string(op: AsyncStringOp) -> Result[Option[Bytes], TlsError] effects { net, concurrency }
 fn tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_int_u32(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_many_string_u32(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_int(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_int_u32(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }
+fn tls_async_wait_any_string_u32(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }
 fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }
+fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }
 fn tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }
 fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
+fn tls_async_recv_u32(stream: TlsStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }
 fn tls_async_shutdown() -> Result[Bool, TlsError] effects { net, concurrency }
+fn tls_frame_len_be_u32(header: Bytes) -> Result[UInt32, TlsError]
 fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact_deadline_u32(stream: TlsStream, expected_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_exact_u32(stream: TlsStream, expected_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_deadline_u32(stream: TlsStream, max_frame_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
+fn tls_recv_framed_u32(stream: TlsStream, max_frame_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }
 fn tls_close(stream: TlsStream) -> Result[Bool, TlsError] effects { net }
 
 fn byte_stream_from_tcp(handle: Int) -> ByteStream
@@ -103,10 +127,15 @@ fn byte_stream_from_tls(stream: TlsStream) -> ByteStream
 fn byte_stream_send(stream: ByteStream, payload: Bytes) -> Result[Int, ByteStreamError] effects { net }
 fn byte_stream_send_timeout(stream: ByteStream, payload: Bytes, timeout_ms: Int) -> Result[Int, ByteStreamError] effects { net }
 fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
+fn byte_stream_recv_u32(stream: ByteStream, max_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }
 fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact_deadline_u32(stream: ByteStream, expected_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_exact_u32(stream: ByteStream, expected_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_deadline_u32(stream: ByteStream, max_frame_bytes: UInt32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
+fn byte_stream_recv_framed_u32(stream: ByteStream, max_frame_bytes: UInt32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }
 fn byte_stream_close(stream: ByteStream) -> Result[Bool, ByteStreamError] effects { net }
 
 fn tls_peer_subject(stream: TlsStream) -> Result[String, TlsError] effects { net }
@@ -248,6 +277,7 @@ fn main() -> Int effects { net } capabilities { net } {
 - `tls_async_wait_many_*` returns the first-ready result with deterministic index selection across arbitrary operation sets.
 - `tls_async_wait_any_*` remains a compatibility wrapper over `tls_async_wait_many_*`.
 - `tls_async_runtime_pressure` reports runtime load snapshots for adaptive orchestration (`queue_depth`/`queue_limit` are `0` on current TLS backend).
+- Phase-1 fixed-width wrappers (`*_u32`) migrate non-negative byte-count, frame-length, selection-index, and pressure-counter domains.
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
@@ -257,3 +287,4 @@ fn main() -> Int effects { net } capabilities { net } {
 - Generic metadata pinning scaffold example: `examples/io/tls_metadata_pinning_scaffold.aic`.
 - Exact read APIs (`*_recv_exact*`) keep reading until `expected_bytes` is satisfied or the deadline budget is exhausted.
 - Framed read APIs (`*_recv_framed*`) decode a 4-byte big-endian length prefix, enforce `max_frame_bytes`, then read the exact payload.
+- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.

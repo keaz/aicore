@@ -5,9 +5,9 @@ import std.proc;
 import std.string;
 import std.vec;
 
-fn fallback_output() -> ProcOutput {
-    ProcOutput {
-        status: 99,
+fn fallback_output() -> ProcResult {
+    ProcResult {
+        status: proc_nonnegative_int_to_i32(99),
         stdout: "",
         stderr: "",
     }

@@ -1,9 +1,9 @@
 # Type System (MVP)
 
 - Strong static typing.
-- No implicit casts/coercions.
+- No general implicit casts/coercions.
 - Types:
-  - `Int`, `Float`, `Bool`, `String`, `()`
+  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
   - named structs/enums
   - parametric surface syntax for ADTs (`Option[T]`, `Result[T,E]`)
   - compiler-managed async wrapper `Async[T]` for `async fn` call results
@@ -36,6 +36,97 @@
   - `E1272`: or-pattern binding type mismatch
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.
+
+## Integer primitives and `Int`
+
+- `Int` is the general integer primitive and currently uses signed 64-bit range:
+  - `Int`: `-9223372036854775808..=9223372036854775807`
+- Fixed-width primitives:
+  - `Int8`: `-128..=127`
+  - `Int16`: `-32768..=32767`
+  - `Int32`: `-2147483648..=2147483647`
+  - `Int64`: `-9223372036854775808..=9223372036854775807`
+  - `UInt8`: `0..=255`
+  - `UInt16`: `0..=65535`
+  - `UInt32`: `0..=4294967295`
+  - `UInt64`: `0..=18446744073709551615`
+- `Int` and `Int64` currently share 64-bit range, but are separate named source types with explicit typing rules.
+
+## Integer literal typing and diagnostics
+
+- Unsuffixed integer literals:
+  - default to `Int`
+  - if an expected integer type exists (annotation/argument/return context), they are checked against that expected type and typed accordingly
+- Suffixed integer literals force fixed-width type:
+  - signed: `i8`, `i16`, `i32`, `i64`
+  - unsigned: `u8`, `u16`, `u32`, `u64`
+- Range diagnostics:
+  - expression literals out of range: `E1204`
+  - pattern integer literals out of range: `E1234`
+- Lexer diagnostics:
+  - invalid integer suffix: `E0009`
+  - float literal with integer suffix: `E0010`
+
+Examples:
+
+```aic
+let a: UInt8 = 255;   // ok
+let b: UInt8 = 256;   // E1204
+let c: Int8 = -128;   // ok
+let d: Int8 = -129;   // E1204
+let e = 1u16;         // e: UInt16
+let f: Int32 = 42;    // unsuffixed literal narrows to Int32 in context
+```
+
+## Integer conversion policy
+
+- No explicit cast syntax exists in MVP.
+- The checker allows only lossless implicit integer conversion where source range is fully contained in target range.
+- This policy is used in typed boundaries (for example let/assignment/function argument/function return compatibility checks).
+
+Examples:
+
+```aic
+fn ok_widen(a: Int16) -> Int32 { a }      // allowed
+fn ok_u8_to_u16(a: UInt8) -> UInt16 { a } // allowed
+fn bad_narrow(a: Int16) -> Int8 { a }     // E1204
+fn bad_sign(a: Int16) -> UInt16 { a }     // E1204
+fn bad_u64_to_int(a: UInt64) -> Int { a } // E1204
+```
+
+## Integer operator typing semantics
+
+- Arithmetic (`+`, `-`, `*`, `/`, `%`) requires integer operands with exact same signedness and width.
+- Bitwise and shift (`&`, `|`, `^`, `<<`, `>>`, `>>>`) require exact same integer signedness and width.
+- Equality/comparison on integer operands also require exact integer kind match.
+- Diagnostic mapping:
+  - `E1230`: arithmetic/bitwise/shift operand mismatch
+  - `E1231`: equality operand mismatch
+  - `E1232`: comparison operand mismatch
+  - `E1233`: logical operator requires `Bool`
+- No overflow trap diagnostics are emitted by the type checker for integer arithmetic.
+
+Examples:
+
+```aic
+fn bad_ops(a: Int8, b: UInt16) -> Int {
+    let _x = a + b; // E1230
+    let _y = a < b; // E1232
+    0
+}
+```
+
+## Numeric lowering semantics (summary)
+
+- Signed integer division/modulo use signed operations.
+- Unsigned integer division/modulo use unsigned operations.
+- Right shift `>>` is arithmetic for signed integers and logical for unsigned integers.
+- Unsigned-right shift `>>>` is logical.
+
+See also:
+
+- `docs/llvm-backend.md` for backend/ABI mapping.
+- `docs/fixed-width-primitives-migration.md` for before/after migration examples.
 
 ## Open issue contracts (current vs target)
 

@@ -40,6 +40,19 @@ struct ProcOutput {
     stderr: String,
 }
 
+/// `ProcHandle` is the bounded public process handle type.
+type ProcHandle = UInt32;
+
+/// `ProcExitStatus` is the bounded public process exit-code type.
+type ProcExitStatus = Int32;
+
+/// `ProcResult` is the bounded public process output model.
+struct ProcResult {
+    status: ProcExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
 /// `RunOptions` is a `struct` in `std.proc`.
 ///
 /// ## Example
@@ -196,8 +209,12 @@ intrinsic fn aic_proc_pipe_chain_intrinsic(stages: Vec[String]) -> Result[ProcOu
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
-    aic_proc_spawn_intrinsic(command)
+fn spawn(command: String) -> Result[ProcHandle, ProcError] effects { proc, env } {
+    let raw = aic_proc_spawn_intrinsic(command);
+    match raw {
+        Ok(value) => proc_handle_from_int(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `wait` in `std.proc`.
@@ -212,8 +229,12 @@ fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } {
-    aic_proc_wait_intrinsic(handle)
+fn wait(handle: ProcHandle) -> Result[ProcExitStatus, ProcError] effects { proc } {
+    let raw = aic_proc_wait_intrinsic(proc_handle_to_int(handle));
+    match raw {
+        Ok(value) => proc_exit_status_from_int(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `kill` in `std.proc`.
@@ -228,8 +249,8 @@ fn wait(handle: Int) -> Result[Int, ProcError] effects { proc } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc } {
-    aic_proc_kill_intrinsic(handle)
+fn kill(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc } {
+    aic_proc_kill_intrinsic(proc_handle_to_int(handle))
 }
 
 /// `run` in `std.proc`.
@@ -244,8 +265,12 @@ fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    aic_proc_run_intrinsic(command)
+fn run(command: String) -> Result[ProcResult, ProcError] effects { proc, env } {
+    let raw = aic_proc_run_intrinsic(command);
+    match raw {
+        Ok(value) => proc_result_from_raw(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `pipe` in `std.proc`.
@@ -260,8 +285,12 @@ fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    aic_proc_pipe_intrinsic(left, right)
+fn pipe(left: String, right: String) -> Result[ProcResult, ProcError] effects { proc, env } {
+    let raw = aic_proc_pipe_intrinsic(left, right);
+    match raw {
+        Ok(value) => proc_result_from_raw(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `run_with` in `std.proc`.
@@ -276,8 +305,12 @@ fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    aic_proc_run_with_intrinsic(command, options)
+fn run_with(command: String, options: RunOptions) -> Result[ProcResult, ProcError] effects { proc, env } {
+    let raw = aic_proc_run_with_intrinsic(command, options);
+    match raw {
+        Ok(value) => proc_result_from_raw(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `is_running` in `std.proc`.
@@ -292,8 +325,8 @@ fn run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcErro
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc } {
-    aic_proc_is_running_intrinsic(handle)
+fn is_running(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc } {
+    aic_proc_is_running_intrinsic(proc_handle_to_int(handle))
 }
 
 /// `current_pid` in `std.proc`.
@@ -308,8 +341,12 @@ fn is_running(handle: Int) -> Result[Bool, ProcError] effects { proc } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn current_pid() -> Result[Int, ProcError] effects { proc } {
-    aic_proc_current_pid_intrinsic()
+fn current_pid() -> Result[ProcHandle, ProcError] effects { proc } {
+    let raw = aic_proc_current_pid_intrinsic();
+    match raw {
+        Ok(value) => proc_handle_from_int(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `run_timeout` in `std.proc`.
@@ -324,8 +361,12 @@ fn current_pid() -> Result[Int, ProcError] effects { proc } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    aic_proc_run_timeout_intrinsic(command, timeout_ms)
+fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcResult, ProcError] effects { proc, env } {
+    let raw = aic_proc_run_timeout_intrinsic(command, timeout_ms);
+    match raw {
+        Ok(value) => proc_result_from_raw(value),
+        Err(err) => Err(err),
+    }
 }
 
 /// `pipe_chain` in `std.proc`.
@@ -340,6 +381,107 @@ fn run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env } {
-    aic_proc_pipe_chain_intrinsic(stages)
+fn pipe_chain(stages: Vec[String]) -> Result[ProcResult, ProcError] effects { proc, env } {
+    let raw = aic_proc_pipe_chain_intrinsic(stages);
+    match raw {
+        Ok(value) => proc_result_from_raw(value),
+        Err(err) => Err(err),
+    }
+}
+
+/// `proc_handle_from_int` validates runtime process handles and converts them to `UInt32`.
+fn proc_handle_from_int(value: Int) -> Result[ProcHandle, ProcError] {
+    if value < 0 || value > 4294967295 {
+        Err(InvalidInput())
+    } else {
+        let mut remaining = value;
+        let mut out: ProcHandle = 0;
+        let mut bit: ProcHandle = 1;
+        while remaining > 0 {
+            if (remaining % 2) == 1 {
+                out = out + bit;
+            } else {
+                ()
+            };
+            remaining = remaining / 2;
+            if remaining > 0 {
+                bit = bit + bit;
+            } else {
+                ()
+            };
+        };
+        Ok(out)
+    }
+}
+
+/// `proc_zero_u32` in `std.proc`.
+fn proc_zero_u32() -> ProcHandle {
+    0u32
+}
+
+/// `proc_one_u32` in `std.proc`.
+fn proc_one_u32() -> ProcHandle {
+    1u32
+}
+
+/// `proc_handle_to_int` converts bounded public handles back to runtime `Int`.
+fn proc_handle_to_int(value: ProcHandle) -> Int {
+    let mut out = 0;
+    let mut remaining = value;
+    let zero = proc_zero_u32();
+    let one = proc_one_u32();
+    while remaining > zero {
+        remaining = remaining - one;
+        out = out + 1;
+    };
+    out
+}
+
+/// `proc_nonnegative_int_to_i32` converts a non-negative bounded `Int` into `Int32`.
+fn proc_nonnegative_int_to_i32(value: Int) -> ProcExitStatus {
+    let mut remaining = value;
+    let mut out: ProcExitStatus = 0;
+    let mut bit: ProcExitStatus = 1;
+    while remaining > 0 {
+        if (remaining % 2) == 1 {
+            out = out + bit;
+        } else {
+            ()
+        };
+        remaining = remaining / 2;
+        if remaining > 0 {
+            bit = bit + bit;
+        } else {
+            ()
+        };
+    };
+    out
+}
+
+/// `proc_exit_status_from_int` validates and converts runtime `Int` status to bounded `Int32`.
+fn proc_exit_status_from_int(value: Int) -> Result[ProcExitStatus, ProcError] {
+    if value < -2147483648 || value > 2147483647 {
+        Err(InvalidInput())
+    } else if value == -2147483648 {
+        let min_value: ProcExitStatus = -2147483648;
+        Ok(min_value)
+    } else if value < 0 {
+        let magnitude = proc_nonnegative_int_to_i32(0 - value);
+        let zero: ProcExitStatus = 0;
+        Ok(zero - magnitude)
+    } else {
+        Ok(proc_nonnegative_int_to_i32(value))
+    }
+}
+
+/// `proc_result_from_raw` converts runtime process payloads into bounded public models.
+fn proc_result_from_raw(raw: ProcOutput) -> Result[ProcResult, ProcError] {
+    match proc_exit_status_from_int(raw.status) {
+        Ok(bounded_status) => Ok(ProcResult {
+            status: bounded_status,
+            stdout: raw.stdout,
+            stderr: raw.stderr,
+        }),
+        Err(err) => Err(err),
+    }
 }

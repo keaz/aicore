@@ -92,9 +92,11 @@ fn timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyErro
 fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn spawn_group(values: Vec[Int], delay_ms: Int) -> Result[Vec[Int], ConcurrencyError] effects { concurrency }
 fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelection, ConcurrencyError] effects { concurrency }
+fn select_first_u32(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelectionU32, ConcurrencyError] effects { concurrency }
 
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency }
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency }
+fn buffered_channel_u32[T](capacity: UInt32) -> (Sender[T], Receiver[T]) effects { concurrency }
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
@@ -102,6 +104,7 @@ fn try_recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency
 fn recv_timeout[T](rx: Receiver[T], timeout_ms: Int) -> Result[T, ChannelError] effects { concurrency }
 fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
 fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
+fn buffered_bytes_channel_u32(capacity: UInt32) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }
 fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
 fn try_send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }
 fn recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { concurrency }
@@ -109,17 +112,22 @@ fn try_recv_bytes(rx: Receiver[Bytes]) -> Result[Bytes, ChannelError] effects { 
 fn recv_bytes_timeout(rx: Receiver[Bytes], timeout_ms: Int) -> Result[Bytes, ChannelError] effects { concurrency }
 fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B] effects { concurrency }
 fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }
+fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(UInt32, T), ChannelError] effects { concurrency, env }
 fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn buffered_channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
+fn channel_int_buffered_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }
 fn send_int(ch: IntChannel, value: Int, timeout_ms: Int) -> Result[Bool, ConcurrencyError] effects { concurrency }
 fn recv_int(ch: IntChannel, timeout_ms: Int) -> Result[Int, ConcurrencyError] effects { concurrency }
 fn try_send_int(ch: IntChannel, value: Int) -> Result[Bool, ChannelError] effects { concurrency }
 fn try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurrency }
 fn select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency }
+fn select_recv_int_u32(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelectionU32, ChannelError] effects { concurrency }
 fn close_channel(ch: IntChannel) -> Result[Bool, ConcurrencyError] effects { concurrency }
 
 fn mutex_int(initial: Int) -> Result[IntMutex, ConcurrencyError] effects { concurrency }
@@ -319,7 +327,13 @@ Sunset policy:
     - `Timeout`: timeout.
     - `Closed`: channel closed/invalid payload path.
   - `select_any(receivers, timeout_ms)` supports fan-in for `N` same-typed receivers and returns `(receiver_index, value)` (`effects { concurrency, env }`).
+  - `select_any_u32(receivers, timeout_ms)` is the phase-1 fixed-width wrapper that returns `UInt32` indices.
   - `select_any` probes receivers in rotating order and uses bounded 1ms waits to avoid fixed-index starvation.
+- Fixed-width phase-1 wrappers:
+  - `*_u32` capacity wrappers migrate non-negative queue/capacity arguments to `UInt32`.
+  - `select_first_u32` / `select_recv_int_u32` migrate selection indices to `UInt32`.
+  - Legacy `Int` signatures remain available for compatibility/runtime parity.
+- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
 - Cancellation:
   - `cancel_task` is cooperative and returns `Ok(true)` when cancellation was requested before completion.
   - `join_task` on a cancelled task returns `Err(Cancelled)`.

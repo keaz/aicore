@@ -38,19 +38,43 @@ Failure behavior:
 - `Bool` -> `i1`
 - `()` -> `void`
 
+Notes:
+
+- `Int` and `Int64` both lower to `i64` in LLVM, but remain distinct named source types for type-checking rules.
+- Unsigned primitives share the same LLVM bit-width as signed peers; signedness affects selected operations (`s*` vs `u*`, `ashr` vs `lshr`), not the raw storage width.
+
 ### Integer lowering policy (fixed-width)
 
 - Fixed-width primitive identity is preserved in backend typing (`render_type`/`parse_type_repr`/`sig_matches_shape`).
 - Integer ops lower with width-aware LLVM ops:
+  - add/sub/mul: `add`/`sub`/`mul`
   - signed: `sdiv`/`srem`, signed comparisons (`slt`/`sle`/`sgt`/`sge`)
   - unsigned: `udiv`/`urem`, unsigned comparisons (`ult`/`ule`/`ugt`/`uge`)
   - shifts use arithmetic/logical behavior based on signedness (`ashr` vs `lshr`).
-- Extern wrappers use exact LLVM scalar widths from declared AIC types (`Int8..UInt64`), not `Int` fallback.
+- `>>>` always lowers to logical right shift (`lshr`).
+
+### Integer coercion policy in codegen
+
+- When typed values cross ABI/helper boundaries with different integer widths, codegen emits explicit casts:
+  - widening signed: `sext`
+  - widening unsigned: `zext`
+  - narrowing: `trunc`
+- This keeps source fixed-width behavior stable even when a runtime helper uses `i64` transport values.
+- Example: typed `std.buffer` read/write/patch helpers cast between runtime `i64` slots and declared `Int16`/`UInt32`/etc payload types.
+
+### Extern C ABI policy
+
+- Extern wrappers use exact declared primitive widths at the LLVM boundary.
+- Supported extern C scalar primitives in MVP type-checking include:
+  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`
+  - `UInt8`, `UInt16`, `UInt32`, `UInt64`
+  - `Bool`, `Float`, `Char`, `()`
+- Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
 
 ### Runtime scalar ABI policy
 
 - LLVM bridge types remain explicit (`i8/i16/i32/i64`) at function boundaries.
-- Runtime C entrypoints representing AIC `Int`/`Bool` scalar values should use fixed-width C types (`int64_t`) rather than platform-dependent `long`.
+- Runtime C entrypoints representing scalar values should use fixed-width C types (`int8_t`/`uint8_t`/`int16_t`/`uint16_t`/`int32_t`/`uint32_t`/`int64_t`/`uint64_t`) rather than platform-dependent `long`/`int`.
 - Size/capacity/index runtime fields remain `i64`/`int64_t` in LLVM ABI and are range-checked in runtime helpers.
 
 ### String ABI (`ptr-len-cap`)

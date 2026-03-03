@@ -7,26 +7,36 @@ fn bool_to_int(v: Bool) -> Int {
     if v { 1 } else { 0 }
 }
 
-fn int_or_bytes(v: Result[Int, BytesError], fallback: Int) -> Int {
+fn u8_to_int(value: UInt8) -> Int {
+    let mut out = 0;
+    let mut remaining = value;
+    while remaining > 0u8 {
+        remaining = remaining - 1u8;
+        out = out + 1;
+    };
+    out
+}
+
+fn int_or_bytes(v: Result[UInt8, BytesError], fallback: Int) -> Int {
     match v {
-        Ok(value) => value,
+        Ok(value) => u8_to_int(value),
         Err(_) => fallback,
     }
 }
 
-fn int_or_buffer(v: Result[Int, BufferError], fallback: Int) -> Int {
+fn int_or_buffer(v: Result[UInt8, BufferError], fallback: Int) -> Int {
     match v {
-        Ok(value) => value,
+        Ok(value) => u8_to_int(value),
         Err(_) => fallback,
     }
 }
 
 fn main() -> Int effects { io } capabilities { io } {
-    let mut raw: Vec[Int] = new_vec();
-    raw = push(raw, 65);
-    raw = push(raw, 66);
-    raw = push(raw, 67);
-    raw = push(raw, 255);
+    let mut raw: Vec[UInt8] = new_vec();
+    raw = push(raw, 65u8);
+    raw = push(raw, 66u8);
+    raw = push(raw, 67u8);
+    raw = push(raw, 255u8);
 
     let payload = match bytes.from_byte_values(raw) {
         Ok(v) => v,
@@ -41,7 +51,7 @@ fn main() -> Int effects { io } capabilities { io } {
         Err(_) => bytes.empty(),
     };
     let middle_ok = bool_to_int(bytes.compare_bytes(middle, bytes.from_string("BC")) == 0);
-    let find_ok = match bytes.find_byte(payload, 255) {
+    let find_ok = match bytes.find_byte(payload, 255u8) {
         Some(i) => bool_to_int(i == 3),
         None => 0,
     };

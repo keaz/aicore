@@ -28,22 +28,26 @@ enum ProcError {
     UnknownProcess,
 }
 
-struct ProcOutput {
-    status: Int,
+type ProcHandle = UInt32
+type ProcExitStatus = Int32
+
+struct ProcResult {
+    status: ProcExitStatus,
     stdout: String,
     stderr: String,
 }
 
-fn spawn(command: String) -> Result[Int, ProcError] effects { proc, env }
-fn wait(handle: Int) -> Result[Int, ProcError] effects { proc }
-fn kill(handle: Int) -> Result[Bool, ProcError] effects { proc }
-fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }
-fn pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }
+fn spawn(command: String) -> Result[ProcHandle, ProcError] effects { proc, env }
+fn wait(handle: ProcHandle) -> Result[ProcExitStatus, ProcError] effects { proc }
+fn kill(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc }
+fn run(command: String) -> Result[ProcResult, ProcError] effects { proc, env }
+fn pipe(left: String, right: String) -> Result[ProcResult, ProcError] effects { proc, env }
 ```
 
 Notes:
-- `run` and `pipe` always return `Ok(ProcOutput)` for successful launch, even when process exit status is non-zero.
-- `ProcOutput.status` carries the process exit code.
+- `run` and `pipe` always return `Ok(ProcResult)` for successful launch, even when process exit status is non-zero.
+- `ProcResult.status` carries bounded `Int32` process exit codes.
+- Public wrappers validate runtime `Int` values before exposing `ProcHandle`/`ProcExitStatus`.
 - `stderr` is captured independently from `stdout`.
 
 ## `std.env`
@@ -61,6 +65,7 @@ fn set(key: String, value: String) -> Result[Bool, EnvError] effects { env }
 fn remove(key: String) -> Result[Bool, EnvError] effects { env }
 fn cwd() -> Result[String, EnvError] effects { env, fs }
 fn set_cwd(path: String) -> Result[Bool, EnvError] effects { env, fs }
+fn exit(code: Int32) -> () effects { env }
 ```
 
 ## `std.path`

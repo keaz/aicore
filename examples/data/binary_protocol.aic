@@ -30,16 +30,36 @@ fn bytes_to_text_or(v: Bytes, fallback: String) -> String {
     }
 }
 
+fn int_to_i32_nonnegative(value: Int) -> Int32 {
+    let mut remaining = value;
+    let mut out: Int32 = 0;
+    let mut bit: Int32 = 1;
+    while remaining > 0 {
+        if (remaining % 2) == 1 {
+            out = out + bit;
+        } else {
+            ()
+        };
+        remaining = remaining / 2;
+        if remaining > 0 {
+            bit = bit + bit;
+        } else {
+            ()
+        };
+    };
+    out
+}
+
 fn main() -> Int effects { io } capabilities { io  } {
     let frame = new_buffer(128);
-    let write_placeholder = buf_write_i32_be(frame, 0);
+    let write_placeholder = buf_write_i32_be(frame, int_to_i32_nonnegative(0));
     let write_flags = buf_write_i16_le(frame, 0x1234);
     let write_tag = buf_write_cstring(frame, "hello");
     let write_payload = buf_write_string_prefixed(frame, "payload");
 
     let frame_len = buf_position(frame);
     let seek_header = buf_seek(frame, 0);
-    let write_length = buf_write_i32_be(frame, frame_len);
+    let write_length = buf_write_i32_be(frame, int_to_i32_nonnegative(frame_len));
     let seek_end = buf_seek(frame, frame_len);
     let _placeholder_status = write_placeholder;
     let _flags_status = write_flags;

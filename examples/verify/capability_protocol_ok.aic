@@ -14,7 +14,7 @@ fn read_once(path: String) -> Int effects { fs } capabilities { fs } {
     0
 }
 
-fn check_handles(tcp: Int, udp: Int, child: Int) -> Int effects { net, proc } capabilities { net, proc } {
+fn check_handles(tcp: Int, udp: Int, child: ProcHandle) -> Int effects { net, proc } capabilities { net, proc } {
     let _alive = proc.is_running(child);
     let _waited = proc.wait(child);
     let _tcp_closed = net.tcp_close(tcp);
@@ -24,6 +24,9 @@ fn check_handles(tcp: Int, udp: Int, child: Int) -> Int effects { net, proc } ca
 
 fn main() -> Int effects { fs, net, proc } capabilities { fs, net, proc } {
     let _fs = read_once("README.md");
-    let _handles = check_handles(10, 11, 12);
+    let _handles = match proc.current_pid() {
+        Ok(pid) => check_handles(10, 11, pid),
+        Err(_) => 0,
+    };
     0
 }

@@ -62,6 +62,13 @@ struct Response {
     body: String,
 }
 
+/// `ResponseView` is a bounded public response model.
+struct ResponseView {
+    status: UInt16,
+    headers: Map[String, String],
+    body: String,
+}
+
 /// `aic_http_server_listen_intrinsic` in `std.http_server`.
 ///
 /// ## Example
@@ -276,8 +283,8 @@ fn read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, S
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn write_response(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
-    aic_http_server_write_response_intrinsic(conn, response)
+fn write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net } {
+    aic_http_server_write_response_intrinsic(conn, http_server_response_to_raw(response))
 }
 
 /// `close` in `std.http_server`.
@@ -308,8 +315,8 @@ fn close(handle: Int) -> Result[Bool, ServerError] effects { net } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn response(status: Int, headers: Map[String, String], body: String) -> Response {
-    Response {
+fn response(status: UInt16, headers: Map[String, String], body: String) -> ResponseView {
+    ResponseView {
         status: status,
         headers: headers,
         body: body,
@@ -328,8 +335,17 @@ fn response(status: Int, headers: Map[String, String], body: String) -> Response
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn text_response(status: Int, body: String) -> Response {
-    aic_http_server_text_response_intrinsic(status, body)
+fn text_response(status: UInt16, body: String) -> ResponseView {
+    let raw = aic_http_server_text_response_intrinsic(http_server_status_to_int(status), body);
+    let bounded_status = match http_server_status_from_int(raw.status) {
+        Ok(value) => value,
+        Err(_) => status,
+    };
+    ResponseView {
+        status: bounded_status,
+        headers: raw.headers,
+        body: raw.body,
+    }
 }
 
 /// `json_response` in `std.http_server`.
@@ -344,8 +360,17 @@ fn text_response(status: Int, body: String) -> Response {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn json_response(status: Int, body: String) -> Response {
-    aic_http_server_json_response_intrinsic(status, body)
+fn json_response(status: UInt16, body: String) -> ResponseView {
+    let raw = aic_http_server_json_response_intrinsic(http_server_status_to_int(status), body);
+    let bounded_status = match http_server_status_from_int(raw.status) {
+        Ok(value) => value,
+        Err(_) => status,
+    };
+    ResponseView {
+        status: bounded_status,
+        headers: raw.headers,
+        body: raw.body,
+    }
 }
 
 /// `error_response` in `std.http_server`.
@@ -360,7 +385,7 @@ fn json_response(status: Int, body: String) -> Response {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn error_response(status: Int, message: String) -> Response {
+fn error_response(status: UInt16, message: String) -> ResponseView {
     text_response(status, message)
 }
 
@@ -376,6 +401,75 @@ fn error_response(status: Int, message: String) -> Response {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn header(resp: Response, name: String) -> Option[String] {
-    aic_http_server_header_intrinsic(resp, name)
+fn header(resp: ResponseView, name: String) -> Option[String] {
+    aic_map_get_intrinsic(resp.headers, name)
+}
+
+/// `http_server_status_from_int` validates and converts runtime `Int` status to bounded `UInt16`.
+fn http_server_status_from_int(status: Int) -> Result[UInt16, ServerError] {
+    if status < 0 || status > 65535 {
+        Err(Internal())
+    } else {
+        let mut remaining = status;
+        let mut out: UInt16 = 0;
+        let mut bit: UInt16 = 1;
+        while remaining > 0 {
+            if (remaining % 2) == 1 {
+                out = out + bit;
+            } else {
+                ()
+            };
+            remaining = remaining / 2;
+            if remaining > 0 {
+                bit = bit + bit;
+            } else {
+                ()
+            };
+        };
+        Ok(out)
+    }
+}
+
+/// `http_server_response_from_raw` converts runtime response payloads into bounded public models.
+fn http_server_response_from_raw(raw: Response) -> Result[ResponseView, ServerError] {
+    match http_server_status_from_int(raw.status) {
+        Ok(bounded_status) => Ok(ResponseView {
+            status: bounded_status,
+            headers: raw.headers,
+            body: raw.body,
+        }),
+        Err(err) => Err(err),
+    }
+}
+
+/// `http_server_response_to_raw` converts bounded public models into runtime boundary payloads.
+fn http_server_response_to_raw(response: ResponseView) -> Response {
+    Response {
+        status: http_server_status_to_int(response.status),
+        headers: response.headers,
+        body: response.body,
+    }
+}
+
+/// `http_server_zero_u16` in `std.http_server`.
+fn http_server_zero_u16() -> UInt16 {
+    0u16
+}
+
+/// `http_server_one_u16` in `std.http_server`.
+fn http_server_one_u16() -> UInt16 {
+    1u16
+}
+
+/// `http_server_status_to_int` converts bounded HTTP status values to runtime `Int`.
+fn http_server_status_to_int(status: UInt16) -> Int {
+    let mut out = 0;
+    let mut remaining = status;
+    let zero = http_server_zero_u16();
+    let one = http_server_one_u16();
+    while remaining > zero {
+        remaining = remaining - one;
+        out = out + 1;
+    };
+    out
 }

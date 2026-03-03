@@ -13,6 +13,9 @@ import std.result;
 import std.string;
 import std.time;
 
+type TlsByteCountU32 = UInt32;
+type TlsFrameLengthU32 = UInt32;
+
 /// `TlsError` is a `enum` in `std.tls`.
 ///
 /// ## Example
@@ -122,6 +125,18 @@ struct TlsAsyncIntSelection {
 /// ```
 struct TlsAsyncStringSelection {
     index: Int,
+    payload: Bytes,
+}
+
+/// `TlsAsyncIntSelectionU32` is a `struct` in `std.tls`.
+struct TlsAsyncIntSelectionU32 {
+    index: UInt32,
+    value: Int,
+}
+
+/// `TlsAsyncStringSelectionU32` is a `struct` in `std.tls`.
+struct TlsAsyncStringSelectionU32 {
+    index: UInt32,
     payload: Bytes,
 }
 
@@ -729,6 +744,18 @@ fn tls_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[String
     aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms)
 }
 
+/// `tls_recv_u32` in `std.tls`.
+fn tls_recv_u32(
+    stream: TlsStream,
+    max_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[String, TlsError] effects { net } {
+    match tls_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => aic_tls_recv_intrinsic(stream.handle, max_bytes_int, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tls_recv_bytes` in `std.tls`.
 ///
 /// ## Example
@@ -745,6 +772,18 @@ fn tls_recv_bytes(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
     let raw = aic_tls_recv_intrinsic(stream.handle, max_bytes, timeout_ms);
     match raw {
         Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tls_recv_bytes_u32` in `std.tls`.
+fn tls_recv_bytes_u32(
+    stream: TlsStream,
+    max_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, TlsError] effects { net } {
+    match tls_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => tls_recv_bytes(stream, max_bytes_int, timeout_ms),
         Err(err) => Err(err),
     }
 }
@@ -779,6 +818,18 @@ fn tls_async_send_submit(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Res
 /// Returns module-defined error variants when the operation fails.
 fn tls_async_recv_submit(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency } {
     aic_tls_async_recv_submit_intrinsic(stream.handle, max_bytes, timeout_ms)
+}
+
+/// `tls_async_recv_submit_u32` in `std.tls`.
+fn tls_async_recv_submit_u32(
+    stream: TlsStream,
+    max_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[AsyncStringOp, TlsError] effects { net, concurrency } {
+    match tls_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => aic_tls_async_recv_submit_intrinsic(stream.handle, max_bytes_int, timeout_ms),
+        Err(err) => Err(err),
+    }
 }
 
 /// `tls_async_wait_int` in `std.tls`.
@@ -968,6 +1019,23 @@ fn tls_async_wait_many_int(
     }
 }
 
+/// `tls_async_wait_many_int_u32` in `std.tls`.
+fn tls_async_wait_many_int_u32(
+    ops: Vec[AsyncIntOp],
+    timeout_ms: Int,
+) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time } {
+    match tls_async_wait_many_int(ops, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match tls_int_to_u32(selection.index) {
+            Err(err) => Err(err),
+            Ok(index) => Ok(TlsAsyncIntSelectionU32 {
+                index: index,
+                value: selection.value,
+            }),
+        },
+    }
+}
+
 /// `tls_async_wait_many_string` in `std.tls`.
 ///
 /// ## Example
@@ -1039,6 +1107,23 @@ fn tls_async_wait_many_string(
     }
 }
 
+/// `tls_async_wait_many_string_u32` in `std.tls`.
+fn tls_async_wait_many_string_u32(
+    ops: Vec[AsyncStringOp],
+    timeout_ms: Int,
+) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time } {
+    match tls_async_wait_many_string(ops, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match tls_int_to_u32(selection.index) {
+            Err(err) => Err(err),
+            Ok(index) => Ok(TlsAsyncStringSelectionU32 {
+                index: index,
+                payload: selection.payload,
+            }),
+        },
+    }
+}
+
 /// `tls_async_wait_any_int` in `std.tls`.
 ///
 /// ## Example
@@ -1060,6 +1145,16 @@ fn tls_async_wait_any_int(
     tls_async_wait_many_int(ops, timeout_ms)
 }
 
+/// `tls_async_wait_any_int_u32` in `std.tls`.
+fn tls_async_wait_any_int_u32(
+    op1: AsyncIntOp,
+    op2: AsyncIntOp,
+    timeout_ms: Int,
+) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    tls_async_wait_many_int_u32(ops, timeout_ms)
+}
+
 /// `tls_async_wait_any_string` in `std.tls`.
 ///
 /// ## Example
@@ -1079,6 +1174,16 @@ fn tls_async_wait_any_string(
 ) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time } {
     let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
     tls_async_wait_many_string(ops, timeout_ms)
+}
+
+/// `tls_async_wait_any_string_u32` in `std.tls`.
+fn tls_async_wait_any_string_u32(
+    op1: AsyncStringOp,
+    op2: AsyncStringOp,
+    timeout_ms: Int,
+) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    tls_async_wait_many_string_u32(ops, timeout_ms)
 }
 
 /// `tls_async_send` in `std.tls`.
@@ -1121,6 +1226,19 @@ fn tls_async_recv(stream: TlsStream, max_bytes: Int, timeout_ms: Int) -> Result[
     }
 }
 
+/// `tls_async_recv_u32` in `std.tls`.
+fn tls_async_recv_u32(
+    stream: TlsStream,
+    max_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, concurrency } {
+    let submitted = tls_async_recv_submit_u32(stream, max_bytes, timeout_ms);
+    match submitted {
+        Ok(op) => tls_async_wait_string(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tls_async_shutdown` in `std.tls`.
 ///
 /// ## Example
@@ -1153,6 +1271,31 @@ fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effect
     aic_tls_async_pressure_intrinsic()
 }
 
+/// `tls_async_runtime_pressure_u32` in `std.tls`.
+fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency } {
+    match tls_async_runtime_pressure() {
+        Err(err) => Err(err),
+        Ok(pressure) => match tls_int_to_u32(pressure.active_ops) {
+            Err(err) => Err(err),
+            Ok(active_ops) => match tls_int_to_u32(pressure.queue_depth) {
+                Err(err) => Err(err),
+                Ok(queue_depth) => match tls_int_to_u32(pressure.op_limit) {
+                    Err(err) => Err(err),
+                    Ok(op_limit) => match tls_int_to_u32(pressure.queue_limit) {
+                        Err(err) => Err(err),
+                        Ok(queue_limit) => Ok(AsyncRuntimePressureU32 {
+                            active_ops: active_ops,
+                            queue_depth: queue_depth,
+                            op_limit: op_limit,
+                            queue_limit: queue_limit,
+                        }),
+                    },
+                },
+            },
+        },
+    }
+}
+
 /// `tls_zero_u8` in `std.tls`.
 fn tls_zero_u8() -> UInt8 {
     0
@@ -1161,6 +1304,68 @@ fn tls_zero_u8() -> UInt8 {
 /// `tls_one_u8` in `std.tls`.
 fn tls_one_u8() -> UInt8 {
     1
+}
+
+/// `tls_zero_u32` in `std.tls`.
+fn tls_zero_u32() -> UInt32 {
+    0u32
+}
+
+/// `tls_one_u32` in `std.tls`.
+fn tls_one_u32() -> UInt32 {
+    1u32
+}
+
+/// `tls_u8_to_u32` in `std.tls`.
+fn tls_u8_to_u32(value: UInt8) -> UInt32 {
+    let mut out: UInt32 = tls_zero_u32();
+    let mut current: UInt8 = tls_zero_u8();
+    let one_u8 = tls_one_u8();
+    let one_u32 = tls_one_u32();
+    while current != value {
+        current = current + one_u8;
+        out = out + one_u32;
+    };
+    out
+}
+
+/// `tls_int_to_u32` in `std.tls`.
+fn tls_int_to_u32(value: Int) -> Result[UInt32, TlsError] {
+    if value < 0 {
+        Err(ProtocolError())
+    } else if value > 4294967295 {
+        Err(ProtocolError())
+    } else {
+        let mut out: UInt32 = tls_zero_u32();
+        let mut remaining = value;
+        let one_u32 = tls_one_u32();
+        while remaining > 0 {
+            out = out + one_u32;
+            remaining = remaining - 1;
+        };
+        Ok(out)
+    }
+}
+
+/// `tls_u32_int_max` in `std.tls`.
+fn tls_u32_int_max() -> UInt32 {
+    2147483647u32
+}
+
+/// `tls_u32_to_int` in `std.tls`.
+fn tls_u32_to_int(value: UInt32) -> Result[Int, TlsError] {
+    if value > tls_u32_int_max() {
+        Err(ProtocolError())
+    } else {
+        let mut out = 0;
+        let mut remaining = value;
+        let one_u32 = tls_one_u32();
+        while remaining > tls_zero_u32() {
+            out = out + 1;
+            remaining = remaining - one_u32;
+        };
+        Ok(out)
+    }
 }
 
 /// `tls_u8_to_int` in `std.tls`.
@@ -1183,6 +1388,35 @@ fn tls_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, TlsError] {
     }
 }
 
+/// `tls_frame_byte_to_u32` in `std.tls`.
+fn tls_frame_byte_to_u32(header: Bytes, index: Int) -> Result[UInt32, TlsError] {
+    match byte_at(header, index) {
+        Ok(value) => Ok(tls_u8_to_u32(value)),
+        Err(_) => Err(ProtocolError()),
+    }
+}
+
+/// `tls_frame_len_be_u32` in `std.tls`.
+fn tls_frame_len_be_u32(header: Bytes) -> Result[TlsFrameLengthU32, TlsError] {
+    if byte_len(header) != 4 {
+        Err(ProtocolError())
+    } else {
+        match tls_frame_byte_to_u32(header, 0) {
+            Err(err) => Err(err),
+            Ok(b0) => match tls_frame_byte_to_u32(header, 1) {
+                Err(err) => Err(err),
+                Ok(b1) => match tls_frame_byte_to_u32(header, 2) {
+                    Err(err) => Err(err),
+                    Ok(b2) => match tls_frame_byte_to_u32(header, 3) {
+                        Err(err) => Err(err),
+                        Ok(b3) => Ok((b0 * 16777216u32) + (b1 * 65536u32) + (b2 * 256u32) + b3),
+                    },
+                },
+            },
+        }
+    }
+}
+
 /// `tls_frame_len_be` in `std.tls`.
 ///
 /// ## Example
@@ -1196,22 +1430,27 @@ fn tls_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, TlsError] {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn tls_frame_len_be(header: Bytes) -> Result[Int, TlsError] {
-    if byte_len(header) != 4 {
-        Err(ProtocolError())
-    } else {
-        match tls_frame_byte_to_int(header, 0) {
-            Err(err) => Err(err),
-            Ok(b0) => match tls_frame_byte_to_int(header, 1) {
-                Err(err) => Err(err),
-                Ok(b1) => match tls_frame_byte_to_int(header, 2) {
-                    Err(err) => Err(err),
-                    Ok(b2) => match tls_frame_byte_to_int(header, 3) {
-                        Err(err) => Err(err),
-                        Ok(b3) => Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3),
-                    },
-                },
-            },
-        }
+    match tls_frame_len_be_u32(header) {
+        Ok(value) => tls_u32_to_int(value),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tls_recv_framed_payload_u32` in `std.tls`.
+fn tls_recv_framed_payload_u32(
+    stream: TlsStream,
+    frame_header: Bytes,
+    max_frame_bytes: TlsFrameLengthU32,
+    deadline_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, time } {
+    let frame_len = tls_frame_len_be_u32(frame_header);
+    match frame_len {
+        Err(err) => Err(err),
+        Ok(payload_len) => if payload_len > max_frame_bytes {
+            Err(ProtocolError())
+        } else {
+            tls_recv_exact_deadline_u32(stream, payload_len, deadline_ms)
+        },
     }
 }
 
@@ -1367,6 +1606,18 @@ fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: 
     }
 }
 
+/// `tls_recv_exact_deadline_u32` in `std.tls`.
+fn tls_recv_exact_deadline_u32(
+    stream: TlsStream,
+    expected_bytes: TlsByteCountU32,
+    deadline_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, time } {
+    match tls_u32_to_int(expected_bytes) {
+        Ok(expected_bytes_int) => tls_recv_exact_deadline(stream, expected_bytes_int, deadline_ms),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tls_recv_exact` in `std.tls`.
 ///
 /// ## Example
@@ -1382,6 +1633,16 @@ fn tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: 
 fn tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
     let deadline_ms = deadline_after_ms(timeout_ms);
     tls_recv_exact_deadline(stream, expected_bytes, deadline_ms)
+}
+
+/// `tls_recv_exact_u32` in `std.tls`.
+fn tls_recv_exact_u32(
+    stream: TlsStream,
+    expected_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tls_recv_exact_deadline_u32(stream, expected_bytes, deadline_ms)
 }
 
 /// `tls_recv_framed_deadline` in `std.tls`.
@@ -1408,6 +1669,19 @@ fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms
     }
 }
 
+/// `tls_recv_framed_deadline_u32` in `std.tls`.
+fn tls_recv_framed_deadline_u32(
+    stream: TlsStream,
+    max_frame_bytes: TlsFrameLengthU32,
+    deadline_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, time } {
+    let header = tls_recv_exact_deadline(stream, 4, deadline_ms);
+    match header {
+        Err(err) => Err(err),
+        Ok(frame_header) => tls_recv_framed_payload_u32(stream, frame_header, max_frame_bytes, deadline_ms),
+    }
+}
+
 /// `tls_recv_framed` in `std.tls`.
 ///
 /// ## Example
@@ -1423,6 +1697,16 @@ fn tls_recv_framed_deadline(stream: TlsStream, max_frame_bytes: Int, deadline_ms
 fn tls_recv_framed(stream: TlsStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time } {
     let deadline_ms = deadline_after_ms(timeout_ms);
     tls_recv_framed_deadline(stream, max_frame_bytes, deadline_ms)
+}
+
+/// `tls_recv_framed_u32` in `std.tls`.
+fn tls_recv_framed_u32(
+    stream: TlsStream,
+    max_frame_bytes: TlsFrameLengthU32,
+    timeout_ms: Int,
+) -> Result[Bytes, TlsError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tls_recv_framed_deadline_u32(stream, max_frame_bytes, deadline_ms)
 }
 
 /// `tls_close` in `std.tls`.
@@ -1584,6 +1868,18 @@ fn byte_stream_recv(stream: ByteStream, max_bytes: Int, timeout_ms: Int) -> Resu
     }
 }
 
+/// `byte_stream_recv_u32` in `std.tls`.
+fn byte_stream_recv_u32(
+    stream: ByteStream,
+    max_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, ByteStreamError] effects { net } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_u32(tcp, max_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_bytes_u32(tls, max_bytes, timeout_ms)),
+    }
+}
+
 /// `byte_stream_recv_exact_deadline` in `std.tls`.
 ///
 /// ## Example
@@ -1600,6 +1896,18 @@ fn byte_stream_recv_exact_deadline(stream: ByteStream, expected_bytes: Int, dead
     match stream {
         Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_deadline(tcp, expected_bytes, deadline_ms)),
         Tls(tls) => byte_stream_map_tls(tls_recv_exact_deadline(tls, expected_bytes, deadline_ms)),
+    }
+}
+
+/// `byte_stream_recv_exact_deadline_u32` in `std.tls`.
+fn byte_stream_recv_exact_deadline_u32(
+    stream: ByteStream,
+    expected_bytes: TlsByteCountU32,
+    deadline_ms: Int,
+) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_deadline_u32(tcp, expected_bytes, deadline_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_exact_deadline_u32(tls, expected_bytes, deadline_ms)),
     }
 }
 
@@ -1622,6 +1930,18 @@ fn byte_stream_recv_exact(stream: ByteStream, expected_bytes: Int, timeout_ms: I
     }
 }
 
+/// `byte_stream_recv_exact_u32` in `std.tls`.
+fn byte_stream_recv_exact_u32(
+    stream: ByteStream,
+    expected_bytes: TlsByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_u32(tcp, expected_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_exact_u32(tls, expected_bytes, timeout_ms)),
+    }
+}
+
 /// `byte_stream_recv_framed_deadline` in `std.tls`.
 ///
 /// ## Example
@@ -1641,6 +1961,18 @@ fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, de
     }
 }
 
+/// `byte_stream_recv_framed_deadline_u32` in `std.tls`.
+fn byte_stream_recv_framed_deadline_u32(
+    stream: ByteStream,
+    max_frame_bytes: TlsFrameLengthU32,
+    deadline_ms: Int,
+) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed_deadline_u32(tcp, max_frame_bytes, deadline_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_framed_deadline_u32(tls, max_frame_bytes, deadline_ms)),
+    }
+}
+
 /// `byte_stream_recv_framed` in `std.tls`.
 ///
 /// ## Example
@@ -1657,6 +1989,18 @@ fn byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms:
     match stream {
         Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed(tcp, max_frame_bytes, timeout_ms)),
         Tls(tls) => byte_stream_map_tls(tls_recv_framed(tls, max_frame_bytes, timeout_ms)),
+    }
+}
+
+/// `byte_stream_recv_framed_u32` in `std.tls`.
+fn byte_stream_recv_framed_u32(
+    stream: ByteStream,
+    max_frame_bytes: TlsFrameLengthU32,
+    timeout_ms: Int,
+) -> Result[Bytes, ByteStreamError] effects { net, time } {
+    match stream {
+        Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_framed_u32(tcp, max_frame_bytes, timeout_ms)),
+        Tls(tls) => byte_stream_map_tls(tls_recv_framed_u32(tls, max_frame_bytes, timeout_ms)),
     }
 }
 

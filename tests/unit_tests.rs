@@ -2052,6 +2052,10 @@ fn unit_std_env_public_apis_delegate_to_runtime_intrinsics() {
         "aic_env_set_cwd_intrinsic",
         1,
     );
+    assert!(
+        env_source.contains("fn exit(code: Int32) -> () effects { env }"),
+        "std/env.aic exit must expose bounded Int32 status codes"
+    );
 }
 
 #[test]
@@ -2307,40 +2311,48 @@ fn unit_std_path_public_apis_delegate_to_runtime_intrinsics() {
 fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
     let proc_source = fs::read_to_string("std/proc.aic").expect("read std/proc.aic");
 
-    assert_delegate_call(
-        &proc_source,
-        "std/proc.aic",
-        "spawn",
-        "aic_proc_spawn_intrinsic",
-        1,
+    assert!(
+        proc_source.contains("type ProcHandle = UInt32;"),
+        "std/proc.aic must expose bounded ProcHandle type"
     );
-    assert_delegate_call(
-        &proc_source,
-        "std/proc.aic",
-        "wait",
-        "aic_proc_wait_intrinsic",
-        1,
+    assert!(
+        proc_source.contains("type ProcExitStatus = Int32;"),
+        "std/proc.aic must expose bounded process exit status type"
     );
-    assert_delegate_call(
-        &proc_source,
-        "std/proc.aic",
-        "kill",
-        "aic_proc_kill_intrinsic",
-        1,
+    assert!(
+        proc_source.contains("struct ProcResult {"),
+        "std/proc.aic must expose bounded public process output model"
     );
-    assert_delegate_call(
-        &proc_source,
-        "std/proc.aic",
-        "run",
-        "aic_proc_run_intrinsic",
-        1,
+    assert!(
+        proc_source.contains("fn spawn(command: String) -> Result[ProcHandle, ProcError]"),
+        "std/proc.aic spawn API must return bounded process handles"
     );
-    assert_delegate_call(
-        &proc_source,
-        "std/proc.aic",
-        "pipe",
-        "aic_proc_pipe_intrinsic",
-        2,
+    assert!(
+        proc_source.contains("fn wait(handle: ProcHandle) -> Result[ProcExitStatus, ProcError]"),
+        "std/proc.aic wait API must return bounded Int32 exit statuses"
+    );
+    assert!(
+        proc_source.contains("fn current_pid() -> Result[ProcHandle, ProcError] effects { proc }"),
+        "std/proc.aic current_pid API must return bounded process handles"
+    );
+    assert!(
+        proc_source
+            .contains("fn proc_handle_from_int(value: Int) -> Result[ProcHandle, ProcError]"),
+        "std/proc.aic must validate Int->UInt32 runtime boundary conversions"
+    );
+    assert!(
+        proc_source.contains(
+            "fn proc_exit_status_from_int(value: Int) -> Result[ProcExitStatus, ProcError]"
+        ),
+        "std/proc.aic must validate Int->Int32 runtime boundary conversions"
+    );
+    assert!(
+        proc_source.contains("if value < 0 || value > 4294967295"),
+        "std/proc.aic must enforce UInt32 handle bounds"
+    );
+    assert!(
+        proc_source.contains("if value < -2147483648 || value > 2147483647"),
+        "std/proc.aic must enforce Int32 exit-status bounds"
     );
 
     for (name, arity) in [
@@ -2572,6 +2584,18 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
         "aic_net_async_pressure_intrinsic",
         0,
     );
+    assert!(
+        net_source.contains("fn tcp_recv_u32("),
+        "std/net.aic must expose fixed-width tcp_recv wrapper"
+    );
+    assert!(
+        net_source.contains("fn udp_recv_from_u32("),
+        "std/net.aic must expose fixed-width udp_recv_from wrapper"
+    );
+    assert!(
+        net_source.contains("fn async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, NetError] effects { net, concurrency }"),
+        "std/net.aic must expose fixed-width async pressure wrapper"
+    );
 
     for (name, arity) in [
         ("aic_net_tcp_listen_intrinsic", 1usize),
@@ -2761,6 +2785,12 @@ fn unit_std_net_tcp_stream_exact_and_framed_reads_are_deadline_based() {
     );
     assert!(
         source.contains(
+            "fn tcp_stream_frame_len_be_u32(header: Bytes) -> Result[FrameLengthU32, NetError]"
+        ),
+        "std/net.aic must expose fixed-width frame parser variant"
+    );
+    assert!(
+        source.contains(
             "fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
         ),
         "std/net.aic must expose deadline-based framed reads"
@@ -2770,6 +2800,14 @@ fn unit_std_net_tcp_stream_exact_and_framed_reads_are_deadline_based() {
             "fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
         ),
         "std/net.aic must expose timeout-based framed reads"
+    );
+    assert!(
+        source.contains("fn tcp_stream_recv_exact_u32("),
+        "std/net.aic must expose fixed-width exact stream-read wrapper"
+    );
+    assert!(
+        source.contains("fn tcp_stream_recv_framed_u32("),
+        "std/net.aic must expose fixed-width framed stream-read wrapper"
     );
     assert!(
         source.contains("tcp_stream_recv_exact_deadline(stream, 4, deadline_ms)"),
@@ -2789,26 +2827,41 @@ fn unit_std_net_tcp_stream_exact_and_framed_reads_are_deadline_based() {
 fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
     let url_source = fs::read_to_string("std/url.aic").expect("read std/url.aic");
 
-    assert_delegate_call(
-        &url_source,
-        "std/url.aic",
-        "parse",
-        "aic_url_parse_intrinsic",
-        1,
+    assert!(
+        url_source.contains("struct UrlView {"),
+        "std/url.aic must expose bounded public URL model"
     );
-    assert_delegate_call(
-        &url_source,
-        "std/url.aic",
-        "normalize",
-        "aic_url_normalize_intrinsic",
-        1,
+    assert!(
+        url_source.contains("port: Option[UInt16],"),
+        "std/url.aic public URL model must use Option[UInt16] ports"
     );
-    assert_delegate_call(
-        &url_source,
-        "std/url.aic",
-        "net_addr",
-        "aic_url_net_addr_intrinsic",
-        1,
+    assert!(
+        url_source.contains("fn parse(text: String) -> Result[UrlView, UrlError]"),
+        "std/url.aic parse API must return bounded URL model"
+    );
+    assert!(
+        url_source.contains("fn normalize(url: UrlView) -> Result[String, UrlError]"),
+        "std/url.aic normalize API must accept bounded URL model"
+    );
+    assert!(
+        url_source.contains("fn net_addr(url: UrlView) -> Result[String, UrlError]"),
+        "std/url.aic net_addr API must accept bounded URL model"
+    );
+    assert!(
+        url_source.contains("fn url_port_from_int(port: Int) -> Result[Option[UInt16], UrlError]"),
+        "std/url.aic must validate runtime Int ports to bounded Option[UInt16]"
+    );
+    assert!(
+        url_source.contains("fn url_port_to_int(port: Option[UInt16]) -> Int"),
+        "std/url.aic must define explicit Option[UInt16] -> Int runtime bridge"
+    );
+    assert!(
+        url_source.contains("if port < 0"),
+        "std/url.aic must preserve no-port semantics without negative sentinel in public model"
+    );
+    assert!(
+        url_source.contains("port > 65535"),
+        "std/url.aic must enforce UInt16 port bounds"
     );
 }
 
@@ -3045,6 +3098,14 @@ fn unit_std_tls_public_apis_delegate_to_runtime_intrinsics() {
         "aic_tls_async_pressure_intrinsic",
         0,
     );
+    assert!(
+        source.contains("fn tls_recv_u32("),
+        "std/tls.aic must expose fixed-width recv wrapper"
+    );
+    assert!(
+        source.contains("fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }"),
+        "std/tls.aic must expose fixed-width async pressure wrapper"
+    );
 
     for (intrinsic, arity) in [
         ("aic_tls_connect_intrinsic", 10usize),
@@ -3138,6 +3199,10 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         "std/tls.aic must expose tls_async_wait_many_int selection helper"
     );
     assert!(
+        source.contains("fn tls_async_wait_many_int_u32("),
+        "std/tls.aic must expose fixed-width async wait-many int wrapper"
+    );
+    assert!(
         source.contains(
             "fn tls_async_wait_many_string(\n    ops: Vec[AsyncStringOp],\n    timeout_ms: Int,\n) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
         ),
@@ -3148,6 +3213,10 @@ fn unit_std_tls_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
             "fn tls_async_wait_any_int(\n    op1: AsyncIntOp,\n    op2: AsyncIntOp,\n    timeout_ms: Int,\n) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
         ),
         "std/tls.aic must expose tls_async_wait_any_int selection helper"
+    );
+    assert!(
+        source.contains("fn tls_async_wait_any_int_u32("),
+        "std/tls.aic must expose fixed-width async wait-any int wrapper"
     );
     assert!(
         source.contains(
@@ -3258,6 +3327,10 @@ fn unit_std_tls_byte_stream_adapter_bridges_tcp_and_tls_byte_paths() {
         "std/tls.aic byte_stream_recv must delegate TLS branch to tls_recv_bytes"
     );
     assert!(
+        source.contains("fn byte_stream_recv_u32("),
+        "std/tls.aic must expose fixed-width byte_stream recv wrapper"
+    );
+    assert!(
         source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_close(tcp))"),
         "std/tls.aic byte_stream_close must delegate TCP branch to tcp_stream_close"
     );
@@ -3300,12 +3373,22 @@ fn unit_std_tls_exact_and_framed_reads_have_deadline_and_byte_stream_adapters() 
         "std/tls.aic must expose shared frame-header parser for TLS framed reads"
     );
     assert!(
+        source.contains(
+            "fn tls_frame_len_be_u32(header: Bytes) -> Result[TlsFrameLengthU32, TlsError]"
+        ),
+        "std/tls.aic must expose fixed-width frame-header parser wrapper"
+    );
+    assert!(
         source.contains("tls_recv_exact_deadline(stream, 4, deadline_ms)"),
         "std/tls.aic framed reads must consume exact 4-byte frame headers"
     );
     assert!(
         source.contains("tls_recv_exact_deadline(stream, payload_len, deadline_ms)"),
         "std/tls.aic framed reads must consume exact payload lengths"
+    );
+    assert!(
+        source.contains("fn tls_recv_framed_u32("),
+        "std/tls.aic must expose fixed-width framed TLS read wrapper"
     );
     assert!(
         source.contains(
@@ -3318,6 +3401,10 @@ fn unit_std_tls_exact_and_framed_reads_have_deadline_and_byte_stream_adapters() 
             "fn byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
         ),
         "std/tls.aic must expose ByteStream deadline framed reads"
+    );
+    assert!(
+        source.contains("fn byte_stream_recv_framed_u32("),
+        "std/tls.aic must expose fixed-width ByteStream framed read wrapper"
     );
     assert!(
         source.contains("Tcp(tcp) => byte_stream_map_net(tcp_stream_recv_exact_deadline(tcp, expected_bytes, deadline_ms))"),
@@ -3605,6 +3692,16 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
             "{name} must document async_runtime_pressure signature"
         );
         assert!(
+            doc.contains(
+                "fn tcp_stream_frame_len_be_u32(header: Bytes) -> Result[UInt32, NetError]"
+            ),
+            "{name} must document fixed-width frame parser wrapper"
+        );
+        assert!(
+            doc.contains("fn async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, NetError] effects { net, concurrency }"),
+            "{name} must document fixed-width async pressure wrapper"
+        );
+        assert!(
             !doc.contains("fn tcp_send(handle: Int, payload: String) -> Result[Int, NetError] effects { net }"),
             "{name} still documents stale string tcp_send signature"
         );
@@ -3667,6 +3764,10 @@ fn unit_io_docs_bytes_first_signatures_match_std_net_contract() {
         "io api reference must include async lifecycle controls example"
     );
     assert!(
+        io_api.contains("docs/io-fixed-width-taxonomy-wave2.md"),
+        "io api reference must link the fixed-width scalar taxonomy artifact"
+    );
+    assert!(
         async_runtime.contains("examples/io/async_lifecycle_controls.aic"),
         "async runtime docs must include async lifecycle controls example coverage"
     );
@@ -3724,6 +3825,14 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
             "{name} must document tls_async_runtime_pressure signature"
         );
         assert!(
+            doc.contains("fn tls_frame_len_be_u32(header: Bytes) -> Result[UInt32, TlsError]"),
+            "{name} must document fixed-width tls frame parser wrapper"
+        );
+        assert!(
+            doc.contains("fn tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }"),
+            "{name} must document fixed-width tls async pressure wrapper"
+        );
+        assert!(
             !doc.contains("fn tls_async_wait_string(op: AsyncStringOp, timeout_ms: Int) -> Result[String, TlsError] effects { net, concurrency }"),
             "{name} still documents stale string tls_async_wait_string signature"
         );
@@ -3773,12 +3882,53 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
         "io api reference must include the runnable tls async submit/wait example"
     );
     assert!(
+        io_api.contains("docs/io-fixed-width-taxonomy-wave2.md"),
+        "io api reference must link fixed-width scalar taxonomy artifact"
+    );
+    assert!(
         tls_api.contains("examples/io/tls_async_submit_wait.aic"),
         "std tls docs must include the runnable tls async submit/wait example"
     );
     assert!(
+        tls_api.contains("docs/io-fixed-width-taxonomy-wave2.md"),
+        "std tls docs must link fixed-width scalar taxonomy artifact"
+    );
+    assert!(
         async_runtime.contains("examples/io/tls_async_submit_wait.aic"),
         "async runtime docs must include tls async submit/wait example coverage"
+    );
+}
+
+#[test]
+fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
+    let runtime_doc =
+        fs::read_to_string("docs/io-concurrency-runtime.md").expect("read io concurrency runtime");
+    let taxonomy = fs::read_to_string("docs/io-fixed-width-taxonomy-wave2.md")
+        .expect("read fixed-width taxonomy wave-2 doc");
+
+    assert!(
+        runtime_doc.contains("fn buffered_channel_u32[T](capacity: UInt32) -> (Sender[T], Receiver[T]) effects { concurrency }"),
+        "concurrency runtime docs must include fixed-width generic channel wrapper"
+    );
+    assert!(
+        runtime_doc.contains("fn channel_int_u32(capacity: UInt32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"),
+        "concurrency runtime docs must include fixed-width int-channel wrapper"
+    );
+    assert!(
+        runtime_doc.contains("fn select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(UInt32, T), ChannelError] effects { concurrency, env }"),
+        "concurrency runtime docs must include fixed-width select-any wrapper"
+    );
+    assert!(
+        runtime_doc.contains("docs/io-fixed-width-taxonomy-wave2.md"),
+        "concurrency runtime docs must link taxonomy artifact"
+    );
+    assert!(
+        taxonomy.contains("std.concurrent"),
+        "taxonomy artifact must include std.concurrent mappings"
+    );
+    assert!(
+        taxonomy.contains("UInt32"),
+        "taxonomy artifact must enumerate fixed-width unsigned choices"
     );
 }
 
@@ -4223,12 +4373,9 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
         "aic_http_method_name_intrinsic",
         1,
     );
-    assert_delegate_call(
-        &http_source,
-        "std/http.aic",
-        "status_reason",
-        "aic_http_status_reason_intrinsic",
-        1,
+    assert!(
+        http_source.contains("fn status_reason(status: UInt16) -> Result[String, HttpError]"),
+        "std/http.aic status_reason API must expose bounded UInt16 statuses"
     );
     assert_delegate_call(
         &http_source,
@@ -4258,12 +4405,27 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
         "aic_http_request_intrinsic",
         4,
     );
-    assert_delegate_call(
-        &http_source,
-        "std/http.aic",
-        "response",
-        "aic_http_response_intrinsic",
-        3,
+    assert!(
+        http_source.contains(
+            "fn response(status: UInt16, headers: Vec[HttpHeader], body: String) -> Result[HttpResponseView, HttpError]"
+        ),
+        "std/http.aic response API must expose bounded public response model"
+    );
+    assert!(
+        http_source.contains("struct HttpResponseView {"),
+        "std/http.aic must define bounded public response model"
+    );
+    assert!(
+        http_source.contains("status: UInt16,"),
+        "std/http.aic public response model must use UInt16 status codes"
+    );
+    assert!(
+        http_source.contains("fn http_status_from_int(status: Int) -> Result[UInt16, HttpError]"),
+        "std/http.aic must validate runtime Int status values"
+    );
+    assert!(
+        http_source.contains("if status < 0 || status > 65535"),
+        "std/http.aic must enforce UInt16 status bounds"
     );
 }
 
@@ -4306,26 +4468,38 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
         "aic_http_server_close_intrinsic",
         1,
     );
-    assert_delegate_call(
-        &source,
-        "std/http_server.aic",
-        "text_response",
-        "aic_http_server_text_response_intrinsic",
-        2,
+    assert!(
+        source.contains("struct ResponseView {"),
+        "std/http_server.aic must define bounded public response model"
     );
-    assert_delegate_call(
-        &source,
-        "std/http_server.aic",
-        "json_response",
-        "aic_http_server_json_response_intrinsic",
-        2,
+    assert!(
+        source.contains("fn response(status: UInt16, headers: Map[String, String], body: String) -> ResponseView"),
+        "std/http_server.aic response API must use bounded UInt16 statuses"
     );
-    assert_delegate_call(
-        &source,
-        "std/http_server.aic",
-        "header",
-        "aic_http_server_header_intrinsic",
-        2,
+    assert!(
+        source.contains("fn text_response(status: UInt16, body: String) -> ResponseView"),
+        "std/http_server.aic text_response API must use bounded UInt16 statuses"
+    );
+    assert!(
+        source.contains("fn json_response(status: UInt16, body: String) -> ResponseView"),
+        "std/http_server.aic json_response API must use bounded UInt16 statuses"
+    );
+    assert!(
+        source.contains("fn error_response(status: UInt16, message: String) -> ResponseView"),
+        "std/http_server.aic error_response API must use bounded UInt16 statuses"
+    );
+    assert!(
+        source.contains("fn header(resp: ResponseView, name: String) -> Option[String]"),
+        "std/http_server.aic header API must target bounded public responses"
+    );
+    assert!(
+        source
+            .contains("fn http_server_status_from_int(status: Int) -> Result[UInt16, ServerError]"),
+        "std/http_server.aic must validate runtime Int status values"
+    );
+    assert!(
+        source.contains("if status < 0 || status > 65535"),
+        "std/http_server.aic must enforce UInt16 status bounds"
     );
     assert_delegate_call(
         &source,
@@ -4666,6 +4840,9 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(source.contains("Closed,"));
     assert!(source.contains("fn select2[A, B](rx1: Receiver[A], rx2: Receiver[B], timeout_ms: Int) -> SelectResult[A, B]"));
     assert!(source.contains("fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T), ChannelError] effects { concurrency, env }"));
+    assert!(source.contains("fn select_any_u32[T]("));
+    assert!(source.contains("struct IntChannelSelectionU32 {"));
+    assert!(source.contains("struct IntTaskSelectionU32 {"));
     assert!(source.contains("turn = (turn + 1) % count"));
     assert!(source.contains("struct Scope {"));
     assert!(source.contains("struct Arc[T] {"));
@@ -4716,6 +4893,7 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(source.contains(
         "fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }"
     ));
+    assert!(source.contains("fn buffered_bytes_channel_u32(capacity: ConcurrencyCapacityU32) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency }"));
     assert!(source.contains(
         "fn send_bytes(tx: Sender[Bytes], value: Bytes) -> Result[Bool, ChannelError] effects { concurrency }"
     ));
@@ -4789,6 +4967,11 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "aic_conc_channel_int_intrinsic",
         1,
     );
+    assert!(source.contains("fn channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"));
+    assert!(source.contains("fn buffered_channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"));
+    assert!(source.contains("fn channel_int_buffered_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"));
+    assert!(source.contains("fn select_recv_int_u32("));
+    assert!(source.contains("fn select_first_u32("));
     assert_delegate_call(
         &source,
         "std/concurrent.aic",

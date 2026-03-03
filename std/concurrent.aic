@@ -12,6 +12,9 @@ import std.option;
 import std.result;
 import std.vec;
 
+type ConcurrencyCapacityU32 = UInt32;
+type ConcurrencyIndexU32 = UInt32;
+
 /// `ConcurrencyError` is a `enum` in `std.concurrent`.
 ///
 /// ## Example
@@ -128,6 +131,12 @@ struct IntChannelSelection {
     value: Int,
 }
 
+/// `IntChannelSelectionU32` is a `struct` in `std.concurrent`.
+struct IntChannelSelectionU32 {
+    channel_index: ConcurrencyIndexU32,
+    value: Int,
+}
+
 /// `IntMutex` is a `struct` in `std.concurrent`.
 ///
 /// ## Example
@@ -228,6 +237,12 @@ struct IntRwLock {
 /// ```
 struct IntTaskSelection {
     task_index: Int,
+    value: Int,
+}
+
+/// `IntTaskSelectionU32` is a `struct` in `std.concurrent`.
+struct IntTaskSelectionU32 {
+    task_index: ConcurrencyIndexU32,
     value: Int,
 }
 
@@ -954,6 +969,53 @@ fn default_blocking_timeout_ms() -> Int {
     2147483647
 }
 
+/// `conc_zero_u32` in `std.concurrent`.
+fn conc_zero_u32() -> UInt32 {
+    0u32
+}
+
+/// `conc_one_u32` in `std.concurrent`.
+fn conc_one_u32() -> UInt32 {
+    1u32
+}
+
+/// `conc_int_to_u32` in `std.concurrent`.
+fn conc_int_to_u32(value: Int) -> Option[UInt32] {
+    if value < 0 || value > 4294967295 {
+        None()
+    } else {
+        let mut out: UInt32 = conc_zero_u32();
+        let mut remaining = value;
+        let one_u32 = conc_one_u32();
+        while remaining > 0 {
+            out = out + one_u32;
+            remaining = remaining - 1;
+        };
+        Some(out)
+    }
+}
+
+/// `conc_u32_int_max` in `std.concurrent`.
+fn conc_u32_int_max() -> UInt32 {
+    2147483647u32
+}
+
+/// `conc_u32_to_int` in `std.concurrent`.
+fn conc_u32_to_int(value: UInt32) -> Option[Int] {
+    if value > conc_u32_int_max() {
+        None()
+    } else {
+        let mut out = 0;
+        let mut remaining = value;
+        let one_u32 = conc_one_u32();
+        while remaining > conc_zero_u32() {
+            out = out + 1;
+            remaining = remaining - one_u32;
+        };
+        Some(out)
+    }
+}
+
 /// `channel_closed` in `std.concurrent`.
 ///
 /// ## Example
@@ -1540,6 +1602,26 @@ fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { conc
     }
 }
 
+/// `buffered_channel_u32` in `std.concurrent`.
+fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Receiver[T]) effects { concurrency } {
+    match conc_u32_to_int(capacity) {
+        Some(capacity_int) => match aic_conc_channel_int_buffered_intrinsic(capacity_int) {
+            Ok(ch) => (
+                Sender { handle: ch.handle },
+                Receiver { handle: ch.handle },
+            ),
+            Err(_) => (
+                Sender { handle: 0 },
+                Receiver { handle: 0 },
+            ),
+        },
+        None => (
+            Sender { handle: 0 },
+            Receiver { handle: 0 },
+        ),
+    }
+}
+
 /// `close_sender` in `std.concurrent`.
 ///
 /// ## Example
@@ -1602,6 +1684,11 @@ fn bytes_channel() -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency } {
 /// Returns module-defined error variants when the operation fails.
 fn buffered_bytes_channel(capacity: Int) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency } {
     buffered_channel(capacity)
+}
+
+/// `buffered_bytes_channel_u32` in `std.concurrent`.
+fn buffered_bytes_channel_u32(capacity: ConcurrencyCapacityU32) -> (Sender[Bytes], Receiver[Bytes]) effects { concurrency } {
+    buffered_channel_u32(capacity)
 }
 
 /// `send_cleanup_error` in `std.concurrent`.
@@ -2102,6 +2189,23 @@ fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelecti
     aic_conc_select_first_intrinsic(tasks, timeout_ms)
 }
 
+/// `select_first_u32` in `std.concurrent`.
+fn select_first_u32(
+    tasks: Vec[Task[Int]],
+    timeout_ms: Int,
+) -> Result[IntTaskSelectionU32, ConcurrencyError] effects { concurrency } {
+    match select_first(tasks, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match conc_int_to_u32(selection.task_index) {
+            Some(index) => Ok(IntTaskSelectionU32 {
+                task_index: index,
+                value: selection.value,
+            }),
+            None => Err(InvalidInput()),
+        },
+    }
+}
+
 /// `channel_int` in `std.concurrent`.
 ///
 /// ## Example
@@ -2116,6 +2220,14 @@ fn select_first(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelecti
 /// Returns module-defined error variants when the operation fails.
 fn channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
     aic_conc_channel_int_intrinsic(capacity)
+}
+
+/// `channel_int_u32` in `std.concurrent`.
+fn channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    match conc_u32_to_int(capacity) {
+        Some(capacity_int) => aic_conc_channel_int_intrinsic(capacity_int),
+        None => Err(InvalidInput()),
+    }
 }
 
 /// `buffered_channel_int` in `std.concurrent`.
@@ -2134,6 +2246,14 @@ fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] e
     aic_conc_channel_int_buffered_intrinsic(capacity)
 }
 
+/// `buffered_channel_int_u32` in `std.concurrent`.
+fn buffered_channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    match conc_u32_to_int(capacity) {
+        Some(capacity_int) => aic_conc_channel_int_buffered_intrinsic(capacity_int),
+        None => Err(InvalidInput()),
+    }
+}
+
 /// `channel_int_buffered` in `std.concurrent`.
 ///
 /// ## Example
@@ -2148,6 +2268,14 @@ fn buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] e
 /// Returns module-defined error variants when the operation fails.
 fn channel_int_buffered(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
     aic_conc_channel_int_buffered_intrinsic(capacity)
+}
+
+/// `channel_int_buffered_u32` in `std.concurrent`.
+fn channel_int_buffered_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency } {
+    match conc_u32_to_int(capacity) {
+        Some(capacity_int) => aic_conc_channel_int_buffered_intrinsic(capacity_int),
+        None => Err(InvalidInput()),
+    }
 }
 
 /// `send_int` in `std.concurrent`.
@@ -2228,6 +2356,24 @@ fn try_recv_int(ch: IntChannel) -> Result[Int, ChannelError] effects { concurren
 /// Returns module-defined error variants when the operation fails.
 fn select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency } {
     aic_conc_select_recv_int_intrinsic(ch1, ch2, timeout_ms)
+}
+
+/// `select_recv_int_u32` in `std.concurrent`.
+fn select_recv_int_u32(
+    ch1: IntChannel,
+    ch2: IntChannel,
+    timeout_ms: Int,
+) -> Result[IntChannelSelectionU32, ChannelError] effects { concurrency } {
+    match select_recv_int(ch1, ch2, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match conc_int_to_u32(selection.channel_index) {
+            Some(index) => Ok(IntChannelSelectionU32 {
+                channel_index: index,
+                value: selection.value,
+            }),
+            None => Err(channel_closed()),
+        },
+    }
 }
 
 /// `select2` in `std.concurrent`.
@@ -2360,6 +2506,20 @@ fn select_any[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[(Int, T
                 None => Err(final_error),
             }
         }
+    }
+}
+
+/// `select_any_u32` in `std.concurrent`.
+fn select_any_u32[T](
+    receivers: Vec[Receiver[T]],
+    timeout_ms: Int,
+) -> Result[(ConcurrencyIndexU32, T), ChannelError] effects { concurrency, env } {
+    match select_any(receivers, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(found) => match conc_int_to_u32(found.0) {
+            Some(index) => Ok((index, found.1)),
+            None => Err(channel_closed()),
+        },
     }
 }
 

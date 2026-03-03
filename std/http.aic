@@ -92,6 +92,14 @@ struct HttpResponse {
     body: String,
 }
 
+/// `HttpResponseView` is a bounded public response model.
+struct HttpResponseView {
+    status: UInt16,
+    reason: String,
+    headers: Vec[HttpHeader],
+    body: String,
+}
+
 /// `aic_http_parse_method_intrinsic` in `std.http`.
 ///
 /// ## Example
@@ -272,8 +280,8 @@ fn method_name(method: HttpMethod) -> Result[String, HttpError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn status_reason(status: Int) -> Result[String, HttpError] {
-    aic_http_status_reason_intrinsic(status)
+fn status_reason(status: UInt16) -> Result[String, HttpError] {
+    aic_http_status_reason_intrinsic(http_status_to_int(status))
 }
 
 /// `validate_header` in `std.http`.
@@ -352,6 +360,71 @@ fn request(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: S
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
-    aic_http_response_intrinsic(status, headers, body)
+fn response(status: UInt16, headers: Vec[HttpHeader], body: String) -> Result[HttpResponseView, HttpError] {
+    let raw = aic_http_response_intrinsic(http_status_to_int(status), headers, body);
+    match raw {
+        Ok(value) => http_response_from_raw(value),
+        Err(err) => Err(err),
+    }
+}
+
+/// `http_zero_u16` in `std.http`.
+fn http_zero_u16() -> UInt16 {
+    0u16
+}
+
+/// `http_one_u16` in `std.http`.
+fn http_one_u16() -> UInt16 {
+    1u16
+}
+
+/// `http_status_to_int` converts bounded HTTP status values to runtime `Int`.
+fn http_status_to_int(status: UInt16) -> Int {
+    let mut out = 0;
+    let mut remaining = status;
+    let zero = http_zero_u16();
+    let one = http_one_u16();
+    while remaining > zero {
+        remaining = remaining - one;
+        out = out + 1;
+    };
+    out
+}
+
+/// `http_status_from_int` validates and converts runtime `Int` status to bounded `UInt16`.
+fn http_status_from_int(status: Int) -> Result[UInt16, HttpError] {
+    if status < 0 || status > 65535 {
+        Err(InvalidStatus())
+    } else {
+        let mut remaining = status;
+        let mut out: UInt16 = 0;
+        let mut bit: UInt16 = 1;
+        while remaining > 0 {
+            if (remaining % 2) == 1 {
+                out = out + bit;
+            } else {
+                ()
+            };
+            remaining = remaining / 2;
+            if remaining > 0 {
+                bit = bit + bit;
+            } else {
+                ()
+            };
+        };
+        Ok(out)
+    }
+}
+
+/// `http_response_from_raw` converts runtime response payloads into bounded public models.
+fn http_response_from_raw(raw: HttpResponse) -> Result[HttpResponseView, HttpError] {
+    match http_status_from_int(raw.status) {
+        Ok(bounded_status) => Ok(HttpResponseView {
+            status: bounded_status,
+            reason: raw.reason,
+            headers: raw.headers,
+            body: raw.body,
+        }),
+        Err(err) => Err(err),
+    }
 }

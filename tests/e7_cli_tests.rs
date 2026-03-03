@@ -4180,6 +4180,7 @@ fn doc_command_std_net_json_includes_all_declared_functions() {
         .iter()
         .filter(|item| item["kind"].as_str() == Some("fn"))
         .filter_map(|item| item["name"].as_str().map(ToString::to_string))
+        .filter(|name| !name.starts_with("__aic_type_alias__"))
         .collect::<Vec<_>>();
     documented_functions.sort();
     documented_functions.dedup();

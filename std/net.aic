@@ -10,6 +10,11 @@ import std.bytes;
 import std.result;
 import std.time;
 
+type ByteCountU32 = UInt32;
+type FrameLengthU32 = UInt32;
+type QueueDepthU32 = UInt32;
+type RuntimeLimitU32 = UInt32;
+
 /// `NetError` is a `enum` in `std.net`.
 ///
 /// ## Example
@@ -100,6 +105,18 @@ struct AsyncStringSelection {
     payload: Bytes,
 }
 
+/// `AsyncIntSelectionU32` is a `struct` in `std.net`.
+struct AsyncIntSelectionU32 {
+    index: UInt32,
+    value: Int,
+}
+
+/// `AsyncStringSelectionU32` is a `struct` in `std.net`.
+struct AsyncStringSelectionU32 {
+    index: UInt32,
+    payload: Bytes,
+}
+
 /// `AsyncRuntimePressure` is a `struct` in `std.net`.
 ///
 /// ## Example
@@ -111,6 +128,14 @@ struct AsyncRuntimePressure {
     queue_depth: Int,
     op_limit: Int,
     queue_limit: Int,
+}
+
+/// `AsyncRuntimePressureU32` is a `struct` in `std.net`.
+struct AsyncRuntimePressureU32 {
+    active_ops: QueueDepthU32,
+    queue_depth: QueueDepthU32,
+    op_limit: RuntimeLimitU32,
+    queue_limit: RuntimeLimitU32,
 }
 
 /// `aic_net_tcp_listen_intrinsic` in `std.net`.
@@ -801,6 +826,18 @@ fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result
     tcp_recv(stream.handle, max_bytes, timeout_ms)
 }
 
+/// `tcp_stream_recv_u32` in `std.net`.
+fn tcp_stream_recv_u32(
+    stream: TcpStream,
+    max_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, NetError] effects { net } {
+    match net_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => tcp_recv(stream.handle, max_bytes_int, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
 /// `net_zero_u8` in `std.net`.
 fn net_zero_u8() -> UInt8 {
     0
@@ -809,6 +846,68 @@ fn net_zero_u8() -> UInt8 {
 /// `net_one_u8` in `std.net`.
 fn net_one_u8() -> UInt8 {
     1
+}
+
+/// `net_zero_u32` in `std.net`.
+fn net_zero_u32() -> UInt32 {
+    0u32
+}
+
+/// `net_one_u32` in `std.net`.
+fn net_one_u32() -> UInt32 {
+    1u32
+}
+
+/// `net_u8_to_u32` in `std.net`.
+fn net_u8_to_u32(value: UInt8) -> UInt32 {
+    let mut out: UInt32 = net_zero_u32();
+    let mut current: UInt8 = net_zero_u8();
+    let one_u8 = net_one_u8();
+    let one_u32 = net_one_u32();
+    while current != value {
+        current = current + one_u8;
+        out = out + one_u32;
+    };
+    out
+}
+
+/// `net_int_to_u32` in `std.net`.
+fn net_int_to_u32(value: Int) -> Result[UInt32, NetError] {
+    if value < 0 {
+        Err(InvalidInput())
+    } else if value > 4294967295 {
+        Err(InvalidInput())
+    } else {
+        let mut out: UInt32 = net_zero_u32();
+        let mut remaining = value;
+        let one_u32 = net_one_u32();
+        while remaining > 0 {
+            out = out + one_u32;
+            remaining = remaining - 1;
+        };
+        Ok(out)
+    }
+}
+
+/// `net_u32_int_max` in `std.net`.
+fn net_u32_int_max() -> UInt32 {
+    2147483647u32
+}
+
+/// `net_u32_to_int` in `std.net`.
+fn net_u32_to_int(value: UInt32) -> Result[Int, NetError] {
+    if value > net_u32_int_max() {
+        Err(InvalidInput())
+    } else {
+        let mut out = 0;
+        let mut remaining = value;
+        let one_u32 = net_one_u32();
+        while remaining > net_zero_u32() {
+            out = out + 1;
+            remaining = remaining - one_u32;
+        };
+        Ok(out)
+    }
 }
 
 /// `net_u8_to_int` in `std.net`.
@@ -831,6 +930,35 @@ fn tcp_stream_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, NetErr
     }
 }
 
+/// `tcp_stream_frame_byte_to_u32` in `std.net`.
+fn tcp_stream_frame_byte_to_u32(header: Bytes, index: Int) -> Result[UInt32, NetError] {
+    match byte_at(header, index) {
+        Ok(value) => Ok(net_u8_to_u32(value)),
+        Err(_) => Err(InvalidInput()),
+    }
+}
+
+/// `tcp_stream_frame_len_be_u32` in `std.net`.
+fn tcp_stream_frame_len_be_u32(header: Bytes) -> Result[FrameLengthU32, NetError] {
+    if byte_len(header) != 4 {
+        Err(InvalidInput())
+    } else {
+        match tcp_stream_frame_byte_to_u32(header, 0) {
+            Err(err) => Err(err),
+            Ok(b0) => match tcp_stream_frame_byte_to_u32(header, 1) {
+                Err(err) => Err(err),
+                Ok(b1) => match tcp_stream_frame_byte_to_u32(header, 2) {
+                    Err(err) => Err(err),
+                    Ok(b2) => match tcp_stream_frame_byte_to_u32(header, 3) {
+                        Err(err) => Err(err),
+                        Ok(b3) => Ok((b0 * 16777216u32) + (b1 * 65536u32) + (b2 * 256u32) + b3),
+                    },
+                },
+            },
+        }
+    }
+}
+
 /// `tcp_stream_frame_len_be` in `std.net`.
 ///
 /// ## Example
@@ -844,22 +972,27 @@ fn tcp_stream_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, NetErr
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError] {
-    if byte_len(header) != 4 {
-        Err(InvalidInput())
-    } else {
-        match tcp_stream_frame_byte_to_int(header, 0) {
-            Err(err) => Err(err),
-            Ok(b0) => match tcp_stream_frame_byte_to_int(header, 1) {
-                Err(err) => Err(err),
-                Ok(b1) => match tcp_stream_frame_byte_to_int(header, 2) {
-                    Err(err) => Err(err),
-                    Ok(b2) => match tcp_stream_frame_byte_to_int(header, 3) {
-                        Err(err) => Err(err),
-                        Ok(b3) => Ok((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3),
-                    },
-                },
-            },
-        }
+    match tcp_stream_frame_len_be_u32(header) {
+        Ok(value) => net_u32_to_int(value),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tcp_stream_recv_framed_payload_u32` in `std.net`.
+fn tcp_stream_recv_framed_payload_u32(
+    stream: TcpStream,
+    frame_header: Bytes,
+    max_frame_bytes: FrameLengthU32,
+    deadline_ms: Int,
+) -> Result[Bytes, NetError] effects { net, time } {
+    let frame_len = tcp_stream_frame_len_be_u32(frame_header);
+    match frame_len {
+        Err(err) => Err(err),
+        Ok(payload_len) => if payload_len > max_frame_bytes {
+            Err(InvalidInput())
+        } else {
+            tcp_stream_recv_exact_deadline_u32(stream, payload_len, deadline_ms)
+        },
     }
 }
 
@@ -885,6 +1018,29 @@ fn tcp_stream_recv_framed_payload(stream: TcpStream, frame_header: Bytes, max_fr
             tcp_stream_recv_exact_deadline(stream, payload_len, deadline_ms)
         },
     }
+}
+
+/// `tcp_stream_recv_framed_deadline_u32` in `std.net`.
+fn tcp_stream_recv_framed_deadline_u32(
+    stream: TcpStream,
+    max_frame_bytes: FrameLengthU32,
+    deadline_ms: Int,
+) -> Result[Bytes, NetError] effects { net, time } {
+    let header = tcp_stream_recv_exact_deadline(stream, 4, deadline_ms);
+    match header {
+        Err(err) => Err(err),
+        Ok(frame_header) => tcp_stream_recv_framed_payload_u32(stream, frame_header, max_frame_bytes, deadline_ms),
+    }
+}
+
+/// `tcp_stream_recv_framed_u32` in `std.net`.
+fn tcp_stream_recv_framed_u32(
+    stream: TcpStream,
+    max_frame_bytes: FrameLengthU32,
+    timeout_ms: Int,
+) -> Result[Bytes, NetError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tcp_stream_recv_framed_deadline_u32(stream, max_frame_bytes, deadline_ms)
 }
 
 /// `net_io_error` in `std.net`.
@@ -981,6 +1137,18 @@ fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadli
     }
 }
 
+/// `tcp_stream_recv_exact_deadline_u32` in `std.net`.
+fn tcp_stream_recv_exact_deadline_u32(
+    stream: TcpStream,
+    expected_bytes: ByteCountU32,
+    deadline_ms: Int,
+) -> Result[Bytes, NetError] effects { net, time } {
+    match net_u32_to_int(expected_bytes) {
+        Ok(expected_bytes_int) => tcp_stream_recv_exact_deadline(stream, expected_bytes_int, deadline_ms),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_stream_recv_exact` in `std.net`.
 ///
 /// ## Example
@@ -996,6 +1164,16 @@ fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadli
 fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time } {
     let deadline_ms = deadline_after_ms(timeout_ms);
     tcp_stream_recv_exact_deadline(stream, expected_bytes, deadline_ms)
+}
+
+/// `tcp_stream_recv_exact_u32` in `std.net`.
+fn tcp_stream_recv_exact_u32(
+    stream: TcpStream,
+    expected_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, NetError] effects { net, time } {
+    let deadline_ms = deadline_after_ms(timeout_ms);
+    tcp_stream_recv_exact_deadline_u32(stream, expected_bytes, deadline_ms)
 }
 
 /// `tcp_stream_recv_framed_deadline` in `std.net`.
@@ -1185,6 +1363,14 @@ fn tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result
     tcp_set_send_buffer_size(stream.handle, size_bytes)
 }
 
+/// `tcp_stream_set_send_buffer_size_u32` in `std.net`.
+fn tcp_stream_set_send_buffer_size_u32(
+    stream: TcpStream,
+    size_bytes: ByteCountU32,
+) -> Result[Bool, NetError] effects { net } {
+    tcp_set_send_buffer_size_u32(stream.handle, size_bytes)
+}
+
 /// `tcp_stream_get_send_buffer_size` in `std.net`.
 ///
 /// ## Example
@@ -1215,6 +1401,14 @@ fn tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] e
 /// Returns module-defined error variants when the operation fails.
 fn tcp_stream_set_recv_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
     tcp_set_recv_buffer_size(stream.handle, size_bytes)
+}
+
+/// `tcp_stream_set_recv_buffer_size_u32` in `std.net`.
+fn tcp_stream_set_recv_buffer_size_u32(
+    stream: TcpStream,
+    size_bytes: ByteCountU32,
+) -> Result[Bool, NetError] effects { net } {
+    tcp_set_recv_buffer_size_u32(stream.handle, size_bytes)
 }
 
 /// `tcp_stream_get_recv_buffer_size` in `std.net`.
@@ -1281,6 +1475,18 @@ fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetEr
     let raw = aic_net_tcp_recv_intrinsic(handle, max_bytes, timeout_ms);
     match raw {
         Ok(data) => Ok(Bytes { data: data }),
+        Err(err) => Err(err),
+    }
+}
+
+/// `tcp_recv_u32` in `std.net`.
+fn tcp_recv_u32(
+    handle: Int,
+    max_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, NetError] effects { net } {
+    match net_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => tcp_recv(handle, max_bytes_int, timeout_ms),
         Err(err) => Err(err),
     }
 }
@@ -1431,6 +1637,17 @@ fn tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetErr
     aic_net_tcp_set_send_buffer_size_intrinsic(handle, size_bytes)
 }
 
+/// `tcp_set_send_buffer_size_u32` in `std.net`.
+fn tcp_set_send_buffer_size_u32(
+    handle: Int,
+    size_bytes: ByteCountU32,
+) -> Result[Bool, NetError] effects { net } {
+    match net_u32_to_int(size_bytes) {
+        Ok(size_bytes_int) => aic_net_tcp_set_send_buffer_size_intrinsic(handle, size_bytes_int),
+        Err(err) => Err(err),
+    }
+}
+
 /// `tcp_get_send_buffer_size` in `std.net`.
 ///
 /// ## Example
@@ -1461,6 +1678,17 @@ fn tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net 
 /// Returns module-defined error variants when the operation fails.
 fn tcp_set_recv_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net } {
     aic_net_tcp_set_recv_buffer_size_intrinsic(handle, size_bytes)
+}
+
+/// `tcp_set_recv_buffer_size_u32` in `std.net`.
+fn tcp_set_recv_buffer_size_u32(
+    handle: Int,
+    size_bytes: ByteCountU32,
+) -> Result[Bool, NetError] effects { net } {
+    match net_u32_to_int(size_bytes) {
+        Ok(size_bytes_int) => aic_net_tcp_set_recv_buffer_size_intrinsic(handle, size_bytes_int),
+        Err(err) => Err(err),
+    }
 }
 
 /// `tcp_get_recv_buffer_size` in `std.net`.
@@ -1541,6 +1769,18 @@ fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetErro
 /// Returns module-defined error variants when the operation fails.
 fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net } {
     aic_net_udp_recv_from_intrinsic(handle, max_bytes, timeout_ms)
+}
+
+/// `udp_recv_from_u32` in `std.net`.
+fn udp_recv_from_u32(
+    handle: Int,
+    max_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[UdpPacket, NetError] effects { net } {
+    match net_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => aic_net_udp_recv_from_intrinsic(handle, max_bytes_int, timeout_ms),
+        Err(err) => Err(err),
+    }
 }
 
 /// `udp_close` in `std.net`.
@@ -1653,6 +1893,18 @@ fn async_tcp_send_submit(handle: Int, payload: Bytes) -> Result[AsyncIntOp, NetE
 /// Returns module-defined error variants when the operation fails.
 fn async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency } {
     aic_net_async_recv_submit_intrinsic(handle, max_bytes, timeout_ms)
+}
+
+/// `async_tcp_recv_submit_u32` in `std.net`.
+fn async_tcp_recv_submit_u32(
+    handle: Int,
+    max_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[AsyncStringOp, NetError] effects { net, concurrency } {
+    match net_u32_to_int(max_bytes) {
+        Ok(max_bytes_int) => aic_net_async_recv_submit_intrinsic(handle, max_bytes_int, timeout_ms),
+        Err(err) => Err(err),
+    }
 }
 
 /// `async_wait_int` in `std.net`.
@@ -1840,6 +2092,23 @@ fn async_wait_many_int(
     }
 }
 
+/// `async_wait_many_int_u32` in `std.net`.
+fn async_wait_many_int_u32(
+    ops: Vec[AsyncIntOp],
+    timeout_ms: Int,
+) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time } {
+    match async_wait_many_int(ops, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match net_int_to_u32(selection.index) {
+            Err(err) => Err(err),
+            Ok(index) => Ok(AsyncIntSelectionU32 {
+                index: index,
+                value: selection.value,
+            }),
+        },
+    }
+}
+
 /// `async_wait_many_string` in `std.net`.
 ///
 /// ## Example
@@ -1911,6 +2180,23 @@ fn async_wait_many_string(
     }
 }
 
+/// `async_wait_many_string_u32` in `std.net`.
+fn async_wait_many_string_u32(
+    ops: Vec[AsyncStringOp],
+    timeout_ms: Int,
+) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time } {
+    match async_wait_many_string(ops, timeout_ms) {
+        Err(err) => Err(err),
+        Ok(selection) => match net_int_to_u32(selection.index) {
+            Err(err) => Err(err),
+            Ok(index) => Ok(AsyncStringSelectionU32 {
+                index: index,
+                payload: selection.payload,
+            }),
+        },
+    }
+}
+
 /// `async_wait_any_int` in `std.net`.
 ///
 /// ## Example
@@ -1932,6 +2218,16 @@ fn async_wait_any_int(
     async_wait_many_int(ops, timeout_ms)
 }
 
+/// `async_wait_any_int_u32` in `std.net`.
+fn async_wait_any_int_u32(
+    op1: AsyncIntOp,
+    op2: AsyncIntOp,
+    timeout_ms: Int,
+) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_int_u32(ops, timeout_ms)
+}
+
 /// `async_wait_any_string` in `std.net`.
 ///
 /// ## Example
@@ -1951,6 +2247,16 @@ fn async_wait_any_string(
 ) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time } {
     let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
     async_wait_many_string(ops, timeout_ms)
+}
+
+/// `async_wait_any_string_u32` in `std.net`.
+fn async_wait_any_string_u32(
+    op1: AsyncStringOp,
+    op2: AsyncStringOp,
+    timeout_ms: Int,
+) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_string_u32(ops, timeout_ms)
 }
 
 /// `async_shutdown` in `std.net`.
@@ -1983,6 +2289,31 @@ fn async_shutdown() -> Result[Bool, NetError] effects { net, concurrency } {
 /// Returns module-defined error variants when the operation fails.
 fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency } {
     aic_net_async_pressure_intrinsic()
+}
+
+/// `async_runtime_pressure_u32` in `std.net`.
+fn async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, NetError] effects { net, concurrency } {
+    match async_runtime_pressure() {
+        Err(err) => Err(err),
+        Ok(pressure) => match net_int_to_u32(pressure.active_ops) {
+            Err(err) => Err(err),
+            Ok(active_ops) => match net_int_to_u32(pressure.queue_depth) {
+                Err(err) => Err(err),
+                Ok(queue_depth) => match net_int_to_u32(pressure.op_limit) {
+                    Err(err) => Err(err),
+                    Ok(op_limit) => match net_int_to_u32(pressure.queue_limit) {
+                        Err(err) => Err(err),
+                        Ok(queue_limit) => Ok(AsyncRuntimePressureU32 {
+                            active_ops: active_ops,
+                            queue_depth: queue_depth,
+                            op_limit: op_limit,
+                            queue_limit: queue_limit,
+                        }),
+                    },
+                },
+            },
+        },
+    }
 }
 
 /// `async_accept` in `std.net`.
@@ -2039,6 +2370,19 @@ fn async_tcp_send(handle: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, N
 /// Returns module-defined error variants when the operation fails.
 fn async_tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency } {
     let submitted = async_tcp_recv_submit(handle, max_bytes, timeout_ms);
+    match submitted {
+        Ok(op) => async_wait_string(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_tcp_recv_u32` in `std.net`.
+fn async_tcp_recv_u32(
+    handle: Int,
+    max_bytes: ByteCountU32,
+    timeout_ms: Int,
+) -> Result[Bytes, NetError] effects { net, concurrency } {
+    let submitted = async_tcp_recv_submit_u32(handle, max_bytes, timeout_ms);
     match submitted {
         Ok(op) => async_wait_string(op, timeout_ms),
         Err(err) => Err(err),

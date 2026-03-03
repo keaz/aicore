@@ -6,12 +6,18 @@ import std.proc;
 
 fn main() -> Int effects { net, proc } capabilities { net, proc } {
     let tcp = 10;
-    let child = 12;
 
     let _tcp_closed = net.tcp_close(tcp);
     let _sent = net.tcp_send(tcp, Bytes { data: "ping" });
-
-    let _waited = proc.wait(child);
-    let _alive = proc.is_running(child);
+    let _proc_checks = match proc.current_pid() {
+        Ok(child) => if true {
+            let _waited = proc.wait(child);
+            let _alive = proc.is_running(child);
+            0
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
     0
 }

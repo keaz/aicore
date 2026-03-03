@@ -133,20 +133,21 @@ This section documents `[DT-T4] URL and HTTP types and parsers`.
 Core types:
 
 - `UrlError`: `InvalidUrl`, `InvalidScheme`, `InvalidHost`, `InvalidPort`, `InvalidPath`, `InvalidInput`, `Internal`
-- `Url`: `{ scheme, host, port, path, query, fragment }`
+- `UrlView`: `{ scheme, host, port: Option[UInt16], path, query, fragment }`
 
 Public APIs:
 
-- `parse(text: String) -> Result[Url, UrlError]`
-- `normalize(url: Url) -> Result[String, UrlError]`
-- `net_addr(url: Url) -> Result[String, UrlError]`
-- `has_explicit_port(url: Url) -> Bool`
+- `parse(text: String) -> Result[UrlView, UrlError]`
+- `normalize(url: UrlView) -> Result[String, UrlError]`
+- `net_addr(url: UrlView) -> Result[String, UrlError]`
+- `has_explicit_port(url: UrlView) -> Bool`
 
 Behavior:
 
 - `parse` validates an RFC-style subset: `scheme://authority/path?query#fragment`.
 - Host and scheme normalization is deterministic (`normalize` lowercases both).
 - Default ports are elided in normalized output (`http:80`, `https:443`).
+- Public URLs model explicit ports as `Option[UInt16]`; runtime sentinel (`-1`) is bridged internally.
 - `net_addr` returns `host:port`, filling default ports for `http`/`https` when absent.
 
 ### HTTP module (`std.http`)
@@ -155,18 +156,18 @@ Core types:
 
 - `HttpError`: `InvalidMethod`, `InvalidStatus`, `InvalidHeaderName`, `InvalidHeaderValue`, `InvalidTarget`, `InvalidInput`, `Internal`
 - `HttpMethod`: `Get|Head|Post|Put|Patch|Delete|Options`
-- `HttpHeader`, `HttpRequest`, `HttpResponse`
+- `HttpHeader`, `HttpRequest`, `HttpResponseView` (`status: UInt16`)
 
 Public APIs:
 
 - `parse_method(text: String) -> Result[HttpMethod, HttpError]`
 - `method_name(method: HttpMethod) -> Result[String, HttpError]`
-- `status_reason(status: Int) -> Result[String, HttpError]`
+- `status_reason(status: UInt16) -> Result[String, HttpError]`
 - `validate_header(name: String, value: String) -> Result[Bool, HttpError]`
 - `validate_target(target: String) -> Result[Bool, HttpError]`
 - `header(name: String, value: String) -> Result[HttpHeader, HttpError]`
 - `request(method, target, headers, body) -> Result[HttpRequest, HttpError]`
-- `response(status, headers, body) -> Result[HttpResponse, HttpError]`
+- `response(status, headers, body) -> Result[HttpResponseView, HttpError]`
 
 Behavior:
 

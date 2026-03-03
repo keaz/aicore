@@ -33,11 +33,14 @@ fn main() -> Int {
 
 ### 2.2 Types
 
-- Builtins: `Int`, `Float`, `Bool`, `String`, `()`
+- Builtins: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
 - Standard-library binary payload type: `Bytes` (declared in `std.bytes`)
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
 - Generic arity is checked statically (`Option[Int, Int]` is invalid).
+- `Int` is the general integer type and currently uses signed 64-bit range (`-9223372036854775808..=9223372036854775807`).
+- Fixed-width integer literals can use suffixes: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`.
+- Unsuffixed integer literals default to `Int` unless an expected integer type context narrows them with range validation.
 
 ### 2.3 Functions
 
@@ -204,7 +207,7 @@ Program {
 
 ## 4. Type system
 
-- No implicit coercions.
+- No general implicit coercions (only lossless integer conversion at typed boundaries).
 - `Option[T]`/`Result[T, E]` are standard tagged ADTs.
 - `Async[T]` is a compiler-managed type wrapper produced by async calls.
 - Trait-bounded generics are checked with explicit impl lookup; no implicit trait satisfaction.
@@ -218,6 +221,52 @@ Program {
   - declared enums
 - Pattern-or (`p1 | p2`) is supported with binding-set/type consistency checks.
 - Guarded match arms are type-checked but excluded from coverage proofs.
+
+### 4.1 Integer families and ranges
+
+- `Int` and fixed-width integer primitives are distinct source-level types.
+- Fixed-width ranges:
+  - `Int8`: `-128..=127`
+  - `Int16`: `-32768..=32767`
+  - `Int32`: `-2147483648..=2147483647`
+  - `Int64`: `-9223372036854775808..=9223372036854775807`
+  - `UInt8`: `0..=255`
+  - `UInt16`: `0..=65535`
+  - `UInt32`: `0..=4294967295`
+  - `UInt64`: `0..=18446744073709551615`
+- Integer literal range diagnostics:
+  - expression contexts use `E1204`
+  - pattern contexts use `E1234`
+
+### 4.2 Integer conversion policy
+
+- There is no explicit numeric cast operator in MVP.
+- Implicit integer conversion is permitted only when lossless (source range is fully contained in target range).
+- Lossless conversion applies at typed boundaries such as let/assignment/function argument/function return checking.
+- Non-lossless conversions are rejected with type-mismatch diagnostics (commonly `E1204`).
+
+Examples:
+
+```aic
+fn ok(a: Int16) -> Int32 { a }     // lossless widening
+fn bad(a: Int16) -> UInt16 { a }   // rejected: signed -> unsigned is not lossless
+fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
+```
+
+### 4.3 Integer operator policy
+
+- Arithmetic (`+`, `-`, `*`, `/`, `%`) requires exact integer kind match (signedness + width).
+- Bitwise/shift (`&`, `|`, `^`, `<<`, `>>`, `>>>`) requires exact integer kind match.
+- Integer equality/comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) requires exact integer kind match.
+- Mismatches report deterministic diagnostics:
+  - `E1230` arithmetic/bitwise/shift mismatch
+  - `E1231` equality mismatch
+  - `E1232` comparison mismatch
+- Integer overflow is not diagnosed by the type system; runtime arithmetic follows backend integer-width semantics.
+
+### 4.4 Migration reference
+
+- Fixed-width migration examples and rollout guidance: `docs/fixed-width-primitives-migration.md`.
 
 ## 5. Effect system
 
@@ -260,7 +309,7 @@ Registry and ownership: `docs/diagnostic-codes.md`.
 - Emits LLVM IR text.
 - Compiles with `clang` plus runtime C shim.
 - Supported codegen subset:
-- `Int`, `Float`, `Bool`, `String`, `()`
+- `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
 - `std.bytes.Bytes` payload wrapper for binary filesystem/network APIs
 - `Option[T]` (core path)
 - calls, `if`, `match`, arithmetic/comparison/logical ops

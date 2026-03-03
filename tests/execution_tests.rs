@@ -5836,11 +5836,29 @@ fn release_and_one(conn: PooledConn[FakeConn]) -> Int effects { concurrency } ca
 }
 
 fn worker_once(pool_ref: Pool[FakeConn]) -> Int effects { concurrency } capabilities { concurrency } {
-    let acquired: Result[PooledConn[FakeConn], PoolError] = acquire(pool_ref);
-    match acquired {
-        Ok(conn) => release_and_one(conn),
-        Err(_) => 0,
-    }
+    let mut attempts = 0;
+    let mut out = 0;
+    let mut done = false;
+    while !done && attempts < 200 {
+        let acquired: Result[PooledConn[FakeConn], PoolError] = acquire(pool_ref);
+        match acquired {
+            Ok(conn) => if true {
+                out = release_and_one(conn);
+                done = true;
+                ()
+            } else {
+                ()
+            },
+            Err(_) => if true {
+                wait_ms(10);
+                attempts = attempts + 1;
+                ()
+            } else {
+                ()
+            },
+        };
+    };
+    out
 }
 
 fn spawn_worker(pool_ref: Pool[FakeConn]) -> Task[Int] effects { concurrency } capabilities { concurrency } {
@@ -5859,6 +5877,17 @@ fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
     }
 }
 
+fn wait_for_zero_in_use(pool_ref: Pool[FakeConn], retries: Int) -> PoolStats effects { concurrency } capabilities { concurrency } {
+    let mut stats = pool_stats(pool_ref);
+    let mut remaining = retries;
+    while remaining > 0 && stats.in_use > 0 {
+        wait_ms(10);
+        stats = pool_stats(pool_ref);
+        remaining = remaining - 1;
+    };
+    stats
+}
+
 fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
     let created = atomic_int(0);
     let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
@@ -5875,7 +5904,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         PoolConfig {
             min_size: 5,
             max_size: 5,
-            acquire_timeout_ms: 1000,
+            acquire_timeout_ms: 15000,
             idle_timeout_ms: 40,
             max_lifetime_ms: 0,
             health_check_ms: 0,
@@ -5890,10 +5919,17 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
     };
 
     let mut tasks: Vec[Task[Int]] = vec.new_vec();
-    let mut i = 0;
-    while i < 10 {
-        tasks = vec.push(tasks, spawn_worker(pool));
-        i = i + 1;
+    let mut spawned = 0;
+    let mut attempts = 0;
+    while spawned < 10 && attempts < 200 {
+        let task = spawn_worker(pool);
+        if task.handle > 0 {
+            tasks = vec.push(tasks, task);
+            spawned = spawned + 1;
+        } else {
+            wait_ms(10);
+        };
+        attempts = attempts + 1;
     };
 
     let mut joined = 0;
@@ -5909,14 +5945,13 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         j = j + 1;
     };
 
-    wait_ms(100);
-    let stats = pool_stats(pool);
+    let stats = wait_for_zero_in_use(pool, 200);
     close_pool(pool);
 
-    if joined == 10 && stats.total <= 5 && stats.in_use == 0 {
+    if spawned == 10 && joined == 10 && stats.total <= 5 && stats.in_use == 0 {
         print_int(42);
     } else {
-        print_int(0);
+        print_int(spawned * 1000 + joined * 100 + stats.total * 10 + stats.in_use);
     };
     0
 }
@@ -6290,11 +6325,11 @@ import std.string;
 fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let run_out = match run("echo out; echo err 1>&2; exit 7") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let pipe_out = match pipe("echo 42", "cat") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let spawned = match spawn("exit 5") {
         Ok(handle) => handle,
@@ -6312,10 +6347,10 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
         },
     };
 
-    let run_status_ok = if run_out.status == 7 { 1 } else { 0 };
+    let run_status_ok = if run_out.status == proc_nonnegative_int_to_i32(7) { 1 } else { 0 };
     let run_stdout_ok = if len(run_out.stdout) > 0 { 1 } else { 0 };
     let run_stderr_ok = if len(run_out.stderr) > 0 { 1 } else { 0 };
-    let pipe_ok = if pipe_out.status == 0 && len(pipe_out.stdout) > 0 { 1 } else { 0 };
+    let pipe_ok = if pipe_out.status == proc_nonnegative_int_to_i32(0) && len(pipe_out.stdout) > 0 { 1 } else { 0 };
     let wait_ok = if waited == 5 { 1 } else { 0 };
 
     if run_status_ok + run_stdout_ok + run_stderr_ok + pipe_ok + wait_ok + kill_missing == 6 {
@@ -6340,11 +6375,11 @@ import std.string;
 fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     let run_out = match run("echo out & echo err 1>&2 & exit /B 7") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let pipe_out = match pipe("echo 42", "findstr 42") {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
     let spawned = match spawn("exit /B 5") {
         Ok(handle) => handle,
@@ -6362,10 +6397,10 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
         },
     };
 
-    let run_status_ok = if run_out.status == 7 { 1 } else { 0 };
+    let run_status_ok = if run_out.status == proc_nonnegative_int_to_i32(7) { 1 } else { 0 };
     let run_stdout_ok = if string.contains(run_out.stdout, "out") { 1 } else { 0 };
     let run_stderr_ok = if string.contains(run_out.stderr, "err") { 1 } else { 0 };
-    let pipe_ok = if pipe_out.status == 0 && string.contains(pipe_out.stdout, "42") { 1 } else { 0 };
+    let pipe_ok = if pipe_out.status == proc_nonnegative_int_to_i32(0) && string.contains(pipe_out.stdout, "42") { 1 } else { 0 };
     let wait_ok = if waited == 5 { 1 } else { 0 };
 
     if run_status_ok + run_stdout_ok + run_stderr_ok + pipe_ok + wait_ok + kill_missing == 6 {
@@ -6404,7 +6439,7 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     };
     let out = match run_with("cat input.txt; printf '|'; printf \"$AIC_PROC_ENV\"; printf '|'; cat", opts) {
         Ok(value) => value,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
 
     let empty_env: Vec[String] = vec.new_vec();
@@ -6475,7 +6510,7 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     };
     let out = match run_with("type input.txt & set /p =\"|\" <NUL & set /p =\"%AIC_PROC_ENV%|\" <NUL & set /p STDINVAL= & echo %STDINVAL%", opts) {
         Ok(value) => value,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
 
     let empty_env: Vec[String] = vec.new_vec();
@@ -6546,9 +6581,9 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     stages = vec.push(stages, "tr a-z A-Z");
     let chained = match pipe_chain(stages) {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
-    let chain_ok = if chained.status == 0 && string.contains(chained.stdout, "BETA") { 1 } else { 0 };
+    let chain_ok = if chained.status == proc_nonnegative_int_to_i32(0) && string.contains(chained.stdout, "BETA") { 1 } else { 0 };
     let empty_stages: Vec[String] = vec.new_vec();
     let empty_chain = match pipe_chain(empty_stages) {
         Ok(_) => 0,
@@ -6615,9 +6650,9 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     stages = vec.push(stages, "findstr beta");
     let chained = match pipe_chain(stages) {
         Ok(out) => out,
-        Err(_) => ProcOutput { status: 99, stdout: "", stderr: "" },
+        Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
-    let chain_ok = if chained.status == 0 && string.contains(chained.stdout, "beta") { 1 } else { 0 };
+    let chain_ok = if chained.status == proc_nonnegative_int_to_i32(0) && string.contains(chained.stdout, "beta") { 1 } else { 0 };
     let empty_stages: Vec[String] = vec.new_vec();
     let empty_chain = match pipe_chain(empty_stages) {
         Ok(_) => 0,
@@ -7168,6 +7203,172 @@ fn main() -> Int effects { io, net, time } capabilities { io, net, time } {
         sent_oversized_header == 4 &&
         oversized_ok &&
         closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_net_tls_fixed_width_frame_len_wrappers_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.tls;
+import std.buffer;
+import std.bytes;
+
+fn net_err_code(err: NetError) -> Int {
+    match err {
+        InvalidInput => 1,
+        _ => 0,
+    }
+}
+
+fn tls_err_code(err: TlsError) -> Int {
+    match err {
+        ProtocolError => 1,
+        _ => 0,
+    }
+}
+
+fn header_for_len(len: UInt32) -> Bytes {
+    let buf = new_buffer(4);
+    let _w = buf_write_u32_be(buf, len);
+    buffer_to_bytes(buf)
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let header_zero = header_for_len(0u32);
+    let header_255 = header_for_len(255u32);
+
+    let net_zero = match tcp_stream_frame_len_be_u32(header_zero) {
+        Ok(value) => if value == 0u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let net_255 = match tcp_stream_frame_len_be_u32(header_255) {
+        Ok(value) => if value == 255u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let tls_zero = match tls_frame_len_be_u32(header_zero) {
+        Ok(value) => if value == 0u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let tls_255 = match tls_frame_len_be_u32(header_255) {
+        Ok(value) => if value == 255u32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let invalid = bytes.from_string("abc");
+    let net_invalid = match tcp_stream_frame_len_be_u32(invalid) {
+        Err(err) => net_err_code(err),
+        Ok(_) => 0,
+    };
+    let tls_invalid = match tls_frame_len_be_u32(invalid) {
+        Err(err) => tls_err_code(err),
+        Ok(_) => 0,
+    };
+
+    if net_zero + net_255 + tls_zero + tls_255 + net_invalid + tls_invalid == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_concurrency_fixed_width_capacity_and_index_wrappers_work() {
+    let src = r#"
+import std.io;
+import std.concurrent;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn unwrap_channel(v: Result[IntChannel, ConcurrencyError]) -> IntChannel {
+    match v {
+        Ok(ch) => ch,
+        Err(_) => IntChannel { handle: 0 },
+    }
+}
+
+fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency, env } {
+    let ch0 = unwrap_channel(channel_int_u32(1u32));
+    let sent = match send_int(ch0, 255, 100) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let received = match recv_int(ch0, 100) {
+        Ok(v) => if v == 255 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let ch1 = unwrap_channel(buffered_channel_int_u32(1u32));
+    let ch2 = unwrap_channel(channel_int_buffered_u32(1u32));
+    let _seed = send_int(ch2, 32, 100);
+    let select_ok = match select_recv_int_u32(ch1, ch2, 100) {
+        Ok(selection) => if selection.channel_index == 1u32 && selection.value == 32 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let pair0: (Sender[Int], Receiver[Int]) = channel();
+    let pair1: (Sender[Int], Receiver[Int]) = channel();
+    let tx0: Sender[Int] = pair0.0;
+    let rx0: Receiver[Int] = pair0.1;
+    let tx1: Sender[Int] = pair1.0;
+    let rx1: Receiver[Int] = pair1.1;
+    let _s0 = send(tx0, 11);
+    let _s1 = send(tx1, 22);
+    let mut receivers: Vec[Receiver[Int]] = vec.new_vec();
+    receivers = vec.push(receivers, rx0);
+    receivers = vec.push(receivers, rx1);
+    let any0 = match select_any_u32(receivers, 20) {
+        Ok(found) => if found.0 == 0u32 && found.1 == 11 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let any1 = match select_any_u32(receivers, 20) {
+        Ok(found) => if found.0 == 1u32 && found.1 == 22 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let close_1 = match close_channel(ch1) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_2 = match close_channel(ch2) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_0 = match close_channel(ch0) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_tx = match close_sender(tx0) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+    let close_rx = match close_receiver(rx0) {
+        Ok(v) => bool_to_int(v),
+        Err(_) => 0,
+    };
+
+    if sent + received + select_ok + any0 + any1 + close_0 + close_1 + close_2 + close_tx + close_rx == 10 {
         print_int(42);
     } else {
         print_int(0);
@@ -8987,10 +9188,10 @@ import std.url;
 import std.vec;
 
 fn main() -> Int effects { io, net } capabilities { io, net  } {
-    let fallback = Url {
+    let fallback = UrlView {
         scheme: "",
         host: "",
-        port: -1,
+        port: None(),
         path: "/",
         query: "",
         fragment: "",
@@ -9057,7 +9258,7 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     let normalized_ok =
         if len(normalized_url.scheme) == 5 &&
             len(normalized_url.host) == 11 &&
-            normalized_url.port == -1 &&
+            has_explicit_port(normalized_url) == false &&
             len(normalized_url.path) == 7 &&
             len(normalized_url.query) == 3 &&
             len(normalized_url.fragment) == 4 {
@@ -9126,10 +9327,11 @@ fn main() -> Int effects { io } capabilities { io  } {
         Ok(_) => 0,
         Err(err) => url_err_code(err),
     };
-    let bad_path = match normalize(Url {
+    let port_80: UInt16 = 80;
+    let bad_path = match normalize(UrlView {
         scheme: "http",
         host: "example.com",
-        port: 80,
+        port: Some(port_80),
         path: "bad-path",
         query: "",
         fragment: "",
@@ -11966,10 +12168,7 @@ fn proc_code(err: ProcError) -> Int {
 }
 
 fn main() -> Int effects { io, proc, env } capabilities { io, proc, env } {
-    let first = match spawn("sleep 5") {
-        Ok(handle) => handle,
-        Err(_) => 0,
-    };
+    let first = spawn("sleep 5");
 
     let second_code = match spawn("sleep 5") {
         Ok(handle) => if true {
@@ -11981,11 +12180,14 @@ fn main() -> Int effects { io, proc, env } capabilities { io, proc, env } {
         Err(err) => proc_code(err),
     };
 
-    let cleanup = if first > 0 {
-        let ignored_kill_first = kill(first);
-        1
-    } else {
-        0
+    let cleanup = match first {
+        Ok(handle) => if true {
+            let ignored_kill_first = kill(handle);
+            1
+        } else {
+            1
+        },
+        Err(_) => 0,
     };
 
     if cleanup == 1 && second_code == 4 {

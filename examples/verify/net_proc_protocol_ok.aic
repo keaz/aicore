@@ -6,11 +6,18 @@ import std.proc;
 fn main() -> Int effects { net, proc } capabilities { net, proc } {
     let tcp = 10;
     let udp = 11;
-    let child = 12;
 
     let _tcp_closed = net.tcp_close(tcp);
     let _udp_closed = net.udp_close(udp);
-    let _alive = proc.is_running(child);
-    let _waited = proc.wait(child);
+    let _proc_checks = match proc.current_pid() {
+        Ok(child) => if true {
+            let _alive = proc.is_running(child);
+            let _waited = proc.wait(child);
+            0
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
     0
 }

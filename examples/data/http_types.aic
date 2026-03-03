@@ -6,10 +6,10 @@ import std.url;
 import std.vec;
 
 fn main() -> Int effects { io, net } capabilities { io, net  } {
-    let fallback = Url {
+    let fallback = UrlView {
         scheme: "",
         host: "",
-        port: -1,
+        port: None(),
         path: "/",
         query: "",
         fragment: "",
@@ -77,7 +77,7 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     let normalized_ok =
         if len(normalized_url.scheme) == 5 &&
             len(normalized_url.host) == 11 &&
-            normalized_url.port == -1 &&
+            url_port_to_int(normalized_url.port) == -1 &&
             len(normalized_url.path) == 10 &&
             len(normalized_url.query) == 8 &&
             len(normalized_url.fragment) == 1 {
