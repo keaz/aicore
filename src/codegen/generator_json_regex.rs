@@ -2795,11 +2795,15 @@ impl<'a> Generator<'a> {
                 (-(1_i128 << (width - 1)), (1_i128 << (width - 1)) - 1)
             };
             let ge_min = self.new_temp();
-            fctx.lines
-                .push(format!("  {} = icmp sge i64 {}, {}", ge_min, decoded_repr, min));
+            fctx.lines.push(format!(
+                "  {} = icmp sge i64 {}, {}",
+                ge_min, decoded_repr, min
+            ));
             let le_max = self.new_temp();
-            fctx.lines
-                .push(format!("  {} = icmp sle i64 {}, {}", le_max, decoded_repr, max));
+            fctx.lines.push(format!(
+                "  {} = icmp sle i64 {}, {}",
+                le_max, decoded_repr, max
+            ));
             let in_range = self.new_temp();
             fctx.lines
                 .push(format!("  {} = and i1 {}, {}", in_range, ge_min, le_max));

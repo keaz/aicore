@@ -1153,14 +1153,17 @@ fn tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effect
     aic_tls_async_pressure_intrinsic()
 }
 
+/// `tls_zero_u8` in `std.tls`.
 fn tls_zero_u8() -> UInt8 {
     0
 }
 
+/// `tls_one_u8` in `std.tls`.
 fn tls_one_u8() -> UInt8 {
     1
 }
 
+/// `tls_u8_to_int` in `std.tls`.
 fn tls_u8_to_int(value: UInt8) -> Int {
     let mut out = 0;
     let mut current: UInt8 = tls_zero_u8();
@@ -1172,6 +1175,7 @@ fn tls_u8_to_int(value: UInt8) -> Int {
     out
 }
 
+/// `tls_frame_byte_to_int` in `std.tls`.
 fn tls_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, TlsError] {
     match byte_at(header, index) {
         Ok(value) => Ok(tls_u8_to_int(value)),

@@ -801,14 +801,17 @@ fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result
     tcp_recv(stream.handle, max_bytes, timeout_ms)
 }
 
+/// `net_zero_u8` in `std.net`.
 fn net_zero_u8() -> UInt8 {
     0
 }
 
+/// `net_one_u8` in `std.net`.
 fn net_one_u8() -> UInt8 {
     1
 }
 
+/// `net_u8_to_int` in `std.net`.
 fn net_u8_to_int(value: UInt8) -> Int {
     let mut out = 0;
     let mut current: UInt8 = net_zero_u8();
@@ -820,6 +823,7 @@ fn net_u8_to_int(value: UInt8) -> Int {
     out
 }
 
+/// `tcp_stream_frame_byte_to_int` in `std.net`.
 fn tcp_stream_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, NetError] {
     match byte_at(header, index) {
         Ok(value) => Ok(net_u8_to_int(value)),

@@ -4973,7 +4973,8 @@ impl<'a> Checker<'a> {
                 } else {
                     let first = arm_types[0].clone();
                     for ty in arm_types.iter().skip(1) {
-                        if !self.types_compatible(&first, ty) && !self.types_compatible(ty, &first) {
+                        if !self.types_compatible(&first, ty) && !self.types_compatible(ty, &first)
+                        {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1221",
                                 format!(

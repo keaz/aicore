@@ -35,6 +35,7 @@ struct Bytes {
     data: String,
 }
 
+/// `zero_u8` in `std.bytes`.
 fn zero_u8() -> UInt8 {
     0
 }

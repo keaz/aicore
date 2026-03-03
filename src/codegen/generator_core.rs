@@ -3461,12 +3461,7 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn coerce_integral_value(
-        &mut self,
-        value: Value,
-        expected: &LType,
-        fctx: &mut FnCtx,
-    ) -> Value {
+    fn coerce_integral_value(&mut self, value: Value, expected: &LType, fctx: &mut FnCtx) -> Value {
         let Some(src_bits) = integer_width_bits(&value.ty) else {
             return value;
         };
