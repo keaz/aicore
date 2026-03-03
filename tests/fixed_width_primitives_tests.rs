@@ -1,11 +1,54 @@
 use std::fs;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use aicore::driver::{has_errors, run_frontend};
+use aicore::toolchain::ENV_AIC_STD_ROOT;
 use tempfile::tempdir;
 
 fn write_main(root: &std::path::Path, source: &str) {
     fs::create_dir_all(root.join("src")).expect("mkdir src");
     fs::write(root.join("src/main.aic"), source).expect("write main.aic");
+}
+
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env lock")
+}
+
+struct ScopedEnvVar {
+    name: &'static str,
+    previous: Option<String>,
+}
+
+impl ScopedEnvVar {
+    fn set(name: &'static str, value: String) -> Self {
+        let previous = std::env::var(name).ok();
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        if let Some(value) = &self.previous {
+            std::env::set_var(self.name, value);
+        } else {
+            std::env::remove_var(self.name);
+        }
+    }
+}
+
+fn with_local_std_root<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = env_lock();
+    let std_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("std")
+        .to_string_lossy()
+        .into_owned();
+    let _std_root = ScopedEnvVar::set(ENV_AIC_STD_ROOT, std_root);
+    f()
 }
 
 #[test]
@@ -50,10 +93,11 @@ fn main() -> Int {
 
 #[test]
 fn std_buffer_width_specific_signatures_typecheck() {
-    let dir = tempdir().expect("tempdir");
-    write_main(
-        dir.path(),
-        r#"module app.main;
+    with_local_std_root(|| {
+        let dir = tempdir().expect("tempdir");
+        write_main(
+            dir.path(),
+            r#"module app.main;
 import std.buffer;
 
 fn main() -> Int {
@@ -63,10 +107,10 @@ fn main() -> Int {
     let v_i32: Int32 = -11;
     let v_u32: UInt32 = 11;
     let v_i64: Int64 = -21;
-    let v_u64: UInt64 = 21;
+    let v_u64: UInt64 = 21u64;
     let patch_u16: UInt16 = 10;
     let patch_u32: UInt32 = 20;
-    let patch_u64: UInt64 = 30;
+    let patch_u64: UInt64 = 30u64;
     let peek_pos: Int = 0;
 
     let b0 = new_buffer(64);
@@ -102,8 +146,155 @@ fn main() -> Int {
     0
 }
 "#,
+        );
+
+        let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+        assert!(!has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    });
+}
+
+#[test]
+fn fixed_width_operator_mismatch_reports_deterministic_diagnostics() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main(a: Int8, b: UInt16) -> Int {
+    let _bad_add = a + b;
+    let _bad_cmp = a < b;
+    0
+}
+"#,
     );
 
     let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
-    assert!(!has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(
+        out.diagnostics.iter().any(|d| {
+            d.code == "E1230"
+                && d.message.contains("matching integer signedness/width")
+                && d.message.contains("Int8")
+                && d.message.contains("UInt16")
+        }),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics.iter().any(|d| {
+            d.code == "E1232"
+                && d.message.contains("fixed-width integers")
+                && d.message.contains("Int8")
+                && d.message.contains("UInt16")
+        }),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn fixed_width_integer_literal_narrowing_and_range_diagnostics() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main() -> Int {
+    let _ok_u8: UInt8 = 255;
+    let _bad_u8: UInt8 = 256;
+    let _ok_i8: Int8 = -128;
+    let _bad_i8: Int8 = -129;
+    0
+}
+"#,
+    );
+
+    let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("UInt8")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("Int8")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn fixed_width_integer_pattern_range_diagnostics() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main(x: UInt8, y: Int8) -> Int {
+    let a = match x {
+        255u8 => 1,
+        256 => 2,
+        _ => 0,
+    };
+    let b = match y {
+        127 => 1,
+        128 => 2,
+        _ => 0,
+    };
+    a + b
+}
+"#,
+    );
+
+    let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1234" && d.message.contains("UInt8")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1234" && d.message.contains("Int8")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn fixed_width_assignments_reject_lossy_or_sign_changing_conversions() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main(a: Int16, b: UInt16) -> Int {
+    let _widen_ok: Int32 = a;
+    let _bad_narrow: Int8 = a;
+    let _bad_sign: UInt16 = a;
+    let _bad_unsigned_to_signed: Int8 = b;
+    0
+}
+"#,
+    );
+
+    let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    let conversion_diags = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "E1204")
+        .count();
+    assert!(
+        conversion_diags >= 3,
+        "expected conversion diagnostics, got {conversion_diags}: {:#?}",
+        out.diagnostics
+    );
 }

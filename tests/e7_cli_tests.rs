@@ -738,7 +738,10 @@ fn sarif_bitwise_bool_type_error_includes_logical_operator_hint() {
     assert!(
         messages
             .iter()
-            .any(|text| text.contains("bitwise operator '&' requires Int operands")),
+            .any(|text| {
+                text.contains("operator '&'")
+                    && text.contains("requires integer operands")
+            }),
         "missing bitwise type error in SARIF messages: {messages:?}"
     );
     assert!(

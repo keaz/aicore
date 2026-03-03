@@ -7,16 +7,18 @@ use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo}
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
-const FIXED_WIDTH_INTEGER_ALIASES: [(&str, &str); 8] = [
-    ("Int8", "Int"),
-    ("Int16", "Int"),
-    ("Int32", "Int"),
-    ("Int64", "Int"),
-    ("UInt8", "Int"),
-    ("UInt16", "Int"),
-    ("UInt32", "Int"),
-    ("UInt64", "Int"),
+const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 8] = [
+    "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegerKind {
+    Int,
+    Fixed {
+        signed: bool,
+        bits: u8,
+    },
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct TypecheckOutput {
@@ -276,15 +278,6 @@ impl<'a> Checker<'a> {
                     .entry(const_name.to_string())
                     .or_insert_with(|| declared_ty.clone());
             }
-        }
-
-        for (alias_name, target) in FIXED_WIDTH_INTEGER_ALIASES {
-            type_aliases
-                .entry(alias_name.to_string())
-                .or_insert_with(|| AliasDef {
-                    generics: Vec::new(),
-                    target: target.to_string(),
-                });
         }
 
         for (name, info) in &resolution.functions {
@@ -3203,8 +3196,6 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ir::Stmt::Assign { target, expr, span } => {
-                    let expr_ty =
-                        self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                     let Some(target_ty) = scope.get(target).cloned() else {
                         self.diagnostics.push(Diagnostic::error(
                             "E1208",
@@ -3214,6 +3205,14 @@ impl<'a> Checker<'a> {
                         ));
                         continue;
                     };
+                    let expr_ty = self.check_expr_with_expected(
+                        expr,
+                        &mut scope,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        Some(&target_ty),
+                    );
                     if !self.types_compatible(&target_ty, &expr_ty) {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -3317,6 +3316,118 @@ impl<'a> Checker<'a> {
         self.check_expr_with_expected(expr, locals, allowed_effects, ctx, contract_mode, None)
     }
 
+    fn integer_expected_type_hint(&self, expected_ty: Option<&str>) -> Option<String> {
+        let expected = expected_ty?;
+        let normalized = self.normalize_type(expected);
+        if parse_integer_kind(&normalized).is_some() {
+            Some(normalized)
+        } else {
+            None
+        }
+    }
+
+    fn validate_integer_literal_range(
+        &mut self,
+        value: i128,
+        target_ty: &str,
+        span: crate::span::Span,
+        code: &str,
+        subject: &str,
+    ) -> bool {
+        let Some(kind) = parse_integer_kind(target_ty) else {
+            return true;
+        };
+        if integer_value_fits_kind(value, kind) {
+            return true;
+        }
+        let (min, max) = integer_kind_range(kind);
+        self.diagnostics.push(
+            Diagnostic::error(
+                code,
+                format!(
+                    "{subject} is out of range for type '{target_ty}' (expected {min}..={max}, found {value})"
+                ),
+                self.file,
+                span,
+            )
+            .with_help("use a value within range or change the target integer type"),
+        );
+        false
+    }
+
+    fn check_int_literal_expr(
+        &mut self,
+        expr: &ir::Expr,
+        value: i64,
+        expected_ty: Option<&str>,
+    ) -> String {
+        let expected_int = self.integer_expected_type_hint(expected_ty);
+        let metadata = expr.int_literal_metadata();
+        if let Some(meta) = metadata {
+            let literal_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+            self.validate_integer_literal_range(
+                value as i128,
+                literal_ty,
+                expr.span,
+                "E1204",
+                &format!(
+                    "integer literal '{}' with suffix '{}'",
+                    value,
+                    meta.suffix.as_str()
+                ),
+            );
+            literal_ty.to_string()
+        } else if let Some(expected) = expected_int {
+            self.validate_integer_literal_range(
+                value as i128,
+                &expected,
+                expr.span,
+                "E1204",
+                &format!("integer literal '{}'", value),
+            );
+            expected
+        } else {
+            "Int".to_string()
+        }
+    }
+
+    fn check_negated_int_literal_expr(
+        &mut self,
+        literal_expr: &ir::Expr,
+        value: i64,
+        expected_ty: Option<&str>,
+    ) -> String {
+        let expected_int = self.integer_expected_type_hint(expected_ty);
+        let negated_value = -(value as i128);
+        let metadata = literal_expr.int_literal_metadata();
+        if let Some(meta) = metadata {
+            let literal_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+            self.validate_integer_literal_range(
+                negated_value,
+                literal_ty,
+                literal_expr.span,
+                "E1204",
+                &format!(
+                    "integer literal '-{}' with suffix '{}'",
+                    value,
+                    meta.suffix.as_str()
+                ),
+            );
+            literal_ty.to_string()
+        } else if let Some(expected) = expected_int {
+            self.validate_integer_literal_range(
+                negated_value,
+                &expected,
+                literal_expr.span,
+                "E1204",
+                &format!("integer literal '-{}'", value),
+            );
+            expected
+        } else {
+            "Int".to_string()
+        }
+    }
+
     fn check_expr_with_expected(
         &mut self,
         expr: &ir::Expr,
@@ -3327,7 +3438,7 @@ impl<'a> Checker<'a> {
         expected_ty: Option<&str>,
     ) -> String {
         match &expr.kind {
-            ir::ExprKind::Int(_) => "Int".to_string(),
+            ir::ExprKind::Int(value) => self.check_int_literal_expr(expr, *value, expected_ty),
             ir::ExprKind::Float(_) => "Float".to_string(),
             ir::ExprKind::Bool(_) => "Bool".to_string(),
             ir::ExprKind::Char(_) => "Char".to_string(),
@@ -4850,9 +4961,51 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::ExprKind::Binary { op, lhs, rhs } => {
-                let mut left_ty = self.check_expr(lhs, locals, allowed_effects, ctx, contract_mode);
-                let mut right_ty =
-                    self.check_expr(rhs, locals, allowed_effects, ctx, contract_mode);
+                let expected_integer = self.integer_expected_type_hint(expected_ty);
+                let mut left_ty = self.check_expr_with_expected(
+                    lhs,
+                    locals,
+                    allowed_effects,
+                    ctx,
+                    contract_mode,
+                    expected_integer.as_deref(),
+                );
+                let mut rhs_expected = expected_integer;
+                if rhs_expected.is_none()
+                    && matches!(
+                        op,
+                        BinOp::Add
+                            | BinOp::Sub
+                            | BinOp::Mul
+                            | BinOp::Div
+                            | BinOp::Mod
+                            | BinOp::BitAnd
+                            | BinOp::BitOr
+                            | BinOp::BitXor
+                            | BinOp::Shl
+                            | BinOp::Shr
+                            | BinOp::Ushr
+                            | BinOp::Eq
+                            | BinOp::Ne
+                            | BinOp::Lt
+                            | BinOp::Le
+                            | BinOp::Gt
+                            | BinOp::Ge
+                    )
+                {
+                    let left_norm = self.normalize_type(&left_ty);
+                    if parse_integer_kind(&left_norm).is_some() {
+                        rhs_expected = Some(left_norm);
+                    }
+                }
+                let mut right_ty = self.check_expr_with_expected(
+                    rhs,
+                    locals,
+                    allowed_effects,
+                    ctx,
+                    contract_mode,
+                    rhs_expected.as_deref(),
+                );
                 if contains_unresolved_type(&left_ty) && !contains_unresolved_type(&right_ty) {
                     if let Some(refined) =
                         self.refine_variable_with_expected(lhs, &right_ty, locals)
@@ -4869,23 +5022,48 @@ impl<'a> Checker<'a> {
                 self.check_binary(*op, &left_ty, &right_ty, expr.span)
             }
             ir::ExprKind::Unary { op, expr: inner } => {
+                if matches!(op, crate::ast::UnaryOp::Neg) {
+                    if let ir::ExprKind::Int(value) = inner.kind {
+                        return self.check_negated_int_literal_expr(inner, value, expected_ty);
+                    }
+                }
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
                 let ty_norm = self.normalize_type(&ty);
                 match op {
                     crate::ast::UnaryOp::Neg => {
-                        if ty_norm != "Int" && ty_norm != "Float" {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E1222",
-                                "unary '-' expects Int or Float",
-                                self.file,
-                                inner.span,
-                            ));
-                        }
                         if ty_norm == "Float" {
-                            "Float".to_string()
-                        } else {
-                            "Int".to_string()
+                            return "Float".to_string();
                         }
+                        if let Some(kind) = parse_integer_kind(&ty_norm) {
+                            if matches!(
+                                kind,
+                                IntegerKind::Fixed {
+                                    signed: false,
+                                    ..
+                                }
+                            ) {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E1222",
+                                        format!(
+                                            "unary '-' cannot be applied to unsigned integer type '{}'",
+                                            ty
+                                        ),
+                                        self.file,
+                                        inner.span,
+                                    )
+                                    .with_help("use a signed integer type for negation"),
+                                );
+                            }
+                            return ty_norm;
+                        }
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1222",
+                            "unary '-' expects signed integer or Float",
+                            self.file,
+                            inner.span,
+                        ));
+                        "<?>".to_string()
                     }
                     crate::ast::UnaryOp::Not => {
                         if ty_norm != "Bool" {
@@ -4899,15 +5077,16 @@ impl<'a> Checker<'a> {
                         "Bool".to_string()
                     }
                     crate::ast::UnaryOp::BitNot => {
-                        if ty_norm != "Int" {
+                        if parse_integer_kind(&ty_norm).is_none() {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1222",
-                                "unary '~' expects Int",
+                                "unary '~' expects integer operand",
                                 self.file,
                                 inner.span,
                             ));
+                            return "<?>".to_string();
                         }
-                        "Int".to_string()
+                        ty_norm
                     }
                 }
             }
@@ -6482,16 +6661,40 @@ impl<'a> Checker<'a> {
     fn check_binary(&mut self, op: BinOp, lhs: &str, rhs: &str, span: crate::span::Span) -> String {
         let lhs_norm = self.normalize_type(lhs);
         let rhs_norm = self.normalize_type(rhs);
+        let lhs_int = parse_integer_kind(&lhs_norm);
+        let rhs_int = parse_integer_kind(&rhs_norm);
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                if lhs_norm == rhs_norm && (lhs_norm == "Int" || lhs_norm == "Float") {
-                    lhs_norm
+                let symbol = match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                    _ => unreachable!(),
+                };
+                if lhs_norm == "Float" && rhs_norm == "Float" {
+                    "Float".to_string()
+                } else if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
+                    if integer_kinds_match_exact(lhs_int, rhs_int) {
+                        lhs_norm
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1230",
+                            format!(
+                                "arithmetic operator '{}' requires matching integer signedness/width, found '{}' and '{}'",
+                                symbol, lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                        "<?>".to_string()
+                    }
                 } else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
                         format!(
-                            "arithmetic operators require matching Int or Float operands, found '{}' and '{}'",
-                            lhs, rhs
+                            "arithmetic operator '{}' requires matching integer or Float operands, found '{}' and '{}'",
+                            symbol, lhs, rhs
                         ),
                         self.file,
                         span,
@@ -6500,18 +6703,32 @@ impl<'a> Checker<'a> {
                 }
             }
             BinOp::Mod => {
-                if lhs_norm != "Int" || rhs_norm != "Int" {
+                if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
+                    if !integer_kinds_match_exact(lhs_int, rhs_int) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1230",
+                            format!(
+                                "operator '%' requires matching integer signedness/width, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                        return "<?>".to_string();
+                    }
+                    lhs_norm
+                } else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
                         format!(
-                            "operator '%' requires Int operands, found '{}' and '{}'",
+                            "operator '%' requires integer operands, found '{}' and '{}'",
                             lhs, rhs
                         ),
                         self.file,
                         span,
                     ));
+                    "<?>".to_string()
                 }
-                "Int".to_string()
             }
             BinOp::BitAnd
             | BinOp::BitOr
@@ -6519,20 +6736,35 @@ impl<'a> Checker<'a> {
             | BinOp::Shl
             | BinOp::Shr
             | BinOp::Ushr => {
-                if lhs_norm != "Int" || rhs_norm != "Int" {
-                    let symbol = match op {
-                        BinOp::BitAnd => "&",
-                        BinOp::BitOr => "|",
-                        BinOp::BitXor => "^",
-                        BinOp::Shl => "<<",
-                        BinOp::Shr => ">>",
-                        BinOp::Ushr => ">>>",
-                        _ => unreachable!(),
-                    };
+                let symbol = match op {
+                    BinOp::BitAnd => "&",
+                    BinOp::BitOr => "|",
+                    BinOp::BitXor => "^",
+                    BinOp::Shl => "<<",
+                    BinOp::Shr => ">>",
+                    BinOp::Ushr => ">>>",
+                    _ => unreachable!(),
+                };
+                if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
+                    if integer_kinds_match_exact(lhs_int, rhs_int) {
+                        lhs_norm
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1230",
+                            format!(
+                                "bitwise/shift operator '{}' requires matching integer signedness/width, found '{}' and '{}'",
+                                symbol, lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                        "<?>".to_string()
+                    }
+                } else {
                     let mut diag = Diagnostic::error(
                         "E1230",
                         format!(
-                            "bitwise operator '{}' requires Int operands, found '{}' and '{}'",
+                            "bitwise/shift operator '{}' requires integer operands, found '{}' and '{}'",
                             symbol, lhs, rhs
                         ),
                         self.file,
@@ -6545,11 +6777,23 @@ impl<'a> Checker<'a> {
                         diag = diag.with_help("for logical operations on Bool, use '&&' or '||'");
                     }
                     self.diagnostics.push(diag);
+                    "<?>".to_string()
                 }
-                "Int".to_string()
             }
             BinOp::Eq | BinOp::Ne => {
-                if !self.types_compatible(lhs, rhs) {
+                if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
+                    if !integer_kinds_match_exact(lhs_int, rhs_int) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1231",
+                            format!(
+                                "equality operands for fixed-width integers must match signedness/width, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                    }
+                } else if !self.types_compatible(lhs, rhs) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1231",
                         format!(
@@ -6563,12 +6807,22 @@ impl<'a> Checker<'a> {
                 "Bool".to_string()
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if !(lhs_norm == rhs_norm
-                    && (lhs_norm == "Int" || lhs_norm == "Float" || lhs_norm == "Char"))
-                {
+                if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
+                    if !integer_kinds_match_exact(lhs_int, rhs_int) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1232",
+                            format!(
+                                "comparison operators for fixed-width integers require matching signedness/width, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                    }
+                } else if !(lhs_norm == rhs_norm && (lhs_norm == "Float" || lhs_norm == "Char")) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
-                        "comparison operators require matching Int, Float, or Char operands",
+                        "comparison operators require matching integer, Float, or Char operands",
                         self.file,
                         span,
                     ));
@@ -6613,18 +6867,42 @@ impl<'a> Checker<'a> {
                 }
                 locals.insert(name.clone(), scrutinee_ty.to_string());
             }
-            ir::PatternKind::Int(_v) => {
-                if normalized_scrutinee_ty != "Int" {
+            ir::PatternKind::Int(v) => {
+                if parse_integer_kind(&normalized_scrutinee_ty).is_none() {
                     self.diagnostics.push(Diagnostic::error(
                         "E1234",
                         format!(
-                            "int pattern requires Int scrutinee, found '{}'",
+                            "int pattern requires integer scrutinee, found '{}'",
                             scrutinee_ty
                         ),
                         self.file,
                         pattern.span,
                     ));
+                    return;
                 }
+
+                if let Some(meta) = pattern.int_literal_metadata() {
+                    let suffix_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+                    self.validate_integer_literal_range(
+                        *v as i128,
+                        suffix_ty,
+                        pattern.span,
+                        "E1234",
+                        &format!(
+                            "pattern integer literal '{}' with suffix '{}'",
+                            v,
+                            meta.suffix.as_str()
+                        ),
+                    );
+                }
+
+                self.validate_integer_literal_range(
+                    *v as i128,
+                    &normalized_scrutinee_ty,
+                    pattern.span,
+                    "E1234",
+                    &format!("pattern integer literal '{}'", v),
+                );
             }
             ir::PatternKind::Bool(_v) => {
                 if normalized_scrutinee_ty != "Bool" {
@@ -7152,7 +7430,7 @@ impl<'a> Checker<'a> {
                 *wildcard_seen = true;
             }
             ir::PatternKind::Int(v) => {
-                if normalized_scrutinee_ty == "Int" {
+                if parse_integer_kind(&normalized_scrutinee_ty).is_some() {
                     seen.insert(format!("int:{v}"));
                 }
             }
@@ -7945,6 +8223,12 @@ impl<'a> Checker<'a> {
             return true;
         }
 
+        if let (Some(expected_kind), Some(found_kind)) =
+            (parse_integer_kind(expected), parse_integer_kind(found))
+        {
+            return integer_conversion_is_lossless(expected_kind, found_kind);
+        }
+
         if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
             if let Some(found_dyn_trait) = parse_dyn_trait_name(found) {
                 let expected_name = Self::unqualified_name(&expected_dyn_trait);
@@ -8006,6 +8290,12 @@ fn type_compatible(expected: &str, found: &str) -> bool {
             && (expected.contains("<?>") || found.contains("<?>")))
     {
         return true;
+    }
+
+    if let (Some(expected_kind), Some(found_kind)) =
+        (parse_integer_kind(expected), parse_integer_kind(found))
+    {
+        return integer_conversion_is_lossless(expected_kind, found_kind);
     }
 
     if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
@@ -8639,6 +8929,151 @@ fn merge_types(a: &str, b: &str) -> String {
     "<?>".to_string()
 }
 
+fn parse_integer_kind(ty: &str) -> Option<IntegerKind> {
+    match base_type_name(ty) {
+        "Int" => Some(IntegerKind::Int),
+        "Int8" => Some(IntegerKind::Fixed {
+            signed: true,
+            bits: 8,
+        }),
+        "Int16" => Some(IntegerKind::Fixed {
+            signed: true,
+            bits: 16,
+        }),
+        "Int32" => Some(IntegerKind::Fixed {
+            signed: true,
+            bits: 32,
+        }),
+        "Int64" => Some(IntegerKind::Fixed {
+            signed: true,
+            bits: 64,
+        }),
+        "UInt8" => Some(IntegerKind::Fixed {
+            signed: false,
+            bits: 8,
+        }),
+        "UInt16" => Some(IntegerKind::Fixed {
+            signed: false,
+            bits: 16,
+        }),
+        "UInt32" => Some(IntegerKind::Fixed {
+            signed: false,
+            bits: 32,
+        }),
+        "UInt64" => Some(IntegerKind::Fixed {
+            signed: false,
+            bits: 64,
+        }),
+        _ => None,
+    }
+}
+
+fn integer_kind_from_suffix(suffix: ir::IntLiteralSuffix) -> IntegerKind {
+    match suffix {
+        ir::IntLiteralSuffix::I8 => IntegerKind::Fixed {
+            signed: true,
+            bits: 8,
+        },
+        ir::IntLiteralSuffix::I16 => IntegerKind::Fixed {
+            signed: true,
+            bits: 16,
+        },
+        ir::IntLiteralSuffix::I32 => IntegerKind::Fixed {
+            signed: true,
+            bits: 32,
+        },
+        ir::IntLiteralSuffix::I64 => IntegerKind::Fixed {
+            signed: true,
+            bits: 64,
+        },
+        ir::IntLiteralSuffix::U8 => IntegerKind::Fixed {
+            signed: false,
+            bits: 8,
+        },
+        ir::IntLiteralSuffix::U16 => IntegerKind::Fixed {
+            signed: false,
+            bits: 16,
+        },
+        ir::IntLiteralSuffix::U32 => IntegerKind::Fixed {
+            signed: false,
+            bits: 32,
+        },
+        ir::IntLiteralSuffix::U64 => IntegerKind::Fixed {
+            signed: false,
+            bits: 64,
+        },
+    }
+}
+
+fn integer_kind_type_name(kind: IntegerKind) -> &'static str {
+    match kind {
+        IntegerKind::Int => "Int",
+        IntegerKind::Fixed {
+            signed: true,
+            bits: 8,
+        } => "Int8",
+        IntegerKind::Fixed {
+            signed: true,
+            bits: 16,
+        } => "Int16",
+        IntegerKind::Fixed {
+            signed: true,
+            bits: 32,
+        } => "Int32",
+        IntegerKind::Fixed {
+            signed: true,
+            bits: 64,
+        } => "Int64",
+        IntegerKind::Fixed {
+            signed: false,
+            bits: 8,
+        } => "UInt8",
+        IntegerKind::Fixed {
+            signed: false,
+            bits: 16,
+        } => "UInt16",
+        IntegerKind::Fixed {
+            signed: false,
+            bits: 32,
+        } => "UInt32",
+        IntegerKind::Fixed {
+            signed: false,
+            bits: 64,
+        } => "UInt64",
+        IntegerKind::Fixed { .. } => "<?>",
+    }
+}
+
+fn integer_kind_range(kind: IntegerKind) -> (i128, i128) {
+    match kind {
+        IntegerKind::Int => (i64::MIN as i128, i64::MAX as i128),
+        IntegerKind::Fixed { signed: true, bits } => {
+            let max = (1_i128 << (bits - 1)) - 1;
+            let min = -(1_i128 << (bits - 1));
+            (min, max)
+        }
+        IntegerKind::Fixed {
+            signed: false,
+            bits,
+        } => (0, (1_i128 << bits) - 1),
+    }
+}
+
+fn integer_value_fits_kind(value: i128, kind: IntegerKind) -> bool {
+    let (min, max) = integer_kind_range(kind);
+    value >= min && value <= max
+}
+
+fn integer_conversion_is_lossless(expected: IntegerKind, found: IntegerKind) -> bool {
+    let (found_min, found_max) = integer_kind_range(found);
+    let (expected_min, expected_max) = integer_kind_range(expected);
+    found_min >= expected_min && found_max <= expected_max
+}
+
+fn integer_kinds_match_exact(left: IntegerKind, right: IntegerKind) -> bool {
+    left == right
+}
+
 fn base_type_name(ty: &str) -> &str {
     ty.split('[').next().unwrap_or(ty)
 }
@@ -8702,9 +9137,7 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     }
     let base = base_type_name(ty);
     (matches!(base, "Int" | "Bool" | "Float" | "Char")
-        || FIXED_WIDTH_INTEGER_ALIASES
-            .iter()
-            .any(|(alias_name, _)| alias_name == &base))
+        || FIXED_WIDTH_INTEGER_PRIMITIVES.iter().any(|name| name == &base))
         && extract_generic_args(ty).is_none()
 }
 
@@ -9671,7 +10104,7 @@ fn main(x: Bool, y: Bool) -> Int {
         let diag = out
             .diagnostics
             .iter()
-            .find(|d| d.code == "E1230" && d.message.contains("bitwise operator '&'"))
+            .find(|d| d.code == "E1230" && d.message.contains("'&'"))
             .expect("missing bitwise type diagnostic");
         assert!(
             diag.help
@@ -9774,21 +10207,11 @@ fn main() -> Int {
     }
 
     #[test]
-    fn fixed_width_integer_aliases_typecheck_via_int_normalization() {
+    fn fixed_width_integer_ops_require_matching_signedness_and_width() {
         let src = r#"
-extern "C" fn c_mix(a: Int32, b: UInt8) -> Int64;
-
-fn coerce(a: Int8, b: UInt16) -> Int64 {
-    let wide: Int = a + b;
-    let as_u32: UInt32 = wide;
-    let as_i64: Int64 = as_u32;
-    as_i64
-}
-
-fn main() -> Int {
-    let a: Int8 = 3;
-    let b: UInt16 = 9;
-    let _value: Int64 = coerce(a, b);
+fn main(a: Int8, b: UInt16) -> Int {
+    let _bad_add = a + b;
+    let _bad_cmp = a < b;
     0
 }
 "#;
@@ -9798,7 +10221,119 @@ fn main() -> Int {
         let (res, d2) = resolve(&ir, "test.aic");
         assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
         let out = check(&ir, &res, "test.aic");
-        assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+        assert!(
+            out.diagnostics.iter().any(|d| {
+                d.code == "E1230"
+                    && d.message.contains("matching integer signedness/width")
+                    && d.message.contains("Int8")
+                    && d.message.contains("UInt16")
+            }),
+            "diags={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics.iter().any(|d| {
+                d.code == "E1232"
+                    && d.message.contains("fixed-width integers")
+                    && d.message.contains("Int8")
+                    && d.message.contains("UInt16")
+            }),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn fixed_width_assignments_allow_only_lossless_conversions() {
+        let src = r#"
+fn main(a: Int16, b: UInt16) -> Int {
+    let _widen_ok: Int32 = a;
+    let _bad_narrow: Int8 = a;
+    let _bad_sign: UInt16 = a;
+    let _bad_unsigned_to_signed: Int8 = b;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let mismatches = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
+        assert!(mismatches >= 3, "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn fixed_width_integer_literals_narrow_and_report_range_errors() {
+        let src = r#"
+fn main() -> Int {
+    let ok_u8: UInt8 = 255;
+    let bad_u8: UInt8 = 256;
+    let ok_i8: Int8 = -128;
+    let bad_i8: Int8 = -129;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1204" && d.message.contains("UInt8")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1204" && d.message.contains("Int8")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn fixed_width_integer_patterns_report_out_of_range_literals() {
+        let src = r#"
+fn main(x: UInt8, y: Int8) -> Int {
+    let a = match x {
+        255u8 => 1,
+        256 => 2,
+        _ => 0,
+    };
+    let b = match y {
+        127 => 1,
+        128 => 2,
+        _ => 0,
+    };
+    a + b
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1234" && d.message.contains("UInt8")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1234" && d.message.contains("Int8")),
+            "diags={:#?}",
+            out.diagnostics
+        );
     }
 
 }

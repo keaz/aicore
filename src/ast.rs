@@ -1,5 +1,7 @@
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 pub const INTERNAL_TYPE_ALIAS_PREFIX: &str = "__aic_type_alias__";
 pub const INTERNAL_CONST_PREFIX: &str = "__aic_const__";
@@ -209,6 +211,137 @@ pub enum TypeKind {
     Named { name: String, args: Vec<TypeExpr> },
     DynTrait { trait_name: String },
     Hole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IntLiteralSignedness {
+    Signed,
+    Unsigned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IntLiteralWidth {
+    W8,
+    W16,
+    W32,
+    W64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IntLiteralSuffix {
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+}
+
+impl IntLiteralSuffix {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+        }
+    }
+
+    pub fn kind(self) -> IntLiteralKind {
+        match self {
+            Self::I8 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Signed,
+                width: IntLiteralWidth::W8,
+            },
+            Self::I16 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Signed,
+                width: IntLiteralWidth::W16,
+            },
+            Self::I32 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Signed,
+                width: IntLiteralWidth::W32,
+            },
+            Self::I64 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Signed,
+                width: IntLiteralWidth::W64,
+            },
+            Self::U8 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Unsigned,
+                width: IntLiteralWidth::W8,
+            },
+            Self::U16 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Unsigned,
+                width: IntLiteralWidth::W16,
+            },
+            Self::U32 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Unsigned,
+                width: IntLiteralWidth::W32,
+            },
+            Self::U64 => IntLiteralKind {
+                signedness: IntLiteralSignedness::Unsigned,
+                width: IntLiteralWidth::W64,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntLiteralKind {
+    pub signedness: IntLiteralSignedness,
+    pub width: IntLiteralWidth,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntLiteralMetadata {
+    pub suffix: IntLiteralSuffix,
+    pub kind: IntLiteralKind,
+    pub raw_value_span: Span,
+}
+
+impl IntLiteralMetadata {
+    pub fn new(suffix: IntLiteralSuffix, raw_value_span: Span) -> Self {
+        Self {
+            kind: suffix.kind(),
+            suffix,
+            raw_value_span,
+        }
+    }
+}
+
+type IntLiteralKey = (usize, usize, i64);
+
+thread_local! {
+    static INT_LITERAL_METADATA_STORE: RefCell<BTreeMap<IntLiteralKey, IntLiteralMetadata>> =
+        RefCell::new(BTreeMap::new());
+}
+
+pub fn clear_int_literal_metadata() {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.clear();
+    });
+}
+
+pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralMetadata) {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.insert((span.start, span.end, value), metadata);
+    });
+}
+
+pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        store
+            .borrow()
+            .get(&(span.start, span.end, value))
+            .copied()
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +558,22 @@ impl Expr {
         Self {
             kind: ExprKind::Bool(value),
             span,
+        }
+    }
+
+    pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
+        match self.kind {
+            ExprKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+            _ => None,
+        }
+    }
+}
+
+impl Pattern {
+    pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
+        match self.kind {
+            PatternKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+            _ => None,
         }
     }
 }

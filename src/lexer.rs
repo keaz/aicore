@@ -7,10 +7,49 @@ pub struct Token {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntLiteralSuffixToken {
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+}
+
+impl IntLiteralSuffixToken {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "i8" => Some(Self::I8),
+            "i16" => Some(Self::I16),
+            "i32" => Some(Self::I32),
+            "i64" => Some(Self::I64),
+            "u8" => Some(Self::U8),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
+            "u64" => Some(Self::U64),
+            _ => None,
+        }
+    }
+
+    fn allowed_suffixes() -> &'static str {
+        "i8, i16, i32, i64, u8, u16, u32, u64"
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntLiteralToken {
+    pub value: i64,
+    pub raw_value_span: Span,
+    pub suffix: Option<IntLiteralSuffixToken>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Ident(String),
-    Int(i64),
+    Int(IntLiteralToken),
     Float(f64),
     String(String),
     Template(String),
@@ -406,13 +445,31 @@ impl<'a> Lexer<'a> {
                 );
                 return;
             }
-            let text = &self.source[digits_start..self.offset];
+            let raw_end = self.offset;
+            let text = &self.source[digits_start..raw_end];
+            let (suffix, consumed_suffix) = self.lex_integer_suffix();
             match i64::from_str_radix(text, 16) {
-                Ok(value) => self.push(TokenKind::Int(value), Span::new(start, self.offset)),
+                Ok(value) => {
+                    let token = IntLiteralToken {
+                        value,
+                        raw_value_span: Span::new(start, raw_end),
+                        suffix,
+                    };
+                    let end = if token.suffix.is_some() {
+                        self.offset
+                    } else {
+                        raw_end
+                    };
+                    if consumed_suffix && token.suffix.is_none() {
+                        self.push(TokenKind::Int(token), Span::new(start, raw_end));
+                    } else {
+                        self.push(TokenKind::Int(token), Span::new(start, end));
+                    }
+                }
                 Err(_) => self.error(
                     "E0004",
                     format!("invalid integer literal '0x{}'", text),
-                    Span::new(start, self.offset),
+                    Span::new(start, raw_end),
                 ),
             }
             return;
@@ -462,26 +519,112 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-        let text = &self.source[start..self.offset];
+        let raw_end = self.offset;
+        let text = &self.source[start..raw_end];
         if is_float {
+            self.lex_float_suffix();
             match text.parse::<f64>() {
-                Ok(value) => self.push(TokenKind::Float(value), Span::new(start, self.offset)),
+                Ok(value) => self.push(TokenKind::Float(value), Span::new(start, raw_end)),
                 Err(_) => self.error(
                     "E0007",
                     format!("invalid float literal '{}'", text),
-                    Span::new(start, self.offset),
+                    Span::new(start, raw_end),
                 ),
             }
         } else {
+            let (suffix, consumed_suffix) = self.lex_integer_suffix();
             match text.parse::<i64>() {
-                Ok(value) => self.push(TokenKind::Int(value), Span::new(start, self.offset)),
+                Ok(value) => {
+                    let token = IntLiteralToken {
+                        value,
+                        raw_value_span: Span::new(start, raw_end),
+                        suffix,
+                    };
+                    let end = if token.suffix.is_some() {
+                        self.offset
+                    } else {
+                        raw_end
+                    };
+                    if consumed_suffix && token.suffix.is_none() {
+                        self.push(TokenKind::Int(token), Span::new(start, raw_end));
+                    } else {
+                        self.push(TokenKind::Int(token), Span::new(start, end));
+                    }
+                }
                 Err(_) => self.error(
                     "E0004",
                     format!("invalid integer literal '{}'", text),
-                    Span::new(start, self.offset),
+                    Span::new(start, raw_end),
                 ),
             }
         }
+    }
+
+    fn lex_integer_suffix(&mut self) -> (Option<IntLiteralSuffixToken>, bool) {
+        let Some(first) = self.peek() else {
+            return (None, false);
+        };
+        if !Self::is_ident_start(first) {
+            return (None, false);
+        }
+        let suffix_start = self.offset;
+        self.bump();
+        while let Some(c) = self.peek() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        let suffix_text = &self.source[suffix_start..self.offset];
+        let suffix = IntLiteralSuffixToken::parse(suffix_text);
+        if suffix.is_none() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0009",
+                    format!("invalid integer literal suffix '{suffix_text}'"),
+                    self.file,
+                    Span::new(suffix_start, self.offset),
+                )
+                .with_help(format!(
+                    "use one of: {}",
+                    IntLiteralSuffixToken::allowed_suffixes()
+                )),
+            );
+        }
+        (suffix, true)
+    }
+
+    fn lex_float_suffix(&mut self) {
+        let Some(first) = self.peek() else {
+            return;
+        };
+        if !Self::is_ident_start(first) {
+            return;
+        }
+        let suffix_start = self.offset;
+        self.bump();
+        while let Some(c) = self.peek() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        let suffix_text = &self.source[suffix_start..self.offset];
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E0010",
+                format!("float literal cannot have suffix '{suffix_text}'"),
+                self.file,
+                Span::new(suffix_start, self.offset),
+            )
+            .with_help("remove the suffix or use an integer literal"),
+        );
+    }
+
+    fn is_ident_start(c: char) -> bool {
+        c.is_ascii_alphabetic() || c == '_'
     }
 
     fn lex_string(&mut self) {
@@ -778,7 +921,7 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{lex, TokenKind};
+    use super::{lex, IntLiteralSuffixToken, TokenKind};
 
     #[test]
     fn lexes_keywords_and_symbols() {
@@ -900,7 +1043,9 @@ mod tests {
         let src = "let x = 0xFF & 0x0F | 0xF0 ^ 0x0A; let y = ~x; let z = x << 2; let w = z >> 1; let u = w >>> 3; x &= 1; x |= 2; x ^= 3; x <<= 1; x >>= 1; x >>>= 1;";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty(), "diags={diags:#?}");
-        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Int(255))));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Int(ref lit) if lit.value == 255)));
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::Ampersand)));
@@ -918,5 +1063,61 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|t| matches!(t.kind, TokenKind::URShiftEq)));
+    }
+
+    #[test]
+    fn lexes_typed_integer_literal_suffixes() {
+        let src = "let a = 1i8; let b = 2u16; let c = 0xFFu8;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.value == 1
+                        && lit.suffix == Some(IntLiteralSuffixToken::I8)
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.value == 2
+                        && lit.suffix == Some(IntLiteralSuffixToken::U16)
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.value == 255
+                        && lit.suffix == Some(IntLiteralSuffixToken::U8)
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+    }
+
+    #[test]
+    fn reports_invalid_integer_suffix() {
+        let src = "let a = 1i32x;";
+        let (_tokens, diags) = lex(src, "test.aic");
+        assert!(diags.iter().any(|d| {
+            d.code == "E0009"
+                && d.message.contains("invalid integer literal suffix")
+                && d.message.contains("i32x")
+        }));
+    }
+
+    #[test]
+    fn reports_float_suffix_deterministically() {
+        let src = "let a = 1.5u8;";
+        let (_tokens, diags) = lex(src, "test.aic");
+        assert!(diags.iter().any(|d| {
+            d.code == "E0010"
+                && d.message.contains("float literal cannot have suffix")
+                && d.message.contains("u8")
+        }));
     }
 }

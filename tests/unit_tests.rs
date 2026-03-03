@@ -1683,6 +1683,54 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_formatter_preserves_typed_integer_suffixes_and_ir_metadata() {
+    let src = r#"
+fn main() -> Int {
+    let x: UInt8 = 255u8;
+    match x {
+        255u8 => 1,
+        _ => 0,
+    }
+}
+"#;
+    let ir = lower(src);
+    let main_fn = ir
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ir::Item::Function(func) if func.name == "main" => Some(func),
+            _ => None,
+        })
+        .expect("main function");
+    let aicore::ir::Stmt::Let { expr, .. } = &main_fn.body.stmts[0] else {
+        panic!("expected let statement");
+    };
+    let expr_meta = expr
+        .int_literal_metadata()
+        .expect("typed int metadata missing on expression");
+    assert_eq!(expr_meta.suffix.as_str(), "u8");
+
+    let match_expr = main_fn.body.tail.as_ref().expect("tail match");
+    let aicore::ir::ExprKind::Match { arms, .. } = &match_expr.kind else {
+        panic!("expected match expression");
+    };
+    let pattern_meta = arms[0]
+        .pattern
+        .int_literal_metadata()
+        .expect("typed int metadata missing on pattern");
+    assert_eq!(pattern_meta.suffix.as_str(), "u8");
+
+    let formatted = format_program(&ir);
+    assert!(
+        formatted.contains("255u8"),
+        "formatter must preserve typed integer suffixes\nformatted={formatted}"
+    );
+    let reparsed_ir = lower(&formatted);
+    let reformatted = format_program(&reparsed_ir);
+    assert_eq!(formatted, reformatted);
+}
+
+#[test]
 fn unit_ir_interns_single_int_type() {
     let src = "fn f(x: Int) -> Int { x } fn g(y: Int) -> Int { y }";
     let ir = lower(src);

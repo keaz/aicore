@@ -2,8 +2,43 @@ use crate::ast::{BinOp, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 pub const CURRENT_IR_SCHEMA_VERSION: u32 = 1;
+pub use crate::ast::{
+    IntLiteralKind, IntLiteralMetadata, IntLiteralSignedness, IntLiteralSuffix, IntLiteralWidth,
+};
+
+type IntLiteralKey = (usize, usize, i64);
+
+thread_local! {
+    static INT_LITERAL_METADATA_STORE: RefCell<BTreeMap<IntLiteralKey, IntLiteralMetadata>> =
+        RefCell::new(BTreeMap::new());
+}
+
+pub fn clear_int_literal_metadata() {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.clear();
+    });
+}
+
+pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralMetadata) {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.insert((span.start, span.end, value), metadata);
+    });
+}
+
+pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
+    INT_LITERAL_METADATA_STORE.with(|store| {
+        store
+            .borrow()
+            .get(&(span.start, span.end, value))
+            .copied()
+    })
+}
 
 fn default_schema_version() -> u32 {
     CURRENT_IR_SCHEMA_VERSION
@@ -308,6 +343,15 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Expr {
+    pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
+        match self.kind {
+            ExprKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExprKind {
     Int(i64),
@@ -395,6 +439,15 @@ pub struct Pattern {
     pub node: NodeId,
     pub kind: PatternKind,
     pub span: Span,
+}
+
+impl Pattern {
+    pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
+        match self.kind {
+            PatternKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

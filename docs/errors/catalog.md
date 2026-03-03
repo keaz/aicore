@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from /Users/kasunranasinghe/Projects/Rust/aicore/src/diagnostic_codes.rs (249 codes).
+This catalog covers all registered diagnostics from /Users/kasunranasinghe/Projects/Rust/aicore/src/diagnostic_codes.rs (251 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -36,6 +36,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E0006` | Unterminated string literal. | `fn main() -> Int { @ }` | `fn main() -> Int { 0 }` |
 | `E0007` | Invalid float literal token. | `fn main() -> Int { @ }` | `fn main() -> Int { 0 }` |
 | `E0008` | Invalid char literal (must contain exactly one Unicode codepoint). | `fn main() -> Char { 'ab' }` | `fn main() -> Char { 'a' }` |
+| `E0009` | Invalid integer literal suffix. | `fn main() -> Int { 1i33 }` | `fn main() -> Int { 1i32 }` |
+| `E0010` | Float literals do not allow integer suffixes. | `fn main() -> Float { 1.5u8 }` | `fn main() -> Float { 1.5 }` |
 | `E1001` | Parser grammar diagnostic in declaration or expression parsing. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |
 | `E1002` | Parser grammar diagnostic in declaration or expression parsing. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |
 | `E1003` | Parser grammar diagnostic in declaration or expression parsing. | `fn sum(a: Int b: Int) -> Int { a + b }` | `fn sum(a: Int, b: Int) -> Int { a + b }` |

@@ -1147,12 +1147,31 @@ impl<'a> Generator<'a> {
                     LType::Unit => fctx.lines.push("  ret void".to_string()),
                     _ => {
                         if let Some(value) = tail {
-                            if value.ty == sig.ret {
-                                fctx.lines.push(format!(
-                                    "  ret {} {}",
-                                    llvm_type(&value.ty),
-                                    value.repr.unwrap_or_else(|| default_value(&value.ty))
-                                ));
+                            let coerced =
+                                self.coerce_value_to_expected(value, &sig.ret, func.span, &mut fctx);
+                            if let Some(value) = coerced {
+                                if value.ty == sig.ret {
+                                    fctx.lines.push(format!(
+                                        "  ret {} {}",
+                                        llvm_type(&value.ty),
+                                        value.repr.unwrap_or_else(|| default_value(&value.ty))
+                                    ));
+                                } else {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "E5007",
+                                        format!(
+                                            "function '{}' return type mismatch in codegen",
+                                            func.name
+                                        ),
+                                        self.file,
+                                        func.span,
+                                    ));
+                                    fctx.lines.push(format!(
+                                        "  ret {} {}",
+                                        llvm_type(&sig.ret),
+                                        default_value(&sig.ret)
+                                    ));
+                                }
                             } else {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E5007",
