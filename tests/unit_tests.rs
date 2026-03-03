@@ -7605,8 +7605,20 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
 
     assert!(
         source
-            .contains("fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]"),
+            .contains("fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError]"),
         "std/buffer.aic must expose buf_peek_u8 random-access helper"
+    );
+    assert!(
+        source.contains("fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int16, BufferError]"),
+        "std/buffer.aic must expose typed signed 16-bit read helper"
+    );
+    assert!(
+        source.contains("fn buf_read_u32_le(buf: ByteBuffer) -> Result[UInt32, BufferError]"),
+        "std/buffer.aic must expose typed unsigned 32-bit read helper"
+    );
+    assert!(
+        source.contains("fn buf_write_u64_be(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"),
+        "std/buffer.aic must expose typed unsigned 64-bit write helper"
     );
     assert!(
         source.contains("fn buf_size(buf: ByteBuffer) -> Int"),
@@ -7617,17 +7629,17 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
         "std/buffer.aic must expose buf_slice helper"
     );
     assert!(
-        source.contains("fn buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError]"),
+        source.contains("fn buf_read_u16_be(buf: ByteBuffer) -> Result[UInt16, BufferError]"),
         "std/buffer.aic must expose unsigned read helpers"
     );
     assert!(
         source.contains(
-            "fn buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+            "fn buf_write_u32_le(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError]"
         ),
         "std/buffer.aic must expose unsigned write helpers"
     );
     assert!(
-        source.contains("fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"),
+        source.contains("fn buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError]"),
         "std/buffer.aic must expose patch-at-offset helpers"
     );
     assert!(

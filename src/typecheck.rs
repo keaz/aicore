@@ -7,6 +7,16 @@ use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo}
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
+const FIXED_WIDTH_INTEGER_ALIASES: [(&str, &str); 8] = [
+    ("Int8", "Int"),
+    ("Int16", "Int"),
+    ("Int32", "Int"),
+    ("Int64", "Int"),
+    ("UInt8", "Int"),
+    ("UInt16", "Int"),
+    ("UInt32", "Int"),
+    ("UInt64", "Int"),
+];
 
 #[derive(Debug, Clone, Default)]
 pub struct TypecheckOutput {
@@ -266,6 +276,15 @@ impl<'a> Checker<'a> {
                     .entry(const_name.to_string())
                     .or_insert_with(|| declared_ty.clone());
             }
+        }
+
+        for (alias_name, target) in FIXED_WIDTH_INTEGER_ALIASES {
+            type_aliases
+                .entry(alias_name.to_string())
+                .or_insert_with(|| AliasDef {
+                    generics: Vec::new(),
+                    target: target.to_string(),
+                });
         }
 
         for (name, info) in &resolution.functions {
@@ -8681,7 +8700,11 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     if contains_unresolved_type(ty) {
         return false;
     }
-    matches!(base_type_name(ty), "Int" | "Bool" | "Float" | "Char")
+    let base = base_type_name(ty);
+    (matches!(base, "Int" | "Bool" | "Float" | "Char")
+        || FIXED_WIDTH_INTEGER_ALIASES
+            .iter()
+            .any(|(alias_name, _)| alias_name == &base))
         && extract_generic_args(ty).is_none()
 }
 
@@ -9749,4 +9772,33 @@ fn main() -> Int {
             out.diagnostics
         );
     }
+
+    #[test]
+    fn fixed_width_integer_aliases_typecheck_via_int_normalization() {
+        let src = r#"
+extern "C" fn c_mix(a: Int32, b: UInt8) -> Int64;
+
+fn coerce(a: Int8, b: UInt16) -> Int64 {
+    let wide: Int = a + b;
+    let as_u32: UInt32 = wide;
+    let as_i64: Int64 = as_u32;
+    as_i64
+}
+
+fn main() -> Int {
+    let a: Int8 = 3;
+    let b: UInt16 = 9;
+    let _value: Int64 = coerce(a, b);
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+    }
+
 }
