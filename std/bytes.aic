@@ -503,7 +503,7 @@ fn from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError] {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn to_byte_values(data: Bytes) -> Vec[Int] {
-    let mut out: Vec[Int] = aic_vec_new_intrinsic();
+    let mut out: Vec[Int] = vec.new_vec();
     let len = byte_len(data);
     let mut i = 0;
     while i < len {

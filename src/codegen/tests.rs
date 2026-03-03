@@ -30,6 +30,47 @@ fn emits_basic_llvm() {
 }
 
 #[test]
+fn struct_literal_fields_provide_builtin_type_hints_without_outer_expected_layout() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("struct_holder.aic");
+    fs::write(
+        &file,
+        r#"
+import std.vec;
+
+struct Holder {
+    ints: Vec[Int],
+    texts: Vec[String],
+}
+
+fn build_holder() -> Holder {
+    Holder {
+        ints: vec.new_vec(),
+        texts: vec.new_vec(),
+    }
+}
+
+fn main() -> Int {
+    let holder = build_holder();
+    holder.ints.len
+}
+"#,
+    )
+    .expect("write source");
+
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+    assert!(output.llvm_ir.contains("define i64 @aic_main()"));
+}
+
+#[test]
 fn tail_return_fibonacci_emits_musttail() {
     let src = r#"
 fn fib_tail(n: Int, a: Int, b: Int) -> Int {

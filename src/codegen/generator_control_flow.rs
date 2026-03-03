@@ -72,6 +72,13 @@ impl<'a> Generator<'a> {
             } else {
                 None
             }
+        } else if template.generics.is_empty() {
+            match self.parse_type_repr(name, span) {
+                Some(LType::Struct(layout)) if base_type_name(&layout.repr) == name => {
+                    Some(layout)
+                }
+                _ => None,
+            }
         } else {
             None
         };
@@ -90,14 +97,14 @@ impl<'a> Generator<'a> {
                 ));
                 continue;
             }
-            let field_expected = expected_layout.as_ref().and_then(|layout| {
+            let field_expected_from_layout = expected_layout.as_ref().and_then(|layout| {
                 layout
                     .fields
                     .iter()
                     .find(|info| info.name == *field_name)
                     .map(|info| &info.ty)
             });
-            let value = self.gen_expr_with_expected(field_expr, field_expected, fctx)?;
+            let value = self.gen_expr_with_expected(field_expr, field_expected_from_layout, fctx)?;
             provided.insert(field_name.clone(), (value, *field_span));
         }
 

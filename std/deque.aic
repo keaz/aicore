@@ -43,8 +43,8 @@ struct Queue[T] {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn new_deque[T]() -> Deque[T] {
-    let front: Vec[T] = aic_vec_new_intrinsic();
-    let back: Vec[T] = aic_vec_new_intrinsic();
+    let front: Vec[T] = vec.new_vec();
+    let back: Vec[T] = vec.new_vec();
     Deque {
         front: front,
         back: back,
@@ -131,7 +131,7 @@ fn pop_front[T](d: Deque[T]) -> (Option[T], Deque[T]) {
         )
     } else {
         if d.back.len > 0 {
-            let empty_back: Vec[T] = aic_vec_new_intrinsic();
+            let empty_back: Vec[T] = vec.new_vec();
             let rebalanced = Deque {
                 front: aic_vec_reverse_intrinsic(d.back),
                 back: empty_back,
@@ -169,7 +169,7 @@ fn pop_back[T](d: Deque[T]) -> (Option[T], Deque[T]) {
         )
     } else {
         if d.front.len > 0 {
-            let empty_front: Vec[T] = aic_vec_new_intrinsic();
+            let empty_front: Vec[T] = vec.new_vec();
             let rebalanced = Deque {
                 front: empty_front,
                 back: aic_vec_reverse_intrinsic(d.front),

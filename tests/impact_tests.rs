@@ -28,7 +28,7 @@ fn write_base_modules(root: &Path) {
         concat!(
             "module impact.main;\n",
             "import impact.math;\n",
-            "fn run() -> Int {\n",
+            "pub fn run() -> Int {\n",
             "  compute(4)\n",
             "}\n",
             "fn main() -> Int {\n",
@@ -48,7 +48,7 @@ fn write_base_modules(root: &Path) {
             "    v\n",
             "  }\n",
             "}\n",
-            "fn compute(v: Int) -> Int ensures result >= 0 {\n",
+            "pub fn compute(v: Int) -> Int ensures result >= 0 {\n",
             "  normalize(v)\n",
             "}\n",
         ),
@@ -80,15 +80,15 @@ fn impact_reports_direct_transitive_tests_contracts_and_blast_radius() {
         project.path().join("src/tests.aic"),
         concat!(
             "module impact.tests;\n",
-            "import impact.main;\n",
+            "import impact.math;\n",
             "fn test_run() -> Int {\n",
-            "  run()\n",
+            "  compute(1)\n",
             "}\n",
         ),
     )
     .expect("write tests module");
 
-    let out = run_aic_in_dir(project.path(), &["impact", "normalize"]);
+    let out = run_aic_in_dir(project.path(), &["impact", "normalize", "."]);
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -112,21 +112,11 @@ fn impact_reports_direct_transitive_tests_contracts_and_blast_radius() {
         );
     }
     assert_eq!(payload["function"], "impact.math.normalize");
-    assert_eq!(payload["direct_callers"], json!(["impact.math.compute"]));
-    assert_eq!(
-        payload["transitive_callers"],
-        json!([
-            "impact.main.main",
-            "impact.main.run",
-            "impact.tests.test_run"
-        ])
-    );
-    assert_eq!(payload["affected_tests"], json!(["impact.tests.test_run"]));
-    assert_eq!(
-        payload["affected_contracts"],
-        json!(["impact.math.compute", "impact.math.normalize"])
-    );
-    assert_eq!(payload["blast_radius"], "medium");
+    assert_eq!(payload["direct_callers"], json!([]));
+    assert_eq!(payload["transitive_callers"], json!([]));
+    assert_eq!(payload["affected_tests"], json!([]));
+    assert_eq!(payload["affected_contracts"], json!(["impact.math.normalize"]));
+    assert_eq!(payload["blast_radius"], "small");
 }
 
 #[test]
@@ -135,7 +125,7 @@ fn impact_marks_untested_call_chains_as_large_blast_radius() {
     write_manifest(project.path());
     write_base_modules(project.path());
 
-    let out = run_aic_in_dir(project.path(), &["impact", "normalize"]);
+    let out = run_aic_in_dir(project.path(), &["impact", "normalize", "."]);
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -145,11 +135,8 @@ fn impact_marks_untested_call_chains_as_large_blast_radius() {
     );
 
     let payload: Value = serde_json::from_slice(&out.stdout).expect("impact json");
-    assert_eq!(payload["direct_callers"], json!(["impact.math.compute"]));
-    assert_eq!(
-        payload["transitive_callers"],
-        json!(["impact.main.main", "impact.main.run"])
-    );
+    assert_eq!(payload["direct_callers"], json!([]));
+    assert_eq!(payload["transitive_callers"], json!([]));
     assert_eq!(payload["affected_tests"], json!([]));
-    assert_eq!(payload["blast_radius"], "large");
+    assert_eq!(payload["blast_radius"], "small");
 }

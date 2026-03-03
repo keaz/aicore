@@ -5034,7 +5034,6 @@ import std.bytes;
 import std.vec;
 import std.deque;
 import std.option;
-import std.result;
 import std.concurrent;
 import std.http_server;
 import std.router;
@@ -6519,6 +6518,31 @@ fn main() -> Int {
     values = vec.reserve(values, 4);
     values = vec.push(values, 2);
     values = vec.shrink_to_fit(values);
+    vec.vec_len(values)
+}
+"#,
+    )
+    .expect("write source");
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_assignment_uses_expected_type_for_vec_new_vec() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.vec;
+
+fn main() -> Int {
+    let mut values: Vec[Int] = vec.new_vec();
+    values = vec.new_vec();
     vec.vec_len(values)
 }
 "#,

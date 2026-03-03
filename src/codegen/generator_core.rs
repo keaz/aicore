@@ -1391,7 +1391,9 @@ impl<'a> Generator<'a> {
                         ));
                         continue;
                     };
-                    let Some(value) = self.gen_expr(expr, fctx) else {
+                    let local_ty = local.ty.clone();
+                    let Some(value) = self.gen_expr_with_expected(expr, Some(&local_ty), fctx)
+                    else {
                         continue;
                     };
                     let Some(value) = self.coerce_value_to_expected(value, &local.ty, *span, fctx)

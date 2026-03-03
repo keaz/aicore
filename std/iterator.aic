@@ -927,7 +927,7 @@ impl LazyIterOps[LazyIter[T, S], T, S] {
     /// ## Errors
     /// Returns module-defined error variants when the operation fails.
     fn collect[T, S](self: LazyIter[T, S]) -> Vec[T] {
-        let mut out: Vec[T] = aic_vec_new_intrinsic();
+        let mut out: Vec[T] = vec.new_vec();
         let mut current = self;
         let mut done = false;
         while !done {

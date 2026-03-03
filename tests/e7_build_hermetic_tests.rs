@@ -34,7 +34,7 @@ fn write_wasm_io_fixture_source(root: &Path) -> PathBuf {
         &source,
         concat!(
             "import std.io;\n",
-            "fn main() -> Int effects { io } {\n",
+            "fn main() -> Int effects { io } capabilities { io } {\n",
             "    print_int(42);\n",
             "    0\n",
             "}\n",

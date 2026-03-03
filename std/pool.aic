@@ -490,8 +490,8 @@ fn conn_lease(conn_handle: Int) -> Int {
 fn pool_state_new[T]() -> PoolState[T] {
     PoolState {
         next_lease: 0,
-        idle: aic_vec_new_intrinsic(),
-        in_use: aic_vec_new_intrinsic(),
+        idle: vec.new_vec(),
+        in_use: vec.new_vec(),
         closed: false,
         created: 0,
         destroyed: 0,
@@ -585,7 +585,7 @@ fn pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T] {
     if delta_ms <= 0 {
         state
     } else {
-        let mut next_idle: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+        let mut next_idle: Vec[PoolEntry[T]] = vec.new_vec();
         let mut i = 0;
         while i < state.idle.len {
             next_idle = match aic_vec_get_intrinsic(state.idle, i) {
@@ -595,7 +595,7 @@ fn pool_state_tick[T](state: PoolState[T], delta_ms: Int) -> PoolState[T] {
             i = i + 1;
         };
 
-        let mut next_in_use: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+        let mut next_in_use: Vec[PoolEntry[T]] = vec.new_vec();
         let mut j = 0;
         while j < state.in_use.len {
             next_in_use = match aic_vec_get_intrinsic(state.in_use, j) {
@@ -654,7 +654,7 @@ fn pool_state_maintain_idle[T](
     health_check: Fn(T) -> Bool,
     destroy: Fn(T) -> (),
 ) -> PoolState[T] {
-    let mut next_idle: Vec[PoolEntry[T]] = aic_vec_new_intrinsic();
+    let mut next_idle: Vec[PoolEntry[T]] = vec.new_vec();
     let mut destroyed = state.destroyed;
     let mut i = 0;
     while i < state.idle.len {
@@ -1057,8 +1057,8 @@ fn pool_state_close_all[T](state: PoolState[T], destroy: Fn(T) -> ()) -> PoolSta
     };
     PoolState {
         next_lease: state.next_lease,
-        idle: aic_vec_new_intrinsic(),
-        in_use: aic_vec_new_intrinsic(),
+        idle: vec.new_vec(),
+        in_use: vec.new_vec(),
         closed: true,
         created: state.created,
         destroyed: destroyed,

@@ -26,7 +26,7 @@ fn write_fixture_source() -> (TempDir, String) {
             "        0\n",
             "    }\n",
             "}\n",
-            "fn passthrough[T](x: T) -> T effects { io } {\n",
+            "fn passthrough[T](x: T) -> T effects { io } capabilities { io } {\n",
             "    print_int(1);\n",
             "    x\n",
             "}\n",

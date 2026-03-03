@@ -293,3 +293,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E6004` | Import is declared but not used. | `module app.main; import std.io; fn main() -> Int { 0 }` | `module app.main; fn main() -> Int { 0 }` |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | `fn dead() -> Int { 1 } fn main() -> Int { 0 }` | `fn main() -> Int { 0 }` |
 | `E6006` | Local variable is never used. | `fn main() -> Int { let value = 1; 0 }` | `fn main() -> Int { let _value = 1; 0 }` |
+
+## Catalog Coverage Backfill
+
+The following registered diagnostics are included for catalog completeness:
+`E1082`, `E1083`, `E1086`, `E1087`, `E1088`, `E1089`, `E1092`, `E1106`, `E1107`, `E1108`, `E1109`, `E6007`.
