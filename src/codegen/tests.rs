@@ -18,6 +18,18 @@ use super::{
     RuntimeInstrumentationOptions, ToolchainInfo,
 };
 
+fn find_define_block<'a>(llvm: &'a str, symbol: &str) -> &'a str {
+    llvm.split("\ndefine ")
+        .find(|block| {
+            block
+                .lines()
+                .next()
+                .map(|line| line.contains(symbol))
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| panic!("missing define block for '{symbol}'\nllvm={llvm}"))
+}
+
 #[test]
 fn emits_basic_llvm() {
     let src = "import std.io; fn main() -> Int effects { io } { print_int(1); 0 }";
@@ -1532,6 +1544,158 @@ panic("boom");
     assert!(
         output.llvm_ir.contains(&expected),
         "missing panic source line location metadata"
+    );
+}
+
+#[test]
+fn wave5c_net_runtime_boundary_keeps_string_endpoint_and_i64_abi() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("wave5c_net_runtime_boundary.aic");
+    fs::write(
+        &file,
+        r#"
+import std.net;
+
+fn main() -> Int effects { net } capabilities { net } {
+let _listen = tcp_listen("127.0.0.1:4100");
+let _connect = tcp_connect("127.0.0.1:4100", 50);
+let _udp = udp_bind("127.0.0.1:4200");
+0
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_listen(i8*, i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_tcp_connect(i8*, i64, i64, i64, i64*)"));
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @aic_rt_net_udp_bind(i8*, i64, i64, i64*)"));
+
+    assert!(
+        !output.llvm_ir.contains("@aic_rt_net_tcp_connect(i8*, i16"),
+        "tcp_connect runtime ABI must not drift to i16 endpoint fields\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("@aic_rt_net_tcp_connect(i8*, i32"),
+        "tcp_connect runtime ABI must not drift to i32 endpoint fields\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("@aic_rt_net_tcp_listen(i8*, i16"),
+        "tcp_listen runtime ABI must not drift to i16 endpoint fields\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("@aic_rt_net_udp_bind(i8*, i16"),
+        "udp_bind runtime ABI must not drift to i16 endpoint fields\nllvm={}",
+        output.llvm_ir
+    );
+
+    let tcp_connect_block = find_define_block(&output.llvm_ir, "@aic_tcp_connect(");
+    assert!(
+        tcp_connect_block.contains("@aic_rt_net_tcp_connect(i8*"),
+        "tcp_connect wrapper must call string endpoint runtime bridge\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        tcp_connect_block.contains("i64"),
+        "tcp_connect wrapper must keep i64-compatible runtime scalar ABI\nllvm={}",
+        output.llvm_ir
+    );
+}
+
+#[test]
+fn wave5c_typed_net_wrappers_lower_via_explicit_conversion_helpers() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("wave5c_typed_net_wrapper_lowering.aic");
+    fs::write(
+        &file,
+        r#"
+import std.net;
+
+fn main() -> Int effects { net } capabilities { net } {
+let stream = TcpStream { handle: 7 };
+let _recv = tcp_stream_recv_u32(stream, 32, 10);
+let _keepalive = tcp_set_keepalive_interval_secs_u32(7, 15);
+let _udp = udp_recv_from_u32(8, 64, 10);
+0
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+    let recv_u32_block = find_define_block(&output.llvm_ir, "@aic_tcp_stream_recv_u32(");
+    assert!(
+        recv_u32_block.contains("@aic_net_u32_to_int("),
+        "tcp_stream_recv_u32 must lower through explicit net_u32_to_int conversion helper\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        recv_u32_block.contains("@aic_tcp_recv("),
+        "tcp_stream_recv_u32 must delegate to Int compatibility wrapper after conversion\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !recv_u32_block.contains("@aic_rt_net_tcp_recv("),
+        "tcp_stream_recv_u32 must not bypass conversion helper with direct runtime recv call\nllvm={}",
+        output.llvm_ir
+    );
+
+    let keepalive_block =
+        find_define_block(&output.llvm_ir, "@aic_tcp_set_keepalive_interval_secs_u32(");
+    assert!(
+        keepalive_block.contains("@aic_net_u32_to_int("),
+        "tcp_set_keepalive_interval_secs_u32 must lower through explicit net_u32_to_int conversion helper\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        keepalive_block.contains("@aic_rt_net_tcp_set_keepalive_interval_secs(i64"),
+        "tcp_set_keepalive_interval_secs_u32 must keep an explicit i64 runtime boundary after conversion\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !keepalive_block.contains("@aic_rt_net_tcp_set_keepalive_interval_secs(i32"),
+        "tcp_set_keepalive_interval_secs_u32 must not drift to i32 runtime ABI\nllvm={}",
+        output.llvm_ir
+    );
+
+    let udp_recv_u32_block = find_define_block(&output.llvm_ir, "@aic_udp_recv_from_u32(");
+    assert!(
+        udp_recv_u32_block.contains("@aic_net_u32_to_int("),
+        "udp_recv_from_u32 must lower through explicit net_u32_to_int conversion helper\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        udp_recv_u32_block.contains("@aic_rt_net_udp_recv_from(i64"),
+        "udp_recv_from_u32 must keep an explicit i64 runtime boundary after conversion\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !udp_recv_u32_block.contains("@aic_rt_net_udp_recv_from(i32"),
+        "udp_recv_from_u32 must not drift to i32 runtime ABI\nllvm={}",
+        output.llvm_ir
     );
 }
 

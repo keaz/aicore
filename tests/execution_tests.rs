@@ -6768,6 +6768,153 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_net_typed_endpoint_wrappers_and_compat_boundaries_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.bytes;
+import std.string;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn is_invalid_input(err: NetError) -> Bool {
+    match err {
+        InvalidInput => true,
+        _ => false,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match tcp_listen_host_port("127.0.0.1", 0u16) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let typed_local: (String, NetPortU16) = match tcp_local_endpoint(listener) {
+        Ok(endpoint) => endpoint,
+        Err(_) => ("", 0u16),
+    };
+    let (typed_host, typed_port) = typed_local;
+    let typed_host_ok = bool_to_int(string.len(typed_host) > 0);
+    let typed_port_ok = bool_to_int(typed_port <= 65535u16);
+
+    let typed_client = match tcp_connect_host_port(typed_host, typed_port, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let typed_server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let typed_send_ok = match tcp_send(typed_client, bytes.from_string("hp")) {
+        Ok(sent) => bool_to_int(sent == 2),
+        Err(_) => 0,
+    };
+    let typed_recv_ok = match tcp_recv(typed_server, 16, 1000) {
+        Ok(payload) => bool_to_int(bytes.compare_bytes(payload, bytes.from_string("hp")) == 0),
+        Err(_) => 0,
+    };
+    let typed_close =
+        (match tcp_close(typed_client) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }) +
+        (match tcp_close(typed_server) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        });
+
+    let legacy_addr = net_format_host_port("127.0.0.1", typed_port);
+    let compat_client = match tcp_connect(legacy_addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let compat_server = match tcp_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let compat_send_ok = match tcp_send(compat_client, bytes.from_string("lg")) {
+        Ok(sent) => bool_to_int(sent == 2),
+        Err(_) => 0,
+    };
+    let compat_recv_ok = match tcp_recv(compat_server, 16, 1000) {
+        Ok(payload) => bool_to_int(bytes.compare_bytes(payload, bytes.from_string("lg")) == 0),
+        Err(_) => 0,
+    };
+    let compat_close =
+        (match tcp_close(compat_client) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }) +
+        (match tcp_close(compat_server) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        });
+
+    let parse_malformed = match net_parse_host_port("127.0.0.1") {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let parse_out_of_range = match net_parse_host_port("127.0.0.1:70000") {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let parse_negative = match net_parse_host_port("127.0.0.1:-1") {
+        Err(err) => bool_to_int(is_invalid_input(err)),
+        _ => 0,
+    };
+    let parse_roundtrip = match net_parse_host_port(legacy_addr) {
+        Ok(endpoint) => bool_to_int(endpoint.1 == typed_port),
+        Err(_) => 0,
+    };
+
+    let udp = match udp_bind_host_port("127.0.0.1", 0u16) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let udp_close_ok = match udp_close(udp) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let listener_close = match tcp_close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let score =
+        typed_host_ok +
+        typed_port_ok +
+        typed_send_ok +
+        typed_recv_ok +
+        typed_close +
+        compat_send_ok +
+        compat_recv_ok +
+        compat_close +
+        parse_malformed +
+        parse_out_of_range +
+        parse_negative +
+        parse_roundtrip +
+        udp_close_ok +
+        listener_close;
+
+    if score == 16 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_net_tcp_socket_tuning_roundtrip_and_negative_paths() {
     let src = r#"
 import std.io;

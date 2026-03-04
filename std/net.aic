@@ -8,12 +8,14 @@ module std.net;
 
 import std.bytes;
 import std.result;
+import std.string;
 import std.time;
 
 type ByteCountU32 = UInt32;
 type FrameLengthU32 = UInt32;
 type QueueDepthU32 = UInt32;
 type RuntimeLimitU32 = UInt32;
+type NetPortU16 = UInt16;
 
 /// `NetError` is a `enum` in `std.net`.
 ///
@@ -714,6 +716,12 @@ fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_listen_intrinsic(addr)
 }
 
+/// `tcp_listen_host_port` in `std.net`.
+fn tcp_listen_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net } {
+    let endpoint = net_format_host_port(host, port);
+    tcp_listen(endpoint)
+}
+
 /// `tcp_local_addr` in `std.net`.
 ///
 /// ## Example
@@ -728,6 +736,14 @@ fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net } {
 /// Returns module-defined error variants when the operation fails.
 fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net } {
     aic_net_tcp_local_addr_intrinsic(handle)
+}
+
+/// `tcp_local_endpoint` in `std.net`.
+fn tcp_local_endpoint(handle: Int) -> Result[(String, NetPortU16), NetError] effects { net } {
+    match tcp_local_addr(handle) {
+        Err(err) => Err(err),
+        Ok(endpoint) => net_parse_host_port(endpoint),
+    }
 }
 
 /// `tcp_accept` in `std.net`.
@@ -760,6 +776,16 @@ fn tcp_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects {
 /// Returns module-defined error variants when the operation fails.
 fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net } {
     aic_net_tcp_connect_intrinsic(addr, timeout_ms)
+}
+
+/// `tcp_connect_host_port` in `std.net`.
+fn tcp_connect_host_port(
+    host: String,
+    port: NetPortU16,
+    timeout_ms: Int,
+) -> Result[Int, NetError] effects { net } {
+    let endpoint = net_format_host_port(host, port);
+    tcp_connect(endpoint, timeout_ms)
 }
 
 /// `tcp_stream` in `std.net`.
@@ -848,6 +874,16 @@ fn net_one_u8() -> UInt8 {
     1
 }
 
+/// `net_zero_u16` in `std.net`.
+fn net_zero_u16() -> UInt16 {
+    0u16
+}
+
+/// `net_one_u16` in `std.net`.
+fn net_one_u16() -> UInt16 {
+    1u16
+}
+
 /// `net_zero_u32` in `std.net`.
 fn net_zero_u32() -> UInt32 {
     0u32
@@ -869,6 +905,73 @@ fn net_u8_to_u32(value: UInt8) -> UInt32 {
         out = out + one_u32;
     };
     out
+}
+
+/// `net_int_to_u16` in `std.net`.
+fn net_int_to_u16(value: Int) -> Result[NetPortU16, NetError] {
+    if value < 0 {
+        Err(InvalidInput())
+    } else if value > 65535 {
+        Err(InvalidInput())
+    } else {
+        let mut out: UInt16 = net_zero_u16();
+        let mut remaining = value;
+        let one_u16 = net_one_u16();
+        while remaining > 0 {
+            out = out + one_u16;
+            remaining = remaining - 1;
+        };
+        Ok(out)
+    }
+}
+
+/// `net_u16_to_int` in `std.net`.
+fn net_u16_to_int(value: NetPortU16) -> Int {
+    let mut out = 0;
+    let mut remaining = value;
+    let one_u16 = net_one_u16();
+    while remaining > net_zero_u16() {
+        out = out + 1;
+        remaining = remaining - one_u16;
+    };
+    out
+}
+
+/// `net_format_host_port` in `std.net`.
+fn net_format_host_port(host: String, port: NetPortU16) -> String {
+    let port_text = string.int_to_string(net_u16_to_int(port));
+    let parts = aic_vec_push_intrinsic(aic_vec_of_intrinsic(host), port_text);
+    string.join(parts, ":")
+}
+
+/// `net_parse_host_port` in `std.net`.
+fn net_parse_host_port(endpoint: String) -> Result[(String, NetPortU16), NetError] {
+    let parts = string.split(endpoint, ":");
+    if parts.len != 2 {
+        Err(InvalidInput())
+    } else {
+        match aic_vec_get_intrinsic(parts, 0) {
+            None => Err(InvalidInput()),
+            Some(host) => if string.len(host) <= 0 {
+                Err(InvalidInput())
+            } else {
+                match aic_vec_get_intrinsic(parts, 1) {
+                    None => Err(InvalidInput()),
+                    Some(port_text) => if string.len(port_text) <= 0 {
+                        Err(InvalidInput())
+                    } else {
+                        match string.parse_int(port_text) {
+                            Err(_) => Err(InvalidInput()),
+                            Ok(port_int) => match net_int_to_u16(port_int) {
+                                Ok(port) => Ok((host, port)),
+                                Err(err) => Err(err),
+                            },
+                        }
+                    },
+                }
+            },
+        }
+    }
 }
 
 /// `net_int_to_u32` in `std.net`.
@@ -1837,6 +1940,12 @@ fn tcp_get_recv_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] e
 /// Returns module-defined error variants when the operation fails.
 fn udp_bind(addr: String) -> Result[Int, NetError] effects { net } {
     aic_net_udp_bind_intrinsic(addr)
+}
+
+/// `udp_bind_host_port` in `std.net`.
+fn udp_bind_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net } {
+    let endpoint = net_format_host_port(host, port);
+    udp_bind(endpoint)
 }
 
 /// `udp_local_addr` in `std.net`.

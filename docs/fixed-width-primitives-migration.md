@@ -90,6 +90,39 @@ Canonical Wave 2B examples for CI wiring:
   - `#332`: protocol field/frame length/port/code domain migration
   - `#333`: float math/serde/format width normalization and wrapper surfaces
 
+## Net endpoint/port migration (`#332`, Wave 5C)
+
+Before (legacy string endpoint API):
+
+```aic
+import std.net;
+
+fn connect_legacy(timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    net.tcp_connect("127.0.0.1:8080", timeout_ms)
+}
+```
+
+After (typed host/port wrapper API with compatibility bridge retained):
+
+```aic
+import std.net;
+
+fn connect_typed(timeout_ms: Int) -> Result[Int, NetError] effects { net } {
+    net.tcp_connect_host_port("127.0.0.1", 8080u16, timeout_ms)
+}
+
+fn listen_typed() -> Result[Int, NetError] effects { net } {
+    net.tcp_listen_host_port("0.0.0.0", 8080u16)
+}
+```
+
+Wave 5C ABI/compatibility contract:
+
+- Runtime net boundary remains `addr: String`; wrappers do not change runtime ABI shape.
+- Typed wrappers (`*_host_port`, `*_local_endpoint`, parse/format helpers) perform deterministic checked conversion only.
+- Invalid endpoint strings and out-of-range ports are rejected deterministically as typed errors.
+- Existing `tcp_connect(addr: String, ...)`, `tcp_listen(addr: String)`, and `udp_bind(addr: String)` remain compatibility entrypoints during migration.
+
 ## Buffer API migration (`std.buffer`)
 
 Before (typed payloads, but capacity/cursor/count still `Int`):

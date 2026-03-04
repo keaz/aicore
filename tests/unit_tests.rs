@@ -3011,6 +3011,113 @@ fn unit_std_net_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_net_typed_endpoint_port_wrappers_and_boundaries_are_declared() {
+    let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
+
+    assert!(
+        net_source.contains("type NetPortU16 = UInt16;"),
+        "std/net.aic must expose NetPortU16 alias for typed port domains"
+    );
+
+    for signature in [
+        "fn tcp_listen_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }",
+        "fn tcp_connect_host_port(\n    host: String,\n    port: NetPortU16,\n    timeout_ms: Int,\n) -> Result[Int, NetError] effects { net }",
+        "fn udp_bind_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }",
+        "fn tcp_local_endpoint(handle: Int) -> Result[(String, NetPortU16), NetError] effects { net }",
+    ] {
+        assert!(
+            net_source.contains(signature),
+            "std/net.aic must expose typed endpoint wrapper: {signature}"
+        );
+    }
+
+    let parse_helper_declared = net_source.contains(
+        "fn net_parse_host_port(endpoint: String) -> Result[(String, NetPortU16), NetError]",
+    );
+    assert!(
+        parse_helper_declared,
+        "std/net.aic must expose a public typed endpoint parse helper returning host + UInt16 port"
+    );
+
+    let format_helper_declared =
+        net_source.contains("fn net_format_host_port(host: String, port: NetPortU16) -> String");
+    assert!(
+        format_helper_declared,
+        "std/net.aic must expose a public typed endpoint format helper using UInt16 port domains"
+    );
+
+    let int_to_u16_boundary_declared = net_source
+        .contains("fn net_int_to_u16(value: Int) -> Result[NetPortU16, NetError]")
+        || net_source.contains("fn net_int_to_u16(value: Int) -> Result[UInt16, NetError]");
+    assert!(
+        int_to_u16_boundary_declared,
+        "std/net.aic must expose Int->UInt16 conversion helper for compatibility boundaries"
+    );
+
+    let u16_to_int_boundary_declared = net_source
+        .contains("fn net_u16_to_int(value: NetPortU16) -> Int")
+        || net_source.contains("fn net_u16_to_int(value: UInt16) -> Int");
+    assert!(
+        u16_to_int_boundary_declared,
+        "std/net.aic must expose UInt16->Int conversion helper for runtime compatibility boundaries"
+    );
+
+    assert!(
+        net_source.contains("65535"),
+        "std/net.aic typed endpoint conversion boundary must enforce UInt16 max bound"
+    );
+    assert!(
+        net_source.contains("value < 0"),
+        "std/net.aic typed endpoint conversion boundary must reject negative Int values"
+    );
+    assert!(
+        net_source.contains("value > 65535"),
+        "std/net.aic typed endpoint conversion boundary must reject out-of-range Int values"
+    );
+    assert!(
+        net_source.contains("Err(InvalidInput())"),
+        "std/net.aic endpoint parse/format conversion boundaries must return explicit InvalidInput"
+    );
+
+    for legacy_signature in [
+        "fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }",
+        "fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }",
+        "fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }",
+        "fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }",
+    ] {
+        assert!(
+            net_source.contains(legacy_signature),
+            "std/net.aic must preserve legacy string endpoint API: {legacy_signature}"
+        );
+    }
+
+    for legacy_delegate in [
+        "aic_net_tcp_listen_intrinsic(addr)",
+        "aic_net_tcp_connect_intrinsic(addr, timeout_ms)",
+        "aic_net_udp_bind_intrinsic(addr)",
+        "aic_net_tcp_local_addr_intrinsic(handle)",
+    ] {
+        assert!(
+            net_source.contains(legacy_delegate),
+            "std/net.aic legacy string endpoint APIs must continue delegating to runtime intrinsics: {legacy_delegate}"
+        );
+    }
+
+    for typed_delegate in [
+        "let endpoint = net_format_host_port(host, port);",
+        "tcp_listen(endpoint)",
+        "tcp_connect(endpoint, timeout_ms)",
+        "udp_bind(endpoint)",
+        "Ok(endpoint) => net_parse_host_port(endpoint),",
+    ] {
+        assert!(
+            net_source.contains(typed_delegate),
+            "std/net.aic typed endpoint wrappers must delegate through explicit parse/format helpers: {typed_delegate}"
+        );
+    }
+}
+
+#[test]
 fn unit_std_net_tcp_stream_adapter_delegates_to_tcp_byte_apis() {
     let net_source = fs::read_to_string("std/net.aic").expect("read std/net.aic");
 

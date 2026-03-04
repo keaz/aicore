@@ -118,6 +118,10 @@ In `src/codegen/mod.rs`:
 - `aic build --debug-info` emits debug metadata and source-mapped panic locations
 - `aic build --opt-level <LEVEL>` accepts `0..3` (`O0..O3`)
 - `aic build --release` defaults optimization to `O2` unless overridden with `--opt-level`/`-O`
+- Wave 5C net endpoint/port ABI guarantee:
+  - runtime net intrinsics remain `addr: String`-based at the boundary
+  - typed endpoint/port wrappers are additive source-level helpers
+  - wrapper coercions (`Int`/`UInt16`, `String`/endpoint) are deterministic checked conversions and map invalid values to typed errors without changing runtime ABI layout
 
 ### Artifact modes
 

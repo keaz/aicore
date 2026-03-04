@@ -533,6 +533,16 @@ fn udp_close(handle: Int) -> Result[Bool, NetError] effects { net }
 fn dns_lookup(host: String) -> Result[String, NetError] effects { net }
 fn dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }
 fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
+
+type NetPortU16 = UInt16
+fn net_int_to_u16(value: Int) -> Result[NetPortU16, NetError]
+fn net_u16_to_int(value: NetPortU16) -> Int
+fn net_format_host_port(host: String, port: NetPortU16) -> String
+fn net_parse_host_port(endpoint: String) -> Result[(String, NetPortU16), NetError]
+fn tcp_connect_host_port(host: String, port: NetPortU16, timeout_ms: Int) -> Result[Int, NetError] effects { net }
+fn tcp_listen_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }
+fn udp_bind_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }
+fn tcp_local_endpoint(handle: Int) -> Result[(String, NetPortU16), NetError] effects { net }
 ```
 
 Notes:
@@ -575,9 +585,16 @@ Notes:
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 - Port-domain policy for Wave 5A uses bounded unsigned ports (`UInt16`) for typed parse/format wrappers while keeping existing `addr: String` compatibility signatures unchanged.
+- Wave 5C typed endpoint ABI contract:
+  - Runtime boundary is unchanged: lower-level net runtime and intrinsics continue to consume/produce `addr: String` endpoints.
+  - Typed wrappers are additive and deterministic (`NetPortU16`, `*_host_port`, `tcp_local_endpoint`, `net_format_host_port`, `net_parse_host_port`).
+  - `net_int_to_u16` accepts only `0..=65535`; out-of-range values deterministically return `NetError::InvalidInput`.
+  - `net_parse_host_port` parses exactly one `host:port` boundary and rejects missing/extra separators with `NetError::InvalidInput`.
+  - `net_format_host_port` is canonical formatter behavior: decimal port, no hidden runtime-side widening/narrowing, no ABI field-layout changes.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
+- Typed endpoint migration example: `examples/data/net_typed_endpoint_u16.aic`.
 - Scalar taxonomy artifact for prior wave baseline: `docs/io-fixed-width-taxonomy-wave2.md`.
 - Wave 5A adoption matrix artifacts: `docs/numeric-api-adoption-wave5.md` and `docs/numeric-api-adoption-wave5.json`.
 

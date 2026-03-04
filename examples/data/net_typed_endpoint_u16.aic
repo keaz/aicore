@@ -1,0 +1,45 @@
+import std.io;
+import std.net;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let endpoint = net_format_host_port("127.0.0.1", 8080u16);
+
+    let parse_ok = match net_parse_host_port(endpoint) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let int_to_port_ok = match net_int_to_u16(65535) {
+        Ok(port) => bool_to_int(net_u16_to_int(port) == 65535),
+        Err(_) => 0,
+    };
+    let int_to_port_fail = match net_int_to_u16(70000) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let parse_fail = match net_parse_host_port("127.0.0.1:70000") {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    // Keep runtime behavior deterministic in CI: typecheck wrappers without opening sockets.
+    if false {
+        let probe_connect = tcp_connect_host_port("127.0.0.1", 8080u16, 1);
+        let probe_listen = tcp_listen_host_port("127.0.0.1", 8080u16);
+        let probe_udp = udp_bind_host_port("127.0.0.1", 8080u16);
+        let _unused = (probe_connect, probe_listen, probe_udp);
+    } else {
+        ()
+    };
+
+    let score = parse_ok + int_to_port_ok + int_to_port_fail + parse_fail;
+    if score == 4 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
