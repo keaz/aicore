@@ -936,19 +936,30 @@ struct ByteBuffer {
     handle: Int,
 }
 
+type BufferCapacityU32 = UInt32
+type BufferOffsetU32 = UInt32
+type BufferCountU32 = UInt32
+
 fn new_buffer(capacity: Int) -> ByteBuffer
+fn new_buffer_u32(capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError]
 fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]
+fn new_growable_buffer_u32(initial_capacity: BufferCapacityU32, max_capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError]
 fn buffer_from_bytes(data: Bytes) -> ByteBuffer
 fn buffer_to_bytes(buf: ByteBuffer) -> Bytes
 
 fn buf_position(buf: ByteBuffer) -> Int
 fn buf_remaining(buf: ByteBuffer) -> Int
+fn buf_position_u32(buf: ByteBuffer) -> Result[BufferOffsetU32, BufferError]
+fn buf_remaining_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]
 fn buf_size(buf: ByteBuffer) -> Int
+fn buf_size_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]
 fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]
+fn buf_seek_u32(buf: ByteBuffer, position: BufferOffsetU32) -> Result[(), BufferError]
 fn buf_reset(buf: ByteBuffer) -> ()
 fn buf_close(buf: ByteBuffer) -> Result[Bool, BufferError]
 fn buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError]
 fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]
+fn buf_slice_u32(buf: ByteBuffer, start: BufferOffsetU32, length: BufferCountU32) -> Result[ByteBuffer, BufferError]
 
 fn buf_read_u8(buf: ByteBuffer) -> Result[UInt8, BufferError]
 fn buf_read_i16_be(buf: ByteBuffer) -> Result[Int16, BufferError]
@@ -964,6 +975,7 @@ fn buf_read_u32_le(buf: ByteBuffer) -> Result[UInt32, BufferError]
 fn buf_read_i64_le(buf: ByteBuffer) -> Result[Int64, BufferError]
 fn buf_read_u64_le(buf: ByteBuffer) -> Result[UInt64, BufferError]
 fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]
+fn buf_read_bytes_u32(buf: ByteBuffer, count: BufferCountU32) -> Result[Bytes, BufferError]
 fn buf_read_cstring(buf: ByteBuffer) -> Result[String, BufferError]
 fn buf_read_length_prefixed(buf: ByteBuffer) -> Result[Bytes, BufferError]
 
@@ -996,12 +1008,17 @@ Notes:
 - APIs are pure (no effect declaration required).
 - `new_buffer(capacity)` is fixed-capacity; writes past capacity return `Overflow`.
 - `new_growable_buffer(initial_capacity, max_capacity)` grows automatically up to `max_capacity`; writes beyond that cap return `Overflow`.
+- Legacy `Int` signatures remain compatibility surfaces; additive `_u32` wrappers delegate to the same runtime intrinsics.
 - Reads past available bytes return `Underflow` (never panic).
 - `buf_read_cstring` requires null-terminated valid UTF-8; invalid payload returns `InvalidUtf8`.
 - `buf_read_length_prefixed` expects signed big-endian i32 length; negative lengths return `InvalidInput`.
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
+- Conversion boundary policy for `_u32` wrappers is deterministic:
+  - `Int -> UInt32` wrapper paths reject negative or >`4294967295` values with `InvalidInput`.
+  - `UInt32 -> Int` wrapper paths reject values above runtime `Int` compatibility ceiling (`2147483647`) with `InvalidInput`.
 - `buf_close` releases buffer storage explicitly; drop cleanup is idempotent and safe after explicit close.
 - unsigned reads/writes (`u16/u32/u64`) use typed `UInt16`/`UInt32`/`UInt64` signatures, and signed variants use `Int16`/`Int32`/`Int64`.
+- For explicit unsigned frame-length reads, prefer `buf_read_u32_be` + `buf_read_bytes_u32`; `buf_read_length_prefixed` stays as a signed-compatibility entrypoint.
 - Frame-length policy for Wave 5A treats protocol length prefixes as unsigned (`UInt32`) and tracks compatibility wrappers in `docs/numeric-api-adoption-wave5.md` (row `P1`).
 - patch helpers (`buf_patch_u*_be/le`) seek-write-restore the cursor for deterministic backfill fields.
 - `buf_peek_u8` reads at absolute position without changing cursor state.

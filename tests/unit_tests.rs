@@ -8739,6 +8739,62 @@ fn unit_std_buffer_intrinsics_are_declared_and_public_apis_delegate() {
 }
 
 #[test]
+fn unit_std_buffer_u32_wrapper_surface_and_conversion_boundaries_are_declared() {
+    let source = fs::read_to_string("std/buffer.aic").expect("read std/buffer.aic");
+
+    for signature in [
+        "type BufferCapacityU32 = UInt32;",
+        "type BufferOffsetU32 = UInt32;",
+        "type BufferCountU32 = UInt32;",
+        "fn new_buffer_u32(capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError]",
+        "fn new_growable_buffer_u32(",
+        "initial_capacity: BufferCapacityU32,",
+        "max_capacity: BufferCapacityU32,",
+        ") -> Result[ByteBuffer, BufferError] {",
+        "fn buf_position_u32(buf: ByteBuffer) -> Result[BufferOffsetU32, BufferError]",
+        "fn buf_remaining_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]",
+        "fn buf_size_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]",
+        "fn buf_seek_u32(buf: ByteBuffer, position: BufferOffsetU32) -> Result[(), BufferError]",
+        "fn buf_read_bytes_u32(buf: ByteBuffer, count: BufferCountU32) -> Result[Bytes, BufferError]",
+        "fn buf_slice_u32(",
+        "start: BufferOffsetU32,",
+        "length: BufferCountU32,",
+    ] {
+        assert!(
+            source.contains(signature),
+            "std/buffer.aic must expose u32 wrapper API surface: {signature}"
+        );
+    }
+
+    for boundary_ref in [
+        "fn buffer_u32_to_int(value: UInt32) -> Result[Int, BufferError]",
+        "fn buffer_int_to_u32(value: Int) -> Result[UInt32, BufferError]",
+        "match buffer_u32_to_int(",
+        "Err(InvalidInput())",
+    ] {
+        assert!(
+            source.contains(boundary_ref),
+            "std/buffer.aic must include deterministic u32/int conversion-boundary reference: {boundary_ref}"
+        );
+    }
+
+    for compatibility_surface in [
+        "fn new_buffer(capacity: Int) -> ByteBuffer",
+        "fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]",
+        "fn buf_position(buf: ByteBuffer) -> Int",
+        "fn buf_size(buf: ByteBuffer) -> Int",
+        "fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]",
+        "fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]",
+        "fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]",
+    ] {
+        assert!(
+            source.contains(compatibility_surface),
+            "std/buffer.aic must preserve legacy Int compatibility surface: {compatibility_surface}"
+        );
+    }
+}
+
+#[test]
 fn unit_buffer_codegen_dispatch_uses_width_specific_matching_helpers() {
     let source = fs::read_to_string("src/codegen/generator_net_tls_buffer.rs")
         .expect("read src/codegen/generator_net_tls_buffer.rs");

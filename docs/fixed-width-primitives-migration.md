@@ -92,46 +92,56 @@ Canonical Wave 2B examples for CI wiring:
 
 ## Buffer API migration (`std.buffer`)
 
-Before (legacy `Int` payload assumptions):
+Before (typed payloads, but capacity/cursor/count still `Int`):
 
 ```aic
 import std.buffer;
-
-fn read_len_or(v: Result[Int, BufferError], fallback: Int) -> Int {
-    match v {
-        Ok(x) => x,
-        Err(_) => fallback,
-    }
-}
-
-fn main() -> Int {
-    let buf = new_buffer(16);
-    let _ = buf_write_u32_be(buf, 512);
-    buf_reset(buf);
-    read_len_or(buf_read_u32_be(buf), -1)
-}
-```
-
-After (typed payloads, offsets still `Int`):
-
-```aic
-import std.buffer;
-
-fn read_len_or(v: Result[UInt32, BufferError], fallback: Int) -> Int {
-    match v {
-        Ok(x) => x,
-        Err(_) => fallback,
-    }
-}
 
 fn main() -> Int {
     let buf = new_buffer(16);
     let _ = buf_write_u32_be(buf, 512u32);
-    let _ = buf_patch_u32_be(buf, 0, 1024u32); // offset remains Int
-    buf_reset(buf);
-    read_len_or(buf_read_u32_be(buf), -1)
+    let cursor = buf_position(buf);        // Int cursor surface
+    let _ = buf_seek(buf, cursor);         // Int offset contract
+    let remaining = buf_remaining(buf);    // Int count contract
+    let _ = buf_read_bytes(buf, remaining);
+    0
 }
 ```
+
+After (Wave 5B wrapper adoption for capacity/cursor/count domains):
+
+```aic
+import std.buffer;
+
+fn read_u32_or(v: Result[UInt32, BufferError], fallback: UInt32) -> UInt32 {
+    match v {
+        Ok(x) => x,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int {
+    let buf = match new_buffer_u32(16u32) {
+        Ok(value) => value,
+        Err(_) => return -1,
+    };
+    let _ = buf_write_u32_be(buf, 512u32);
+    let _ = buf_patch_u32_be(buf, 0, 1024u32); // patch offsets remain Int-compatible
+    let cursor = read_u32_or(buf_position_u32(buf), 0u32);
+    let _ = buf_seek_u32(buf, cursor);
+    let remaining = read_u32_or(buf_remaining_u32(buf), 0u32);
+    let _ = buf_read_bytes_u32(buf, remaining);
+    0
+}
+```
+
+Wave 5B conversion policy notes:
+
+- Keep legacy `Int` APIs (`new_buffer`, `buf_seek`, `buf_read_bytes`, etc.) for compatibility during incremental migration.
+- Prefer `_u32` wrappers for new protocol/count/cursor paths: `new_buffer_u32`, `new_growable_buffer_u32`, `buf_position_u32`, `buf_remaining_u32`, `buf_seek_u32`, `buf_read_bytes_u32`, `buf_size_u32`, and `buf_slice_u32`.
+- Wrapper conversion failures are deterministic and return `BufferError::InvalidInput`:
+  - `Int -> UInt32`: negative or out-of-range values are rejected.
+  - `UInt32 -> Int` (runtime bridge path): values above the runtime compatibility ceiling are rejected.
 
 ## Bytes API migration (`std.bytes`)
 

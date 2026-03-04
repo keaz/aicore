@@ -2,9 +2,46 @@ import std.io;
 import std.buffer;
 import std.bytes;
 
-fn read_int_or(v: Result[Int, BufferError], fallback: Int) -> Int {
+fn read_u32_or(v: Result[UInt32, BufferError], fallback: UInt32) -> UInt32 {
     match v {
         Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn int_to_i16_nonnegative(value: Int) -> Int16 {
+    let mut remaining = value;
+    let mut out: Int16 = 0;
+    let mut bit: Int16 = 1;
+    while remaining > 0 {
+        if (remaining % 2) == 1 {
+            out = out + bit;
+        } else {
+            ()
+        };
+        remaining = remaining / 2;
+        if remaining > 0 {
+            bit = bit + bit;
+        } else {
+            ()
+        };
+    };
+    out
+}
+
+fn i16_to_int_nonnegative(value: Int16) -> Int {
+    let mut remaining = value;
+    let mut out = 0;
+    while remaining > 0 {
+        out = out + 1;
+        remaining = remaining - 1;
+    };
+    out
+}
+
+fn read_i16_as_int_or(v: Result[Int16, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => i16_to_int_nonnegative(value),
         Err(_) => fallback,
     }
 }
@@ -30,52 +67,71 @@ fn bytes_to_text_or(v: Bytes, fallback: String) -> String {
     }
 }
 
-fn int_to_i32_nonnegative(value: Int) -> Int32 {
+fn u32_to_int(value: UInt32) -> Int {
     let mut remaining = value;
-    let mut out: Int32 = 0;
-    let mut bit: Int32 = 1;
-    while remaining > 0 {
-        if (remaining % 2) == 1 {
-            out = out + bit;
-        } else {
-            ()
-        };
-        remaining = remaining / 2;
-        if remaining > 0 {
-            bit = bit + bit;
-        } else {
-            ()
-        };
+    let mut out = 0;
+    while remaining > 0u32 {
+        out = out + 1;
+        remaining = remaining - 1u32;
     };
     out
 }
 
-fn main() -> Int effects { io } capabilities { io  } {
-    let frame = new_buffer(128);
-    let write_placeholder = buf_write_i32_be(frame, int_to_i32_nonnegative(0));
-    let write_flags = buf_write_i16_le(frame, 0x1234);
-    let write_tag = buf_write_cstring(frame, "hello");
-    let write_payload = buf_write_string_prefixed(frame, "payload");
+fn read_u32_as_int_or(v: Result[UInt32, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => u32_to_int(value),
+        Err(_) => fallback,
+    }
+}
 
-    let frame_len = buf_position(frame);
-    let seek_header = buf_seek(frame, 0);
-    let write_length = buf_write_i32_be(frame, int_to_i32_nonnegative(frame_len));
-    let seek_end = buf_seek(frame, frame_len);
-    let _placeholder_status = write_placeholder;
-    let _flags_status = write_flags;
-    let _tag_status = write_tag;
-    let _payload_status = write_payload;
-    let _seek_header_status = seek_header;
-    let _write_length_status = write_length;
-    let _seek_end_status = seek_end;
+fn main() -> Int effects { io } capabilities { io  } {
+    let frame = match new_buffer_u32(128u32) {
+        Ok(value) => value,
+        Err(_) => new_buffer(128),
+    };
+    let zero_u32: UInt32 = 0u32;
+    let write_placeholder_status = match buf_write_u32_be(frame, zero_u32) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let write_flags_status = match buf_write_i16_le(frame, int_to_i16_nonnegative(4660)) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let write_tag_status = match buf_write_cstring(frame, "hello") {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let write_payload_status = match buf_write_string_prefixed(frame, "payload") {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    let frame_len = read_u32_or(buf_position_u32(frame), zero_u32);
+    let seek_header_status = match buf_seek_u32(frame, 0u32) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let write_length_status = match buf_write_u32_be(frame, frame_len) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let seek_end_status = match buf_seek_u32(frame, frame_len) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
 
     let wire = buffer_to_bytes(frame);
     let parser = buffer_from_bytes(wire);
 
-    let total_len = read_int_or(buf_read_i32_be(parser), -1);
-    let flags = read_int_or(buf_read_i16_le(parser), -1);
+    let total_len = read_u32_as_int_or(buf_read_u32_be(parser), -1);
+    let flags = read_i16_as_int_or(buf_read_i16_le(parser), -1);
     let tag = read_string_or(buf_read_cstring(parser), "bad-tag");
-    let payload = bytes_to_text_or(read_bytes_or_empty(buf_read_length_prefixed(parser)), "bad-payload");
+    let payload_len = read_u32_or(buf_read_u32_be(parser), zero_u32);
+    let payload = bytes_to_text_or(
+        read_bytes_or_empty(buf_read_bytes_u32(parser, payload_len)),
+        "bad-payload",
+    );
 
     println_int(total_len);
     println_int(flags);

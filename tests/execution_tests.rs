@@ -11553,6 +11553,145 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_buffer_u32_wrappers_and_int_compatibility_paths_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.buffer;
+import std.bytes;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn u32_or(v: Result[UInt32, BufferError], fallback: UInt32) -> UInt32 {
+    match v {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn is_ok_unit(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+fn is_invalid_input_unit(v: Result[(), BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_input_bytes(v: Result[Bytes, BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_invalid_input_buf(v: Result[ByteBuffer, BufferError]) -> Bool {
+    match v {
+        Err(err) => match err {
+            InvalidInput => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn unwrap_buf(v: Result[ByteBuffer, BufferError]) -> ByteBuffer {
+    match v {
+        Ok(buf) => buf,
+        Err(_) => new_buffer(1),
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let base = unwrap_buf(new_buffer_u32(16u32));
+    let a: UInt8 = 65;
+    let b: UInt8 = 66;
+    let _w0 = buf_write_u8(base, a);
+    let _w1 = buf_write_u8(base, b);
+    let pos_u32 = u32_or(buf_position_u32(base), 0u32);
+    let size_u32 = u32_or(buf_size_u32(base), 0u32);
+    let seek_u32_ok = bool_to_int(is_ok_unit(buf_seek_u32(base, 0u32)));
+    let read_two = match buf_read_bytes_u32(base, 2u32) {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    };
+    let read_two_ok = bool_to_int(bytes.compare_bytes(read_two, bytes.from_string("AB")) == 0);
+
+    buf_reset(base);
+    let sliced = match buf_slice_u32(base, 0u32, 2u32) {
+        Ok(value) => value,
+        Err(_) => new_buffer(1),
+    };
+    let sliced_ok = bool_to_int(
+        bytes.compare_bytes(buffer_to_bytes(sliced), bytes.from_string("AB")) == 0
+    );
+
+    let growable = unwrap_buf(new_growable_buffer_u32(2u32, 8u32));
+    let grow_write_ok = bool_to_int(is_ok_unit(buf_write_bytes(growable, bytes.from_string("WXYZ"))));
+    let grow_pos_u32 = u32_or(buf_position_u32(growable), 0u32);
+
+    let too_large: UInt32 = 2147483648u32;
+    let invalid_new = bool_to_int(is_invalid_input_buf(new_buffer_u32(too_large)));
+    let invalid_new_growable = bool_to_int(is_invalid_input_buf(new_growable_buffer_u32(1u32, too_large)));
+    let invalid_seek = bool_to_int(is_invalid_input_unit(buf_seek_u32(base, too_large)));
+    let invalid_read = bool_to_int(is_invalid_input_bytes(buf_read_bytes_u32(base, too_large)));
+    let invalid_slice = bool_to_int(is_invalid_input_buf(buf_slice_u32(base, too_large, 1u32)));
+
+    let compat = new_buffer(8);
+    let z: UInt8 = 90;
+    let _compat_write = buf_write_u8(compat, z);
+    let compat_pos = buf_position(compat);
+    let compat_size = buf_size(compat);
+    let compat_seek_ok = bool_to_int(is_ok_unit(buf_seek(compat, 0)));
+    let compat_read_ok = match buf_read_bytes(compat, 1) {
+        Ok(value) => bool_to_int(bytes.byte_len(value) == 1),
+        Err(_) => 0,
+    };
+
+    let score =
+        bool_to_int(pos_u32 == 2u32) +
+        bool_to_int(size_u32 == 2u32) +
+        seek_u32_ok +
+        read_two_ok +
+        sliced_ok +
+        grow_write_ok +
+        bool_to_int(grow_pos_u32 == 4u32) +
+        invalid_new +
+        invalid_new_growable +
+        invalid_seek +
+        invalid_read +
+        invalid_slice +
+        bool_to_int(compat_pos == 1) +
+        bool_to_int(compat_size == 1) +
+        compat_seek_ok +
+        compat_read_ok;
+
+    if score == 16 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_crypto_vectors_roundtrip_and_secure_compare_paths() {
     let src = r#"
 import std.io;

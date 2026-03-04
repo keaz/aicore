@@ -9,6 +9,13 @@ module std.buffer;
 import std.bytes;
 import std.result;
 
+/// Explicit non-negative capacity domain for buffer APIs.
+type BufferCapacityU32 = UInt32;
+/// Explicit non-negative offset domain for buffer APIs.
+type BufferOffsetU32 = UInt32;
+/// Explicit non-negative count domain for buffer APIs.
+type BufferCountU32 = UInt32;
+
 /// `BufferError` is a `enum` in `std.buffer`.
 ///
 /// ## Example
@@ -450,6 +457,55 @@ intrinsic fn aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, val
 /// Patch-at-offset unsigned little-endian 64-bit write intrinsic.
 intrinsic fn aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError];
 
+/// Internal conversion helper for deterministic UInt32 zero value.
+fn buffer_zero_u32() -> UInt32 {
+    0u32
+}
+
+/// Internal conversion helper for deterministic UInt32 one value.
+fn buffer_one_u32() -> UInt32 {
+    1u32
+}
+
+/// Internal conversion helper for deterministic Int domain upper-bound.
+fn buffer_u32_int_max() -> UInt32 {
+    2147483647u32
+}
+
+/// Converts Int to UInt32 and returns InvalidInput on out-of-range values.
+fn buffer_int_to_u32(value: Int) -> Result[UInt32, BufferError] {
+    if value < 0 {
+        Err(InvalidInput())
+    } else if value > 4294967295 {
+        Err(InvalidInput())
+    } else {
+        let mut out: UInt32 = buffer_zero_u32();
+        let mut remaining = value;
+        let one_u32 = buffer_one_u32();
+        while remaining > 0 {
+            out = out + one_u32;
+            remaining = remaining - 1;
+        };
+        Ok(out)
+    }
+}
+
+/// Converts UInt32 to Int and returns InvalidInput on out-of-range values.
+fn buffer_u32_to_int(value: UInt32) -> Result[Int, BufferError] {
+    if value > buffer_u32_int_max() {
+        Err(InvalidInput())
+    } else {
+        let mut out = 0;
+        let mut remaining = value;
+        let one_u32 = buffer_one_u32();
+        while remaining > buffer_zero_u32() {
+            out = out + 1;
+            remaining = remaining - one_u32;
+        };
+        Ok(out)
+    }
+}
+
 /// `new_buffer` in `std.buffer`.
 ///
 /// ## Example
@@ -466,6 +522,14 @@ fn new_buffer(capacity: Int) -> ByteBuffer {
     aic_buffer_new_intrinsic(capacity)
 }
 
+/// `new_buffer_u32` in `std.buffer`.
+fn new_buffer_u32(capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError] {
+    match buffer_u32_to_int(capacity) {
+        Ok(capacity_int) => Ok(new_buffer(capacity_int)),
+        Err(err) => Err(err),
+    }
+}
+
 /// `new_growable_buffer` in `std.buffer`.
 ///
 /// ## Example
@@ -480,6 +544,20 @@ fn new_buffer(capacity: Int) -> ByteBuffer {
 /// Returns module-defined error variants when the operation fails.
 fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError] {
     aic_buffer_new_growable_intrinsic(initial_capacity, max_capacity)
+}
+
+/// `new_growable_buffer_u32` in `std.buffer`.
+fn new_growable_buffer_u32(
+    initial_capacity: BufferCapacityU32,
+    max_capacity: BufferCapacityU32,
+) -> Result[ByteBuffer, BufferError] {
+    match buffer_u32_to_int(initial_capacity) {
+        Err(err) => Err(err),
+        Ok(initial_capacity_int) => match buffer_u32_to_int(max_capacity) {
+            Err(err) => Err(err),
+            Ok(max_capacity_int) => new_growable_buffer(initial_capacity_int, max_capacity_int),
+        },
+    }
 }
 
 /// `buffer_from_bytes` in `std.buffer`.
@@ -530,6 +608,11 @@ fn buf_position(buf: ByteBuffer) -> Int {
     aic_buffer_position_intrinsic(buf)
 }
 
+/// `buf_position_u32` in `std.buffer`.
+fn buf_position_u32(buf: ByteBuffer) -> Result[BufferOffsetU32, BufferError] {
+    buffer_int_to_u32(buf_position(buf))
+}
+
 /// `buf_remaining` in `std.buffer`.
 ///
 /// ## Example
@@ -546,6 +629,11 @@ fn buf_remaining(buf: ByteBuffer) -> Int {
     aic_buffer_remaining_intrinsic(buf)
 }
 
+/// `buf_remaining_u32` in `std.buffer`.
+fn buf_remaining_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError] {
+    buffer_int_to_u32(buf_remaining(buf))
+}
+
 /// `buf_seek` in `std.buffer`.
 ///
 /// ## Example
@@ -560,6 +648,14 @@ fn buf_remaining(buf: ByteBuffer) -> Int {
 /// Returns module-defined error variants when the operation fails.
 fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError] {
     aic_buffer_seek_intrinsic(buf, position)
+}
+
+/// `buf_seek_u32` in `std.buffer`.
+fn buf_seek_u32(buf: ByteBuffer, position: BufferOffsetU32) -> Result[(), BufferError] {
+    match buffer_u32_to_int(position) {
+        Ok(position_int) => buf_seek(buf, position_int),
+        Err(_) => buf_seek(buf, -1),
+    }
 }
 
 /// `buf_reset` in `std.buffer`.
@@ -816,6 +912,14 @@ fn buf_read_u64_le(buf: ByteBuffer) -> Result[UInt64, BufferError] {
 /// Returns module-defined error variants when the operation fails.
 fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError] {
     aic_buffer_read_bytes_intrinsic(buf, count)
+}
+
+/// `buf_read_bytes_u32` in `std.buffer`.
+fn buf_read_bytes_u32(buf: ByteBuffer, count: BufferCountU32) -> Result[Bytes, BufferError] {
+    match buffer_u32_to_int(count) {
+        Ok(count_int) => buf_read_bytes(buf, count_int),
+        Err(err) => Err(err),
+    }
 }
 
 /// `buf_read_cstring` in `std.buffer`.
@@ -1241,6 +1345,11 @@ fn buf_size(buf: ByteBuffer) -> Int {
     buf_position(buf) + buf_remaining(buf)
 }
 
+/// `buf_size_u32` in `std.buffer`.
+fn buf_size_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError] {
+    buffer_int_to_u32(buf_size(buf))
+}
+
 /// `buf_slice` in `std.buffer`.
 ///
 /// ## Example
@@ -1273,5 +1382,20 @@ fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, Buf
                 }
             }
         }
+    }
+}
+
+/// `buf_slice_u32` in `std.buffer`.
+fn buf_slice_u32(
+    buf: ByteBuffer,
+    start: BufferOffsetU32,
+    length: BufferCountU32,
+) -> Result[ByteBuffer, BufferError] {
+    match buffer_u32_to_int(start) {
+        Err(err) => Err(err),
+        Ok(start_int) => match buffer_u32_to_int(length) {
+            Err(err) => Err(err),
+            Ok(length_int) => buf_slice(buf, start_int, length_int),
+        },
     }
 }
