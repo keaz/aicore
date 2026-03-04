@@ -302,6 +302,16 @@ run_fail=(
   "examples/e5/panic_line_map.aic:AICore panic at"
 )
 
+wave1_numeric_check_candidates=(
+  "examples/core/int128_uint128.aic"
+  "examples/data/std_numeric.aic"
+)
+wave1_numeric_run_candidates=(
+  "examples/core/int128_uint128.aic"
+  "examples/data/std_numeric.aic"
+)
+wave1_numeric_run_smoke=()
+
 if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
   check_pass+=(
     "examples/io/postgres_tls_scram_reference.aic"
@@ -312,6 +322,19 @@ if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
     "examples/crypto/pg_scram_auth.aic"
   )
 fi
+
+for f in "${wave1_numeric_check_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    check_pass+=("$f")
+  fi
+done
+
+for f in "${wave1_numeric_run_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    run_pass+=("$f")
+    wave1_numeric_run_smoke+=("$f")
+  fi
+done
 
 expect_check_fail() {
   local file="$1"
@@ -332,6 +355,16 @@ expect_run_fail() {
   fi
   if ! grep -q "$marker" /tmp/aic-example.err && ! grep -q "$marker" /tmp/aic-example.out; then
     echo "expected contract failure marker not found for: $file" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+}
+
+expect_run_success() {
+  local file="$1"
+  if ! "${AIC[@]}" run "$file" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    echo "expected run success but failed: $file" >&2
     cat /tmp/aic-example.out >&2 || true
     cat /tmp/aic-example.err >&2 || true
     exit 1
@@ -698,6 +731,11 @@ case "$MODE" in
     expect_run_value "examples/core/pattern_or.aic" "42"
     expect_run_value "examples/verify/range_proofs.aic" "9"
     expect_run_value "examples/verify/qv_contract_proof_fixed.aic" "7"
+    if [[ "${#wave1_numeric_run_smoke[@]}" -gt 0 ]]; then
+      for f in "${wave1_numeric_run_smoke[@]}"; do
+        expect_run_success "$f"
+      done
+    fi
     if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
       expect_run_value "examples/crypto/pg_scram_auth.aic" "42"
       expect_run_value "examples/io/postgres_tls_scram_reference.aic" "42"

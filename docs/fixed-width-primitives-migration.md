@@ -14,6 +14,31 @@ This guide covers practical migration from `Int`-based integer usage to fixed-wi
 3. Prefer literal suffixes (`1u8`, `42i16`, `7u32`) at protocol boundaries for readability and deterministic typing.
 4. Expect only lossless implicit conversions; narrowing/sign-changing assignments are rejected.
 
+## Wave 1 migration contract (`#317`, `#320`)
+
+- Current behavior:
+  - Fixed-width families are available up to 64-bit (`Int64`/`UInt64`).
+  - No dedicated `std.numeric` helper module is documented.
+- Target behavior:
+  - Add `Int128`/`UInt128` for explicit 128-bit storage and arithmetic boundaries.
+  - Keep `Int` unchanged as the general signed 64-bit integer.
+  - Introduce `std.numeric` for explicit numeric-boundary operations where source code must state overflow/conversion policy.
+
+Migration guidance for Wave 1:
+
+1. Use `Int128`/`UInt128` only at boundaries that require >64-bit range (ledger ids, hash-partition counters, high-range protocol values).
+2. Keep existing `Int`/`Int64` signatures where 64-bit range is sufficient to avoid unnecessary ABI churn.
+3. Move risky conversion points to explicit `std.numeric` helper calls rather than relying on implicit boundary checks.
+4. Keep deterministic policy at call sites:
+   - checked conversion path for fallible narrowing/sign-change
+   - saturating path where upper/lower clamp is business-correct
+   - wrapping path only where modular arithmetic is intentionally required
+
+Canonical Wave 1 examples for CI wiring:
+
+- `examples/core/int128_uint128.aic` (primitive/literal/operator coverage for `Int128` + `UInt128`)
+- `examples/data/std_numeric.aic` (`std.numeric` conversion/overflow policy walkthrough)
+
 ## Buffer API migration (`std.buffer`)
 
 Before (legacy `Int` payload assumptions):

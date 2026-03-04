@@ -43,6 +43,17 @@ Notes:
 - `Int` and `Int64` both lower to `i64` in LLVM, but remain distinct named source types for type-checking rules.
 - Unsigned primitives share the same LLVM bit-width as signed peers; signedness affects selected operations (`s*` vs `u*`, `ashr` vs `lshr`), not the raw storage width.
 
+### Wave 1 primitive extension contract (`#317`)
+
+- Current behavior:
+  - Backend primitive mapping is defined through 64-bit fixed-width integer families.
+- Target behavior:
+  - Add backend primitive mappings:
+    - `Int128` -> `i128`
+    - `UInt128` -> `i128`
+  - Preserve signedness semantics via opcode selection (`s*` vs `u*`) exactly as with existing unsigned/signed pairs.
+  - Keep `Int` mapped to `i64` for MVP compatibility; adding 128-bit primitives does not rebind `Int`.
+
 ### Integer lowering policy (fixed-width)
 
 - Fixed-width primitive identity is preserved in backend typing (`render_type`/`parse_type_repr`/`sig_matches_shape`).
@@ -52,6 +63,11 @@ Notes:
   - unsigned: `udiv`/`urem`, unsigned comparisons (`ult`/`ule`/`ugt`/`uge`)
   - shifts use arithmetic/logical behavior based on signedness (`ashr` vs `lshr`).
 - `>>>` always lowers to logical right shift (`lshr`).
+
+Wave 1 extension contract (`#317`):
+
+- `Int128`/`UInt128` arithmetic, comparisons, and shifts follow the same width/signedness lowering rules as existing fixed-width primitives.
+- Type-directed cast insertion rules (`sext`/`zext`/`trunc`) extend to 128-bit boundaries without adding implicit source-language coercions.
 
 ### Integer coercion policy in codegen
 
@@ -70,6 +86,11 @@ Notes:
   - `UInt8`, `UInt16`, `UInt32`, `UInt64`
   - `Bool`, `Float`, `Char`, `()`
 - Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
+
+Wave 1 contract (`#317`, `#320`):
+
+- Add `Int128`/`UInt128` to supported extern scalar primitives after parser/type-check/codegen/runtime coverage is merged.
+- `std.numeric`-driven conversion/overflow helper calls are lowered as ordinary resolved stdlib calls; no backend-only implicit conversion paths are introduced.
 
 ### Runtime scalar ABI policy
 

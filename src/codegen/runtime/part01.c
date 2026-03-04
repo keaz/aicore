@@ -2934,6 +2934,2119 @@ long aic_rt_time_format_iso8601(
     return 0;
 }
 
+#define AIC_RT_NUMERIC_DECIMAL_DIV_SCALE 18L
+
+enum {
+    AIC_RT_NUMERIC_PARSE_OK = 0,
+    AIC_RT_NUMERIC_PARSE_INVALID_INPUT = 1,
+    AIC_RT_NUMERIC_PARSE_EMPTY = 2,
+    AIC_RT_NUMERIC_PARSE_NO_DIGITS = 3,
+    AIC_RT_NUMERIC_PARSE_INVALID_CHAR = 4,
+    AIC_RT_NUMERIC_PARSE_NEGATIVE = 5,
+    AIC_RT_NUMERIC_PARSE_ALLOC = 6
+};
+
+enum {
+    AIC_RT_NUMERIC_DECIMAL_OK = 0,
+    AIC_RT_NUMERIC_DECIMAL_INVALID_INPUT = 1,
+    AIC_RT_NUMERIC_DECIMAL_EMPTY = 2,
+    AIC_RT_NUMERIC_DECIMAL_MALFORMED = 3,
+    AIC_RT_NUMERIC_DECIMAL_ALLOC = 4
+};
+
+static void aic_rt_numeric_reset_string(char** out_ptr, long* out_len) {
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+}
+
+static int aic_rt_numeric_is_space(unsigned char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
+}
+
+static int aic_rt_numeric_validate_slice(const char* ptr, long len, size_t* out_len) {
+    if (len < 0) {
+        return 0;
+    }
+    size_t n = (size_t)len;
+    if ((long)n != len) {
+        return 0;
+    }
+    if (n > 0 && ptr == NULL) {
+        return 0;
+    }
+    if (out_len != NULL) {
+        *out_len = n;
+    }
+    return 1;
+}
+
+static int aic_rt_numeric_trim_slice(
+    const char* ptr,
+    long len,
+    size_t* out_start,
+    size_t* out_end
+) {
+    size_t n = 0;
+    if (!aic_rt_numeric_validate_slice(ptr, len, &n)) {
+        return 0;
+    }
+    size_t start = 0;
+    while (start < n && aic_rt_numeric_is_space((unsigned char)ptr[start])) {
+        start += 1;
+    }
+    size_t end = n;
+    while (end > start && aic_rt_numeric_is_space((unsigned char)ptr[end - 1])) {
+        end -= 1;
+    }
+    if (out_start != NULL) {
+        *out_start = start;
+    }
+    if (out_end != NULL) {
+        *out_end = end;
+    }
+    return 1;
+}
+
+static char* aic_rt_numeric_copy_bytes(const char* ptr, size_t len) {
+    if (len > 0 && ptr == NULL) {
+        return NULL;
+    }
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    if (len > 0) {
+        memcpy(out, ptr, len);
+    }
+    out[len] = '\0';
+    return out;
+}
+
+static long aic_rt_numeric_write_error(const char* message, char** out_err_ptr, long* out_err_len) {
+    size_t message_len = message == NULL ? 0 : strlen(message);
+    char* out = aic_rt_numeric_copy_bytes(message == NULL ? "" : message, message_len);
+    if (out == NULL) {
+        aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+        return 1;
+    }
+    if (out_err_ptr != NULL) {
+        *out_err_ptr = out;
+    } else {
+        free(out);
+    }
+    if (out_err_len != NULL) {
+        *out_err_len = (long)message_len;
+    }
+    return 1;
+}
+
+static int aic_rt_numeric_emit_string(
+    char* value,
+    size_t value_len,
+    char** out_ptr,
+    long* out_len
+) {
+    if (value == NULL || value_len > (size_t)LONG_MAX) {
+        if (value != NULL) {
+            free(value);
+        }
+        aic_rt_numeric_reset_string(out_ptr, out_len);
+        return 0;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = value;
+    } else {
+        free(value);
+    }
+    if (out_len != NULL) {
+        *out_len = (long)value_len;
+    }
+    return 1;
+}
+
+static int aic_rt_numeric_is_zero_digits(const char* digits, size_t digits_len) {
+    return digits != NULL && digits_len == 1 && digits[0] == '0';
+}
+
+static int aic_rt_numeric_cmp_digits(
+    const char* lhs,
+    size_t lhs_len,
+    const char* rhs,
+    size_t rhs_len
+) {
+    if (lhs_len < rhs_len) {
+        return -1;
+    }
+    if (lhs_len > rhs_len) {
+        return 1;
+    }
+    if (lhs_len == 0) {
+        return 0;
+    }
+    int cmp = memcmp(lhs, rhs, lhs_len);
+    if (cmp < 0) {
+        return -1;
+    }
+    if (cmp > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static char* aic_rt_numeric_add_digits(
+    const char* lhs,
+    size_t lhs_len,
+    const char* rhs,
+    size_t rhs_len,
+    size_t* out_len
+) {
+    if (lhs == NULL || rhs == NULL) {
+        return NULL;
+    }
+    size_t max_len = lhs_len > rhs_len ? lhs_len : rhs_len;
+    if (max_len == SIZE_MAX) {
+        return NULL;
+    }
+    char* out = (char*)malloc(max_len + 2);
+    if (out == NULL) {
+        return NULL;
+    }
+    size_t write = max_len + 1;
+    out[write] = '\0';
+    size_t i = lhs_len;
+    size_t j = rhs_len;
+    unsigned carry = 0;
+    while (write > 0) {
+        unsigned left = 0;
+        unsigned right = 0;
+        if (i > 0) {
+            i -= 1;
+            left = (unsigned)(lhs[i] - '0');
+        }
+        if (j > 0) {
+            j -= 1;
+            right = (unsigned)(rhs[j] - '0');
+        }
+        unsigned sum = left + right + carry;
+        out[write - 1] = (char)('0' + (sum % 10U));
+        carry = sum / 10U;
+        write -= 1;
+    }
+    size_t start = 0;
+    size_t produced = max_len + 1;
+    while (start + 1 < produced && out[start] == '0') {
+        start += 1;
+    }
+    size_t len = produced - start;
+    if (start > 0) {
+        memmove(out, out + start, len);
+        out[len] = '\0';
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    return out;
+}
+
+static char* aic_rt_numeric_sub_digits(
+    const char* lhs,
+    size_t lhs_len,
+    const char* rhs,
+    size_t rhs_len,
+    size_t* out_len
+) {
+    if (lhs == NULL || rhs == NULL || lhs_len == 0) {
+        return NULL;
+    }
+    char* out = (char*)malloc(lhs_len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    out[lhs_len] = '\0';
+    size_t i = lhs_len;
+    size_t j = rhs_len;
+    int borrow = 0;
+    while (i > 0) {
+        i -= 1;
+        int left = (int)(lhs[i] - '0') - borrow;
+        int right = 0;
+        if (j > 0) {
+            j -= 1;
+            right = (int)(rhs[j] - '0');
+        }
+        if (left < right) {
+            left += 10;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        out[i] = (char)('0' + (left - right));
+    }
+    size_t start = 0;
+    while (start + 1 < lhs_len && out[start] == '0') {
+        start += 1;
+    }
+    size_t len = lhs_len - start;
+    if (start > 0) {
+        memmove(out, out + start, len);
+        out[len] = '\0';
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    return out;
+}
+
+static char* aic_rt_numeric_mul_digits(
+    const char* lhs,
+    size_t lhs_len,
+    const char* rhs,
+    size_t rhs_len,
+    size_t* out_len
+) {
+    if (lhs == NULL || rhs == NULL || lhs_len == 0 || rhs_len == 0) {
+        return NULL;
+    }
+    if (aic_rt_numeric_is_zero_digits(lhs, lhs_len) || aic_rt_numeric_is_zero_digits(rhs, rhs_len)) {
+        if (out_len != NULL) {
+            *out_len = 1;
+        }
+        return aic_rt_numeric_copy_bytes("0", 1);
+    }
+    if (lhs_len > SIZE_MAX - rhs_len) {
+        return NULL;
+    }
+    size_t total = lhs_len + rhs_len;
+    int* accum = (int*)calloc(total, sizeof(int));
+    if (accum == NULL) {
+        return NULL;
+    }
+    for (size_t i = lhs_len; i > 0; --i) {
+        unsigned left = (unsigned)(lhs[i - 1] - '0');
+        for (size_t j = rhs_len; j > 0; --j) {
+            unsigned right = (unsigned)(rhs[j - 1] - '0');
+            size_t idx = i + j - 1;
+            accum[idx] += (int)(left * right);
+        }
+    }
+    for (size_t idx = total; idx > 1; --idx) {
+        int carry = accum[idx - 1] / 10;
+        accum[idx - 1] %= 10;
+        accum[idx - 2] += carry;
+    }
+    size_t start = 0;
+    while (start + 1 < total && accum[start] == 0) {
+        start += 1;
+    }
+    size_t len = total - start;
+    char* out = (char*)malloc(len + 1);
+    if (out == NULL) {
+        free(accum);
+        return NULL;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        out[i] = (char)('0' + accum[start + i]);
+    }
+    out[len] = '\0';
+    free(accum);
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    return out;
+}
+
+static char* aic_rt_numeric_divide_digits(
+    const char* dividend,
+    size_t dividend_len,
+    const char* divisor,
+    size_t divisor_len,
+    size_t* out_len
+) {
+    if (dividend == NULL || divisor == NULL || divisor_len == 0) {
+        return NULL;
+    }
+    if (aic_rt_numeric_is_zero_digits(divisor, divisor_len)) {
+        return NULL;
+    }
+    if (aic_rt_numeric_cmp_digits(dividend, dividend_len, divisor, divisor_len) < 0) {
+        if (out_len != NULL) {
+            *out_len = 1;
+        }
+        return aic_rt_numeric_copy_bytes("0", 1);
+    }
+
+    char* quotient = (char*)malloc(dividend_len + 1);
+    char* remainder = (char*)malloc(dividend_len + 2);
+    if (quotient == NULL || remainder == NULL) {
+        free(quotient);
+        free(remainder);
+        return NULL;
+    }
+
+    size_t quotient_len = 0;
+    size_t rem_len = 1;
+    remainder[0] = '0';
+    remainder[1] = '\0';
+
+    for (size_t i = 0; i < dividend_len; ++i) {
+        char next_digit = dividend[i];
+        if (rem_len == 1 && remainder[0] == '0') {
+            remainder[0] = next_digit;
+            rem_len = 1;
+        } else {
+            remainder[rem_len] = next_digit;
+            rem_len += 1;
+        }
+        remainder[rem_len] = '\0';
+        while (rem_len > 1 && remainder[0] == '0') {
+            memmove(remainder, remainder + 1, rem_len);
+            rem_len -= 1;
+            remainder[rem_len] = '\0';
+        }
+
+        int qdigit = 0;
+        while (aic_rt_numeric_cmp_digits(remainder, rem_len, divisor, divisor_len) >= 0) {
+            size_t next_len = 0;
+            char* next = aic_rt_numeric_sub_digits(remainder, rem_len, divisor, divisor_len, &next_len);
+            if (next == NULL) {
+                free(quotient);
+                free(remainder);
+                return NULL;
+            }
+            memcpy(remainder, next, next_len);
+            rem_len = next_len;
+            remainder[rem_len] = '\0';
+            free(next);
+            qdigit += 1;
+            if (qdigit > 9) {
+                free(quotient);
+                free(remainder);
+                return NULL;
+            }
+        }
+        quotient[quotient_len] = (char)('0' + qdigit);
+        quotient_len += 1;
+    }
+    quotient[quotient_len] = '\0';
+
+    size_t start = 0;
+    while (start + 1 < quotient_len && quotient[start] == '0') {
+        start += 1;
+    }
+    if (start > 0) {
+        memmove(quotient, quotient + start, quotient_len - start + 1);
+        quotient_len -= start;
+    }
+    free(remainder);
+    if (out_len != NULL) {
+        *out_len = quotient_len;
+    }
+    return quotient;
+}
+
+static char* aic_rt_numeric_append_zeros(
+    const char* digits,
+    size_t digits_len,
+    size_t zeros,
+    size_t* out_len
+) {
+    if (digits == NULL) {
+        return NULL;
+    }
+    if (zeros == 0 || aic_rt_numeric_is_zero_digits(digits, digits_len)) {
+        char* out = aic_rt_numeric_copy_bytes(digits, digits_len);
+        if (out != NULL && out_len != NULL) {
+            *out_len = digits_len;
+        }
+        return out;
+    }
+    if (digits_len > SIZE_MAX - zeros) {
+        return NULL;
+    }
+    size_t total = digits_len + zeros;
+    char* out = (char*)malloc(total + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, digits, digits_len);
+    memset(out + digits_len, '0', zeros);
+    out[total] = '\0';
+    if (out_len != NULL) {
+        *out_len = total;
+    }
+    return out;
+}
+
+static char* aic_rt_numeric_build_signed_text(
+    int negative,
+    const char* digits,
+    size_t digits_len,
+    size_t* out_len
+) {
+    if (digits == NULL || digits_len == 0) {
+        return NULL;
+    }
+    int is_zero = aic_rt_numeric_is_zero_digits(digits, digits_len);
+    size_t sign_len = (!is_zero && negative) ? 1 : 0;
+    if (digits_len > SIZE_MAX - sign_len) {
+        return NULL;
+    }
+    size_t total = sign_len + digits_len;
+    char* out = (char*)malloc(total + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    size_t write = 0;
+    if (sign_len == 1) {
+        out[write++] = '-';
+    }
+    memcpy(out + write, digits, digits_len);
+    out[total] = '\0';
+    if (out_len != NULL) {
+        *out_len = total;
+    }
+    return out;
+}
+
+static int aic_rt_numeric_signed_add(
+    int lhs_negative,
+    const char* lhs_digits,
+    size_t lhs_len,
+    int rhs_negative,
+    const char* rhs_digits,
+    size_t rhs_len,
+    int* out_negative,
+    char** out_digits,
+    size_t* out_digits_len
+) {
+    if (out_negative != NULL) {
+        *out_negative = 0;
+    }
+    if (out_digits != NULL) {
+        *out_digits = NULL;
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = 0;
+    }
+
+    char* digits = NULL;
+    size_t digits_len = 0;
+    int negative = 0;
+    if (lhs_negative == rhs_negative) {
+        digits = aic_rt_numeric_add_digits(lhs_digits, lhs_len, rhs_digits, rhs_len, &digits_len);
+        negative = lhs_negative;
+    } else {
+        int cmp = aic_rt_numeric_cmp_digits(lhs_digits, lhs_len, rhs_digits, rhs_len);
+        if (cmp == 0) {
+            digits = aic_rt_numeric_copy_bytes("0", 1);
+            digits_len = digits == NULL ? 0 : 1;
+            negative = 0;
+        } else if (cmp > 0) {
+            digits = aic_rt_numeric_sub_digits(lhs_digits, lhs_len, rhs_digits, rhs_len, &digits_len);
+            negative = lhs_negative;
+        } else {
+            digits = aic_rt_numeric_sub_digits(rhs_digits, rhs_len, lhs_digits, lhs_len, &digits_len);
+            negative = rhs_negative;
+        }
+    }
+    if (digits == NULL) {
+        return 0;
+    }
+    if (aic_rt_numeric_is_zero_digits(digits, digits_len)) {
+        negative = 0;
+    }
+    if (out_negative != NULL) {
+        *out_negative = negative;
+    }
+    if (out_digits != NULL) {
+        *out_digits = digits;
+    } else {
+        free(digits);
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = digits_len;
+    }
+    return 1;
+}
+
+static int aic_rt_numeric_parse_integer_digits(
+    const char* text_ptr,
+    long text_len,
+    int allow_negative,
+    int* out_negative,
+    char** out_digits,
+    size_t* out_digits_len,
+    int* out_error_code
+) {
+    if (out_negative != NULL) {
+        *out_negative = 0;
+    }
+    if (out_digits != NULL) {
+        *out_digits = NULL;
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = 0;
+    }
+    if (out_error_code != NULL) {
+        *out_error_code = AIC_RT_NUMERIC_PARSE_OK;
+    }
+
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_numeric_trim_slice(text_ptr, text_len, &start, &end)) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_PARSE_INVALID_INPUT;
+        }
+        return 0;
+    }
+    if (start >= end) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_PARSE_EMPTY;
+        }
+        return 0;
+    }
+
+    int negative = 0;
+    char lead = text_ptr[start];
+    if (lead == '+' || lead == '-') {
+        negative = lead == '-';
+        start += 1;
+    }
+    if (start >= end) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_PARSE_NO_DIGITS;
+        }
+        return 0;
+    }
+    if (negative && !allow_negative) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_PARSE_NEGATIVE;
+        }
+        return 0;
+    }
+
+    for (size_t i = start; i < end; ++i) {
+        if (text_ptr[i] < '0' || text_ptr[i] > '9') {
+            if (out_error_code != NULL) {
+                *out_error_code = AIC_RT_NUMERIC_PARSE_INVALID_CHAR;
+            }
+            return 0;
+        }
+    }
+
+    size_t non_zero = start;
+    while (non_zero < end && text_ptr[non_zero] == '0') {
+        non_zero += 1;
+    }
+    size_t digits_start = non_zero;
+    size_t digits_len = end - digits_start;
+    if (digits_len == 0) {
+        digits_start = end - 1;
+        digits_len = 1;
+        negative = 0;
+    }
+    char* digits = aic_rt_numeric_copy_bytes(text_ptr + digits_start, digits_len);
+    if (digits == NULL) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_PARSE_ALLOC;
+        }
+        return 0;
+    }
+    if (out_negative != NULL) {
+        *out_negative = negative;
+    }
+    if (out_digits != NULL) {
+        *out_digits = digits;
+    } else {
+        free(digits);
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = digits_len;
+    }
+    return 1;
+}
+
+static const char* aic_rt_numeric_bigint_parse_error(int code) {
+    switch (code) {
+        case AIC_RT_NUMERIC_PARSE_INVALID_INPUT:
+            return "invalid bigint: invalid input";
+        case AIC_RT_NUMERIC_PARSE_EMPTY:
+            return "invalid bigint: empty";
+        case AIC_RT_NUMERIC_PARSE_NO_DIGITS:
+            return "invalid bigint: no digits";
+        case AIC_RT_NUMERIC_PARSE_INVALID_CHAR:
+            return "invalid bigint: invalid character";
+        case AIC_RT_NUMERIC_PARSE_ALLOC:
+            return "invalid bigint: allocation failed";
+        default:
+            return "invalid bigint: parse failed";
+    }
+}
+
+static const char* aic_rt_numeric_biguint_parse_error(int code) {
+    switch (code) {
+        case AIC_RT_NUMERIC_PARSE_INVALID_INPUT:
+            return "invalid biguint: invalid input";
+        case AIC_RT_NUMERIC_PARSE_EMPTY:
+            return "invalid biguint: empty";
+        case AIC_RT_NUMERIC_PARSE_NO_DIGITS:
+            return "invalid biguint: no digits";
+        case AIC_RT_NUMERIC_PARSE_INVALID_CHAR:
+            return "invalid biguint: invalid character";
+        case AIC_RT_NUMERIC_PARSE_NEGATIVE:
+            return "invalid biguint: negative value";
+        case AIC_RT_NUMERIC_PARSE_ALLOC:
+            return "invalid biguint: allocation failed";
+        default:
+            return "invalid biguint: parse failed";
+    }
+}
+
+static long aic_rt_numeric_finish_bigint_result(
+    int negative,
+    char* digits,
+    size_t digits_len,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    size_t text_len = 0;
+    char* text = aic_rt_numeric_build_signed_text(negative, digits, digits_len, &text_len);
+    free(digits);
+    if (text == NULL || !aic_rt_numeric_emit_string(text, text_len, out_ptr, out_len)) {
+        return aic_rt_numeric_write_error("invalid bigint: allocation failed", out_err_ptr, out_err_len);
+    }
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+    return 0;
+}
+
+static long aic_rt_numeric_finish_biguint_result(
+    char* digits,
+    size_t digits_len,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    if (!aic_rt_numeric_emit_string(digits, digits_len, out_ptr, out_len)) {
+        return aic_rt_numeric_write_error("invalid biguint: allocation failed", out_err_ptr, out_err_len);
+    }
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+    return 0;
+}
+
+long aic_rt_numeric_bigint_parse(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)text_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+    int negative = 0;
+    char* digits = NULL;
+    size_t digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            text_ptr,
+            text_len,
+            1,
+            &negative,
+            &digits,
+            &digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    return aic_rt_numeric_finish_bigint_result(
+        negative,
+        digits,
+        digits_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_bigint_add(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            1,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            1,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+
+    int result_negative = 0;
+    char* result_digits = NULL;
+    size_t result_len = 0;
+    int ok = aic_rt_numeric_signed_add(
+        lhs_negative,
+        lhs_digits,
+        lhs_digits_len,
+        rhs_negative,
+        rhs_digits,
+        rhs_digits_len,
+        &result_negative,
+        &result_digits,
+        &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (!ok) {
+        return aic_rt_numeric_write_error("invalid bigint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_bigint_result(
+        result_negative,
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_bigint_sub(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            1,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            1,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+
+    if (!aic_rt_numeric_is_zero_digits(rhs_digits, rhs_digits_len)) {
+        rhs_negative = rhs_negative ? 0 : 1;
+    }
+    int result_negative = 0;
+    char* result_digits = NULL;
+    size_t result_len = 0;
+    int ok = aic_rt_numeric_signed_add(
+        lhs_negative,
+        lhs_digits,
+        lhs_digits_len,
+        rhs_negative,
+        rhs_digits,
+        rhs_digits_len,
+        &result_negative,
+        &result_digits,
+        &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (!ok) {
+        return aic_rt_numeric_write_error("invalid bigint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_bigint_result(
+        result_negative,
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_bigint_mul(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            1,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            1,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    size_t result_len = 0;
+    char* result_digits = aic_rt_numeric_mul_digits(
+        lhs_digits,
+        lhs_digits_len,
+        rhs_digits,
+        rhs_digits_len,
+        &result_len);
+    int result_negative =
+        (!aic_rt_numeric_is_zero_digits(result_digits, result_len) && lhs_negative != rhs_negative)
+            ? 1
+            : 0;
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid bigint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_bigint_result(
+        result_negative,
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_bigint_div(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            1,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            1,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_bigint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (aic_rt_numeric_is_zero_digits(rhs_digits, rhs_digits_len)) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("bigint division by zero", out_err_ptr, out_err_len);
+    }
+    size_t result_len = 0;
+    char* result_digits =
+        aic_rt_numeric_divide_digits(lhs_digits, lhs_digits_len, rhs_digits, rhs_digits_len, &result_len);
+    int result_negative =
+        (!aic_rt_numeric_is_zero_digits(result_digits, result_len) && lhs_negative != rhs_negative)
+            ? 1
+            : 0;
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid bigint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_bigint_result(
+        result_negative,
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_biguint_parse(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)text_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+    int negative = 0;
+    char* digits = NULL;
+    size_t digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            text_ptr,
+            text_len,
+            0,
+            &negative,
+            &digits,
+            &digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    (void)negative;
+    return aic_rt_numeric_finish_biguint_result(
+        digits,
+        digits_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_biguint_add(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            0,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            0,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    (void)lhs_negative;
+    (void)rhs_negative;
+    size_t result_len = 0;
+    char* result_digits =
+        aic_rt_numeric_add_digits(lhs_digits, lhs_digits_len, rhs_digits, rhs_digits_len, &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid biguint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_biguint_result(
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_biguint_sub(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            0,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            0,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    (void)lhs_negative;
+    (void)rhs_negative;
+    if (aic_rt_numeric_cmp_digits(lhs_digits, lhs_digits_len, rhs_digits, rhs_digits_len) < 0) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("biguint subtraction underflow", out_err_ptr, out_err_len);
+    }
+    size_t result_len = 0;
+    char* result_digits =
+        aic_rt_numeric_sub_digits(lhs_digits, lhs_digits_len, rhs_digits, rhs_digits_len, &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid biguint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_biguint_result(
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_biguint_mul(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            0,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            0,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    (void)lhs_negative;
+    (void)rhs_negative;
+    size_t result_len = 0;
+    char* result_digits = aic_rt_numeric_mul_digits(
+        lhs_digits,
+        lhs_digits_len,
+        rhs_digits,
+        rhs_digits_len,
+        &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid biguint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_biguint_result(
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_biguint_div(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    int error_code = AIC_RT_NUMERIC_PARSE_OK;
+    if (!aic_rt_numeric_parse_integer_digits(
+            lhs_ptr,
+            lhs_len,
+            0,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    if (!aic_rt_numeric_parse_integer_digits(
+            rhs_ptr,
+            rhs_len,
+            0,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_biguint_parse_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    (void)lhs_negative;
+    (void)rhs_negative;
+    if (aic_rt_numeric_is_zero_digits(rhs_digits, rhs_digits_len)) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("biguint division by zero", out_err_ptr, out_err_len);
+    }
+    size_t result_len = 0;
+    char* result_digits =
+        aic_rt_numeric_divide_digits(lhs_digits, lhs_digits_len, rhs_digits, rhs_digits_len, &result_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid biguint: allocation failed", out_err_ptr, out_err_len);
+    }
+    return aic_rt_numeric_finish_biguint_result(
+        result_digits,
+        result_len,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+static int aic_rt_numeric_parse_decimal_parts(
+    const char* text_ptr,
+    long text_len,
+    int* out_negative,
+    char** out_digits,
+    size_t* out_digits_len,
+    long* out_scale,
+    int* out_error_code
+) {
+    if (out_negative != NULL) {
+        *out_negative = 0;
+    }
+    if (out_digits != NULL) {
+        *out_digits = NULL;
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = 0;
+    }
+    if (out_scale != NULL) {
+        *out_scale = 0;
+    }
+    if (out_error_code != NULL) {
+        *out_error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    }
+
+    size_t start = 0;
+    size_t end = 0;
+    if (!aic_rt_numeric_trim_slice(text_ptr, text_len, &start, &end)) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_DECIMAL_INVALID_INPUT;
+        }
+        return 0;
+    }
+    if (start >= end) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_DECIMAL_EMPTY;
+        }
+        return 0;
+    }
+
+    int negative = 0;
+    if (text_ptr[start] == '+' || text_ptr[start] == '-') {
+        negative = text_ptr[start] == '-';
+        start += 1;
+    }
+    if (start >= end) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_DECIMAL_MALFORMED;
+        }
+        return 0;
+    }
+
+    size_t raw_len = end - start;
+    char* digits = (char*)malloc(raw_len + 1);
+    if (digits == NULL) {
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_DECIMAL_ALLOC;
+        }
+        return 0;
+    }
+
+    size_t digits_len = 0;
+    long scale = 0;
+    int seen_dot = 0;
+    int seen_digit = 0;
+    for (size_t i = start; i < end; ++i) {
+        char ch = text_ptr[i];
+        if (ch >= '0' && ch <= '9') {
+            digits[digits_len] = ch;
+            digits_len += 1;
+            seen_digit = 1;
+            if (seen_dot) {
+                if (scale == LONG_MAX) {
+                    free(digits);
+                    if (out_error_code != NULL) {
+                        *out_error_code = AIC_RT_NUMERIC_DECIMAL_MALFORMED;
+                    }
+                    return 0;
+                }
+                scale += 1;
+            }
+        } else if (ch == '.' && !seen_dot) {
+            seen_dot = 1;
+        } else {
+            free(digits);
+            if (out_error_code != NULL) {
+                *out_error_code = AIC_RT_NUMERIC_DECIMAL_MALFORMED;
+            }
+            return 0;
+        }
+    }
+    if (!seen_digit || digits_len == 0) {
+        free(digits);
+        if (out_error_code != NULL) {
+            *out_error_code = AIC_RT_NUMERIC_DECIMAL_MALFORMED;
+        }
+        return 0;
+    }
+    digits[digits_len] = '\0';
+
+    size_t leading = 0;
+    while (leading + 1 < digits_len && digits[leading] == '0') {
+        leading += 1;
+    }
+    if (leading > 0) {
+        memmove(digits, digits + leading, digits_len - leading + 1);
+        digits_len -= leading;
+    }
+    while (scale > 0 && digits_len > 1 && digits[digits_len - 1] == '0') {
+        digits_len -= 1;
+        digits[digits_len] = '\0';
+        scale -= 1;
+    }
+    if (digits_len == 1 && digits[0] == '0') {
+        negative = 0;
+        scale = 0;
+    }
+
+    if (out_negative != NULL) {
+        *out_negative = negative;
+    }
+    if (out_digits != NULL) {
+        *out_digits = digits;
+    } else {
+        free(digits);
+    }
+    if (out_digits_len != NULL) {
+        *out_digits_len = digits_len;
+    }
+    if (out_scale != NULL) {
+        *out_scale = scale;
+    }
+    return 1;
+}
+
+static const char* aic_rt_numeric_decimal_error(int code) {
+    switch (code) {
+        case AIC_RT_NUMERIC_DECIMAL_INVALID_INPUT:
+            return "invalid decimal: invalid input";
+        case AIC_RT_NUMERIC_DECIMAL_EMPTY:
+            return "invalid decimal: empty";
+        case AIC_RT_NUMERIC_DECIMAL_MALFORMED:
+            return "invalid decimal: malformed";
+        case AIC_RT_NUMERIC_DECIMAL_ALLOC:
+            return "invalid decimal: allocation failed";
+        default:
+            return "invalid decimal: parse failed";
+    }
+}
+
+static void aic_rt_numeric_normalize_decimal_parts(
+    int* io_negative,
+    char* digits,
+    size_t* io_digits_len,
+    long* io_scale
+) {
+    if (digits == NULL || io_digits_len == NULL || io_scale == NULL) {
+        return;
+    }
+    size_t len = *io_digits_len;
+    long scale = *io_scale;
+
+    size_t leading = 0;
+    while (leading + 1 < len && digits[leading] == '0') {
+        leading += 1;
+    }
+    if (leading > 0) {
+        memmove(digits, digits + leading, len - leading + 1);
+        len -= leading;
+    }
+    while (scale > 0 && len > 1 && digits[len - 1] == '0') {
+        len -= 1;
+        digits[len] = '\0';
+        scale -= 1;
+    }
+    if (len == 1 && digits[0] == '0') {
+        scale = 0;
+        if (io_negative != NULL) {
+            *io_negative = 0;
+        }
+    }
+    *io_digits_len = len;
+    *io_scale = scale;
+}
+
+static char* aic_rt_numeric_build_decimal_text(
+    int negative,
+    const char* digits,
+    size_t digits_len,
+    long scale,
+    size_t* out_len
+) {
+    if (digits == NULL || digits_len == 0 || scale < 0) {
+        return NULL;
+    }
+    if (aic_rt_numeric_is_zero_digits(digits, digits_len)) {
+        if (out_len != NULL) {
+            *out_len = 1;
+        }
+        return aic_rt_numeric_copy_bytes("0", 1);
+    }
+
+    size_t scale_n = (size_t)scale;
+    if ((long)scale_n != scale) {
+        return NULL;
+    }
+    size_t sign_len = negative ? 1 : 0;
+    if (scale_n == 0) {
+        return aic_rt_numeric_build_signed_text(negative, digits, digits_len, out_len);
+    }
+
+    size_t total = 0;
+    if (scale_n >= digits_len) {
+        size_t zero_prefix = scale_n - digits_len;
+        if (digits_len > SIZE_MAX - zero_prefix) {
+            return NULL;
+        }
+        size_t frac_len = zero_prefix + digits_len;
+        if (frac_len > SIZE_MAX - 2 - sign_len) {
+            return NULL;
+        }
+        total = sign_len + 2 + frac_len;
+        char* out = (char*)malloc(total + 1);
+        if (out == NULL) {
+            return NULL;
+        }
+        size_t write = 0;
+        if (negative) {
+            out[write++] = '-';
+        }
+        out[write++] = '0';
+        out[write++] = '.';
+        if (zero_prefix > 0) {
+            memset(out + write, '0', zero_prefix);
+            write += zero_prefix;
+        }
+        memcpy(out + write, digits, digits_len);
+        out[total] = '\0';
+        if (out_len != NULL) {
+            *out_len = total;
+        }
+        return out;
+    }
+
+    size_t integer_len = digits_len - scale_n;
+    if (integer_len > SIZE_MAX - scale_n - 1 - sign_len) {
+        return NULL;
+    }
+    total = sign_len + integer_len + 1 + scale_n;
+    char* out = (char*)malloc(total + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    size_t write = 0;
+    if (negative) {
+        out[write++] = '-';
+    }
+    memcpy(out + write, digits, integer_len);
+    write += integer_len;
+    out[write++] = '.';
+    memcpy(out + write, digits + integer_len, scale_n);
+    out[total] = '\0';
+    if (out_len != NULL) {
+        *out_len = total;
+    }
+    return out;
+}
+
+static long aic_rt_numeric_finish_decimal_result(
+    int negative,
+    char* digits,
+    size_t digits_len,
+    long scale,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    size_t text_len = 0;
+    char* text = aic_rt_numeric_build_decimal_text(negative, digits, digits_len, scale, &text_len);
+    free(digits);
+    if (text == NULL || !aic_rt_numeric_emit_string(text, text_len, out_ptr, out_len)) {
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+    return 0;
+}
+
+long aic_rt_numeric_decimal_parse(
+    const char* text_ptr,
+    long text_len,
+    long text_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)text_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int negative = 0;
+    char* digits = NULL;
+    size_t digits_len = 0;
+    long scale = 0;
+    int error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    if (!aic_rt_numeric_parse_decimal_parts(
+            text_ptr,
+            text_len,
+            &negative,
+            &digits,
+            &digits_len,
+            &scale,
+            &error_code)) {
+        return aic_rt_numeric_write_error(
+            aic_rt_numeric_decimal_error(error_code),
+            out_err_ptr,
+            out_err_len);
+    }
+    return aic_rt_numeric_finish_decimal_result(
+        negative,
+        digits,
+        digits_len,
+        scale,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_decimal_add(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    long lhs_scale = 0;
+    long rhs_scale = 0;
+    int error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    if (!aic_rt_numeric_parse_decimal_parts(
+            lhs_ptr,
+            lhs_len,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &lhs_scale,
+            &error_code)) {
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (!aic_rt_numeric_parse_decimal_parts(
+            rhs_ptr,
+            rhs_len,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &rhs_scale,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+
+    long target_scale = lhs_scale > rhs_scale ? lhs_scale : rhs_scale;
+    size_t lhs_scaled_len = 0;
+    size_t rhs_scaled_len = 0;
+    char* lhs_scaled = aic_rt_numeric_append_zeros(
+        lhs_digits,
+        lhs_digits_len,
+        (size_t)(target_scale - lhs_scale),
+        &lhs_scaled_len);
+    char* rhs_scaled = aic_rt_numeric_append_zeros(
+        rhs_digits,
+        rhs_digits_len,
+        (size_t)(target_scale - rhs_scale),
+        &rhs_scaled_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (lhs_scaled == NULL || rhs_scaled == NULL) {
+        free(lhs_scaled);
+        free(rhs_scaled);
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+
+    int result_negative = 0;
+    char* result_digits = NULL;
+    size_t result_len = 0;
+    int ok = aic_rt_numeric_signed_add(
+        lhs_negative,
+        lhs_scaled,
+        lhs_scaled_len,
+        rhs_negative,
+        rhs_scaled,
+        rhs_scaled_len,
+        &result_negative,
+        &result_digits,
+        &result_len);
+    free(lhs_scaled);
+    free(rhs_scaled);
+    if (!ok) {
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    long result_scale = target_scale;
+    aic_rt_numeric_normalize_decimal_parts(&result_negative, result_digits, &result_len, &result_scale);
+    return aic_rt_numeric_finish_decimal_result(
+        result_negative,
+        result_digits,
+        result_len,
+        result_scale,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_decimal_sub(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    long lhs_scale = 0;
+    long rhs_scale = 0;
+    int error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    if (!aic_rt_numeric_parse_decimal_parts(
+            lhs_ptr,
+            lhs_len,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &lhs_scale,
+            &error_code)) {
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (!aic_rt_numeric_parse_decimal_parts(
+            rhs_ptr,
+            rhs_len,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &rhs_scale,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+
+    long target_scale = lhs_scale > rhs_scale ? lhs_scale : rhs_scale;
+    size_t lhs_scaled_len = 0;
+    size_t rhs_scaled_len = 0;
+    char* lhs_scaled = aic_rt_numeric_append_zeros(
+        lhs_digits,
+        lhs_digits_len,
+        (size_t)(target_scale - lhs_scale),
+        &lhs_scaled_len);
+    char* rhs_scaled = aic_rt_numeric_append_zeros(
+        rhs_digits,
+        rhs_digits_len,
+        (size_t)(target_scale - rhs_scale),
+        &rhs_scaled_len);
+    int rhs_effective_negative = rhs_negative;
+    if (!aic_rt_numeric_is_zero_digits(rhs_scaled, rhs_scaled_len)) {
+        rhs_effective_negative = rhs_effective_negative ? 0 : 1;
+    }
+    free(lhs_digits);
+    free(rhs_digits);
+    if (lhs_scaled == NULL || rhs_scaled == NULL) {
+        free(lhs_scaled);
+        free(rhs_scaled);
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+
+    int result_negative = 0;
+    char* result_digits = NULL;
+    size_t result_len = 0;
+    int ok = aic_rt_numeric_signed_add(
+        lhs_negative,
+        lhs_scaled,
+        lhs_scaled_len,
+        rhs_effective_negative,
+        rhs_scaled,
+        rhs_scaled_len,
+        &result_negative,
+        &result_digits,
+        &result_len);
+    free(lhs_scaled);
+    free(rhs_scaled);
+    if (!ok) {
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    long result_scale = target_scale;
+    aic_rt_numeric_normalize_decimal_parts(&result_negative, result_digits, &result_len, &result_scale);
+    return aic_rt_numeric_finish_decimal_result(
+        result_negative,
+        result_digits,
+        result_len,
+        result_scale,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_decimal_mul(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    long lhs_scale = 0;
+    long rhs_scale = 0;
+    int error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    if (!aic_rt_numeric_parse_decimal_parts(
+            lhs_ptr,
+            lhs_len,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &lhs_scale,
+            &error_code)) {
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (!aic_rt_numeric_parse_decimal_parts(
+            rhs_ptr,
+            rhs_len,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &rhs_scale,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (lhs_scale > LONG_MAX - rhs_scale) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    long result_scale = lhs_scale + rhs_scale;
+    size_t result_len = 0;
+    char* result_digits = aic_rt_numeric_mul_digits(
+        lhs_digits,
+        lhs_digits_len,
+        rhs_digits,
+        rhs_digits_len,
+        &result_len);
+    int result_negative =
+        (!aic_rt_numeric_is_zero_digits(result_digits, result_len) && lhs_negative != rhs_negative)
+            ? 1
+            : 0;
+    free(lhs_digits);
+    free(rhs_digits);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    aic_rt_numeric_normalize_decimal_parts(&result_negative, result_digits, &result_len, &result_scale);
+    return aic_rt_numeric_finish_decimal_result(
+        result_negative,
+        result_digits,
+        result_len,
+        result_scale,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
+long aic_rt_numeric_decimal_div(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap,
+    char** out_ptr,
+    long* out_len,
+    char** out_err_ptr,
+    long* out_err_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    aic_rt_numeric_reset_string(out_ptr, out_len);
+    aic_rt_numeric_reset_string(out_err_ptr, out_err_len);
+
+    int lhs_negative = 0;
+    int rhs_negative = 0;
+    char* lhs_digits = NULL;
+    char* rhs_digits = NULL;
+    size_t lhs_digits_len = 0;
+    size_t rhs_digits_len = 0;
+    long lhs_scale = 0;
+    long rhs_scale = 0;
+    int error_code = AIC_RT_NUMERIC_DECIMAL_OK;
+    if (!aic_rt_numeric_parse_decimal_parts(
+            lhs_ptr,
+            lhs_len,
+            &lhs_negative,
+            &lhs_digits,
+            &lhs_digits_len,
+            &lhs_scale,
+            &error_code)) {
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (!aic_rt_numeric_parse_decimal_parts(
+            rhs_ptr,
+            rhs_len,
+            &rhs_negative,
+            &rhs_digits,
+            &rhs_digits_len,
+            &rhs_scale,
+            &error_code)) {
+        free(lhs_digits);
+        return aic_rt_numeric_write_error(aic_rt_numeric_decimal_error(error_code), out_err_ptr, out_err_len);
+    }
+    if (aic_rt_numeric_is_zero_digits(rhs_digits, rhs_digits_len)) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("decimal division by zero", out_err_ptr, out_err_len);
+    }
+    if (rhs_scale > LONG_MAX - AIC_RT_NUMERIC_DECIMAL_DIV_SCALE) {
+        free(lhs_digits);
+        free(rhs_digits);
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    long numerator_scale_shift = rhs_scale + AIC_RT_NUMERIC_DECIMAL_DIV_SCALE;
+    size_t numerator_len = 0;
+    size_t denominator_len = 0;
+    char* numerator = aic_rt_numeric_append_zeros(
+        lhs_digits,
+        lhs_digits_len,
+        (size_t)numerator_scale_shift,
+        &numerator_len);
+    char* denominator = aic_rt_numeric_append_zeros(
+        rhs_digits,
+        rhs_digits_len,
+        (size_t)lhs_scale,
+        &denominator_len);
+    free(lhs_digits);
+    free(rhs_digits);
+    if (numerator == NULL || denominator == NULL) {
+        free(numerator);
+        free(denominator);
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    size_t result_len = 0;
+    char* result_digits =
+        aic_rt_numeric_divide_digits(numerator, numerator_len, denominator, denominator_len, &result_len);
+    free(numerator);
+    free(denominator);
+    if (result_digits == NULL) {
+        return aic_rt_numeric_write_error("invalid decimal: allocation failed", out_err_ptr, out_err_len);
+    }
+    int result_negative =
+        (!aic_rt_numeric_is_zero_digits(result_digits, result_len) && lhs_negative != rhs_negative)
+            ? 1
+            : 0;
+    long result_scale = AIC_RT_NUMERIC_DECIMAL_DIV_SCALE;
+    aic_rt_numeric_normalize_decimal_parts(&result_negative, result_digits, &result_len, &result_scale);
+    return aic_rt_numeric_finish_decimal_result(
+        result_negative,
+        result_digits,
+        result_len,
+        result_scale,
+        out_ptr,
+        out_len,
+        out_err_ptr,
+        out_err_len);
+}
+
 static unsigned long long aic_rt_rand_state = 0x9e3779b97f4a7c15ULL;
 static int aic_rt_rand_seeded = 0;
 

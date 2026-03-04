@@ -13,10 +13,12 @@ pub enum IntLiteralSuffixToken {
     I16,
     I32,
     I64,
+    I128,
     U8,
     U16,
     U32,
     U64,
+    U128,
 }
 
 impl IntLiteralSuffixToken {
@@ -26,16 +28,18 @@ impl IntLiteralSuffixToken {
             "i16" => Some(Self::I16),
             "i32" => Some(Self::I32),
             "i64" => Some(Self::I64),
+            "i128" => Some(Self::I128),
             "u8" => Some(Self::U8),
             "u16" => Some(Self::U16),
             "u32" => Some(Self::U32),
             "u64" => Some(Self::U64),
+            "u128" => Some(Self::U128),
             _ => None,
         }
     }
 
     fn allowed_suffixes() -> &'static str {
-        "i8, i16, i32, i64, u8, u16, u32, u64"
+        "i8, i16, i32, i64, i128, u8, u16, u32, u64, u128"
     }
 }
 
@@ -43,6 +47,7 @@ impl IntLiteralSuffixToken {
 pub struct IntLiteralToken {
     pub value: i64,
     pub raw_value_span: Span,
+    pub raw_text: String,
     pub suffix: Option<IntLiteralSuffixToken>,
 }
 
@@ -448,11 +453,25 @@ impl<'a> Lexer<'a> {
             let raw_end = self.offset;
             let text = &self.source[digits_start..raw_end];
             let (suffix, consumed_suffix) = self.lex_integer_suffix();
-            match i64::from_str_radix(text, 16) {
-                Ok(value) => {
+            match u128::from_str_radix(text, 16) {
+                Ok(raw_value) => {
+                    if raw_value > i64::MAX as u128
+                        && !matches!(
+                            suffix,
+                            Some(IntLiteralSuffixToken::I128 | IntLiteralSuffixToken::U128)
+                        )
+                    {
+                        self.error(
+                            "E0004",
+                            format!("invalid integer literal '0x{}'", text),
+                            Span::new(start, raw_end),
+                        );
+                        return;
+                    }
                     let token = IntLiteralToken {
-                        value,
+                        value: raw_value as i64,
                         raw_value_span: Span::new(start, raw_end),
+                        raw_text: self.source[start..raw_end].to_string(),
                         suffix,
                     };
                     let end = if token.suffix.is_some() {
@@ -533,11 +552,25 @@ impl<'a> Lexer<'a> {
             }
         } else {
             let (suffix, consumed_suffix) = self.lex_integer_suffix();
-            match text.parse::<i64>() {
-                Ok(value) => {
+            match text.parse::<u128>() {
+                Ok(raw_value) => {
+                    if raw_value > i64::MAX as u128
+                        && !matches!(
+                            suffix,
+                            Some(IntLiteralSuffixToken::I128 | IntLiteralSuffixToken::U128)
+                        )
+                    {
+                        self.error(
+                            "E0004",
+                            format!("invalid integer literal '{}'", text),
+                            Span::new(start, raw_end),
+                        );
+                        return;
+                    }
                     let token = IntLiteralToken {
-                        value,
+                        value: raw_value as i64,
                         raw_value_span: Span::new(start, raw_end),
+                        raw_text: self.source[start..raw_end].to_string(),
                         suffix,
                     };
                     let end = if token.suffix.is_some() {
@@ -1067,7 +1100,7 @@ mod tests {
 
     #[test]
     fn lexes_typed_integer_literal_suffixes() {
-        let src = "let a = 1i8; let b = 2u16; let c = 0xFFu8;";
+        let src = "let a = 1i8; let b = 2u16; let c = 0xFFu8; let d = 3i128; let e = 4u128;";
         let (tokens, diags) = lex(src, "test.aic");
         assert!(diags.is_empty(), "diags={diags:#?}");
         assert!(tokens.iter().any(|t| {
@@ -1096,6 +1129,51 @@ mod tests {
                         && lit.suffix == Some(IntLiteralSuffixToken::U8)
                         && lit.raw_value_span.end < t.span.end
             )
+        }));
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.value == 3
+                        && lit.suffix == Some(IntLiteralSuffixToken::I128)
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.value == 4
+                        && lit.suffix == Some(IntLiteralSuffixToken::U128)
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+    }
+
+    #[test]
+    fn lexes_large_u128_suffix_without_overflow_diagnostic() {
+        let src = "let max = 340282366920938463463374607431768211455u128;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Int(ref lit)
+                    if lit.suffix == Some(IntLiteralSuffixToken::U128)
+                && lit.raw_text == "340282366920938463463374607431768211455"
+            )
+        }));
+    }
+
+    #[test]
+    fn reports_out_of_range_u128_literal_deterministically() {
+        let src = "let too_big = 340282366920938463463374607431768211456u128;";
+        let (_tokens, diags) = lex(src, "test.aic");
+        assert!(diags.iter().any(|d| {
+            d.code == "E0004"
+                && d.message.contains("invalid integer literal")
+                && d.message
+                    .contains("340282366920938463463374607431768211456")
         }));
     }
 

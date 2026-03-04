@@ -1,0 +1,242 @@
+/// The `std.numeric` module provides runtime-backed big-number APIs.
+///
+/// ## Example
+/// ```aic
+/// import std.numeric;
+/// ```
+module std.numeric;
+
+import std.string;
+
+/// `BigInt` stores a canonical decimal string for signed arbitrary-precision integers.
+struct BigInt {
+    value: String,
+}
+
+/// `BigUInt` stores a canonical decimal string for unsigned arbitrary-precision integers.
+struct BigUInt {
+    value: String,
+}
+
+/// `Decimal` stores a canonical decimal string for fixed-point decimal arithmetic.
+struct Decimal {
+    value: String,
+}
+
+/// Runtime bridge for signed bigint parsing.
+fn aic_numeric_bigint_parse_intrinsic(text: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid bigint: empty");
+    out
+}
+
+/// Runtime bridge for signed bigint addition.
+fn aic_numeric_bigint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid bigint: operation failed");
+    out
+}
+
+/// Runtime bridge for signed bigint subtraction.
+fn aic_numeric_bigint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid bigint: operation failed");
+    out
+}
+
+/// Runtime bridge for signed bigint multiplication.
+fn aic_numeric_bigint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid bigint: operation failed");
+    out
+}
+
+/// Runtime bridge for signed bigint division.
+fn aic_numeric_bigint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("bigint division by zero");
+    out
+}
+
+/// Runtime bridge for unsigned biguint parsing.
+fn aic_numeric_biguint_parse_intrinsic(text: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid biguint: empty");
+    out
+}
+
+/// Runtime bridge for unsigned biguint addition.
+fn aic_numeric_biguint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid biguint: operation failed");
+    out
+}
+
+/// Runtime bridge for unsigned biguint subtraction.
+fn aic_numeric_biguint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("biguint subtraction underflow");
+    out
+}
+
+/// Runtime bridge for unsigned biguint multiplication.
+fn aic_numeric_biguint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid biguint: operation failed");
+    out
+}
+
+/// Runtime bridge for unsigned biguint division.
+fn aic_numeric_biguint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("biguint division by zero");
+    out
+}
+
+/// Runtime bridge for decimal parsing.
+fn aic_numeric_decimal_parse_intrinsic(text: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid decimal: empty");
+    out
+}
+
+/// Runtime bridge for decimal addition.
+fn aic_numeric_decimal_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid decimal: operation failed");
+    out
+}
+
+/// Runtime bridge for decimal subtraction.
+fn aic_numeric_decimal_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid decimal: operation failed");
+    out
+}
+
+/// Runtime bridge for decimal multiplication.
+fn aic_numeric_decimal_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("invalid decimal: operation failed");
+    out
+}
+
+/// Runtime bridge for decimal division.
+fn aic_numeric_decimal_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
+    let out: Result[String, String] = Err("decimal division by zero");
+    out
+}
+
+/// Convert `Result[String, String]` into `Result[BigInt, String]`.
+fn map_big_int_result(raw: Result[String, String]) -> Result[BigInt, String] {
+    match raw {
+        Ok(value) => Ok(BigInt { value: value }),
+        Err(err) => Err(err),
+    }
+}
+
+/// Convert `Result[String, String]` into `Result[BigUInt, String]`.
+fn map_big_uint_result(raw: Result[String, String]) -> Result[BigUInt, String] {
+    match raw {
+        Ok(value) => Ok(BigUInt { value: value }),
+        Err(err) => Err(err),
+    }
+}
+
+/// Convert `Result[String, String]` into `Result[Decimal, String]`.
+fn map_decimal_result(raw: Result[String, String]) -> Result[Decimal, String] {
+    match raw {
+        Ok(value) => Ok(Decimal { value: value }),
+        Err(err) => Err(err),
+    }
+}
+
+/// Parse a signed big integer string.
+fn parse_big_int(text: String) -> Result[BigInt, String] {
+    map_big_int_result(aic_numeric_bigint_parse_intrinsic(text))
+}
+
+/// Build a `BigInt` from a platform `Int`.
+fn big_int_from_int(value: Int) -> BigInt {
+    BigInt {
+        value: string.int_to_string(value),
+    }
+}
+
+/// Convert a `BigInt` to its canonical decimal string.
+fn big_int_to_string(value: BigInt) -> String {
+    value.value
+}
+
+/// Add two `BigInt` values.
+fn big_int_add(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String] {
+    map_big_int_result(aic_numeric_bigint_add_intrinsic(lhs.value, rhs.value))
+}
+
+/// Subtract two `BigInt` values.
+fn big_int_sub(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String] {
+    map_big_int_result(aic_numeric_bigint_sub_intrinsic(lhs.value, rhs.value))
+}
+
+/// Multiply two `BigInt` values.
+fn big_int_mul(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String] {
+    map_big_int_result(aic_numeric_bigint_mul_intrinsic(lhs.value, rhs.value))
+}
+
+/// Divide two `BigInt` values.
+fn big_int_div(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String] {
+    map_big_int_result(aic_numeric_bigint_div_intrinsic(lhs.value, rhs.value))
+}
+
+/// Parse an unsigned big integer string.
+fn parse_big_uint(text: String) -> Result[BigUInt, String] {
+    map_big_uint_result(aic_numeric_biguint_parse_intrinsic(text))
+}
+
+/// Convert a `BigUInt` to its canonical decimal string.
+fn big_uint_to_string(value: BigUInt) -> String {
+    value.value
+}
+
+/// Add two `BigUInt` values.
+fn big_uint_add(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String] {
+    map_big_uint_result(aic_numeric_biguint_add_intrinsic(lhs.value, rhs.value))
+}
+
+/// Subtract two `BigUInt` values.
+fn big_uint_sub(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String] {
+    map_big_uint_result(aic_numeric_biguint_sub_intrinsic(lhs.value, rhs.value))
+}
+
+/// Multiply two `BigUInt` values.
+fn big_uint_mul(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String] {
+    map_big_uint_result(aic_numeric_biguint_mul_intrinsic(lhs.value, rhs.value))
+}
+
+/// Divide two `BigUInt` values.
+fn big_uint_div(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String] {
+    map_big_uint_result(aic_numeric_biguint_div_intrinsic(lhs.value, rhs.value))
+}
+
+/// Parse a decimal string.
+fn parse_decimal(text: String) -> Result[Decimal, String] {
+    map_decimal_result(aic_numeric_decimal_parse_intrinsic(text))
+}
+
+/// Build a `Decimal` from a platform `Int`.
+fn decimal_from_int(value: Int) -> Decimal {
+    Decimal {
+        value: string.int_to_string(value),
+    }
+}
+
+/// Convert a `Decimal` to its canonical decimal string.
+fn decimal_to_string(value: Decimal) -> String {
+    value.value
+}
+
+/// Add two `Decimal` values.
+fn decimal_add(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String] {
+    map_decimal_result(aic_numeric_decimal_add_intrinsic(lhs.value, rhs.value))
+}
+
+/// Subtract two `Decimal` values.
+fn decimal_sub(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String] {
+    map_decimal_result(aic_numeric_decimal_sub_intrinsic(lhs.value, rhs.value))
+}
+
+/// Multiply two `Decimal` values.
+fn decimal_mul(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String] {
+    map_decimal_result(aic_numeric_decimal_mul_intrinsic(lhs.value, rhs.value))
+}
+
+/// Divide two `Decimal` values.
+fn decimal_div(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String] {
+    map_decimal_result(aic_numeric_decimal_div_intrinsic(lhs.value, rhs.value))
+}

@@ -598,6 +598,36 @@ fn rest_guide_references_existing_paths_and_ci_examples() {
 }
 
 #[test]
+fn wave1_numeric_example_contracts_are_ci_wired() {
+    let root = repo_root();
+    let migration_doc = fs::read_to_string(root.join("docs/fixed-width-primitives-migration.md"))
+        .expect("read docs/fixed-width-primitives-migration.md");
+    let ci_script = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+
+    let expected_paths = [
+        "examples/core/int128_uint128.aic",
+        "examples/data/std_numeric.aic",
+    ];
+
+    for rel in expected_paths {
+        assert!(
+            migration_doc.contains(&format!("`{rel}`")),
+            "fixed-width migration guide must reference wave1 example contract path: {rel}"
+        );
+        assert!(
+            ci_script.contains(&format!("\"{rel}\"")),
+            "examples.sh must include wave1 numeric candidate path: {rel}"
+        );
+    }
+
+    assert!(
+        ci_script.contains("for f in \"${wave1_numeric_run_smoke[@]}\"; do"),
+        "examples.sh must run wave1 numeric smoke examples in run mode when present"
+    );
+}
+
+#[test]
 fn rest_guide_docs_test_commands_are_executable() {
     let doc_path = rest_guide_doc();
     let text = fs::read_to_string(&doc_path)

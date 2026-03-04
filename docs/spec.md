@@ -179,6 +179,8 @@ Status summary (`current` -> `target`):
 - `#137` borrow completeness: lexical/local alias checks -> move tracking, cross-call/field-aware borrow reasoning, and stronger ownership diagnostics.
 - `#138` generic constraints: inline bounds only -> normalized inline + `where` constraints (with equivalent semantics).
 - `#139` inference: limited local inference and explicit closure parameter types -> broader local deterministic inference while keeping function signatures explicit.
+- `#317` 128-bit integer primitives: fixed-width family up to 64-bit -> add `Int128`/`UInt128` with deterministic literal/range/type-operator semantics.
+- `#320` numeric stdlib surface: no dedicated numeric module -> add `std.numeric` for explicit conversion/overflow-policy APIs without changing implicit-cast policy.
 
 ## 3. Canonical IR
 
@@ -267,6 +269,19 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
 ### 4.4 Migration reference
 
 - Fixed-width migration examples and rollout guidance: `docs/fixed-width-primitives-migration.md`.
+
+### 4.5 Wave 1 numeric expansion contracts (`#317`, `#320`)
+
+- Current behavior:
+  - Built-in integer primitives are `Int`, `Int8/16/32/64`, `UInt8/16/32/64`.
+  - Literal suffixes are limited to `i8/i16/i32/i64/u8/u16/u32/u64`.
+  - No dedicated `std.numeric` module is part of the documented standard library surface.
+- Target behavior (Wave 1 contract):
+  - Add `Int128` and `UInt128` as first-class fixed-width integer primitives.
+  - Extend literal suffix support with `i128` and `u128`.
+  - Preserve existing implicit conversion policy: only lossless conversions are allowed; there is still no general cast operator.
+  - Add `std.numeric` as the explicit numeric-conversion/overflow-policy module (checked/wrapping/saturating style helpers and cross-width conversion helpers), keeping arithmetic type rules deterministic.
+  - Keep diagnostic categories stable: out-of-range/type-mismatch diagnostics remain deterministic and continue to use the integer diagnostic families already documented in this spec.
 
 ## 5. Effect system
 

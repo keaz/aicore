@@ -1,0 +1,48 @@
+import std.io;
+import std.numeric;
+import std.string;
+
+fn factorial_text_ok(text: String) -> Int {
+    if string.len(text) == 33 && string.contains(text, "265252859812191058636308480000000") {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut acc = numeric.big_int_from_int(1);
+    let mut i = 2;
+    while i <= 30 {
+        acc = match numeric.big_int_mul(acc, numeric.big_int_from_int(i)) {
+            Ok(value) => value,
+            Err(_) => numeric.big_int_from_int(0),
+        };
+        i = i + 1;
+    };
+
+    let fact_text = numeric.big_int_to_string(acc);
+    let fact_ok = factorial_text_ok(fact_text);
+
+    let roundtrip_ok = match numeric.parse_big_int(fact_text) {
+        Ok(value) => factorial_text_ok(numeric.big_int_to_string(value)),
+        Err(_) => 0,
+    };
+
+    let parse_err_ok = match numeric.parse_big_int("30!") {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    };
+
+    let div_zero_ok = match numeric.big_int_div(numeric.big_int_from_int(10), numeric.big_int_from_int(0)) {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    };
+
+    if fact_ok + roundtrip_ok + parse_err_ok + div_zero_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

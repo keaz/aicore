@@ -1523,10 +1523,12 @@ impl<'a> Generator<'a> {
             | LType::Int16
             | LType::Int32
             | LType::Int64
+            | LType::Int128
             | LType::UInt8
             | LType::UInt16
             | LType::UInt32
-            | LType::UInt64 => self.json_encode_integral_runtime(value, span, fctx),
+            | LType::UInt64
+            | LType::UInt128 => self.json_encode_integral_runtime(value, span, fctx),
             LType::Float => self.json_encode_float_runtime(value, span, fctx),
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
             LType::Char => self.json_encode_char_runtime(value, span, fctx),
@@ -1817,10 +1819,12 @@ impl<'a> Generator<'a> {
             | LType::Int16
             | LType::Int32
             | LType::Int64
+            | LType::Int128
             | LType::UInt8
             | LType::UInt16
             | LType::UInt32
-            | LType::UInt64 => self.json_decode_integral_runtime(target_ty, json, span, fctx),
+            | LType::UInt64
+            | LType::UInt128 => self.json_decode_integral_runtime(target_ty, json, span, fctx),
             LType::Float => self.json_decode_float_runtime(json, span, fctx),
             LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
             LType::Char => self.json_decode_char_runtime(json, span, fctx),
@@ -2197,10 +2201,12 @@ impl<'a> Generator<'a> {
             | LType::Int16
             | LType::Int32
             | LType::Int64
+            | LType::Int128
             | LType::UInt8
             | LType::UInt16
             | LType::UInt32
-            | LType::UInt64 => Some("{\"kind\":\"int\"}".to_string()),
+            | LType::UInt64
+            | LType::UInt128 => Some("{\"kind\":\"int\"}".to_string()),
             LType::Float => Some("{\"kind\":\"float\"}".to_string()),
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
             LType::Char => Some("{\"kind\":\"char\"}".to_string()),

@@ -521,9 +521,11 @@ fn format_expr(
 
     match &expr.kind {
         ir::ExprKind::Int(v) => {
-            out.push_str(&v.to_string());
             if let Some(meta) = expr.int_literal_metadata() {
-                out.push_str(meta.suffix.as_str());
+                out.push_str(&meta.raw_literal_text);
+                out.push_str(&meta.suffix_text);
+            } else {
+                out.push_str(&v.to_string());
             }
         }
         ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
@@ -1023,9 +1025,11 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
         ir::PatternKind::Wildcard => out.push('_'),
         ir::PatternKind::Var(v) => out.push_str(v),
         ir::PatternKind::Int(v) => {
-            out.push_str(&v.to_string());
             if let Some(meta) = pattern.int_literal_metadata() {
-                out.push_str(meta.suffix.as_str());
+                out.push_str(&meta.raw_literal_text);
+                out.push_str(&meta.suffix_text);
+            } else {
+                out.push_str(&v.to_string());
             }
         }
         ir::PatternKind::Char(v) => out.push_str(&format!("{:?}", v)),

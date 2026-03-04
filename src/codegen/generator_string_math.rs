@@ -30,6 +30,21 @@ impl<'a> Generator<'a> {
             "repeat" | "aic_string_repeat_intrinsic" => "repeat",
             "parse_int" | "aic_string_parse_int_intrinsic" => "parse_int",
             "parse_float" | "aic_string_parse_float_intrinsic" => "parse_float",
+            "aic_numeric_bigint_parse_intrinsic" => "numeric_bigint_parse",
+            "aic_numeric_bigint_add_intrinsic" => "numeric_bigint_add",
+            "aic_numeric_bigint_sub_intrinsic" => "numeric_bigint_sub",
+            "aic_numeric_bigint_mul_intrinsic" => "numeric_bigint_mul",
+            "aic_numeric_bigint_div_intrinsic" => "numeric_bigint_div",
+            "aic_numeric_biguint_parse_intrinsic" => "numeric_biguint_parse",
+            "aic_numeric_biguint_add_intrinsic" => "numeric_biguint_add",
+            "aic_numeric_biguint_sub_intrinsic" => "numeric_biguint_sub",
+            "aic_numeric_biguint_mul_intrinsic" => "numeric_biguint_mul",
+            "aic_numeric_biguint_div_intrinsic" => "numeric_biguint_div",
+            "aic_numeric_decimal_parse_intrinsic" => "numeric_decimal_parse",
+            "aic_numeric_decimal_add_intrinsic" => "numeric_decimal_add",
+            "aic_numeric_decimal_sub_intrinsic" => "numeric_decimal_sub",
+            "aic_numeric_decimal_mul_intrinsic" => "numeric_decimal_mul",
+            "aic_numeric_decimal_div_intrinsic" => "numeric_decimal_div",
             "int_to_string" | "aic_string_int_to_string_intrinsic" => "int_to_string",
             "float_to_string" | "aic_string_float_to_string_intrinsic" => "float_to_string",
             "bool_to_string" | "aic_string_bool_to_string_intrinsic" => "bool_to_string",
@@ -166,6 +181,234 @@ impl<'a> Generator<'a> {
             }
             "parse_float" if self.sig_matches_shape(name, &["String"], "Result[Float, String]") => {
                 Some(self.gen_string_parse_float_call(name, args, span, fctx))
+            }
+            "numeric_bigint_parse"
+                if self.sig_matches_shape(name, &["String"], "Result[String, String]") =>
+            {
+                Some(self.gen_string_result_string_unary_call(
+                    name,
+                    "aic_numeric_bigint_parse_intrinsic",
+                    "aic_rt_numeric_bigint_parse",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_bigint_add"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_bigint_add_intrinsic",
+                    "aic_rt_numeric_bigint_add",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_bigint_sub"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_bigint_sub_intrinsic",
+                    "aic_rt_numeric_bigint_sub",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_bigint_mul"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_bigint_mul_intrinsic",
+                    "aic_rt_numeric_bigint_mul",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_bigint_div"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_bigint_div_intrinsic",
+                    "aic_rt_numeric_bigint_div",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_biguint_parse"
+                if self.sig_matches_shape(name, &["String"], "Result[String, String]") =>
+            {
+                Some(self.gen_string_result_string_unary_call(
+                    name,
+                    "aic_numeric_biguint_parse_intrinsic",
+                    "aic_rt_numeric_biguint_parse",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_biguint_add"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_biguint_add_intrinsic",
+                    "aic_rt_numeric_biguint_add",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_biguint_sub"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_biguint_sub_intrinsic",
+                    "aic_rt_numeric_biguint_sub",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_biguint_mul"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_biguint_mul_intrinsic",
+                    "aic_rt_numeric_biguint_mul",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_biguint_div"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_biguint_div_intrinsic",
+                    "aic_rt_numeric_biguint_div",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_decimal_parse"
+                if self.sig_matches_shape(name, &["String"], "Result[String, String]") =>
+            {
+                Some(self.gen_string_result_string_unary_call(
+                    name,
+                    "aic_numeric_decimal_parse_intrinsic",
+                    "aic_rt_numeric_decimal_parse",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_decimal_add"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_decimal_add_intrinsic",
+                    "aic_rt_numeric_decimal_add",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_decimal_sub"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_decimal_sub_intrinsic",
+                    "aic_rt_numeric_decimal_sub",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_decimal_mul"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_decimal_mul_intrinsic",
+                    "aic_rt_numeric_decimal_mul",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "numeric_decimal_div"
+                if self.sig_matches_shape(
+                    name,
+                    &["String", "String"],
+                    "Result[String, String]",
+                ) =>
+            {
+                Some(self.gen_string_result_string_binary_call(
+                    name,
+                    "aic_numeric_decimal_div_intrinsic",
+                    "aic_rt_numeric_decimal_div",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "int_to_string" if self.sig_matches_shape(name, &["Int"], "String") => {
                 Some(self.gen_string_int_to_string_call(args, span, fctx))
@@ -1492,6 +1735,335 @@ impl<'a> Generator<'a> {
         let ok_label = self.new_label("string_parse_float_ok");
         let err_label = self.new_label("string_parse_float_err");
         let cont_label = self.new_label("string_parse_float_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(&result_ty),
+            llvm_type(&result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty,
+            repr: Some(reg),
+        })
+    }
+
+    pub(super) fn gen_string_result_string_unary_call(
+        &mut self,
+        fn_name: &str,
+        display_name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{display_name} expects one argument"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let value = self.gen_expr(&args[0], fctx)?;
+        if value.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{display_name} expects String"),
+                self.file,
+                args[0].span,
+            ));
+            return None;
+        }
+        let (value_ptr, value_len, value_cap) = self.string_parts(&value, args[0].span, fctx)?;
+        let out_ok_ptr_slot = self.new_temp();
+        let out_ok_len_slot = self.new_temp();
+        let out_err_ptr_slot = self.new_temp();
+        let out_err_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_ok_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_ok_len_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_err_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_err_len_slot));
+        let status = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            status,
+            runtime_fn,
+            value_ptr,
+            value_len,
+            value_cap,
+            out_ok_ptr_slot,
+            out_ok_len_slot,
+            out_err_ptr_slot,
+            out_err_len_slot
+        ));
+        let out_ok_ptr = self.new_temp();
+        let out_ok_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_ok_ptr, out_ok_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_ok_len, out_ok_len_slot
+        ));
+        let out_err_ptr = self.new_temp();
+        let out_err_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_err_ptr, out_err_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_err_len, out_err_len_slot
+        ));
+
+        let result_ty = self
+            .fn_sigs
+            .get(fn_name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{fn_name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            })?;
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(&result_ty, span)
+        else {
+            return None;
+        };
+        if ok_ty != LType::String || err_ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{display_name} expects Result[String, String] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_payload = self.build_string_value(&out_ok_ptr, &out_ok_len, &out_ok_len, fctx);
+        let err_payload = self.build_string_value(&out_err_ptr, &out_err_len, &out_err_len, fctx);
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(&result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, status));
+        let ok_label = self.new_label("result_string_unary_ok");
+        let err_label = self.new_label("result_string_unary_err");
+        let cont_label = self.new_label("result_string_unary_cont");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            ok_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            slot
+        ));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(&result_ty),
+            llvm_type(&result_ty),
+            slot
+        ));
+        Some(Value {
+            ty: result_ty,
+            repr: Some(reg),
+        })
+    }
+
+    pub(super) fn gen_string_result_string_binary_call(
+        &mut self,
+        fn_name: &str,
+        display_name: &str,
+        runtime_fn: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 2 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                format!("{display_name} expects two arguments"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let lhs = self.gen_expr(&args[0], fctx)?;
+        let rhs = self.gen_expr(&args[1], fctx)?;
+        if lhs.ty != LType::String || rhs.ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{display_name} expects (String, String)"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let (lhs_ptr, lhs_len, lhs_cap) = self.string_parts(&lhs, args[0].span, fctx)?;
+        let (rhs_ptr, rhs_len, rhs_cap) = self.string_parts(&rhs, args[1].span, fctx)?;
+        let out_ok_ptr_slot = self.new_temp();
+        let out_ok_len_slot = self.new_temp();
+        let out_err_ptr_slot = self.new_temp();
+        let out_err_len_slot = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_ok_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_ok_len_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i8*", out_err_ptr_slot));
+        fctx.lines
+            .push(format!("  {} = alloca i64", out_err_len_slot));
+        let status = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @{}(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {})",
+            status,
+            runtime_fn,
+            lhs_ptr,
+            lhs_len,
+            lhs_cap,
+            rhs_ptr,
+            rhs_len,
+            rhs_cap,
+            out_ok_ptr_slot,
+            out_ok_len_slot,
+            out_err_ptr_slot,
+            out_err_len_slot
+        ));
+        let out_ok_ptr = self.new_temp();
+        let out_ok_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_ok_ptr, out_ok_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_ok_len, out_ok_len_slot
+        ));
+        let out_err_ptr = self.new_temp();
+        let out_err_len = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i8*, i8** {}",
+            out_err_ptr, out_err_ptr_slot
+        ));
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            out_err_len, out_err_len_slot
+        ));
+
+        let result_ty = self
+            .fn_sigs
+            .get(fn_name)
+            .map(|sig| sig.ret.clone())
+            .or_else(|| {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{fn_name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            })?;
+        let Some((layout, ok_ty, err_ty, ok_index, err_index)) =
+            self.result_layout_parts(&result_ty, span)
+        else {
+            return None;
+        };
+        if ok_ty != LType::String || err_ty != LType::String {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!("{display_name} expects Result[String, String] return type"),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let ok_payload = self.build_string_value(&out_ok_ptr, &out_ok_len, &out_ok_len, fctx);
+        let err_payload = self.build_string_value(&out_err_ptr, &out_err_len, &out_err_len, fctx);
+        let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
+        let err_value =
+            self.build_enum_variant(&layout, err_index, Some(err_payload), span, fctx)?;
+
+        let slot = self.alloc_entry_slot(&result_ty, fctx);
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", is_ok, status));
+        let ok_label = self.new_label("result_string_binary_ok");
+        let err_label = self.new_label("result_string_binary_err");
+        let cont_label = self.new_label("result_string_binary_cont");
         fctx.lines.push(format!(
             "  br i1 {}, label %{}, label %{}",
             is_ok, ok_label, err_label

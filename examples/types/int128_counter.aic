@@ -1,0 +1,21 @@
+import std.io;
+
+fn step(counter: Int128, delta: Int128) -> Int128 {
+    counter + delta
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut counter: Int128 = 0i128;
+    let mut i: Int = 0;
+    while i < 5 {
+        counter = step(counter, 3i128);
+        i = i + 1;
+    };
+
+    if counter == 15i128 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -225,6 +225,7 @@ pub enum IntLiteralWidth {
     W16,
     W32,
     W64,
+    W128,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,19 +298,43 @@ pub struct IntLiteralKind {
     pub width: IntLiteralWidth,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntLiteralMetadata {
     pub suffix: IntLiteralSuffix,
+    pub suffix_text: String,
     pub kind: IntLiteralKind,
     pub raw_value_span: Span,
+    pub raw_literal_text: String,
 }
 
 impl IntLiteralMetadata {
-    pub fn new(suffix: IntLiteralSuffix, raw_value_span: Span) -> Self {
+    pub fn new(
+        suffix: IntLiteralSuffix,
+        raw_value_span: Span,
+        raw_literal_text: impl Into<String>,
+    ) -> Self {
         Self {
             kind: suffix.kind(),
             suffix,
+            suffix_text: suffix.as_str().to_string(),
             raw_value_span,
+            raw_literal_text: raw_literal_text.into(),
+        }
+    }
+
+    pub fn with_kind_and_suffix_text(
+        suffix: IntLiteralSuffix,
+        kind: IntLiteralKind,
+        suffix_text: impl Into<String>,
+        raw_value_span: Span,
+        raw_literal_text: impl Into<String>,
+    ) -> Self {
+        Self {
+            suffix,
+            suffix_text: suffix_text.into(),
+            kind,
+            raw_value_span,
+            raw_literal_text: raw_literal_text.into(),
         }
     }
 }
@@ -337,7 +362,7 @@ pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralM
 
 pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
     INT_LITERAL_METADATA_STORE
-        .with(|store| store.borrow().get(&(span.start, span.end, value)).copied())
+        .with(|store| store.borrow().get(&(span.start, span.end, value)).cloned())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

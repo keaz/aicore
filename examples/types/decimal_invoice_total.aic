@@ -1,0 +1,79 @@
+import std.io;
+import std.numeric;
+import std.string;
+
+fn parse_or_zero(text: String) -> Decimal {
+    match numeric.parse_decimal(text) {
+        Ok(value) => value,
+        Err(_) => numeric.decimal_from_int(0),
+    }
+}
+
+fn add_or_zero(lhs: Decimal, rhs: Decimal) -> Decimal {
+    match numeric.decimal_add(lhs, rhs) {
+        Ok(value) => value,
+        Err(_) => numeric.decimal_from_int(0),
+    }
+}
+
+fn sub_or_zero(lhs: Decimal, rhs: Decimal) -> Decimal {
+    match numeric.decimal_sub(lhs, rhs) {
+        Ok(value) => value,
+        Err(_) => numeric.decimal_from_int(0),
+    }
+}
+
+fn mul_or_zero(lhs: Decimal, rhs: Decimal) -> Decimal {
+    match numeric.decimal_mul(lhs, rhs) {
+        Ok(value) => value,
+        Err(_) => numeric.decimal_from_int(0),
+    }
+}
+
+fn div_or_zero(lhs: Decimal, rhs: Decimal) -> Decimal {
+    match numeric.decimal_div(lhs, rhs) {
+        Ok(value) => value,
+        Err(_) => numeric.decimal_from_int(0),
+    }
+}
+
+fn decimal_err(v: Result[Decimal, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    }
+}
+
+fn invoice_due() -> Decimal {
+    let subtotal = add_or_zero(
+        mul_or_zero(parse_or_zero("12.50"), parse_or_zero("4")),
+        mul_or_zero(parse_or_zero("3.40"), parse_or_zero("5"))
+    );
+    let service = mul_or_zero(subtotal, parse_or_zero("0.10"));
+    let gross = add_or_zero(
+        add_or_zero(
+            mul_or_zero(parse_or_zero("12.50"), parse_or_zero("4")),
+            mul_or_zero(parse_or_zero("3.40"), parse_or_zero("5"))
+        ),
+        service
+    );
+    sub_or_zero(gross, parse_or_zero("70.2"))
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let due_text = numeric.decimal_to_string(invoice_due());
+    let split_text = numeric.decimal_to_string(div_or_zero(invoice_due(), parse_or_zero("2")));
+
+    let due_ok = if string.len(due_text) == 3 && string.contains(due_text, "3.5") { 1 } else { 0 };
+    let split_ok = if string.len(split_text) == 4 && string.contains(split_text, "1.75") { 1 } else { 0 };
+
+    let invalid_parse_ok = decimal_err(numeric.parse_decimal("12..5"));
+    let divide_zero_ok = decimal_err(numeric.decimal_div(parse_or_zero("7.5"), parse_or_zero("0")));
+
+    if due_ok + split_ok + invalid_parse_ok + divide_zero_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

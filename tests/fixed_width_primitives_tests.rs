@@ -63,26 +63,32 @@ fn narrow_types(
     b: Int16,
     c: Int32,
     d: Int64,
+    i: Int128,
     e: UInt8,
     f: UInt16,
     g: UInt32,
     h: UInt64,
+    j: UInt128,
 ) -> Int {
     let _a: Int8 = a;
     let _b: Int16 = b;
     let _c: Int32 = c;
     let _d: Int64 = d;
+    let _i: Int128 = i;
     let _e: UInt8 = e;
     let _f: UInt16 = f;
     let _g: UInt32 = g;
     let _h: UInt64 = h;
+    let _j: UInt128 = j;
     let _sum: Int32 = c + 1;
+    let _wide: Int128 = i + 1i128;
     let _shifted: UInt32 = g >>> 1;
+    let _wide_shifted: UInt128 = j >>> 1u128;
     0
 }
 
 fn main() -> Int {
-    narrow_types(1, 2, 3, 4, 5, 6, 7, 8)
+    narrow_types(1, 2, 3, 4, 5i128, 6, 7, 8, 9u64, 10u128)
 }
 "#,
     );
@@ -291,6 +297,41 @@ fn main() -> Int {
 }
 
 #[test]
+fn int128_uint128_literal_boundaries_and_failures_typecheck() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main() -> Int {
+    let _ok_i128_min: Int128 = -170141183460469231731687303715884105728i128;
+    let _ok_u128_max: UInt128 = 340282366920938463463374607431768211455u128;
+    let _bad_i128: Int128 = 170141183460469231731687303715884105728i128;
+    let _bad_u128_neg: UInt128 = -1u128;
+    0
+}
+"#,
+    );
+
+    let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("Int128")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("UInt128")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn fixed_width_integer_pattern_range_diagnostics() {
     let dir = tempdir().expect("tempdir");
     write_main(
@@ -353,6 +394,33 @@ fn main(a: Int16, b: UInt16) -> Int {
     let conversion_diags = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
     assert!(
         conversion_diags >= 3,
+        "expected conversion diagnostics, got {conversion_diags}: {:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn fixed_width_int128_uint128_assignments_enforce_lossless_rules() {
+    let dir = tempdir().expect("tempdir");
+    write_main(
+        dir.path(),
+        r#"module app.main;
+
+fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
+    let _ok_signed_widen: Int128 = a;
+    let _ok_unsigned_widen: UInt128 = b;
+    let _bad_signed_to_unsigned: UInt128 = c;
+    let _bad_unsigned_to_signed: Int128 = d;
+    0
+}
+"#,
+    );
+
+    let out = run_frontend(&dir.path().join("src/main.aic")).expect("frontend");
+    assert!(has_errors(&out.diagnostics), "diags={:#?}", out.diagnostics);
+    let conversion_diags = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
+    assert!(
+        conversion_diags >= 2,
         "expected conversion diagnostics, got {conversion_diags}: {:#?}",
         out.diagnostics
     );

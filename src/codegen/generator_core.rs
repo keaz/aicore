@@ -115,6 +115,51 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare i64 @aic_rt_string_parse_float(i8*, i64, i64, double*, i8**, i64*)\n",
         );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_bigint_parse(i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_bigint_add(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_bigint_sub(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_bigint_mul(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_bigint_div(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_biguint_parse(i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_biguint_add(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_biguint_sub(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_biguint_mul(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_biguint_div(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_decimal_parse(i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_decimal_add(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_decimal_sub(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_decimal_mul(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_numeric_decimal_div(i8*, i64, i64, i8*, i64, i64, i8**, i64*, i8**, i64*)\n",
+        );
         text.push_str("declare void @aic_rt_string_int_to_string(i64, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_string_float_to_string(double, i8**, i64*)\n");
         text.push_str("declare void @aic_rt_string_bool_to_string(i64, i8**, i64*)\n");
@@ -2353,18 +2398,47 @@ impl<'a> Generator<'a> {
 
     fn int_literal_type_hint(&self, expr: &ir::Expr, expected_ty: Option<&LType>) -> Option<LType> {
         if let Some(meta) = expr.int_literal_metadata() {
-            return Some(match meta.suffix {
-                crate::ast::IntLiteralSuffix::I8 => LType::Int8,
-                crate::ast::IntLiteralSuffix::I16 => LType::Int16,
-                crate::ast::IntLiteralSuffix::I32 => LType::Int32,
-                crate::ast::IntLiteralSuffix::I64 => LType::Int64,
-                crate::ast::IntLiteralSuffix::U8 => LType::UInt8,
-                crate::ast::IntLiteralSuffix::U16 => LType::UInt16,
-                crate::ast::IntLiteralSuffix::U32 => LType::UInt32,
-                crate::ast::IntLiteralSuffix::U64 => LType::UInt64,
+            return Some(match (meta.kind.signedness, meta.kind.width) {
+                (crate::ast::IntLiteralSignedness::Signed, crate::ast::IntLiteralWidth::W8) => {
+                    LType::Int8
+                }
+                (crate::ast::IntLiteralSignedness::Signed, crate::ast::IntLiteralWidth::W16) => {
+                    LType::Int16
+                }
+                (crate::ast::IntLiteralSignedness::Signed, crate::ast::IntLiteralWidth::W32) => {
+                    LType::Int32
+                }
+                (crate::ast::IntLiteralSignedness::Signed, crate::ast::IntLiteralWidth::W64) => {
+                    LType::Int64
+                }
+                (crate::ast::IntLiteralSignedness::Signed, crate::ast::IntLiteralWidth::W128) => {
+                    LType::Int128
+                }
+                (crate::ast::IntLiteralSignedness::Unsigned, crate::ast::IntLiteralWidth::W8) => {
+                    LType::UInt8
+                }
+                (crate::ast::IntLiteralSignedness::Unsigned, crate::ast::IntLiteralWidth::W16) => {
+                    LType::UInt16
+                }
+                (crate::ast::IntLiteralSignedness::Unsigned, crate::ast::IntLiteralWidth::W32) => {
+                    LType::UInt32
+                }
+                (crate::ast::IntLiteralSignedness::Unsigned, crate::ast::IntLiteralWidth::W64) => {
+                    LType::UInt64
+                }
+                (crate::ast::IntLiteralSignedness::Unsigned, crate::ast::IntLiteralWidth::W128) => {
+                    LType::UInt128
+                }
             });
         }
         expected_ty.filter(|ty| is_integral_type(ty)).cloned()
+    }
+
+    fn int_literal_llvm_repr(&self, expr: &ir::Expr, fallback: i64) -> String {
+        expr.int_literal_metadata()
+            .and_then(|meta| parse_raw_int_literal_magnitude(&meta.raw_literal_text))
+            .map(|magnitude| magnitude.to_string())
+            .unwrap_or_else(|| fallback.to_string())
     }
 
     pub(super) fn gen_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> Option<Value> {
@@ -2384,7 +2458,7 @@ impl<'a> Generator<'a> {
                     .unwrap_or(LType::Int);
                 Some(Value {
                     ty: literal_ty,
-                    repr: Some(v.to_string()),
+                    repr: Some(self.int_literal_llvm_repr(expr, *v)),
                 })
             }
             ir::ExprKind::Float(v) => Some(Value {
@@ -3374,10 +3448,12 @@ impl<'a> Generator<'a> {
             LType::Int16 => Some("Int16".to_string()),
             LType::Int32 => Some("Int32".to_string()),
             LType::Int64 => Some("Int64".to_string()),
+            LType::Int128 => Some("Int128".to_string()),
             LType::UInt8 => Some("UInt8".to_string()),
             LType::UInt16 => Some("UInt16".to_string()),
             LType::UInt32 => Some("UInt32".to_string()),
             LType::UInt64 => Some("UInt64".to_string()),
+            LType::UInt128 => Some("UInt128".to_string()),
             LType::Float => Some("Float".to_string()),
             LType::Bool => Some("Bool".to_string()),
             LType::String => Some("String".to_string()),
@@ -5295,4 +5371,16 @@ fn type_uses_generic(ty: &str, generic: &str) -> bool {
     extract_generic_args(ty)
         .map(|args| args.iter().any(|arg| type_uses_generic(arg, generic)))
         .unwrap_or(false)
+}
+
+fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
+    let trimmed = text.trim();
+    if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
+        u128::from_str_radix(hex, 16).ok()
+    } else {
+        trimmed.parse::<u128>().ok()
+    }
 }

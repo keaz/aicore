@@ -2221,6 +2221,7 @@ impl<'a> Parser<'a> {
                     literal.value,
                     literal.suffix,
                     literal.raw_value_span,
+                    literal.raw_text,
                 );
                 Some(Expr {
                     kind: ExprKind::Int(literal.value),
@@ -2988,16 +2989,46 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn int_literal_suffix_to_ast(suffix: IntLiteralSuffixToken) -> IntLiteralSuffix {
+    fn int_literal_suffix_to_ast(
+        suffix: IntLiteralSuffixToken,
+    ) -> (IntLiteralSuffix, IntLiteralKind, &'static str) {
         match suffix {
-            IntLiteralSuffixToken::I8 => IntLiteralSuffix::I8,
-            IntLiteralSuffixToken::I16 => IntLiteralSuffix::I16,
-            IntLiteralSuffixToken::I32 => IntLiteralSuffix::I32,
-            IntLiteralSuffixToken::I64 => IntLiteralSuffix::I64,
-            IntLiteralSuffixToken::U8 => IntLiteralSuffix::U8,
-            IntLiteralSuffixToken::U16 => IntLiteralSuffix::U16,
-            IntLiteralSuffixToken::U32 => IntLiteralSuffix::U32,
-            IntLiteralSuffixToken::U64 => IntLiteralSuffix::U64,
+            IntLiteralSuffixToken::I8 => (IntLiteralSuffix::I8, IntLiteralSuffix::I8.kind(), "i8"),
+            IntLiteralSuffixToken::I16 => {
+                (IntLiteralSuffix::I16, IntLiteralSuffix::I16.kind(), "i16")
+            }
+            IntLiteralSuffixToken::I32 => {
+                (IntLiteralSuffix::I32, IntLiteralSuffix::I32.kind(), "i32")
+            }
+            IntLiteralSuffixToken::I64 => {
+                (IntLiteralSuffix::I64, IntLiteralSuffix::I64.kind(), "i64")
+            }
+            IntLiteralSuffixToken::I128 => (
+                IntLiteralSuffix::I64,
+                IntLiteralKind {
+                    signedness: IntLiteralSignedness::Signed,
+                    width: IntLiteralWidth::W128,
+                },
+                "i128",
+            ),
+            IntLiteralSuffixToken::U8 => (IntLiteralSuffix::U8, IntLiteralSuffix::U8.kind(), "u8"),
+            IntLiteralSuffixToken::U16 => {
+                (IntLiteralSuffix::U16, IntLiteralSuffix::U16.kind(), "u16")
+            }
+            IntLiteralSuffixToken::U32 => {
+                (IntLiteralSuffix::U32, IntLiteralSuffix::U32.kind(), "u32")
+            }
+            IntLiteralSuffixToken::U64 => {
+                (IntLiteralSuffix::U64, IntLiteralSuffix::U64.kind(), "u64")
+            }
+            IntLiteralSuffixToken::U128 => (
+                IntLiteralSuffix::U64,
+                IntLiteralKind {
+                    signedness: IntLiteralSignedness::Unsigned,
+                    width: IntLiteralWidth::W128,
+                },
+                "u128",
+            ),
         }
     }
 
@@ -3007,13 +3038,20 @@ impl<'a> Parser<'a> {
         value: i64,
         suffix: Option<IntLiteralSuffixToken>,
         raw_value_span: Span,
+        raw_literal_text: String,
     ) {
         let Some(suffix) = suffix else {
             return;
         };
-        let ast_suffix = Self::int_literal_suffix_to_ast(suffix);
-        let ast_meta = IntLiteralMetadata::new(ast_suffix, raw_value_span);
-        record_int_literal_metadata(span, value, ast_meta);
+        let (ast_suffix, ast_kind, suffix_text) = Self::int_literal_suffix_to_ast(suffix);
+        let ast_meta = IntLiteralMetadata::with_kind_and_suffix_text(
+            ast_suffix,
+            ast_kind,
+            suffix_text,
+            raw_value_span,
+            raw_literal_text,
+        );
+        record_int_literal_metadata(span, value, ast_meta.clone());
         ir::record_int_literal_metadata(span, value, ast_meta);
     }
 
@@ -3388,6 +3426,7 @@ impl<'a> Parser<'a> {
                     literal.value,
                     literal.suffix,
                     literal.raw_value_span,
+                    literal.raw_text,
                 );
                 Some(Pattern {
                     kind: PatternKind::Int(literal.value),
@@ -4303,11 +4342,12 @@ fn widen(
     b: Int16,
     c: Int32,
     d: Int64,
+    i: Int128,
     e: UInt8,
     f: UInt16,
     g: UInt32,
     h: UInt64,
-) -> UInt64 {
+) -> UInt128 {
     h
 }
 "#;
@@ -4319,7 +4359,7 @@ fn widen(
             _ => panic!("expected function"),
         };
         let expected = [
-            "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
+            "Int8", "Int16", "Int32", "Int64", "Int128", "UInt8", "UInt16", "UInt32", "UInt64",
         ];
         for (param, expected_name) in f.params.iter().zip(expected.iter()) {
             assert!(matches!(
@@ -4329,7 +4369,7 @@ fn widen(
         }
         assert!(matches!(
             &f.ret_type.kind,
-            TypeKind::Named { name, args } if name == "UInt64" && args.is_empty()
+            TypeKind::Named { name, args } if name == "UInt128" && args.is_empty()
         ));
     }
 
@@ -4338,6 +4378,7 @@ fn widen(
         let src = r#"
 fn main() -> Int {
     let a: Int8 = 1i8;
+    let b: UInt128 = 340282366920938463463374607431768211455u128;
     match a {
         1i8 => 1,
         _ => 0,
@@ -4358,9 +4399,27 @@ fn main() -> Int {
             .int_literal_metadata()
             .expect("expected typed int metadata for expression literal");
         assert_eq!(expr_meta.suffix, IntLiteralSuffix::I8);
+        assert_eq!(expr_meta.suffix_text, "i8");
         assert_eq!(expr_meta.kind.signedness, IntLiteralSignedness::Signed);
         assert_eq!(expr_meta.kind.width, IntLiteralWidth::W8);
         assert!(expr_meta.raw_value_span.end < expr.span.end);
+
+        let Stmt::Let {
+            expr: expr_u128, ..
+        } = &f.body.stmts[1]
+        else {
+            panic!("expected second let statement");
+        };
+        let expr_u128_meta = expr_u128
+            .int_literal_metadata()
+            .expect("expected typed int metadata for u128 expression literal");
+        assert_eq!(expr_u128_meta.suffix, IntLiteralSuffix::U64);
+        assert_eq!(expr_u128_meta.suffix_text, "u128");
+        assert_eq!(
+            expr_u128_meta.kind.signedness,
+            IntLiteralSignedness::Unsigned
+        );
+        assert_eq!(expr_u128_meta.kind.width, IntLiteralWidth::W128);
 
         let tail = f.body.tail.as_ref().expect("tail expression");
         let ExprKind::Match { arms, .. } = &tail.kind else {
@@ -4371,6 +4430,7 @@ fn main() -> Int {
             .int_literal_metadata()
             .expect("expected typed int metadata for pattern literal");
         assert_eq!(pattern_meta.suffix, IntLiteralSuffix::I8);
+        assert_eq!(pattern_meta.suffix_text, "i8");
         assert_eq!(pattern_meta.kind.signedness, IntLiteralSignedness::Signed);
         assert_eq!(pattern_meta.kind.width, IntLiteralWidth::W8);
     }

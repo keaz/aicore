@@ -7,14 +7,20 @@ use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo}
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
-const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 8] = [
-    "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
+const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 10] = [
+    "Int8", "Int16", "Int32", "Int64", "Int128", "UInt8", "UInt16", "UInt32", "UInt64", "UInt128",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IntegerKind {
     Int,
     Fixed { signed: bool, bits: u8 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegerLiteralValue {
+    NonNegative(u128),
+    NegativeMagnitude(u128),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3323,14 +3329,62 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn expr_int_literal_value(&self, expr: &ir::Expr) -> Option<i128> {
+    fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
+        let trimmed = text.trim();
+        if let Some(hex) = trimmed
+            .strip_prefix("0x")
+            .or_else(|| trimmed.strip_prefix("0X"))
+        {
+            u128::from_str_radix(hex, 16).ok()
+        } else {
+            trimmed.parse::<u128>().ok()
+        }
+    }
+
+    fn non_negative_integer_literal_value(
+        &self,
+        value: i64,
+        metadata: Option<&ir::IntLiteralMetadata>,
+    ) -> Option<IntegerLiteralValue> {
+        if let Some(meta) = metadata {
+            return Self::parse_raw_int_literal_magnitude(&meta.raw_literal_text)
+                .map(IntegerLiteralValue::NonNegative);
+        }
+        if value < 0 {
+            return None;
+        }
+        Some(IntegerLiteralValue::NonNegative(value as u128))
+    }
+
+    fn negative_integer_literal_value(
+        &self,
+        value: i64,
+        metadata: Option<&ir::IntLiteralMetadata>,
+    ) -> Option<IntegerLiteralValue> {
+        if let Some(meta) = metadata {
+            return Self::parse_raw_int_literal_magnitude(&meta.raw_literal_text)
+                .map(IntegerLiteralValue::NegativeMagnitude);
+        }
+        if value < 0 {
+            return None;
+        }
+        Some(IntegerLiteralValue::NegativeMagnitude(value as u128))
+    }
+
+    fn expr_int_literal_value(&self, expr: &ir::Expr) -> Option<IntegerLiteralValue> {
         match &expr.kind {
-            ir::ExprKind::Int(value) => Some(*value as i128),
+            ir::ExprKind::Int(value) => {
+                let metadata = expr.int_literal_metadata();
+                self.non_negative_integer_literal_value(*value, metadata.as_ref())
+            }
             ir::ExprKind::Unary {
                 op: crate::ast::UnaryOp::Neg,
                 expr: inner,
             } => match inner.kind {
-                ir::ExprKind::Int(value) => Some(-(value as i128)),
+                ir::ExprKind::Int(value) => {
+                    let metadata = inner.int_literal_metadata();
+                    self.negative_integer_literal_value(value, metadata.as_ref())
+                }
                 _ => None,
             },
             _ => None,
@@ -3345,7 +3399,7 @@ impl<'a> Checker<'a> {
         let Some(kind) = parse_integer_kind(&expected_norm) else {
             return false;
         };
-        integer_value_fits_kind(value, kind)
+        integer_literal_fits_kind(value, kind)
     }
 
     fn argument_type_compatible(&self, expected: &str, found: &str, arg: &ir::Expr) -> bool {
@@ -3353,28 +3407,9 @@ impl<'a> Checker<'a> {
             || self.integer_literal_fits_expected_type(arg, expected)
     }
 
-    fn generic_binding_accepts_integer_literal(
-        &self,
-        expected_norm: &str,
-        arg: &ir::Expr,
-        generic_bindings: &BTreeMap<String, String>,
-    ) -> bool {
-        let Some(value) = self.expr_int_literal_value(arg) else {
-            return false;
-        };
-        let Some(bound) = generic_bindings.get(expected_norm) else {
-            return false;
-        };
-        let bound_norm = self.normalize_type(bound);
-        let Some(kind) = parse_integer_kind(&bound_norm) else {
-            return false;
-        };
-        integer_value_fits_kind(value, kind)
-    }
-
     fn validate_integer_literal_range(
         &mut self,
-        value: i128,
+        value: IntegerLiteralValue,
         target_ty: &str,
         span: crate::span::Span,
         code: &str,
@@ -3383,15 +3418,16 @@ impl<'a> Checker<'a> {
         let Some(kind) = parse_integer_kind(target_ty) else {
             return true;
         };
-        if integer_value_fits_kind(value, kind) {
+        if integer_literal_fits_kind(value, kind) {
             return true;
         }
-        let (min, max) = integer_kind_range(kind);
+        let (min, max) = integer_kind_range_text(kind);
+        let found = integer_literal_value_text(value);
         self.diagnostics.push(
             Diagnostic::error(
                 code,
                 format!(
-                    "{subject} is out of range for type '{target_ty}' (expected {min}..={max}, found {value})"
+                    "{subject} is out of range for type '{target_ty}' (expected {min}..={max}, found {found})"
                 ),
                 self.file,
                 span,
@@ -3409,23 +3445,28 @@ impl<'a> Checker<'a> {
     ) -> String {
         let expected_int = self.integer_expected_type_hint(expected_ty);
         let metadata = expr.int_literal_metadata();
-        if let Some(meta) = metadata {
-            let literal_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+        if let Some(meta) = metadata.as_ref() {
+            let literal_ty = integer_kind_type_name(integer_kind_from_literal_kind(meta.kind));
+            let literal_value = self
+                .non_negative_integer_literal_value(value, Some(meta))
+                .unwrap_or(IntegerLiteralValue::NonNegative(value.max(0) as u128));
             self.validate_integer_literal_range(
-                value as i128,
+                literal_value,
                 literal_ty,
                 expr.span,
                 "E1204",
                 &format!(
                     "integer literal '{}' with suffix '{}'",
-                    value,
-                    meta.suffix.as_str()
+                    meta.raw_literal_text, meta.suffix_text
                 ),
             );
             literal_ty.to_string()
         } else if let Some(expected) = expected_int {
+            let literal_value = self
+                .non_negative_integer_literal_value(value, None)
+                .unwrap_or(IntegerLiteralValue::NonNegative(value.max(0) as u128));
             self.validate_integer_literal_range(
-                value as i128,
+                literal_value,
                 &expected,
                 expr.span,
                 "E1204",
@@ -3444,25 +3485,29 @@ impl<'a> Checker<'a> {
         expected_ty: Option<&str>,
     ) -> String {
         let expected_int = self.integer_expected_type_hint(expected_ty);
-        let negated_value = -(value as i128);
         let metadata = literal_expr.int_literal_metadata();
-        if let Some(meta) = metadata {
-            let literal_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+        if let Some(meta) = metadata.as_ref() {
+            let literal_ty = integer_kind_type_name(integer_kind_from_literal_kind(meta.kind));
+            let literal_value = self
+                .negative_integer_literal_value(value, Some(meta))
+                .unwrap_or(IntegerLiteralValue::NegativeMagnitude(value.max(0) as u128));
             self.validate_integer_literal_range(
-                negated_value,
+                literal_value,
                 literal_ty,
                 literal_expr.span,
                 "E1204",
                 &format!(
                     "integer literal '-{}' with suffix '{}'",
-                    value,
-                    meta.suffix.as_str()
+                    meta.raw_literal_text, meta.suffix_text
                 ),
             );
             literal_ty.to_string()
         } else if let Some(expected) = expected_int {
+            let literal_value = self
+                .negative_integer_literal_value(value, None)
+                .unwrap_or(IntegerLiteralValue::NegativeMagnitude(value.max(0) as u128));
             self.validate_integer_literal_range(
-                negated_value,
+                literal_value,
                 &expected,
                 literal_expr.span,
                 "E1204",
@@ -6908,23 +6953,30 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
-                if let Some(meta) = pattern.int_literal_metadata() {
-                    let suffix_ty = integer_kind_type_name(integer_kind_from_suffix(meta.suffix));
+                let pattern_meta = pattern.int_literal_metadata();
+                if let Some(meta) = pattern_meta.as_ref() {
+                    let suffix_ty =
+                        integer_kind_type_name(integer_kind_from_literal_kind(meta.kind));
+                    let literal_value = self
+                        .non_negative_integer_literal_value(*v, Some(meta))
+                        .unwrap_or(IntegerLiteralValue::NonNegative((*v).max(0) as u128));
                     self.validate_integer_literal_range(
-                        *v as i128,
+                        literal_value,
                         suffix_ty,
                         pattern.span,
                         "E1234",
                         &format!(
                             "pattern integer literal '{}' with suffix '{}'",
-                            v,
-                            meta.suffix.as_str()
+                            meta.raw_literal_text, meta.suffix_text
                         ),
                     );
                 }
 
+                let pattern_value = self
+                    .non_negative_integer_literal_value(*v, pattern_meta.as_ref())
+                    .unwrap_or(IntegerLiteralValue::NonNegative((*v).max(0) as u128));
                 self.validate_integer_literal_range(
-                    *v as i128,
+                    pattern_value,
                     &normalized_scrutinee_ty,
                     pattern.span,
                     "E1234",
@@ -8975,6 +9027,10 @@ fn parse_integer_kind(ty: &str) -> Option<IntegerKind> {
             signed: true,
             bits: 64,
         }),
+        "Int128" => Some(IntegerKind::Fixed {
+            signed: true,
+            bits: 128,
+        }),
         "UInt8" => Some(IntegerKind::Fixed {
             signed: false,
             bits: 8,
@@ -8991,43 +9047,55 @@ fn parse_integer_kind(ty: &str) -> Option<IntegerKind> {
             signed: false,
             bits: 64,
         }),
+        "UInt128" => Some(IntegerKind::Fixed {
+            signed: false,
+            bits: 128,
+        }),
         _ => None,
     }
 }
 
-fn integer_kind_from_suffix(suffix: ir::IntLiteralSuffix) -> IntegerKind {
-    match suffix {
-        ir::IntLiteralSuffix::I8 => IntegerKind::Fixed {
+fn integer_kind_from_literal_kind(kind: ir::IntLiteralKind) -> IntegerKind {
+    match (kind.signedness, kind.width) {
+        (ir::IntLiteralSignedness::Signed, ir::IntLiteralWidth::W8) => IntegerKind::Fixed {
             signed: true,
             bits: 8,
         },
-        ir::IntLiteralSuffix::I16 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Signed, ir::IntLiteralWidth::W16) => IntegerKind::Fixed {
             signed: true,
             bits: 16,
         },
-        ir::IntLiteralSuffix::I32 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Signed, ir::IntLiteralWidth::W32) => IntegerKind::Fixed {
             signed: true,
             bits: 32,
         },
-        ir::IntLiteralSuffix::I64 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Signed, ir::IntLiteralWidth::W64) => IntegerKind::Fixed {
             signed: true,
             bits: 64,
         },
-        ir::IntLiteralSuffix::U8 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Signed, ir::IntLiteralWidth::W128) => IntegerKind::Fixed {
+            signed: true,
+            bits: 128,
+        },
+        (ir::IntLiteralSignedness::Unsigned, ir::IntLiteralWidth::W8) => IntegerKind::Fixed {
             signed: false,
             bits: 8,
         },
-        ir::IntLiteralSuffix::U16 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Unsigned, ir::IntLiteralWidth::W16) => IntegerKind::Fixed {
             signed: false,
             bits: 16,
         },
-        ir::IntLiteralSuffix::U32 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Unsigned, ir::IntLiteralWidth::W32) => IntegerKind::Fixed {
             signed: false,
             bits: 32,
         },
-        ir::IntLiteralSuffix::U64 => IntegerKind::Fixed {
+        (ir::IntLiteralSignedness::Unsigned, ir::IntLiteralWidth::W64) => IntegerKind::Fixed {
             signed: false,
             bits: 64,
+        },
+        (ir::IntLiteralSignedness::Unsigned, ir::IntLiteralWidth::W128) => IntegerKind::Fixed {
+            signed: false,
+            bits: 128,
         },
     }
 }
@@ -9052,6 +9120,10 @@ fn integer_kind_type_name(kind: IntegerKind) -> &'static str {
             bits: 64,
         } => "Int64",
         IntegerKind::Fixed {
+            signed: true,
+            bits: 128,
+        } => "Int128",
+        IntegerKind::Fixed {
             signed: false,
             bits: 8,
         } => "UInt8",
@@ -9067,34 +9139,88 @@ fn integer_kind_type_name(kind: IntegerKind) -> &'static str {
             signed: false,
             bits: 64,
         } => "UInt64",
+        IntegerKind::Fixed {
+            signed: false,
+            bits: 128,
+        } => "UInt128",
         IntegerKind::Fixed { .. } => "<?>",
     }
 }
 
-fn integer_kind_range(kind: IntegerKind) -> (i128, i128) {
-    match kind {
-        IntegerKind::Int => (i64::MIN as i128, i64::MAX as i128),
-        IntegerKind::Fixed { signed: true, bits } => {
-            let max = (1_i128 << (bits - 1)) - 1;
-            let min = -(1_i128 << (bits - 1));
-            (min, max)
-        }
-        IntegerKind::Fixed {
-            signed: false,
-            bits,
-        } => (0, (1_i128 << bits) - 1),
+fn integer_unsigned_max(bits: u8) -> u128 {
+    if bits == 128 {
+        u128::MAX
+    } else {
+        (1_u128 << bits) - 1
     }
 }
 
-fn integer_value_fits_kind(value: i128, kind: IntegerKind) -> bool {
-    let (min, max) = integer_kind_range(kind);
-    value >= min && value <= max
+fn integer_signed_max(bits: u8) -> u128 {
+    (1_u128 << (bits - 1)) - 1
+}
+
+fn integer_signed_min_magnitude(bits: u8) -> u128 {
+    1_u128 << (bits - 1)
+}
+
+fn integer_kind_range_text(kind: IntegerKind) -> (String, String) {
+    match kind {
+        IntegerKind::Int => (i64::MIN.to_string(), i64::MAX.to_string()),
+        IntegerKind::Fixed { signed: true, bits } => (
+            format!("-{}", integer_signed_min_magnitude(bits)),
+            integer_signed_max(bits).to_string(),
+        ),
+        IntegerKind::Fixed {
+            signed: false,
+            bits,
+        } => ("0".to_string(), integer_unsigned_max(bits).to_string()),
+    }
+}
+
+fn integer_literal_value_text(value: IntegerLiteralValue) -> String {
+    match value {
+        IntegerLiteralValue::NonNegative(v) => v.to_string(),
+        IntegerLiteralValue::NegativeMagnitude(v) => format!("-{v}"),
+    }
+}
+
+fn integer_literal_fits_kind(value: IntegerLiteralValue, kind: IntegerKind) -> bool {
+    match kind {
+        IntegerKind::Int => match value {
+            IntegerLiteralValue::NonNegative(v) => v <= i64::MAX as u128,
+            IntegerLiteralValue::NegativeMagnitude(v) => v <= (i64::MAX as u128) + 1,
+        },
+        IntegerKind::Fixed { signed: true, bits } => match value {
+            IntegerLiteralValue::NonNegative(v) => v <= integer_signed_max(bits),
+            IntegerLiteralValue::NegativeMagnitude(v) => v <= integer_signed_min_magnitude(bits),
+        },
+        IntegerKind::Fixed {
+            signed: false,
+            bits,
+        } => match value {
+            IntegerLiteralValue::NonNegative(v) => v <= integer_unsigned_max(bits),
+            IntegerLiteralValue::NegativeMagnitude(_) => false,
+        },
+    }
+}
+
+fn integer_kind_props(kind: IntegerKind) -> (bool, u8) {
+    match kind {
+        IntegerKind::Int => (true, 64),
+        IntegerKind::Fixed { signed, bits } => (signed, bits),
+    }
 }
 
 fn integer_conversion_is_lossless(expected: IntegerKind, found: IntegerKind) -> bool {
-    let (found_min, found_max) = integer_kind_range(found);
-    let (expected_min, expected_max) = integer_kind_range(expected);
-    found_min >= expected_min && found_max <= expected_max
+    let (expected_signed, expected_bits) = integer_kind_props(expected);
+    let (found_signed, found_bits) = integer_kind_props(found);
+
+    match (expected_signed, found_signed) {
+        (true, true) => found_bits <= expected_bits,
+        (true, false) => expected_bits > found_bits,
+        (false, false) => found_bits <= expected_bits,
+        (false, true) => false,
+    }
 }
 
 fn integer_kinds_match_exact(left: IntegerKind, right: IntegerKind) -> bool {
@@ -10363,5 +10489,59 @@ fn main(x: UInt8, y: Int8) -> Int {
             "diags={:#?}",
             out.diagnostics
         );
+    }
+
+    #[test]
+    fn fixed_width_128_literals_validate_boundaries_and_failures() {
+        let src = r#"
+fn main() -> Int {
+    let ok_i128_min: Int128 = -170141183460469231731687303715884105728i128;
+    let ok_u128_max: UInt128 = 340282366920938463463374607431768211455u128;
+    let bad_i128: Int128 = 170141183460469231731687303715884105728i128;
+    let bad_u128_neg: UInt128 = -1u128;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1204" && d.message.contains("Int128")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "E1204" && d.message.contains("UInt128")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn fixed_width_128_assignments_enforce_signedness_and_lossless_rules() {
+        let src = r#"
+fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
+    let _ok_signed_widen: Int128 = a;
+    let _ok_unsigned_widen: UInt128 = b;
+    let _bad_signed_to_unsigned: UInt128 = c;
+    let _bad_unsigned_to_signed: Int128 = d;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let mismatches = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
+        assert!(mismatches >= 2, "diags={:#?}", out.diagnostics);
     }
 }

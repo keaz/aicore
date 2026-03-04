@@ -52,6 +52,17 @@
   - `UInt64`: `0..=18446744073709551615`
 - `Int` and `Int64` currently share 64-bit range, but are separate named source types with explicit typing rules.
 
+### Wave 1 contract (`#317`) for 128-bit primitives
+
+- Current behavior:
+  - Fixed-width integer primitives are limited to 8/16/32/64-bit signed and unsigned types.
+  - Integer literal suffixes are limited to `i8/i16/i32/i64/u8/u16/u32/u64`.
+- Target behavior:
+  - Add `Int128` (`-170141183460469231731687303715884105728..=170141183460469231731687303715884105727`).
+  - Add `UInt128` (`0..=340282366920938463463374607431768211455`).
+  - Add literal suffixes `i128` and `u128`.
+  - Keep unsuffixed literals defaulting to `Int` unless expected-type context narrows.
+
 ## Integer literal typing and diagnostics
 
 - Unsuffixed integer literals:
@@ -123,6 +134,18 @@ fn bad_ops(a: Int8, b: UInt16) -> Int {
 - Right shift `>>` is arithmetic for signed integers and logical for unsigned integers.
 - Unsigned-right shift `>>>` is logical.
 
+## Wave 1 `std.numeric` contract (`#320`)
+
+- Current behavior:
+  - Numeric typing/coercion is fully language-level; there is no dedicated `std.numeric` module in documented stdlib APIs.
+- Target behavior:
+  - Introduce `std.numeric` as the explicit helper surface for numeric conversion and overflow-policy operations.
+  - `std.numeric` APIs are additive and do not relax type-checker rules:
+    - no new implicit cast behavior
+    - integer operator exact-kind requirements remain unchanged
+    - diagnostics remain deterministic and continue to use the current mismatch/range code families
+  - Preferred migration shape is explicit helper calls at boundaries where widening/narrowing/sign-policy must be stated in source.
+
 See also:
 
 - `docs/llvm-backend.md` for backend/ABI mapping.
@@ -152,6 +175,12 @@ Type-focused status:
 - `#139` improved inference
   - Current: local inference with deterministic unresolved failures (`E1204`, `E1212`, `E1280`).
   - Target: stronger local inference (closure-context and usage-driven) with explicit ambiguity diagnostics.
+- `#317` fixed-width integer family extension
+  - Current: fixed-width primitives end at `Int64`/`UInt64`.
+  - Target: extend primitive family with `Int128`/`UInt128` and corresponding literal suffixes.
+- `#320` numeric stdlib module
+  - Current: no dedicated `std.numeric` conversion/overflow helper module.
+  - Target: add `std.numeric` for explicit numeric conversion and overflow-policy APIs without changing implicit-coercion semantics.
 
 Related syntax issue with type impact:
 

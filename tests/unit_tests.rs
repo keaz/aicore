@@ -1708,7 +1708,7 @@ fn main() -> Int {
     let expr_meta = expr
         .int_literal_metadata()
         .expect("typed int metadata missing on expression");
-    assert_eq!(expr_meta.suffix.as_str(), "u8");
+    assert_eq!(expr_meta.suffix_text, "u8");
 
     let match_expr = main_fn.body.tail.as_ref().expect("tail match");
     let aicore::ir::ExprKind::Match { arms, .. } = &match_expr.kind else {
@@ -1718,7 +1718,7 @@ fn main() -> Int {
         .pattern
         .int_literal_metadata()
         .expect("typed int metadata missing on pattern");
-    assert_eq!(pattern_meta.suffix.as_str(), "u8");
+    assert_eq!(pattern_meta.suffix_text, "u8");
 
     let formatted = format_program(&ir);
     assert!(
@@ -1728,6 +1728,47 @@ fn main() -> Int {
     let reparsed_ir = lower(&formatted);
     let reformatted = format_program(&reparsed_ir);
     assert_eq!(formatted, reformatted);
+}
+
+#[test]
+fn unit_formatter_preserves_u128_suffix_metadata_and_text() {
+    let src = r#"
+fn main() -> Int {
+    let x: UInt128 = 340282366920938463463374607431768211455u128;
+    x == 0u128
+}
+"#;
+    let ir = lower(src);
+    let main_fn = ir
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ir::Item::Function(func) if func.name == "main" => Some(func),
+            _ => None,
+        })
+        .expect("main function");
+    let aicore::ir::Stmt::Let { expr, .. } = &main_fn.body.stmts[0] else {
+        panic!("expected let statement");
+    };
+    let expr_meta = expr
+        .int_literal_metadata()
+        .expect("typed int metadata missing on expression");
+    assert_eq!(expr_meta.suffix_text, "u128");
+    assert_eq!(
+        expr_meta.raw_literal_text,
+        "340282366920938463463374607431768211455"
+    );
+    assert_eq!(expr_meta.kind.width, aicore::ir::IntLiteralWidth::W128);
+
+    let formatted = format_program(&ir);
+    assert!(
+        formatted.contains("340282366920938463463374607431768211455u128"),
+        "formatted={formatted}"
+    );
+    assert!(
+        formatted.contains("0u128"),
+        "formatter must preserve u128 suffixes\nformatted={formatted}"
+    );
 }
 
 #[test]
@@ -1745,6 +1786,19 @@ fn unit_syntax_showcase_parses_cleanly() {
     let (program, diags) = parse(&source, &path.to_string_lossy());
     assert!(diags.is_empty(), "diags={diags:#?}");
     assert!(program.is_some());
+}
+
+#[test]
+fn unit_numeric_examples_parse_cleanly() {
+    for path in [
+        Path::new("examples/types/bigint_factorial.aic"),
+        Path::new("examples/types/decimal_invoice_total.aic"),
+    ] {
+        let source = fs::read_to_string(path).expect("read numeric example");
+        let (program, diags) = parse(&source, &path.to_string_lossy());
+        assert!(diags.is_empty(), "path={} diags={diags:#?}", path.display());
+        assert!(program.is_some(), "path={} should parse", path.display());
+    }
 }
 
 #[test]
@@ -4677,6 +4731,87 @@ fn unit_std_string_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_std_numeric_public_apis_are_runtime_backed() {
+    let source = fs::read_to_string("std/numeric.aic").expect("read std/numeric.aic");
+
+    for type_name in ["struct BigInt", "struct BigUInt", "struct Decimal"] {
+        assert!(
+            source.contains(type_name),
+            "std/numeric.aic must expose `{type_name}`"
+        );
+    }
+
+    for intrinsic in [
+        "aic_numeric_bigint_parse_intrinsic",
+        "aic_numeric_bigint_add_intrinsic",
+        "aic_numeric_bigint_sub_intrinsic",
+        "aic_numeric_bigint_mul_intrinsic",
+        "aic_numeric_bigint_div_intrinsic",
+        "aic_numeric_biguint_parse_intrinsic",
+        "aic_numeric_biguint_add_intrinsic",
+        "aic_numeric_biguint_sub_intrinsic",
+        "aic_numeric_biguint_mul_intrinsic",
+        "aic_numeric_biguint_div_intrinsic",
+        "aic_numeric_decimal_parse_intrinsic",
+        "aic_numeric_decimal_add_intrinsic",
+        "aic_numeric_decimal_sub_intrinsic",
+        "aic_numeric_decimal_mul_intrinsic",
+        "aic_numeric_decimal_div_intrinsic",
+    ] {
+        assert!(
+            source.contains(&format!("fn {intrinsic}(")),
+            "std/numeric.aic must declare `{intrinsic}`"
+        );
+    }
+
+    for public_api in [
+        "fn parse_big_int(text: String) -> Result[BigInt, String]",
+        "fn big_int_add(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]",
+        "fn big_int_sub(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]",
+        "fn big_int_mul(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]",
+        "fn big_int_div(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]",
+        "fn parse_big_uint(text: String) -> Result[BigUInt, String]",
+        "fn big_uint_add(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]",
+        "fn big_uint_sub(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]",
+        "fn big_uint_mul(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]",
+        "fn big_uint_div(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]",
+        "fn parse_decimal(text: String) -> Result[Decimal, String]",
+        "fn decimal_add(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]",
+        "fn decimal_sub(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]",
+        "fn decimal_mul(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]",
+        "fn decimal_div(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]",
+    ] {
+        assert!(
+            source.contains(public_api),
+            "std/numeric.aic missing public API `{public_api}`"
+        );
+    }
+
+    for delegate_call in [
+        "aic_numeric_bigint_parse_intrinsic(text)",
+        "aic_numeric_bigint_add_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_bigint_sub_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_bigint_mul_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_bigint_div_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_biguint_parse_intrinsic(text)",
+        "aic_numeric_biguint_add_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_biguint_sub_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_biguint_mul_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_biguint_div_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_decimal_parse_intrinsic(text)",
+        "aic_numeric_decimal_add_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_decimal_sub_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_decimal_mul_intrinsic(lhs.value, rhs.value)",
+        "aic_numeric_decimal_div_intrinsic(lhs.value, rhs.value)",
+    ] {
+        assert!(
+            source.contains(delegate_call),
+            "std/numeric.aic must delegate through `{delegate_call}`"
+        );
+    }
+}
+
+#[test]
 fn unit_std_char_public_apis_delegate_to_runtime_intrinsics() {
     let char_source = fs::read_to_string("std/char.aic").expect("read std/char.aic");
 
@@ -5781,6 +5916,7 @@ import std.option;
 import std.concurrent;
 import std.http_server;
 import std.router;
+import std.numeric;
 
 fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } capabilities { io, fs, net, time, rand, env, proc, concurrency } {
     let _exists = exists("foo.txt");
@@ -5926,6 +6062,31 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _byte_len = byte_length("hello");
     let _ascii = is_ascii("hello");
     let _joined_parts = string.join(_parts, "|");
+    let _big_int_parse = numeric.parse_big_int("123456789012345678901234567890");
+    let _big_int_div = match numeric.big_int_div(numeric.big_int_from_int(84), numeric.big_int_from_int(2)) {
+        Ok(v) => numeric.big_int_to_string(v),
+        Err(err) => err,
+    };
+    let _big_uint_add = match numeric.parse_big_uint("11") {
+        Ok(a) => match numeric.parse_big_uint("31") {
+            Ok(b) => match numeric.big_uint_add(a, b) {
+                Ok(v) => numeric.big_uint_to_string(v),
+                Err(err) => err,
+            },
+            Err(err) => err,
+        },
+        Err(err) => err,
+    };
+    let _decimal_mul = match numeric.parse_decimal("1.25") {
+        Ok(a) => match numeric.parse_decimal("2.0") {
+            Ok(b) => match numeric.decimal_mul(a, b) {
+                Ok(v) => numeric.decimal_to_string(v),
+                Err(err) => err,
+            },
+            Err(err) => err,
+        },
+        Err(err) => err,
+    };
     let _v0: Vec[Int] = vec.new_vec();
     let _v0_cap: Vec[Int] = vec.new_vec_with_capacity(4);
     let _v0_reserve = vec.reserve(_v0_cap, 2);

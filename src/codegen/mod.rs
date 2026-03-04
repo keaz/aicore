@@ -1623,10 +1623,12 @@ enum LType {
     Int16,
     Int32,
     Int64,
+    Int128,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Float,
     Bool,
     Char,
@@ -3718,6 +3720,7 @@ fn integer_width_bits(ty: &LType) -> Option<u32> {
         LType::Int16 | LType::UInt16 => Some(16),
         LType::Int32 | LType::UInt32 => Some(32),
         LType::Int64 | LType::UInt64 => Some(64),
+        LType::Int128 | LType::UInt128 => Some(128),
         _ => None,
     }
 }
@@ -3729,14 +3732,14 @@ fn is_integral_type(ty: &LType) -> bool {
 fn is_signed_integer_type(ty: &LType) -> bool {
     matches!(
         ty,
-        LType::Int | LType::Int8 | LType::Int16 | LType::Int32 | LType::Int64
+        LType::Int | LType::Int8 | LType::Int16 | LType::Int32 | LType::Int64 | LType::Int128
     )
 }
 
 fn is_unsigned_integer_type(ty: &LType) -> bool {
     matches!(
         ty,
-        LType::UInt8 | LType::UInt16 | LType::UInt32 | LType::UInt64
+        LType::UInt8 | LType::UInt16 | LType::UInt32 | LType::UInt64 | LType::UInt128
     )
 }
 
@@ -3746,10 +3749,12 @@ fn integral_type_for_width(bits: u32, unsigned: bool) -> Option<LType> {
         (16, true) => Some(LType::UInt16),
         (32, true) => Some(LType::UInt32),
         (64, true) => Some(LType::UInt64),
+        (128, true) => Some(LType::UInt128),
         (8, false) => Some(LType::Int8),
         (16, false) => Some(LType::Int16),
         (32, false) => Some(LType::Int32),
         (64, false) => Some(LType::Int),
+        (128, false) => Some(LType::Int128),
         _ => None,
     }
 }
@@ -3780,6 +3785,7 @@ fn llvm_type(ty: &LType) -> String {
         LType::Int16 | LType::UInt16 => "i16".to_string(),
         LType::Int32 | LType::UInt32 => "i32".to_string(),
         LType::Int64 | LType::UInt64 => "i64".to_string(),
+        LType::Int128 | LType::UInt128 => "i128".to_string(),
         LType::Float => "double".to_string(),
         LType::Bool => "i1".to_string(),
         LType::Char => "i32".to_string(),
@@ -3833,10 +3839,12 @@ fn default_value(ty: &LType) -> String {
         | LType::Int16
         | LType::Int32
         | LType::Int64
+        | LType::Int128
         | LType::UInt8
         | LType::UInt16
         | LType::UInt32
-        | LType::UInt64 => "0".to_string(),
+        | LType::UInt64
+        | LType::UInt128 => "0".to_string(),
         LType::Float => llvm_float_literal(0.0_f64),
         LType::Bool => "0".to_string(),
         LType::Char => "0".to_string(),
@@ -3932,10 +3940,12 @@ fn render_type(ty: &LType) -> String {
         LType::Int16 => "Int16".to_string(),
         LType::Int32 => "Int32".to_string(),
         LType::Int64 => "Int64".to_string(),
+        LType::Int128 => "Int128".to_string(),
         LType::UInt8 => "UInt8".to_string(),
         LType::UInt16 => "UInt16".to_string(),
         LType::UInt32 => "UInt32".to_string(),
         LType::UInt64 => "UInt64".to_string(),
+        LType::UInt128 => "UInt128".to_string(),
         LType::Float => "Float".to_string(),
         LType::Bool => "Bool".to_string(),
         LType::Char => "Char".to_string(),

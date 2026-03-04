@@ -29,32 +29,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u16_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u16_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u32_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u32_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u64_be_intrinsic(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_patch_u64_le_intrinsic(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -74,32 +74,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i16_be_intrinsic(buf: ByteBuffer) -> Result[Int16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i16_le_intrinsic(buf: ByteBuffer) -> Result[Int16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i32_be_intrinsic(buf: ByteBuffer) -> Result[Int32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i32_le_intrinsic(buf: ByteBuffer) -> Result[Int32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i64_be_intrinsic(buf: ByteBuffer) -> Result[Int64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_i64_le_intrinsic(buf: ByteBuffer) -> Result[Int64, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -109,37 +109,37 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u16_be_intrinsic(buf: ByteBuffer) -> Result[UInt16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u16_le_intrinsic(buf: ByteBuffer) -> Result[UInt16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u32_be_intrinsic(buf: ByteBuffer) -> Result[UInt32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u32_le_intrinsic(buf: ByteBuffer) -> Result[UInt32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u64_be_intrinsic(buf: ByteBuffer) -> Result[UInt64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u64_le_intrinsic(buf: ByteBuffer) -> Result[UInt64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "aic_buffer_read_u8_intrinsic(buf: ByteBuffer) -> Result[UInt8, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -174,32 +174,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i16_be_intrinsic(buf: ByteBuffer, value: Int16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i16_le_intrinsic(buf: ByteBuffer, value: Int16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i32_be_intrinsic(buf: ByteBuffer, value: Int32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i32_le_intrinsic(buf: ByteBuffer, value: Int32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i64_be_intrinsic(buf: ByteBuffer, value: Int64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_i64_le_intrinsic(buf: ByteBuffer, value: Int64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -209,37 +209,37 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u16_be_intrinsic(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u16_le_intrinsic(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u32_be_intrinsic(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u32_le_intrinsic(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u64_be_intrinsic(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u64_le_intrinsic(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "aic_buffer_write_u8_intrinsic(buf: ByteBuffer, value: UInt8) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -249,37 +249,37 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u16_be(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u16_le(buf: ByteBuffer, offset: Int, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u32_be(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u32_le(buf: ByteBuffer, offset: Int, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u64_be(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_patch_u64_le(buf: ByteBuffer, offset: Int, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[Int, BufferError]"
+      "signature": "buf_peek_u8(buf: ByteBuffer, position: Int) -> Result[UInt8, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -299,32 +299,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i16_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i16_be(buf: ByteBuffer) -> Result[Int16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i16_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i16_le(buf: ByteBuffer) -> Result[Int16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i32_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i32_be(buf: ByteBuffer) -> Result[Int32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i32_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i32_le(buf: ByteBuffer) -> Result[Int32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i64_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i64_be(buf: ByteBuffer) -> Result[Int64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_i64_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_i64_le(buf: ByteBuffer) -> Result[Int64, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -334,37 +334,37 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u16_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u16_be(buf: ByteBuffer) -> Result[UInt16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u16_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u16_le(buf: ByteBuffer) -> Result[UInt16, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u32_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u32_be(buf: ByteBuffer) -> Result[UInt32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u32_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u32_le(buf: ByteBuffer) -> Result[UInt32, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u64_be(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u64_be(buf: ByteBuffer) -> Result[UInt64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u64_le(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u64_le(buf: ByteBuffer) -> Result[UInt64, BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_read_u8(buf: ByteBuffer) -> Result[Int, BufferError]"
+      "signature": "buf_read_u8(buf: ByteBuffer) -> Result[UInt8, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -404,32 +404,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i16_be(buf: ByteBuffer, value: Int16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i16_le(buf: ByteBuffer, value: Int16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i32_be(buf: ByteBuffer, value: Int32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i32_le(buf: ByteBuffer, value: Int32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i64_be(buf: ByteBuffer, value: Int64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_i64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_i64_le(buf: ByteBuffer, value: Int64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -439,37 +439,37 @@
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u16_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u16_be(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u16_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u16_le(buf: ByteBuffer, value: UInt16) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u32_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u32_be(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u32_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u32_le(buf: ByteBuffer, value: UInt32) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u64_be(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u64_be(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u64_le(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u64_le(buf: ByteBuffer, value: UInt64) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
-      "signature": "buf_write_u8(buf: ByteBuffer, value: Int) -> Result[(), BufferError]"
+      "signature": "buf_write_u8(buf: ByteBuffer, value: UInt8) -> Result[(), BufferError]"
     },
     {
       "module": "std.buffer",
@@ -504,7 +504,7 @@
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "aic_bytes_byte_at_intrinsic(data: String, index: Int) -> Int"
+      "signature": "aic_bytes_byte_at_intrinsic(data: String, index: Int) -> UInt8"
     },
     {
       "module": "std.bytes",
@@ -514,7 +514,7 @@
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "aic_bytes_from_byte_values_intrinsic(values: Vec[Int]) -> String"
+      "signature": "aic_bytes_from_byte_values_intrinsic(values: Vec[UInt8]) -> String"
     },
     {
       "module": "std.bytes",
@@ -534,7 +534,7 @@
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "byte_at(data: Bytes, index: Int) -> Result[Int, BytesError]"
+      "signature": "byte_at(data: Bytes, index: Int) -> Result[UInt8, BytesError]"
     },
     {
       "module": "std.bytes",
@@ -569,12 +569,12 @@
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "find_byte(data: Bytes, value: Int) -> Option[Int]"
+      "signature": "find_byte(data: Bytes, value: UInt8) -> Option[Int]"
     },
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "from_byte_values(values: Vec[Int]) -> Result[Bytes, BytesError]"
+      "signature": "from_byte_values(values: Vec[UInt8]) -> Result[Bytes, BytesError]"
     },
     {
       "module": "std.bytes",
@@ -599,7 +599,7 @@
     {
       "module": "std.bytes",
       "kind": "fn",
-      "signature": "to_byte_values(data: Bytes) -> Vec[Int]"
+      "signature": "to_byte_values(data: Bytes) -> Vec[UInt8]"
     },
     {
       "module": "std.bytes",
@@ -610,6 +610,11 @@
       "module": "std.bytes",
       "kind": "fn",
       "signature": "to_string_lossy(data: Bytes) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "zero_u8() -> UInt8"
     },
     {
       "module": "std.bytes",
@@ -699,7 +704,37 @@
     {
       "module": "std.concurrent",
       "kind": "enum",
+      "signature": "GuardKind { MutexGuardKind, RwLockWriteGuardKind }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "enum",
       "signature": "SelectResult[A, B] { First(A), Second(B), Timeout, Closed }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ConcurrencyCapacityU32() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ConcurrencyCountU32() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ConcurrencyHandleU32() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ConcurrencyIndexU32() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ConcurrencyPayloadIdU32() -> UInt32"
     },
     {
       "module": "std.concurrent",
@@ -979,12 +1014,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "arc_handle_u32[T](a: Arc[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "arc_new[T](value: T) -> Arc[T] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "arc_strong_count[T](a: Arc[T]) -> Int effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "arc_strong_count_u32[T](a: Arc[T]) -> Result[ConcurrencyCountU32, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1044,12 +1089,27 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "buffered_bytes_channel_u32(capacity: ConcurrencyCapacityU32) -> Tuple[Sender[Bytes], Receiver[Bytes]] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "buffered_channel[T](capacity: Int) -> Tuple[Sender[T], Receiver[T]] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "buffered_channel_int(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "buffered_channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> Tuple[Sender[T], Receiver[T]] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1084,6 +1144,16 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "channel_int_buffered_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "channel_int_u32(capacity: ConcurrencyCapacityU32) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "channel_timeout() -> ChannelError"
     },
     {
@@ -1110,6 +1180,41 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_int_to_u32(value: Int) -> Option[UInt32]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_int_to_u32_result(value: Int) -> Result[UInt32, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_one_u32() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_u32_int_max() -> UInt32"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_u32_to_int(value: UInt32) -> Option[Int]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_u32_to_int_result(value: UInt32) -> Result[Int, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "conc_zero_u32() -> UInt32"
     },
     {
       "module": "std.concurrent",
@@ -1269,6 +1374,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "receiver_handle_u32[T](rx: Receiver[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
     },
     {
@@ -1304,6 +1414,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "scope_handle_u32(scope: Scope) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "scope_join_all(scope: Scope) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -1334,6 +1449,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "select_any_u32[T](receivers: Vec[Receiver[T]], timeout_ms: Int) -> Result[Tuple[ConcurrencyIndexU32, T], ChannelError] effects { concurrency, env }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "select_closed[A, B]() -> SelectResult[A, B]"
     },
     {
@@ -1344,7 +1464,17 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "select_first_u32(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSelectionU32, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "select_recv_int(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelection, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "select_recv_int_u32(ch1: IntChannel, ch2: IntChannel, timeout_ms: Int) -> Result[IntChannelSelectionU32, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1374,6 +1504,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "sender_handle_u32[T](tx: Sender[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "spawn[T](f: Fn[T]) -> Task[T] effects { concurrency }"
     },
     {
@@ -1399,7 +1534,22 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "store_payload_for_channel_int[T](value: T) -> Result[Int, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "store_payload_for_channel_u32[T](value: T) -> Result[ConcurrencyPayloadIdU32, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "take_payload_bytes(payload_id: Int) -> Result[Bytes, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_bytes_u32(payload_id: ConcurrencyPayloadIdU32) -> Result[Bytes, ChannelError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1409,7 +1559,32 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "take_payload_for_channel_int[T](payload_id: Int, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_for_channel_u32[T](payload_id: ConcurrencyPayloadIdU32, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "take_payload_string(payload_id: Int) -> Result[String, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_string_int(payload_id: Int) -> Result[String, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "take_payload_string_u32(payload_id: ConcurrencyPayloadIdU32) -> Result[String, ChannelError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
     },
     {
       "module": "std.concurrent",
@@ -1514,6 +1689,11 @@
     {
       "module": "std.concurrent",
       "kind": "struct",
+      "signature": "IntChannelSelectionU32 { channel_index: ConcurrencyIndexU32, value: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
       "signature": "IntMutex { handle: Int }"
     },
     {
@@ -1529,7 +1709,12 @@
     {
       "module": "std.concurrent",
       "kind": "struct",
-      "signature": "MutexGuard[T] { handle: Int, guard_kind: Int, value: T }"
+      "signature": "IntTaskSelectionU32 { task_index: ConcurrencyIndexU32, value: Int }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "struct",
+      "signature": "MutexGuard[T] { handle: Int, guard_kind: GuardKind, value: T }"
     },
     {
       "module": "std.concurrent",
@@ -1944,7 +2129,22 @@
     {
       "module": "std.env",
       "kind": "fn",
-      "signature": "exit(code: Int) -> () effects { env }"
+      "signature": "env_i32_to_int(value: Int32) -> Int"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "env_one_i32() -> Int32"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "env_zero_i32() -> Int32"
+    },
+    {
+      "module": "std.env",
+      "kind": "fn",
+      "signature": "exit(code: Int32) -> () effects { env }"
     },
     {
       "module": "std.env",
@@ -2374,6 +2574,31 @@
     {
       "module": "std.http",
       "kind": "fn",
+      "signature": "http_one_u16() -> UInt16"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "http_response_from_raw(raw: HttpResponse) -> Result[HttpResponseView, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "http_status_from_int(status: Int) -> Result[UInt16, HttpError]"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "http_status_to_int(status: UInt16) -> Int"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
+      "signature": "http_zero_u16() -> UInt16"
+    },
+    {
+      "module": "std.http",
+      "kind": "fn",
       "signature": "method_name(method: HttpMethod) -> Result[String, HttpError]"
     },
     {
@@ -2389,12 +2614,12 @@
     {
       "module": "std.http",
       "kind": "fn",
-      "signature": "response(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError]"
+      "signature": "response(status: UInt16, headers: Vec[HttpHeader], body: String) -> Result[HttpResponseView, HttpError]"
     },
     {
       "module": "std.http",
       "kind": "fn",
-      "signature": "status_reason(status: Int) -> Result[String, HttpError]"
+      "signature": "status_reason(status: UInt16) -> Result[String, HttpError]"
     },
     {
       "module": "std.http",
@@ -2420,6 +2645,11 @@
       "module": "std.http",
       "kind": "struct",
       "signature": "HttpResponse { status: Int, reason: String, headers: Vec[HttpHeader], body: String }"
+    },
+    {
+      "module": "std.http",
+      "kind": "struct",
+      "signature": "HttpResponseView { status: UInt16, reason: String, headers: Vec[HttpHeader], body: String }"
     },
     {
       "module": "std.http_server",
@@ -2479,17 +2709,47 @@
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "error_response(status: Int, message: String) -> Response"
+      "signature": "error_response(status: UInt16, message: String) -> ResponseView"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "header(resp: Response, name: String) -> Option[String]"
+      "signature": "header(resp: ResponseView, name: String) -> Option[String]"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "json_response(status: Int, body: String) -> Response"
+      "signature": "http_server_one_u16() -> UInt16"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_response_from_raw(raw: Response) -> Result[ResponseView, ServerError]"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_response_to_raw(response: ResponseView) -> Response"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_status_from_int(status: Int) -> Result[UInt16, ServerError]"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_status_to_int(status: UInt16) -> Int"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_zero_u16() -> UInt16"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "json_response(status: UInt16, body: String) -> ResponseView"
     },
     {
       "module": "std.http_server",
@@ -2504,17 +2764,17 @@
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "response(status: Int, headers: Map[String, String], body: String) -> Response"
+      "signature": "response(status: UInt16, headers: Map[String, String], body: String) -> ResponseView"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "text_response(status: Int, body: String) -> Response"
+      "signature": "text_response(status: UInt16, body: String) -> ResponseView"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
-      "signature": "write_response(conn: Int, response: Response) -> Result[Int, ServerError] effects { net }"
+      "signature": "write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net }"
     },
     {
       "module": "std.http_server",
@@ -2525,6 +2785,11 @@
       "module": "std.http_server",
       "kind": "struct",
       "signature": "Response { status: Int, headers: Map[String, String], body: String }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "ResponseView { status: UInt16, headers: Map[String, String], body: String }"
     },
     {
       "module": "std.io",
@@ -3799,6 +4064,26 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "__aic_type_alias__ByteCountU32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "__aic_type_alias__FrameLengthU32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "__aic_type_alias__QueueDepthU32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "__aic_type_alias__RuntimeLimitU32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "aic_net_async_accept_submit_intrinsic(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
     },
     {
@@ -3810,6 +4095,11 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_async_pressure_intrinsic() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -3839,6 +4129,11 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "aic_net_dns_lookup_all_intrinsic(host: String) -> Result[Vec[String], NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "aic_net_dns_lookup_intrinsic(host: String) -> Result[String, NetError] effects { net }"
     },
     {
@@ -3860,6 +4155,21 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_tcp_connect_intrinsic(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_keepalive_count_intrinsic(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_keepalive_idle_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_get_keepalive_interval_secs_intrinsic(handle: Int) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -3894,6 +4204,11 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "aic_net_tcp_peer_addr_intrinsic(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "aic_net_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, NetError] effects { net }"
     },
     {
@@ -3905,6 +4220,21 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_tcp_send_timeout_intrinsic(handle: Int, payload: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_keepalive_count_intrinsic(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_keepalive_idle_secs_intrinsic(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_set_keepalive_interval_secs_intrinsic(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -3925,6 +4255,21 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "aic_net_tcp_set_send_buffer_size_intrinsic(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_shutdown_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_shutdown_read_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "aic_net_tcp_shutdown_write_intrinsic(handle: Int) -> Result[Bool, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -3984,6 +4329,16 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "async_shutdown() -> Result[Bool, NetError] effects { net, concurrency }"
     },
     {
@@ -3995,6 +4350,16 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "async_tcp_recv_submit(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_recv_submit_u32(handle: Int, max_bytes: ByteCountU32, timeout_ms: Int) -> Result[AsyncStringOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_tcp_recv_u32(handle: Int, max_bytes: ByteCountU32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, concurrency }"
     },
     {
       "module": "std.net",
@@ -4014,12 +4379,42 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "async_wait_any_int_u32(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
     },
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "async_wait_any_string_u32(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_many_int_u32(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelectionU32, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "async_wait_many_string_u32(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelectionU32, NetError] effects { net, concurrency, time }"
     },
     {
       "module": "std.net",
@@ -4034,7 +4429,17 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "dns_lookup_all(host: String) -> Result[Vec[String], NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "dns_reverse(addr: String) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_int_to_u32(value: Int) -> Result[UInt32, NetError]"
     },
     {
       "module": "std.net",
@@ -4044,7 +4449,47 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "net_one_u32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_one_u8() -> UInt8"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "net_timeout_error() -> NetError"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_u32_int_max() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_u32_to_int(value: UInt32) -> Result[Int, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_u8_to_int(value: UInt8) -> Int"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_u8_to_u32(value: UInt8) -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_zero_u32() -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_zero_u8() -> UInt8"
     },
     {
       "module": "std.net",
@@ -4069,6 +4514,36 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_keepalive_idle_secs(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_keepalive_idle_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_keepalive_interval_secs(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_keepalive_interval_secs_u32(handle: Int) -> Result[UInt32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_get_nodelay(handle: Int) -> Result[Bool, NetError] effects { net }"
     },
     {
@@ -4079,7 +4554,17 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_get_recv_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_get_send_buffer_size(handle: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_get_send_buffer_size_u32(handle: Int) -> Result[ByteCountU32, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4094,7 +4579,17 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_peer_addr(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_recv_u32(handle: Int, max_bytes: ByteCountU32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4114,6 +4609,36 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_set_keepalive_count(handle: Int, probe_count: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_keepalive_count_u32(handle: Int, probe_count: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_keepalive_idle_secs(handle: Int, idle_secs: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_keepalive_idle_secs_u32(handle: Int, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_keepalive_interval_secs(handle: Int, interval_secs: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_keepalive_interval_secs_u32(handle: Int, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_set_nodelay(handle: Int, enabled: Bool) -> Result[Bool, NetError] effects { net }"
     },
     {
@@ -4124,7 +4649,32 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_set_recv_buffer_size_u32(handle: Int, size_bytes: ByteCountU32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_set_send_buffer_size(handle: Int, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_set_send_buffer_size_u32(handle: Int, size_bytes: ByteCountU32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_shutdown(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_shutdown_read(handle: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_shutdown_write(handle: Int) -> Result[Bool, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4139,12 +4689,57 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_frame_byte_to_u32(header: Bytes, index: Int) -> Result[UInt32, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError]"
     },
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_frame_len_be_u32(header: Bytes) -> Result[FrameLengthU32, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_get_keepalive(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_count(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_count_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_idle_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_idle_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_interval_secs(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_keepalive_interval_secs_u32(stream: TcpStream) -> Result[UInt32, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4159,7 +4754,22 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_get_recv_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_get_send_buffer_size(stream: TcpStream) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_get_send_buffer_size_u32(stream: TcpStream) -> Result[ByteCountU32, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_peer_addr(stream: TcpStream) -> Result[String, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4179,6 +4789,16 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_recv_exact_deadline_u32(stream: TcpStream, expected_bytes: ByteCountU32, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_exact_u32(stream: TcpStream, expected_bytes: ByteCountU32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
     },
     {
@@ -4189,7 +4809,27 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_recv_framed_deadline_u32(stream: TcpStream, max_frame_bytes: FrameLengthU32, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_recv_framed_payload(stream: TcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_framed_payload_u32(stream: TcpStream, frame_header: Bytes, max_frame_bytes: FrameLengthU32, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_framed_u32(stream: TcpStream, max_frame_bytes: FrameLengthU32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_recv_u32(stream: TcpStream, max_bytes: ByteCountU32, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4209,6 +4849,36 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_count(stream: TcpStream, probe_count: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_count_u32(stream: TcpStream, probe_count: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_idle_secs(stream: TcpStream, idle_secs: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_idle_secs_u32(stream: TcpStream, idle_secs: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_interval_secs(stream: TcpStream, interval_secs: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_keepalive_interval_secs_u32(stream: TcpStream, interval_secs: UInt32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_set_nodelay(stream: TcpStream, enabled: Bool) -> Result[Bool, NetError] effects { net }"
     },
     {
@@ -4219,7 +4889,32 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_stream_set_recv_buffer_size_u32(stream: TcpStream, size_bytes: ByteCountU32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_stream_set_send_buffer_size(stream: TcpStream, size_bytes: Int) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_set_send_buffer_size_u32(stream: TcpStream, size_bytes: ByteCountU32) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_shutdown(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_shutdown_read(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_stream_shutdown_write(stream: TcpStream) -> Result[Bool, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4244,6 +4939,11 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "udp_recv_from_u32(handle: Int, max_bytes: ByteCountU32, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }"
     },
     {
@@ -4259,6 +4959,21 @@
     {
       "module": "std.net",
       "kind": "struct",
+      "signature": "AsyncIntSelectionU32 { index: UInt32, value: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "AsyncRuntimePressure { active_ops: Int, queue_depth: Int, op_limit: Int, queue_limit: Int }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
+      "signature": "AsyncRuntimePressureU32 { active_ops: QueueDepthU32, queue_depth: QueueDepthU32, op_limit: RuntimeLimitU32, queue_limit: RuntimeLimitU32 }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
       "signature": "AsyncStringOp { handle: Int }"
     },
     {
@@ -4269,12 +4984,222 @@
     {
       "module": "std.net",
       "kind": "struct",
+      "signature": "AsyncStringSelectionU32 { index: UInt32, payload: Bytes }"
+    },
+    {
+      "module": "std.net",
+      "kind": "struct",
       "signature": "TcpStream { handle: Int }"
     },
     {
       "module": "std.net",
       "kind": "struct",
       "signature": "UdpPacket { from: String, payload: Bytes }"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_bigint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_bigint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_bigint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_bigint_parse_intrinsic(text: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_bigint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_biguint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_biguint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_biguint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_biguint_parse_intrinsic(text: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_biguint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_decimal_add_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_decimal_div_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_decimal_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_decimal_parse_intrinsic(text: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "aic_numeric_decimal_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_add(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_div(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_from_int(value: Int) -> BigInt"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_mul(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_sub(lhs: BigInt, rhs: BigInt) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_int_to_string(value: BigInt) -> String"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_uint_add(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_uint_div(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_uint_mul(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_uint_sub(lhs: BigUInt, rhs: BigUInt) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "big_uint_to_string(value: BigUInt) -> String"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_add(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_div(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_from_int(value: Int) -> Decimal"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_mul(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_sub(lhs: Decimal, rhs: Decimal) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "decimal_to_string(value: Decimal) -> String"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "map_big_int_result(raw: Result[String, String]) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "map_big_uint_result(raw: Result[String, String]) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "map_decimal_result(raw: Result[String, String]) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "parse_big_int(text: String) -> Result[BigInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "parse_big_uint(text: String) -> Result[BigUInt, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "fn",
+      "signature": "parse_decimal(text: String) -> Result[Decimal, String]"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "struct",
+      "signature": "BigInt { value: String }"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "struct",
+      "signature": "BigUInt { value: String }"
+    },
+    {
+      "module": "std.numeric",
+      "kind": "struct",
+      "signature": "Decimal { value: String }"
     },
     {
       "module": "std.option",
@@ -4619,6 +5544,16 @@
     {
       "module": "std.proc",
       "kind": "fn",
+      "signature": "__aic_type_alias__ProcExitStatus() -> Int32"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "__aic_type_alias__ProcHandle() -> UInt32"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
       "signature": "aic_proc_current_pid_intrinsic() -> Result[Int, ProcError] effects { proc }"
     },
     {
@@ -4669,57 +5604,97 @@
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "current_pid() -> Result[Int, ProcError] effects { proc }"
+      "signature": "current_pid() -> Result[ProcHandle, ProcError] effects { proc }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "is_running(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+      "signature": "is_running(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "kill(handle: Int) -> Result[Bool, ProcError] effects { proc }"
+      "signature": "kill(handle: ProcHandle) -> Result[Bool, ProcError] effects { proc }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "pipe(left: String, right: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+      "signature": "pipe(left: String, right: String) -> Result[ProcResult, ProcError] effects { proc, env }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "pipe_chain(stages: Vec[String]) -> Result[ProcOutput, ProcError] effects { proc, env }"
+      "signature": "pipe_chain(stages: Vec[String]) -> Result[ProcResult, ProcError] effects { proc, env }"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env }"
+      "signature": "proc_exit_status_from_int(value: Int) -> Result[ProcExitStatus, ProcError]"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "run_timeout(command: String, timeout_ms: Int) -> Result[ProcOutput, ProcError] effects { proc, env }"
+      "signature": "proc_handle_from_int(value: Int) -> Result[ProcHandle, ProcError]"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "run_with(command: String, options: RunOptions) -> Result[ProcOutput, ProcError] effects { proc, env }"
+      "signature": "proc_handle_to_int(value: ProcHandle) -> Int"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "spawn(command: String) -> Result[Int, ProcError] effects { proc, env }"
+      "signature": "proc_nonnegative_int_to_i32(value: Int) -> ProcExitStatus"
     },
     {
       "module": "std.proc",
       "kind": "fn",
-      "signature": "wait(handle: Int) -> Result[Int, ProcError] effects { proc }"
+      "signature": "proc_one_u32() -> ProcHandle"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "proc_result_from_raw(raw: ProcOutput) -> Result[ProcResult, ProcError]"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "proc_zero_u32() -> ProcHandle"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run(command: String) -> Result[ProcResult, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run_timeout(command: String, timeout_ms: Int) -> Result[ProcResult, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "run_with(command: String, options: RunOptions) -> Result[ProcResult, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "spawn(command: String) -> Result[ProcHandle, ProcError] effects { proc, env }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "fn",
+      "signature": "wait(handle: ProcHandle) -> Result[ProcExitStatus, ProcError] effects { proc }"
     },
     {
       "module": "std.proc",
       "kind": "struct",
       "signature": "ProcOutput { status: Int, stdout: String, stderr: String }"
+    },
+    {
+      "module": "std.proc",
+      "kind": "struct",
+      "signature": "ProcResult { status: ProcExitStatus, stdout: String, stderr: String }"
     },
     {
       "module": "std.proc",
@@ -5659,6 +6634,21 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "__aic_type_alias__TlsByteCountU32() -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "__aic_type_alias__TlsFrameLengthU32() -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "__aic_type_alias__TlsVersionCode() -> UInt8"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "aic_tls_accept_intrinsic(listener_handle: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, timeout_ms: Int) -> Result[Int, TlsError] effects { net }"
     },
     {
@@ -5670,6 +6660,11 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_async_cancel_string_intrinsic(op: AsyncStringOp) -> Result[Bool, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_async_pressure_intrinsic() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }"
     },
     {
       "module": "std.tls",
@@ -5710,6 +6705,21 @@
       "module": "std.tls",
       "kind": "fn",
       "signature": "aic_tls_connect_intrinsic(tcp_fd: Int, verify_server: Bool, ca_cert_path: String, has_ca_cert_path: Bool, client_cert_path: String, has_client_cert_path: Bool, client_key_path: String, has_client_key_path: Bool, server_name: String, has_server_name: Bool) -> Result[Int, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_peer_fingerprint_sha256_intrinsic(handle: Int) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_peer_issuer_intrinsic(handle: Int) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "aic_tls_peer_san_entries_intrinsic(handle: Int) -> Result[Vec[String], TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -5784,12 +6794,37 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "byte_stream_recv_exact_deadline_u32(stream: ByteStream, expected_bytes: TlsByteCountU32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_exact_u32(stream: ByteStream, expected_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "byte_stream_recv_framed(stream: ByteStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
       "signature": "byte_stream_recv_framed_deadline(stream: ByteStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_framed_deadline_u32(stream: ByteStream, max_frame_bytes: TlsFrameLengthU32, deadline_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_framed_u32(stream: ByteStream, max_frame_bytes: TlsFrameLengthU32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "byte_stream_recv_u32(stream: ByteStream, max_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[Bytes, ByteStreamError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -5859,6 +6894,26 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_async_recv_submit_u32(stream: TlsStream, max_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_recv_u32(stream: TlsStream, max_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_runtime_pressure() -> Result[AsyncRuntimePressure, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_runtime_pressure_u32() -> Result[AsyncRuntimePressureU32, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_async_send(stream: TlsStream, data: Bytes, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }"
     },
     {
@@ -5879,12 +6934,42 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_async_wait_any_int_u32(op1: AsyncIntOp, op2: AsyncIntOp, timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_async_wait_any_string(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_async_wait_any_string_u32(op1: AsyncStringOp, op2: AsyncStringOp, timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_async_wait_int(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, TlsError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelection, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_many_int_u32(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[TlsAsyncIntSelectionU32, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelection, TlsError] effects { net, concurrency, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_async_wait_many_string_u32(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[TlsAsyncStringSelectionU32, TlsError] effects { net, concurrency, time }"
     },
     {
       "module": "std.tls",
@@ -5919,7 +7004,27 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_frame_byte_to_int(header: Bytes, index: Int) -> Result[Int, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_frame_byte_to_u32(header: Bytes, index: Int) -> Result[UInt32, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_frame_len_be(header: Bytes) -> Result[Int, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_frame_len_be_u32(header: Bytes) -> Result[TlsFrameLengthU32, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_int_to_u32(value: Int) -> Result[UInt32, TlsError]"
     },
     {
       "module": "std.tls",
@@ -5934,7 +7039,32 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_one_u32() -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_one_u8() -> UInt8"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_peer_cn(stream: TlsStream) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_fingerprint_sha256(stream: TlsStream) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_issuer(stream: TlsStream) -> Result[String, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_peer_san_entries(stream: TlsStream) -> Result[Vec[String], TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -5954,12 +7084,27 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_recv_bytes_u32(stream: TlsStream, max_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_recv_exact(stream: TlsStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_recv_exact_deadline(stream: TlsStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_exact_deadline_u32(stream: TlsStream, expected_bytes: TlsByteCountU32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_exact_u32(stream: TlsStream, expected_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
     },
     {
       "module": "std.tls",
@@ -5974,7 +7119,27 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_recv_framed_deadline_u32(stream: TlsStream, max_frame_bytes: TlsFrameLengthU32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_recv_framed_payload(stream: TlsStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_framed_payload_u32(stream: TlsStream, frame_header: Bytes, max_frame_bytes: TlsFrameLengthU32, deadline_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_framed_u32(stream: TlsStream, max_frame_bytes: TlsFrameLengthU32, timeout_ms: Int) -> Result[Bytes, TlsError] effects { net, time }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_recv_u32(stream: TlsStream, max_bytes: TlsByteCountU32, timeout_ms: Int) -> Result[String, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
@@ -6009,12 +7174,57 @@
     {
       "module": "std.tls",
       "kind": "fn",
+      "signature": "tls_u32_int_max() -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_u32_to_int(value: UInt32) -> Result[Int, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_u8_to_int(value: UInt8) -> Int"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_u8_to_u32(value: UInt8) -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
       "signature": "tls_upgrade(tcp_fd: Int, hostname: String, config: TlsConfig) -> Result[TlsStream, TlsError] effects { net }"
     },
     {
       "module": "std.tls",
       "kind": "fn",
       "signature": "tls_version(stream: TlsStream) -> Result[TlsVersion, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_version_code(stream: TlsStream) -> Result[TlsVersionCode, TlsError] effects { net }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_version_from_code(code: TlsVersionCode) -> Result[TlsVersion, TlsError]"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_version_to_code(version: TlsVersion) -> TlsVersionCode"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_zero_u32() -> UInt32"
+    },
+    {
+      "module": "std.tls",
+      "kind": "fn",
+      "signature": "tls_zero_u8() -> UInt8"
     },
     {
       "module": "std.tls",
@@ -6029,7 +7239,17 @@
     {
       "module": "std.tls",
       "kind": "struct",
+      "signature": "TlsAsyncIntSelectionU32 { index: UInt32, value: TlsByteCountU32 }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
       "signature": "TlsAsyncStringSelection { index: Int, payload: Bytes }"
+    },
+    {
+      "module": "std.tls",
+      "kind": "struct",
+      "signature": "TlsAsyncStringSelectionU32 { index: UInt32, payload: Bytes }"
     },
     {
       "module": "std.tls",
@@ -6064,27 +7284,67 @@
     {
       "module": "std.url",
       "kind": "fn",
-      "signature": "has_explicit_port(url: Url) -> Bool"
+      "signature": "has_explicit_port(url: UrlView) -> Bool"
     },
     {
       "module": "std.url",
       "kind": "fn",
-      "signature": "net_addr(url: Url) -> Result[String, UrlError]"
+      "signature": "net_addr(url: UrlView) -> Result[String, UrlError]"
     },
     {
       "module": "std.url",
       "kind": "fn",
-      "signature": "normalize(url: Url) -> Result[String, UrlError]"
+      "signature": "normalize(url: UrlView) -> Result[String, UrlError]"
     },
     {
       "module": "std.url",
       "kind": "fn",
-      "signature": "parse(text: String) -> Result[Url, UrlError]"
+      "signature": "parse(text: String) -> Result[UrlView, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_from_raw(raw: Url) -> Result[UrlView, UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_one_u16() -> UInt16"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_port_from_int(port: Int) -> Result[Option[UInt16], UrlError]"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_port_to_int(port: Option[UInt16]) -> Int"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_to_raw(url: UrlView) -> Url"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_u16_to_int(value: UInt16) -> Int"
+    },
+    {
+      "module": "std.url",
+      "kind": "fn",
+      "signature": "url_zero_u16() -> UInt16"
     },
     {
       "module": "std.url",
       "kind": "struct",
       "signature": "Url { scheme: String, host: String, port: Int, path: String, query: String, fragment: String }"
+    },
+    {
+      "module": "std.url",
+      "kind": "struct",
+      "signature": "UrlView { scheme: String, host: String, port: Option[UInt16], path: String, query: String, fragment: String }"
     },
     {
       "module": "std.vec",

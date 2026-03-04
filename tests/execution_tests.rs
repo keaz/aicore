@@ -9146,6 +9146,207 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_numeric_bigint_biguint_decimal_runtime_paths() {
+    let src = r#"
+import std.io;
+import std.numeric;
+import std.string;
+
+fn string_eq(left: String, right: String) -> Bool {
+    string.len(left) == string.len(right) && string.contains(left, right)
+}
+
+fn bigint_ok(v: Result[BigInt, String], expected: String) -> Int {
+    match v {
+        Ok(value) => if string_eq(numeric.big_int_to_string(value), expected) { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn biguint_ok(v: Result[BigUInt, String], expected: String) -> Int {
+    match v {
+        Ok(value) => if string_eq(numeric.big_uint_to_string(value), expected) { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn decimal_ok(v: Result[Decimal, String], expected: String) -> Int {
+    match v {
+        Ok(value) => if string_eq(numeric.decimal_to_string(value), expected) { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn bigint_err(v: Result[BigInt, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    }
+}
+
+fn biguint_err(v: Result[BigUInt, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    }
+}
+
+fn decimal_err(v: Result[Decimal, String]) -> Int {
+    match v {
+        Ok(_) => 0,
+        Err(err) => if string.len(err) > 0 { 1 } else { 0 },
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let big_int_add_ok =
+        match numeric.parse_big_int("123456789012345678901234567890") {
+            Ok(a) => match numeric.parse_big_int("987654321098765432109876543210") {
+                Ok(b) => bigint_ok(
+                    numeric.big_int_add(a, b),
+                    "1111111110111111111011111111100"
+                ),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let big_int_sub_ok = bigint_ok(
+        numeric.big_int_sub(numeric.big_int_from_int(7), numeric.big_int_from_int(42)),
+        "-35"
+    );
+    let big_int_mul_ok =
+        match numeric.parse_big_int("12345678901234567890") {
+            Ok(a) => match numeric.parse_big_int("9") {
+                Ok(b) => bigint_ok(numeric.big_int_mul(a, b), "111111110111111111010"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let big_int_div_ok =
+        match numeric.parse_big_int("-100") {
+            Ok(a) => match numeric.parse_big_int("3") {
+                Ok(b) => bigint_ok(numeric.big_int_div(a, b), "-33"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let big_int_parse_err = bigint_err(numeric.parse_big_int("12x"));
+    let big_int_div_zero_err = bigint_err(
+        numeric.big_int_div(numeric.big_int_from_int(1), numeric.big_int_from_int(0))
+    );
+
+    let big_uint_add_ok =
+        match numeric.parse_big_uint("18446744073709551616") {
+            Ok(a) => match numeric.parse_big_uint("10") {
+                Ok(b) => biguint_ok(numeric.big_uint_add(a, b), "18446744073709551626"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let big_uint_underflow_err =
+        match numeric.parse_big_uint("1") {
+            Ok(a) => match numeric.parse_big_uint("2") {
+                Ok(b) => biguint_err(numeric.big_uint_sub(a, b)),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let big_uint_div_zero_err =
+        match numeric.parse_big_uint("7") {
+            Ok(a) => match numeric.parse_big_uint("0") {
+                Ok(b) => biguint_err(numeric.big_uint_div(a, b)),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+
+    let decimal_parse_ok = decimal_ok(numeric.parse_decimal("0012.3400"), "12.34");
+    let decimal_add_ok =
+        match numeric.parse_decimal("1.20") {
+            Ok(a) => match numeric.parse_decimal("2.03") {
+                Ok(b) => decimal_ok(numeric.decimal_add(a, b), "3.23"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let decimal_sub_ok =
+        match numeric.parse_decimal("5.0") {
+            Ok(a) => match numeric.parse_decimal("7.25") {
+                Ok(b) => decimal_ok(numeric.decimal_sub(a, b), "-2.25"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let decimal_mul_ok =
+        match numeric.parse_decimal("2.5") {
+            Ok(a) => match numeric.parse_decimal("4") {
+                Ok(b) => decimal_ok(numeric.decimal_mul(a, b), "10"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let decimal_div_ok =
+        match numeric.parse_decimal("1") {
+            Ok(a) => match numeric.parse_decimal("8") {
+                Ok(b) => decimal_ok(numeric.decimal_div(a, b), "0.125"),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+    let decimal_parse_err = decimal_err(numeric.parse_decimal("1.2.3"));
+    let decimal_div_zero_err =
+        match numeric.parse_decimal("7.5") {
+            Ok(a) => match numeric.parse_decimal("0") {
+                Ok(b) => decimal_err(numeric.decimal_div(a, b)),
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        };
+
+    let score =
+        big_int_add_ok +
+        big_int_sub_ok +
+        big_int_mul_ok +
+        big_int_div_ok +
+        big_int_parse_err +
+        big_int_div_zero_err +
+        big_uint_add_ok +
+        big_uint_underflow_err +
+        big_uint_div_zero_err +
+        decimal_parse_ok +
+        decimal_add_ok +
+        decimal_sub_ok +
+        decimal_mul_ok +
+        decimal_div_ok +
+        decimal_parse_err +
+        decimal_div_zero_err;
+    if score == 16 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_numeric_examples_smoke() {
+    for path in [
+        "examples/types/bigint_factorial.aic",
+        "examples/types/decimal_invoice_total.aic",
+    ] {
+        let src = fs::read_to_string(path).expect("read numeric example");
+        let (code, stdout, stderr) = compile_and_run(&src);
+        assert_eq!(code, 0, "path={path} stderr={stderr}");
+        assert_eq!(stdout, "42\n", "path={path}");
+    }
+}
+
+#[test]
 fn exec_json_seeded_roundtrip_property_check() {
     let src = r#"
 import std.io;
@@ -13085,4 +13286,70 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_frontend_accepts_int128_uint128_boundary_literals() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("int128_frontend_ok.aic");
+    let source = r#"
+fn main() -> Int {
+    let signed_min: Int128 = -170141183460469231731687303715884105728i128;
+    let unsigned_max: UInt128 = 340282366920938463463374607431768211455u128;
+    let signed_step: Int128 = signed_min + 1i128;
+    let unsigned_step: UInt128 = unsigned_max - 1u128;
+    if signed_step < 0i128 && unsigned_step > 0u128 {
+        0
+    } else {
+        1
+    }
+}
+"#;
+    fs::write(&src, source).expect("write source");
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+}
+
+#[test]
+fn exec_frontend_reports_int128_uint128_range_failures() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("int128_frontend_fail.aic");
+    let source = r#"
+fn main() -> Int {
+    let bad_signed: Int128 = 170141183460469231731687303715884105728i128;
+    let bad_unsigned_neg: UInt128 = -1u128;
+    if bad_signed == 0i128 || bad_unsigned_neg == 0u128 {
+        1
+    } else {
+        0
+    }
+}
+"#;
+    fs::write(&src, source).expect("write source");
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("Int128")),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("UInt128")),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
 }

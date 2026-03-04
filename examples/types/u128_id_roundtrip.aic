@@ -1,0 +1,17 @@
+import std.io;
+
+fn roundtrip(id: UInt128) -> UInt128 {
+    id
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let original: UInt128 = 18446744073709551616u128;
+    let returned: UInt128 = roundtrip(original);
+
+    if returned == original {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
