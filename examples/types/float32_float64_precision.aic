@@ -1,0 +1,19 @@
+fn precision_gap_f32() -> Float32 {
+    (16777216.0f32 + 1.0f32) - 16777216.0f32
+}
+
+fn precision_gap_f64() -> Float64 {
+    (16777216.0f64 + 1.0f64) - 16777216.0f64
+}
+
+fn main() -> Int {
+    let low_precision = precision_gap_f32();
+    let high_precision = precision_gap_f64();
+    let legacy_alias: Float = high_precision;
+
+    let low_ok = if low_precision == 0.0f32 { 1 } else { 0 };
+    let high_ok = if high_precision == 1.0f64 { 1 } else { 0 };
+    let alias_ok = if legacy_alias == 1.0 { 1 } else { 0 };
+
+    if low_ok + high_ok + alias_ok == 3 { 0 } else { 1 }
+}

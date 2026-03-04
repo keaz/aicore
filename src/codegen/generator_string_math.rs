@@ -179,7 +179,11 @@ impl<'a> Generator<'a> {
             "parse_int" if self.sig_matches_shape(name, &["String"], "Result[Int, String]") => {
                 Some(self.gen_string_parse_int_call(name, args, span, fctx))
             }
-            "parse_float" if self.sig_matches_shape(name, &["String"], "Result[Float, String]") => {
+            "parse_float"
+                if self.sig_matches_shape(name, &["String"], "Result[Float, String]")
+                    || self.sig_matches_shape(name, &["String"], "Result[Float32, String]")
+                    || self.sig_matches_shape(name, &["String"], "Result[Float64, String]") =>
+            {
                 Some(self.gen_string_parse_float_call(name, args, span, fctx))
             }
             "numeric_bigint_parse"
@@ -413,7 +417,11 @@ impl<'a> Generator<'a> {
             "int_to_string" if self.sig_matches_shape(name, &["Int"], "String") => {
                 Some(self.gen_string_int_to_string_call(args, span, fctx))
             }
-            "float_to_string" if self.sig_matches_shape(name, &["Float"], "String") => {
+            "float_to_string"
+                if self.sig_matches_shape(name, &["Float"], "String")
+                    || self.sig_matches_shape(name, &["Float32"], "String")
+                    || self.sig_matches_shape(name, &["Float64"], "String") =>
+            {
                 Some(self.gen_string_float_to_string_call(args, span, fctx))
             }
             "bool_to_string" if self.sig_matches_shape(name, &["Bool"], "String") => {
@@ -1709,20 +1717,25 @@ impl<'a> Generator<'a> {
         else {
             return None;
         };
-        if ok_ty != LType::Float || err_ty != LType::String {
+        if !is_float_type(&ok_ty) || err_ty != LType::String {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "parse_float expects Result[Float, String] return type",
+                "parse_float expects Result[Float32|Float64|Float, String] return type",
                 self.file,
                 span,
             ));
             return None;
         }
 
-        let ok_payload = Value {
-            ty: LType::Float,
-            repr: Some(out_value),
-        };
+        let ok_payload = self.coerce_value_to_expected(
+            Value {
+                ty: LType::Float64,
+                repr: Some(out_value),
+            },
+            &ok_ty,
+            span,
+            fctx,
+        )?;
         let err_payload = self.build_string_value(&out_err_ptr, &out_err_len, &out_err_len, fctx);
         let ok_value = self.build_enum_variant(&layout, ok_index, Some(ok_payload), span, fctx)?;
         let err_value =
@@ -2163,15 +2176,16 @@ impl<'a> Generator<'a> {
             return None;
         }
         let value = self.gen_expr(&args[0], fctx)?;
-        if value.ty != LType::Float {
+        if !is_float_type(&value.ty) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "float_to_string expects Float",
+                "float_to_string expects Float32, Float64, or Float",
                 self.file,
                 args[0].span,
             ));
             return None;
         }
+        let value = self.coerce_value_to_expected(value, &LType::Float64, args[0].span, fctx)?;
         let value_repr = value
             .repr
             .clone()
@@ -2351,7 +2365,7 @@ impl<'a> Generator<'a> {
             "abs" if self.sig_matches_shape(name, &["Int"], "Int") => {
                 Some(self.gen_math_unary_int_call(name, "aic_rt_math_abs", args, span, fctx))
             }
-            "abs_float" if self.sig_matches_shape(name, &["Float"], "Float") => Some(
+            "abs_float" if self.sig_matches_unary_float_to_float(name) => Some(
                 self.gen_math_unary_float_call(name, "aic_rt_math_abs_float", args, span, fctx),
             ),
             "min" if self.sig_matches_shape(name, &["Int", "Int"], "Int") => {
@@ -2360,32 +2374,50 @@ impl<'a> Generator<'a> {
             "max" if self.sig_matches_shape(name, &["Int", "Int"], "Int") => {
                 Some(self.gen_math_binary_int_call(name, "aic_rt_math_max", args, span, fctx))
             }
-            "pow" if self.sig_matches_shape(name, &["Float", "Float"], "Float") => {
+            "pow" if self.sig_matches_binary_float_to_float(name) => {
                 Some(self.gen_math_binary_float_call(name, "aic_rt_math_pow", args, span, fctx))
             }
-            "sqrt" if self.sig_matches_shape(name, &["Float"], "Float") => {
+            "sqrt" if self.sig_matches_unary_float_to_float(name) => {
                 Some(self.gen_math_unary_float_call(name, "aic_rt_math_sqrt", args, span, fctx))
             }
-            "floor" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+            "floor" if self.sig_matches_unary_float_to_int(name) => Some(
                 self.gen_math_unary_float_to_int_call(name, "aic_rt_math_floor", args, span, fctx),
             ),
-            "ceil" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+            "ceil" if self.sig_matches_unary_float_to_int(name) => Some(
                 self.gen_math_unary_float_to_int_call(name, "aic_rt_math_ceil", args, span, fctx),
             ),
-            "round" if self.sig_matches_shape(name, &["Float"], "Int") => Some(
+            "round" if self.sig_matches_unary_float_to_int(name) => Some(
                 self.gen_math_unary_float_to_int_call(name, "aic_rt_math_round", args, span, fctx),
             ),
-            "log" if self.sig_matches_shape(name, &["Float"], "Float") => {
+            "log" if self.sig_matches_unary_float_to_float(name) => {
                 Some(self.gen_math_unary_float_call(name, "aic_rt_math_log", args, span, fctx))
             }
-            "sin" if self.sig_matches_shape(name, &["Float"], "Float") => {
+            "sin" if self.sig_matches_unary_float_to_float(name) => {
                 Some(self.gen_math_unary_float_call(name, "aic_rt_math_sin", args, span, fctx))
             }
-            "cos" if self.sig_matches_shape(name, &["Float"], "Float") => {
+            "cos" if self.sig_matches_unary_float_to_float(name) => {
                 Some(self.gen_math_unary_float_call(name, "aic_rt_math_cos", args, span, fctx))
             }
             _ => None,
         }
+    }
+
+    fn sig_matches_unary_float_to_float(&self, name: &str) -> bool {
+        self.sig_matches_shape(name, &["Float"], "Float")
+            || self.sig_matches_shape(name, &["Float32"], "Float32")
+            || self.sig_matches_shape(name, &["Float64"], "Float64")
+    }
+
+    fn sig_matches_binary_float_to_float(&self, name: &str) -> bool {
+        self.sig_matches_shape(name, &["Float", "Float"], "Float")
+            || self.sig_matches_shape(name, &["Float32", "Float32"], "Float32")
+            || self.sig_matches_shape(name, &["Float64", "Float64"], "Float64")
+    }
+
+    fn sig_matches_unary_float_to_int(&self, name: &str) -> bool {
+        self.sig_matches_shape(name, &["Float"], "Int")
+            || self.sig_matches_shape(name, &["Float32"], "Int")
+            || self.sig_matches_shape(name, &["Float64"], "Int")
     }
 
     pub(super) fn gen_math_unary_int_call(
@@ -2484,25 +2516,28 @@ impl<'a> Generator<'a> {
             return None;
         }
         let value = self.gen_expr(&args[0], fctx)?;
-        if value.ty != LType::Float {
+        if !is_float_type(&value.ty) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                format!("{name} expects Float"),
+                format!("{name} expects Float32, Float64, or Float"),
                 self.file,
                 args[0].span,
             ));
             return None;
         }
-        let arg = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let result_ty = value.ty.clone();
+        let arg = self.coerce_value_to_expected(value, &LType::Float64, args[0].span, fctx)?;
+        let arg_repr = arg.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
         let reg = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call double @{}(double {})",
-            reg, runtime_fn, arg
+            reg, runtime_fn, arg_repr
         ));
-        Some(Value {
-            ty: LType::Float,
+        let out = Value {
+            ty: LType::Float64,
             repr: Some(reg),
-        })
+        };
+        self.coerce_value_to_expected(out, &result_ty, span, fctx)
     }
 
     pub(super) fn gen_math_binary_float_call(
@@ -2524,26 +2559,39 @@ impl<'a> Generator<'a> {
         }
         let lhs = self.gen_expr(&args[0], fctx)?;
         let rhs = self.gen_expr(&args[1], fctx)?;
-        if lhs.ty != LType::Float || rhs.ty != LType::Float {
+        if !is_float_type(&lhs.ty)
+            || !is_float_type(&rhs.ty)
+            || !float_types_compatible(&lhs.ty, &rhs.ty)
+        {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                format!("{name} expects (Float, Float)"),
+                format!("{name} expects matching Float32/Float64 operands"),
                 self.file,
                 span,
             ));
             return None;
         }
-        let lhs_arg = lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
-        let rhs_arg = rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let result_ty = lhs.ty.clone();
+        let lhs_coerced =
+            self.coerce_value_to_expected(lhs, &LType::Float64, args[0].span, fctx)?;
+        let rhs_coerced =
+            self.coerce_value_to_expected(rhs, &LType::Float64, args[1].span, fctx)?;
+        let lhs_arg = lhs_coerced
+            .repr
+            .unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let rhs_arg = rhs_coerced
+            .repr
+            .unwrap_or_else(|| llvm_float_literal(0.0_f64));
         let reg = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call double @{}(double {}, double {})",
             reg, runtime_fn, lhs_arg, rhs_arg
         ));
-        Some(Value {
-            ty: LType::Float,
+        let out = Value {
+            ty: LType::Float64,
             repr: Some(reg),
-        })
+        };
+        self.coerce_value_to_expected(out, &result_ty, span, fctx)
     }
 
     pub(super) fn gen_math_unary_float_to_int_call(
@@ -2564,20 +2612,21 @@ impl<'a> Generator<'a> {
             return None;
         }
         let value = self.gen_expr(&args[0], fctx)?;
-        if value.ty != LType::Float {
+        if !is_float_type(&value.ty) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                format!("{name} expects Float"),
+                format!("{name} expects Float32, Float64, or Float"),
                 self.file,
                 args[0].span,
             ));
             return None;
         }
-        let arg = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+        let arg = self.coerce_value_to_expected(value, &LType::Float64, args[0].span, fctx)?;
+        let arg_repr = arg.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
         let reg = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @{}(double {})",
-            reg, runtime_fn, arg
+            reg, runtime_fn, arg_repr
         ));
         Some(Value {
             ty: LType::Int,

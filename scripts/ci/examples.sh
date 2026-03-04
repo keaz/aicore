@@ -322,6 +322,16 @@ wave2a_size_run_candidates=(
 )
 wave2a_size_run_smoke=()
 
+wave2b_float_check_candidates=(
+  "examples/types/float32_float64_precision.aic"
+  "examples/types/float_ffi_contract.aic"
+)
+wave2b_float_run_candidates=(
+  "examples/types/float32_float64_precision.aic"
+  "examples/types/float_ffi_contract.aic"
+)
+wave2b_float_run_smoke=()
+
 if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
   check_pass+=(
     "examples/io/postgres_tls_scram_reference.aic"
@@ -356,6 +366,19 @@ for f in "${wave2a_size_run_candidates[@]}"; do
   if [[ -f "$f" || -d "$f" ]]; then
     run_pass+=("$f")
     wave2a_size_run_smoke+=("$f")
+  fi
+done
+
+for f in "${wave2b_float_check_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    check_pass+=("$f")
+  fi
+done
+
+for f in "${wave2b_float_run_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    run_pass+=("$f")
+    wave2b_float_run_smoke+=("$f")
   fi
 done
 
@@ -761,6 +784,11 @@ case "$MODE" in
     fi
     if [[ "${#wave2a_size_run_smoke[@]}" -gt 0 ]]; then
       for f in "${wave2a_size_run_smoke[@]}"; do
+        expect_run_success "$f"
+      done
+    fi
+    if [[ "${#wave2b_float_run_smoke[@]}" -gt 0 ]]; then
+      for f in "${wave2b_float_run_smoke[@]}"; do
         expect_run_success "$f"
       done
     fi

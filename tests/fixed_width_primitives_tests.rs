@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use aicore::ast::{Item, Stmt, TypeKind};
+use aicore::ast::{FloatLiteralSuffix, FloatLiteralWidth, Item, Stmt, TypeKind};
 use aicore::driver::{has_errors, run_frontend};
 use aicore::formatter::format_program;
 use aicore::ir_builder::build;
@@ -517,4 +517,118 @@ fn bump(index: USize, delta: UInt, signed: ISize) -> UInt {
         !formatted_once.contains("UInt"),
         "formatted={formatted_once}"
     );
+}
+
+#[test]
+fn frontend_float_primitives_parse_in_signatures_and_type_positions() {
+    let src = r#"module app.main;
+
+type Scalar = Float;
+
+fn next(a: Float32, b: Float64, c: Float) -> Float {
+    let _a: Float32 = a;
+    let _b: Float64 = b;
+    let _c: Float = c;
+    c
+}
+"#;
+    let (program, diagnostics) = parse(src, "test.aic");
+    assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+    let program = program.expect("program");
+    let f = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Function(f) if f.name == "next" => Some(f),
+            _ => None,
+        })
+        .expect("next function");
+
+    let expected = ["Float32", "Float64", "Float"];
+    for (param, expected_name) in f.params.iter().zip(expected.iter()) {
+        assert!(matches!(
+            &param.ty.kind,
+            TypeKind::Named { name, args } if name == expected_name && args.is_empty()
+        ));
+    }
+    assert!(matches!(
+        &f.ret_type.kind,
+        TypeKind::Named { name, args } if name == "Float" && args.is_empty()
+    ));
+
+    let mut let_type_names = Vec::new();
+    for stmt in &f.body.stmts {
+        if let Stmt::Let { ty: Some(ty), .. } = stmt {
+            if let TypeKind::Named { name, args } = &ty.kind {
+                assert!(args.is_empty(), "expected non-generic type, got {name}[..]");
+                let_type_names.push(name.as_str());
+            }
+        }
+    }
+    assert_eq!(let_type_names, vec!["Float32", "Float64", "Float"]);
+}
+
+#[test]
+fn frontend_float_suffix_round_trip_is_deterministic() {
+    let src = r#"module app.main;
+
+fn main() -> Float {
+    let x: Float32 = 1.0f32;
+    let y: Float64 = 2.5f64;
+    x + y
+}
+"#;
+    let (program, diagnostics) = parse(src, "roundtrip.aic");
+    assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+    let program = program.expect("program");
+    let f = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Function(f) if f.name == "main" => Some(f),
+            _ => None,
+        })
+        .expect("main function");
+    let Stmt::Let { expr: x_expr, .. } = &f.body.stmts[0] else {
+        panic!("expected first let statement");
+    };
+    let x_meta = x_expr
+        .float_literal_metadata()
+        .expect("expected typed float metadata for x");
+    assert_eq!(x_meta.suffix, FloatLiteralSuffix::F32);
+    assert_eq!(x_meta.kind.width, FloatLiteralWidth::W32);
+    assert_eq!(x_meta.raw_literal_text, "1.0");
+
+    let Stmt::Let { expr: y_expr, .. } = &f.body.stmts[1] else {
+        panic!("expected second let statement");
+    };
+    let y_meta = y_expr
+        .float_literal_metadata()
+        .expect("expected typed float metadata for y");
+    assert_eq!(y_meta.suffix, FloatLiteralSuffix::F64);
+    assert_eq!(y_meta.kind.width, FloatLiteralWidth::W64);
+    assert_eq!(y_meta.raw_literal_text, "2.5");
+
+    let ir = build(&program);
+    let formatted_once = format_program(&ir);
+    assert!(
+        formatted_once.contains("1.0f32"),
+        "formatted={formatted_once}"
+    );
+    assert!(
+        formatted_once.contains("2.5f64"),
+        "formatted={formatted_once}"
+    );
+    assert!(
+        formatted_once.contains("-> Float64"),
+        "formatted={formatted_once}"
+    );
+
+    let (reparsed, reparsed_diags) = parse(&formatted_once, "roundtrip_formatted.aic");
+    assert!(
+        reparsed_diags.is_empty(),
+        "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted_once}"
+    );
+    let reformatted = format_program(&build(&reparsed.expect("program")));
+    assert_eq!(formatted_once, reformatted);
 }

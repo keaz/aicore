@@ -658,6 +658,79 @@ fn wave2a_size_integer_example_contracts_are_ci_wired() {
 }
 
 #[test]
+fn wave2b_float_example_contracts_are_ci_wired() {
+    let root = repo_root();
+    let spec_doc = fs::read_to_string(root.join("docs/spec.md")).expect("read docs/spec.md");
+    let type_doc =
+        fs::read_to_string(root.join("docs/type-system.md")).expect("read docs/type-system.md");
+    let llvm_doc =
+        fs::read_to_string(root.join("docs/llvm-backend.md")).expect("read docs/llvm-backend.md");
+    let migration_doc = fs::read_to_string(root.join("docs/fixed-width-primitives-migration.md"))
+        .expect("read docs/fixed-width-primitives-migration.md");
+    let ci_script = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+
+    let expected_paths = [
+        "examples/types/float32_float64_precision.aic",
+        "examples/types/float_ffi_contract.aic",
+    ];
+
+    for rel in expected_paths {
+        assert!(
+            root.join(rel).is_file(),
+            "wave2b example file must exist: {rel}"
+        );
+        assert!(
+            migration_doc.contains(&format!("`{rel}`")),
+            "fixed-width migration guide must reference wave2b example contract path: {rel}"
+        );
+        assert!(
+            ci_script.contains(&format!("\"{rel}\"")),
+            "examples.sh must include wave2b float candidate path: {rel}"
+        );
+    }
+
+    assert!(
+        ci_script.contains("for f in \"${wave2b_float_run_smoke[@]}\"; do"),
+        "examples.sh must run wave2b float smoke examples in run mode when present"
+    );
+
+    for required in [
+        "Float32",
+        "Float64",
+        "Float` is a compatibility alias to `Float64",
+    ] {
+        assert!(
+            spec_doc.contains(required),
+            "docs/spec.md must document wave2b float policy marker: {required}"
+        );
+    }
+
+    for required in [
+        "Float literal suffixes",
+        "f32",
+        "f64",
+        "Float32` with `Float64`/`Float` is rejected",
+    ] {
+        assert!(
+            type_doc.contains(required),
+            "docs/type-system.md must document wave2b float policy marker: {required}"
+        );
+    }
+
+    for required in [
+        "`Float32` -> `float`",
+        "`Float64` -> `double`",
+        "`Float` -> `double` (alias of `Float64`)",
+    ] {
+        assert!(
+            llvm_doc.contains(required),
+            "docs/llvm-backend.md must document wave2b llvm marker: {required}"
+        );
+    }
+}
+
+#[test]
 fn rest_guide_docs_test_commands_are_executable() {
     let doc_path = rest_guide_doc();
     let text = fs::read_to_string(&doc_path)

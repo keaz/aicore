@@ -3,7 +3,7 @@
 - Strong static typing.
 - No general implicit casts/coercions.
 - Types:
-  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
+  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Float`, `Bool`, `String`, `()`
   - named structs/enums
   - parametric surface syntax for ADTs (`Option[T]`, `Result[T,E]`)
   - compiler-managed async wrapper `Async[T]` for `async fn` call results
@@ -36,6 +36,7 @@
   - `E1272`: or-pattern binding type mismatch
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.
+- `Float` is a compatibility alias to `Float64`.
 
 ## Integer primitives and `Int`
 
@@ -133,6 +134,49 @@ fn bad_ops(a: Int8, b: UInt16) -> Int {
 }
 ```
 
+## Float primitives and compatibility alias
+
+- `Float32` and `Float64` are distinct float primitives.
+- `Float` is a compatibility alias of `Float64` and is treated as the same kind in type/operator checks.
+- Float operator checks remain deterministic and do not add implicit int/float coercions.
+
+## Float literal typing and diagnostics (`#319`)
+
+- Unsuffixed float literals default to `Float` (`Float64`).
+- Float literal suffixes:
+  - `f32` forces `Float32`
+  - `f64` forces `Float64`
+- Expected-type context may type unsuffixed float literals as `Float32` or `Float64`.
+- Lexer diagnostics:
+  - float literal with integer suffix: `E0010`
+
+Examples:
+
+```aic
+let x = 1.5;            // x: Float (alias Float64)
+let y = 1.5f32;         // y: Float32
+let z: Float32 = 1.25;  // unsuffixed literal narrowed by context
+```
+
+## Float operator typing semantics (`#319`)
+
+- Arithmetic (`+`, `-`, `*`, `/`, `%`) requires exact float kind match.
+- Equality/comparison on float operands also require exact float kind match.
+- `Float` and `Float64` are treated as the same kind in exact-match checks due to alias canonicalization.
+- `Float32` with `Float64`/`Float` is rejected without implicit promotion:
+  - `E1230`: arithmetic mismatch
+  - `E1231`: equality mismatch
+  - `E1232`: comparison mismatch
+
+Example:
+
+```aic
+fn bad_mixed(a: Float32, b: Float64) -> Int {
+    let _x = a + b; // E1230
+    0
+}
+```
+
 ## Numeric lowering semantics (summary)
 
 - Signed integer division/modulo use signed operations.
@@ -187,6 +231,9 @@ Type-focused status:
 - `#318` size-family integers
   - Current: `ISize`/`USize` are supported with deterministic 64-bit semantics, and `UInt` aliases `USize`.
   - Target: keep this aliasing/stability contract and avoid platform-dependent typechecking behavior.
+- `#319` float-width primitives
+  - Current: `Float32`/`Float64` are available, with `Float` as alias to `Float64`.
+  - Target: keep literal and mixed-width diagnostics deterministic while preserving `Float` compatibility.
 - `#320` numeric stdlib module
   - Current: no dedicated `std.numeric` conversion/overflow helper module.
   - Target: add `std.numeric` for explicit numeric conversion and overflow-policy APIs without changing implicit-coercion semantics.

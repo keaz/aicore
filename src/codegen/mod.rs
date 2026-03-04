@@ -1631,6 +1631,8 @@ enum LType {
     UInt32,
     UInt64,
     UInt128,
+    Float32,
+    Float64,
     Float,
     Bool,
     Char,
@@ -3708,6 +3710,12 @@ fn coerce_repr(value: &Value, expected: &LType) -> String {
             .clone()
             .unwrap_or_else(|| default_value(expected));
     }
+    if float_types_compatible(&value.ty, expected) {
+        return value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+    }
     default_value(expected)
 }
 
@@ -3725,6 +3733,40 @@ fn integer_width_bits(ty: &LType) -> Option<u32> {
         LType::Int128 | LType::UInt128 => Some(128),
         _ => None,
     }
+}
+
+fn float_width_bits(ty: &LType) -> Option<u32> {
+    match ty {
+        LType::Float32 => Some(32),
+        LType::Float64 | LType::Float => Some(64),
+        _ => None,
+    }
+}
+
+fn is_float_type(ty: &LType) -> bool {
+    float_width_bits(ty).is_some()
+}
+
+fn float_types_compatible(lhs: &LType, rhs: &LType) -> bool {
+    match (float_width_bits(lhs), float_width_bits(rhs)) {
+        (Some(lhs_bits), Some(rhs_bits)) => lhs_bits == rhs_bits,
+        _ => false,
+    }
+}
+
+fn float_common_type(lhs: &LType, rhs: &LType) -> Option<LType> {
+    let lhs_bits = float_width_bits(lhs)?;
+    let rhs_bits = float_width_bits(rhs)?;
+    if lhs_bits != rhs_bits {
+        return None;
+    }
+    Some(if lhs_bits == 32 {
+        LType::Float32
+    } else if matches!(lhs, LType::Float) || matches!(rhs, LType::Float) {
+        LType::Float
+    } else {
+        LType::Float64
+    })
 }
 
 fn is_integral_type(ty: &LType) -> bool {
@@ -3799,7 +3841,8 @@ fn llvm_type(ty: &LType) -> String {
         LType::Int32 | LType::UInt32 => "i32".to_string(),
         LType::Int64 | LType::UInt64 => "i64".to_string(),
         LType::Int128 | LType::UInt128 => "i128".to_string(),
-        LType::Float => "double".to_string(),
+        LType::Float32 => "float".to_string(),
+        LType::Float64 | LType::Float => "double".to_string(),
         LType::Bool => "i1".to_string(),
         LType::Char => "i32".to_string(),
         LType::Unit => "void".to_string(),
@@ -3858,7 +3901,8 @@ fn default_value(ty: &LType) -> String {
         | LType::UInt32
         | LType::UInt64
         | LType::UInt128 => "0".to_string(),
-        LType::Float => llvm_float_literal(0.0_f64),
+        LType::Float32 => "0.0".to_string(),
+        LType::Float64 | LType::Float => llvm_float_literal(0.0_f64),
         LType::Bool => "0".to_string(),
         LType::Char => "0".to_string(),
         LType::Unit => String::new(),
@@ -3961,6 +4005,8 @@ fn render_type(ty: &LType) -> String {
         LType::UInt32 => "UInt32".to_string(),
         LType::UInt64 => "UInt64".to_string(),
         LType::UInt128 => "UInt128".to_string(),
+        LType::Float32 => "Float32".to_string(),
+        LType::Float64 => "Float64".to_string(),
         LType::Float => "Float".to_string(),
         LType::Bool => "Bool".to_string(),
         LType::Char => "Char".to_string(),

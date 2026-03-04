@@ -365,6 +365,97 @@ fn unit_typecheck_rejects_implicit_int_float_coercion() {
 }
 
 #[test]
+fn unit_typecheck_float_width_alias_and_literal_context_typecheck() {
+    let src = r#"
+fn take_f32(x: Float32) -> Float32 { x }
+fn take_f64(x: Float64) -> Float64 { x }
+fn take_float_alias(x: Float) -> Float64 { x }
+
+fn main() -> Int {
+    let from_ctx_f32: Float32 = 1.25;
+    let from_ctx_f64: Float64 = 2.5;
+    let alias: Float = 3.75;
+    let _f32_direct: Float32 = take_f32(4.5);
+    let _f32_roundtrip: Float32 = take_f32(from_ctx_f32);
+    let _f64_roundtrip: Float64 = take_f64(alias);
+    let _alias_roundtrip: Float = take_float_alias(from_ctx_f64);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_typecheck_rejects_mixed_float_width_ops_with_stable_diagnostics() {
+    let src = r#"
+fn main(a: Float32, b: Float64) -> Int {
+    let _arith = a + b;
+    let _cmp = a < b;
+    let _eq = a == b;
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1230" && d.message.contains("matching float widths")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1232" && d.message.contains("floats require matching width")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1231" && d.message.contains("floats must match width")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_typecheck_rejects_float_width_assignment_and_call_mismatches() {
+    let src = r#"
+fn want_f32(x: Float32) -> Float32 { x }
+
+fn main() -> Int {
+    let default_float = 1.0;
+    let wide: Float64 = default_float;
+    let _bad_assign_from_wide: Float32 = wide;
+    let _bad_assign_from_default: Float32 = default_float;
+    let _bad_call = want_f32(wide);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    let e1204_count = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
+    assert!(e1204_count >= 2, "diags={:#?}", out.diagnostics);
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1214"
+            && d.message.contains("Float32")
+            && d.message.contains("Float64")),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_trait_bounded_generic_accepts_multiple_impl_types() {
     let src = r#"
 trait Order[T];

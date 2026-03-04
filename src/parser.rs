@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
 use crate::ir;
-use crate::lexer::{lex, IntLiteralSuffixToken, Token, TokenKind};
+use crate::lexer::{lex, FloatLiteralSuffixToken, IntLiteralSuffixToken, Token, TokenKind};
 use crate::span::Span;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
@@ -9,7 +9,9 @@ const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
 
 pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
     clear_int_literal_metadata();
+    clear_float_literal_metadata();
     ir::clear_int_literal_metadata();
+    ir::clear_float_literal_metadata();
     let (tokens, mut diagnostics) = lex(source, file);
     let mut parser = Parser {
         file,
@@ -1328,7 +1330,10 @@ impl<'a> Parser<'a> {
             full_name.push_str(&seg);
             end = seg_span.end;
         }
-        full_name = canonical_primitive_type_name(&full_name).to_string();
+        let canonical = canonical_primitive_type_name(&full_name);
+        if full_name != "Float" {
+            full_name = canonical.to_string();
+        }
 
         if full_name == "Fn" && self.at_kind(|k| matches!(k, TokenKind::LParen)) {
             self.bump();
@@ -2229,10 +2234,17 @@ impl<'a> Parser<'a> {
                     span: token.span,
                 })
             }
-            TokenKind::Float(value) => {
+            TokenKind::Float(literal) => {
                 self.bump();
+                let float_value = literal.value;
+                self.record_typed_float_literal(
+                    token.span,
+                    literal.suffix,
+                    literal.raw_value_span,
+                    literal.raw_text,
+                );
                 Some(Expr {
-                    kind: ExprKind::Float(value),
+                    kind: ExprKind::Float(float_value),
                     span: token.span,
                 })
             }
@@ -3033,6 +3045,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn float_literal_suffix_to_ast(
+        suffix: FloatLiteralSuffixToken,
+    ) -> (FloatLiteralSuffix, FloatLiteralKind, &'static str) {
+        match suffix {
+            FloatLiteralSuffixToken::F32 => (
+                FloatLiteralSuffix::F32,
+                FloatLiteralSuffix::F32.kind(),
+                "f32",
+            ),
+            FloatLiteralSuffixToken::F64 => (
+                FloatLiteralSuffix::F64,
+                FloatLiteralSuffix::F64.kind(),
+                "f64",
+            ),
+        }
+    }
+
     fn record_typed_int_literal(
         &mut self,
         span: Span,
@@ -3054,6 +3083,28 @@ impl<'a> Parser<'a> {
         );
         record_int_literal_metadata(span, value, ast_meta.clone());
         ir::record_int_literal_metadata(span, value, ast_meta);
+    }
+
+    fn record_typed_float_literal(
+        &mut self,
+        span: Span,
+        suffix: Option<FloatLiteralSuffixToken>,
+        raw_value_span: Span,
+        raw_literal_text: String,
+    ) {
+        let Some(suffix) = suffix else {
+            return;
+        };
+        let (ast_suffix, ast_kind, suffix_text) = Self::float_literal_suffix_to_ast(suffix);
+        let ast_meta = FloatLiteralMetadata::with_kind_and_suffix_text(
+            ast_suffix,
+            ast_kind,
+            suffix_text,
+            raw_value_span,
+            raw_literal_text,
+        );
+        record_float_literal_metadata(span, ast_meta.clone());
+        ir::record_float_literal_metadata(span, ast_meta);
     }
 
     fn make_unit_expr(&self, span: Span) -> Expr {
@@ -3760,8 +3811,8 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::parse;
     use crate::ast::{
-        BinOp, Expr, ExprKind, IntLiteralSignedness, IntLiteralSuffix, IntLiteralWidth, Item,
-        PatternKind, Stmt, TypeKind,
+        BinOp, Expr, ExprKind, FloatLiteralSuffix, FloatLiteralWidth, IntLiteralSignedness,
+        IntLiteralSuffix, IntLiteralWidth, Item, PatternKind, Stmt, TypeKind,
     };
 
     #[test]
@@ -4314,10 +4365,10 @@ fn main() -> Int {
     }
 
     #[test]
-    fn parses_float_literals() {
+    fn parses_float_literals_and_preserves_suffix_metadata() {
         let src = r#"
 fn main() -> Float {
-    3.125 + 2.5e-3
+    3.125f32 + 2.5e-3f64
 }
 "#;
         let (program, diagnostics) = parse(src, "test.aic");
@@ -4327,12 +4378,34 @@ fn main() -> Float {
             Item::Function(f) => f,
             _ => panic!("expected function"),
         };
+        assert!(matches!(
+            &function.ret_type.kind,
+            TypeKind::Named { name, args } if name == "Float" && args.is_empty()
+        ));
         let tail = function.body.tail.as_ref().expect("tail expression");
         let ExprKind::Binary { lhs, rhs, .. } = &tail.kind else {
             panic!("expected binary expression");
         };
         assert!(matches!(lhs.kind, ExprKind::Float(v) if (v - 3.125).abs() < 1e-12));
         assert!(matches!(rhs.kind, ExprKind::Float(v) if (v - 2.5e-3).abs() < 1e-12));
+
+        let lhs_meta = lhs
+            .float_literal_metadata()
+            .expect("expected typed float metadata for lhs");
+        assert_eq!(lhs_meta.suffix, FloatLiteralSuffix::F32);
+        assert_eq!(lhs_meta.suffix_text, "f32");
+        assert_eq!(lhs_meta.kind.width, FloatLiteralWidth::W32);
+        assert_eq!(lhs_meta.raw_literal_text, "3.125");
+        assert!(lhs_meta.raw_value_span.end < lhs.span.end);
+
+        let rhs_meta = rhs
+            .float_literal_metadata()
+            .expect("expected typed float metadata for rhs");
+        assert_eq!(rhs_meta.suffix, FloatLiteralSuffix::F64);
+        assert_eq!(rhs_meta.suffix_text, "f64");
+        assert_eq!(rhs_meta.kind.width, FloatLiteralWidth::W64);
+        assert_eq!(rhs_meta.raw_literal_text, "2.5e-3");
+        assert!(rhs_meta.raw_value_span.end < rhs.span.end);
     }
 
     #[test]
@@ -4398,6 +4471,46 @@ fn widths(a: ISize, b: USize, c: UInt) -> UInt {
         assert!(matches!(
             &f.ret_type.kind,
             TypeKind::Named { name, args } if name == "USize" && args.is_empty()
+        ));
+    }
+
+    #[test]
+    fn parses_float_primitives_and_preserves_float_alias_spelling() {
+        let src = r#"
+fn widths(a: Float32, b: Float64, c: Float) -> Float {
+    let _a: Float32 = a;
+    let _b: Float64 = b;
+    let _c: Float = c;
+    c
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expected = ["Float32", "Float64", "Float"];
+        for (param, expected_name) in f.params.iter().zip(expected.iter()) {
+            assert!(matches!(
+                &param.ty.kind,
+                TypeKind::Named { name, args } if name == expected_name && args.is_empty()
+            ));
+        }
+        assert!(matches!(
+            &f.ret_type.kind,
+            TypeKind::Named { name, args } if name == "Float" && args.is_empty()
+        ));
+        let Stmt::Let {
+            ty: Some(alias_ty), ..
+        } = &f.body.stmts[2]
+        else {
+            panic!("expected third let with alias type");
+        };
+        assert!(matches!(
+            &alias_ty.kind,
+            TypeKind::Named { name, args } if name == "Float" && args.is_empty()
         ));
     }
 
@@ -4477,9 +4590,9 @@ fn bad_float() -> Float { 1.5u8 }
             "diags={diagnostics:#?}"
         );
         assert!(
-            diagnostics.iter().any(
-                |d| d.code == "E0010" && d.message.contains("float literal cannot have suffix")
-            ),
+            diagnostics.iter().any(|d| d.code == "E0010"
+                && d.message.contains("invalid float literal suffix")
+                && d.message.contains("u8")),
             "diags={diagnostics:#?}"
         );
     }

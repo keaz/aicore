@@ -1,10 +1,11 @@
 # Fixed-Width Primitives Migration Guide
 
-This guide covers practical migration from `Int`-based integer usage to fixed-width primitives:
+This guide covers practical migration from `Int`/`Float` usage to fixed-width primitives:
 
 - `Int8`, `Int16`, `Int32`, `Int64`, `Int128`
 - `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`
 - `ISize`, `USize` (`UInt` alias)
+- `Float32`, `Float64` (`Float` alias to `Float64`)
 
 `Int` remains available as the general integer type (signed 64-bit range in current backend/runtime).
 
@@ -14,6 +15,7 @@ This guide covers practical migration from `Int`-based integer usage to fixed-wi
 2. Keep positions/offsets/count-style indices as `Int` unless an API explicitly requires a fixed-width type.
 3. Prefer literal suffixes (`1u8`, `42i16`, `7u32`) at protocol boundaries for readability and deterministic typing.
 4. Expect only lossless implicit conversions; narrowing/sign-changing assignments are rejected.
+5. Use explicit float width (`Float32` vs `Float64`) at ABI/protocol boundaries; keep `Float` where compatibility with existing `Float64` APIs is intended.
 
 ## Wave 1 migration contract (`#317`, `#320`)
 
@@ -56,6 +58,24 @@ Canonical Wave 2A examples for CI wiring:
 
 - `examples/core/isize_usize_uint.aic` (size-family primitive and alias behavior)
 - `examples/core/isize_usize_conversions.aic` (lossless vs rejected conversion boundaries)
+
+## Wave 2B float-width contract (`#319`)
+
+- `Float32` and `Float64` are explicit float primitives.
+- `Float` remains a compatibility alias of `Float64`.
+- Literal policy:
+  - unsuffixed float literals default to `Float` (`Float64`)
+  - `f32`/`f64` suffixes explicitly set float width
+  - expected-type context may narrow unsuffixed literals to `Float32`
+- Mixed-width float operators remain deterministic:
+  - `Float32` with `Float64`/`Float` is rejected in arithmetic/equality/comparison
+  - `Float` and `Float64` are treated as the same kind (alias canonicalization)
+- Integer/float implicit coercions are still not introduced.
+
+Canonical Wave 2B examples for CI wiring:
+
+- `examples/types/float32_float64_precision.aic` (precision and alias behavior across float widths)
+- `examples/types/float_ffi_contract.aic` (extern ABI signature contract for `Float32` vs `Float64`/`Float`)
 
 ## Buffer API migration (`std.buffer`)
 

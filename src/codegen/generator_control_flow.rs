@@ -2271,7 +2271,8 @@ impl<'a> Generator<'a> {
 
         if let Some(expected_ty) = self.parse_type_repr(&def.declared_ty, def.span) {
             let actual_ty = self.const_value_ty(&value);
-            if actual_ty != expected_ty {
+            let is_float_const_match = is_float_type(&actual_ty) && is_float_type(&expected_ty);
+            if actual_ty != expected_ty && !is_float_const_match {
                 self.diagnostics.push(Diagnostic::error(
                     "E5007",
                     format!(
@@ -2737,7 +2738,7 @@ impl<'a> Generator<'a> {
     pub(super) fn const_value_ty(&self, value: &ConstValue) -> LType {
         match value {
             ConstValue::Int(_) => LType::Int,
-            ConstValue::Float(_) => LType::Float,
+            ConstValue::Float(_) => LType::Float64,
             ConstValue::Bool(_) => LType::Bool,
             ConstValue::Char(_) => LType::Char,
             ConstValue::Unit => LType::Unit,
@@ -2756,7 +2757,7 @@ impl<'a> Generator<'a> {
                 repr: Some(v.to_string()),
             },
             ConstValue::Float(v) => Value {
-                ty: LType::Float,
+                ty: LType::Float64,
                 repr: Some(llvm_float_literal(*v)),
             },
             ConstValue::Bool(v) => Value {
@@ -2786,7 +2787,8 @@ impl<'a> Generator<'a> {
         let context = format!("default value for field '{}.{}'", struct_name, field_name);
         let value = self.eval_const_expr(&context, expr, &mut Vec::new())?;
         let actual_ty = self.const_value_ty(&value);
-        if &actual_ty != expected_ty {
+        let is_float_const_match = is_float_type(&actual_ty) && is_float_type(expected_ty);
+        if &actual_ty != expected_ty && !is_float_const_match {
             self.diagnostics.push(Diagnostic::error(
                 "E5004",
                 format!(
@@ -2801,7 +2803,8 @@ impl<'a> Generator<'a> {
             ));
             return None;
         }
-        Some(self.runtime_value_from_const(&value, fctx))
+        let const_value = self.runtime_value_from_const(&value, fctx);
+        self.coerce_value_to_expected(const_value, expected_ty, expr.span, fctx)
     }
 
     pub(super) fn normalize_type_repr(
@@ -2939,6 +2942,8 @@ impl<'a> Generator<'a> {
             "UInt32" => return Some(LType::UInt32),
             "UInt64" => return Some(LType::UInt64),
             "UInt128" => return Some(LType::UInt128),
+            "Float32" => return Some(LType::Float32),
+            "Float64" => return Some(LType::Float64),
             "Float" => return Some(LType::Float),
             "Bool" => return Some(LType::Bool),
             "Char" => return Some(LType::Char),

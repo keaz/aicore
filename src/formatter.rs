@@ -528,7 +528,14 @@ fn format_expr(
                 out.push_str(&v.to_string());
             }
         }
-        ir::ExprKind::Float(v) => out.push_str(&render_float_literal(*v)),
+        ir::ExprKind::Float(v) => {
+            if let Some(meta) = expr.float_literal_metadata() {
+                out.push_str(&meta.raw_literal_text);
+                out.push_str(&meta.suffix_text);
+            } else {
+                out.push_str(&render_float_literal(*v));
+            }
+        }
         ir::ExprKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
         ir::ExprKind::Char(v) => out.push_str(&format!("{:?}", v)),
         ir::ExprKind::String(v) => {
@@ -1174,6 +1181,62 @@ fn bump(index: USize, delta: UInt, signed: ISize) -> UInt {
         assert!(formatted.contains("ISize"), "formatted={formatted}");
         assert!(formatted.contains("USize"), "formatted={formatted}");
         assert!(!formatted.contains("UInt"), "formatted={formatted}");
+    }
+
+    #[test]
+    fn canonicalizes_float_alias_to_float64_in_formatted_types() {
+        let src = r#"
+type Scalar = Float;
+
+fn choose(a: Float32, b: Float64, c: Float) -> Float {
+    let _alias: Float = c;
+    b
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted = format_program(&ir);
+        assert!(formatted.contains("Float32"), "formatted={formatted}");
+        assert!(formatted.contains("Float64"), "formatted={formatted}");
+        assert!(!formatted.contains("= Float;"), "formatted={formatted}");
+        assert!(!formatted.contains(": Float ="), "formatted={formatted}");
+        assert!(!formatted.contains("-> Float {"), "formatted={formatted}");
+    }
+
+    #[test]
+    fn preserves_typed_float_suffixes_in_formatted_output() {
+        let src = r#"
+fn main() -> Float {
+    let a: Float32 = 1.25f32;
+    let b: Float64 = 2.5f64;
+    a + b
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted_once = format_program(&ir);
+        assert!(
+            formatted_once.contains("1.25f32"),
+            "formatted={formatted_once}"
+        );
+        assert!(
+            formatted_once.contains("2.5f64"),
+            "formatted={formatted_once}"
+        );
+        assert!(
+            formatted_once.contains("-> Float64"),
+            "formatted={formatted_once}"
+        );
+
+        let (reparsed, reparsed_diags) = parse(&formatted_once, "formatted.aic");
+        assert!(
+            reparsed_diags.is_empty(),
+            "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted_once}"
+        );
+        let reformatted = format_program(&build(&reparsed.expect("program")));
+        assert_eq!(formatted_once, reformatted);
     }
 
     #[test]

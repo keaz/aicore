@@ -2441,6 +2441,21 @@ impl<'a> Generator<'a> {
             .unwrap_or_else(|| fallback.to_string())
     }
 
+    fn float_literal_type_hint(&self, expr: &ir::Expr, expected_ty: Option<&LType>) -> LType {
+        if let Some(meta) = expr.float_literal_metadata() {
+            return match meta.kind.width {
+                crate::ast::FloatLiteralWidth::W32 => LType::Float32,
+                crate::ast::FloatLiteralWidth::W64 => LType::Float64,
+            };
+        }
+        if let Some(expected) = expected_ty {
+            if let Some(kind) = float_common_type(expected, expected) {
+                return kind;
+            }
+        }
+        LType::Float64
+    }
+
     pub(super) fn gen_expr(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> Option<Value> {
         self.gen_expr_with_expected(expr, None, fctx)
     }
@@ -2461,10 +2476,26 @@ impl<'a> Generator<'a> {
                     repr: Some(self.int_literal_llvm_repr(expr, *v)),
                 })
             }
-            ir::ExprKind::Float(v) => Some(Value {
-                ty: LType::Float,
-                repr: Some(llvm_float_literal(*v)),
-            }),
+            ir::ExprKind::Float(v) => {
+                let literal_ty = self.float_literal_type_hint(expr, expected_ty);
+                if literal_ty == LType::Float32 {
+                    let narrowed = self.new_temp();
+                    fctx.lines.push(format!(
+                        "  {} = fptrunc double {} to float",
+                        narrowed,
+                        llvm_float_literal(*v)
+                    ));
+                    Some(Value {
+                        ty: LType::Float32,
+                        repr: Some(narrowed),
+                    })
+                } else {
+                    Some(Value {
+                        ty: literal_ty,
+                        repr: Some(llvm_float_literal(*v)),
+                    })
+                }
+            }
             ir::ExprKind::Bool(v) => Some(Value {
                 ty: LType::Bool,
                 repr: Some(if *v { "1".to_string() } else { "0".to_string() }),
@@ -2493,7 +2524,14 @@ impl<'a> Generator<'a> {
                         repr: Some(reg),
                     })
                 } else if let Some(const_value) = self.const_values.get(name).cloned() {
-                    Some(self.runtime_value_from_const(&const_value, fctx))
+                    let mut value = self.runtime_value_from_const(&const_value, fctx);
+                    if let Some(def) = self.const_defs.get(name).cloned() {
+                        if let Some(const_ty) = self.parse_type_repr(&def.declared_ty, def.span) {
+                            value =
+                                self.coerce_value_to_expected(value, &const_ty, expr.span, fctx)?;
+                        }
+                    }
+                    Some(value)
                 } else if self.const_defs.contains_key(name) {
                     self.diagnostics.push(Diagnostic::error(
                         "E5023",
@@ -2530,12 +2568,13 @@ impl<'a> Generator<'a> {
                             repr: Some(reg),
                         })
                     }
-                    (UnaryOp::Neg, LType::Float) => {
+                    (UnaryOp::Neg, ty) if is_float_type(&ty) => {
                         let reg = self.new_temp();
-                        let repr = value.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
-                        fctx.lines.push(format!("  {} = fneg double {}", reg, repr));
+                        let repr = value.repr.unwrap_or_else(|| default_value(&ty));
+                        fctx.lines
+                            .push(format!("  {} = fneg {} {}", reg, llvm_type(&ty), repr));
                         Some(Value {
-                            ty: LType::Float,
+                            ty,
                             repr: Some(reg),
                         })
                     }
@@ -2575,8 +2614,17 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
             ir::ExprKind::UnsafeBlock { block } => self.gen_block(block, fctx),
             ir::ExprKind::Binary { op, lhs, rhs } => {
-                let lv = self.gen_expr(lhs, fctx)?;
-                let rv = self.gen_expr(rhs, fctx)?;
+                let numeric_expected =
+                    expected_ty.filter(|ty| is_integral_type(ty) || is_float_type(ty));
+                let lv = self.gen_expr_with_expected(lhs, numeric_expected, fctx)?;
+                let rhs_expected = if let Some(expected) = numeric_expected {
+                    Some(expected)
+                } else if is_integral_type(&lv.ty) || is_float_type(&lv.ty) {
+                    Some(&lv.ty)
+                } else {
+                    None
+                };
+                let rv = self.gen_expr_with_expected(rhs, rhs_expected, fctx)?;
                 self.gen_binary(*op, lv, rv, fctx, expr.span)
             }
             ir::ExprKind::Call { callee, args, .. } => {
@@ -2664,6 +2712,28 @@ impl<'a> Generator<'a> {
                         }
                     }
                 }
+                if is_float_type(&lhs.ty) && is_float_type(&rhs.ty) && lhs.ty != rhs.ty {
+                    if let Some(common_ty) = float_common_type(&lhs.ty, &rhs.ty) {
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(lhs.clone(), &common_ty, span, fctx)
+                        {
+                            lhs = coerced;
+                        }
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(rhs.clone(), &common_ty, span, fctx)
+                        {
+                            rhs = coerced;
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5006",
+                            "arithmetic codegen expects matching float widths",
+                            self.file,
+                            span,
+                        ));
+                        return None;
+                    }
+                }
                 match (&lhs.ty, &rhs.ty) {
                     (lhs_ty, rhs_ty) if lhs_ty == rhs_ty && is_integral_type(lhs_ty) => {
                         let inst = match op {
@@ -2700,7 +2770,11 @@ impl<'a> Generator<'a> {
                             repr: Some(reg),
                         })
                     }
-                    (LType::Float, LType::Float) if !matches!(op, BinOp::Mod) => {
+                    (lhs_ty, rhs_ty)
+                        if lhs_ty == rhs_ty
+                            && is_float_type(lhs_ty)
+                            && !matches!(op, BinOp::Mod) =>
+                    {
                         let inst = match op {
                             BinOp::Add => "fadd",
                             BinOp::Sub => "fsub",
@@ -2710,21 +2784,22 @@ impl<'a> Generator<'a> {
                         };
                         let reg = self.new_temp();
                         fctx.lines.push(format!(
-                            "  {} = {} double {}, {}",
+                            "  {} = {} {} {}, {}",
                             reg,
                             inst,
-                            lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
-                            rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64))
+                            llvm_type(lhs_ty),
+                            lhs.repr.unwrap_or_else(|| default_value(lhs_ty)),
+                            rhs.repr.unwrap_or_else(|| default_value(rhs_ty))
                         ));
                         Some(Value {
-                            ty: LType::Float,
+                            ty: lhs_ty.clone(),
                             repr: Some(reg),
                         })
                     }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
                             "E5006",
-                            "arithmetic codegen expects matching integer or Float operands",
+                            "arithmetic codegen expects matching integer or float operands",
                             self.file,
                             span,
                         ));
@@ -2793,6 +2868,28 @@ impl<'a> Generator<'a> {
                         }
                     }
                 }
+                if is_float_type(&lhs.ty) && is_float_type(&rhs.ty) && lhs.ty != rhs.ty {
+                    if let Some(common_ty) = float_common_type(&lhs.ty, &rhs.ty) {
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(lhs.clone(), &common_ty, span, fctx)
+                        {
+                            lhs = coerced;
+                        }
+                        if let Some(coerced) =
+                            self.coerce_value_to_expected(rhs.clone(), &common_ty, span, fctx)
+                        {
+                            rhs = coerced;
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5006",
+                            "comparison codegen expects matching float widths",
+                            self.file,
+                            span,
+                        ));
+                        return None;
+                    }
+                }
 
                 let (cmp, ty) = match (&lhs.ty, &rhs.ty) {
                     (lhs_ty, rhs_ty) if lhs_ty == rhs_ty && is_integral_type(lhs_ty) => {
@@ -2831,7 +2928,7 @@ impl<'a> Generator<'a> {
                         };
                         (cmp, llvm_type(lhs_ty))
                     }
-                    (LType::Float, LType::Float) => {
+                    (lhs_ty, rhs_ty) if lhs_ty == rhs_ty && is_float_type(lhs_ty) => {
                         let cmp = match op {
                             BinOp::Eq => "oeq",
                             BinOp::Ne => "une",
@@ -2841,7 +2938,7 @@ impl<'a> Generator<'a> {
                             BinOp::Ge => "oge",
                             _ => unreachable!(),
                         };
-                        (cmp, "double".to_string())
+                        (cmp, llvm_type(lhs_ty))
                     }
                     (LType::Bool, LType::Bool) if matches!(op, BinOp::Eq | BinOp::Ne) => {
                         let cmp = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
@@ -2870,11 +2967,12 @@ impl<'a> Generator<'a> {
                     }
                 };
                 let reg = self.new_temp();
-                let (inst, lhs_repr, rhs_repr) = if ty == "double" {
+                let is_float_cmp = is_float_type(&lhs.ty) && is_float_type(&rhs.ty);
+                let (inst, lhs_repr, rhs_repr) = if is_float_cmp {
                     (
                         "fcmp",
-                        lhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
-                        rhs.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64)),
+                        lhs.repr.unwrap_or_else(|| default_value(&lhs.ty)),
+                        rhs.repr.unwrap_or_else(|| default_value(&rhs.ty)),
                     )
                 } else {
                     (
@@ -3025,16 +3123,17 @@ impl<'a> Generator<'a> {
                 return None;
             }
             let arg = self.gen_expr(&args[0], fctx)?;
-            if arg.ty != LType::Float {
+            if !is_float_type(&arg.ty) {
                 self.diagnostics.push(Diagnostic::error(
                     "E5011",
-                    "print_float expects Float",
+                    "print_float expects Float32, Float64, or Float",
                     self.file,
                     args[0].span,
                 ));
                 return None;
             }
-            let repr = arg.repr.unwrap_or_else(|| llvm_float_literal(0.0_f64));
+            let arg = self.coerce_value_to_expected(arg, &LType::Float, args[0].span, fctx)?;
+            let repr = arg.repr.unwrap_or_else(|| default_value(&LType::Float));
             fctx.lines
                 .push(format!("  call void @aic_rt_print_float(double {})", repr));
             return Some(Value {
@@ -3456,6 +3555,8 @@ impl<'a> Generator<'a> {
             LType::UInt32 => Some("UInt32".to_string()),
             LType::UInt64 => Some("UInt64".to_string()),
             LType::UInt128 => Some("UInt128".to_string()),
+            LType::Float32 => Some("Float32".to_string()),
+            LType::Float64 => Some("Float64".to_string()),
             LType::Float => Some("Float".to_string()),
             LType::Bool => Some("Bool".to_string()),
             LType::String => Some("String".to_string()),
@@ -3480,6 +3581,9 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
     ) -> bool {
         if expected == found {
+            return true;
+        }
+        if float_types_compatible(expected, found) {
             return true;
         }
 
@@ -3530,6 +3634,9 @@ impl<'a> Generator<'a> {
         }
         if is_integral_type(&value.ty) && is_integral_type(expected) {
             return Some(self.coerce_integral_value(value, expected, fctx));
+        }
+        if is_float_type(&value.ty) && is_float_type(expected) {
+            return Some(self.coerce_float_value(value, expected, fctx));
         }
         match expected {
             LType::DynTrait(trait_name) => {
@@ -3582,6 +3689,44 @@ impl<'a> Generator<'a> {
             ));
         }
 
+        Value {
+            ty: expected.clone(),
+            repr: Some(casted),
+        }
+    }
+
+    fn coerce_float_value(&mut self, value: Value, expected: &LType, fctx: &mut FnCtx) -> Value {
+        let Some(src_bits) = float_width_bits(&value.ty) else {
+            return value;
+        };
+        let Some(dst_bits) = float_width_bits(expected) else {
+            return value;
+        };
+        let repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        if src_bits == dst_bits {
+            return Value {
+                ty: expected.clone(),
+                repr: Some(repr),
+            };
+        }
+
+        let casted = self.new_temp();
+        let op = if src_bits > dst_bits {
+            "fptrunc"
+        } else {
+            "fpext"
+        };
+        fctx.lines.push(format!(
+            "  {} = {} {} {} to {}",
+            casted,
+            op,
+            llvm_type(&value.ty),
+            repr,
+            llvm_type(expected)
+        ));
         Value {
             ty: expected.clone(),
             repr: Some(casted),

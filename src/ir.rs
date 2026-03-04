@@ -7,13 +7,17 @@ use std::collections::BTreeMap;
 
 pub const CURRENT_IR_SCHEMA_VERSION: u32 = 1;
 pub use crate::ast::{
-    IntLiteralKind, IntLiteralMetadata, IntLiteralSignedness, IntLiteralSuffix, IntLiteralWidth,
+    FloatLiteralKind, FloatLiteralMetadata, FloatLiteralSuffix, FloatLiteralWidth, IntLiteralKind,
+    IntLiteralMetadata, IntLiteralSignedness, IntLiteralSuffix, IntLiteralWidth,
 };
 
 type IntLiteralKey = (usize, usize, i64);
+type FloatLiteralKey = (usize, usize);
 
 thread_local! {
     static INT_LITERAL_METADATA_STORE: RefCell<BTreeMap<IntLiteralKey, IntLiteralMetadata>> =
+        RefCell::new(BTreeMap::new());
+    static FLOAT_LITERAL_METADATA_STORE: RefCell<BTreeMap<FloatLiteralKey, FloatLiteralMetadata>> =
         RefCell::new(BTreeMap::new());
 }
 
@@ -28,6 +32,13 @@ pub fn clear_int_literal_metadata() {
     });
 }
 
+pub fn clear_float_literal_metadata() {
+    FLOAT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.clear();
+    });
+}
+
 pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralMetadata) {
     INT_LITERAL_METADATA_STORE.with(|store| {
         let mut guard = store.borrow_mut();
@@ -35,9 +46,20 @@ pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralM
     });
 }
 
+pub fn record_float_literal_metadata(span: Span, metadata: FloatLiteralMetadata) {
+    FLOAT_LITERAL_METADATA_STORE.with(|store| {
+        let mut guard = store.borrow_mut();
+        guard.insert((span.start, span.end), metadata);
+    });
+}
+
 pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
     INT_LITERAL_METADATA_STORE
         .with(|store| store.borrow().get(&(span.start, span.end, value)).cloned())
+}
+
+pub fn lookup_float_literal_metadata(span: Span) -> Option<FloatLiteralMetadata> {
+    FLOAT_LITERAL_METADATA_STORE.with(|store| store.borrow().get(&(span.start, span.end)).cloned())
 }
 
 fn default_schema_version() -> u32 {
@@ -347,6 +369,13 @@ impl Expr {
     pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
         match self.kind {
             ExprKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+            _ => None,
+        }
+    }
+
+    pub fn float_literal_metadata(&self) -> Option<FloatLiteralMetadata> {
+        match self.kind {
+            ExprKind::Float(_) => lookup_float_literal_metadata(self.span),
             _ => None,
         }
     }

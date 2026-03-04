@@ -40,6 +40,9 @@ Failure behavior:
 - `UInt32` -> `i32`
 - `UInt64` -> `i64`
 - `UInt128` -> `i128`
+- `Float32` -> `float`
+- `Float64` -> `double`
+- `Float` -> `double` (alias of `Float64`)
 - `Bool` -> `i1`
 - `()` -> `void`
 
@@ -48,15 +51,18 @@ Notes:
 - `Int`, `Int64`, and `ISize` all lower to `i64` in LLVM, but remain distinct source-level integer kinds for type-checking/operator policy.
 - `UInt` is canonicalized to `USize` in frontend/codegen typing, and both lower to `i64`.
 - Unsigned primitives share the same LLVM bit-width as signed peers; signedness affects selected operations (`s*` vs `u*`, `ashr` vs `lshr`), not the raw storage width.
+- `Float` is canonicalized to `Float64` and lowers to `double`; `Float32` remains distinct and lowers to `float`.
 
-### Wave numeric primitive contract (`#317`, `#318`)
+### Wave numeric primitive contract (`#317`, `#318`, `#319`)
 
 - Current behavior:
   - Backend maps `Int128`/`UInt128` to `i128` and keeps deterministic signedness-aware op selection.
   - Backend maps `ISize`/`USize` to `i64` and treats `UInt` as an alias of `USize`.
+  - Backend maps `Float32` to `float`, `Float64` to `double`, and canonicalizes `Float` to `Float64`.
 - Target behavior:
   - Keep integer-family lowering deterministic across platforms: no backend-dependent rebinding of `ISize`/`USize`.
   - Keep `Int` mapped to `i64`; size-family support is additive and does not alter existing `Int` ABI.
+  - Keep `Float` compatibility aliasing to `Float64` deterministic and preserve exact-kind float operator selection.
 
 ### Integer lowering policy (fixed-width)
 
@@ -89,18 +95,20 @@ Wave 1 extension contract (`#317`):
 - Supported extern C scalar primitives in MVP type-checking include:
   - `Int`, `ISize`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`
   - `USize`/`UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`
-  - `Bool`, `Float`, `Char`, `()`
+  - `Float32`, `Float64`, `Float`, `Bool`, `Char`, `()`
 - Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
 
-Wave numeric contract (`#317`, `#318`, `#320`):
+Wave numeric contract (`#317`, `#318`, `#319`, `#320`):
 
 - `ISize`/`USize` extern surfaces lower as `i64` with signedness-aware op selection, and `UInt` canonicalizes to `USize`.
+- `Float32` extern surfaces lower as `float`; `Float64` and `Float` lower as `double`.
 - `std.numeric`-driven conversion/overflow helper calls are lowered as ordinary resolved stdlib calls; no backend-only implicit conversion paths are introduced.
 
 ### Runtime scalar ABI policy
 
 - LLVM bridge types remain explicit (`i8/i16/i32/i64`) at function boundaries.
 - Runtime C entrypoints representing scalar values should use fixed-width C types (`int8_t`/`uint8_t`/`int16_t`/`uint16_t`/`int32_t`/`uint32_t`/`int64_t`/`uint64_t`) rather than platform-dependent `long`/`int`.
+- Float runtime/extern scalar boundaries should use `float` (`Float32`) and `double` (`Float64`/`Float`) in C signatures.
 - Size/capacity/index runtime fields remain `i64`/`int64_t` in LLVM ABI and are range-checked in runtime helpers.
 
 ### String ABI (`ptr-len-cap`)

@@ -33,7 +33,7 @@ fn main() -> Int {
 
 ### 2.2 Types
 
-- Builtins: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
+- Builtins: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Float`, `Bool`, `String`, `()`
 - Standard-library binary payload type: `Bytes` (declared in `std.bytes`)
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
@@ -41,6 +41,10 @@ fn main() -> Int {
 - `Int` is the general integer type and currently uses signed 64-bit range (`-9223372036854775808..=9223372036854775807`).
 - Fixed-width integer literals can use suffixes: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`.
 - Unsuffixed integer literals default to `Int` unless an expected integer type context narrows them with range validation.
+- `Float` is a compatibility alias to `Float64`.
+- Unsuffixed float literals default to `Float` (`Float64`) unless expected-type context narrows to `Float32`.
+- Float literal suffixes are `f32` and `f64`.
+- Mixed-width float operators are rejected unless operands are the same float kind (`Float` and `Float64` are treated as the same kind).
 
 ### 2.3 Functions
 
@@ -112,7 +116,7 @@ enum Option[T] {
 
 ### 2.5 Expressions
 
-- Literals: `1`, `3.14`, `2.5e-3`, `true`, `"x"`, `()`
+- Literals: `1`, `3.14`, `2.5e-3`, `1.0f32`, `1.0f64`, `true`, `"x"`, `()`
 - Calls: `f(x)`
 - `if`: `if cond { ... } else { ... }`
 - `match`:
@@ -181,6 +185,7 @@ Status summary (`current` -> `target`):
 - `#139` inference: limited local inference and explicit closure parameter types -> broader local deterministic inference while keeping function signatures explicit.
 - `#317` 128-bit integer primitives: fixed-width family up to 64-bit -> add `Int128`/`UInt128` with deterministic literal/range/type-operator semantics.
 - `#318` size-family integers: no dedicated size-typed integer family -> add deterministic `ISize`/`USize` with `UInt` aliasing `USize`.
+- `#319` float-width primitives: single `Float` primitive only -> add `Float32`/`Float64` while keeping `Float` as alias to `Float64` with deterministic literal/operator policy.
 - `#320` numeric stdlib surface: no dedicated numeric module -> add `std.numeric` for explicit conversion/overflow-policy APIs without changing implicit-cast policy.
 
 ## 3. Canonical IR
@@ -277,18 +282,35 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
   - `E1232` comparison mismatch
 - Integer overflow is not diagnosed by the type system; runtime arithmetic follows backend integer-width semantics.
 
-### 4.4 Migration reference
+### 4.4 Float families and literal policy (`#319`)
+
+- `Float32` and `Float64` are distinct source-level float kinds.
+- `Float` is a compatibility alias to `Float64`.
+- Unsuffixed float literals default to `Float` (`Float64`).
+- Float literals may be explicitly suffixed with `f32` or `f64`.
+- Expected-type context may type unsuffixed float literals as `Float32` or `Float64`.
+- Float operators require exact float-kind match:
+  - arithmetic operators (`+`, `-`, `*`, `/`, `%`) use `E1230` on mismatch
+  - equality operators use `E1231` on mismatch
+  - comparison operators use `E1232` on mismatch
+- `Float` and `Float64` are treated as the same kind in exact-match checks because of alias canonicalization.
+- No implicit `Int`/float coercions are introduced by this policy.
+
+### 4.5 Migration reference
 
 - Fixed-width migration examples and rollout guidance: `docs/fixed-width-primitives-migration.md`.
 
-### 4.5 Wave numeric expansion contracts (`#317`, `#318`, `#320`)
+### 4.6 Wave numeric expansion contracts (`#317`, `#318`, `#319`, `#320`)
 
 - Current behavior:
   - Built-in integer primitives include `Int`, `ISize`, `USize` (`UInt` alias), `Int8/16/32/64/128`, `UInt8/16/32/64/128`.
   - Literal suffixes include `i8/i16/i32/i64/i128/u8/u16/u32/u64/u128`.
+  - Built-in float primitives include `Float32` and `Float64`; `Float` aliases `Float64`.
+  - Float literals default to `Float` (`Float64`) and support explicit `f32`/`f64` suffixes.
   - No dedicated `std.numeric` module is part of the documented standard library surface.
 - Target behavior (remaining contract scope):
   - Keep `ISize`/`USize` deterministic (64-bit) and keep `UInt` as an alias of `USize`.
+  - Keep `Float` as compatibility alias to `Float64` and keep `Float32`/`Float64` mixed-width diagnostics deterministic.
   - Preserve existing implicit conversion policy: only lossless conversions are allowed; there is still no general cast operator.
   - Add `std.numeric` as the explicit numeric-conversion/overflow-policy module (checked/wrapping/saturating style helpers and cross-width conversion helpers), keeping arithmetic type rules deterministic.
   - Keep diagnostic categories stable: out-of-range/type-mismatch diagnostics remain deterministic and continue to use the integer diagnostic families already documented in this spec.
@@ -334,7 +356,7 @@ Registry and ownership: `docs/diagnostic-codes.md`.
 - Emits LLVM IR text.
 - Compiles with `clang` plus runtime C shim.
 - Supported codegen subset:
-- `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float`, `Bool`, `String`, `()`
+- `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Float`, `Bool`, `String`, `()`
 - `std.bytes.Bytes` payload wrapper for binary filesystem/network APIs
 - `Option[T]` (core path)
 - calls, `if`, `match`, arithmetic/comparison/logical ops

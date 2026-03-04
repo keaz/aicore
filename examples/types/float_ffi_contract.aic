@@ -1,0 +1,24 @@
+fn ffi_apply_gain_f32(sample: Float32, gain: Float32) -> Float32 {
+    sample * gain
+}
+
+fn ffi_apply_gain_f64(sample: Float64, gain: Float64) -> Float64 {
+    sample * gain
+}
+
+fn ffi_apply_gain_compat(sample: Float, gain: Float) -> Float {
+    sample * gain
+}
+
+fn main() -> Int {
+    let scaled32: Float32 = ffi_apply_gain_f32(2.5f32, 4.0f32);
+    let scaled64: Float64 = ffi_apply_gain_f64(2.5f64, 4.0f64);
+    let scaled_compat: Float = ffi_apply_gain_compat(2.5, 4.0);
+    let back_to_f64: Float64 = scaled_compat;
+
+    let f32_ok = if scaled32 == 10.0f32 { 1 } else { 0 };
+    let f64_ok = if scaled64 == 10.0f64 { 1 } else { 0 };
+    let compat_ok = if back_to_f64 == 10.0f64 { 1 } else { 0 };
+
+    if f32_ok + f64_ok + compat_ok == 3 { 0 } else { 1 }
+}

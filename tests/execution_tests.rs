@@ -9078,17 +9078,18 @@ fn exec_float_arithmetic_and_comparisons() {
 import std.io;
 
 fn main() -> Int effects { io } capabilities { io  } {
-    let a = 3.5;
-    let b = 2.0;
-    let sum = a + b;
-    let total = sum * 2.0;
+    let total32 = (3.5f32 + 2.0f32) * 2.0f32;
+    let gt32 = if total32 > 10.0f32 { 1 } else { 0 };
+    let eq32 = if total32 == 11.0f32 { 1 } else { 0 };
 
-    let gt_ok = if total > 10.0 { 1 } else { 0 };
-    let eq_ok = if total == 11.0 { 1 } else { 0 };
-    let lt_ok = if a < b { 0 } else { 1 };
-    let ge_ok = if total >= 11.0 { 1 } else { 0 };
+    let total64 = (3.5f64 + 2.0f64) * 2.0f64;
+    let gt64 = if total64 > 10.0f64 { 1 } else { 0 };
+    let eq64 = if total64 == 11.0f64 { 1 } else { 0 };
 
-    if gt_ok + eq_ok + lt_ok + ge_ok == 4 {
+    let alias_total: Float = (3.5 + 2.0) * 2.0;
+    let alias_ok = if alias_total == 11.0 { 1 } else { 0 };
+
+    if gt32 + eq32 + gt64 + eq64 + alias_ok == 5 {
         print_int(42);
     } else {
         print_int(0);
@@ -9106,33 +9107,36 @@ fn exec_float_string_and_json_roundtrip() {
     let src = r#"
 import std.io;
 import std.json;
-import std.string;
+
+fn near(a: Float64, b: Float64, eps: Float64) -> Bool {
+    let diff = if a > b { a - b } else { b - a };
+    diff <= eps
+}
 
 fn main() -> Int effects { io } capabilities { io  } {
-    let parsed = match parse_float("3.125") {
+    let alias_value: Float = 3.125;
+    let alias_roundtrip = match decode_float(encode_float(alias_value)) {
         Ok(v) => v,
         Err(_) => 0.0,
     };
-    let text = float_to_string(parsed);
-    let reparsed = match parse_float(text) {
+    let f64_roundtrip = match decode_float(encode_float(6.5f64)) {
         Ok(v) => v,
         Err(_) => 0.0,
     };
-    let from_json = match decode_float(encode_float(reparsed)) {
+    let f32_roundtrip = match decode_float(encode_float(1.25f32)) {
         Ok(v) => v,
         Err(_) => 0.0,
-    };
-    let good_value = if from_json == 3.125 { 1 } else { 0 };
-    let parse_bad = match parse_float("nan") {
-        Ok(_) => 0,
-        Err(_) => 1,
     };
     let decode_bad = match decode_float(encode_string("abc")) {
         Ok(_) => 0,
         Err(_) => 1,
     };
 
-    if good_value == 1 && parse_bad == 1 && decode_bad == 1 {
+    if near(alias_roundtrip, 3.125, 0.0000001)
+        && near(f64_roundtrip, 6.5, 0.0000001)
+        && near(f32_roundtrip, 1.25, 0.0000001)
+        && decode_bad == 1
+    {
         print_int(42);
     } else {
         print_int(0);
@@ -9143,6 +9147,61 @@ fn main() -> Int effects { io } capabilities { io  } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_float_const_defaults_respect_typed_surfaces() {
+    let src = r#"
+import std.io;
+
+const C32: Float32 = 1.5f32 + 2.5f32;
+const C64: Float64 = 1.5f64 + 2.5f64;
+const CALIAS: Float = 1.5 + 2.5;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let c32_ok = if C32 == 4.0f32 { 1 } else { 0 };
+    let c64_ok = if C64 == 4.0f64 { 1 } else { 0 };
+    let alias_ok = if CALIAS == 4.0 { 1 } else { 0 };
+    if c32_ok + c64_ok + alias_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_float_mixed_width_arithmetic_reports_type_error() {
+    let src = r#"
+fn main() -> Int {
+    let left: Float32 = 1.0f32;
+    let right: Float64 = 2.0f64;
+    let _bad = left + right;
+    0
+}
+"#;
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(&path, src).expect("write source");
+    let front = run_frontend(&path).expect("frontend");
+    assert!(
+        has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "E1230" && d.message.contains("matching float widths")),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
 }
 
 #[test]

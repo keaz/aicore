@@ -43,6 +43,26 @@ impl IntLiteralSuffixToken {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatLiteralSuffixToken {
+    F32,
+    F64,
+}
+
+impl FloatLiteralSuffixToken {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+
+    fn allowed_suffixes() -> &'static str {
+        "f32, f64"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntLiteralToken {
     pub value: i64,
@@ -52,10 +72,18 @@ pub struct IntLiteralToken {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct FloatLiteralToken {
+    pub value: f64,
+    pub raw_value_span: Span,
+    pub raw_text: String,
+    pub suffix: Option<FloatLiteralSuffixToken>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Ident(String),
     Int(IntLiteralToken),
-    Float(f64),
+    Float(FloatLiteralToken),
     String(String),
     Template(String),
     Char(char),
@@ -541,9 +569,26 @@ impl<'a> Lexer<'a> {
         let raw_end = self.offset;
         let text = &self.source[start..raw_end];
         if is_float {
-            self.lex_float_suffix();
+            let (suffix, consumed_suffix) = self.lex_float_suffix();
             match text.parse::<f64>() {
-                Ok(value) => self.push(TokenKind::Float(value), Span::new(start, raw_end)),
+                Ok(value) => {
+                    let token = FloatLiteralToken {
+                        value,
+                        raw_value_span: Span::new(start, raw_end),
+                        raw_text: self.source[start..raw_end].to_string(),
+                        suffix,
+                    };
+                    let end = if token.suffix.is_some() {
+                        self.offset
+                    } else {
+                        raw_end
+                    };
+                    if consumed_suffix && token.suffix.is_none() {
+                        self.push(TokenKind::Float(token), Span::new(start, raw_end));
+                    } else {
+                        self.push(TokenKind::Float(token), Span::new(start, end));
+                    }
+                }
                 Err(_) => self.error(
                     "E0007",
                     format!("invalid float literal '{}'", text),
@@ -628,12 +673,12 @@ impl<'a> Lexer<'a> {
         (suffix, true)
     }
 
-    fn lex_float_suffix(&mut self) {
+    fn lex_float_suffix(&mut self) -> (Option<FloatLiteralSuffixToken>, bool) {
         let Some(first) = self.peek() else {
-            return;
+            return (None, false);
         };
         if !Self::is_ident_start(first) {
-            return;
+            return (None, false);
         }
         let suffix_start = self.offset;
         self.bump();
@@ -645,15 +690,22 @@ impl<'a> Lexer<'a> {
             }
         }
         let suffix_text = &self.source[suffix_start..self.offset];
-        self.diagnostics.push(
-            Diagnostic::error(
-                "E0010",
-                format!("float literal cannot have suffix '{suffix_text}'"),
-                self.file,
-                Span::new(suffix_start, self.offset),
-            )
-            .with_help("remove the suffix or use an integer literal"),
-        );
+        let suffix = FloatLiteralSuffixToken::parse(suffix_text);
+        if suffix.is_none() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E0010",
+                    format!("invalid float literal suffix '{suffix_text}'"),
+                    self.file,
+                    Span::new(suffix_start, self.offset),
+                )
+                .with_help(format!(
+                    "use one of: {}",
+                    FloatLiteralSuffixToken::allowed_suffixes()
+                )),
+            );
+        }
+        (suffix, true)
     }
 
     fn is_ident_start(c: char) -> bool {
@@ -954,7 +1006,7 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{lex, IntLiteralSuffixToken, TokenKind};
+    use super::{lex, FloatLiteralSuffixToken, IntLiteralSuffixToken, TokenKind};
 
     #[test]
     fn lexes_keywords_and_symbols() {
@@ -1075,16 +1127,43 @@ mod tests {
         assert!(diags.is_empty(), "diags={diags:#?}");
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 3.125).abs() < 1e-12)));
+            .any(|t| matches!(&t.kind, TokenKind::Float(lit) if (lit.value - 3.125).abs() < 1e-12 && lit.suffix.is_none())));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 0.5).abs() < 1e-12)));
+            .any(|t| matches!(&t.kind, TokenKind::Float(lit) if (lit.value - 0.5).abs() < 1e-12 && lit.suffix.is_none())));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 1.0e10).abs() < 1.0)));
+            .any(|t| matches!(&t.kind, TokenKind::Float(lit) if (lit.value - 1.0e10).abs() < 1.0 && lit.suffix.is_none())));
         assert!(tokens
             .iter()
-            .any(|t| matches!(t.kind, TokenKind::Float(v) if (v - 2.5e-3).abs() < 1e-12)));
+            .any(|t| matches!(&t.kind, TokenKind::Float(lit) if (lit.value - 2.5e-3).abs() < 1e-12 && lit.suffix.is_none())));
+    }
+
+    #[test]
+    fn lexes_typed_float_literal_suffixes() {
+        let src = "let a = 1.0f32; let b = 2.5e1f64;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                &t.kind,
+                TokenKind::Float(lit)
+                    if (lit.value - 1.0).abs() < 1e-12
+                        && lit.suffix == Some(FloatLiteralSuffixToken::F32)
+                        && lit.raw_text == "1.0"
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
+        assert!(tokens.iter().any(|t| {
+            matches!(
+                &t.kind,
+                TokenKind::Float(lit)
+                    if (lit.value - 25.0).abs() < 1e-9
+                        && lit.suffix == Some(FloatLiteralSuffixToken::F64)
+                        && lit.raw_text == "2.5e1"
+                        && lit.raw_value_span.end < t.span.end
+            )
+        }));
     }
 
     #[test]
@@ -1210,7 +1289,7 @@ mod tests {
         let (_tokens, diags) = lex(src, "test.aic");
         assert!(diags.iter().any(|d| {
             d.code == "E0010"
-                && d.message.contains("float literal cannot have suffix")
+                && d.message.contains("invalid float literal suffix")
                 && d.message.contains("u8")
         }));
     }

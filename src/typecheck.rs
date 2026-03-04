@@ -21,6 +21,12 @@ enum IntegerKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatKind {
+    F32,
+    F64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IntegerLiteralValue {
     NonNegative(u128),
     NegativeMagnitude(u128),
@@ -2857,7 +2863,7 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Var(name) => binding_types.get(name).cloned(),
             ir::ExprKind::StructInit { name, .. } => Some(name.clone()),
             ir::ExprKind::Int(_) => Some("Int".to_string()),
-            ir::ExprKind::Float(_) => Some("Float".to_string()),
+            ir::ExprKind::Float(_) => Some("Float64".to_string()),
             ir::ExprKind::Bool(_) => Some("Bool".to_string()),
             ir::ExprKind::Char(_) => Some("Char".to_string()),
             ir::ExprKind::String(_) => Some("String".to_string()),
@@ -3332,6 +3338,12 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn float_expected_type_hint(&self, expected_ty: Option<&str>) -> Option<String> {
+        let expected = expected_ty?;
+        let normalized = self.normalize_type(expected);
+        parse_float_kind(&normalized).map(|kind| float_kind_type_name(kind).to_string())
+    }
+
     fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
         let trimmed = text.trim();
         if let Some(hex) = trimmed
@@ -3522,6 +3534,11 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn check_float_literal_expr(&self, expected_ty: Option<&str>) -> String {
+        self.float_expected_type_hint(expected_ty)
+            .unwrap_or_else(|| "Float64".to_string())
+    }
+
     fn check_expr_with_expected(
         &mut self,
         expr: &ir::Expr,
@@ -3533,7 +3550,7 @@ impl<'a> Checker<'a> {
     ) -> String {
         match &expr.kind {
             ir::ExprKind::Int(value) => self.check_int_literal_expr(expr, *value, expected_ty),
-            ir::ExprKind::Float(_) => "Float".to_string(),
+            ir::ExprKind::Float(_) => self.check_float_literal_expr(expected_ty),
             ir::ExprKind::Bool(_) => "Bool".to_string(),
             ir::ExprKind::Char(_) => "Char".to_string(),
             ir::ExprKind::String(_) => "String".to_string(),
@@ -5042,16 +5059,18 @@ impl<'a> Checker<'a> {
                 }
             }
             ir::ExprKind::Binary { op, lhs, rhs } => {
-                let expected_integer = self.integer_expected_type_hint(expected_ty);
+                let expected_numeric = self
+                    .integer_expected_type_hint(expected_ty)
+                    .or_else(|| self.float_expected_type_hint(expected_ty));
                 let mut left_ty = self.check_expr_with_expected(
                     lhs,
                     locals,
                     allowed_effects,
                     ctx,
                     contract_mode,
-                    expected_integer.as_deref(),
+                    expected_numeric.as_deref(),
                 );
-                let mut rhs_expected = expected_integer;
+                let mut rhs_expected = expected_numeric;
                 if rhs_expected.is_none()
                     && matches!(
                         op,
@@ -5077,6 +5096,8 @@ impl<'a> Checker<'a> {
                     let left_norm = self.normalize_type(&left_ty);
                     if parse_integer_kind(&left_norm).is_some() {
                         rhs_expected = Some(left_norm);
+                    } else if let Some(kind) = parse_float_kind(&left_norm) {
+                        rhs_expected = Some(float_kind_type_name(kind).to_string());
                     }
                 }
                 let mut right_ty = self.check_expr_with_expected(
@@ -5112,8 +5133,8 @@ impl<'a> Checker<'a> {
                 let ty_norm = self.normalize_type(&ty);
                 match op {
                     crate::ast::UnaryOp::Neg => {
-                        if ty_norm == "Float" {
-                            return "Float".to_string();
+                        if let Some(kind) = parse_float_kind(&ty_norm) {
+                            return float_kind_type_name(kind).to_string();
                         }
                         if let Some(kind) = parse_integer_kind(&ty_norm) {
                             if matches!(kind, IntegerKind::Fixed { signed: false, .. }) {
@@ -5134,7 +5155,7 @@ impl<'a> Checker<'a> {
                         }
                         self.diagnostics.push(Diagnostic::error(
                             "E1222",
-                            "unary '-' expects signed integer or Float",
+                            "unary '-' expects signed integer or Float32/Float64",
                             self.file,
                             inner.span,
                         ));
@@ -6738,6 +6759,8 @@ impl<'a> Checker<'a> {
         let rhs_norm = self.normalize_type(rhs);
         let lhs_int = parse_integer_kind(&lhs_norm);
         let rhs_int = parse_integer_kind(&rhs_norm);
+        let lhs_float = parse_float_kind(&lhs_norm);
+        let rhs_float = parse_float_kind(&rhs_norm);
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                 let symbol = match op {
@@ -6747,8 +6770,21 @@ impl<'a> Checker<'a> {
                     BinOp::Div => "/",
                     _ => unreachable!(),
                 };
-                if lhs_norm == "Float" && rhs_norm == "Float" {
-                    "Float".to_string()
+                if let (Some(lhs_float), Some(rhs_float)) = (lhs_float, rhs_float) {
+                    if lhs_float == rhs_float {
+                        float_kind_type_name(lhs_float).to_string()
+                    } else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1230",
+                            format!(
+                                "arithmetic operator '{}' requires matching float widths, found '{}' and '{}'",
+                                symbol, lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                        "<?>".to_string()
+                    }
                 } else if let (Some(lhs_int), Some(rhs_int)) = (lhs_int, rhs_int) {
                     if integer_kinds_match_exact(lhs_int, rhs_int) {
                         lhs_norm
@@ -6768,7 +6804,7 @@ impl<'a> Checker<'a> {
                     self.diagnostics.push(Diagnostic::error(
                         "E1230",
                         format!(
-                            "arithmetic operator '{}' requires matching integer or Float operands, found '{}' and '{}'",
+                            "arithmetic operator '{}' requires matching integer or float operands, found '{}' and '{}'",
                             symbol, lhs, rhs
                         ),
                         self.file,
@@ -6868,6 +6904,18 @@ impl<'a> Checker<'a> {
                             span,
                         ));
                     }
+                } else if let (Some(lhs_float), Some(rhs_float)) = (lhs_float, rhs_float) {
+                    if lhs_float != rhs_float {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1231",
+                            format!(
+                                "equality operands for floats must match width, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                    }
                 } else if !self.types_compatible(lhs, rhs) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1231",
@@ -6894,10 +6942,22 @@ impl<'a> Checker<'a> {
                             span,
                         ));
                     }
-                } else if !(lhs_norm == rhs_norm && (lhs_norm == "Float" || lhs_norm == "Char")) {
+                } else if let (Some(lhs_float), Some(rhs_float)) = (lhs_float, rhs_float) {
+                    if lhs_float != rhs_float {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1232",
+                            format!(
+                                "comparison operators for floats require matching width, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        ));
+                    }
+                } else if !(lhs_norm == rhs_norm && lhs_norm == "Char") {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
-                        "comparison operators require matching integer, Float, or Char operands",
+                        "comparison operators require matching integer, float, or Char operands",
                         self.file,
                         span,
                     ));
@@ -8115,7 +8175,7 @@ impl<'a> Checker<'a> {
 
             if matches!(
                 base_name,
-                "Int" | "Float" | "Bool" | "Char" | "String" | "()"
+                "Int" | "Float32" | "Float64" | "Bool" | "Char" | "String" | "()"
             ) {
                 return None;
             }
@@ -8242,6 +8302,7 @@ impl<'a> Checker<'a> {
 
     fn expand_aliases(&self, ty: &str, visiting: &mut BTreeSet<String>) -> String {
         let base = base_type_name(ty);
+        let canonical_base = canonical_builtin_type_name(base);
         let normalized_args = extract_generic_args(ty).map(|args| {
             args.iter()
                 .map(|arg| self.expand_aliases(arg, visiting))
@@ -8250,7 +8311,9 @@ impl<'a> Checker<'a> {
 
         let Some(alias) = self.type_aliases.get(base) else {
             return if let Some(args) = normalized_args {
-                format!("{base}[{}]", args.join(", "))
+                format!("{canonical_base}[{}]", args.join(", "))
+            } else if canonical_base != base {
+                canonical_base.to_string()
             } else {
                 ty.to_string()
             };
@@ -8309,6 +8372,11 @@ impl<'a> Checker<'a> {
             (parse_integer_kind(expected), parse_integer_kind(found))
         {
             return integer_conversion_is_lossless(expected_kind, found_kind);
+        }
+        if let (Some(expected_kind), Some(found_kind)) =
+            (parse_float_kind(expected), parse_float_kind(found))
+        {
+            return expected_kind == found_kind;
         }
 
         if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
@@ -8378,6 +8446,11 @@ fn type_compatible(expected: &str, found: &str) -> bool {
         (parse_integer_kind(expected), parse_integer_kind(found))
     {
         return integer_conversion_is_lossless(expected_kind, found_kind);
+    }
+    if let (Some(expected_kind), Some(found_kind)) =
+        (parse_float_kind(expected), parse_float_kind(found))
+    {
+        return expected_kind == found_kind;
     }
 
     if let Some(expected_dyn_trait) = parse_dyn_trait_name(expected) {
@@ -9246,6 +9319,28 @@ fn integer_kinds_match_exact(left: IntegerKind, right: IntegerKind) -> bool {
     left == right
 }
 
+fn parse_float_kind(ty: &str) -> Option<FloatKind> {
+    match base_type_name(ty) {
+        "Float32" => Some(FloatKind::F32),
+        "Float64" | "Float" => Some(FloatKind::F64),
+        _ => None,
+    }
+}
+
+fn float_kind_type_name(kind: FloatKind) -> &'static str {
+    match kind {
+        FloatKind::F32 => "Float32",
+        FloatKind::F64 => "Float64",
+    }
+}
+
+fn canonical_builtin_type_name(base: &str) -> &str {
+    match base {
+        "Float" => "Float64",
+        _ => base,
+    }
+}
+
 fn base_type_name(ty: &str) -> &str {
     ty.split('[').next().unwrap_or(ty)
 }
@@ -9307,8 +9402,8 @@ fn is_c_abi_compatible_type(ty: &str) -> bool {
     if contains_unresolved_type(ty) {
         return false;
     }
-    let base = base_type_name(ty);
-    (matches!(base, "Int" | "Bool" | "Float" | "Char")
+    let base = canonical_builtin_type_name(base_type_name(ty));
+    (matches!(base, "Int" | "Bool" | "Float32" | "Float64" | "Char")
         || FIXED_WIDTH_INTEGER_PRIMITIVES
             .iter()
             .any(|name| name == &base))

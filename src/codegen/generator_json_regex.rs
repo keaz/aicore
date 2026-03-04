@@ -44,7 +44,11 @@ impl<'a> Generator<'a> {
             "encode_int" if self.sig_matches_shape(name, &["Int"], "JsonValue") => {
                 Some(self.gen_json_encode_int_call(args, span, fctx))
             }
-            "encode_float" if self.sig_matches_shape(name, &["Float"], "JsonValue") => {
+            "encode_float"
+                if self.sig_matches_shape(name, &["Float"], "JsonValue")
+                    || self.sig_matches_shape(name, &["Float32"], "JsonValue")
+                    || self.sig_matches_shape(name, &["Float64"], "JsonValue") =>
+            {
                 Some(self.gen_json_encode_float_call(args, span, fctx))
             }
             "encode_bool" if self.sig_matches_shape(name, &["Bool"], "JsonValue") => {
@@ -63,7 +67,17 @@ impl<'a> Generator<'a> {
                 Some(self.gen_json_decode_int_call(name, args, span, fctx))
             }
             "decode_float"
-                if self.sig_matches_shape(name, &["JsonValue"], "Result[Float, JsonError]") =>
+                if self.sig_matches_shape(name, &["JsonValue"], "Result[Float, JsonError]")
+                    || self.sig_matches_shape(
+                        name,
+                        &["JsonValue"],
+                        "Result[Float32, JsonError]",
+                    )
+                    || self.sig_matches_shape(
+                        name,
+                        &["JsonValue"],
+                        "Result[Float64, JsonError]",
+                    ) =>
             {
                 Some(self.gen_json_decode_float_call(name, args, span, fctx))
             }
@@ -293,15 +307,16 @@ impl<'a> Generator<'a> {
             return None;
         }
         let value = self.gen_expr(&args[0], fctx)?;
-        if value.ty != LType::Float {
+        if !is_float_type(&value.ty) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "encode_float expects Float",
+                "encode_float expects Float32, Float64, or Float",
                 self.file,
                 args[0].span,
             ));
             return None;
         }
+        let value = self.coerce_value_to_expected(value, &LType::Float, args[0].span, fctx)?;
         let out_ptr_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
         let out_len_slot = self.new_temp();
@@ -309,7 +324,7 @@ impl<'a> Generator<'a> {
         let value_repr = value
             .repr
             .clone()
-            .unwrap_or_else(|| llvm_float_literal(0.0_f64));
+            .unwrap_or_else(|| default_value(&LType::Float));
         let _err = self.new_temp();
         fctx.lines.push(format!(
             "  {} = call i64 @aic_rt_json_encode_float(double {}, i8** {}, i64* {})",
@@ -563,21 +578,6 @@ impl<'a> Generator<'a> {
             return None;
         }
         let value = self.gen_expr(&args[0], fctx)?;
-        let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(&value, args[0].span, fctx)?;
-        let out_slot = self.new_temp();
-        fctx.lines.push(format!("  {} = alloca double", out_slot));
-        let err = self.new_temp();
-        fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_json_decode_float(i8* {}, i64 {}, i64 {}, double* {})",
-            err, raw_ptr, raw_len, raw_cap, out_slot
-        ));
-        let out_reg = self.new_temp();
-        fctx.lines
-            .push(format!("  {} = load double, double* {}", out_reg, out_slot));
-        let ok_payload = Value {
-            ty: LType::Float,
-            repr: Some(out_reg),
-        };
         let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
@@ -587,7 +587,23 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
-        self.wrap_json_result(&result_ty, ok_payload, &err, span, fctx)
+        let Some((_, ok_ty, _, _, _)) = self.result_layout_parts(&result_ty, span) else {
+            return None;
+        };
+        if !is_float_type(&ok_ty) {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "decode_float expects Result[Float32|Float64|Float, JsonError], found '{}'",
+                    render_type(&result_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let decoded = self.json_decode_float_runtime(&ok_ty, &value, span, fctx)?;
+        self.wrap_json_result(&result_ty, decoded.value, &decoded.err_code, span, fctx)
     }
 
     pub(super) fn gen_json_decode_bool_call(
@@ -1531,7 +1547,9 @@ impl<'a> Generator<'a> {
             | LType::UInt32
             | LType::UInt64
             | LType::UInt128 => self.json_encode_integral_runtime(value, span, fctx),
-            LType::Float => self.json_encode_float_runtime(value, span, fctx),
+            LType::Float | LType::Float32 | LType::Float64 => {
+                self.json_encode_float_runtime(value, span, fctx)
+            }
             LType::Bool => self.json_encode_bool_runtime(value, span, fctx),
             LType::Char => self.json_encode_char_runtime(value, span, fctx),
             LType::String => self.json_encode_string_runtime(value, span, fctx),
@@ -1829,7 +1847,9 @@ impl<'a> Generator<'a> {
             | LType::UInt32
             | LType::UInt64
             | LType::UInt128 => self.json_decode_integral_runtime(target_ty, json, span, fctx),
-            LType::Float => self.json_decode_float_runtime(json, span, fctx),
+            LType::Float | LType::Float32 | LType::Float64 => {
+                self.json_decode_float_runtime(target_ty, json, span, fctx)
+            }
             LType::Bool => self.json_decode_bool_runtime(json, span, fctx),
             LType::Char => self.json_decode_char_runtime(json, span, fctx),
             LType::String => self.json_decode_string_runtime(json, span, fctx),
@@ -2213,7 +2233,9 @@ impl<'a> Generator<'a> {
             | LType::UInt32
             | LType::UInt64
             | LType::UInt128 => Some("{\"kind\":\"int\"}".to_string()),
-            LType::Float => Some("{\"kind\":\"float\"}".to_string()),
+            LType::Float | LType::Float32 | LType::Float64 => {
+                Some("{\"kind\":\"float\"}".to_string())
+            }
             LType::Bool => Some("{\"kind\":\"bool\"}".to_string()),
             LType::Char => Some("{\"kind\":\"char\"}".to_string()),
             LType::String => Some("{\"kind\":\"string\"}".to_string()),
@@ -2436,15 +2458,16 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<ValueWithErr> {
-        if value.ty != LType::Float {
+        if !is_float_type(&value.ty) {
             self.diagnostics.push(Diagnostic::error(
                 "E5011",
-                "json encode expects Float input",
+                "json encode expects Float32, Float64, or Float input",
                 self.file,
                 span,
             ));
             return None;
         }
+        let value = self.coerce_value_to_expected(value.clone(), &LType::Float, span, fctx)?;
         let out_ptr_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
         let out_len_slot = self.new_temp();
@@ -2456,7 +2479,7 @@ impl<'a> Generator<'a> {
             value
                 .repr
                 .clone()
-                .unwrap_or_else(|| llvm_float_literal(0.0_f64)),
+                .unwrap_or_else(|| default_value(&LType::Float)),
             out_ptr_slot,
             out_len_slot
         ));
@@ -2920,10 +2943,23 @@ impl<'a> Generator<'a> {
 
     pub(super) fn json_decode_float_runtime(
         &mut self,
+        target_ty: &LType,
         value: &Value,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<ValueWithErr> {
+        if !is_float_type(target_ty) {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "json decode expects float target type, found '{}'",
+                    render_type(target_ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
         let (raw_ptr, raw_len, raw_cap) = self.json_raw_parts(value, span, fctx)?;
         let out_slot = self.new_temp();
         fctx.lines.push(format!("  {} = alloca double", out_slot));
@@ -2935,11 +2971,13 @@ impl<'a> Generator<'a> {
         let out = self.new_temp();
         fctx.lines
             .push(format!("  {} = load double, double* {}", out, out_slot));
+        let decoded = Value {
+            ty: LType::Float64,
+            repr: Some(out),
+        };
+        let decoded = self.coerce_value_to_expected(decoded, target_ty, span, fctx)?;
         Some(ValueWithErr {
-            value: Value {
-                ty: LType::Float,
-                repr: Some(out),
-            },
+            value: decoded,
             err_code,
         })
     }
