@@ -2115,3 +2115,53 @@ fn capability_protocols_docs_test_commands_are_executable() {
     );
     run_docs_test_commands(&doc_path, &commands);
 }
+
+#[test]
+fn wave5a_numeric_api_artifacts_are_cross_linked_and_issue_linked() {
+    let root = repo_root();
+    let markdown_path = root.join("docs/numeric-api-adoption-wave5.md");
+    let json_path = root.join("docs/numeric-api-adoption-wave5.json");
+
+    let markdown = fs::read_to_string(&markdown_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", markdown_path.display()));
+    let json_text = fs::read_to_string(&json_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", json_path.display()));
+    let json: Value = serde_json::from_str(&json_text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", json_path.display()));
+
+    for marker in [
+        "Human-readable matrix: `docs/numeric-api-adoption-wave5.md`",
+        "Machine-readable matrix: `docs/numeric-api-adoption-wave5.json`",
+        "### `#331` Counts/Lengths/Capacity/Index Rollout",
+        "### `#332` Protocol Fields/Frame Lengths/Ports/Codes Rollout",
+        "### `#333` Float Math/Serde/Format Rollout",
+    ] {
+        assert!(
+            markdown.contains(marker),
+            "{} missing required marker '{}'",
+            markdown_path.display(),
+            marker
+        );
+    }
+
+    assert!(
+        matches!(json, Value::Object(_) | Value::Array(_)),
+        "{} must contain a top-level JSON object or array",
+        json_path.display()
+    );
+
+    for issue in ["#331", "#332", "#333"] {
+        assert!(
+            markdown.contains(issue),
+            "{} must reference follow-up issue {}",
+            markdown_path.display(),
+            issue
+        );
+        assert!(
+            json_text.contains(issue),
+            "{} must reference follow-up issue {}",
+            json_path.display(),
+            issue
+        );
+    }
+}

@@ -77,6 +77,19 @@ Canonical Wave 2B examples for CI wiring:
 - `examples/types/float32_float64_precision.aic` (precision and alias behavior across float widths)
 - `examples/types/float_ffi_contract.aic` (extern ABI signature contract for `Float32` vs `Float64`/`Float`)
 
+## Wave 5A numeric adoption matrix (`#330`)
+
+- Human-readable matrix: `docs/numeric-api-adoption-wave5.md`.
+- Machine-readable matrix: `docs/numeric-api-adoption-wave5.json`.
+- Wave 5A policy categories:
+  - counts/lengths/capacity/index -> `USize` or explicit unsigned fixed-width wrappers
+  - protocol fields/frame lengths/ports/codes -> fixed-width unsigned domains
+  - float math/serde/format -> explicit `Float32`/`Float64` policy with `Float` compatibility alias
+- Follow-up rollout mapping:
+  - `#331`: count/length/capacity/index wrappers and boundary conversions
+  - `#332`: protocol field/frame length/port/code domain migration
+  - `#333`: float math/serde/format width normalization and wrapper surfaces
+
 ## Buffer API migration (`std.buffer`)
 
 Before (legacy `Int` payload assumptions):

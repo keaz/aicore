@@ -234,8 +234,12 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     fs::write(&test_file, transformed)?;
 
     let front = run_frontend(&test_file)?;
+    let keep_harness = env_truthy("AIC_TEST_KEEP_HARNESS", false);
+
     if has_errors(&front.diagnostics) {
-        let _ = fs::remove_dir_all(&temp_dir);
+        if !keep_harness {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
         anyhow::bail!("attribute test typecheck failed: {:#?}", front.diagnostics);
     }
 
@@ -269,7 +273,9 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     }
 
     let output = command.output()?;
-    let _ = fs::remove_dir_all(&temp_dir);
+    if !keep_harness {
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 
     if case.should_panic {
         if output.status.success() {

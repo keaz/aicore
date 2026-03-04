@@ -2,6 +2,11 @@
 
 This document is implementation-oriented and intended for autonomous contributors working on compiler/runtime/package changes.
 
+Wave 5 numeric adoption planning artifacts:
+
+- `docs/numeric-api-adoption-wave5.md`
+- `docs/numeric-api-adoption-wave5.json`
+
 Core language-specific deep dive:
 
 - `docs/core-language-1.0.md`

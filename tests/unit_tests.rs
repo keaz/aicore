@@ -9070,3 +9070,110 @@ fn unit_map_set_key_support_is_documented_and_execution_covered() {
         "ai-agent implementation doc must describe expanded map/set key support"
     );
 }
+
+fn json_value_text_for_matching(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => value.to_ascii_lowercase(),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(json_value_text_for_matching)
+            .collect::<Vec<_>>()
+            .join(" "),
+        serde_json::Value::Object(map) => {
+            let mut text = String::new();
+            for (key, value) in map {
+                text.push_str(&key.to_ascii_lowercase());
+                text.push(' ');
+                text.push_str(&json_value_text_for_matching(value));
+                text.push(' ');
+            }
+            text
+        }
+    }
+}
+
+fn json_has_object_with_terms(value: &serde_json::Value, required_terms: &[&str]) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut object_text = String::new();
+            for (key, value) in map {
+                object_text.push_str(&key.to_ascii_lowercase());
+                object_text.push(' ');
+                object_text.push_str(&json_value_text_for_matching(value));
+                object_text.push(' ');
+            }
+            if required_terms
+                .iter()
+                .all(|term| object_text.contains(&term.to_ascii_lowercase()))
+            {
+                return true;
+            }
+            map.values()
+                .any(|child| json_has_object_with_terms(child, required_terms))
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|child| json_has_object_with_terms(child, required_terms)),
+        _ => false,
+    }
+}
+
+#[test]
+fn unit_wave5a_numeric_api_adoption_markdown_has_required_policy_markers() {
+    let markdown = fs::read_to_string("docs/numeric-api-adoption-wave5.md")
+        .expect("read docs/numeric-api-adoption-wave5.md");
+
+    for marker in [
+        "# Wave 5A Numeric API Adoption Matrix (`#330`)",
+        "Machine-readable matrix: `docs/numeric-api-adoption-wave5.json`",
+        "Use `USize` for in-process count/length/capacity/index domains.",
+        "frame lengths and protocol byte counts: `UInt32`",
+        "network ports and compact protocol codes: `UInt16`",
+        "`Float` is a compatibility alias of `Float64`.",
+        "Mixed-width float operations are rejected by type policy",
+        "### `std.buffer` Frame Length Domain",
+        "### `std.net` Port Domain",
+    ] {
+        assert!(
+            markdown.contains(marker),
+            "docs/numeric-api-adoption-wave5.md missing required marker: {marker}"
+        );
+    }
+
+    for issue in ["#331", "#332", "#333"] {
+        assert!(
+            markdown.contains(issue),
+            "docs/numeric-api-adoption-wave5.md must reference follow-up issue {issue}"
+        );
+    }
+}
+
+#[test]
+fn unit_wave5a_numeric_api_adoption_json_has_required_rows_and_follow_up_links() {
+    let manifest_text = fs::read_to_string("docs/numeric-api-adoption-wave5.json")
+        .expect("read docs/numeric-api-adoption-wave5.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest_text).expect("parse numeric api adoption wave5 json");
+
+    for issue in ["#331", "#332", "#333"] {
+        assert!(
+            manifest_text.contains(issue),
+            "docs/numeric-api-adoption-wave5.json must reference follow-up issue {issue}"
+        );
+    }
+
+    assert!(
+        json_has_object_with_terms(
+            &manifest,
+            &["std.buffer", "buffer.frame_length_count_domain"]
+        ),
+        "docs/numeric-api-adoption-wave5.json must include std.buffer frame-length decision rows"
+    );
+    assert!(
+        json_has_object_with_terms(&manifest, &["std.net", "net.port_domain", "uint16"]),
+        "docs/numeric-api-adoption-wave5.json must include std.net port-domain decision rows"
+    );
+}

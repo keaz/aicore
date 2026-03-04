@@ -24,6 +24,12 @@ Covered modules:
 - `std.buffer`
 - `std.crypto`
 
+## Wave 5A Numeric Adoption Artifacts
+
+- Human-readable matrix: `docs/numeric-api-adoption-wave5.md`.
+- Machine-readable matrix: `docs/numeric-api-adoption-wave5.json`.
+- Prior fixed-width scalar baseline: `docs/io-fixed-width-taxonomy-wave2.md`.
+
 ## Effect Taxonomy
 
 Known effects (from `src/effects.rs`):
@@ -568,10 +574,12 @@ Notes:
 - Failover baseline: call `dns_lookup_all(host)` once per retry window, then iterate returned addresses in order while applying your per-attempt timeout budget.
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
+- Port-domain policy for Wave 5A uses bounded unsigned ports (`UInt16`) for typed parse/format wrappers while keeping existing `addr: String` compatibility signatures unchanged.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
-- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
+- Scalar taxonomy artifact for prior wave baseline: `docs/io-fixed-width-taxonomy-wave2.md`.
+- Wave 5A adoption matrix artifacts: `docs/numeric-api-adoption-wave5.md` and `docs/numeric-api-adoption-wave5.json`.
 
 ## `std.tls`
 
@@ -735,7 +743,8 @@ Notes:
 - Canonical deterministic Postgres-style secure client replay: `examples/io/postgres_tls_scram_reference.aic`.
 - Replay contract: `docs/security-ops/postgres-tls-scram-replay.v1.json`.
 - On platforms without TLS backend support, APIs return `TlsError::ProtocolError`.
-- Scalar taxonomy artifact for this wave: `docs/io-fixed-width-taxonomy-wave2.md`.
+- Scalar taxonomy artifact for prior wave baseline: `docs/io-fixed-width-taxonomy-wave2.md`.
+- Wave 5A adoption matrix artifacts: `docs/numeric-api-adoption-wave5.md` and `docs/numeric-api-adoption-wave5.json`.
 
 ## `std.secure_errors`
 
@@ -993,6 +1002,7 @@ Notes:
 - `buf_seek` validates bounds (`0 <= position <= length`) and returns `InvalidInput` on invalid positions.
 - `buf_close` releases buffer storage explicitly; drop cleanup is idempotent and safe after explicit close.
 - unsigned reads/writes (`u16/u32/u64`) use typed `UInt16`/`UInt32`/`UInt64` signatures, and signed variants use `Int16`/`Int32`/`Int64`.
+- Frame-length policy for Wave 5A treats protocol length prefixes as unsigned (`UInt32`) and tracks compatibility wrappers in `docs/numeric-api-adoption-wave5.md` (row `P1`).
 - patch helpers (`buf_patch_u*_be/le`) seek-write-restore the cursor for deterministic backfill fields.
 - `buf_peek_u8` reads at absolute position without changing cursor state.
 - `buf_size` returns total bytes currently stored in the buffer.

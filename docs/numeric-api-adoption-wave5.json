@@ -1,0 +1,262 @@
+{
+  "wave": "5A",
+  "source_issue": "#330",
+  "ordering": [
+    "module",
+    "symbol",
+    "current_signature"
+  ],
+  "row_count": 25,
+  "rows": [
+    {
+      "module": "std.buffer",
+      "symbol": "buf_position",
+      "current_signature": "fn buf_position(buf: ByteBuffer) -> Int",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Adopt BufferOffsetU32 for position/offset surfaces.",
+      "migration_action": "Add buf_position_u32(buf: ByteBuffer) -> Result[UInt32, BufferError] and use checked Int->UInt32 conversion.",
+      "compatibility_wrapper": "Keep buf_position(Int) as compatibility API and delegate through deterministic conversion boundary.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "buf_read_bytes",
+      "current_signature": "fn buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Use BufferCountU32 for byte-count request parameters.",
+      "migration_action": "Add buf_read_bytes_u32(buf: ByteBuffer, count: UInt32) -> Result[Bytes, BufferError] and promote in new callsites.",
+      "compatibility_wrapper": "Retain buf_read_bytes(Int) as wrapper that validates and forwards to buf_read_bytes_u32.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "buf_remaining",
+      "current_signature": "fn buf_remaining(buf: ByteBuffer) -> Int",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Represent remaining byte-count as BufferCountU32.",
+      "migration_action": "Add buf_remaining_u32(buf: ByteBuffer) -> Result[UInt32, BufferError].",
+      "compatibility_wrapper": "Keep buf_remaining(Int) for compatibility and map overflow/negative values to BufferError::InvalidInput.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "buf_seek",
+      "current_signature": "fn buf_seek(buf: ByteBuffer, position: Int) -> Result[(), BufferError]",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Use BufferOffsetU32 for seek targets in non-negative domains.",
+      "migration_action": "Add buf_seek_u32(buf: ByteBuffer, position: UInt32) -> Result[(), BufferError].",
+      "compatibility_wrapper": "Keep buf_seek(Int) and forward after deterministic Int range validation.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "buf_size",
+      "current_signature": "fn buf_size(buf: ByteBuffer) -> Int",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Expose buffer size using BufferCountU32 in typed surfaces.",
+      "migration_action": "Add buf_size_u32(buf: ByteBuffer) -> Result[UInt32, BufferError].",
+      "compatibility_wrapper": "Keep buf_size(Int) as wrapper for existing callers.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "buf_slice",
+      "current_signature": "fn buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Use BufferOffsetU32 and BufferCountU32 for slice boundaries.",
+      "migration_action": "Add buf_slice_u32(buf: ByteBuffer, start: UInt32, length: UInt32) -> Result[ByteBuffer, BufferError].",
+      "compatibility_wrapper": "Keep buf_slice(Int, Int) and route through checked conversion to u32 surface.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "new_buffer",
+      "current_signature": "fn new_buffer(capacity: Int) -> ByteBuffer",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Use BufferCapacityU32 for non-negative capacity parameters.",
+      "migration_action": "Add new_buffer_u32(capacity: UInt32) -> Result[ByteBuffer, BufferError].",
+      "compatibility_wrapper": "Keep new_buffer(Int) as compatibility constructor and map range failures to BufferError::InvalidInput.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.buffer",
+      "symbol": "new_growable_buffer",
+      "current_signature": "fn new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]",
+      "category": "buffer.frame_length_count_domain",
+      "target_type_policy": "Use BufferCapacityU32 for initial/max capacity inputs.",
+      "migration_action": "Add new_growable_buffer_u32(initial_capacity: UInt32, max_capacity: UInt32) -> Result[ByteBuffer, BufferError].",
+      "compatibility_wrapper": "Keep Int API and delegate to u32 variant with deterministic conversion checks.",
+      "linked_issue": "#331"
+    },
+    {
+      "module": "std.net",
+      "symbol": "async_runtime_pressure",
+      "current_signature": "fn async_runtime_pressure() -> Result[AsyncRuntimePressure, NetError] effects { net, concurrency }",
+      "category": "net.status_domain",
+      "target_type_policy": "Use QueueDepthU32/RuntimeLimitU32 typed counters for runtime pressure status fields.",
+      "migration_action": "Promote async_runtime_pressure_u32() as preferred surface for machine-consumed status metrics.",
+      "compatibility_wrapper": "Keep async_runtime_pressure(Int fields) and maintain one-way compatibility from typed u32 reporting.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "async_wait_many_int",
+      "current_signature": "fn async_wait_many_int(ops: Vec[AsyncIntOp], timeout_ms: Int) -> Result[AsyncIntSelection, NetError] effects { net, concurrency, time }",
+      "category": "net.status_domain",
+      "target_type_policy": "Use UInt32 for selection indexes in status/selection outputs.",
+      "migration_action": "Promote async_wait_many_int_u32() and shift new integrations to AsyncIntSelectionU32.",
+      "compatibility_wrapper": "Retain async_wait_many_int(Int index) for compatibility with existing pattern matches.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "async_wait_many_string",
+      "current_signature": "fn async_wait_many_string(ops: Vec[AsyncStringOp], timeout_ms: Int) -> Result[AsyncStringSelection, NetError] effects { net, concurrency, time }",
+      "category": "net.status_domain",
+      "target_type_policy": "Use UInt32 for selection indexes in status/selection outputs.",
+      "migration_action": "Promote async_wait_many_string_u32() and shift new integrations to AsyncStringSelectionU32.",
+      "compatibility_wrapper": "Retain async_wait_many_string(Int index) for existing consumers.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_connect",
+      "current_signature": "fn tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }",
+      "category": "net.port_domain",
+      "target_type_policy": "Introduce NetPortU16 and typed endpoint forms for host/port composition.",
+      "migration_action": "Add tcp_connect_host_port(host: String, port: UInt16, timeout_ms: Int) -> Result[Int, NetError].",
+      "compatibility_wrapper": "Keep tcp_connect(addr: String) and parse/format host:port via deterministic endpoint parser.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_get_keepalive_count",
+      "current_signature": "fn tcp_get_keepalive_count(handle: Int) -> Result[Int, NetError] effects { net }",
+      "category": "net.status_domain",
+      "target_type_policy": "Represent probe/status counters as UInt32.",
+      "migration_action": "Promote tcp_get_keepalive_count_u32(handle: Int) -> Result[UInt32, NetError] as primary.",
+      "compatibility_wrapper": "Keep tcp_get_keepalive_count(Int) and preserve existing behavior for legacy callsites.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_listen",
+      "current_signature": "fn tcp_listen(addr: String) -> Result[Int, NetError] effects { net }",
+      "category": "net.port_domain",
+      "target_type_policy": "Introduce NetPortU16 and typed endpoint forms for listener setup.",
+      "migration_action": "Add tcp_listen_host_port(host: String, port: UInt16) -> Result[Int, NetError].",
+      "compatibility_wrapper": "Keep tcp_listen(addr: String) as string endpoint compatibility wrapper.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_local_addr",
+      "current_signature": "fn tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }",
+      "category": "net.port_domain",
+      "target_type_policy": "Expose endpoint return values as { host: String, port: UInt16 } for typed port use.",
+      "migration_action": "Add tcp_local_endpoint(handle: Int) -> Result[(String, UInt16), NetError].",
+      "compatibility_wrapper": "Keep tcp_local_addr(String) for legacy users and provide typed endpoint parser utility.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_recv",
+      "current_signature": "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use ByteCountU32 for max byte counts in transport read APIs.",
+      "migration_action": "Promote tcp_recv_u32(handle, max_bytes: ByteCountU32, timeout_ms) as primary read surface.",
+      "compatibility_wrapper": "Keep tcp_recv(Int max_bytes) and route through checked u32 conversion.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_frame_len_be",
+      "current_signature": "fn tcp_stream_frame_len_be(header: Bytes) -> Result[Int, NetError]",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use FrameLengthU32 for 4-byte network frame headers.",
+      "migration_action": "Promote tcp_stream_frame_len_be_u32(header) -> Result[FrameLengthU32, NetError] as primary parser.",
+      "compatibility_wrapper": "Keep tcp_stream_frame_len_be(Int) as compatibility wrapper that converts from u32.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv",
+      "current_signature": "fn tcp_stream_recv(stream: TcpStream, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use ByteCountU32 for stream read bounds.",
+      "migration_action": "Promote tcp_stream_recv_u32(stream, max_bytes: ByteCountU32, timeout_ms) for fixed-width calls.",
+      "compatibility_wrapper": "Keep tcp_stream_recv(Int max_bytes) as wrapper over u32 surface.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv_exact",
+      "current_signature": "fn tcp_stream_recv_exact(stream: TcpStream, expected_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use ByteCountU32 for exact-length read contracts.",
+      "migration_action": "Promote tcp_stream_recv_exact_u32(stream, expected_bytes: ByteCountU32, timeout_ms).",
+      "compatibility_wrapper": "Keep Int surface for legacy callsites and apply deterministic conversion at boundary.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv_exact_deadline",
+      "current_signature": "fn tcp_stream_recv_exact_deadline(stream: TcpStream, expected_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use ByteCountU32 for exact deadline-based receive contracts.",
+      "migration_action": "Promote tcp_stream_recv_exact_deadline_u32(stream, expected_bytes: ByteCountU32, deadline_ms).",
+      "compatibility_wrapper": "Keep Int variant as wrapper that validates range before invoking u32 variant.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv_framed",
+      "current_signature": "fn tcp_stream_recv_framed(stream: TcpStream, max_frame_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net, time }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use FrameLengthU32 for framed protocol max-frame constraints.",
+      "migration_action": "Promote tcp_stream_recv_framed_u32(stream, max_frame_bytes: FrameLengthU32, timeout_ms).",
+      "compatibility_wrapper": "Keep Int framed API as compatibility wrapper.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv_framed_deadline",
+      "current_signature": "fn tcp_stream_recv_framed_deadline(stream: TcpStream, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use FrameLengthU32 for framed deadline-based receive contracts.",
+      "migration_action": "Promote tcp_stream_recv_framed_deadline_u32(stream, max_frame_bytes: FrameLengthU32, deadline_ms).",
+      "compatibility_wrapper": "Keep Int variant and convert through deterministic range checks.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "tcp_stream_recv_framed_payload",
+      "current_signature": "fn tcp_stream_recv_framed_payload(stream: TcpStream, frame_header: Bytes, max_frame_bytes: Int, deadline_ms: Int) -> Result[Bytes, NetError] effects { net, time }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use FrameLengthU32 for parsed header length and max frame policy.",
+      "migration_action": "Promote tcp_stream_recv_framed_payload_u32(..., max_frame_bytes: FrameLengthU32, ...) as primary.",
+      "compatibility_wrapper": "Keep Int payload variant as compatibility wrapper.",
+      "linked_issue": "#333"
+    },
+    {
+      "module": "std.net",
+      "symbol": "udp_bind",
+      "current_signature": "fn udp_bind(addr: String) -> Result[Int, NetError] effects { net }",
+      "category": "net.port_domain",
+      "target_type_policy": "Introduce NetPortU16 and typed endpoint forms for UDP binding.",
+      "migration_action": "Add udp_bind_host_port(host: String, port: UInt16) -> Result[Int, NetError].",
+      "compatibility_wrapper": "Keep udp_bind(addr: String) as endpoint-string wrapper.",
+      "linked_issue": "#332"
+    },
+    {
+      "module": "std.net",
+      "symbol": "udp_recv_from",
+      "current_signature": "fn udp_recv_from(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[UdpPacket, NetError] effects { net }",
+      "category": "net.fixed_protocol_width_domain",
+      "target_type_policy": "Use ByteCountU32 for UDP receive bounds.",
+      "migration_action": "Promote udp_recv_from_u32(handle, max_bytes: ByteCountU32, timeout_ms).",
+      "compatibility_wrapper": "Keep udp_recv_from(Int max_bytes) for compatibility.",
+      "linked_issue": "#333"
+    }
+  ]
+}
