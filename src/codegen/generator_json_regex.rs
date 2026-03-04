@@ -1519,6 +1519,8 @@ impl<'a> Generator<'a> {
     ) -> Option<ValueWithErr> {
         match &value.ty {
             LType::Int
+            | LType::ISize
+            | LType::USize
             | LType::Int8
             | LType::Int16
             | LType::Int32
@@ -1815,6 +1817,8 @@ impl<'a> Generator<'a> {
     ) -> Option<ValueWithErr> {
         match target_ty {
             LType::Int
+            | LType::ISize
+            | LType::USize
             | LType::Int8
             | LType::Int16
             | LType::Int32
@@ -2197,6 +2201,8 @@ impl<'a> Generator<'a> {
     ) -> Option<String> {
         match ty {
             LType::Int
+            | LType::ISize
+            | LType::USize
             | LType::Int8
             | LType::Int16
             | LType::Int32

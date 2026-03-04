@@ -312,6 +312,16 @@ wave1_numeric_run_candidates=(
 )
 wave1_numeric_run_smoke=()
 
+wave2a_size_check_candidates=(
+  "examples/core/isize_usize_uint.aic"
+  "examples/core/isize_usize_conversions.aic"
+)
+wave2a_size_run_candidates=(
+  "examples/core/isize_usize_uint.aic"
+  "examples/core/isize_usize_conversions.aic"
+)
+wave2a_size_run_smoke=()
+
 if [[ "$INCLUDE_PROTOCOL_EXAMPLES" == "1" ]]; then
   check_pass+=(
     "examples/io/postgres_tls_scram_reference.aic"
@@ -333,6 +343,19 @@ for f in "${wave1_numeric_run_candidates[@]}"; do
   if [[ -f "$f" || -d "$f" ]]; then
     run_pass+=("$f")
     wave1_numeric_run_smoke+=("$f")
+  fi
+done
+
+for f in "${wave2a_size_check_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    check_pass+=("$f")
+  fi
+done
+
+for f in "${wave2a_size_run_candidates[@]}"; do
+  if [[ -f "$f" || -d "$f" ]]; then
+    run_pass+=("$f")
+    wave2a_size_run_smoke+=("$f")
   fi
 done
 
@@ -733,6 +756,11 @@ case "$MODE" in
     expect_run_value "examples/verify/qv_contract_proof_fixed.aic" "7"
     if [[ "${#wave1_numeric_run_smoke[@]}" -gt 0 ]]; then
       for f in "${wave1_numeric_run_smoke[@]}"; do
+        expect_run_success "$f"
+      done
+    fi
+    if [[ "${#wave2a_size_run_smoke[@]}" -gt 0 ]]; then
+      for f in "${wave2a_size_run_smoke[@]}"; do
         expect_run_success "$f"
       done
     fi

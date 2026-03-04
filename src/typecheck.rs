@@ -7,13 +7,16 @@ use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo}
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
-const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 10] = [
+const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 13] = [
     "Int8", "Int16", "Int32", "Int64", "Int128", "UInt8", "UInt16", "UInt32", "UInt64", "UInt128",
+    "ISize", "USize", "UInt",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IntegerKind {
     Int,
+    ISize,
+    USize,
     Fixed { signed: bool, bits: u8 },
 }
 
@@ -9011,6 +9014,8 @@ fn merge_types(a: &str, b: &str) -> String {
 fn parse_integer_kind(ty: &str) -> Option<IntegerKind> {
     match base_type_name(ty) {
         "Int" => Some(IntegerKind::Int),
+        "ISize" => Some(IntegerKind::ISize),
+        "USize" | "UInt" => Some(IntegerKind::USize),
         "Int8" => Some(IntegerKind::Fixed {
             signed: true,
             bits: 8,
@@ -9103,6 +9108,8 @@ fn integer_kind_from_literal_kind(kind: ir::IntLiteralKind) -> IntegerKind {
 fn integer_kind_type_name(kind: IntegerKind) -> &'static str {
     match kind {
         IntegerKind::Int => "Int",
+        IntegerKind::ISize => "ISize",
+        IntegerKind::USize => "USize",
         IntegerKind::Fixed {
             signed: true,
             bits: 8,
@@ -9166,6 +9173,8 @@ fn integer_signed_min_magnitude(bits: u8) -> u128 {
 fn integer_kind_range_text(kind: IntegerKind) -> (String, String) {
     match kind {
         IntegerKind::Int => (i64::MIN.to_string(), i64::MAX.to_string()),
+        IntegerKind::ISize => (i64::MIN.to_string(), i64::MAX.to_string()),
+        IntegerKind::USize => ("0".to_string(), u64::MAX.to_string()),
         IntegerKind::Fixed { signed: true, bits } => (
             format!("-{}", integer_signed_min_magnitude(bits)),
             integer_signed_max(bits).to_string(),
@@ -9190,6 +9199,14 @@ fn integer_literal_fits_kind(value: IntegerLiteralValue, kind: IntegerKind) -> b
             IntegerLiteralValue::NonNegative(v) => v <= i64::MAX as u128,
             IntegerLiteralValue::NegativeMagnitude(v) => v <= (i64::MAX as u128) + 1,
         },
+        IntegerKind::ISize => match value {
+            IntegerLiteralValue::NonNegative(v) => v <= i64::MAX as u128,
+            IntegerLiteralValue::NegativeMagnitude(v) => v <= (i64::MAX as u128) + 1,
+        },
+        IntegerKind::USize => match value {
+            IntegerLiteralValue::NonNegative(v) => v <= u64::MAX as u128,
+            IntegerLiteralValue::NegativeMagnitude(_) => false,
+        },
         IntegerKind::Fixed { signed: true, bits } => match value {
             IntegerLiteralValue::NonNegative(v) => v <= integer_signed_max(bits),
             IntegerLiteralValue::NegativeMagnitude(v) => v <= integer_signed_min_magnitude(bits),
@@ -9207,6 +9224,8 @@ fn integer_literal_fits_kind(value: IntegerLiteralValue, kind: IntegerKind) -> b
 fn integer_kind_props(kind: IntegerKind) -> (bool, u8) {
     match kind {
         IntegerKind::Int => (true, 64),
+        IntegerKind::ISize => (true, 64),
+        IntegerKind::USize => (false, 64),
         IntegerKind::Fixed { signed, bits } => (signed, bits),
     }
 }
@@ -10543,5 +10562,86 @@ fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
         let out = check(&ir, &res, "test.aic");
         let mismatches = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
         assert!(mismatches >= 2, "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn size_integer_assignments_enforce_lossless_policy_with_uint_alias() {
+        let src = r#"
+fn main(a: Int, b: ISize, c: USize, d: UInt32, e: UInt) -> Int {
+    let _ok_int_to_isize: ISize = a;
+    let _ok_isize_to_int: Int = b;
+    let _ok_u32_to_usize: USize = d;
+    let _ok_usize_to_uint: UInt = c;
+    let _ok_uint_to_usize: USize = e;
+    let _bad_usize_to_int: Int = c;
+    let _bad_int_to_usize: USize = a;
+    let _bad_isize_to_usize: USize = b;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        let mismatches = out.diagnostics.iter().filter(|d| d.code == "E1204").count();
+        assert!(mismatches >= 3, "diags={:#?}", out.diagnostics);
+    }
+
+    #[test]
+    fn size_integer_ops_require_exact_kind_except_uint_usize_alias_match() {
+        let src = r#"
+fn main(a: ISize, b: Int, c: USize, d: UInt) -> Int {
+    let _ok_alias_add = c + d;
+    let _bad_arith = a + b;
+    let _bad_cmp = c < b;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics.iter().any(|d| d.code == "E1230"
+                && d.message.contains("ISize")
+                && d.message.contains("Int")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+        assert!(
+            out.diagnostics.iter().any(|d| d.code == "E1232"
+                && d.message.contains("USize")
+                && d.message.contains("Int")),
+            "diags={:#?}",
+            out.diagnostics
+        );
+    }
+
+    #[test]
+    fn usize_and_uint_literals_follow_unsigned_range_rules() {
+        let src = r#"
+fn main() -> Int {
+    let _ok_usize_from_u64: USize = 42u64;
+    let _ok_uint_alias: UInt = 7;
+    let _bad_negative_uint: UInt = -1;
+    0
+}
+"#;
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics={d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics={d2:#?}");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics.iter().any(|d| d.code == "E1204"
+                && (d.message.contains("USize") || d.message.contains("UInt"))),
+            "diags={:#?}",
+            out.diagnostics
+        );
     }
 }

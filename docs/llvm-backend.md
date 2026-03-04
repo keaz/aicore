@@ -27,32 +27,36 @@ Failure behavior:
 ### Primitive mappings
 
 - `Int` -> `i64`
+- `ISize` -> `i64`
+- `USize` -> `i64`
+- `UInt` -> `i64` (alias of `USize`)
 - `Int8` -> `i8`
 - `Int16` -> `i16`
 - `Int32` -> `i32`
 - `Int64` -> `i64`
+- `Int128` -> `i128`
 - `UInt8` -> `i8`
 - `UInt16` -> `i16`
 - `UInt32` -> `i32`
 - `UInt64` -> `i64`
+- `UInt128` -> `i128`
 - `Bool` -> `i1`
 - `()` -> `void`
 
 Notes:
 
-- `Int` and `Int64` both lower to `i64` in LLVM, but remain distinct named source types for type-checking rules.
+- `Int`, `Int64`, and `ISize` all lower to `i64` in LLVM, but remain distinct source-level integer kinds for type-checking/operator policy.
+- `UInt` is canonicalized to `USize` in frontend/codegen typing, and both lower to `i64`.
 - Unsigned primitives share the same LLVM bit-width as signed peers; signedness affects selected operations (`s*` vs `u*`, `ashr` vs `lshr`), not the raw storage width.
 
-### Wave 1 primitive extension contract (`#317`)
+### Wave numeric primitive contract (`#317`, `#318`)
 
 - Current behavior:
-  - Backend primitive mapping is defined through 64-bit fixed-width integer families.
+  - Backend maps `Int128`/`UInt128` to `i128` and keeps deterministic signedness-aware op selection.
+  - Backend maps `ISize`/`USize` to `i64` and treats `UInt` as an alias of `USize`.
 - Target behavior:
-  - Add backend primitive mappings:
-    - `Int128` -> `i128`
-    - `UInt128` -> `i128`
-  - Preserve signedness semantics via opcode selection (`s*` vs `u*`) exactly as with existing unsigned/signed pairs.
-  - Keep `Int` mapped to `i64` for MVP compatibility; adding 128-bit primitives does not rebind `Int`.
+  - Keep integer-family lowering deterministic across platforms: no backend-dependent rebinding of `ISize`/`USize`.
+  - Keep `Int` mapped to `i64`; size-family support is additive and does not alter existing `Int` ABI.
 
 ### Integer lowering policy (fixed-width)
 
@@ -68,6 +72,7 @@ Wave 1 extension contract (`#317`):
 
 - `Int128`/`UInt128` arithmetic, comparisons, and shifts follow the same width/signedness lowering rules as existing fixed-width primitives.
 - Type-directed cast insertion rules (`sext`/`zext`/`trunc`) extend to 128-bit boundaries without adding implicit source-language coercions.
+- `ISize`/`USize` follow the 64-bit signed/unsigned lowering path, and `UInt` resolves to `USize` before lowering.
 
 ### Integer coercion policy in codegen
 
@@ -82,14 +87,14 @@ Wave 1 extension contract (`#317`):
 
 - Extern wrappers use exact declared primitive widths at the LLVM boundary.
 - Supported extern C scalar primitives in MVP type-checking include:
-  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`
-  - `UInt8`, `UInt16`, `UInt32`, `UInt64`
+  - `Int`, `ISize`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`
+  - `USize`/`UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`
   - `Bool`, `Float`, `Char`, `()`
 - Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
 
-Wave 1 contract (`#317`, `#320`):
+Wave numeric contract (`#317`, `#318`, `#320`):
 
-- Add `Int128`/`UInt128` to supported extern scalar primitives after parser/type-check/codegen/runtime coverage is merged.
+- `ISize`/`USize` extern surfaces lower as `i64` with signedness-aware op selection, and `UInt` canonicalizes to `USize`.
 - `std.numeric`-driven conversion/overflow helper calls are lowered as ordinary resolved stdlib calls; no backend-only implicit conversion paths are introduced.
 
 ### Runtime scalar ABI policy

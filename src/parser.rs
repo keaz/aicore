@@ -1328,6 +1328,7 @@ impl<'a> Parser<'a> {
             full_name.push_str(&seg);
             end = seg_span.end;
         }
+        full_name = canonical_primitive_type_name(&full_name).to_string();
 
         if full_name == "Fn" && self.at_kind(|k| matches!(k, TokenKind::LParen)) {
             self.bump();
@@ -4370,6 +4371,33 @@ fn widen(
         assert!(matches!(
             &f.ret_type.kind,
             TypeKind::Named { name, args } if name == "UInt128" && args.is_empty()
+        ));
+    }
+
+    #[test]
+    fn parses_size_primitives_and_canonicalizes_uint_alias() {
+        let src = r#"
+fn widths(a: ISize, b: USize, c: UInt) -> UInt {
+    c
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let f = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        let expected = ["ISize", "USize", "USize"];
+        for (param, expected_name) in f.params.iter().zip(expected.iter()) {
+            assert!(matches!(
+                &param.ty.kind,
+                TypeKind::Named { name, args } if name == expected_name && args.is_empty()
+            ));
+        }
+        assert!(matches!(
+            &f.ret_type.kind,
+            TypeKind::Named { name, args } if name == "USize" && args.is_empty()
         ));
     }
 

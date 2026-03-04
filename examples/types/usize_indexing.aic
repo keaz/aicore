@@ -1,0 +1,16 @@
+module examples.types.usize_indexing;
+
+fn keep_index(current: USize) -> USize {
+    current
+}
+
+fn choose_index(_first: USize, second: USize) -> USize {
+    second
+}
+
+fn main() -> Int {
+    let first: USize = 0;
+    let second: USize = 1;
+    let _chosen: USize = choose_index(first, keep_index(second));
+    0
+}

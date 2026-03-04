@@ -180,6 +180,7 @@ Status summary (`current` -> `target`):
 - `#138` generic constraints: inline bounds only -> normalized inline + `where` constraints (with equivalent semantics).
 - `#139` inference: limited local inference and explicit closure parameter types -> broader local deterministic inference while keeping function signatures explicit.
 - `#317` 128-bit integer primitives: fixed-width family up to 64-bit -> add `Int128`/`UInt128` with deterministic literal/range/type-operator semantics.
+- `#318` size-family integers: no dedicated size-typed integer family -> add deterministic `ISize`/`USize` with `UInt` aliasing `USize`.
 - `#320` numeric stdlib surface: no dedicated numeric module -> add `std.numeric` for explicit conversion/overflow-policy APIs without changing implicit-cast policy.
 
 ## 3. Canonical IR
@@ -226,16 +227,22 @@ Program {
 
 ### 4.1 Integer families and ranges
 
-- `Int` and fixed-width integer primitives are distinct source-level types.
+- `Int`, `ISize`, `USize`, and fixed-width integer primitives are distinct source-level integer kinds.
+- `UInt` is an alias of `USize`.
+- Deterministic Wave 2A policy: `ISize` and `USize` are pinned to 64-bit domains in type-checking/lowering.
 - Fixed-width ranges:
+  - `ISize`: `-9223372036854775808..=9223372036854775807`
+  - `USize` / `UInt`: `0..=18446744073709551615`
   - `Int8`: `-128..=127`
   - `Int16`: `-32768..=32767`
   - `Int32`: `-2147483648..=2147483647`
   - `Int64`: `-9223372036854775808..=9223372036854775807`
+  - `Int128`: `-170141183460469231731687303715884105728..=170141183460469231731687303715884105727`
   - `UInt8`: `0..=255`
   - `UInt16`: `0..=65535`
   - `UInt32`: `0..=4294967295`
   - `UInt64`: `0..=18446744073709551615`
+  - `UInt128`: `0..=340282366920938463463374607431768211455`
 - Integer literal range diagnostics:
   - expression contexts use `E1204`
   - pattern contexts use `E1234`
@@ -245,12 +252,15 @@ Program {
 - There is no explicit numeric cast operator in MVP.
 - Implicit integer conversion is permitted only when lossless (source range is fully contained in target range).
 - Lossless conversion applies at typed boundaries such as let/assignment/function argument/function return checking.
+- `UInt` and `USize` are equivalent for compatibility/operator-kind checks because `UInt` aliases `USize`.
 - Non-lossless conversions are rejected with type-mismatch diagnostics (commonly `E1204`).
 
 Examples:
 
 ```aic
 fn ok(a: Int16) -> Int32 { a }     // lossless widening
+fn ok_size(a: UInt32) -> USize { a } // lossless widening into size domain
+fn ok_alias(a: USize) -> UInt { a }  // alias-compatible
 fn bad(a: Int16) -> UInt16 { a }   // rejected: signed -> unsigned is not lossless
 fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
 ```
@@ -260,6 +270,7 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
 - Arithmetic (`+`, `-`, `*`, `/`, `%`) requires exact integer kind match (signedness + width).
 - Bitwise/shift (`&`, `|`, `^`, `<<`, `>>`, `>>>`) requires exact integer kind match.
 - Integer equality/comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) requires exact integer kind match.
+- `UInt`/`USize` are treated as the same integer kind for exact-match checks because `UInt` aliases `USize`.
 - Mismatches report deterministic diagnostics:
   - `E1230` arithmetic/bitwise/shift mismatch
   - `E1231` equality mismatch
@@ -270,15 +281,14 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
 
 - Fixed-width migration examples and rollout guidance: `docs/fixed-width-primitives-migration.md`.
 
-### 4.5 Wave 1 numeric expansion contracts (`#317`, `#320`)
+### 4.5 Wave numeric expansion contracts (`#317`, `#318`, `#320`)
 
 - Current behavior:
-  - Built-in integer primitives are `Int`, `Int8/16/32/64`, `UInt8/16/32/64`.
-  - Literal suffixes are limited to `i8/i16/i32/i64/u8/u16/u32/u64`.
+  - Built-in integer primitives include `Int`, `ISize`, `USize` (`UInt` alias), `Int8/16/32/64/128`, `UInt8/16/32/64/128`.
+  - Literal suffixes include `i8/i16/i32/i64/i128/u8/u16/u32/u64/u128`.
   - No dedicated `std.numeric` module is part of the documented standard library surface.
-- Target behavior (Wave 1 contract):
-  - Add `Int128` and `UInt128` as first-class fixed-width integer primitives.
-  - Extend literal suffix support with `i128` and `u128`.
+- Target behavior (remaining contract scope):
+  - Keep `ISize`/`USize` deterministic (64-bit) and keep `UInt` as an alias of `USize`.
   - Preserve existing implicit conversion policy: only lossless conversions are allowed; there is still no general cast operator.
   - Add `std.numeric` as the explicit numeric-conversion/overflow-policy module (checked/wrapping/saturating style helpers and cross-width conversion helpers), keeping arithmetic type rules deterministic.
   - Keep diagnostic categories stable: out-of-range/type-mismatch diagnostics remain deterministic and continue to use the integer diagnostic families already documented in this spec.

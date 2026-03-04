@@ -2927,6 +2927,8 @@ impl<'a> Generator<'a> {
         let repr = normalized.trim();
         match repr {
             "Int" => return Some(LType::Int),
+            "ISize" => return Some(LType::ISize),
+            "USize" | "UInt" => return Some(LType::USize),
             "Int8" => return Some(LType::Int8),
             "Int16" => return Some(LType::Int16),
             "Int32" => return Some(LType::Int32),

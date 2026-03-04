@@ -628,6 +628,36 @@ fn wave1_numeric_example_contracts_are_ci_wired() {
 }
 
 #[test]
+fn wave2a_size_integer_example_contracts_are_ci_wired() {
+    let root = repo_root();
+    let migration_doc = fs::read_to_string(root.join("docs/fixed-width-primitives-migration.md"))
+        .expect("read docs/fixed-width-primitives-migration.md");
+    let ci_script = fs::read_to_string(root.join("scripts/ci/examples.sh"))
+        .expect("read scripts/ci/examples.sh");
+
+    let expected_paths = [
+        "examples/core/isize_usize_uint.aic",
+        "examples/core/isize_usize_conversions.aic",
+    ];
+
+    for rel in expected_paths {
+        assert!(
+            migration_doc.contains(&format!("`{rel}`")),
+            "fixed-width migration guide must reference wave2a example contract path: {rel}"
+        );
+        assert!(
+            ci_script.contains(&format!("\"{rel}\"")),
+            "examples.sh must include wave2a size-integer candidate path: {rel}"
+        );
+    }
+
+    assert!(
+        ci_script.contains("for f in \"${wave2a_size_run_smoke[@]}\"; do"),
+        "examples.sh must run wave2a size-integer smoke examples in run mode when present"
+    );
+}
+
+#[test]
 fn rest_guide_docs_test_commands_are_executable() {
     let doc_path = rest_guide_doc();
     let text = fs::read_to_string(&doc_path)

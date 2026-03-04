@@ -2,8 +2,9 @@
 
 This guide covers practical migration from `Int`-based integer usage to fixed-width primitives:
 
-- `Int8`, `Int16`, `Int32`, `Int64`
-- `UInt8`, `UInt16`, `UInt32`, `UInt64`
+- `Int8`, `Int16`, `Int32`, `Int64`, `Int128`
+- `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`
+- `ISize`, `USize` (`UInt` alias)
 
 `Int` remains available as the general integer type (signed 64-bit range in current backend/runtime).
 
@@ -38,6 +39,23 @@ Canonical Wave 1 examples for CI wiring:
 
 - `examples/core/int128_uint128.aic` (primitive/literal/operator coverage for `Int128` + `UInt128`)
 - `examples/data/std_numeric.aic` (`std.numeric` conversion/overflow policy walkthrough)
+
+## Wave 2A size-family contract (`#318`)
+
+- `ISize` and `USize` are deterministic 64-bit integer families in type-checking and codegen lowering.
+- `UInt` is a source-level alias of `USize`.
+- Implicit conversions remain lossless-only:
+  - `UInt32 -> USize` is allowed.
+  - `USize -> Int` is rejected.
+  - `Int -> ISize` is allowed (same signed 64-bit range).
+- Operator rules remain exact-kind:
+  - `USize` and `UInt` are treated as the same kind.
+  - `ISize` and `Int` remain distinct operator kinds.
+
+Canonical Wave 2A examples for CI wiring:
+
+- `examples/core/isize_usize_uint.aic` (size-family primitive and alias behavior)
+- `examples/core/isize_usize_conversions.aic` (lossless vs rejected conversion boundaries)
 
 ## Buffer API migration (`std.buffer`)
 

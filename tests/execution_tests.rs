@@ -13353,3 +13353,62 @@ fn main() -> Int {
         front.diagnostics
     );
 }
+
+#[test]
+fn exec_size_integer_family_runtime_and_uint_alias_behavior() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let signed: ISize = -5;
+    let signed_abs: ISize = 5;
+    let zero: ISize = 0;
+    let unsigned: USize = 47u64;
+    let alias_unsigned: UInt = unsigned;
+    let one: USize = 1;
+    let expected_sum: USize = 48;
+    let sum: USize = alias_unsigned + one;
+
+    if signed + signed_abs == zero && sum == expected_sum {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_frontend_rejects_size_integer_sign_change_and_kind_mismatch() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("size_integer_frontend_fail.aic");
+    let source = r#"
+fn main(a: USize, b: Int) -> Int {
+    let _bad_to_int: Int = a;
+    let _bad_to_usize: USize = b;
+    let _bad_op = a + b;
+    0
+}
+"#;
+    fs::write(&src, source).expect("write source");
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front.diagnostics.iter().any(|d| d.code == "E1204"),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    assert!(
+        front.diagnostics.iter().any(|d| d.code == "E1230"),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+}

@@ -1619,6 +1619,8 @@ struct FnSig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LType {
     Int,
+    ISize,
+    USize,
     Int8,
     Int16,
     Int32,
@@ -3715,7 +3717,7 @@ fn llvm_float_literal(value: f64) -> String {
 
 fn integer_width_bits(ty: &LType) -> Option<u32> {
     match ty {
-        LType::Int => Some(64),
+        LType::Int | LType::ISize | LType::USize => Some(64),
         LType::Int8 | LType::UInt8 => Some(8),
         LType::Int16 | LType::UInt16 => Some(16),
         LType::Int32 | LType::UInt32 => Some(32),
@@ -3732,14 +3734,25 @@ fn is_integral_type(ty: &LType) -> bool {
 fn is_signed_integer_type(ty: &LType) -> bool {
     matches!(
         ty,
-        LType::Int | LType::Int8 | LType::Int16 | LType::Int32 | LType::Int64 | LType::Int128
+        LType::Int
+            | LType::ISize
+            | LType::Int8
+            | LType::Int16
+            | LType::Int32
+            | LType::Int64
+            | LType::Int128
     )
 }
 
 fn is_unsigned_integer_type(ty: &LType) -> bool {
     matches!(
         ty,
-        LType::UInt8 | LType::UInt16 | LType::UInt32 | LType::UInt64 | LType::UInt128
+        LType::USize
+            | LType::UInt8
+            | LType::UInt16
+            | LType::UInt32
+            | LType::UInt64
+            | LType::UInt128
     )
 }
 
@@ -3780,7 +3793,7 @@ fn comparison_integral_common_type(lhs: &LType, rhs: &LType) -> Option<LType> {
 
 fn llvm_type(ty: &LType) -> String {
     match ty {
-        LType::Int => "i64".to_string(),
+        LType::Int | LType::ISize | LType::USize => "i64".to_string(),
         LType::Int8 | LType::UInt8 => "i8".to_string(),
         LType::Int16 | LType::UInt16 => "i16".to_string(),
         LType::Int32 | LType::UInt32 => "i32".to_string(),
@@ -3834,7 +3847,7 @@ fn llvm_type(ty: &LType) -> String {
 
 fn default_value(ty: &LType) -> String {
     match ty {
-        LType::Int => "0".to_string(),
+        LType::Int | LType::ISize | LType::USize => "0".to_string(),
         LType::Int8
         | LType::Int16
         | LType::Int32
@@ -3936,6 +3949,8 @@ fn resource_drop_runtime_fn(action: ResourceDropAction) -> &'static str {
 fn render_type(ty: &LType) -> String {
     match ty {
         LType::Int => "Int".to_string(),
+        LType::ISize => "ISize".to_string(),
+        LType::USize => "USize".to_string(),
         LType::Int8 => "Int8".to_string(),
         LType::Int16 => "Int16".to_string(),
         LType::Int32 => "Int32".to_string(),
@@ -4252,6 +4267,39 @@ fn main() -> Int {
                 assert!(output.llvm_ir.contains("define i64 @aic_consume_u16(i16"));
                 assert!(output.llvm_ir.contains("define i64 @aic_consume_i32(i32"));
                 assert!(output.llvm_ir.contains("define i64 @aic_consume_u64(i64"));
+            }
+            Err(diags) => panic!("codegen diagnostics={diags:#?}"),
+        }
+    }
+
+    #[test]
+    fn size_integer_primitives_lower_deterministically_and_uint_aliases_usize() {
+        let src = r#"
+fn keep_isize(x: ISize) -> ISize { x }
+fn keep_usize(x: USize) -> USize { x }
+fn keep_uint(x: UInt) -> UInt { x }
+
+fn main() -> Int {
+    let signed: ISize = -5;
+    let unsigned: USize = 7u64;
+    let alias_value: UInt = unsigned;
+    let _a = keep_isize(signed);
+    let _b = keep_usize(unsigned);
+    let _c = keep_uint(alias_value);
+    0
+}
+"#;
+        let (program, parse_diags) = parse(src, "size_integer_codegen.aic");
+        assert!(parse_diags.is_empty(), "parse diagnostics={parse_diags:#?}");
+
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        match emit_llvm(&lowered, "size_integer_codegen.aic") {
+            Ok(output) => {
+                assert!(output.llvm_ir.contains("define i64 @aic_main()"));
+                assert!(output.llvm_ir.contains("define i64 @aic_keep_isize(i64"));
+                assert!(output.llvm_ir.contains("define i64 @aic_keep_usize(i64"));
+                assert!(output.llvm_ir.contains("define i64 @aic_keep_uint(i64"));
             }
             Err(diags) => panic!("codegen diagnostics={diags:#?}"),
         }

@@ -2,7 +2,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
+use aicore::ast::{Item, Stmt, TypeKind};
 use aicore::driver::{has_errors, run_frontend};
+use aicore::formatter::format_program;
+use aicore::ir_builder::build;
+use aicore::parser::parse;
 use aicore::toolchain::ENV_AIC_STD_ROOT;
 use tempfile::tempdir;
 
@@ -423,5 +427,94 @@ fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
         conversion_diags >= 2,
         "expected conversion diagnostics, got {conversion_diags}: {:#?}",
         out.diagnostics
+    );
+}
+
+#[test]
+fn frontend_size_primitives_parse_in_signatures_and_type_positions() {
+    let src = r#"module app.main;
+
+type Counter = UInt;
+
+fn next(index: USize, delta: UInt, signed: ISize) -> UInt {
+    let _index: USize = index;
+    let _delta: UInt = delta;
+    let _signed: ISize = signed;
+    delta
+}
+"#;
+    let (program, diagnostics) = parse(src, "test.aic");
+    assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+    let program = program.expect("program");
+    let f = program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Function(f) if f.name == "next" => Some(f),
+            _ => None,
+        })
+        .expect("next function");
+
+    let expected = ["USize", "USize", "ISize"];
+    for (param, expected_name) in f.params.iter().zip(expected.iter()) {
+        assert!(matches!(
+            &param.ty.kind,
+            TypeKind::Named { name, args } if name == expected_name && args.is_empty()
+        ));
+    }
+    assert!(matches!(
+        &f.ret_type.kind,
+        TypeKind::Named { name, args } if name == "USize" && args.is_empty()
+    ));
+
+    let mut let_type_names = Vec::new();
+    for stmt in &f.body.stmts {
+        if let Stmt::Let { ty: Some(ty), .. } = stmt {
+            if let TypeKind::Named { name, args } = &ty.kind {
+                assert!(args.is_empty(), "expected non-generic type, got {name}[..]");
+                let_type_names.push(name.as_str());
+            }
+        }
+    }
+    assert_eq!(let_type_names, vec!["USize", "USize", "ISize"]);
+}
+
+#[test]
+fn frontend_size_primitives_round_trip_is_deterministic() {
+    let src = r#"module app.main;
+
+fn bump(index: USize, delta: UInt, signed: ISize) -> UInt {
+    let step: UInt = delta;
+    if signed < 0 {
+        step
+    } else {
+        index + step
+    }
+}
+"#;
+    let (program, diagnostics) = parse(src, "roundtrip.aic");
+    assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+    let ir = build(&program.expect("program"));
+    let formatted_once = format_program(&ir);
+
+    let (reparsed, reparsed_diags) = parse(&formatted_once, "roundtrip_formatted.aic");
+    assert!(
+        reparsed_diags.is_empty(),
+        "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted_once}"
+    );
+    let reformatted = format_program(&build(&reparsed.expect("program")));
+
+    assert_eq!(formatted_once, reformatted);
+    assert!(
+        formatted_once.contains("ISize"),
+        "formatted={formatted_once}"
+    );
+    assert!(
+        formatted_once.contains("USize"),
+        "formatted={formatted_once}"
+    );
+    assert!(
+        !formatted_once.contains("UInt"),
+        "formatted={formatted_once}"
     );
 }

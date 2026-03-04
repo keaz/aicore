@@ -991,6 +991,22 @@ mod tests {
     }
 
     #[test]
+    fn lexes_size_primitive_names_as_identifiers() {
+        let src = "type SI = ISize; type SU = USize; type AU = UInt;";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "ISize")));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "USize")));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "UInt")));
+    }
+
+    #[test]
     fn lexes_strings() {
         let src = r#"let x = "hello";"#;
         let (tokens, diags) = lex(src, "test.aic");

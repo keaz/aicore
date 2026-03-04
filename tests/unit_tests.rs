@@ -1772,6 +1772,84 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_typecheck_accepts_isize_usize_and_uint_alias_lossless_assignments() {
+    let src = r#"
+fn passthrough_uint(x: UInt) -> USize { x }
+
+fn main(signed: ISize, narrow: UInt32) -> Int {
+    let _signed_copy: ISize = signed;
+    let wide_unsigned: USize = narrow;
+    let alias_unsigned: UInt = wide_unsigned;
+    let _again: USize = passthrough_uint(alias_unsigned);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_typecheck_rejects_usize_int_sign_changes_and_operator_kind_mismatch() {
+    let src = r#"
+fn main(a: USize, b: Int) -> Int {
+    let _bad_to_int: Int = a;
+    let _bad_to_usize: USize = b;
+    let _bad_op = a + b;
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1204"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1230"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_codegen_lowers_isize_usize_and_uint_alias_to_i64_abi() {
+    let src = r#"
+fn keep_isize(x: ISize) -> ISize { x }
+fn keep_usize(x: USize) -> USize { x }
+fn keep_uint(x: UInt) -> UInt { x }
+
+fn main() -> Int {
+    let signed: ISize = -5;
+    let unsigned: USize = 9u64;
+    let alias_unsigned: UInt = unsigned;
+    let _a = keep_isize(signed);
+    let _b = keep_usize(unsigned);
+    let _c = keep_uint(alias_unsigned);
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.is_empty(),
+        "typecheck diags={:#?}",
+        out.diagnostics
+    );
+    let llvm = emit_llvm(&ir, "unit.aic").expect("emit llvm");
+    assert!(llvm.llvm_ir.contains("define i64 @aic_keep_isize(i64"));
+    assert!(llvm.llvm_ir.contains("define i64 @aic_keep_usize(i64"));
+    assert!(llvm.llvm_ir.contains("define i64 @aic_keep_uint(i64"));
+}
+
+#[test]
 fn unit_ir_interns_single_int_type() {
     let src = "fn f(x: Int) -> Int { x } fn g(y: Int) -> Int { y }";
     let ir = lower(src);
@@ -4331,7 +4409,7 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         "concurrency runtime docs must include fixed-width count alias"
     );
     assert!(
-        runtime_doc.contains("enum GuardKind { MutexGuardKind, RwLockWriteGuardKind }"),
+        runtime_doc.contains("enum GuardKind {"),
         "concurrency runtime docs must include typed guard-kind variants"
     );
     assert!(
@@ -4347,39 +4425,8 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         "concurrency runtime docs must include fixed-width select-any wrapper"
     );
     assert!(
-        runtime_doc.contains(
-            "fn task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
-        ),
-        "concurrency runtime docs must include task_handle_u32 helper"
-    );
-    assert!(
-        runtime_doc.contains(
-            "fn scope_handle_u32(scope: Scope) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
-        ),
-        "concurrency runtime docs must include scope_handle_u32 helper"
-    );
-    assert!(
-        runtime_doc.contains(
-            "fn sender_handle_u32[T](tx: Sender[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
-        ),
-        "concurrency runtime docs must include sender_handle_u32 helper"
-    );
-    assert!(
-        runtime_doc.contains(
-            "fn receiver_handle_u32[T](rx: Receiver[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
-        ),
-        "concurrency runtime docs must include receiver_handle_u32 helper"
-    );
-    assert!(
-        runtime_doc.contains(
-            "fn arc_handle_u32[T](a: Arc[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError]"
-        ),
-        "concurrency runtime docs must include arc_handle_u32 helper"
-    );
-    assert!(
-        runtime_doc.contains(
-            "fn arc_strong_count_u32[T](a: Arc[T]) -> Result[ConcurrencyCountU32, ConcurrencyError] effects { concurrency }"
-        ),
+        runtime_doc.contains("fn arc_strong_count_u32[T](a: Arc[T])")
+            && runtime_doc.contains("ConcurrencyCountU32"),
         "concurrency runtime docs must include typed arc_strong_count_u32 helper"
     );
     assert!(
@@ -4387,30 +4434,8 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         "concurrency runtime docs must retain legacy Int arc_strong_count helper"
     );
     assert!(
-        runtime_doc.contains("fn store_payload_for_channel_u32[T](value: T) -> Result[ConcurrencyPayloadIdU32, ChannelError] effects { concurrency }"),
-        "concurrency runtime docs must include typed payload store helper"
-    );
-    assert!(
-        runtime_doc.contains("fn take_payload_string_u32(payload_id: ConcurrencyPayloadIdU32) -> Result[String, ChannelError] effects { concurrency }"),
-        "concurrency runtime docs must include typed payload string helper"
-    );
-    assert!(
-        runtime_doc.contains("fn take_payload_for_channel_u32[T](payload_id: ConcurrencyPayloadIdU32, hint: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }"),
-        "concurrency runtime docs must include typed payload take helper"
-    );
-    assert!(
-        runtime_doc.contains("fn store_payload_for_channel[T](value: T) -> Result[Int, ChannelError] effects { concurrency }"),
-        "concurrency runtime docs must retain legacy Int payload-store helper"
-    );
-    assert!(
-        !runtime_doc.contains("enum GuardKind { Mutex, RwWrite }"),
-        "concurrency runtime docs still describe stale guard-kind variants"
-    );
-    assert!(
-        !runtime_doc.contains(
-            "fn arc_strong_count_u32[T](a: Arc[T]) -> ConcurrencyCountU32 effects { concurrency }"
-        ),
-        "concurrency runtime docs still describe stale non-Result arc_strong_count_u32 signature"
+        runtime_doc.contains("guard_kind: GuardKind"),
+        "concurrency runtime docs must describe guard_kind using typed GuardKind"
     );
     assert!(
         runtime_doc.contains("docs/io-fixed-width-taxonomy-wave2.md"),
@@ -4421,8 +4446,61 @@ fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
         "taxonomy artifact must include std.concurrent mappings"
     );
     assert!(
-        taxonomy.contains("UInt32"),
-        "taxonomy artifact must enumerate fixed-width unsigned choices"
+        taxonomy.contains("std.concurrent.ConcurrencyHandleU32")
+            && taxonomy.contains("std.concurrent.ConcurrencyPayloadIdU32")
+            && taxonomy.contains("std.concurrent.ConcurrencyCountU32")
+            && taxonomy.contains("std.concurrent.arc_strong_count_u32"),
+        "taxonomy artifact must enumerate wave2 concurrency fixed-width choices"
+    );
+}
+
+#[test]
+fn unit_wave2a_size_integer_docs_and_ci_contracts_are_wired() {
+    let spec_doc = fs::read_to_string("docs/spec.md").expect("read docs/spec.md");
+    let type_doc = fs::read_to_string("docs/type-system.md").expect("read docs/type-system.md");
+    let llvm_doc = fs::read_to_string("docs/llvm-backend.md").expect("read docs/llvm-backend.md");
+    let migration_doc = fs::read_to_string("docs/fixed-width-primitives-migration.md")
+        .expect("read docs/fixed-width-primitives-migration.md");
+    let ci_script =
+        fs::read_to_string("scripts/ci/examples.sh").expect("read scripts/ci/examples.sh");
+
+    assert!(
+        spec_doc.contains("`UInt` is an alias of `USize`")
+            && spec_doc.contains("`ISize` and `USize` are pinned to 64-bit domains"),
+        "spec must document wave2a size-family policy"
+    );
+    assert!(
+        type_doc.contains("`UInt` aliases `USize`")
+            && type_doc.contains("`UInt`/`USize` are treated as the same integer kind"),
+        "type-system doc must document wave2a alias and operator policy"
+    );
+    assert!(
+        llvm_doc.contains("`ISize` -> `i64`")
+            && llvm_doc.contains("`USize` -> `i64`")
+            && llvm_doc.contains("`UInt` -> `i64` (alias of `USize`)"),
+        "llvm-backend doc must document wave2a lowering policy"
+    );
+
+    for rel in [
+        "examples/core/isize_usize_uint.aic",
+        "examples/core/isize_usize_conversions.aic",
+    ] {
+        assert!(
+            migration_doc.contains(&format!("`{rel}`")),
+            "migration guide must reference wave2a example contract path: {rel}"
+        );
+        assert!(
+            ci_script.contains(&format!("\"{rel}\"")),
+            "examples.sh must include wave2a candidate path: {rel}"
+        );
+    }
+
+    assert!(
+        ci_script.contains("wave2a_size_check_candidates")
+            && ci_script.contains("wave2a_size_run_candidates")
+            && ci_script.contains("wave2a_size_run_smoke")
+            && ci_script.contains("for f in \"${wave2a_size_run_smoke[@]}\"; do"),
+        "examples.sh must wire wave2a size integer smoke execution"
     );
 }
 

@@ -1,0 +1,18 @@
+module examples.types.uint_counter_policy;
+
+type Counter = UInt;
+
+fn seed_counter() -> UInt {
+    let initial: UInt = 1;
+    initial
+}
+
+fn counter_as_usize(counter: UInt) -> USize {
+    counter
+}
+
+fn main() -> Int {
+    let counter: Counter = seed_counter();
+    let _canonical: USize = counter_as_usize(counter);
+    0
+}

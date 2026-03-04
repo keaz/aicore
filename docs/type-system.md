@@ -69,8 +69,10 @@
   - default to `Int`
   - if an expected integer type exists (annotation/argument/return context), they are checked against that expected type and typed accordingly
 - Suffixed integer literals force fixed-width type:
-  - signed: `i8`, `i16`, `i32`, `i64`
-  - unsigned: `u8`, `u16`, `u32`, `u64`
+  - signed: `i8`, `i16`, `i32`, `i64`, `i128`
+  - unsigned: `u8`, `u16`, `u32`, `u64`, `u128`
+- `ISize`/`USize` are type names (not literal suffixes) and follow deterministic 64-bit range policy.
+- `UInt` aliases `USize`.
 - Range diagnostics:
   - expression literals out of range: `E1204`
   - pattern integer literals out of range: `E1234`
@@ -94,12 +96,15 @@ let f: Int32 = 42;    // unsuffixed literal narrows to Int32 in context
 - No explicit cast syntax exists in MVP.
 - The checker allows only lossless implicit integer conversion where source range is fully contained in target range.
 - This policy is used in typed boundaries (for example let/assignment/function argument/function return compatibility checks).
+- `UInt` and `USize` are equivalent for compatibility/operator-kind checks because `UInt` is an alias of `USize`.
 
 Examples:
 
 ```aic
 fn ok_widen(a: Int16) -> Int32 { a }      // allowed
 fn ok_u8_to_u16(a: UInt8) -> UInt16 { a } // allowed
+fn ok_size(a: UInt32) -> USize { a }      // allowed
+fn ok_alias(a: USize) -> UInt { a }       // allowed (alias)
 fn bad_narrow(a: Int16) -> Int8 { a }     // E1204
 fn bad_sign(a: Int16) -> UInt16 { a }     // E1204
 fn bad_u64_to_int(a: UInt64) -> Int { a } // E1204
@@ -110,6 +115,7 @@ fn bad_u64_to_int(a: UInt64) -> Int { a } // E1204
 - Arithmetic (`+`, `-`, `*`, `/`, `%`) requires integer operands with exact same signedness and width.
 - Bitwise and shift (`&`, `|`, `^`, `<<`, `>>`, `>>>`) require exact same integer signedness and width.
 - Equality/comparison on integer operands also require exact integer kind match.
+- `UInt`/`USize` are treated as the same integer kind in exact-match checks (alias canonicalization).
 - Diagnostic mapping:
   - `E1230`: arithmetic/bitwise/shift operand mismatch
   - `E1231`: equality operand mismatch
@@ -176,8 +182,11 @@ Type-focused status:
   - Current: local inference with deterministic unresolved failures (`E1204`, `E1212`, `E1280`).
   - Target: stronger local inference (closure-context and usage-driven) with explicit ambiguity diagnostics.
 - `#317` fixed-width integer family extension
-  - Current: fixed-width primitives end at `Int64`/`UInt64`.
-  - Target: extend primitive family with `Int128`/`UInt128` and corresponding literal suffixes.
+  - Current: fixed-width family includes `Int128`/`UInt128` and corresponding literal suffixes.
+  - Target: preserve deterministic integer conversion/operator diagnostics while extending library-level numeric helpers.
+- `#318` size-family integers
+  - Current: `ISize`/`USize` are supported with deterministic 64-bit semantics, and `UInt` aliases `USize`.
+  - Target: keep this aliasing/stability contract and avoid platform-dependent typechecking behavior.
 - `#320` numeric stdlib module
   - Current: no dedicated `std.numeric` conversion/overflow helper module.
   - Target: add `std.numeric` for explicit numeric conversion and overflow-policy APIs without changing implicit-coercion semantics.

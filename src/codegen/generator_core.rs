@@ -3444,6 +3444,8 @@ impl<'a> Generator<'a> {
             }
             LType::Enum(layout) => Some(base_type_name(&layout.repr).to_string()),
             LType::Int => Some("Int".to_string()),
+            LType::ISize => Some("ISize".to_string()),
+            LType::USize => Some("USize".to_string()),
             LType::Int8 => Some("Int8".to_string()),
             LType::Int16 => Some("Int16".to_string()),
             LType::Int32 => Some("Int32".to_string()),

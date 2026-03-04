@@ -52,13 +52,13 @@ fn display_type(type_map: &BTreeMap<ir::TypeId, String>, ty: &ir::TypeId) -> Str
 fn format_type_repr(repr: &str) -> String {
     let repr = repr.trim();
     let Some(args) = extract_generic_args(repr) else {
-        return repr.to_string();
+        return ir::canonical_primitive_type_name(repr).to_string();
     };
     let rendered = args
         .iter()
         .map(|arg| format_type_repr(arg))
         .collect::<Vec<_>>();
-    let base = base_type_name(repr);
+    let base = ir::canonical_primitive_type_name(base_type_name(repr));
     if base == TUPLE_INTERNAL_NAME {
         if rendered.len() == 1 {
             format!("({},)", rendered[0])
@@ -1153,6 +1153,27 @@ mod tests {
         let a = format_program(&ir);
         let b = format_program(&ir);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonicalizes_uint_alias_to_usize_in_formatted_types() {
+        let src = r#"
+type Counter = UInt;
+
+fn bump(index: USize, delta: UInt, signed: ISize) -> UInt {
+    let _index: USize = index;
+    let _delta: UInt = delta;
+    let _signed: ISize = signed;
+    delta
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted = format_program(&ir);
+        assert!(formatted.contains("ISize"), "formatted={formatted}");
+        assert!(formatted.contains("USize"), "formatted={formatted}");
+        assert!(!formatted.contains("UInt"), "formatted={formatted}");
     }
 
     #[test]

@@ -22,6 +22,13 @@ pub fn decode_internal_const(name: &str) -> Option<&str> {
     name.strip_prefix(INTERNAL_CONST_PREFIX)
 }
 
+pub fn canonical_primitive_type_name(name: &str) -> &str {
+    match name {
+        "UInt" => "USize",
+        _ => name,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Visibility {
     #[default]

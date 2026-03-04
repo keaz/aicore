@@ -17,6 +17,10 @@ thread_local! {
         RefCell::new(BTreeMap::new());
 }
 
+pub fn canonical_primitive_type_name(name: &str) -> &str {
+    crate::ast::canonical_primitive_type_name(name)
+}
+
 pub fn clear_int_literal_metadata() {
     INT_LITERAL_METADATA_STORE.with(|store| {
         let mut guard = store.borrow_mut();
