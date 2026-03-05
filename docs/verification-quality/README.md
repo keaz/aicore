@@ -2,7 +2,7 @@
 
 This documentation set is for agents that need to write verifier-friendly AIC code and operate all verification gates in CI.
 
-## Gate Map (QV-T1..QV-T5 + AGX3-T3)
+## Gate Map (QV-T1..QV-T6 + AGX3-T3)
 
 | Gate | Outcome | Runbook |
 |---|---|---|
@@ -11,6 +11,7 @@ This documentation set is for agents that need to write verifier-friendly AIC co
 | QV-T3 fuzzing | detect parser/typechecker crashes with deterministic triage | `fuzz-differential-runbook.md` |
 | QV-T4 differential checks | detect parse->IR->format drift | `fuzz-differential-runbook.md` |
 | QV-T5 performance gates | enforce latency/throughput budgets and regression thresholds | `perf-sla-playbook.md` |
+| QV-T6 REST conformance harness | enforce parser->router->json->async scenario matrix outcomes | `rest-conformance-matrix.md` |
 | AGX3-T3 concurrency stress/replay | detect deterministic concurrency regressions and emit replay artifacts | `concurrency-stress-replay.md` |
 
 ## CI + Nightly Mapping (Issue #105 / #63)

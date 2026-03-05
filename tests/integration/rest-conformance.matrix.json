@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "suite": "rest-runtime-conformance",
+  "scenarios": [
+    {
+      "id": "REST-CONF-001-HTTP-VALID-E2E",
+      "category": "parse-route-json-response",
+      "description": "Valid HTTP request is parsed, routed with path params, JSON body decoded, and JSON response emitted deterministically.",
+      "program": "http_valid_parse_route_json_response",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    },
+    {
+      "id": "REST-CONF-002-HTTP-MALFORMED-METHOD",
+      "category": "http-parse-negative",
+      "description": "Malformed HTTP method is rejected with deterministic ServerError::InvalidMethod mapping.",
+      "program": "http_malformed_method_typed_error",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    },
+    {
+      "id": "REST-CONF-003-ROUTER-PRECEDENCE-PARAMS",
+      "category": "router-precedence-params",
+      "description": "Router precedence and path-param extraction are deterministic across static, param, wildcard, and method wildcard patterns.",
+      "program": "router_precedence_and_param_extraction",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    },
+    {
+      "id": "REST-CONF-004-JSON-MALFORMED-PAYLOAD",
+      "category": "json-negative",
+      "description": "Valid HTTP parse with malformed JSON payload returns deterministic JsonError::InvalidJson.",
+      "program": "json_malformed_payload_typed_error",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    },
+    {
+      "id": "REST-CONF-005-ASYNC-LIFECYCLE",
+      "category": "async-lifecycle",
+      "description": "Async submit/wait lifecycle timeout and shutdown semantics stay deterministic.",
+      "program": "async_lifecycle_timeout_and_shutdown",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    },
+    {
+      "id": "REST-CONF-006-TYPED-ERROR-MAPPING",
+      "category": "typed-error-mapping",
+      "description": "HTTP, router, JSON, and async error variants map to deterministic typed outcomes.",
+      "program": "typed_error_mapping_stability",
+      "expect_exit_code": 0,
+      "expect_stdout": "42\n"
+    }
+  ]
+}

@@ -9041,9 +9041,8 @@ fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } 
 "#;
     let addr_file_rel = "http_frag_addr.txt";
     let envs = [("AIC_HTTP_ADDR_FILE", addr_file_rel)];
-    let client_thread: std::sync::Arc<
-        std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
-    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let client_thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
     let client_thread_setup = std::sync::Arc::clone(&client_thread);
     let (code, stdout, stderr) =
         compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
@@ -9093,11 +9092,7 @@ fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } 
             });
             *client_thread_setup.lock().expect("store client thread") = Some(handle);
         });
-    if let Some(handle) = client_thread
-        .lock()
-        .expect("take client thread")
-        .take()
-    {
+    if let Some(handle) = client_thread.lock().expect("take client thread").take() {
         handle.join().expect("client thread join");
     } else {
         panic!("client thread was not started");
@@ -9780,9 +9775,8 @@ fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } 
         ("AIC_RT_LIMIT_HTTP_READ_TOTAL_MS", "5000"),
     ];
 
-    let client_thread: std::sync::Arc<
-        std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
-    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let client_thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
     let client_thread_setup = std::sync::Arc::clone(&client_thread);
     let (code, stdout, stderr) =
         compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
@@ -9824,11 +9818,7 @@ fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } 
             *client_thread_setup.lock().expect("store client thread") = Some(handle);
         });
 
-    if let Some(handle) = client_thread
-        .lock()
-        .expect("take client thread")
-        .take()
-    {
+    if let Some(handle) = client_thread.lock().expect("take client thread").take() {
         handle.join().expect("client thread join");
     } else {
         panic!("client thread was not started");
@@ -10426,7 +10416,10 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 "#;
 
-    let envs = [("AIC_RT_LIMIT_JSON_DEPTH", "4"), ("AIC_RT_LIMIT_JSON_BYTES", "48")];
+    let envs = [
+        ("AIC_RT_LIMIT_JSON_DEPTH", "4"),
+        ("AIC_RT_LIMIT_JSON_BYTES", "48"),
+    ];
     let (code, stdout, stderr) =
         compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
     assert_eq!(code, 0, "stderr={stderr}");

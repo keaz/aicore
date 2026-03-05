@@ -9447,7 +9447,9 @@ mod tests {
     use crate::diagnostics::Severity;
     use crate::{ir_builder::build, parser::parse, resolver::resolve};
 
-    use super::{await_bridge_submit_type, check, extract_generic_args, merge_types, split_top_level};
+    use super::{
+        await_bridge_submit_type, check, extract_generic_args, merge_types, split_top_level,
+    };
 
     #[test]
     fn option_match_exhaustive() {
