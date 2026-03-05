@@ -6,6 +6,8 @@ AICore is an **agent-native, IR-first programming language** designed for **huma
 
 The canonical source of truth is **IR** (`aic ir --emit json`), while text syntax is a deterministic view (`aic fmt`).
 
+Project note: AICore has been developed mainly using **GPT-5.3-Codex** for implementation work, with human review and validation.
+
 ---
 
 ## Table of Contents
@@ -34,6 +36,7 @@ The canonical source of truth is **IR** (`aic ir --emit json`), while text synta
   - [Build](#build)
   - [Hello World](#hello-world)
 - [CLI Reference](#cli-reference)
+- [AI-Agent Documentation](#ai-agent-documentation)
 - [Local CI with Make](#local-ci-with-make)
 - [GitHub Actions](#github-actions)
 - [Project Layout](#project-layout)
@@ -594,10 +597,11 @@ aic doc <file> -o <dir>     # Generate API documentation
 aic lsp                     # Start LSP server
 aic daemon                  # Start incremental check/build daemon
 aic explain <code>          # Explain diagnostic code (e.g. E2001)
-aic lock <pkg>              # Lock dependencies with checksums
+aic lock [path]             # Generate lockfile/checksums for project/workspace
 aic pkg publish|search|install  # Package management
 aic std-compat --check      # Std library compatibility/deprecation lint
 aic verify-intrinsics       # Verify intrinsic bindings
+aic diff --semantic <old> <new> # Semantic API/change diff in JSON
 aic contract --json         # Emit CLI contract for tool negotiation
 aic release manifest        # Reproducibility manifest
 aic release sbom            # Generate SBOM
@@ -605,6 +609,18 @@ aic release policy --check  # Enforce release/LTS policy gates
 aic run <file> --sandbox    # Sandboxed execution (none|ci|strict)
 aic check <file> --sarif    # SARIF diagnostics export
 ```
+
+---
+
+## AI-Agent Documentation
+
+For agent-first usage guidance (feature selection, command strategy, and workflow playbooks):
+
+- `docs/agent-tooling/language-feature-playbook.md`
+- `docs/agent-tooling/aic-command-playbook.md`
+- `docs/agent-tooling/commands/aic-init.md`
+- `docs/agent-tooling/commands/aic-lsp.md`
+- `docs/agent-tooling/commands/aic-diff.md`
 
 ---
 
