@@ -83,8 +83,8 @@ Required workflow for those issue IDs:
 - Canonical targeted test command: `cargo test --locked --test <target> ...`
 - Canonical exact filter form: `cargo test --locked --test <target> -- --exact <case_name>`
 - Canonical ignored filter form: `cargo test --locked --test <target> -- --ignored`
-- Command-style guard references: keep `#329` guard checks in scope to detect ambiguous/non-canonical filtered invocations (`#329` issue state is unchanged by this policy).
-- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+- Command-style guard command: `make test-command-style-guard` (runs `python3 scripts/ci/test_command_style_guard.py`).
+- Anti-pattern: unanchored name-filter invocations that omit `--test <target>`.
 
 Wave 5D examples:
 

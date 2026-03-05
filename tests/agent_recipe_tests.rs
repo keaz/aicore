@@ -2214,7 +2214,7 @@ fn wave5d_numeric_docs_examples_and_ci_policy_are_consistent() {
     for marker in [
         "cargo test --locked --test <target> ...",
         "cargo test --locked --test <target> -- --exact <case_name>",
-        "cargo test --locked wave5_numeric",
+        "make test-command-style-guard",
     ] {
         assert!(
             contributing_doc.contains(marker),

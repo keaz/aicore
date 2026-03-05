@@ -9359,7 +9359,7 @@ fn unit_wave5d_docs_examples_and_command_policy_markers_are_present() {
     for marker in [
         "## Wave 5D command-style contract (`#333`)",
         "cargo test --locked --test <target>",
-        "cargo test --locked wave5_numeric",
+        "make test-command-style-guard",
         "examples/data/wave5_numeric_end_to_end.aic",
         "examples/data/wave5_migration_buffer_u32.aic",
     ] {
@@ -9372,7 +9372,7 @@ fn unit_wave5d_docs_examples_and_command_policy_markers_are_present() {
     for marker in [
         "#### Wave 5D Command-Style Policy (`#333`)",
         "cargo test --locked --test <target>",
-        "cargo test --locked wave5_numeric",
+        "make test-command-style-guard",
         "examples/data/wave5_numeric_end_to_end.aic",
         "examples/data/wave5_migration_buffer_u32.aic",
     ] {
@@ -9386,7 +9386,7 @@ fn unit_wave5d_docs_examples_and_command_policy_markers_are_present() {
         "### Canonical Cargo Test Command Style (Wave 5D, `#333`)",
         "cargo test --locked --test <target> ...",
         "cargo test --locked --test <target> -- --exact <case_name>",
-        "cargo test --locked wave5_numeric",
+        "make test-command-style-guard",
         "examples/data/wave5_numeric_end_to_end.aic",
         "examples/data/wave5_migration_buffer_u32.aic",
     ] {

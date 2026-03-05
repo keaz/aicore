@@ -35,7 +35,7 @@ This example validates:
 ## Verification Commands
 
 ```bash
-cargo test exec_tail_call_ -- --nocapture
+cargo test --locked --test execution_tests exec_tail_call_ -- --nocapture
 cargo run --quiet --bin aic -- check examples/core/tail_call_optimization.aic
 cargo run --quiet --bin aic -- run examples/core/tail_call_optimization.aic
 ```

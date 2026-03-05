@@ -82,8 +82,9 @@ This document is the human-readable Wave 5A numeric typing matrix for std APIs.
 - Canonical targeted test shape for rollout validation: `cargo test --locked --test <target> ...`
 - Canonical exact test shape when filtering: `cargo test --locked --test <target> -- --exact <case_name>`
 - Canonical ignored test shape: `cargo test --locked --test <target> -- --ignored`
+- Command-style guard command: `make test-command-style-guard` (runs `python3 scripts/ci/test_command_style_guard.py`)
 - Command-style guard references: use `#329` guard checks to detect ambiguous/non-canonical filtered invocations while keeping `#329` issue state unchanged.
-- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+- Anti-pattern: unanchored name-filter invocations that omit `--test <target>`.
 
 Wave 5D examples:
 

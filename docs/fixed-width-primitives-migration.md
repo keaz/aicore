@@ -101,7 +101,8 @@ Wave 5D standardizes canonical targeted test commands for numeric adoption work:
 Command-style guard references (tracking only; `#329` state is unchanged):
 
 - `#329` guard checks should detect ambiguous/non-canonical filtered invocations that do not anchor on `--test <target>`.
-- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+- Guard command: `make test-command-style-guard` (`python3 scripts/ci/test_command_style_guard.py`)
+- Anti-pattern: unanchored name-filter invocations that omit `--test <target>`.
 
 Wave 5D examples:
 
