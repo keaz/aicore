@@ -1,3 +1,176 @@
+// Json runtime error codes are aligned with std.json JsonError variant mapping.
+#define AIC_RT_JSON_ERR_INVALID_JSON 1L
+#define AIC_RT_JSON_ERR_INVALID_NUMBER 4L
+#define AIC_RT_JSON_ERR_INVALID_STRING 5L
+#define AIC_RT_JSON_ERR_INVALID_INPUT 6L
+#define AIC_RT_JSON_ERR_INTERNAL 7L
+
+#define AIC_RT_JSON_DEPTH_DEFAULT 128L
+#define AIC_RT_JSON_DEPTH_MAX 4096L
+#define AIC_RT_JSON_BYTES_DEFAULT (16L * 1024L * 1024L)
+#define AIC_RT_JSON_BYTES_MAX (256L * 1024L * 1024L)
+
+static long aic_rt_json_depth_limit = AIC_RT_JSON_DEPTH_DEFAULT;
+static long aic_rt_json_bytes_limit = AIC_RT_JSON_BYTES_DEFAULT;
+static pthread_once_t aic_rt_json_limits_once = PTHREAD_ONCE_INIT;
+
+static long aic_rt_json_last_error_offset = 0;
+static long aic_rt_json_last_error_line = 1;
+static long aic_rt_json_last_error_column = 1;
+
+static void aic_rt_json_limits_init(void) {
+    aic_rt_json_depth_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_JSON_DEPTH",
+        AIC_RT_JSON_DEPTH_DEFAULT,
+        1,
+        AIC_RT_JSON_DEPTH_MAX
+    );
+    aic_rt_json_bytes_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_JSON_BYTES",
+        AIC_RT_JSON_BYTES_DEFAULT,
+        1,
+        AIC_RT_JSON_BYTES_MAX
+    );
+}
+
+static void aic_rt_json_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_json_limits_once, aic_rt_json_limits_init);
+}
+
+static void aic_rt_json_record_error_location(const char* text, size_t len, size_t offset) {
+    if (offset > len) {
+        offset = len;
+    }
+    long line = 1;
+    long column = 1;
+    if (text != NULL) {
+        for (size_t i = 0; i < offset; ++i) {
+            if (text[i] == '\n') {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+    }
+    aic_rt_json_last_error_offset = (long)offset;
+    aic_rt_json_last_error_line = line;
+    aic_rt_json_last_error_column = column;
+}
+
+static int aic_rt_json_is_number_continuation(char ch) {
+    return ((ch >= '0' && ch <= '9') ||
+            ch == '+' ||
+            ch == '-' ||
+            ch == '.' ||
+            (ch >= 'a' && ch <= 'z') ||
+            (ch >= 'A' && ch <= 'Z') ||
+            ch == '_');
+}
+
+static long aic_rt_json_parse_string_token_strict(const char* text, size_t len, size_t* pos) {
+    if (*pos >= len || text[*pos] != '"') {
+        return AIC_RT_JSON_ERR_INVALID_STRING;
+    }
+    size_t i = *pos + 1;
+    size_t segment_start = i;
+    while (i < len) {
+        unsigned char ch = (unsigned char)text[i];
+        if (ch == '"') {
+            if (i > segment_start &&
+                !aic_rt_string_utf8_is_valid(text + segment_start, i - segment_start)) {
+                return AIC_RT_JSON_ERR_INVALID_STRING;
+            }
+            *pos = i + 1;
+            return 0;
+        }
+        if (ch < 0x20) {
+            return AIC_RT_JSON_ERR_INVALID_STRING;
+        }
+        if (ch == '\\') {
+            if (i > segment_start &&
+                !aic_rt_string_utf8_is_valid(text + segment_start, i - segment_start)) {
+                return AIC_RT_JSON_ERR_INVALID_STRING;
+            }
+            i += 1;
+            if (i >= len) {
+                return AIC_RT_JSON_ERR_INVALID_STRING;
+            }
+            char esc = text[i];
+            switch (esc) {
+                case '"':
+                case '\\':
+                case '/':
+                case 'b':
+                case 'f':
+                case 'n':
+                case 'r':
+                case 't':
+                    i += 1;
+                    segment_start = i;
+                    continue;
+                case 'u': {
+                    i += 1;
+                    unsigned codepoint = 0;
+                    for (int h = 0; h < 4; ++h) {
+                        if (i >= len) {
+                            return AIC_RT_JSON_ERR_INVALID_STRING;
+                        }
+                        int hv = aic_rt_json_hex_value(text[i]);
+                        if (hv < 0) {
+                            return AIC_RT_JSON_ERR_INVALID_STRING;
+                        }
+                        codepoint = (codepoint << 4) | (unsigned)hv;
+                        i += 1;
+                    }
+                    if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+                        if (i + 6 > len || text[i] != '\\' || text[i + 1] != 'u') {
+                            return AIC_RT_JSON_ERR_INVALID_STRING;
+                        }
+                        i += 2;
+                        unsigned low = 0;
+                        for (int h = 0; h < 4; ++h) {
+                            if (i >= len) {
+                                return AIC_RT_JSON_ERR_INVALID_STRING;
+                            }
+                            int hv = aic_rt_json_hex_value(text[i]);
+                            if (hv < 0) {
+                                return AIC_RT_JSON_ERR_INVALID_STRING;
+                            }
+                            low = (low << 4) | (unsigned)hv;
+                            i += 1;
+                        }
+                        if (low < 0xDC00 || low > 0xDFFF) {
+                            return AIC_RT_JSON_ERR_INVALID_STRING;
+                        }
+                    } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
+                    }
+                    if (codepoint > 0x10FFFF) {
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
+                    }
+                    segment_start = i;
+                    continue;
+                }
+                default:
+                    return AIC_RT_JSON_ERR_INVALID_STRING;
+            }
+        }
+        i += 1;
+    }
+    return AIC_RT_JSON_ERR_INVALID_STRING;
+}
+
+static long aic_rt_json_parse_number_token_typed(const char* text, size_t len, size_t* pos) {
+    long rc = aic_rt_json_parse_number_token(text, len, pos);
+    if (rc != 0) {
+        return AIC_RT_JSON_ERR_INVALID_NUMBER;
+    }
+    if (*pos < len && aic_rt_json_is_number_continuation(text[*pos])) {
+        return AIC_RT_JSON_ERR_INVALID_NUMBER;
+    }
+    return 0;
+}
 
 static long aic_rt_json_parse_array(
     const char* text,
@@ -6,7 +179,7 @@ static long aic_rt_json_parse_array(
     int depth
 ) {
     if (*pos >= len || text[*pos] != '[') {
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     *pos += 1;
     aic_rt_json_skip_ws(text, len, pos);
@@ -22,7 +195,7 @@ static long aic_rt_json_parse_array(
         }
         aic_rt_json_skip_ws(text, len, pos);
         if (*pos >= len) {
-            return 1;
+            return AIC_RT_JSON_ERR_INVALID_JSON;
         }
         if (text[*pos] == ',') {
             *pos += 1;
@@ -33,9 +206,9 @@ static long aic_rt_json_parse_array(
             *pos += 1;
             return 0;
         }
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
-    return 1;
+    return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
 static long aic_rt_json_parse_object(
@@ -45,7 +218,7 @@ static long aic_rt_json_parse_object(
     int depth
 ) {
     if (*pos >= len || text[*pos] != '{') {
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     *pos += 1;
     aic_rt_json_skip_ws(text, len, pos);
@@ -54,13 +227,13 @@ static long aic_rt_json_parse_object(
         return 0;
     }
     while (*pos < len) {
-        long key_rc = aic_rt_json_parse_string_token(text, len, pos);
+        long key_rc = aic_rt_json_parse_string_token_strict(text, len, pos);
         if (key_rc != 0) {
             return key_rc;
         }
         aic_rt_json_skip_ws(text, len, pos);
         if (*pos >= len || text[*pos] != ':') {
-            return 1;
+            return AIC_RT_JSON_ERR_INVALID_JSON;
         }
         *pos += 1;
         aic_rt_json_skip_ws(text, len, pos);
@@ -71,7 +244,7 @@ static long aic_rt_json_parse_object(
         }
         aic_rt_json_skip_ws(text, len, pos);
         if (*pos >= len) {
-            return 1;
+            return AIC_RT_JSON_ERR_INVALID_JSON;
         }
         if (text[*pos] == ',') {
             *pos += 1;
@@ -82,9 +255,9 @@ static long aic_rt_json_parse_object(
             *pos += 1;
             return 0;
         }
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
-    return 1;
+    return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
 static long aic_rt_json_parse_value(
@@ -94,12 +267,13 @@ static long aic_rt_json_parse_value(
     long* out_kind,
     int depth
 ) {
-    if (depth > 128) {
-        return 1;
+    aic_rt_json_limits_ensure();
+    if (depth > (int)aic_rt_json_depth_limit) {
+        return AIC_RT_JSON_ERR_INVALID_INPUT;
     }
     aic_rt_json_skip_ws(text, len, pos);
     if (*pos >= len) {
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     char ch = text[*pos];
     if (ch == 'n') {
@@ -110,7 +284,7 @@ static long aic_rt_json_parse_value(
             }
             return 0;
         }
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     if (ch == 't') {
         if (*pos + 4 <= len && memcmp(text + *pos, "true", 4) == 0) {
@@ -120,7 +294,7 @@ static long aic_rt_json_parse_value(
             }
             return 0;
         }
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     if (ch == 'f') {
         if (*pos + 5 <= len && memcmp(text + *pos, "false", 5) == 0) {
@@ -130,10 +304,10 @@ static long aic_rt_json_parse_value(
             }
             return 0;
         }
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     if (ch == '"') {
-        long rc = aic_rt_json_parse_string_token(text, len, pos);
+        long rc = aic_rt_json_parse_string_token_strict(text, len, pos);
         if (rc != 0) {
             return rc;
         }
@@ -163,7 +337,7 @@ static long aic_rt_json_parse_value(
         return 0;
     }
     if (ch == '-' || (ch >= '0' && ch <= '9')) {
-        long rc = aic_rt_json_parse_number_token(text, len, pos);
+        long rc = aic_rt_json_parse_number_token_typed(text, len, pos);
         if (rc != 0) {
             return rc;
         }
@@ -172,23 +346,39 @@ static long aic_rt_json_parse_value(
         }
         return 0;
     }
-    return 1;
+    return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
 static long aic_rt_json_validate_document(const char* text, size_t len, long* out_kind) {
+    aic_rt_json_limits_ensure();
+    if (len > (size_t)aic_rt_json_bytes_limit) {
+        aic_rt_json_record_error_location(text, len, len);
+        return AIC_RT_JSON_ERR_INVALID_INPUT;
+    }
     size_t pos = 0;
     long kind = AIC_RT_JSON_KIND_NULL;
     long rc = aic_rt_json_parse_value(text, len, &pos, &kind, 0);
     if (rc != 0) {
+        aic_rt_json_record_error_location(text, len, pos);
         return rc;
     }
+    size_t parse_end = pos;
     aic_rt_json_skip_ws(text, len, &pos);
     if (pos != len) {
-        return 1;
+        long tail_rc = AIC_RT_JSON_ERR_INVALID_JSON;
+        if (kind == AIC_RT_JSON_KIND_NUMBER &&
+            parse_end < len &&
+            !aic_rt_json_is_space(text[parse_end]) &&
+            aic_rt_json_is_number_continuation(text[parse_end])) {
+            tail_rc = AIC_RT_JSON_ERR_INVALID_NUMBER;
+        }
+        aic_rt_json_record_error_location(text, len, parse_end);
+        return tail_rc;
     }
     if (out_kind != NULL) {
         *out_kind = kind;
     }
+    aic_rt_json_record_error_location(text, len, pos);
     return 0;
 }
 
@@ -206,11 +396,16 @@ static long aic_rt_json_decode_string_token(
         *out_len = 0;
     }
     if (*pos >= len || text[*pos] != '"') {
-        return 1;
+        return AIC_RT_JSON_ERR_INVALID_STRING;
+    }
+    size_t validate_pos = *pos;
+    long validate_rc = aic_rt_json_parse_string_token_strict(text, len, &validate_pos);
+    if (validate_rc != 0) {
+        return AIC_RT_JSON_ERR_INVALID_STRING;
     }
     char* out = (char*)malloc(len + 1);
     if (out == NULL) {
-        return 7;
+        return AIC_RT_JSON_ERR_INTERNAL;
     }
     size_t out_pos = 0;
     *pos += 1;
@@ -231,7 +426,7 @@ static long aic_rt_json_decode_string_token(
         }
         if ((unsigned char)ch < 0x20) {
             free(out);
-            return 1;
+            return AIC_RT_JSON_ERR_INVALID_STRING;
         }
         if (ch != '\\') {
             out[out_pos++] = ch;
@@ -239,7 +434,7 @@ static long aic_rt_json_decode_string_token(
         }
         if (*pos >= len) {
             free(out);
-            return 1;
+            return AIC_RT_JSON_ERR_INVALID_STRING;
         }
         char esc = text[*pos];
         *pos += 1;
@@ -269,12 +464,12 @@ static long aic_rt_json_decode_string_token(
                 for (int i = 0; i < 4; ++i) {
                     if (*pos >= len) {
                         free(out);
-                        return 1;
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
                     }
                     int hv = aic_rt_json_hex_value(text[*pos]);
                     if (hv < 0) {
                         free(out);
-                        return 1;
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
                     }
                     codepoint = (codepoint << 4) | (unsigned)hv;
                     *pos += 1;
@@ -282,7 +477,7 @@ static long aic_rt_json_decode_string_token(
                 if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
                     if (*pos + 6 > len || text[*pos] != '\\' || text[*pos + 1] != 'u') {
                         free(out);
-                        return 1;
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
                     }
                     *pos += 2;
                     unsigned low = 0;
@@ -290,33 +485,33 @@ static long aic_rt_json_decode_string_token(
                         int hv = aic_rt_json_hex_value(text[*pos]);
                         if (hv < 0) {
                             free(out);
-                            return 1;
+                            return AIC_RT_JSON_ERR_INVALID_STRING;
                         }
                         low = (low << 4) | (unsigned)hv;
                         *pos += 1;
                     }
                     if (low < 0xDC00 || low > 0xDFFF) {
                         free(out);
-                        return 1;
+                        return AIC_RT_JSON_ERR_INVALID_STRING;
                     }
                     codepoint = 0x10000 + (((codepoint - 0xD800) << 10) | (low - 0xDC00));
                 } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
                     free(out);
-                    return 1;
+                    return AIC_RT_JSON_ERR_INVALID_STRING;
                 }
                 if (!aic_rt_json_append_utf8(out, len, &out_pos, codepoint)) {
                     free(out);
-                    return 7;
+                    return AIC_RT_JSON_ERR_INTERNAL;
                 }
                 break;
             }
             default:
                 free(out);
-                return 1;
+                return AIC_RT_JSON_ERR_INVALID_STRING;
         }
     }
     free(out);
-    return 1;
+    return AIC_RT_JSON_ERR_INVALID_STRING;
 }
 
 static long aic_rt_json_escape_string(
@@ -2956,6 +3151,192 @@ static int aic_rt_http_server_parse_decimal(const char* ptr, size_t len, long* o
     return 1;
 }
 
+static int aic_rt_http_server_hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (ch - 'A');
+    }
+    return -1;
+}
+
+static int aic_rt_http_server_parse_transfer_encoding(
+    const char* value_ptr,
+    size_t value_len,
+    int* out_chunked
+) {
+    if (out_chunked != NULL) {
+        *out_chunked = 0;
+    }
+    if (value_ptr == NULL || value_len == 0) {
+        return 0;
+    }
+
+    size_t cursor = 0;
+    int token_count = 0;
+    while (cursor < value_len) {
+        while (cursor < value_len && (value_ptr[cursor] == ' ' || value_ptr[cursor] == '\t')) {
+            cursor++;
+        }
+        size_t token_start = cursor;
+        while (cursor < value_len && value_ptr[cursor] != ',') {
+            cursor++;
+        }
+        size_t token_end = cursor;
+        while (token_end > token_start &&
+               (value_ptr[token_end - 1] == ' ' || value_ptr[token_end - 1] == '\t')) {
+            token_end--;
+        }
+        if (token_end == token_start) {
+            return 0;
+        }
+        token_count++;
+        if (token_count != 1 ||
+            !aic_rt_ascii_eq_lit_ci(value_ptr + token_start, token_end - token_start, "chunked")) {
+            return 0;
+        }
+        if (cursor < value_len && value_ptr[cursor] == ',') {
+            cursor++;
+        }
+    }
+
+    if (token_count != 1) {
+        return 0;
+    }
+    if (out_chunked != NULL) {
+        *out_chunked = 1;
+    }
+    return 1;
+}
+
+/*
+ * Returns:
+ *   0 => complete and valid chunked body
+ *   1 => syntactically valid prefix but incomplete payload
+ *   2 => malformed chunk framing
+ */
+static int aic_rt_http_server_chunked_parse(
+    const char* body_ptr,
+    size_t body_len,
+    char* decoded_out,
+    size_t decoded_cap,
+    size_t* out_wire_len,
+    size_t* out_decoded_len
+) {
+    if (out_wire_len != NULL) {
+        *out_wire_len = 0;
+    }
+    if (out_decoded_len != NULL) {
+        *out_decoded_len = 0;
+    }
+    if (body_len > 0 && body_ptr == NULL) {
+        return 2;
+    }
+
+    size_t cursor = 0;
+    size_t decoded_written = 0;
+    while (1) {
+        size_t size_start = cursor;
+        while (cursor < body_len && body_ptr[cursor] != '\r') {
+            if (body_ptr[cursor] == '\n') {
+                return 2;
+            }
+            cursor++;
+        }
+        if (cursor >= body_len || cursor + 1 >= body_len) {
+            return 1;
+        }
+        if (body_ptr[cursor + 1] != '\n') {
+            return 2;
+        }
+
+        size_t line_end = cursor;
+        size_t ext_start = size_start;
+        while (ext_start < line_end && body_ptr[ext_start] != ';') {
+            ext_start++;
+        }
+        if (ext_start == size_start) {
+            return 2;
+        }
+
+        size_t chunk_size = 0;
+        for (size_t i = size_start; i < ext_start; ++i) {
+            int hv = aic_rt_http_server_hex_value(body_ptr[i]);
+            if (hv < 0) {
+                return 2;
+            }
+            if (chunk_size > (SIZE_MAX - (size_t)hv) / 16) {
+                return 2;
+            }
+            chunk_size = (chunk_size * 16) + (size_t)hv;
+        }
+
+        cursor += 2; /* consume CRLF after the chunk-size line */
+
+        if (chunk_size == 0) {
+            while (1) {
+                size_t trailer_start = cursor;
+                while (cursor < body_len && body_ptr[cursor] != '\r') {
+                    if (body_ptr[cursor] == '\n') {
+                        return 2;
+                    }
+                    cursor++;
+                }
+                if (cursor >= body_len || cursor + 1 >= body_len) {
+                    return 1;
+                }
+                if (body_ptr[cursor + 1] != '\n') {
+                    return 2;
+                }
+                if (cursor == trailer_start) {
+                    cursor += 2;
+                    if (out_wire_len != NULL) {
+                        *out_wire_len = cursor;
+                    }
+                    if (out_decoded_len != NULL) {
+                        *out_decoded_len = decoded_written;
+                    }
+                    return 0;
+                }
+                size_t colon = trailer_start;
+                while (colon < cursor && body_ptr[colon] != ':') {
+                    colon++;
+                }
+                if (colon == trailer_start || colon >= cursor) {
+                    return 2;
+                }
+                cursor += 2;
+            }
+        }
+
+        if (chunk_size > (SIZE_MAX - decoded_written)) {
+            return 2;
+        }
+        if (cursor + chunk_size > body_len) {
+            return 1;
+        }
+        if (decoded_out != NULL) {
+            if (decoded_written + chunk_size > decoded_cap) {
+                return 2;
+            }
+            memcpy(decoded_out + decoded_written, body_ptr + cursor, chunk_size);
+        }
+        cursor += chunk_size;
+        if (cursor + 1 >= body_len) {
+            return 1;
+        }
+        if (body_ptr[cursor] != '\r' || body_ptr[cursor + 1] != '\n') {
+            return 2;
+        }
+        cursor += 2;
+        decoded_written += chunk_size;
+    }
+}
+
 static int aic_rt_http_server_find_header_delimiter(
     const char* payload,
     size_t payload_len,
@@ -3058,7 +3439,8 @@ static long aic_rt_http_server_headers_to_map(
     size_t headers_len,
     long* out_handle,
     long* out_content_length,
-    int* out_has_content_length
+    int* out_has_content_length,
+    int* out_has_chunked_transfer
 ) {
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -3068,6 +3450,9 @@ static long aic_rt_http_server_headers_to_map(
     }
     if (out_has_content_length != NULL) {
         *out_has_content_length = 0;
+    }
+    if (out_has_chunked_transfer != NULL) {
+        *out_has_chunked_transfer = 0;
     }
     long handle = 0;
     if (aic_rt_map_new(1, 1, &handle) != 0) {
@@ -3085,6 +3470,8 @@ static long aic_rt_http_server_headers_to_map(
 
     int seen_content_length = 0;
     long seen_content_length_value = 0;
+    int seen_transfer_encoding = 0;
+    int seen_chunked_transfer = 0;
     size_t cursor = 0;
     while (cursor < headers_len) {
         size_t line_end = cursor;
@@ -3177,10 +3564,27 @@ static long aic_rt_http_server_headers_to_map(
             if (out_has_content_length != NULL) {
                 *out_has_content_length = 1;
             }
+        } else if (aic_rt_ascii_eq_lit_ci(lower_name, raw_name_len, "transfer-encoding")) {
+            int parsed_chunked = 0;
+            int parsed_ok =
+                aic_rt_http_server_parse_transfer_encoding(value_ptr, value_len, &parsed_chunked);
+            if (!parsed_ok || !parsed_chunked || seen_transfer_encoding) {
+                free(lower_name);
+                return 3;
+            }
+            seen_transfer_encoding = 1;
+            seen_chunked_transfer = 1;
+            if (out_has_chunked_transfer != NULL) {
+                *out_has_chunked_transfer = 1;
+            }
         }
 
         free(lower_name);
         cursor = next_cursor;
+    }
+
+    if (seen_chunked_transfer && seen_content_length) {
+        return 3;
     }
 
     return 0;
@@ -3257,6 +3661,7 @@ long aic_rt_http_server_read_request(
     long headers_handle = 0;
     long content_length = 0;
     int has_content_length = 0;
+    int has_chunked_transfer = 0;
     int headers_parsed = 0;
 
     while (1) {
@@ -3282,7 +3687,8 @@ long aic_rt_http_server_read_request(
                     headers_len,
                     &headers_handle,
                     &content_length,
-                    &has_content_length
+                    &has_content_length,
+                    &has_chunked_transfer
                 );
                 if (headers_rc != 0) {
                     free(payload);
@@ -3301,13 +3707,29 @@ long aic_rt_http_server_read_request(
                 }
             }
 
-            if (!has_content_length) {
-                break;
-            }
-
             size_t body_start = header_marker + delimiter_len;
             size_t available_body = body_start <= payload_n ? (payload_n - body_start) : 0;
-            if (available_body >= (size_t)content_length) {
+            if (has_chunked_transfer) {
+                size_t wire_len = 0;
+                size_t decoded_len = 0;
+                int chunk_rc = aic_rt_http_server_chunked_parse(
+                    payload + body_start,
+                    available_body,
+                    NULL,
+                    0,
+                    &wire_len,
+                    &decoded_len
+                );
+                if (chunk_rc == 0) {
+                    break;
+                }
+                if (chunk_rc == 2) {
+                    free(payload);
+                    return 1;
+                }
+            } else if (has_content_length && available_body >= (size_t)content_length) {
+                break;
+            } else if (!has_content_length) {
                 break;
             }
         }
@@ -3396,6 +3818,10 @@ long aic_rt_http_server_read_request(
           (version_len == 8 && memcmp(version_ptr, "HTTP/1.0", 8) == 0))) {
         free(payload);
         return 1;
+    }
+    if (has_chunked_transfer && memcmp(version_ptr, "HTTP/1.1", 8) != 0) {
+        free(payload);
+        return 3;
     }
 
     long method_tag = 0;
@@ -3498,24 +3924,75 @@ long aic_rt_http_server_read_request(
 
     size_t body_start = header_marker + delimiter_len;
     size_t available_body = body_start <= payload_n ? (payload_n - body_start) : 0;
-    size_t body_len = available_body;
-    if (has_content_length) {
-        body_len = (size_t)content_length;
-        if (available_body < body_len) {
+    size_t body_len = 0;
+    char* body_owned = NULL;
+    if (has_chunked_transfer) {
+        size_t wire_len = 0;
+        size_t decoded_len = 0;
+        int chunk_rc = aic_rt_http_server_chunked_parse(
+            payload + body_start,
+            available_body,
+            NULL,
+            0,
+            &wire_len,
+            &decoded_len
+        );
+        if (chunk_rc == 1) {
             free(path_owned);
             free(method_owned);
             free(payload);
             return 6;
         }
+        if (chunk_rc == 2) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 1;
+        }
+        body_owned = (char*)malloc(decoded_len + 1);
+        if (body_owned == NULL) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
+        int copy_rc = aic_rt_http_server_chunked_parse(
+            payload + body_start,
+            available_body,
+            body_owned,
+            decoded_len,
+            &wire_len,
+            &decoded_len
+        );
+        if (copy_rc != 0) {
+            free(body_owned);
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return copy_rc == 1 ? 6 : 1;
+        }
+        body_len = decoded_len;
+        body_owned[body_len] = '\0';
+    } else {
+        body_len = available_body;
+        if (has_content_length) {
+            body_len = (size_t)content_length;
+            if (available_body < body_len) {
+                free(path_owned);
+                free(method_owned);
+                free(payload);
+                return 6;
+            }
+        }
+        body_owned = aic_rt_copy_bytes(payload + body_start, body_len);
+        if (body_owned == NULL) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
     }
-
-    char* body_owned = aic_rt_copy_bytes(payload + body_start, body_len);
     free(payload);
-    if (body_owned == NULL) {
-        free(path_owned);
-        free(method_owned);
-        return 9;
-    }
 
     if (out_method_ptr != NULL) {
         *out_method_ptr = method_owned;
@@ -3720,7 +4197,8 @@ long aic_rt_http_server_close(long handle) {
 }
 
 #define AIC_RT_ROUTER_TABLE_CAP 64
-#define AIC_RT_ROUTER_ROUTE_CAP 128
+#define AIC_RT_ROUTER_ROUTE_CAP_DEFAULT 128
+#define AIC_RT_ROUTER_ROUTE_CAP_MAX 4096
 
 typedef struct {
     int active;
@@ -3734,10 +4212,26 @@ typedef struct {
 typedef struct {
     int active;
     long len;
-    AicRtRouterRoute routes[AIC_RT_ROUTER_ROUTE_CAP];
+    long cap;
+    AicRtRouterRoute* routes;
 } AicRtRouterSlot;
 
 static AicRtRouterSlot aic_rt_router_table[AIC_RT_ROUTER_TABLE_CAP];
+static long aic_rt_router_route_limit = AIC_RT_ROUTER_ROUTE_CAP_DEFAULT;
+static pthread_once_t aic_rt_router_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_router_limits_init(void) {
+    aic_rt_router_route_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_ROUTER_ROUTES",
+        AIC_RT_ROUTER_ROUTE_CAP_DEFAULT,
+        1,
+        AIC_RT_ROUTER_ROUTE_CAP_MAX
+    );
+}
+
+static void aic_rt_router_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_router_limits_once, aic_rt_router_limits_init);
+}
 
 static char aic_rt_router_ascii_upper(char ch) {
     if (ch >= 'a' && ch <= 'z') {
@@ -3747,11 +4241,12 @@ static char aic_rt_router_ascii_upper(char ch) {
 }
 
 static AicRtRouterSlot* aic_rt_router_get_slot(long handle) {
+    aic_rt_router_limits_ensure();
     if (handle <= 0 || handle > AIC_RT_ROUTER_TABLE_CAP) {
         return NULL;
     }
     AicRtRouterSlot* slot = &aic_rt_router_table[handle - 1];
-    if (!slot->active) {
+    if (!slot->active || slot->routes == NULL || slot->cap <= 0) {
         return NULL;
     }
     return slot;
@@ -3975,19 +4470,21 @@ long aic_rt_router_new(long* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
+    aic_rt_router_limits_ensure();
     for (long i = 0; i < AIC_RT_ROUTER_TABLE_CAP; ++i) {
         if (!aic_rt_router_table[i].active) {
             AicRtRouterSlot* slot = &aic_rt_router_table[i];
+            AicRtRouterRoute* routes = (AicRtRouterRoute*)calloc(
+                (size_t)aic_rt_router_route_limit,
+                sizeof(AicRtRouterRoute)
+            );
+            if (routes == NULL) {
+                return 4;
+            }
             slot->active = 1;
             slot->len = 0;
-            for (long j = 0; j < AIC_RT_ROUTER_ROUTE_CAP; ++j) {
-                slot->routes[j].active = 0;
-                slot->routes[j].method_ptr = NULL;
-                slot->routes[j].method_len = 0;
-                slot->routes[j].pattern_ptr = NULL;
-                slot->routes[j].pattern_len = 0;
-                slot->routes[j].route_id = 0;
-            }
+            slot->cap = aic_rt_router_route_limit;
+            slot->routes = routes;
             if (out_handle != NULL) {
                 *out_handle = i + 1;
             }
@@ -4022,8 +4519,11 @@ long aic_rt_router_add(
     if (!aic_rt_router_validate_path_pattern(pattern_ptr, (size_t)pattern_len)) {
         return 1;
     }
-    if (slot->len >= AIC_RT_ROUTER_ROUTE_CAP) {
+    if (slot->len >= slot->cap) {
         return 3;
+    }
+    if (slot->routes == NULL) {
+        return 4;
     }
 
     char* method_owned = aic_rt_copy_bytes(method_ptr, (size_t)method_len);
@@ -4085,6 +4585,9 @@ long aic_rt_router_match(
 
     AicRtRouterSlot* slot = aic_rt_router_get_slot(handle);
     if (slot == NULL) {
+        return 4;
+    }
+    if (slot->routes == NULL) {
         return 4;
     }
 

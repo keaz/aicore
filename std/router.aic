@@ -4,6 +4,10 @@
 /// ```aic
 /// import std.router;
 /// ```
+///
+/// Runtime route registration capacity is deterministic and configurable via
+/// `AIC_RT_LIMIT_ROUTER_ROUTES` (default: `128`, max: `4096`).
+/// Registering beyond the configured cap returns `RouterError::Capacity`.
 module std.router;
 
 import std.map;

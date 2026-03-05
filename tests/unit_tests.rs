@@ -5736,6 +5736,48 @@ fn unit_std_json_public_apis_delegate_to_runtime_intrinsics() {
 }
 
 #[test]
+fn unit_json_runtime_hardening_limits_and_typed_error_paths_are_wired() {
+    let runtime_source =
+        fs::read_to_string("src/codegen/runtime/part05.c").expect("read runtime part05");
+    let json_source = fs::read_to_string("std/json.aic").expect("read std/json.aic");
+
+    assert!(
+        runtime_source.contains("AIC_RT_LIMIT_JSON_DEPTH"),
+        "json runtime must expose configurable depth limit env"
+    );
+    assert!(
+        runtime_source.contains("AIC_RT_LIMIT_JSON_BYTES"),
+        "json runtime must expose configurable payload-size limit env"
+    );
+    assert!(
+        runtime_source.contains("AIC_RT_JSON_ERR_INVALID_NUMBER")
+            && runtime_source.contains("AIC_RT_JSON_ERR_INVALID_STRING"),
+        "json runtime must preserve typed numeric/string parse error paths"
+    );
+    assert!(
+        runtime_source.contains("aic_rt_json_parse_string_token_strict")
+            && runtime_source.contains("aic_rt_string_utf8_is_valid"),
+        "json runtime parse path must validate escapes and utf8 deterministically"
+    );
+    assert!(
+        runtime_source.contains("aic_rt_json_record_error_location"),
+        "json runtime must keep stable parse error location tracking in runtime state"
+    );
+
+    for variant in [
+        "InvalidJson",
+        "InvalidNumber",
+        "InvalidString",
+        "InvalidInput",
+    ] {
+        assert!(
+            json_source.contains(variant),
+            "std/json JsonError must retain variant {variant}"
+        );
+    }
+}
+
+#[test]
 fn unit_std_config_load_json_has_success_and_error_paths() {
     let source = fs::read_to_string("std/config.aic").expect("read std/config.aic");
 

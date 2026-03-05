@@ -9252,6 +9252,228 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     assert_eq!(stdout, "42\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_decodes_chunked_request_body() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.string;
+import std.map;
+import std.bytes;
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let raw_req = "POST /chunk HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+    let sent = match tcp_send(client, bytes.from_string(raw_req)) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+
+    let parsed_ok = match read_request(server, 4096, 1000) {
+        Ok(req) => if string.contains(req.method, "POST") &&
+            string.contains(req.path, "/chunk") &&
+            string.contains(req.body, "hello world") && len(req.body) == 11 &&
+            (match map.get(req.headers, "transfer-encoding") {
+                Some(v) => if string.contains(v, "chunked") { 1 } else { 0 },
+                None => 0,
+            }) == 1 {
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent > 0 && parsed_ok == 1 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_malformed_chunk_framing_returns_invalid_request() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, bytes.from_string("POST /bad-chunk HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\n0\r\n\r\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if code == 1 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_transfer_encoding_and_content_length_conflict_is_invalid_header() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, bytes.from_string("POST /conflict HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n5\r\nhello\r\n0\r\n\r\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if code == 3 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[test]
 fn exec_router_matches_paths_params_and_order() {
     let src = fs::read_to_string("examples/io/http_router.aic").expect("read router example");
@@ -9291,6 +9513,112 @@ fn main() -> Int effects { io } capabilities { io  } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "2\n");
+}
+
+#[test]
+fn exec_router_route_capacity_limit_override_is_enforced() {
+    let src = r#"
+import std.io;
+import std.router;
+
+fn err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn add_many(router: Router, remaining: Int) -> Result[Router, RouterError] {
+    if remaining == 0 {
+        Ok(router)
+    } else {
+        match add(router, "GET", "/cap", remaining) {
+            Ok(next) => add_many(next, remaining - 1),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let router = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let after_two = add_many(router, 2);
+    let overflow_code = match after_two {
+        Ok(next) => match add(next, "GET", "/overflow", 3) {
+            Ok(_) => 0,
+            Err(err) => err_code(err),
+        },
+        Err(err) => err_code(err) * 10,
+    };
+    if overflow_code == 3 {
+        print_int(42);
+    } else {
+        print_int(overflow_code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_ROUTER_ROUTES", "2")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_router_route_capacity_override_allows_above_legacy_cap() {
+    let src = r#"
+import std.io;
+import std.router;
+
+fn err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn add_many(router: Router, remaining: Int) -> Result[Router, RouterError] {
+    if remaining == 0 {
+        Ok(router)
+    } else {
+        match add(router, "GET", "/grow", remaining) {
+            Ok(next) => add_many(next, remaining - 1),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let router = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let code = match add_many(router, 130) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    if code == 0 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_ROUTER_ROUTES", "192")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
 }
 
 #[test]
@@ -9420,7 +9748,7 @@ fn main() -> Int effects { io } capabilities { io  } {
             Ok(_) => 0,
             Err(err) => err_code(err),
         },
-        Err(_) => 0,
+        Err(err) => err_code(err),
     };
 
     print_int(malformed * 1000 + wrong_type * 100 + invalid_number * 10 + invalid_string);
@@ -9430,6 +9758,79 @@ fn main() -> Int effects { io } capabilities { io  } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "1245\n");
+}
+
+#[test]
+fn exec_json_runtime_hardening_limits_and_format_failures_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.json;
+
+fn err_code(err: JsonError) -> Int {
+    match err {
+        InvalidJson => 1,
+        InvalidType => 2,
+        MissingField => 3,
+        InvalidNumber => 4,
+        InvalidString => 5,
+        InvalidInput => 6,
+        Internal => 7,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let over_depth = match parse("[[[[[0]]]]]") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let over_size = match parse("{\"payload\":\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\"}") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let invalid_escape = match parse("\"\\q\"") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let invalid_utf = match parse("\"\\uD800\"") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let malformed_number = match parse("01") {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let overflow_int = match parse("9223372036854775808") {
+        Ok(v) => match decode_int(v) {
+            Ok(_) => 0,
+            Err(err) => err_code(err),
+        },
+        Err(err) => err_code(err),
+    };
+    let overflow_float = match parse("1e309") {
+        Ok(v) => match decode_float(v) {
+            Ok(_) => 0,
+            Err(err) => err_code(err),
+        },
+        Err(err) => err_code(err),
+    };
+
+    let score = over_depth * 1000000 +
+        over_size * 100000 +
+        invalid_escape * 10000 +
+        invalid_utf * 1000 +
+        malformed_number * 100 +
+        overflow_int * 10 +
+        overflow_float;
+    print_int(score);
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_JSON_DEPTH", "4"), ("AIC_RT_LIMIT_JSON_BYTES", "48")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "6655444\n");
 }
 
 #[test]
