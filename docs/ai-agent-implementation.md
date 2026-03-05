@@ -7,6 +7,22 @@ Wave 5 numeric adoption planning artifacts:
 - `docs/numeric-api-adoption-wave5.md`
 - `docs/numeric-api-adoption-wave5.json`
 
+## Wave 5D Migration Markers (`#333`)
+
+- Agent-facing Wave 5D example markers: `wave5_migration_buffer_u32`, `wave5_numeric_end_to_end`.
+- Canonical verification snippet style should keep explicit test-suite selection (`--test`) to avoid command-shape drift.
+- Numeric drift + command policy guard reference: `tests/unit_tests.rs` (`unit_wave5d_docs_examples_and_command_policy_markers_are_present`).
+- Docs/examples CI wiring guard reference: `tests/agent_recipe_tests.rs` (`wave5d_numeric_docs_examples_and_ci_policy_are_consistent`).
+
+```bash
+cargo run --quiet --bin aic -- check examples/data/wave5_migration_buffer_u32.aic
+cargo run --quiet --bin aic -- run examples/data/wave5_migration_buffer_u32.aic
+cargo run --quiet --bin aic -- check examples/data/wave5_numeric_end_to_end.aic
+cargo run --quiet --bin aic -- run examples/data/wave5_numeric_end_to_end.aic
+cargo test --locked --test unit_tests unit_wave5d_docs_examples_and_command_policy_markers_are_present
+cargo test --locked --test agent_recipe_tests wave5d_numeric_docs_examples_and_ci_policy_are_consistent
+```
+
 Core language-specific deep dive:
 
 - `docs/core-language-1.0.md`

@@ -78,6 +78,19 @@ Required workflow for those issue IDs:
 
 ## Test Infrastructure Guide
 
+### Canonical Cargo Test Command Style (Wave 5D, `#333`)
+
+- Canonical targeted test command: `cargo test --locked --test <target> ...`
+- Canonical exact filter form: `cargo test --locked --test <target> -- --exact <case_name>`
+- Canonical ignored filter form: `cargo test --locked --test <target> -- --ignored`
+- Command-style guard references: keep `#329` guard checks in scope to detect ambiguous/non-canonical filtered invocations (`#329` issue state is unchanged by this policy).
+- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+
+Wave 5D examples:
+
+- `examples/data/wave5_numeric_end_to_end.aic`
+- `examples/data/wave5_migration_buffer_u32.aic`
+
 ### Unit and golden
 
 - Library/unit tests:

@@ -76,3 +76,16 @@ This document is the human-readable Wave 5A numeric typing matrix for std APIs.
 
 - Rows: `F1`, `F2`, `F3`.
 - Scope: `Float64` default policy, `Float` alias compatibility, and explicit-width interop points for `Float32`.
+
+#### Wave 5D Command-Style Policy (`#333`)
+
+- Canonical targeted test shape for rollout validation: `cargo test --locked --test <target> ...`
+- Canonical exact test shape when filtering: `cargo test --locked --test <target> -- --exact <case_name>`
+- Canonical ignored test shape: `cargo test --locked --test <target> -- --ignored`
+- Command-style guard references: use `#329` guard checks to detect ambiguous/non-canonical filtered invocations while keeping `#329` issue state unchanged.
+- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+
+Wave 5D examples:
+
+- `examples/data/wave5_numeric_end_to_end.aic`
+- `examples/data/wave5_migration_buffer_u32.aic`

@@ -9340,3 +9340,102 @@ fn unit_wave5a_numeric_api_adoption_json_has_required_rows_and_follow_up_links()
         "docs/numeric-api-adoption-wave5.json must include std.net port-domain decision rows"
     );
 }
+
+#[test]
+fn unit_wave5d_docs_examples_and_command_policy_markers_are_present() {
+    let migration_doc = fs::read_to_string("docs/fixed-width-primitives-migration.md")
+        .expect("read docs/fixed-width-primitives-migration.md");
+    let adoption_doc = fs::read_to_string("docs/numeric-api-adoption-wave5.md")
+        .expect("read docs/numeric-api-adoption-wave5.md");
+    let contributing_doc =
+        fs::read_to_string("docs/contributing.md").expect("read docs/contributing.md");
+    let io_doc =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let implementation_doc = fs::read_to_string("docs/ai-agent-implementation.md")
+        .expect("read docs/ai-agent-implementation.md");
+    let examples_ci =
+        fs::read_to_string("scripts/ci/examples.sh").expect("read scripts/ci/examples.sh");
+
+    for marker in [
+        "## Wave 5D command-style contract (`#333`)",
+        "cargo test --locked --test <target>",
+        "cargo test --locked wave5_numeric",
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        assert!(
+            migration_doc.contains(marker),
+            "docs/fixed-width-primitives-migration.md missing Wave 5D marker: {marker}"
+        );
+    }
+
+    for marker in [
+        "#### Wave 5D Command-Style Policy (`#333`)",
+        "cargo test --locked --test <target>",
+        "cargo test --locked wave5_numeric",
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        assert!(
+            adoption_doc.contains(marker),
+            "docs/numeric-api-adoption-wave5.md missing Wave 5D marker: {marker}"
+        );
+    }
+
+    for marker in [
+        "### Canonical Cargo Test Command Style (Wave 5D, `#333`)",
+        "cargo test --locked --test <target> ...",
+        "cargo test --locked --test <target> -- --exact <case_name>",
+        "cargo test --locked wave5_numeric",
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        assert!(
+            contributing_doc.contains(marker),
+            "docs/contributing.md missing Wave 5D marker: {marker}"
+        );
+    }
+
+    assert!(
+        io_doc.contains("## Wave 5D Migration Notes (`#333`)"),
+        "docs/io-api-reference.md missing Wave 5D section marker"
+    );
+    assert!(
+        implementation_doc.contains("## Wave 5D Migration Markers (`#333`)"),
+        "docs/ai-agent-implementation.md missing Wave 5D section marker"
+    );
+
+    for marker in [
+        "unit_wave5d_docs_examples_and_command_policy_markers_are_present",
+        "wave5d_numeric_docs_examples_and_ci_policy_are_consistent",
+    ] {
+        assert!(
+            io_doc.contains(marker),
+            "docs/io-api-reference.md missing Wave 5D marker: {marker}"
+        );
+        assert!(
+            implementation_doc.contains(marker),
+            "docs/ai-agent-implementation.md missing Wave 5D marker: {marker}"
+        );
+    }
+
+    for example in [
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        assert!(
+            examples_ci.contains(&format!("\"{example}\"")),
+            "scripts/ci/examples.sh must include Wave 5D example path: {example}"
+        );
+    }
+
+    for run_marker in [
+        "expect_run_value \"examples/data/wave5_numeric_end_to_end.aic\" \"42\"",
+        "expect_run_value \"examples/data/wave5_migration_buffer_u32.aic\" \"42\"",
+    ] {
+        assert!(
+            examples_ci.contains(run_marker),
+            "scripts/ci/examples.sh must include deterministic Wave 5D run assertion: {run_marker}"
+        );
+    }
+}

@@ -1,0 +1,81 @@
+import std.io;
+import std.net;
+import std.bytes;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn int_eq(v: Result[Int, NetError], expected: Int) -> Int {
+    match v {
+        Ok(value) => bool_to_int(value == expected),
+        Err(_) => 0,
+    }
+}
+
+fn u32_eq(v: Result[UInt32, NetError], expected: UInt32) -> Int {
+    match v {
+        Ok(value) => bool_to_int(value == expected),
+        Err(_) => 0,
+    }
+}
+
+fn frame_header_42() -> Bytes {
+    let mut raw: Vec[UInt8] = vec.new_vec();
+    raw = vec.push(raw, 0u8);
+    raw = vec.push(raw, 0u8);
+    raw = vec.push(raw, 0u8);
+    raw = vec.push(raw, 42u8);
+    match bytes.from_byte_values(raw) {
+        Ok(value) => value,
+        Err(_) => bytes.empty(),
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let header = frame_header_42();
+    let frame_len_u32_ok = u32_eq(tcp_stream_frame_len_be_u32(header), 42u32);
+    let frame_len_int_ok = int_eq(tcp_stream_frame_len_be(header), 42);
+
+    let int_to_u32_ok = u32_eq(net_int_to_u32(42), 42u32);
+    let int_to_u32_fail = match net_int_to_u32(-1) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let u32_to_int_ok = int_eq(net_u32_to_int(42u32), 42);
+    let u32_to_int_fail = match net_u32_to_int(2147483648u32) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+    let typed_port_ok = match net_int_to_u16(8080) {
+        Ok(port) => bool_to_int(net_u16_to_int(port) == 8080),
+        Err(_) => 0,
+    };
+
+    // Keep CI deterministic: typecheck runtime-bound wrappers without opening sockets.
+    if false {
+        let stream = TcpStream { handle: 7 };
+        let probe_tcp = tcp_stream_recv_u32(stream, 64u32, 1);
+        let probe_udp = udp_recv_from_u32(8, 64u32, 1);
+        let _unused = (probe_tcp, probe_udp);
+    } else {
+        ()
+    };
+
+    let score =
+        frame_len_u32_ok
+        + frame_len_int_ok
+        + int_to_u32_ok
+        + int_to_u32_fail
+        + u32_to_int_ok
+        + u32_to_int_fail
+        + typed_port_ok;
+
+    if score == 7 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}

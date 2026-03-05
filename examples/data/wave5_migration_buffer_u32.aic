@@ -1,0 +1,100 @@
+import std.io;
+import std.buffer;
+import std.bytes;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn u32_to_int(value: UInt32) -> Int {
+    let mut remaining = value;
+    let mut out = 0;
+    while remaining > 0u32 {
+        remaining = remaining - 1u32;
+        out = out + 1;
+    };
+    out
+}
+
+fn read_u32_as_int_or(v: Result[UInt32, BufferError], fallback: Int) -> Int {
+    match v {
+        Ok(value) => u32_to_int(value),
+        Err(_) => fallback,
+    }
+}
+
+fn read_payload_eq(v: Result[Bytes, BufferError], expected: Bytes) -> Int {
+    match v {
+        Ok(payload) => bool_to_int(bytes.compare_bytes(payload, expected) == 0),
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let two_u32: UInt32 = 2u32;
+    let expected_payload = bytes.from_string("OK");
+
+    let legacy = new_buffer(16);
+    let legacy_write_len_ok = match buf_write_u32_be(legacy, two_u32) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let legacy_write_payload_ok = match buf_write_bytes(legacy, expected_payload) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let legacy_position_ok = bool_to_int(buf_position(legacy) == 6);
+    let legacy_seek_ok = match buf_seek(legacy, 0) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let legacy_len_ok = bool_to_int(read_u32_as_int_or(buf_read_u32_be(legacy), -1) == 2);
+    let legacy_payload_ok = read_payload_eq(buf_read_bytes(legacy, 2), expected_payload);
+    let legacy_score =
+        legacy_write_len_ok
+        + legacy_write_payload_ok
+        + legacy_position_ok
+        + legacy_seek_ok
+        + legacy_len_ok
+        + legacy_payload_ok;
+
+    let recommended = match new_buffer_u32(16u32) {
+        Ok(value) => value,
+        Err(_) => new_buffer(16),
+    };
+    let recommended_write_len_ok = match buf_write_u32_be(recommended, two_u32) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recommended_write_payload_ok = match buf_write_bytes(recommended, expected_payload) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recommended_position_ok = bool_to_int(read_u32_as_int_or(buf_position_u32(recommended), -1) == 6);
+    let recommended_size_ok = bool_to_int(read_u32_as_int_or(buf_size_u32(recommended), -1) == 6);
+    let recommended_seek_ok = match buf_seek_u32(recommended, 0u32) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let recommended_len_ok = bool_to_int(read_u32_as_int_or(buf_read_u32_be(recommended), -1) == 2);
+    let recommended_payload_ok = read_payload_eq(buf_read_bytes_u32(recommended, two_u32), expected_payload);
+    let recommended_remaining_ok = bool_to_int(read_u32_as_int_or(buf_remaining_u32(recommended), -1) == 0);
+    let recommended_score =
+        recommended_write_len_ok
+        + recommended_write_payload_ok
+        + recommended_position_ok
+        + recommended_size_ok
+        + recommended_seek_ok
+        + recommended_len_ok
+        + recommended_payload_ok
+        + recommended_remaining_ok;
+
+    // Legacy Int APIs and recommended _u32 wrappers should both stay deterministic.
+    let score = legacy_score + recommended_score;
+    if score == 14 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}

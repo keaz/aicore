@@ -30,6 +30,13 @@ Covered modules:
 - Machine-readable matrix: `docs/numeric-api-adoption-wave5.json`.
 - Prior fixed-width scalar baseline: `docs/io-fixed-width-taxonomy-wave2.md`.
 
+## Wave 5D Migration Notes (`#333`)
+
+- Wave 5D example markers: `wave5_migration_buffer_u32`, `wave5_numeric_end_to_end`.
+- Canonical verification snippet style uses explicit test-suite selection: `cargo test --locked --test <suite> <case>`.
+- Numeric drift + command policy guard reference: `tests/unit_tests.rs` (`unit_wave5d_docs_examples_and_command_policy_markers_are_present`).
+- Docs/examples CI wiring guard reference: `tests/agent_recipe_tests.rs` (`wave5d_numeric_docs_examples_and_ci_policy_are_consistent`).
+
 ## Effect Taxonomy
 
 Known effects (from `src/effects.rs`):
@@ -1086,5 +1093,11 @@ cargo run --quiet --bin aic -- check examples/io/interactive_greeter.aic
 cargo run --quiet --bin aic -- check examples/io/tls_connect.aic
 cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic
+cargo run --quiet --bin aic -- check examples/data/wave5_migration_buffer_u32.aic
+cargo run --quiet --bin aic -- run examples/data/wave5_migration_buffer_u32.aic
+cargo run --quiet --bin aic -- check examples/data/wave5_numeric_end_to_end.aic
+cargo run --quiet --bin aic -- run examples/data/wave5_numeric_end_to_end.aic
+cargo test --locked --test unit_tests unit_wave5d_docs_examples_and_command_policy_markers_are_present
+cargo test --locked --test agent_recipe_tests wave5d_numeric_docs_examples_and_ci_policy_are_consistent
 cargo run --quiet --bin aic -- explain E2001
 ```

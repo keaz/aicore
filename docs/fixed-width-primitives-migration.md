@@ -90,6 +90,24 @@ Canonical Wave 2B examples for CI wiring:
   - `#332`: protocol field/frame length/port/code domain migration
   - `#333`: float math/serde/format width normalization and wrapper surfaces
 
+## Wave 5D command-style contract (`#333`)
+
+Wave 5D standardizes canonical targeted test commands for numeric adoption work:
+
+- Canonical suite command: `cargo test --locked --test <target> ...`
+- Canonical exact-case command: `cargo test --locked --test <target> -- --exact <case_name>`
+- Canonical ignored-case command: `cargo test --locked --test <target> -- --ignored`
+
+Command-style guard references (tracking only; `#329` state is unchanged):
+
+- `#329` guard checks should detect ambiguous/non-canonical filtered invocations that do not anchor on `--test <target>`.
+- Anti-pattern (ambiguous filtered invocation): `cargo test --locked wave5_numeric`
+
+Wave 5D examples:
+
+- `examples/data/wave5_numeric_end_to_end.aic`
+- `examples/data/wave5_migration_buffer_u32.aic`
+
 ## Net endpoint/port migration (`#332`, Wave 5C)
 
 Before (legacy string endpoint API):

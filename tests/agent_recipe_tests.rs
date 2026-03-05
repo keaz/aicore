@@ -2165,3 +2165,111 @@ fn wave5a_numeric_api_artifacts_are_cross_linked_and_issue_linked() {
         );
     }
 }
+
+#[test]
+fn wave5d_numeric_docs_examples_and_ci_policy_are_consistent() {
+    let root = repo_root();
+    let fixed_width_path = root.join("docs/fixed-width-primitives-migration.md");
+    let fixed_width_doc = fs::read_to_string(&fixed_width_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", fixed_width_path.display()));
+    let adoption_path = root.join("docs/numeric-api-adoption-wave5.md");
+    let adoption_doc = fs::read_to_string(&adoption_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", adoption_path.display()));
+    let io_doc_path = root.join("docs/io-api-reference.md");
+    let io_doc = fs::read_to_string(&io_doc_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", io_doc_path.display()));
+    let implementation_doc_path = root.join("docs/ai-agent-implementation.md");
+    let implementation_doc = fs::read_to_string(&implementation_doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read {}: {err}",
+            implementation_doc_path.display()
+        )
+    });
+    let contributing_path = root.join("docs/contributing.md");
+    let contributing_doc = fs::read_to_string(&contributing_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", contributing_path.display()));
+
+    for (doc, path) in [
+        (&fixed_width_doc, &fixed_width_path),
+        (&adoption_doc, &adoption_path),
+        (&io_doc, &io_doc_path),
+        (&implementation_doc, &implementation_doc_path),
+        (&contributing_doc, &contributing_path),
+    ] {
+        for marker in [
+            "Wave 5D",
+            "#333",
+            "examples/data/wave5_numeric_end_to_end.aic",
+            "examples/data/wave5_migration_buffer_u32.aic",
+        ] {
+            assert!(
+                doc.contains(marker),
+                "{} missing Wave 5D marker '{}'",
+                path.display(),
+                marker
+            );
+        }
+    }
+
+    for marker in [
+        "cargo test --locked --test <target> ...",
+        "cargo test --locked --test <target> -- --exact <case_name>",
+        "cargo test --locked wave5_numeric",
+    ] {
+        assert!(
+            contributing_doc.contains(marker),
+            "{} missing Wave 5D command-style marker '{}'",
+            contributing_path.display(),
+            marker
+        );
+    }
+
+    let examples_ci_path = root.join("scripts/ci/examples.sh");
+    let examples_ci = fs::read_to_string(&examples_ci_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", examples_ci_path.display()));
+    for example_rel in [
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        assert!(
+            root.join(example_rel).exists(),
+            "wave5d agent example missing: {}",
+            example_rel
+        );
+        assert!(
+            examples_ci.contains(&format!("\"{example_rel}\"")),
+            "{} must include Wave 5D example path '{}'",
+            examples_ci_path.display(),
+            example_rel
+        );
+    }
+    for run_marker in [
+        "expect_run_value \"examples/data/wave5_numeric_end_to_end.aic\" \"42\"",
+        "expect_run_value \"examples/data/wave5_migration_buffer_u32.aic\" \"42\"",
+    ] {
+        assert!(
+            examples_ci.contains(run_marker),
+            "{} missing Wave 5D deterministic run assertion '{}'",
+            examples_ci_path.display(),
+            run_marker
+        );
+    }
+
+    for example_rel in [
+        "examples/data/wave5_numeric_end_to_end.aic",
+        "examples/data/wave5_migration_buffer_u32.aic",
+    ] {
+        let check = Command::new(env!("CARGO_BIN_EXE_aic"))
+            .arg("check")
+            .arg(example_rel)
+            .current_dir(&root)
+            .output()
+            .unwrap_or_else(|err| panic!("failed to run `aic check {example_rel}`: {err}"));
+        assert!(
+            check.status.success(),
+            "`aic check {example_rel}` failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&check.stdout),
+            String::from_utf8_lossy(&check.stderr)
+        );
+    }
+}
