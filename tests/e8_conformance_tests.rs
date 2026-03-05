@@ -109,6 +109,8 @@ fn verification_quality_docs_cover_qv_gates() {
         .expect("read perf runbook");
     assert!(perf.contains("budget.v1.json"));
     assert!(perf.contains("Regression Triage"));
+    assert!(perf.contains("rest-runtime-soak-gate.v1.json"));
+    assert!(perf.contains("rest-runtime-soak-report.json"));
 
     let concurrency =
         fs::read_to_string(root.join("docs/verification-quality/concurrency-stress-replay.md"))
@@ -136,6 +138,11 @@ fn verification_quality_workflows_are_release_blocking() {
         "e8-concurrency-stress-linux",
         "Upload E8 perf report",
         "e8-perf-report-linux",
+        "Upload E8 REST runtime soak report",
+        "e8-rest-runtime-soak-linux",
+        "Run host REST runtime perf/soak gate suite",
+        "make test-e8-rest-runtime-soak",
+        "rest-runtime-soak-report.json",
     ] {
         assert!(ci.contains(token), "ci workflow missing token: {token}");
     }

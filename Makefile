@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -21,6 +21,7 @@ help:
 	@echo "  make test-exec     Run LLVM execution tests"
 	@echo "  make test-e7       Run E7 CLI + LSP integration tests"
 	@echo "  make test-e8       Run E8 verification/fuzz/diff/matrix/perf tests"
+	@echo "  make test-e8-rest-runtime-soak Run deterministic REST runtime parse/router/json/async soak gate"
 	@echo "  make test-e8-concurrency-stress Run deterministic concurrency stress/replay gate"
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make test-e9       Run E9 release/security operations tests"
@@ -95,6 +96,10 @@ test-e8:
 	$(CARGO) test --locked --test e8_matrix_tests
 	$(CARGO) test --locked --test e8_concurrency_stress_tests
 	$(CARGO) test --locked --test e8_perf_tests
+	python3 scripts/ci/rest-runtime-soak-gate.py
+
+test-e8-rest-runtime-soak:
+	python3 scripts/ci/rest-runtime-soak-gate.py
 
 test-e8-concurrency-stress:
 	$(CARGO) test --locked --test e8_concurrency_stress_tests

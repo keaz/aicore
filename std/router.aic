@@ -8,6 +8,15 @@
 /// Runtime route registration capacity is deterministic and configurable via
 /// `AIC_RT_LIMIT_ROUTER_ROUTES` (default: `128`, max: `4096`).
 /// Registering beyond the configured cap returns `RouterError::Capacity`.
+///
+/// Route conformance contract:
+/// - Method precedence: exact method > `*`.
+/// - Path precedence: static segment > `:param` segment > trailing `*`.
+/// - Overlapping definitions must be registered from higher to lower precedence.
+/// - Add-time ambiguity policy is deterministic:
+///   - overlapping routes with equal precedence are rejected with `RouterError::InvalidPattern`,
+///   - adding an overlapping higher-precedence route after a lower-precedence route is rejected
+///     with `RouterError::InvalidPattern`.
 module std.router;
 
 import std.map;

@@ -3127,6 +3127,82 @@ static long aic_rt_http_server_map_net_error(long net_err) {
     return 8;
 }
 
+#define AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT 8192L
+#define AIC_RT_HTTP_REQUEST_LINE_BYTES_MAX (1024L * 1024L)
+#define AIC_RT_HTTP_HEADER_BYTES_DEFAULT (32L * 1024L)
+#define AIC_RT_HTTP_HEADER_BYTES_MAX (4L * 1024L * 1024L)
+#define AIC_RT_HTTP_HEADER_COUNT_DEFAULT 128L
+#define AIC_RT_HTTP_HEADER_COUNT_MAX 4096L
+#define AIC_RT_HTTP_BODY_BYTES_DEFAULT (1024L * 1024L)
+#define AIC_RT_HTTP_BODY_BYTES_MAX (256L * 1024L * 1024L)
+#define AIC_RT_HTTP_READ_IDLE_MS_DEFAULT 1000L
+#define AIC_RT_HTTP_READ_IDLE_MS_MAX (60L * 1000L)
+#define AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT (30L * 1000L)
+#define AIC_RT_HTTP_READ_TOTAL_MS_MAX (5L * 60L * 1000L)
+
+static long aic_rt_http_request_line_bytes_limit = AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT;
+static long aic_rt_http_header_bytes_limit = AIC_RT_HTTP_HEADER_BYTES_DEFAULT;
+static long aic_rt_http_header_count_limit = AIC_RT_HTTP_HEADER_COUNT_DEFAULT;
+static long aic_rt_http_body_bytes_limit = AIC_RT_HTTP_BODY_BYTES_DEFAULT;
+static long aic_rt_http_read_idle_ms_limit = AIC_RT_HTTP_READ_IDLE_MS_DEFAULT;
+static long aic_rt_http_read_total_ms_limit = AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT;
+static pthread_once_t aic_rt_http_limits_once = PTHREAD_ONCE_INIT;
+
+static void aic_rt_http_limits_init(void) {
+    aic_rt_http_request_line_bytes_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_REQUEST_LINE_BYTES",
+        AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT,
+        1,
+        AIC_RT_HTTP_REQUEST_LINE_BYTES_MAX
+    );
+    aic_rt_http_header_bytes_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_HEADER_BYTES",
+        AIC_RT_HTTP_HEADER_BYTES_DEFAULT,
+        1,
+        AIC_RT_HTTP_HEADER_BYTES_MAX
+    );
+    aic_rt_http_header_count_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_HEADER_COUNT",
+        AIC_RT_HTTP_HEADER_COUNT_DEFAULT,
+        1,
+        AIC_RT_HTTP_HEADER_COUNT_MAX
+    );
+    aic_rt_http_body_bytes_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_BODY_BYTES",
+        AIC_RT_HTTP_BODY_BYTES_DEFAULT,
+        1,
+        AIC_RT_HTTP_BODY_BYTES_MAX
+    );
+    aic_rt_http_read_idle_ms_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_READ_IDLE_MS",
+        AIC_RT_HTTP_READ_IDLE_MS_DEFAULT,
+        1,
+        AIC_RT_HTTP_READ_IDLE_MS_MAX
+    );
+    aic_rt_http_read_total_ms_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_HTTP_READ_TOTAL_MS",
+        AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT,
+        1,
+        AIC_RT_HTTP_READ_TOTAL_MS_MAX
+    );
+}
+
+static void aic_rt_http_limits_ensure(void) {
+    (void)pthread_once(&aic_rt_http_limits_once, aic_rt_http_limits_init);
+}
+
+static long aic_rt_http_now_ms(void) {
+#ifdef CLOCK_MONOTONIC
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+        long sec_ms = (long)now.tv_sec * 1000L;
+        long nsec_ms = (long)(now.tv_nsec / 1000000L);
+        return sec_ms + nsec_ms;
+    }
+#endif
+    return -1;
+}
+
 static int aic_rt_http_server_parse_decimal(const char* ptr, size_t len, long* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
@@ -3218,12 +3294,14 @@ static int aic_rt_http_server_parse_transfer_encoding(
  *   0 => complete and valid chunked body
  *   1 => syntactically valid prefix but incomplete payload
  *   2 => malformed chunk framing
+ *   3 => decoded body exceeds configured body limit
  */
 static int aic_rt_http_server_chunked_parse(
     const char* body_ptr,
     size_t body_len,
     char* decoded_out,
     size_t decoded_cap,
+    size_t max_decoded,
     size_t* out_wire_len,
     size_t* out_decoded_len
 ) {
@@ -3315,6 +3393,9 @@ static int aic_rt_http_server_chunked_parse(
 
         if (chunk_size > (SIZE_MAX - decoded_written)) {
             return 2;
+        }
+        if (decoded_written + chunk_size > max_decoded) {
+            return 3;
         }
         if (cursor + chunk_size > body_len) {
             return 1;
@@ -3440,7 +3521,8 @@ static long aic_rt_http_server_headers_to_map(
     long* out_handle,
     long* out_content_length,
     int* out_has_content_length,
-    int* out_has_chunked_transfer
+    int* out_has_chunked_transfer,
+    long header_count_limit
 ) {
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -3472,6 +3554,7 @@ static long aic_rt_http_server_headers_to_map(
     long seen_content_length_value = 0;
     int seen_transfer_encoding = 0;
     int seen_chunked_transfer = 0;
+    long header_count = 0;
     size_t cursor = 0;
     while (cursor < headers_len) {
         size_t line_end = cursor;
@@ -3486,6 +3569,10 @@ static long aic_rt_http_server_headers_to_map(
         if (logical_end == cursor) {
             cursor = next_cursor;
             continue;
+        }
+        header_count += 1;
+        if (header_count > header_count_limit) {
+            return 3;
         }
 
         size_t colon = cursor;
@@ -3646,6 +3733,29 @@ long aic_rt_http_server_read_request(
     if (max_bytes <= 0) {
         return 7;
     }
+    if (timeout_ms < 0) {
+        return 8;
+    }
+    aic_rt_http_limits_ensure();
+
+    size_t request_line_limit = (size_t)aic_rt_http_request_line_bytes_limit;
+    size_t header_bytes_limit = (size_t)aic_rt_http_header_bytes_limit;
+    long header_count_limit = aic_rt_http_header_count_limit;
+    size_t body_bytes_limit = (size_t)aic_rt_http_body_bytes_limit;
+    long read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
+    long effective_total_timeout_ms =
+        timeout_ms > 0 ? timeout_ms : aic_rt_http_read_total_ms_limit;
+    long deadline_ms = -1;
+    if (effective_total_timeout_ms > 0) {
+        long now_ms = aic_rt_http_now_ms();
+        if (now_ms >= 0) {
+            if (effective_total_timeout_ms > LONG_MAX - now_ms) {
+                deadline_ms = LONG_MAX;
+            } else {
+                deadline_ms = now_ms + effective_total_timeout_ms;
+            }
+        }
+    }
 
     size_t max_payload = (size_t)max_bytes;
     char* payload = (char*)malloc(max_payload + 1);
@@ -3675,6 +3785,14 @@ long aic_rt_http_server_read_request(
                     free(payload);
                     return 1;
                 }
+                size_t request_line_len = line_end;
+                if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                    request_line_len--;
+                }
+                if (request_line_len > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
 
                 size_t headers_start = line_end + 1;
                 if (headers_start > header_marker) {
@@ -3682,13 +3800,18 @@ long aic_rt_http_server_read_request(
                     return 1;
                 }
                 size_t headers_len = header_marker - headers_start;
+                if (headers_len > header_bytes_limit) {
+                    free(payload);
+                    return 3;
+                }
                 long headers_rc = aic_rt_http_server_headers_to_map(
                     payload + headers_start,
                     headers_len,
                     &headers_handle,
                     &content_length,
                     &has_content_length,
-                    &has_chunked_transfer
+                    &has_chunked_transfer,
+                    header_count_limit
                 );
                 if (headers_rc != 0) {
                     free(payload);
@@ -3699,6 +3822,7 @@ long aic_rt_http_server_read_request(
                 if (has_content_length) {
                     size_t body_start = header_marker + delimiter_len;
                     if (content_length < 0 ||
+                        (size_t)content_length > body_bytes_limit ||
                         body_start > max_payload ||
                         (size_t)content_length > (max_payload - body_start)) {
                         free(payload);
@@ -3717,6 +3841,7 @@ long aic_rt_http_server_read_request(
                     available_body,
                     NULL,
                     0,
+                    body_bytes_limit,
                     &wire_len,
                     &decoded_len
                 );
@@ -3726,6 +3851,10 @@ long aic_rt_http_server_read_request(
                 if (chunk_rc == 2) {
                     free(payload);
                     return 1;
+                }
+                if (chunk_rc == 3) {
+                    free(payload);
+                    return 7;
                 }
             } else if (has_content_length && available_body >= (size_t)content_length) {
                 break;
@@ -3739,10 +3868,60 @@ long aic_rt_http_server_read_request(
             return 7;
         }
 
+        if (line_end == SIZE_MAX) {
+            for (size_t i = 0; i < payload_n; ++i) {
+                if (payload[i] == '\n') {
+                    line_end = i;
+                    break;
+                }
+            }
+            if (line_end == SIZE_MAX) {
+                if (payload_n > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
+            } else {
+                size_t request_line_len = line_end;
+                if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                    request_line_len--;
+                }
+                if (request_line_len > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
+            }
+        }
+        if (header_marker == SIZE_MAX && line_end != SIZE_MAX && line_end + 1 <= payload_n) {
+            size_t header_prefix_len = payload_n - (line_end + 1);
+            if (header_prefix_len > header_bytes_limit + 4) {
+                free(payload);
+                return 3;
+            }
+        }
+
+        long recv_timeout_ms = read_idle_ms_limit;
+        if (deadline_ms >= 0) {
+            long now_ms = aic_rt_http_now_ms();
+            if (now_ms >= 0) {
+                if (now_ms >= deadline_ms) {
+                    free(payload);
+                    return 5;
+                }
+                long remaining_deadline = deadline_ms - now_ms;
+                if (recv_timeout_ms > remaining_deadline) {
+                    recv_timeout_ms = remaining_deadline;
+                }
+            }
+        }
+        if (recv_timeout_ms <= 0) {
+            free(payload);
+            return 5;
+        }
+
         long remaining = (long)(max_payload - payload_n);
         char* chunk = NULL;
         long chunk_len = 0;
-        long recv_rc = aic_rt_net_tcp_recv(conn, remaining, timeout_ms, &chunk, &chunk_len);
+        long recv_rc = aic_rt_net_tcp_recv(conn, remaining, recv_timeout_ms, &chunk, &chunk_len);
         if (recv_rc != 0) {
             free(chunk);
             free(payload);
@@ -3777,6 +3956,24 @@ long aic_rt_http_server_read_request(
             if (aic_rt_http_server_find_header_delimiter(payload, payload_n, &found_marker, &found_delim)) {
                 header_marker = found_marker;
                 delimiter_len = found_delim;
+            }
+        }
+
+        if (line_end != SIZE_MAX) {
+            size_t request_line_len = line_end;
+            if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                request_line_len--;
+            }
+            if (request_line_len > request_line_limit) {
+                free(payload);
+                return 1;
+            }
+        }
+        if (header_marker == SIZE_MAX && line_end != SIZE_MAX && line_end + 1 <= payload_n) {
+            size_t header_prefix_len = payload_n - (line_end + 1);
+            if (header_prefix_len > header_bytes_limit + 4) {
+                free(payload);
+                return 3;
             }
         }
     }
@@ -3934,6 +4131,7 @@ long aic_rt_http_server_read_request(
             available_body,
             NULL,
             0,
+            body_bytes_limit,
             &wire_len,
             &decoded_len
         );
@@ -3949,6 +4147,12 @@ long aic_rt_http_server_read_request(
             free(payload);
             return 1;
         }
+        if (chunk_rc == 3) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 7;
+        }
         body_owned = (char*)malloc(decoded_len + 1);
         if (body_owned == NULL) {
             free(path_owned);
@@ -3961,6 +4165,7 @@ long aic_rt_http_server_read_request(
             available_body,
             body_owned,
             decoded_len,
+            body_bytes_limit,
             &wire_len,
             &decoded_len
         );
@@ -3969,7 +4174,13 @@ long aic_rt_http_server_read_request(
             free(path_owned);
             free(method_owned);
             free(payload);
-            return copy_rc == 1 ? 6 : 1;
+            if (copy_rc == 1) {
+                return 6;
+            }
+            if (copy_rc == 3) {
+                return 7;
+            }
+            return 1;
         }
         body_len = decoded_len;
         body_owned[body_len] = '\0';
@@ -3983,6 +4194,12 @@ long aic_rt_http_server_read_request(
                 free(payload);
                 return 6;
             }
+        }
+        if (body_len > body_bytes_limit) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 7;
         }
         body_owned = aic_rt_copy_bytes(payload + body_start, body_len);
         if (body_owned == NULL) {
@@ -4250,6 +4467,285 @@ static AicRtRouterSlot* aic_rt_router_get_slot(long handle) {
         return NULL;
     }
     return slot;
+}
+
+static void aic_rt_router_next_segment(
+    const char* text_ptr,
+    size_t text_len,
+    size_t* cursor,
+    const char** out_ptr,
+    size_t* out_len,
+    int* out_done
+);
+
+static int aic_rt_router_method_is_wildcard(const char* method_ptr, size_t method_len) {
+    return method_ptr != NULL && method_len == 1 && method_ptr[0] == '*';
+}
+
+static int aic_rt_router_method_overlaps(
+    const AicRtRouterRoute* route,
+    const char* method_ptr,
+    size_t method_len
+) {
+    if (route == NULL || route->method_ptr == NULL || method_ptr == NULL) {
+        return 0;
+    }
+    if (aic_rt_router_method_is_wildcard(route->method_ptr, (size_t)route->method_len) ||
+        aic_rt_router_method_is_wildcard(method_ptr, method_len)) {
+        return 1;
+    }
+    if ((size_t)route->method_len != method_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < method_len; ++i) {
+        if (aic_rt_router_ascii_upper(route->method_ptr[i]) !=
+            aic_rt_router_ascii_upper(method_ptr[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int aic_rt_router_method_precedence_compare(
+    const AicRtRouterRoute* existing,
+    const char* method_ptr,
+    size_t method_len
+) {
+    if (existing == NULL || existing->method_ptr == NULL || method_ptr == NULL) {
+        return 0;
+    }
+    int existing_rank =
+        aic_rt_router_method_is_wildcard(existing->method_ptr, (size_t)existing->method_len)
+            ? 0
+            : 1;
+    int new_rank = aic_rt_router_method_is_wildcard(method_ptr, method_len) ? 0 : 1;
+    if (new_rank > existing_rank) {
+        return 1;
+    }
+    if (new_rank < existing_rank) {
+        return -1;
+    }
+    return 0;
+}
+
+static int aic_rt_router_segment_type(const char* segment_ptr, size_t segment_len) {
+    if (segment_ptr == NULL || segment_len == 0) {
+        return 0;
+    }
+    if (segment_len == 1 && segment_ptr[0] == '*') {
+        return 3; /* wildcard */
+    }
+    if (segment_ptr[0] == ':') {
+        return 2; /* param */
+    }
+    return 1; /* static */
+}
+
+static int aic_rt_router_segment_rank_for_precedence(int segment_type) {
+    switch (segment_type) {
+        case 3:
+            return 1; /* wildcard */
+        case 2:
+            return 2; /* param */
+        case 1:
+            return 3; /* static */
+        default:
+            return 0;
+    }
+}
+
+static int aic_rt_router_patterns_overlap(
+    const char* existing_ptr,
+    size_t existing_len,
+    const char* new_ptr,
+    size_t new_len
+) {
+    size_t existing_cursor = 0;
+    size_t new_cursor = 0;
+
+    while (1) {
+        const char* existing_seg_ptr = NULL;
+        size_t existing_seg_len = 0;
+        int existing_done = 0;
+        const char* new_seg_ptr = NULL;
+        size_t new_seg_len = 0;
+        int new_done = 0;
+
+        aic_rt_router_next_segment(
+            existing_ptr,
+            existing_len,
+            &existing_cursor,
+            &existing_seg_ptr,
+            &existing_seg_len,
+            &existing_done
+        );
+        aic_rt_router_next_segment(
+            new_ptr,
+            new_len,
+            &new_cursor,
+            &new_seg_ptr,
+            &new_seg_len,
+            &new_done
+        );
+
+        if (existing_done && new_done) {
+            return 1;
+        }
+
+        if (existing_done) {
+            int new_type = aic_rt_router_segment_type(new_seg_ptr, new_seg_len);
+            return new_type == 3 ? 1 : 0;
+        }
+        if (new_done) {
+            int existing_type = aic_rt_router_segment_type(existing_seg_ptr, existing_seg_len);
+            return existing_type == 3 ? 1 : 0;
+        }
+
+        int existing_type = aic_rt_router_segment_type(existing_seg_ptr, existing_seg_len);
+        int new_type = aic_rt_router_segment_type(new_seg_ptr, new_seg_len);
+        if (existing_type == 3 || new_type == 3) {
+            return 1;
+        }
+
+        if (existing_type == 1 && new_type == 1) {
+            if (existing_seg_len != new_seg_len ||
+                memcmp(existing_seg_ptr, new_seg_ptr, existing_seg_len) != 0) {
+                return 0;
+            }
+        }
+    }
+}
+
+/*
+ * Compares path precedence between an existing route and a new route.
+ * Returns:
+ *   1  => new pattern has higher precedence
+ *  -1  => existing pattern has higher precedence
+ *   0  => equal precedence (or no decisive precedence)
+ */
+static int aic_rt_router_pattern_precedence_compare(
+    const char* existing_ptr,
+    size_t existing_len,
+    const char* new_ptr,
+    size_t new_len
+) {
+    size_t existing_cursor = 0;
+    size_t new_cursor = 0;
+
+    while (1) {
+        const char* existing_seg_ptr = NULL;
+        size_t existing_seg_len = 0;
+        int existing_done = 0;
+        const char* new_seg_ptr = NULL;
+        size_t new_seg_len = 0;
+        int new_done = 0;
+
+        aic_rt_router_next_segment(
+            existing_ptr,
+            existing_len,
+            &existing_cursor,
+            &existing_seg_ptr,
+            &existing_seg_len,
+            &existing_done
+        );
+        aic_rt_router_next_segment(
+            new_ptr,
+            new_len,
+            &new_cursor,
+            &new_seg_ptr,
+            &new_seg_len,
+            &new_done
+        );
+
+        if (existing_done && new_done) {
+            return 0;
+        }
+        if (existing_done) {
+            int new_type = aic_rt_router_segment_type(new_seg_ptr, new_seg_len);
+            if (new_type == 3) {
+                return -1;
+            }
+            return 0;
+        }
+        if (new_done) {
+            int existing_type = aic_rt_router_segment_type(existing_seg_ptr, existing_seg_len);
+            if (existing_type == 3) {
+                return 1;
+            }
+            return 0;
+        }
+
+        int existing_type = aic_rt_router_segment_type(existing_seg_ptr, existing_seg_len);
+        int new_type = aic_rt_router_segment_type(new_seg_ptr, new_seg_len);
+        int existing_rank = aic_rt_router_segment_rank_for_precedence(existing_type);
+        int new_rank = aic_rt_router_segment_rank_for_precedence(new_type);
+        if (new_rank > existing_rank) {
+            return 1;
+        }
+        if (new_rank < existing_rank) {
+            return -1;
+        }
+
+        if (existing_type == 1 && new_type == 1) {
+            if (existing_seg_len != new_seg_len ||
+                memcmp(existing_seg_ptr, new_seg_ptr, existing_seg_len) != 0) {
+                return 0;
+            }
+        } else if (existing_type == 3 && new_type == 3) {
+            return 0;
+        }
+    }
+}
+
+/*
+ * Enforces deterministic precedence and ambiguity rules for overlapping routes.
+ * Returns 0 when registration is allowed.
+ * Returns 1 (InvalidPattern) when overlapping definitions are ambiguous or
+ * violate required registration precedence.
+ */
+static long aic_rt_router_check_route_conflicts(
+    const AicRtRouterSlot* slot,
+    const char* method_ptr,
+    size_t method_len,
+    const char* pattern_ptr,
+    size_t pattern_len
+) {
+    if (slot == NULL || slot->routes == NULL || method_ptr == NULL || pattern_ptr == NULL) {
+        return 4;
+    }
+
+    for (long i = 0; i < slot->len; ++i) {
+        const AicRtRouterRoute* existing = &slot->routes[i];
+        if (!existing->active) {
+            continue;
+        }
+        if (!aic_rt_router_method_overlaps(existing, method_ptr, method_len)) {
+            continue;
+        }
+        if (!aic_rt_router_patterns_overlap(
+                existing->pattern_ptr,
+                (size_t)existing->pattern_len,
+                pattern_ptr,
+                pattern_len)) {
+            continue;
+        }
+
+        int method_cmp = aic_rt_router_method_precedence_compare(existing, method_ptr, method_len);
+        int path_cmp = aic_rt_router_pattern_precedence_compare(
+            existing->pattern_ptr,
+            (size_t)existing->pattern_len,
+            pattern_ptr,
+            pattern_len
+        );
+
+        int new_higher = (method_cmp > 0) || (method_cmp == 0 && path_cmp > 0);
+        int equal_precedence = (method_cmp == 0 && path_cmp == 0);
+        if (new_higher || equal_precedence) {
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 static int aic_rt_router_validate_method(const char* method_ptr, size_t method_len) {
@@ -4524,6 +5020,16 @@ long aic_rt_router_add(
     }
     if (slot->routes == NULL) {
         return 4;
+    }
+    long conflict_rc = aic_rt_router_check_route_conflicts(
+        slot,
+        method_ptr,
+        (size_t)method_len,
+        pattern_ptr,
+        (size_t)pattern_len
+    );
+    if (conflict_rc != 0) {
+        return conflict_rc;
     }
 
     char* method_owned = aic_rt_copy_bytes(method_ptr, (size_t)method_len);

@@ -140,6 +140,16 @@ jobs:
           path: target/e8/perf-report.json
           if-no-files-found: ignore
 
+      - name: Upload E8 REST runtime soak report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e8-rest-runtime-soak-linux
+          path: |
+            target/e8/rest-runtime-soak-report.json
+            target/e8/rest-runtime-soak-report-linux.json
+          if-no-files-found: ignore
+
   execution-matrix:
     name: Execution Matrix (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -170,6 +180,9 @@ jobs:
       - name: Run host perf gate suite
         run: cargo test --locked --test e8_perf_tests
 
+      - name: Run host REST runtime perf/soak gate suite
+        run: make test-e8-rest-runtime-soak
+
       - name: Upload E8 perf trend artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -179,6 +192,8 @@ jobs:
             target/e8/perf-report.json
             target/e8/perf-report-*.json
             target/e8/perf-trend-*.json
+            target/e8/rest-runtime-soak-report.json
+            target/e8/rest-runtime-soak-report-*.json
           if-no-files-found: ignore
 
   cross-platform-build:

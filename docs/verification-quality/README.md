@@ -17,9 +17,10 @@ This documentation set is for agents that need to write verifier-friendly AIC co
 
 | Scope | Workflow/job | Command | Artifacts |
 |---|---|---|---|
-| QV-T1..QV-T5 PR/push gate | `.github/workflows/ci.yml` / `tests-linux-full` (`E8 verification gates`) | `make test-e8` | `target/e8/perf-report.json` (uploaded as `e8-perf-report-linux`) |
+| QV-T1..QV-T5 PR/push gate | `.github/workflows/ci.yml` / `tests-linux-full` (`E8 verification gates`) | `make test-e8` | `target/e8/perf-report.json` (uploaded as `e8-perf-report-linux`) and `target/e8/rest-runtime-soak-report*.json` (uploaded as `e8-rest-runtime-soak-linux`) |
 | AGX3-T3 concurrency stress artifact capture | `.github/workflows/ci.yml` / `tests-linux-full` (`Upload E8 concurrency stress artifacts`) | `cargo test --locked --test e8_concurrency_stress_tests` (via `make test-e8`) | `target/e8/concurrency-stress-report.json`, `target/e8/concurrency-stress-schedule.json`, `target/e8/concurrency-stress-replay.txt` (uploaded as `e8-concurrency-stress-linux`) |
 | QV-T5 cross-host perf trend | `.github/workflows/ci.yml` / `execution-matrix` (`Run host perf gate suite`) | `cargo test --locked --test e8_perf_tests` | `target/e8/perf-report.json`, `target/e8/perf-report-*.json`, `target/e8/perf-trend-*.json` (uploaded as `e8-perf-${os}`) |
+| QV-T5 cross-host REST runtime soak | `.github/workflows/ci.yml` / `execution-matrix` (`Run host REST runtime perf/soak gate suite`) | `make test-e8-rest-runtime-soak` | `target/e8/rest-runtime-soak-report.json`, `target/e8/rest-runtime-soak-report-*.json` (uploaded in `e8-perf-${os}` artifact bundle) |
 | QV-T3 nightly fuzz stress | `.github/workflows/nightly-fuzz.yml` / `fuzz-nightly` | `make test-e8-nightly-fuzz` | `target/e8/nightly-fuzz-report.json`, `target/e8/fuzz-crashers` (uploaded as `nightly-fuzz-report`) |
 
 ## Release-Blocking Policy

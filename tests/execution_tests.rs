@@ -9474,6 +9474,370 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     assert_eq!(stdout, "42\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_guardrail_request_line_limit_returns_invalid_request() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, bytes.from_string("GET /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) { Ok(_) => 1, Err(_) => 0 };
+    let closed_server = match close(server) { Ok(_) => 1, Err(_) => 0 };
+    let closed_listener = match close(listener) { Ok(_) => 1, Err(_) => 0 };
+
+    if code == 1 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_HTTP_REQUEST_LINE_BYTES", "24")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_guardrail_header_bytes_limit_returns_invalid_header() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let addr = match tcp_local_addr(listener) { Ok(v) => v, Err(_) => "" };
+    let client = match tcp_connect(addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let server = match accept(listener, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    tcp_send(client, bytes.from_string("GET /h HTTP/1.1\r\nHost: localhost\r\nX-Long: 12345678901234567890\r\n\r\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) { Ok(_) => 1, Err(_) => 0 };
+    let closed_server = match close(server) { Ok(_) => 1, Err(_) => 0 };
+    let closed_listener = match close(listener) { Ok(_) => 1, Err(_) => 0 };
+
+    if code == 3 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_HTTP_HEADER_BYTES", "24")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_guardrail_header_count_limit_returns_invalid_header() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let addr = match tcp_local_addr(listener) { Ok(v) => v, Err(_) => "" };
+    let client = match tcp_connect(addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let server = match accept(listener, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    tcp_send(client, bytes.from_string("GET /h HTTP/1.1\r\nHost: localhost\r\nX-A: 1\r\n\r\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) { Ok(_) => 1, Err(_) => 0 };
+    let closed_server = match close(server) { Ok(_) => 1, Err(_) => 0 };
+    let closed_listener = match close(listener) { Ok(_) => 1, Err(_) => 0 };
+
+    if code == 3 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_HTTP_HEADER_COUNT", "1")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_guardrail_body_limit_returns_body_too_large() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match listen("127.0.0.1:0") { Ok(h) => h, Err(_) => 0 };
+    let addr = match tcp_local_addr(listener) { Ok(v) => v, Err(_) => "" };
+    let client = match tcp_connect(addr, 1000) { Ok(h) => h, Err(_) => 0 };
+    let server = match accept(listener, 1000) { Ok(h) => h, Err(_) => 0 };
+
+    tcp_send(client, bytes.from_string("POST /b HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) { Ok(_) => 1, Err(_) => 0 };
+    let closed_server = match close(server) { Ok(_) => 1, Err(_) => 0 };
+    let closed_listener = match close(listener) { Ok(_) => 1, Err(_) => 0 };
+
+    if code == 7 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let envs = [("AIC_RT_LIMIT_HTTP_BODY_BYTES", "4")];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_guardrail_idle_timeout_returns_timeout() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.env;
+import std.fs;
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } {
+    let addr_file = read_env_or("AIC_HTTP_ADDR_FILE", "http_guard_addr.txt");
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let published = match write_text(addr_file, addr) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 15000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let code = match read_request(server, 4096, 15000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_server = match close(server) { Ok(_) => 1, Err(_) => 0 };
+    let closed_listener = match close(listener) { Ok(_) => 1, Err(_) => 0 };
+
+    if published == 1 && code == 5 && closed_server + closed_listener == 2 {
+        print_int(42);
+    } else {
+        print_int(code);
+    };
+    0
+}
+"#;
+
+    let addr_file_rel = "http_guard_addr.txt";
+    let envs = [
+        ("AIC_HTTP_ADDR_FILE", addr_file_rel),
+        ("AIC_RT_LIMIT_HTTP_READ_IDLE_MS", "40"),
+        ("AIC_RT_LIMIT_HTTP_READ_TOTAL_MS", "5000"),
+    ];
+
+    let client_thread: std::sync::Arc<
+        std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let client_thread_setup = std::sync::Arc::clone(&client_thread);
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            let addr_file = root.join(addr_file_rel);
+            let handle = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(15);
+                let mut connect_addr: Option<String> = None;
+                while Instant::now() < deadline {
+                    if let Ok(value) = fs::read_to_string(&addr_file) {
+                        let trimmed = value.trim();
+                        if !trimmed.is_empty() {
+                            connect_addr = Some(trimmed.to_string());
+                            break;
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+
+                let connect_addr = connect_addr.expect("server did not publish listen address");
+                let mut stream = loop {
+                    if Instant::now() >= deadline {
+                        panic!("client failed to connect to server");
+                    }
+                    match std::net::TcpStream::connect(&connect_addr) {
+                        Ok(stream) => break stream,
+                        Err(_) => std::thread::sleep(Duration::from_millis(20)),
+                    }
+                };
+
+                stream.set_nodelay(true).expect("set_nodelay");
+                stream
+                    .write_all(
+                        b"POST /idle HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhe",
+                    )
+                    .expect("write partial request");
+                stream.flush().expect("flush partial request");
+                std::thread::sleep(Duration::from_millis(200));
+            });
+            *client_thread_setup.lock().expect("store client thread") = Some(handle);
+        });
+
+    if let Some(handle) = client_thread
+        .lock()
+        .expect("take client thread")
+        .take()
+    {
+        handle.join().expect("client thread join");
+    } else {
+        panic!("client thread was not started");
+    }
+
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
 #[test]
 fn exec_router_matches_paths_params_and_order() {
     let src = fs::read_to_string("examples/io/http_router.aic").expect("read router example");
@@ -9516,10 +9880,243 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_router_precedence_static_param_wildcard_and_method_filtering() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.router;
+import std.string;
+
+fn str_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && string.contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn route_id(router: Router, method: String, path: String) -> Int {
+    match match_route(router, method, path) {
+        Ok(found) => match found {
+            Some(value) => value.route_id,
+            None => 0,
+        },
+        Err(_) => -1,
+    }
+}
+
+fn route_param_or_empty(router: Router, method: String, path: String, key: String) -> String {
+    match match_route(router, method, path) {
+        Ok(found) => match found {
+            Some(value) => match map.get(value.params, key) {
+                Some(v) => v,
+                None => "",
+            },
+            None => "",
+        },
+        Err(_) => "",
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let router0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let router1 = match add(router0, "GET", "/users/me", 10) {
+        Ok(value) => value,
+        Err(_) => router0,
+    };
+    let router2 = match add(router1, "GET", "/users/:id", 20) {
+        Ok(value) => value,
+        Err(_) => router1,
+    };
+    let router3 = match add(router2, "GET", "/users/*", 30) {
+        Ok(value) => value,
+        Err(_) => router2,
+    };
+    let router4 = match add(router3, "*", "/users/*", 40) {
+        Ok(value) => value,
+        Err(_) => router3,
+    };
+
+    let static_ok = if route_id(router4, "GET", "/users/me") == 10 { 1 } else { 0 };
+    let param_ok = if route_id(router4, "GET", "/users/42") == 20 &&
+        str_eq(route_param_or_empty(router4, "GET", "/users/42", "id"), "42") == 1 {
+        1
+    } else {
+        0
+    };
+    let wildcard_ok = if route_id(router4, "GET", "/users/42/profile") == 30 &&
+        len(route_param_or_empty(router4, "GET", "/users/42/profile", "id")) == 0 {
+        1
+    } else {
+        0
+    };
+    let method_fallback_ok = if route_id(router4, "POST", "/users/42/profile") == 40 {
+        1
+    } else {
+        0
+    };
+
+    if static_ok + param_ok + wildcard_ok + method_fallback_ok == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_router_ambiguity_rejects_equal_precedence_overlap() {
+    let src = r#"
+import std.io;
+import std.router;
+
+fn err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let router0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let router1 = match add(router0, "GET", "/users/:id", 1) {
+        Ok(value) => value,
+        Err(_) => router0,
+    };
+    let first_conflict = match add(router1, "GET", "/users/:name", 2) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let second_conflict = match add(router1, "GET", "/users/:id", 3) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    if first_conflict == 1 && second_conflict == 1 {
+        print_int(42);
+    } else {
+        print_int(first_conflict * 10 + second_conflict);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_router_ambiguity_rejects_precedence_violating_registration_order() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.router;
+import std.string;
+
+fn err_code(err: RouterError) -> Int {
+    match err {
+        InvalidPattern => 1,
+        InvalidMethod => 2,
+        Capacity => 3,
+        Internal => 4,
+    }
+}
+
+fn str_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && string.contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn route_id(router: Router, method: String, path: String) -> Int {
+    match match_route(router, method, path) {
+        Ok(found) => match found {
+            Some(value) => value.route_id,
+            None => 0,
+        },
+        Err(_) => -1,
+    }
+}
+
+fn route_param(router: Router, method: String, path: String, key: String) -> String {
+    match match_route(router, method, path) {
+        Ok(found) => match found {
+            Some(value) => match map.get(value.params, key) {
+                Some(v) => v,
+                None => "",
+            },
+            None => "",
+        },
+        Err(_) => "",
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let router0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let router1 = match add(router0, "GET", "/users/*", 10) {
+        Ok(value) => value,
+        Err(_) => router0,
+    };
+    let path_conflict = match add(router1, "GET", "/users/:id", 20) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let router2 = match new_router() {
+        Ok(value) => value,
+        Err(_) => Router { handle: 0 },
+    };
+    let router3 = match add(router2, "*", "/teams/:id", 30) {
+        Ok(value) => value,
+        Err(_) => router2,
+    };
+    let method_conflict = match add(router3, "GET", "/teams/:id", 40) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+    let fallback_ok = if route_id(router3, "GET", "/teams/7") == 30 &&
+        str_eq(route_param(router3, "GET", "/teams/7", "id"), "7") == 1 {
+        1
+    } else {
+        0
+    };
+
+    if path_conflict == 1 && method_conflict == 1 && fallback_ok == 1 {
+        print_int(42);
+    } else {
+        print_int(path_conflict * 100 + method_conflict * 10 + fallback_ok);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_router_route_capacity_limit_override_is_enforced() {
     let src = r#"
 import std.io;
 import std.router;
+import std.string;
 
 fn err_code(err: RouterError) -> Int {
     match err {
@@ -9534,7 +10131,8 @@ fn add_many(router: Router, remaining: Int) -> Result[Router, RouterError] {
     if remaining == 0 {
         Ok(router)
     } else {
-        match add(router, "GET", "/cap", remaining) {
+        let path = f"/cap/{int_to_string(remaining)}";
+        match add(router, "GET", path, remaining) {
             Ok(next) => add_many(next, remaining - 1),
             Err(err) => Err(err),
         }
@@ -9575,6 +10173,7 @@ fn exec_router_route_capacity_override_allows_above_legacy_cap() {
     let src = r#"
 import std.io;
 import std.router;
+import std.string;
 
 fn err_code(err: RouterError) -> Int {
     match err {
@@ -9589,7 +10188,8 @@ fn add_many(router: Router, remaining: Int) -> Result[Router, RouterError] {
     if remaining == 0 {
         Ok(router)
     } else {
-        match add(router, "GET", "/grow", remaining) {
+        let path = f"/grow/{int_to_string(remaining)}";
+        match add(router, "GET", path, remaining) {
             Ok(next) => add_many(next, remaining - 1),
             Err(err) => Err(err),
         }
