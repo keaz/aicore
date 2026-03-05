@@ -1852,7 +1852,7 @@ impl<'a> Generator<'a> {
         &mut self,
         ty: &LType,
         span: crate::span::Span,
-    ) -> Option<(usize, usize, LType, LType, LType, bool)> {
+    ) -> Option<(usize, usize, LType, LType, LType, bool, bool)> {
         let LType::Enum(layout) = ty else {
             return None;
         };
@@ -1872,18 +1872,24 @@ impl<'a> Generator<'a> {
         let LType::Enum(err_layout) = &err_payload_ty else {
             return None;
         };
-        if base_type_name(&err_layout.repr) != "NetError" {
-            return None;
-        }
+        let err_name = method_base_name(base_type_name(&err_layout.repr));
         let LType::Struct(op_layout) = &ok_payload_ty else {
             return None;
         };
-        let output_ty = match base_type_name(&op_layout.repr) {
-            "AsyncIntOp" => self.parse_type_repr("Result[Int, NetError]", span)?,
-            "AsyncStringOp" => self.parse_type_repr("Result[Bytes, NetError]", span)?,
+        let op_name = method_base_name(base_type_name(&op_layout.repr));
+        let output_ty = match (op_name, err_name) {
+            ("AsyncIntOp", "NetError") => self.parse_type_repr("Result[Int, NetError]", span)?,
+            ("AsyncStringOp", "NetError") => {
+                self.parse_type_repr("Result[Bytes, NetError]", span)?
+            }
+            ("AsyncIntOp", "TlsError") => self.parse_type_repr("Result[Int, TlsError]", span)?,
+            ("AsyncStringOp", "TlsError") => {
+                self.parse_type_repr("Result[Bytes, TlsError]", span)?
+            }
             _ => return None,
         };
-        let is_string = base_type_name(&op_layout.repr) == "AsyncStringOp";
+        let is_string = op_name == "AsyncStringOp";
+        let tls_error = err_name == "TlsError";
         Some((
             ok_idx,
             err_idx,
@@ -1891,6 +1897,7 @@ impl<'a> Generator<'a> {
             err_payload_ty,
             output_ty,
             is_string,
+            tls_error,
         ))
     }
 
@@ -1903,6 +1910,7 @@ impl<'a> Generator<'a> {
         submit_err_payload_ty: LType,
         output_ty: LType,
         string_payload: bool,
+        tls_error: bool,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
@@ -1918,7 +1926,7 @@ impl<'a> Generator<'a> {
         if output_err_ty != submit_err_payload_ty {
             self.diagnostics.push(Diagnostic::error(
                 "E5002",
-                "await submit bridge requires matching NetError payload type",
+                "await submit bridge requires matching submit error payload type",
                 self.file,
                 span,
             ));
@@ -2038,7 +2046,11 @@ impl<'a> Generator<'a> {
                     fctx,
                 )?
             };
-            self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
+            if tls_error {
+                self.wrap_tls_result(&output_ty, payload, &poll_err, span, fctx)?
+            } else {
+                self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
+            }
         } else {
             let out_int_slot = self.new_temp();
             fctx.lines.push(format!("  {} = alloca i64", out_int_slot));
@@ -2050,16 +2062,29 @@ impl<'a> Generator<'a> {
             let out_int = self.new_temp();
             fctx.lines
                 .push(format!("  {} = load i64, i64* {}", out_int, out_int_slot));
-            self.wrap_net_result(
-                &output_ty,
-                Value {
-                    ty: LType::Int,
-                    repr: Some(out_int),
-                },
-                &poll_err,
-                span,
-                fctx,
-            )?
+            if tls_error {
+                self.wrap_tls_result(
+                    &output_ty,
+                    Value {
+                        ty: LType::Int,
+                        repr: Some(out_int),
+                    },
+                    &poll_err,
+                    span,
+                    fctx,
+                )?
+            } else {
+                self.wrap_net_result(
+                    &output_ty,
+                    Value {
+                        ty: LType::Int,
+                        repr: Some(out_int),
+                    },
+                    &poll_err,
+                    span,
+                    fctx,
+                )?
+            }
         };
         fctx.lines.push(format!(
             "  store {} {}, {}* {}",
@@ -2116,8 +2141,15 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if let Some((ok_idx, err_idx, submit_ok_ty, submit_err_ty, output_ty, string_payload)) =
-            self.classify_await_submit_result(&awaited.ty, span)
+        if let Some((
+            ok_idx,
+            err_idx,
+            submit_ok_ty,
+            submit_err_ty,
+            output_ty,
+            string_payload,
+            tls_error,
+        )) = self.classify_await_submit_result(&awaited.ty, span)
         {
             return self.gen_await_submit_result(
                 awaited,
@@ -2127,6 +2159,7 @@ impl<'a> Generator<'a> {
                 submit_err_ty,
                 output_ty,
                 string_payload,
+                tls_error,
                 span,
                 fctx,
             );
@@ -2134,7 +2167,7 @@ impl<'a> Generator<'a> {
 
         self.diagnostics.push(Diagnostic::error(
             "E5002",
-            "await expects Async[T] or Result[Async*Op, NetError] during codegen",
+            "await expects Async[T] or Result[Async*Op, NetError/TlsError] during codegen",
             self.file,
             span,
         ));

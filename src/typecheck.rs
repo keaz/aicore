@@ -5225,7 +5225,7 @@ impl<'a> Checker<'a> {
                             inner.span,
                         )
                         .with_help(
-                            "await values returned from async functions or std.net async submit calls",
+                            "await values returned from async functions or std.net/std.tls async submit calls",
                         ),
                     );
                     return "<?>".to_string();
@@ -9017,12 +9017,11 @@ fn await_bridge_submit_type(ty: &str) -> Option<String> {
     }
     let ok = args[0].trim();
     let err = args[1].trim();
-    if err != "NetError" {
-        return None;
-    }
-    match ok {
-        "AsyncIntOp" => Some("Result[Int, NetError]".to_string()),
-        "AsyncStringOp" => Some("Result[Bytes, NetError]".to_string()),
+    match (ok, err) {
+        ("AsyncIntOp", "NetError") => Some("Result[Int, NetError]".to_string()),
+        ("AsyncStringOp", "NetError") => Some("Result[Bytes, NetError]".to_string()),
+        ("AsyncIntOp", "TlsError") => Some("Result[Int, TlsError]".to_string()),
+        ("AsyncStringOp", "TlsError") => Some("Result[Bytes, TlsError]".to_string()),
         _ => None,
     }
 }
@@ -9448,7 +9447,7 @@ mod tests {
     use crate::diagnostics::Severity;
     use crate::{ir_builder::build, parser::parse, resolver::resolve};
 
-    use super::{check, extract_generic_args, merge_types, split_top_level};
+    use super::{await_bridge_submit_type, check, extract_generic_args, merge_types, split_top_level};
 
     #[test]
     fn option_match_exhaustive() {
@@ -9966,6 +9965,30 @@ fn main() -> Int effects { net, proc } capabilities { net, proc } {
         let args = extract_generic_args("Result[Option[Int], Result[Int, Bool]]").unwrap();
         assert_eq!(args.len(), 2);
         assert_eq!(args[0], "Option[Int]");
+    }
+
+    #[test]
+    fn await_bridge_submit_type_supports_net_and_tls_results() {
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncIntOp, NetError]"),
+            Some("Result[Int, NetError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncStringOp, NetError]"),
+            Some("Result[Bytes, NetError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncIntOp, TlsError]"),
+            Some("Result[Int, TlsError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncStringOp, TlsError]"),
+            Some("Result[Bytes, TlsError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncStringOp, FsError]"),
+            None
+        );
     }
 
     #[test]

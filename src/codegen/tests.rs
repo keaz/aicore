@@ -1454,6 +1454,81 @@ let _server = match accepted {
 }
 
 #[test]
+fn await_submit_bridge_lowers_tls_result_polling_runtime_calls() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("await_submit_bridge_polling_tls.aic");
+    fs::write(
+        &file,
+        r#"
+import std.bytes;
+import std.tls;
+
+async fn main() -> Int effects { net, concurrency } capabilities { net, concurrency } {
+let stream = TlsStream { handle: -1 };
+let sent = await tls_async_send_submit(stream, bytes.from_string("ping"), 10);
+let recv = await tls_async_recv_submit(stream, 8, 10);
+let _sent_score = match sent {
+    Ok(_) => 1,
+    Err(_) => 1,
+};
+let _recv_score = match recv {
+    Ok(_) => 1,
+    Err(_) => 1,
+};
+0
+}
+"#,
+    )
+    .expect("write source");
+
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+    assert!(
+        output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"),
+        "tls await submit bridge should declare async int poll helper\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output
+            .llvm_ir
+            .contains("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)"),
+        "tls await submit bridge should declare async string poll helper\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+        "tls await submit bridge should poll int reactor operation\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output
+            .llvm_ir
+            .contains("call i64 @aic_rt_async_poll_string("),
+        "tls await submit bridge should poll string reactor operation\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("tls_ok"),
+        "tls await submit bridge should wrap results through tls error mapping\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("call i64 @aic_rt_conc_spawn("),
+        "tls await submit bridge must not lower to thread-per-task spawn\nllvm={}",
+        output.llvm_ir
+    );
+}
+
+#[test]
 fn struct_init_tail_move_skips_map_close_on_moved_local() {
     let dir = tempdir().expect("tempdir");
     let file = dir.path().join("struct_tail_move_map.aic");

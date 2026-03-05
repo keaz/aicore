@@ -516,6 +516,19 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 | Sandboxed run profiles | ✅ Implemented |
 | Release reproducibility manifest | ✅ Implemented |
 
+### REST + Async Support Matrix
+
+| Capability | Status | Notes |
+|---|---|---|
+| `std.http_server` core APIs (`listen`, `accept`, `read_request`, `write_response`, `close`) | Supported | Runtime-backed and execution-tested on Linux/macOS (`exec_http_server_parses_request_and_emits_http11_response`). |
+| Async HTTP server APIs in `std.http_server` | Unsupported | No `http_server.async_*` API surface; async primitives are exposed in `std.net`/`std.tls`. |
+| HTTP request parsing coverage | Partial | Runtime parser accepts HTTP/1.0 + HTTP/1.1 and known methods (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`), with bounded receive-loop body handling driven by `Content-Length`. |
+| `std.router` route matching (exact, `:param`, trailing `*`) | Supported | Deterministic first-match order and typed errors are execution-tested (`exec_router_matches_paths_params_and_order`). |
+| `std.net` async submit/wait/cancel/poll/wait-many/shutdown/pressure | Supported | Event-loop runtime is covered by execution tests and runnable examples (`examples/io/async_*`). |
+| `await` submit bridge (`await Result[Async*Op, NetError]`) | Supported | Lowered to runtime async poll helpers and covered by tests/examples. |
+| `std.tls` async submit/wait lifecycle | Partial | API surface is implemented and tested; runtime pressure reports queue metrics as `0` and backend-dependent TLS behavior is handled with typed fallback paths. |
+| REST + async runtime on Windows | Unsupported | Network and async runtime paths use deterministic stub errors on Windows; REST/async execution coverage is gated to non-Windows targets. |
+
 ---
 
 ## Getting Started

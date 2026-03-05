@@ -10,6 +10,17 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - Async submit/wait API surface for TCP accept/send/recv.
 - TLS async submit/wait API surface for TLS send/recv.
 
+## Async + REST Runtime Support Matrix
+
+| Capability | Status | Evidence anchor |
+|---|---|---|
+| `std.net` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Runtime async reactor in `src/codegen/runtime/part04.c` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable`, `exec_net_async_queue_backpressure_and_shutdown` |
+| `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
+| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
+| Async HTTP-server API surface | Unsupported | `std/http_server.aic` exposes synchronous APIs only; no `http_server.async_*` surface exists |
+| Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
+| Windows async runtime backend | Unsupported | Windows net/async runtime paths return deterministic unsupported errors in `part04.c`; async execution coverage is `#[cfg(not(target_os = "windows"))]` |
+
 ## API Surface
 
 `std/net.aic` now exposes:
@@ -54,6 +65,8 @@ Language-level bridge:
 - `await` now also accepts submit results directly:
   - `await Result[AsyncIntOp, NetError] -> Result[Int, NetError]`
   - `await Result[AsyncStringOp, NetError] -> Result[Bytes, NetError]`
+  - `await Result[AsyncIntOp, TlsError] -> Result[Int, TlsError]`
+  - `await Result[AsyncStringOp, TlsError] -> Result[Bytes, TlsError]`
 
 ## Wrapper Semantics
 
@@ -117,21 +130,21 @@ let socket = match accepted {
 
 ## CI and Perf Gate Mapping
 
-- Regression tests in `/Users/kasunranasinghe/Projects/Rust/aicore/tests/execution_tests.rs` cover:
+- Regression tests in `tests/execution_tests.rs` cover:
   - multi-connection async flow (`exec_net_async_event_loop_multi_connection`)
   - queue saturation + shutdown (`exec_net_async_queue_backpressure_and_shutdown`)
   - 1000 concurrent accepts on a single thread (`exec_net_async_accept_1000_connections_single_thread`)
   - async submit+await bridge polling (`exec_async_await_submit_bridge_drives_reactor_without_task_spawn`)
   - negative async-wait paths (`exec_net_async_wait_negative_paths_are_stable`) for invalid handles, timeout retry semantics, and single-consumer re-wait behavior
-- CI example coverage in `/Users/kasunranasinghe/Projects/Rust/aicore/scripts/ci/examples.sh` includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_net_event_loop.aic` in both:
+- CI example coverage in `scripts/ci/examples.sh` includes `examples/io/async_net_event_loop.aic` in both:
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)
-- CI also includes `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/async_await_submit_bridge.aic` in both check and run gates.
+- CI also includes `examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Runnable pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
-- Perf gate baseline is `/Users/kasunranasinghe/Projects/Rust/aicore/benchmarks/service_baseline/async-net-gate.v1.json`:
+- Perf gate baseline is `benchmarks/service_baseline/async-net-gate.v1.json`:
   - scenario: `rest_async_echo_1000_connections`
   - encoded load: `connections = 1000`
   - baseline timings: `thread_per_connection_ms = 420.0`, `event_loop_ms = 180.0`

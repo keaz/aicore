@@ -26,7 +26,18 @@ All APIs are `effects { concurrency }`.
 
 Related runtime note:
 - `std.net` async submit/wait operations (`async_*`) also require `effects { concurrency }` and are backed by the async reactor loop documented in `docs/async-event-loop.md`.
-- `await` submit-bridge lowering (`await Result[Async*Op, NetError]`) polls those reactor operations cooperatively via runtime async poll helpers.
+- `await` submit-bridge lowering (`await Result[Async*Op, NetError|TlsError]`) polls those reactor operations cooperatively via runtime async poll helpers.
+
+## Runtime Support Matrix
+
+| Capability | Status | Evidence anchor |
+|---|---|---|
+| Generic `std.concurrent` task/channel/sync APIs | Supported | Runtime ABI symbols documented below and covered by `tests/execution_tests.rs` + `tests/e8_concurrency_stress_tests.rs` |
+| Fixed-width wrapper surface (`*_u32`, typed handle/count aliases) | Supported | Type/API contracts in this doc and execution/unit coverage for wrapper helpers |
+| `std.net` async operations requiring `effects { concurrency }` | Supported | Async reactor runtime in `docs/async-event-loop.md` with submit/wait/poll/cancel coverage |
+| `await` submit bridge for async net/tls handles | Supported | Cooperative poll helper usage (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) and async bridge execution coverage |
+| Linux/macOS concurrency runtime paths | Supported | Full task/channel/mutex/rwlock/arc/atomic behavior implemented |
+| Windows concurrency runtime paths | Partial | APIs remain available but unsupported runtime branches return deterministic `ConcurrencyError::Io` / `ChannelError::Closed` outcomes |
 
 ## Types
 

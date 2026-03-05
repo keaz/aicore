@@ -917,6 +917,64 @@ async fn main() -> Int {
 }
 
 #[test]
+fn unit_await_tls_async_submit_bridge_typechecks() {
+    let src = r#"
+enum TlsError {
+    Timeout,
+    Io,
+}
+
+struct AsyncIntOp {
+    handle: Int,
+}
+
+struct AsyncStringOp {
+    handle: Int,
+}
+
+fn tls_async_send_submit(stream: Int, timeout_ms: Int) -> Result[AsyncIntOp, TlsError] {
+    if timeout_ms > 0 {
+        Ok(AsyncIntOp { handle: stream + timeout_ms })
+    } else {
+        Err(Timeout())
+    }
+}
+
+fn tls_async_recv_submit(max_bytes: Int, timeout_ms: Int) -> Result[AsyncStringOp, TlsError] {
+    if timeout_ms > 0 {
+        Ok(AsyncStringOp { handle: max_bytes + timeout_ms })
+    } else {
+        Err(Timeout())
+    }
+}
+
+async fn main() -> Int {
+    let sent = await tls_async_send_submit(0, 10);
+    let recv = await tls_async_recv_submit(8, 10);
+    let a = match sent {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    let b = match recv {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    a + b
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1256" || d.code == "E1257"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_fn_type_and_closure_typecheck() {
     let src = r#"
 fn apply(f: Fn(Int) -> Int, x: Int) -> Int {

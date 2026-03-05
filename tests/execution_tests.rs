@@ -8965,6 +8965,293 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     assert_eq!(stdout, "42\n");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_fragmented_body_is_parsed_across_recv_boundaries() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.string;
+import std.env;
+import std.map;
+import std.fs;
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } {
+    let addr_file = read_env_or("AIC_HTTP_ADDR_FILE", "http_frag_addr.txt");
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let published = if len(addr) > 0 {
+        match write_text(addr_file, addr) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    } else {
+        0
+    };
+    let server = match accept(listener, 15000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let parsed_ok = match read_request(server, 4096, 15000) {
+        Ok(req) => if string.contains(req.method, "POST") && len(req.method) == 4 &&
+            string.contains(req.path, "/frag") && len(req.path) == 5 &&
+            string.contains(req.body, "hello") && len(req.body) == 5 &&
+            (match map.get(req.headers, "content-length") {
+                Some(v) => if string.contains(v, "5") && len(v) == 1 { 1 } else { 0 },
+                None => 0,
+            }) == 1 {
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if published == 1 && parsed_ok == 1 && closed_server + closed_listener == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let addr_file_rel = "http_frag_addr.txt";
+    let envs = [("AIC_HTTP_ADDR_FILE", addr_file_rel)];
+    let client_thread: std::sync::Arc<
+        std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let client_thread_setup = std::sync::Arc::clone(&client_thread);
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            let addr_file = root.join(addr_file_rel);
+            let handle = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(15);
+                let mut connect_addr: Option<String> = None;
+                while Instant::now() < deadline {
+                    match fs::read_to_string(&addr_file) {
+                        Ok(value) => {
+                            let trimmed = value.trim();
+                            if !trimmed.is_empty() {
+                                connect_addr = Some(trimmed.to_string());
+                                break;
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+
+                let connect_addr = connect_addr.expect("server did not publish listen address");
+                let mut connected: Option<std::net::TcpStream> = None;
+                while Instant::now() < deadline {
+                    match std::net::TcpStream::connect(&connect_addr) {
+                        Ok(stream) => {
+                            connected = Some(stream);
+                            break;
+                        }
+                        Err(_) => std::thread::sleep(Duration::from_millis(20)),
+                    }
+                }
+
+                let mut stream = connected.expect("client failed to connect to server");
+                stream.set_nodelay(true).expect("set_nodelay");
+                stream
+                    .write_all(
+                        b"POST /frag HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhe",
+                    )
+                    .expect("write first request chunk");
+                std::thread::sleep(Duration::from_millis(60));
+                stream
+                    .write_all(b"llo")
+                    .expect("write second request chunk");
+                stream.flush().expect("flush request chunks");
+                std::thread::sleep(Duration::from_millis(120));
+            });
+            *client_thread_setup.lock().expect("store client thread") = Some(handle);
+        });
+    if let Some(handle) = client_thread
+        .lock()
+        .expect("take client thread")
+        .take()
+    {
+        handle.join().expect("client thread join");
+    } else {
+        panic!("client thread was not started");
+    }
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_malformed_content_length_returns_invalid_header() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, bytes.from_string("POST /bad HTTP/1.1\nHost: localhost\nContent-Length: nope\n\n"));
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if code == 3 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_truncated_body_returns_connection_closed() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.bytes;
+
+fn err_code(err: ServerError) -> Int {
+    match err {
+        InvalidRequest => 1,
+        InvalidMethod => 2,
+        InvalidHeader => 3,
+        InvalidTarget => 4,
+        Timeout => 5,
+        ConnectionClosed => 6,
+        BodyTooLarge => 7,
+        Net => 8,
+        Internal => 9,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net  } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    tcp_send(client, bytes.from_string("POST /short HTTP/1.1\nHost: localhost\nContent-Length: 5\n\nhe"));
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let code = match read_request(server, 4096, 1000) {
+        Ok(_) => 0,
+        Err(err) => err_code(err),
+    };
+
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if code == 6 && closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[test]
 fn exec_router_matches_paths_params_and_order() {
     let src = fs::read_to_string("examples/io/http_router.aic").expect("read router example");

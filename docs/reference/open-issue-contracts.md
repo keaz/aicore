@@ -2,7 +2,7 @@
 
 See also: [Spec](../spec.md), [Type System](../type-system.md), [Architecture](../architecture.md), [Contributing](../contributing.md), [Syntax](./syntax.md), [Types](./types.md), [Generics](./generics.md), [Memory](./memory.md), [Effects](./effects.md)
 
-This page is an AI-agent-facing contract for open language issues:
+This page is an AI-agent-facing contract for language issues that are still open or only partially completed:
 
 - `#128` `[LANG-T4] Tuple types`
 - `#130` `[LANG-T6] Struct methods and method call syntax`
@@ -11,45 +11,35 @@ This page is an AI-agent-facing contract for open language issues:
 - `#138` `[TYPE-T3] Generic type constraints and where clauses`
 - `#139` `[TYPE-T4] Improved type inference`
 
-The sections below intentionally separate `Current behavior` from `Target behavior`. `Target behavior` is a design and implementation contract, not a claim that features are already implemented.
+The sections below intentionally separate `Current behavior` from `Target behavior`. `Target behavior` captures remaining work, not necessarily full feature creation from zero.
 
 ## Issue #128: Tuple types
 
 ### Syntax form
 
 - Current behavior:
-  - Type grammar accepts `()` (unit) and named/generic types; `(T, U)` is not accepted.
-  - Expression grammar treats `(expr)` as grouping and `()` as unit only; tuple literals are not accepted.
-  - `let` and `match` patterns do not support tuple destructuring.
-  - Postfix field syntax requires identifier tokens, so tuple index projection like `.0` is rejected.
+  - Tuple type syntax, tuple literals, tuple destructuring in `let`/`match`, and numeric projection (`.0`, `.1`, ...) are implemented.
+  - Grouping `(<expr>)` and unit `()` behavior remains unchanged.
+  - Parser currently rejects tuple-wide mutable destructuring (`let mut (a, b) = ...`) and requires mutability at binding level.
 - Target behavior:
-  - Add tuple type syntax `(T1, T2, ..., Tn)` with `n >= 2`.
-  - Add tuple literal syntax `(e1, e2, ..., en)` with `n >= 2`.
-  - Add tuple pattern syntax in `let` and `match`: `(p1, p2, ..., pn)`.
-  - Add tuple projection syntax `expr.<index>` with zero-based indices.
-  - Preserve existing grouping `(<expr>)` and unit `()` behavior unchanged.
+  - Complete tuple-pattern parity in all lowering paths where tuple branches are still limited.
+  - Clarify long-term surface policy for tuple-wide mutable destructuring.
 
 ### Type/effect/borrow behavior
 
 - Current behavior:
-  - No tuple type constructor in AST/IR/type checker.
+  - Tuple constructor/projection typing and tuple-pattern arity checks are implemented in the type checker.
+  - Tuple values and projected elements participate in existing borrow/mutability checks.
 - Target behavior:
-  - Tuple literal type is the pointwise product of element types.
-  - Tuple literal evaluation is left-to-right; effect usage is the union of element effects.
-  - Borrow rules apply both to tuple values and projected elements (projection must not bypass alias checks).
-  - Generic substitution must work inside tuple elements.
+  - Extend tuple codegen coverage for remaining tuple-pattern edge cases without regressing deterministic typing/borrow behavior.
 
 ### Expected diagnostics
 
 - Current behavior:
-  - Tuple-like syntax fails with existing parser diagnostics (for example `E1025`, `E1031`, `E1036`, `E1037`, `E1046`).
+  - Tuple index out-of-range, non-tuple projection, and tuple-pattern arity mismatch produce deterministic diagnostics.
+  - Invalid tuple syntax continues to use deterministic parser diagnostics.
 - Target behavior:
-  - Add dedicated diagnostics for:
-    - invalid tuple arity (`n < 2`) in tuple type/literal/pattern contexts
-    - tuple projection index out of bounds
-    - tuple projection on non-tuple values
-    - tuple-pattern arity mismatch against scrutinee type
-  - Register all new codes before feature rollout (`src/diagnostic_codes.rs` and `docs/diagnostic-codes.md`).
+  - Preserve current diagnostics while closing remaining tuple-pattern lowering gaps.
 
 ### Minimal test matrix template
 
@@ -64,53 +54,39 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 ### Agent implementation checklist
 
-- [ ] Extend lexer/parser grammar for tuple types, literals, patterns, and numeric projections.
-- [ ] Add tuple nodes in AST, IR, formatter, and JSON schema compatibility paths.
-- [ ] Implement tuple typing rules, projection typing, and pattern typing/exhaustiveness interactions.
-- [ ] Integrate tuple borrow semantics with existing alias/mutability checks.
-- [ ] Add parser/typecheck/compile-fail and execution tests covering positive and negative paths.
-- [ ] Update reference docs (`syntax`, `types`, `expressions`, `pattern-matching`) and diagnostics registry docs.
+- [ ] Add/extend execution coverage for tuple-pattern branches that still have codegen limits.
+- [ ] Confirm and document tuple-wide mutable-destructuring policy (`let mut (...)` vs per-binding `mut`).
+- [ ] Keep tuple diagnostics and reference pages aligned with runtime behavior.
 
 ## Issue #130: Struct methods and method-call syntax
 
 ### Syntax form
 
 - Current behavior:
-  - `impl` supports marker trait implementations (`impl Trait[Type];`) only.
-  - Inherent impl blocks (`impl Type { ... }`) are not parsed.
-  - Method-call surface syntax (`value.method(...)`) is parsed as field-access + call and then fails during resolution/type checking.
-  - Associated function syntax (`Type::method(...)`) is not available in expression grammar.
+  - Inherent impl blocks (`impl Type { ... }`) and impl methods are parsed and lowered.
+  - Method call syntax (`value.method(...)`) and associated call syntax (`Type::name(...)`) resolve in type checking/codegen.
+  - Receiver spellings `self`, `self: Type`, `&self`, and `&mut self` are accepted in method signatures.
 - Target behavior:
-  - Add inherent impl blocks: `impl Type { fn ... }`.
-  - Add receiver forms in method declarations: `self`, `&self`, `&mut self`.
-  - Add method-call resolution: `value.method(args)` desugars to a function-style call with an explicit receiver.
-  - Add associated function call syntax: `Type::name(args)`.
-  - Allow multiple impl blocks per type (deterministic merge rules).
+  - Preserve deterministic method/associated-call resolution while tightening remaining receiver-form semantics.
+  - Keep impl merge/lookup behavior deterministic across multiple impl blocks.
 
 ### Type/effect/borrow behavior
 
 - Current behavior:
-  - No method receiver model in resolver/type checker.
+  - Method dispatch is static and receiver-aware (`receiver type + method name`) with deterministic unknown-method handling.
+  - Method effects participate in normal effect propagation checks.
+  - Receiver reference forms currently normalize to `Self` in parser/type paths; distinct `&self` vs `&mut self` borrow semantics are not yet fully differentiated.
 - Target behavior:
-  - Receiver typing contract:
-    - `self`: consumes receiver value
-    - `&self`: shared borrow
-    - `&mut self`: mutable borrow with exclusivity checks
-  - Method call effect accounting follows normal function effect rules; no implicit effect exemptions.
-  - Method dispatch is static in MVP (resolved at compile time from receiver type + method name).
+  - If receiver-reference semantics are split, enforce explicit mutability/alias checks for `&self` and `&mut self` end-to-end.
+  - Preserve existing static dispatch behavior and deterministic effect accounting.
 
 ### Expected diagnostics
 
 - Current behavior:
-  - Inherent impl/method declarations fail with existing parser errors.
-  - `value.method(...)` often fails as module-qualifier/callable resolution error.
+  - Unknown method and arity/type mismatch paths produce deterministic method diagnostics.
+  - Invalid receiver signatures are diagnosed during parse/typecheck stages.
 - Target behavior:
-  - Add dedicated diagnostics for:
-    - unknown method on receiver type
-    - receiver mutability mismatch (`&mut self` method on immutable receiver)
-    - method arity/type mismatch after receiver binding
-    - invalid associated call form (instance-only vs associated-only misuse)
-  - Keep diagnostics deterministic and include receiver type in messages.
+  - If receiver-reference semantics diverge, add dedicated mutability-mismatch diagnostics without changing existing deterministic failure behavior.
 
 ### Minimal test matrix template
 
@@ -125,55 +101,45 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 ### Agent implementation checklist
 
-- [ ] Add syntax and AST/IR support for inherent impls, method signatures, and `Type::name(...)`.
-- [ ] Extend resolver symbol tables for type-owned methods and associated functions.
-- [ ] Implement receiver-aware method resolution and call desugaring in type checker.
-- [ ] Integrate receiver borrowing/consumption semantics with existing borrow checker.
-- [ ] Update formatter + codegen lowering path for method/associated calls.
-- [ ] Add parser/resolver/typecheck/execution tests and update docs/reference pages.
+- [ ] Add explicit tests that distinguish `self`/`&self`/`&mut self` semantics once borrow modeling is separated.
+- [ ] Expand negative-path coverage for associated-vs-instance misuse and receiver-shape mismatches.
+- [ ] Keep method-call docs and diagnostics examples synchronized with implementation.
 
 ## Issue #136: Trait method declarations and dynamic dispatch
 
 ### Syntax form
 
 - Current behavior:
-  - Traits are marker-only declarations (`trait Name[T];`).
-  - Trait impls are marker-only (`impl Trait[Type];`), with no method bodies.
-  - Trait-bound generic method invocation (`x.method()`) through trait signatures is unavailable.
+  - Traits can declare methods, and trait impl blocks can provide method bodies.
+  - Trait-bound generic method invocation (`x.method()`) is supported for static dispatch.
+  - `dyn Trait` syntax is supported for object-safe trait method dispatch.
 - Target behavior:
-  - Extend trait declarations to include method signatures.
-  - Extend trait impl declarations to provide required method implementations.
-  - Resolve trait method calls via generic bounds (static dispatch MVP).
-  - Dynamic dispatch via `dyn Trait` is optional and gated as stretch behavior after static dispatch is complete.
+  - Expand dyn dispatch coverage where needed without weakening current object-safety guarantees.
+  - Keep marker-trait and method-trait behavior coherent under one deterministic resolution model.
 
 ### Type/effect/borrow behavior
 
 - Current behavior:
-  - Trait bounds only act as marker constraints.
+  - Trait impls are checked for required method presence and signature conformance.
+  - Generic calls constrained by trait bounds resolve methods deterministically after substitution.
+  - Dyn dispatch enforces object-safety restrictions (for example, no trait generics and no invalid `Self` usage in method signatures).
 - Target behavior:
-  - Trait impl method signatures must match trait declarations exactly (name, receiver shape, params, return type, effects).
-  - Generic calls constrained by trait bounds resolve method symbols using the concrete type substitution.
-  - Receiver borrow/ownership semantics are enforced consistently with inherent methods.
-  - If dynamic dispatch is implemented, object-safety constraints and vtable layout rules must be explicit and test-covered.
+  - Extend object-safety and dyn dispatch capabilities only with explicit runtime/typecheck contracts and matching tests.
 
 ### Expected diagnostics
 
 - Current behavior:
-  - Trait bodies and trait impl bodies fail parse with current trait/impl declaration diagnostics.
+  - Missing required trait methods and trait signature mismatches emit deterministic diagnostics.
+  - Object-safety failures for invalid dyn usage emit deterministic diagnostics (including `E1214` paths).
 - Target behavior:
-  - Add dedicated diagnostics for:
-    - missing required trait methods in impl
-    - trait method signature mismatch in impl
-    - method call on type missing required trait bound
-    - invalid dyn/object-safe usage (if dyn dispatch is enabled)
-  - Keep existing bound-failure diagnostic behavior consistent for marker and method traits.
+  - Preserve current diagnostics while extending dyn coverage; avoid changing stable bound-failure behavior.
 
 ### Minimal test matrix template
 
 | Case | Source sketch | Expected |
 | --- | --- | --- |
 | Trait with method signatures | `trait Display { fn to_string(self) -> String; }` | Parses and lowers |
-| Valid trait impl | `impl Display for User { fn to_string(self) -> String { ... } }` | Signature checks pass |
+| Valid trait impl | `impl Display[User] { fn to_string(self: User) -> String { ... } }` | Signature checks pass |
 | Generic bound call | `fn show[T: Display](x: T) -> String { x.to_string() }` | Resolves and type-checks |
 | Signature mismatch | wrong return/effects/receiver | Deterministic trait mismatch diagnostic |
 | Missing method | impl omits required method | Deterministic missing-method diagnostic |
@@ -181,12 +147,9 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 ### Agent implementation checklist
 
-- [ ] Extend AST/IR data models for trait method signatures and trait impl method bodies.
-- [ ] Update parser/formatter for trait and trait-impl method syntax.
-- [ ] Implement resolver/type checker conformance checks between trait methods and impl methods.
-- [ ] Implement trait-bound method resolution in generic calls (static dispatch MVP).
-- [ ] Gate dynamic dispatch work behind explicit feature scope and diagnostics.
-- [ ] Add complete positive/negative tests and update diagnostics/reference docs.
+- [ ] Add integration coverage for additional dyn-dispatch shapes only after object-safety rules are specified.
+- [ ] Keep trait-method/dyn diagnostics examples in sync with parser/typechecker behavior.
+- [ ] Expand docs to capture any newly supported object-safe forms.
 
 ## Issue #137: Borrow checker completeness
 
@@ -249,32 +212,28 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 - Current behavior:
   - Inline trait bounds on generics are available, including multi-bounds (`T: A + B`).
-  - `where` clauses are not part of grammar.
+  - Function-level `where` clauses are implemented (including multi-bound forms).
+  - Inline and `where` bounds can be mixed on the same declaration.
 - Target behavior:
-  - Add `where` clause grammar on generic declarations, at minimum for functions:
-    - `fn f[T, U](...) -> R where T: A, U: B { ... }`
-  - Normalize inline bounds and `where` bounds into one internal constraint set.
-  - Keep existing inline bound syntax fully supported.
+  - Extend `where`-clause support to additional declaration forms only if/when that scope is explicitly adopted.
+  - Keep inline and `where` syntaxes semantically equivalent.
 
 ### Type/effect/borrow behavior
 
 - Current behavior:
-  - Bound checks rely on explicit trait impl lookup; missing bound yields deterministic error.
+  - Bound checks rely on explicit trait impl lookup; missing bound yields deterministic errors (for example `E1258`).
+  - Multiple bounds are conjunctive (`T: A + B` requires both).
+  - Constraint syntax location (inline vs `where`) does not change effect or borrow semantics.
 - Target behavior:
-  - Bound satisfaction must be equivalent regardless of declaration location (inline vs `where`).
-  - Multiple bounds are conjunctive (`T: A + B` means both required).
-  - No special effect or borrow exceptions are introduced by bound syntax.
-  - If associated-type constraints are included in scope, they must participate in the same normalization and satisfaction checks.
+  - Preserve deterministic bound satisfaction if `where` support is expanded to new surfaces.
 
 ### Expected diagnostics
 
 - Current behavior:
-  - Invalid/missing trait bounds use existing trait-bound diagnostics.
-  - `where` usage currently fails parse/block expectations.
+  - Invalid/missing trait bounds use existing deterministic trait-bound diagnostics.
+  - Malformed `where` syntax fails deterministically in parser/type phases.
 - Target behavior:
-  - Add deterministic diagnostics for malformed `where` clauses and duplicate/conflicting bounds.
-  - Reuse existing bound-failure diagnostics where semantics are unchanged.
-  - Include help text that shows equivalent inline/`where` rewrites.
+  - If new `where` forms are added, keep diagnostics deterministic and consistent with existing bound-failure messages.
 
 ### Minimal test matrix template
 
@@ -289,12 +248,9 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 ### Agent implementation checklist
 
-- [ ] Add lexer/parser support for `where` clause syntax.
-- [ ] Extend AST/IR to carry normalized constraint sets.
-- [ ] Merge inline and `where` bounds in resolver/type checker.
-- [ ] Ensure existing trait-bound diagnostics remain stable where semantics match.
-- [ ] Add parser/typecheck tests for positive and negative bound scenarios.
-- [ ] Update generics/type reference docs with canonical examples.
+- [ ] Decide and document whether `where` clauses should expand beyond function declarations.
+- [ ] Maintain parser/typecheck tests for mixed inline+`where` bounds and malformed-clause paths.
+- [ ] Keep generics reference docs aligned with the implemented `where` surface.
 
 ## Issue #139: Improved type inference
 

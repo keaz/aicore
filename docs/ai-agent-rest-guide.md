@@ -18,7 +18,7 @@ Use this as the minimum map before changing REST behavior.
 |---|---|
 | Frontend orchestration and package load | `src/driver.rs`, `src/package_loader.rs` |
 | Type/effect/contracts validation | `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs` |
-| Runtime lowering and LLVM backend | `src/codegen/mod.rs` |
+| Runtime lowering and HTTP/async runtime backends | `src/codegen/mod.rs`, `src/codegen/generator_net_tls_buffer.rs`, `src/codegen/runtime/part04.c`, `src/codegen/runtime/part05.c` |
 | REST stdlib API surface | `std/http_server.aic`, `std/router.aic`, `std/net.aic`, `std/json.aic`, `std/string.aic`, `std/map.aic` |
 | Test coverage | `tests/unit_tests.rs`, `tests/execution_tests.rs`, `tests/e8_perf_tests.rs` |
 | Example and CI wiring | `scripts/ci/examples.sh` |
@@ -34,6 +34,9 @@ src/codegen/mod.rs
 src/contracts.rs
 src/driver.rs
 src/effects.rs
+src/codegen/generator_net_tls_buffer.rs
+src/codegen/runtime/part04.c
+src/codegen/runtime/part05.c
 src/package_loader.rs
 src/typecheck.rs
 std/http_server.aic
@@ -56,6 +59,22 @@ tests/unit_tests.rs
 | Route dispatch semantics | `std/router.aic` + `src/codegen/mod.rs` router runtime calls | Deterministic route precedence tests + example |
 | JSON payload behavior for REST | `std/json.aic` + `src/codegen/mod.rs` JSON lowering/runtime | Roundtrip and negative-path execution tests |
 | Async REST networking behavior | `std/net.aic` + `src/codegen/mod.rs` async runtime section | Multi-connection test + backpressure test + perf gate |
+
+### REST + Async Support Matrix
+
+This matrix captures implementation state as of the current code/tests and should be updated when behavior changes.
+
+| Capability | Status | Evidence anchor |
+|---|---|---|
+| `std.http_server` synchronous server APIs | Supported | Runtime implementations in `src/codegen/runtime/part05.c` + execution test `exec_http_server_parses_request_and_emits_http11_response` |
+| Native async HTTP server APIs (`std.http_server.async_*`) | Unsupported | No async HTTP-server API surface in `std/http_server.aic` |
+| HTTP request parsing breadth | Partial | Parser currently accepts HTTP/1.0 + HTTP/1.1, recognized method set, and bounded receive-loop `Content-Length` body handling in `aic_rt_http_server_read_request` |
+| Router dispatch (`exact`, `:param`, trailing `*`, deterministic first-match) | Supported | Runtime router implementation in `part05.c` + execution test `exec_router_matches_paths_params_and_order` |
+| JSON helpers used by REST workflows | Supported | `std/json.aic` APIs + execution test `exec_json_roundtrip_and_object_operations` |
+| Net async reactor APIs (`async_*`) | Supported | `std/net.aic` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable` |
+| `await` submit bridge for async net handles | Supported | execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` + example `examples/io/async_await_submit_bridge.aic` |
+| TLS async reactor APIs (`tls_async_*`) | Partial | API + runtime paths exist; pressure queue fields are fixed zero and full handshake behavior depends on TLS backend availability in tests |
+| REST/async runtime on Windows | Unsupported | Windows runtime stubs in `part04.c` return deterministic errors; REST/async execution tests are `#[cfg(not(target_os = "windows"))]` |
 
 ## 4. Deterministic End-To-End Workflow
 
@@ -97,6 +116,8 @@ request_parsing examples/io/http_server_hello.aic
 routing examples/io/http_router.aic
 json_roundtrip examples/data/config_json.aic
 error_paths examples/data/url_http_negative_cases.aic
+async_event_loop examples/io/async_net_event_loop.aic
+async_submit_bridge examples/io/async_await_submit_bridge.aic
 <!-- rest-guide:examples:end -->
 
 These are already exercised by CI (`scripts/ci/examples.sh`), and should remain there.
@@ -106,6 +127,8 @@ aic check examples/io/http_server_hello.aic
 aic check examples/io/http_router.aic
 aic check examples/data/config_json.aic
 aic check examples/data/url_http_negative_cases.aic
+aic check examples/io/async_net_event_loop.aic
+aic check examples/io/async_await_submit_bridge.aic
 <!-- docs-test:end -->
 
 ## 7. Agent Task Checklist (Issue Closure Gate)
