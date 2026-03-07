@@ -19,6 +19,7 @@ use aicore::codegen::{
     emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
     OptimizationLevel, RuntimeInstrumentationOptions,
 };
+use aicore::context_query;
 use aicore::contracts::lower_runtime_asserts;
 use aicore::daemon;
 use aicore::diag_fixes::apply_safe_fixes;
@@ -46,6 +47,7 @@ use aicore::package_workflow::{
     native_link_config, workspace_build_plan, NativeLinkConfig,
 };
 use aicore::parser;
+use aicore::patch_protocol::{self, PatchMode};
 use aicore::perf_gate::{
     build_trend_report, host_target_label, load_budget, load_compare_baseline, run_perf_gate,
 };
@@ -59,10 +61,13 @@ use aicore::release_ops::{
 };
 use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
+use aicore::scaffold;
 use aicore::semantic_diff;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
+use aicore::symbol_query;
+use aicore::synthesize;
 use aicore::telemetry;
 use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode, ReplayMetadata};
 use aicore::toolchain::install_std;
@@ -141,6 +146,72 @@ enum Command {
         json: bool,
         #[arg(long)]
         offline: bool,
+    },
+    Context {
+        #[arg(long = "for", value_name = "TARGET", num_args = 1..)]
+        target: Vec<String>,
+        #[arg(long, value_name = "N", default_value_t = 1, value_parser = parse_positive_usize)]
+        depth: usize,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Query {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_enum)]
+        kind: Option<QueryKindArg>,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, value_name = "EFFECT", value_delimiter = ',')]
+        effects: Vec<String>,
+        #[arg(long)]
+        has_invariant: bool,
+        #[arg(long, value_name = "TYPE_PARAM")]
+        generic_over: Option<String>,
+        #[arg(long)]
+        has_requires: bool,
+        #[arg(long)]
+        has_ensures: bool,
+        #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+        limit: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    Symbols {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_enum, default_value = "text")]
+        format: SymbolsFormatArg,
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
+    },
+    Scaffold {
+        #[command(subcommand)]
+        command: ScaffoldSubcommand,
+        #[arg(long, global = true)]
+        json: bool,
+    },
+    Synthesize {
+        #[arg(long, value_enum)]
+        from: SynthesizeFromArg,
+        target: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Patch {
+        #[arg(long, conflicts_with = "apply", required_unless_present = "apply")]
+        preview: bool,
+        #[arg(long, conflicts_with = "preview", required_unless_present = "preview")]
+        apply: bool,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        patch: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
     Coverage {
         #[arg(default_value = "src/main.aic")]
@@ -393,6 +464,42 @@ enum DocFormatArg {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum QueryKindArg {
+    Function,
+    Struct,
+    Enum,
+    Variant,
+    Trait,
+    Impl,
+    Module,
+}
+
+impl QueryKindArg {
+    fn to_symbol_kind(self) -> symbol_query::SymbolKind {
+        match self {
+            QueryKindArg::Function => symbol_query::SymbolKind::Function,
+            QueryKindArg::Struct => symbol_query::SymbolKind::Struct,
+            QueryKindArg::Enum => symbol_query::SymbolKind::Enum,
+            QueryKindArg::Variant => symbol_query::SymbolKind::Variant,
+            QueryKindArg::Trait => symbol_query::SymbolKind::Trait,
+            QueryKindArg::Impl => symbol_query::SymbolKind::Impl,
+            QueryKindArg::Module => symbol_query::SymbolKind::Module,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SymbolsFormatArg {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SynthesizeFromArg {
+    Spec,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum TestModeArg {
     All,
     RunPass,
@@ -424,6 +531,57 @@ enum DebugSubcommand {
         adapter: Option<PathBuf>,
         #[arg(last = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ScaffoldSubcommand {
+    Struct {
+        name: String,
+        #[arg(long = "field", value_name = "NAME:TYPE")]
+        fields: Vec<String>,
+        #[arg(long = "with-invariant")]
+        with_invariant: Option<String>,
+        #[arg(last = true, value_name = "FIELDS")]
+        inline_fields: Vec<String>,
+    },
+    Enum {
+        name: String,
+        #[arg(long = "variant", value_name = "NAME[:TYPE]")]
+        variants: Vec<String>,
+        #[arg(last = true, value_name = "VARIANTS")]
+        inline_variants: Vec<String>,
+    },
+    #[command(name = "fn")]
+    Fn {
+        name: String,
+        #[arg(long = "param", value_name = "NAME:TYPE")]
+        params: Vec<String>,
+        #[arg(long = "return", default_value = "Unit", value_name = "TYPE")]
+        return_type: String,
+        #[arg(long = "effect", value_name = "EFFECT", value_delimiter = ',')]
+        effects: Vec<String>,
+        #[arg(long = "capability", value_name = "CAP", value_delimiter = ',')]
+        capabilities: Vec<String>,
+        #[arg(long)]
+        requires: Option<String>,
+        #[arg(long)]
+        ensures: Option<String>,
+    },
+    Match {
+        expr: String,
+        #[arg(long = "arm", value_name = "PATTERN=>BODY")]
+        arms: Vec<String>,
+        #[arg(long)]
+        exhaustive: bool,
+    },
+    Test {
+        #[arg(long = "for")]
+        target: String,
+        #[arg(long)]
+        run_pass: bool,
+        #[arg(long)]
+        compile_fail: bool,
     },
 }
 
@@ -633,6 +791,17 @@ fn parse_coverage_percent(value: &str) -> Result<f64, String> {
 fn parse_positive_u32(value: &str) -> Result<u32, String> {
     let parsed = value
         .parse::<u32>()
+        .map_err(|_| format!("invalid value `{value}`"))?;
+    if parsed == 0 {
+        Err("value must be greater than 0".to_string())
+    } else {
+        Ok(parsed)
+    }
+}
+
+fn parse_positive_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
         .map_err(|_| format!("invalid value `{value}`"))?;
     if parsed == 0 {
         Err("value must be greater than 0".to_string())
@@ -922,6 +1091,59 @@ fn collect_import_graph(
     }
 }
 
+fn print_symbol_query_report(report: &symbol_query::QueryReport) {
+    if report.symbols.is_empty() {
+        println!("query: no symbols matched");
+        return;
+    }
+
+    println!(
+        "query: matched {} of {} symbol(s)",
+        report.matched_symbols, report.total_symbols
+    );
+    print_symbol_list(&report.symbols);
+}
+
+fn print_symbol_list(symbols: &[symbol_query::SymbolRecord]) {
+    if symbols.is_empty() {
+        println!("symbols: no symbols found");
+        return;
+    }
+
+    for symbol in symbols {
+        println!(
+            "{} {}:{}:{} {}",
+            symbol.kind.as_str(),
+            symbol.location.file,
+            symbol.location.line,
+            symbol.location.column,
+            symbol.signature
+        );
+
+        if let Some(module) = &symbol.module {
+            println!("  module: {module}");
+        }
+        if let Some(container) = &symbol.container {
+            println!("  container: {container}");
+        }
+        if !symbol.effects.is_empty() {
+            println!("  effects: {}", symbol.effects.join(", "));
+        }
+        if !symbol.capabilities.is_empty() {
+            println!("  capabilities: {}", symbol.capabilities.join(", "));
+        }
+        if let Some(requires) = &symbol.requires {
+            println!("  requires: {requires}");
+        }
+        if let Some(ensures) = &symbol.ensures {
+            println!("  ensures: {ensures}");
+        }
+        if let Some(invariant) = &symbol.invariant {
+            println!("  invariant: {invariant}");
+        }
+    }
+}
+
 fn run_cli() -> anyhow::Result<i32> {
     let cli = Cli::parse();
 
@@ -1042,6 +1264,196 @@ fn run_cli() -> anyhow::Result<i32> {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
                 EXIT_OK
+            }
+        }
+        Command::Context {
+            target,
+            depth,
+            project,
+            json,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let report = match context_query::build_context_report(&project_root, &target, depth) {
+                Ok(report) => report,
+                Err(err) => {
+                    eprintln!("context: {err}");
+                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                }
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("{}", context_query::format_context_report_text(&report));
+            }
+            EXIT_OK
+        }
+        Command::Query {
+            project,
+            kind,
+            name,
+            effects,
+            has_invariant,
+            generic_over,
+            has_requires,
+            has_ensures,
+            limit,
+            json,
+        } => {
+            let filters = symbol_query::QueryFilters {
+                kind: kind.map(QueryKindArg::to_symbol_kind),
+                name_pattern: name,
+                effects,
+                has_invariant,
+                generic_over,
+                has_requires,
+                has_ensures,
+                limit,
+            };
+            let report = symbol_query::query_symbols(&project, filters)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print_symbol_query_report(&report);
+            }
+            EXIT_OK
+        }
+        Command::Symbols {
+            project,
+            format,
+            json,
+        } => {
+            let symbols = symbol_query::list_symbols(&project)?;
+            if json || matches!(format, SymbolsFormatArg::Json) {
+                println!("{}", serde_json::to_string_pretty(&symbols)?);
+            } else {
+                print_symbol_list(&symbols);
+            }
+            EXIT_OK
+        }
+        Command::Scaffold { command, json } => {
+            let scaffold = match command {
+                ScaffoldSubcommand::Struct {
+                    name,
+                    fields,
+                    with_invariant,
+                    inline_fields,
+                } => {
+                    let mut field_specs = fields;
+                    field_specs.extend(scaffold::parse_inline_items(&inline_fields)?);
+                    let parsed_fields = scaffold::parse_struct_fields(&field_specs)?;
+                    scaffold::scaffold_struct(&name, &parsed_fields, with_invariant.as_deref())
+                }
+                ScaffoldSubcommand::Enum {
+                    name,
+                    variants,
+                    inline_variants,
+                } => {
+                    let mut variant_specs = variants;
+                    variant_specs.extend(scaffold::parse_inline_items(&inline_variants)?);
+                    let parsed_variants = scaffold::parse_enum_variants(&variant_specs)?;
+                    scaffold::scaffold_enum(&name, &parsed_variants)
+                }
+                ScaffoldSubcommand::Fn {
+                    name,
+                    params,
+                    return_type,
+                    effects,
+                    capabilities,
+                    requires,
+                    ensures,
+                } => {
+                    let parsed_params = scaffold::parse_params(&params)?;
+                    scaffold::scaffold_function(&scaffold::FnScaffoldOptions {
+                        name,
+                        params: parsed_params,
+                        return_type,
+                        effects,
+                        capabilities,
+                        requires,
+                        ensures,
+                    })
+                }
+                ScaffoldSubcommand::Match {
+                    expr,
+                    arms,
+                    exhaustive,
+                } => {
+                    let parsed_arms = scaffold::parse_match_arms(&arms)?;
+                    scaffold::scaffold_match(&expr, parsed_arms, exhaustive)?
+                }
+                ScaffoldSubcommand::Test {
+                    target,
+                    run_pass,
+                    compile_fail,
+                } => {
+                    let include_run_pass = run_pass || !compile_fail;
+                    let include_compile_fail = compile_fail || !run_pass;
+                    scaffold::scaffold_test(&scaffold::TestScaffoldOptions {
+                        target_function: target,
+                        include_run_pass,
+                        include_compile_fail,
+                    })
+                }
+            };
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&scaffold)?);
+            } else {
+                println!("{}", scaffold.content);
+            }
+
+            EXIT_OK
+        }
+        Command::Synthesize {
+            from,
+            target,
+            project,
+            json,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let response = match from {
+                SynthesizeFromArg::Spec => synthesize::synthesize_from_spec(&project_root, &target),
+            };
+            let response = match response {
+                Ok(response) => response,
+                Err(err) => {
+                    eprintln!("synthesize: {err}");
+                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                }
+            };
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            } else {
+                println!("{}", synthesize::format_text(&response));
+            }
+
+            EXIT_OK
+        }
+        Command::Patch {
+            preview: _,
+            apply,
+            project,
+            patch,
+            json,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let mode = if apply {
+                PatchMode::Apply
+            } else {
+                PatchMode::Preview
+            };
+            let response = patch_protocol::run_patch(&project_root, &patch, mode)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            } else {
+                println!("{}", patch_protocol::format_patch_response_text(&response));
+            }
+
+            if response.ok {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
             }
         }
         Command::Coverage {

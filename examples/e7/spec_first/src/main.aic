@@ -1,0 +1,15 @@
+module demo.spec_first;
+
+struct User {
+    age: Int,
+    name: String,
+} invariant age >= 0
+
+enum ValidationError {
+    Internal,
+    EmptyName,
+}
+
+fn main() -> Int {
+    0
+}

@@ -1,0 +1,5 @@
+spec fn validate_user(user: User) -> Result[Bool, ValidationError] {
+    requires user.age >= 0
+    ensures result == Ok(false)
+    effects { io }
+}

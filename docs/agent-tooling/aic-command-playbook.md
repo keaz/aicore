@@ -1,0 +1,141 @@
+# Agent-First `aic` Command Playbook
+
+Purpose: choose the right `aic` command at the right stage of an autonomous workflow.
+
+Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (stability contract).
+
+## Command selection flow
+
+1. Need parse/type/effect feedback: use `aic check --json`.
+2. Need deterministic edits from diagnostics: use `aic diag apply-fixes --dry-run --json`.
+3. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --json`.
+4. Need a spec-first implementation preview: use `aic synthesize --from spec <name> --project . --json`.
+5. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
+6. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
+7. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
+8. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
+9. Need interactive editor integration: use `aic lsp`.
+
+## Decision matrix for autonomous loops
+
+| Loop stage | Primary command | Success signal | Failure handling path |
+|---|---|---|---|
+| Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>`, then apply targeted edits |
+| Context-window minimization | `aic context --for function <name> --depth <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
+| Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
+| Safe autofix planning | `aic diag apply-fixes <entry> --dry-run --json` | `ok: true` with deterministic edit plan | Resolve conflicts manually, re-run dry-run |
+| Structured patch planning | `aic patch --preview <patch.json> --json` | `ok: true`, non-empty `applied_edits[]`/`previews[]` | Resolve reported `conflicts[]`, re-run preview |
+| Canonical source shape | `aic fmt <entry> --check` | Exit `0` | Run `aic fmt <entry>`, re-check |
+| Semantic compatibility gate | `aic diff --semantic <old> <new> --fail-on-breaking` | Exit `0`, `summary.breaking == 0` | Inspect `changes[]`, adjust API/contracts/effects |
+| Build artifact production | `aic build <entry> ...` | Exit `0`, artifact emitted | Re-run `aic check --json`; fix frontend/backend diagnostics |
+| Runtime confirmation | `aic run <entry> ...` | Exit `0` | Use sandbox/profile flags + `aic check --json` for root cause |
+| Editor-assisted refactor loop | `aic lsp` | JSON-RPC initialize + diagnostics stream | Fall back to one-shot `check/fmt` commands |
+
+## Machine-output expectations
+
+These are the command outputs automation should parse directly:
+
+| Command | Machine-oriented output contract |
+|---|---|
+| `aic check --json` | JSON diagnostics array (`code`, `severity`, `message`, `spans`, `help`, `suggested_fixes`) |
+| `aic check --sarif` | SARIF 2.1.0 JSON document |
+| `aic check --show-holes` | Typed-hole JSON (`holes[]` with line/inferred/context) |
+| `aic diag apply-fixes --json` | Autofix plan/apply JSON (`ok`, `applied_edits`, `conflicts`) |
+| `aic context --json` | Context window JSON (`target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
+| `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`) |
+| `aic patch --json` | Structured patch JSON (`ok`, `applied_edits`, `previews`, `conflicts`) |
+| `aic ast --json` | AST+IR response including type/effect/import metadata |
+| `aic ir --emit json` | Canonical IR JSON |
+| `aic impact` | Impact report JSON (`direct_callers`, `transitive_callers`, `affected_tests`, ...) |
+| `aic suggest-effects` | Effect/capability suggestion JSON |
+| `aic suggest-contracts --json` | Contract suggestion JSON |
+| `aic metrics` / `aic coverage` / `aic bench` | Structured report JSON with optional threshold gating |
+| `aic diff --semantic` | Semantic change JSON (`changes[]`, `summary.breaking`, `summary.non_breaking`) |
+| `aic contract --json` | CLI compatibility contract JSON |
+| `aic lsp` / `aic daemon` | JSON-RPC 2.0 over stdio |
+
+## Contract-stable command families
+
+### Bootstrap and environment
+
+| Command | Use when | Key output mode |
+|---|---|---|
+| `aic init [path]` | Creating a fresh project scaffold | Text status |
+| `aic check [input] --json` | Core compile-time validation loop | Diagnostics JSON |
+| `aic diag [input] --json` | Diagnostics stream without full check wrapper | Diagnostics JSON |
+| `aic diag apply-fixes [input] --dry-run --json` | Planning safe automated edits | Planned edit JSON |
+| `aic explain <code> [--json]` | Translating error codes into fix intent | Text/JSON explanation |
+| `aic fmt [input] [--check]` | Deterministic formatting gate | Exit code + file rewrite/check |
+| `aic ir [input] --emit json|text` | Inspecting canonical frontend IR | IR JSON/text |
+| `aic impact <function> [input]` | Blast-radius estimation for refactors | JSON impact report |
+| `aic suggest-effects <input>` | Inferring missing effects/capabilities | JSON suggestions |
+| `aic suggest-contracts <input> [--json]` | Contract proposal generation | Text/JSON suggestions |
+| `aic context --for ... [--depth N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
+| `aic query [--kind ... --name ...]` | Semantic symbol retrieval by kind/name/effects/contracts | Text/JSON symbol report |
+| `aic symbols [--format text|json]` | Full workspace symbol export | Text/JSON symbol list |
+| `aic scaffold ...` | Generate typed boilerplate templates | Text/JSON scaffold payload |
+| `aic synthesize --from spec <name> [--json]` | Spec-first function + test fixture synthesis preview | Text/JSON artifact bundle |
+| `aic patch --preview|--apply <patch.json>` | Structured add/modify edits by symbol intent | Text/JSON patch response |
+| `aic metrics <input> [--check]` | Complexity/perf guardrails in CI | JSON metrics/check status |
+| `aic ir-migrate <ir.json>` | Upgrading legacy IR snapshots | Migrated IR JSON |
+| `aic migrate [path] [--json]` | Source/IR migration planning | Migration summary/JSON |
+| `aic lock [path]` | Deterministic dependency lock materialization | Lockfile generation status |
+| `aic pkg publish/search/install ...` | Package registry lifecycle | Text/JSON results |
+| `aic build [input] ...` | Producing executable/object/library artifacts | Artifact + optional manifest/hash checks |
+| `aic doc [input] --output <dir>` | API doc generation | Generated docs path |
+| `aic std-compat --check` | Std API compatibility gate | Text/JSON compatibility report |
+| `aic diff --semantic <old> <new>` | Semantic API delta between versions | Deterministic JSON report |
+| `aic lsp` | Language-server mode for editors/agents | JSON-RPC over stdio |
+| `aic debug dap [--adapter <path>]` | Debug adapter bridge | DAP process bridge |
+| `aic daemon` | Incremental check/build JSON-RPC server | JSON-RPC over stdio |
+| `aic test [path] [--json]` | Fixture + attribute/property test harness | Text/JSON harness report |
+| `aic contract --json` | CLI protocol negotiation/compatibility | Contract JSON |
+| `aic release ...` | Manifest/SBOM/provenance/policy/LTS/security ops | Text/JSON release outputs |
+| `aic run [input] ...` | Compile and execute with sandbox/runtime options | Program output + exit status |
+
+## Additional implemented commands (outside stable list)
+
+| Command | Use when | Notes |
+|---|---|---|
+| `aic setup [--std-root <path>]` | Installing std toolchain files | Required in clean environments before std imports work reliably |
+| `aic ast <input> --json` | Returning AST + IR + resolved metadata bundle | Requires `--json` |
+| `aic coverage <input> [--check --min <pct>]` | Coverage tracking and thresholds | JSON report, optional file write |
+| `aic bench [--budget ...]` | Perf gate execution with trend report | JSON payload + optional compare baseline |
+| `aic repl [--json]` | Interactive expression/function effect probing | Session protocol useful for tooling |
+| `aic grammar --ebnf|--json` | Grammar artifact export | Contract/EBNF output |
+
+## High-value automation patterns
+
+### Pattern: fast fix loop
+
+```bash
+aic check src/main.aic --json
+aic diag apply-fixes src/main.aic --dry-run --json
+aic fmt src/main.aic --check
+aic check src/main.aic --json
+```
+
+### Pattern: refactor safety gate
+
+```bash
+aic check src/main.aic --json
+aic diff --semantic before/main.aic after/main.aic --fail-on-breaking
+aic test . --json
+```
+
+### Pattern: editor+batch hybrid
+
+```bash
+# long-lived process
+aic lsp
+
+# CI/batch fallback
+aic check src/main.aic --json
+aic fmt src/main.aic --check
+```
+
+## Deep dives
+
+- `aic init`: `docs/agent-tooling/commands/aic-init.md`
+- `aic lsp`: `docs/agent-tooling/commands/aic-lsp.md`
+- `aic diff --semantic`: `docs/agent-tooling/commands/aic-diff.md`

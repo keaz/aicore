@@ -1,0 +1,3 @@
+[package]
+name = "spec_first"
+main = "src/main.aic"

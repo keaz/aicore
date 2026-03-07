@@ -39,6 +39,12 @@ Published parse/check/build/fix schemas:
 - `aic impact`
 - `aic suggest-effects`
 - `aic suggest-contracts`
+- `aic context`
+- `aic query`
+- `aic symbols`
+- `aic scaffold`
+- `aic synthesize`
+- `aic patch`
 - `aic metrics`
 - `aic ir-migrate`
 - `aic migrate`
@@ -55,6 +61,26 @@ Published parse/check/build/fix schemas:
 - `aic contract`
 - `aic release`
 - `aic run`
+
+Stable `patch` flags include:
+
+- `--preview` (compute deterministic edit plan without filesystem writes)
+- `--apply` (write patched files only when no conflicts are present)
+- `--project <path>` (symbol/index resolution root)
+- `--json` (machine-readable patch response)
+
+Stable `context` flags include:
+
+- `--for <target...>` (target selector; supports `function <name>` or `<module>.<name>`)
+- `--depth <N>` (transitive dependency/caller traversal depth)
+- `--project <path>` (project root used for symbol index + call graph extraction)
+- `--json` (machine-readable context response)
+
+Stable `synthesize` flags include:
+
+- `--from <kind>` (`spec` in the current implementation)
+- `--project <path>` (project root used to discover `spec fn` files and dependent types)
+- `--json` (machine-readable synthesis response)
 
 Stable `run` flags include:
 
@@ -193,6 +219,65 @@ Contract inference scope:
 Text mode:
 
 - default mode (without `--json`) is human-readable and grouped by function
+
+## `aic context` output modes
+
+Usage:
+
+```bash
+aic context --project . --for function process_user --depth 2 --json
+```
+
+JSON payload:
+
+- `protocol_version`
+- `phase` (`context`)
+- `depth`
+- `target` (`name`, `kind`, `signature`, optional `module`)
+- `dependencies[]` (`name`, `kind`, `signature`, optional `module`, `relation`, `distance`, optional contracts/effects/capabilities)
+- `callers[]` (`name`, `signature`, optional `module`, `distance`)
+- `contracts` (`requires`, `ensures`, `invariant`)
+- `related_tests[]`
+
+## `aic synthesize` output modes
+
+Usage:
+
+```bash
+aic synthesize --from spec validate_user --project . --json
+```
+
+Spec discovery and current scope:
+
+- reads restricted `spec fn` declarations from project `.aic` files, typically under `specs/`
+- supports body clauses on separate lines:
+  - `requires <expr>`
+  - `ensures <expr>`
+  - `effects { ... }`
+  - `capabilities { ... }`
+- does not write files in this wave; it emits deterministic artifact previews with `path_hint`
+
+JSON payload:
+
+- `protocol_version`
+- `phase` (`synthesize`)
+- `source_kind` (`spec`)
+- `target`
+- `spec_file`
+- `artifacts[]`
+  - `kind` (`function`, `attribute-test-fixture`)
+  - `name`
+  - `path_hint`
+  - `content`
+  - optional `reason`
+- `notes[]`
+
+Synthesis behavior:
+
+- emits an executable function skeleton carrying the declared signature/contracts/effects
+- mirrors `effects` into `capabilities` when capabilities are omitted in the spec
+- emits a self-contained attribute-test fixture with at least one happy-path test and one failing contract test when supported by the spec
+- reports non-lowerable clauses in `notes[]` instead of forcing them into runnable artifacts
 
 ## `aic metrics` JSON output
 

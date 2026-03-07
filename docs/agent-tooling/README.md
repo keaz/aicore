@@ -36,6 +36,8 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - `aic contract --json`
 - `aic ast --json <path>`
 - `aic check <path> --json`
+- `aic context --for function <name> --depth <n> --json`
+- `aic synthesize --from spec <name> --project . --json`
 - `aic diag apply-fixes <path> --dry-run --json`
 - `aic lsp`
 - `aic daemon`

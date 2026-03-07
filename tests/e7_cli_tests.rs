@@ -130,6 +130,121 @@ fn write_build_opt_project(root: &std::path::Path) {
     .expect("write build opt source");
 }
 
+fn write_symbol_query_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.search;\n",
+            "struct User {\n",
+            "    name: String,\n",
+            "    age: Int,\n",
+            "} invariant age >= 0\n",
+            "\n",
+            "enum AppError {\n",
+            "    NotFound,\n",
+            "    InvalidInput(String),\n",
+            "}\n",
+            "\n",
+            "fn validate_user(user: User) -> Bool effects { io } capabilities { io } ",
+            "requires user.age >= 0 ensures result == true {\n",
+            "    true\n",
+            "}\n",
+            "\n",
+            "fn helper() -> Int {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write symbol query fixture");
+}
+
+fn write_context_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.context;\n",
+            "struct User {\n",
+            "    age: Int,\n",
+            "} invariant age >= 0\n",
+            "\n",
+            "enum AppError {\n",
+            "    InvalidInput,\n",
+            "}\n",
+            "\n",
+            "fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {\n",
+            "    true\n",
+            "}\n",
+            "\n",
+            "fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {\n",
+            "    if validate_user(user) {\n",
+            "        Ok(1)\n",
+            "    } else {\n",
+            "        Err(InvalidInput())\n",
+            "    }\n",
+            "}\n",
+            "\n",
+            "fn orchestrate() -> Int {\n",
+            "    match process_user(User { age: 1 }) {\n",
+            "        Ok(v) => v,\n",
+            "        Err(_) => 0,\n",
+            "    }\n",
+            "}\n",
+            "\n",
+            "fn test_process_user_ok() -> Int {\n",
+            "    orchestrate()\n",
+            "}\n",
+            "\n",
+            "fn main() -> Int {\n",
+            "    orchestrate()\n",
+            "}\n",
+        ),
+    )
+    .expect("write context fixture");
+}
+
+fn write_synthesize_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::create_dir_all(root.join("specs")).expect("mkdir specs");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"spec_first\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write synthesize aic.toml");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.spec_first;\n",
+            "struct User {\n",
+            "    age: Int,\n",
+            "    name: String,\n",
+            "} invariant age >= 0\n",
+            "\n",
+            "enum ValidationError {\n",
+            "    Internal,\n",
+            "    EmptyName,\n",
+            "}\n",
+            "\n",
+            "fn main() -> Int {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write synthesize source");
+    fs::write(
+        root.join("specs/validate_user.aic"),
+        concat!(
+            "spec fn validate_user(user: User) -> Result[Bool, ValidationError] {\n",
+            "    requires user.age >= 0\n",
+            "    ensures result == Ok(false)\n",
+            "    effects { io }\n",
+            "}\n",
+        ),
+    )
+    .expect("write synthesize spec");
+}
+
 fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
     let events = read_events(telemetry_path).expect("read telemetry events");
     events
@@ -299,6 +414,12 @@ fn cli_help_snapshots_are_stable() {
         "ast",
         "impact",
         "suggest-effects",
+        "context",
+        "query",
+        "symbols",
+        "scaffold",
+        "synthesize",
+        "patch",
         "coverage",
         "metrics",
         "bench",
@@ -355,6 +476,31 @@ fn cli_help_snapshots_are_stable() {
         assert!(
             ast_help_text.contains(flag),
             "missing `{flag}` in ast help:\n{ast_help_text}"
+        );
+    }
+
+    let context_help = run_aic(&["context", "--help"]);
+    assert!(context_help.status.success());
+    let context_help_text = String::from_utf8_lossy(&context_help.stdout);
+    for flag in [
+        "--for <TARGET>...",
+        "--depth <N>",
+        "--project <PROJECT>",
+        "--json",
+    ] {
+        assert!(
+            context_help_text.contains(flag),
+            "missing `{flag}` in context help:\n{context_help_text}"
+        );
+    }
+
+    let synthesize_help = run_aic(&["synthesize", "--help"]);
+    assert!(synthesize_help.status.success());
+    let synthesize_help_text = String::from_utf8_lossy(&synthesize_help.stdout);
+    for flag in ["--from <FROM>", "--project <PROJECT>", "--json"] {
+        assert!(
+            synthesize_help_text.contains(flag),
+            "missing `{flag}` in synthesize help:\n{synthesize_help_text}"
         );
     }
 
@@ -429,6 +575,455 @@ fn cli_help_snapshots_are_stable() {
         normalize_help_snapshot(&test_help_text),
         normalize_help_snapshot(include_str!("golden/e7/help_test.txt"))
     );
+}
+
+#[test]
+fn query_and_symbols_commands_emit_deterministic_json_payloads() {
+    let project = tempdir().expect("tempdir");
+    write_symbol_query_fixture(project.path());
+
+    let query = run_aic_in_dir(
+        project.path(),
+        &[
+            "query",
+            "--project",
+            ".",
+            "--kind",
+            "function",
+            "--name",
+            "validate*",
+            "--effects",
+            "io",
+            "--has-requires",
+            "--has-ensures",
+            "--json",
+        ],
+    );
+    assert_eq!(query.status.code(), Some(0));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query json");
+    assert_eq!(query_json["matched_symbols"], 1);
+    assert_eq!(query_json["symbols"][0]["name"], "validate_user");
+    assert_eq!(query_json["symbols"][0]["kind"], "function");
+    assert_eq!(query_json["symbols"][0]["effects"][0], "io");
+    assert!(query_json["symbols"][0]["requires"].is_string());
+    assert!(query_json["symbols"][0]["ensures"].is_string());
+
+    let symbols = run_aic_in_dir(
+        project.path(),
+        &["symbols", "--project", ".", "--format", "json"],
+    );
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
+    let entries = symbols_json.as_array().expect("symbols array");
+    assert!(entries
+        .iter()
+        .any(|entry| entry["name"] == "User" && entry["kind"] == "struct"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["name"] == "validate_user" && entry["kind"] == "function"));
+}
+
+#[test]
+fn context_command_emits_ranked_context_window_payload() {
+    let project = tempdir().expect("tempdir");
+    write_context_fixture(project.path());
+
+    let first = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "process_user",
+            "--depth",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "context stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let first_json: Value = serde_json::from_slice(&first.stdout).expect("context json");
+    assert_eq!(first_json["phase"], "context");
+    assert_eq!(first_json["depth"], 2);
+    assert_eq!(first_json["target"]["name"], "process_user");
+    assert_eq!(first_json["target"]["kind"], "function");
+    assert!(first_json["target"]["signature"]
+        .as_str()
+        .expect("target signature")
+        .contains("fn process_user"));
+    assert!(first_json["dependencies"]
+        .as_array()
+        .expect("dependencies")
+        .iter()
+        .any(|dependency| {
+            dependency["name"] == "User"
+                && dependency["kind"] == "struct"
+                && dependency["relation"] == "signature_type"
+        }));
+    assert!(first_json["dependencies"]
+        .as_array()
+        .expect("dependencies")
+        .iter()
+        .any(|dependency| {
+            dependency["name"] == "validate_user"
+                && dependency["kind"] == "function"
+                && dependency["relation"] == "call"
+                && dependency["distance"] == 1
+        }));
+    assert!(first_json["callers"]
+        .as_array()
+        .expect("callers")
+        .iter()
+        .any(|caller| caller["name"] == "orchestrate" && caller["distance"] == 1));
+    assert!(first_json["callers"]
+        .as_array()
+        .expect("callers")
+        .iter()
+        .any(|caller| caller["name"] == "test_process_user_ok" && caller["distance"] == 2));
+    assert!(first_json["related_tests"]
+        .as_array()
+        .expect("related tests")
+        .iter()
+        .any(|name| name
+            .as_str()
+            .unwrap_or_default()
+            .ends_with(".test_process_user_ok")));
+
+    let second = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "process_user",
+            "--depth",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "aic context --json output must be deterministic"
+    );
+}
+
+#[test]
+fn scaffold_command_generates_wave1_templates() {
+    let strukt = run_aic(&[
+        "scaffold",
+        "struct",
+        "User",
+        "--field",
+        "name:String",
+        "--field",
+        "age:Int",
+        "--with-invariant",
+        "age >= 0",
+    ]);
+    assert_eq!(strukt.status.code(), Some(0));
+    let struct_text = String::from_utf8_lossy(&strukt.stdout);
+    assert!(struct_text.contains("struct User {"));
+    assert!(struct_text.contains("name: String"));
+    assert!(struct_text.contains("invariant age >= 0"));
+
+    let function = run_aic(&[
+        "scaffold",
+        "fn",
+        "process_user",
+        "--param",
+        "u:User",
+        "--return",
+        "Result[Int, AppError]",
+        "--effect",
+        "io",
+        "--requires",
+        "u.age >= 0",
+        "--ensures",
+        "true",
+        "--json",
+    ]);
+    assert_eq!(function.status.code(), Some(0));
+    let function_json: Value = serde_json::from_slice(&function.stdout).expect("scaffold fn json");
+    assert_eq!(function_json["kind"], "fn");
+    assert_eq!(function_json["name"], "process_user");
+    assert!(function_json["content"]
+        .as_str()
+        .expect("content")
+        .contains("effects { io }"));
+
+    let match_scaffold = run_aic(&[
+        "scaffold",
+        "match",
+        "my_result",
+        "--arm",
+        "Ok(v)=>v",
+        "--arm",
+        "Err(e)=>todo()",
+        "--exhaustive",
+    ]);
+    assert_eq!(match_scaffold.status.code(), Some(0));
+    let match_text = String::from_utf8_lossy(&match_scaffold.stdout);
+    assert!(match_text.contains("Ok(v) => v"));
+    assert!(!match_text.contains("_ =>"));
+
+    let test_scaffold = run_aic(&["scaffold", "test", "--for", "process_user"]);
+    assert_eq!(test_scaffold.status.code(), Some(0));
+    let test_text = String::from_utf8_lossy(&test_scaffold.stdout);
+    assert!(test_text.contains("#[test]"));
+    assert!(test_text.contains("compile-fail fixture template"));
+}
+
+#[test]
+fn synthesize_command_emits_spec_first_artifacts_and_runnable_fixture() {
+    let project = tempdir().expect("tempdir");
+    write_synthesize_fixture(project.path());
+
+    let first = run_aic_in_dir(
+        project.path(),
+        &[
+            "synthesize",
+            "--from",
+            "spec",
+            "validate_user",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "synthesize stdout={}\nstderr={}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let synth_json: Value = serde_json::from_slice(&first.stdout).expect("synthesize json");
+    assert_eq!(synth_json["phase"], "synthesize");
+    assert_eq!(synth_json["source_kind"], "spec");
+    assert_eq!(synth_json["target"], "validate_user");
+    assert!(synth_json["notes"]
+        .as_array()
+        .expect("notes")
+        .iter()
+        .any(|note| note.as_str().unwrap_or_default().contains("capability")));
+
+    let artifacts = synth_json["artifacts"].as_array().expect("artifacts");
+    let function = artifacts
+        .iter()
+        .find(|artifact| artifact["kind"] == "function")
+        .expect("function artifact");
+    assert_eq!(function["path_hint"], "src/generated/validate_user.aic");
+    let function_content = function["content"].as_str().expect("function content");
+    assert!(
+        function_content.contains("fn validate_user(user: User) -> Result[Bool, ValidationError]")
+    );
+    assert!(function_content.contains("effects { io }"));
+    assert!(function_content.contains("capabilities { io }"));
+    assert!(function_content.contains("Ok(false)"));
+
+    let fixture = artifacts
+        .iter()
+        .find(|artifact| artifact["kind"] == "attribute-test-fixture")
+        .expect("fixture artifact");
+    let fixture_content = fixture["content"].as_str().expect("fixture content");
+    assert!(fixture_content.contains("#[test]"));
+    assert!(fixture_content.contains("#[should_panic]"));
+    assert!(fixture_content.contains("struct User {"));
+    assert!(fixture_content.contains("enum ValidationError {"));
+
+    fs::write(project.path().join("generated_tests.aic"), fixture_content)
+        .expect("write generated fixture");
+    let test_output = run_aic_in_dir(
+        project.path(),
+        &["test", ".", "--filter", "validate_user", "--json"],
+    );
+    assert_eq!(
+        test_output.status.code(),
+        Some(0),
+        "generated tests stdout={}\nstderr={}",
+        String::from_utf8_lossy(&test_output.stdout),
+        String::from_utf8_lossy(&test_output.stderr)
+    );
+    let test_json: Value =
+        serde_json::from_slice(&test_output.stdout).expect("generated test json");
+    assert_eq!(test_json["failed"], 0);
+    assert_eq!(test_json["passed"], 2);
+
+    let second = run_aic_in_dir(
+        project.path(),
+        &[
+            "synthesize",
+            "--from",
+            "spec",
+            "validate_user",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        first.stdout, second.stdout,
+        "aic synthesize --json output must be deterministic"
+    );
+}
+
+#[test]
+fn patch_command_preview_and_apply_support_structured_operations() {
+    let project = tempdir().expect("tempdir");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        concat!(
+            "module demo.patch;\n",
+            "struct Config {\n",
+            "    port: Int\n",
+            "}\n",
+            "fn handle_result(x: Result[Int, Int]) -> Int {\n",
+            "    match x {\n",
+            "        Ok(v) => v,\n",
+            "        Err(e) => e,\n",
+            "    }\n",
+            "}\n",
+            "fn main() -> Int {\n",
+            "    handle_result(Ok(1))\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let patch_path = project.path().join("structured_patch.json");
+    fs::write(
+        &patch_path,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "add_field",
+                    "target_file": "src/main.aic",
+                    "target_struct": "Config",
+                    "field": { "name": "timeout", "ty": "Int" }
+                },
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "0 - e"
+                },
+                {
+                    "kind": "add_function",
+                    "target_file": "src/main.aic",
+                    "after_symbol": "handle_result",
+                    "function": {
+                        "name": "validate_port",
+                        "params": [ { "name": "c", "ty": "Config" } ],
+                        "return_type": "Bool",
+                        "body": "c.port >= 0"
+                    }
+                }
+            ]
+        }))
+        .expect("serialize patch document"),
+    )
+    .expect("write patch document");
+    let patch_arg = patch_path.to_string_lossy().to_string();
+
+    let preview = run_aic_in_dir(
+        project.path(),
+        &["patch", "--preview", &patch_arg, "--json"],
+    );
+    assert_eq!(preview.status.code(), Some(0));
+    let preview_json: Value = serde_json::from_slice(&preview.stdout).expect("preview json");
+    assert_eq!(preview_json["phase"], "patch");
+    assert_eq!(preview_json["mode"], "preview");
+    assert_eq!(preview_json["ok"], true);
+    assert!(
+        preview_json["applied_edits"]
+            .as_array()
+            .expect("applied edits")
+            .len()
+            >= 3
+    );
+    assert!(preview_json["previews"].as_array().expect("previews").len() >= 3);
+
+    let after_preview = fs::read_to_string(&source_path).expect("read source after preview");
+    assert!(after_preview.contains("Err(e) => e"));
+    assert!(!after_preview.contains("validate_port"));
+
+    let apply = run_aic_in_dir(project.path(), &["patch", "--apply", &patch_arg, "--json"]);
+    assert_eq!(apply.status.code(), Some(0));
+    let apply_json: Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(apply_json["mode"], "apply");
+    assert_eq!(apply_json["ok"], true);
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
+    assert!(rewritten.contains("timeout: Int"));
+    assert!(rewritten.contains("Err(e) => 0 - e"));
+    assert!(rewritten.contains("fn validate_port(c: Config) -> Bool"));
+
+    let check = run_aic_in_dir(project.path(), &["check", "src/main.aic"]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+#[test]
+fn patch_command_reports_conflicts_without_writing_files() {
+    let project = tempdir().expect("tempdir");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    let source_path = project.path().join("src/main.aic");
+    fs::write(
+        &source_path,
+        "module demo.patch;\nfn main() -> Int {\n    0\n}\n",
+    )
+    .expect("write source");
+
+    let patch_path = project.path().join("conflict_patch.json");
+    fs::write(
+        &patch_path,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "add_field",
+                    "target_file": "src/main.aic",
+                    "target_struct": "Missing",
+                    "field": { "name": "timeout", "ty": "Int" }
+                }
+            ]
+        }))
+        .expect("serialize patch document"),
+    )
+    .expect("write patch document");
+    let patch_arg = patch_path.to_string_lossy().to_string();
+
+    let apply = run_aic_in_dir(project.path(), &["patch", "--apply", &patch_arg, "--json"]);
+    assert_eq!(apply.status.code(), Some(1));
+    let apply_json: Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(apply_json["ok"], false);
+    assert_eq!(
+        apply_json["conflicts"].as_array().expect("conflicts").len(),
+        1
+    );
+
+    let after = fs::read_to_string(&source_path).expect("read after failed apply");
+    assert_eq!(after, "module demo.patch;\nfn main() -> Int {\n    0\n}\n");
 }
 
 #[test]
@@ -1488,6 +2083,36 @@ fn explain_and_contract_commands_work() {
         .expect("commands")
         .iter()
         .any(|c| c["name"] == "bench"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "context"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "query"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "symbols"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "scaffold"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "synthesize"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .any(|c| c["name"] == "patch"));
     let bench_contract = contract_json["commands"]
         .as_array()
         .expect("commands")
@@ -1536,6 +2161,54 @@ fn explain_and_contract_commands_work() {
         .expect("debug stable flags")
         .iter()
         .any(|flag| flag == "dap --adapter"));
+    let patch_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "patch")
+        .expect("patch command contract");
+    let context_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "context")
+        .expect("context command contract");
+    assert!(context_contract["stable_flags"]
+        .as_array()
+        .expect("context stable flags")
+        .iter()
+        .any(|flag| flag == "--for"));
+    assert!(context_contract["stable_flags"]
+        .as_array()
+        .expect("context stable flags")
+        .iter()
+        .any(|flag| flag == "--depth"));
+    let synthesize_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "synthesize")
+        .expect("synthesize command contract");
+    assert!(synthesize_contract["stable_flags"]
+        .as_array()
+        .expect("synthesize stable flags")
+        .iter()
+        .any(|flag| flag == "--from"));
+    assert!(synthesize_contract["stable_flags"]
+        .as_array()
+        .expect("synthesize stable flags")
+        .iter()
+        .any(|flag| flag == "--project"));
+    assert!(patch_contract["stable_flags"]
+        .as_array()
+        .expect("patch stable flags")
+        .iter()
+        .any(|flag| flag == "--preview"));
+    assert!(patch_contract["stable_flags"]
+        .as_array()
+        .expect("patch stable flags")
+        .iter()
+        .any(|flag| flag == "--apply"));
     for phase in ["parse", "ast", "check", "build", "fix"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
