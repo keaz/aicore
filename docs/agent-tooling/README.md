@@ -40,6 +40,7 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - `aic context --for function <name> --depth <n> --json`
 - `aic synthesize --from spec <name> --project . --json`
 - `aic testgen --strategy boundary --for function <name> --project . --json`
+- `aic checkpoint diff <checkpoint> [--to <checkpoint>] --project . --json`
 - `aic diag apply-fixes <path> --dry-run --json`
 - `aic lsp`
 - `aic daemon`

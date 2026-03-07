@@ -277,6 +277,27 @@ fn write_testgen_fixture(root: &std::path::Path) {
     .expect("write testgen source");
 }
 
+fn write_checkpoint_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"checkpoint_fixture\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write checkpoint aic.toml");
+    fs::write(root.join("aic.lock"), "{\n  \"schema_version\": 2\n}\n")
+        .expect("write checkpoint aic.lock");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.checkpoint;\n",
+            "fn main() -> Int {\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write checkpoint source");
+}
+
 fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
     let events = read_events(telemetry_path).expect("read telemetry events");
     events
@@ -452,6 +473,7 @@ fn cli_help_snapshots_are_stable() {
         "scaffold",
         "synthesize",
         "testgen",
+        "checkpoint",
         "patch",
         "coverage",
         "metrics",
@@ -551,6 +573,34 @@ fn cli_help_snapshots_are_stable() {
         assert!(
             testgen_help_text.contains(flag),
             "missing `{flag}` in testgen help:\n{testgen_help_text}"
+        );
+    }
+
+    let checkpoint_help = run_aic(&["checkpoint", "--help"]);
+    assert!(checkpoint_help.status.success());
+    let checkpoint_help_text = String::from_utf8_lossy(&checkpoint_help.stdout);
+    for token in ["create", "list", "restore", "diff", "--json"] {
+        assert!(
+            checkpoint_help_text.contains(token),
+            "missing `{token}` in checkpoint help:\n{checkpoint_help_text}"
+        );
+    }
+
+    let checkpoint_create_help = run_aic(&["checkpoint", "create", "--help"]);
+    assert!(checkpoint_create_help.status.success());
+    let checkpoint_create_help_text = String::from_utf8_lossy(&checkpoint_create_help.stdout);
+    assert!(
+        checkpoint_create_help_text.contains("--project <PROJECT>"),
+        "missing `--project <PROJECT>` in checkpoint create help:\n{checkpoint_create_help_text}"
+    );
+
+    let checkpoint_diff_help = run_aic(&["checkpoint", "diff", "--help"]);
+    assert!(checkpoint_diff_help.status.success());
+    let checkpoint_diff_help_text = String::from_utf8_lossy(&checkpoint_diff_help.stdout);
+    for token in ["--to <TO>", "--project <PROJECT>"] {
+        assert!(
+            checkpoint_diff_help_text.contains(token),
+            "missing `{token}` in checkpoint diff help:\n{checkpoint_diff_help_text}"
         );
     }
 
@@ -1081,6 +1131,206 @@ fn testgen_command_reports_actionable_strategy_target_failures() {
     assert!(
         stderr.contains("strategy `boundary` requires a function target"),
         "expected actionable diagnostic, got stderr={stderr}"
+    );
+}
+
+#[test]
+fn checkpoint_command_round_trips_restore_and_emits_deterministic_diff() {
+    let project = tempdir().expect("tempdir");
+    write_checkpoint_fixture(project.path());
+
+    let create_first = run_aic_in_dir(
+        project.path(),
+        &["checkpoint", "create", "--project", ".", "--json"],
+    );
+    assert_eq!(
+        create_first.status.code(),
+        Some(0),
+        "checkpoint create stdout={}\nstderr={}",
+        String::from_utf8_lossy(&create_first.stdout),
+        String::from_utf8_lossy(&create_first.stderr)
+    );
+    let create_first_json: Value =
+        serde_json::from_slice(&create_first.stdout).expect("checkpoint create json");
+    assert_eq!(create_first_json["phase"], "checkpoint");
+    assert_eq!(create_first_json["command"], "create");
+    assert_eq!(create_first_json["checkpoint"]["id"], "ckpt-0001");
+
+    fs::write(
+        project.path().join("src/main.aic"),
+        concat!(
+            "module demo.checkpoint;\n",
+            "fn helper() -> Int {\n",
+            "    1\n",
+            "}\n",
+            "fn main() -> Int {\n",
+            "    helper()\n",
+            "}\n",
+        ),
+    )
+    .expect("rewrite checkpoint source");
+    fs::write(
+        project.path().join("aic.lock"),
+        "{\n  \"schema_version\": 3\n}\n",
+    )
+    .expect("rewrite checkpoint lockfile");
+
+    let create_second = run_aic_in_dir(
+        project.path(),
+        &["checkpoint", "create", "--project", ".", "--json"],
+    );
+    assert_eq!(create_second.status.code(), Some(0));
+    let create_second_json: Value =
+        serde_json::from_slice(&create_second.stdout).expect("checkpoint create second json");
+    assert_eq!(create_second_json["checkpoint"]["id"], "ckpt-0002");
+
+    let list_output = run_aic_in_dir(
+        project.path(),
+        &["checkpoint", "list", "--project", ".", "--json"],
+    );
+    assert_eq!(list_output.status.code(), Some(0));
+    let list_json: Value = serde_json::from_slice(&list_output.stdout).expect("checkpoint list");
+    let checkpoints = list_json["checkpoints"]
+        .as_array()
+        .expect("checkpoint array");
+    assert_eq!(checkpoints.len(), 2);
+    assert_eq!(checkpoints[0]["id"], "ckpt-0001");
+    assert_eq!(checkpoints[1]["id"], "ckpt-0002");
+
+    let diff_args = [
+        "checkpoint",
+        "diff",
+        "ckpt-0001",
+        "--to",
+        "ckpt-0002",
+        "--project",
+        ".",
+        "--json",
+    ];
+    let diff_first = run_aic_in_dir(project.path(), &diff_args);
+    assert_eq!(
+        diff_first.status.code(),
+        Some(0),
+        "checkpoint diff stdout={}\nstderr={}",
+        String::from_utf8_lossy(&diff_first.stdout),
+        String::from_utf8_lossy(&diff_first.stderr)
+    );
+    let diff_first_json: Value =
+        serde_json::from_slice(&diff_first.stdout).expect("checkpoint diff json");
+    assert_eq!(diff_first_json["command"], "diff");
+    assert_eq!(diff_first_json["from"], "checkpoint:ckpt-0001");
+    assert_eq!(diff_first_json["to"], "checkpoint:ckpt-0002");
+    assert_eq!(diff_first_json["summary"]["modified"], 2);
+    assert_eq!(diff_first_json["summary"]["semantic_non_breaking"], 1);
+    assert!(diff_first_json["files"]
+        .as_array()
+        .expect("checkpoint diff files")
+        .iter()
+        .any(|file| {
+            file["path"] == "src/main.aic"
+                && file["status"] == "modified"
+                && file["semantic"]["summary"]["non_breaking"] == 1
+        }));
+
+    let diff_second = run_aic_in_dir(project.path(), &diff_args);
+    assert_eq!(diff_second.status.code(), Some(0));
+    assert_eq!(
+        diff_first.stdout, diff_second.stdout,
+        "aic checkpoint diff --json output must be deterministic"
+    );
+
+    let restore_output = run_aic_in_dir(
+        project.path(),
+        &[
+            "checkpoint",
+            "restore",
+            "ckpt-0001",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        restore_output.status.code(),
+        Some(0),
+        "checkpoint restore stdout={}\nstderr={}",
+        String::from_utf8_lossy(&restore_output.stdout),
+        String::from_utf8_lossy(&restore_output.stderr)
+    );
+    let restore_json: Value =
+        serde_json::from_slice(&restore_output.stdout).expect("checkpoint restore json");
+    assert_eq!(restore_json["command"], "restore");
+    assert_eq!(restore_json["restored_files"], 3);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/main.aic")).expect("read restored source"),
+        concat!(
+            "module demo.checkpoint;\n",
+            "fn main() -> Int {\n",
+            "    0\n",
+            "}\n",
+        )
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("aic.lock")).expect("read restored lock"),
+        "{\n  \"schema_version\": 2\n}\n"
+    );
+}
+
+#[test]
+fn checkpoint_command_reports_corrupt_snapshot_without_partial_restore() {
+    let project = tempdir().expect("tempdir");
+    write_checkpoint_fixture(project.path());
+
+    let create_output = run_aic_in_dir(
+        project.path(),
+        &["checkpoint", "create", "--project", ".", "--json"],
+    );
+    assert_eq!(create_output.status.code(), Some(0));
+
+    fs::write(
+        project
+            .path()
+            .join(".aic-checkpoints/ckpt-0001/files/src/main.aic"),
+        "module demo.checkpoint;\nfn main() -> Int {\n    999\n}\n",
+    )
+    .expect("tamper checkpoint snapshot");
+
+    fs::write(
+        project.path().join("src/main.aic"),
+        concat!(
+            "module demo.checkpoint;\n",
+            "fn main() -> Int {\n",
+            "    77\n",
+            "}\n",
+        ),
+    )
+    .expect("rewrite source before restore");
+
+    let restore_output = run_aic_in_dir(
+        project.path(),
+        &[
+            "checkpoint",
+            "restore",
+            "ckpt-0001",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(restore_output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&restore_output.stderr);
+    assert!(
+        stderr.contains("snapshot hash mismatch for src/main.aic"),
+        "expected hash mismatch diagnostic, got stderr={stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/main.aic")).expect("read unchanged source"),
+        concat!(
+            "module demo.checkpoint;\n",
+            "fn main() -> Int {\n",
+            "    77\n",
+            "}\n",
+        )
     );
 }
 
@@ -2322,6 +2572,11 @@ fn explain_and_contract_commands_work() {
         .as_array()
         .expect("commands")
         .iter()
+        .any(|c| c["name"] == "checkpoint"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
         .any(|c| c["name"] == "patch"));
     let bench_contract = contract_json["commands"]
         .as_array()
@@ -2415,6 +2670,12 @@ fn explain_and_contract_commands_work() {
         .iter()
         .find(|c| c["name"] == "testgen")
         .expect("testgen command contract");
+    let checkpoint_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "checkpoint")
+        .expect("checkpoint command contract");
     assert!(testgen_contract["stable_flags"]
         .as_array()
         .expect("testgen stable flags")
@@ -2425,6 +2686,16 @@ fn explain_and_contract_commands_work() {
         .expect("testgen stable flags")
         .iter()
         .any(|flag| flag == "--emit-dir"));
+    assert!(checkpoint_contract["stable_flags"]
+        .as_array()
+        .expect("checkpoint stable flags")
+        .iter()
+        .any(|flag| flag == "subcommands:create,list,restore,diff"));
+    assert!(checkpoint_contract["stable_flags"]
+        .as_array()
+        .expect("checkpoint stable flags")
+        .iter()
+        .any(|flag| flag == "diff --to"));
     assert!(patch_contract["stable_flags"]
         .as_array()
         .expect("patch stable flags")
@@ -5154,5 +5425,55 @@ fn doc_command_std_net_json_includes_all_declared_functions() {
     assert_eq!(
         documented_functions, declared_functions,
         "std.net function coverage mismatch in aic doc json"
+    );
+}
+
+#[test]
+fn checkpoint_docs_and_contract_references_are_consistent() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    let checkpoint_command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|entry| entry["name"] == "checkpoint")
+        .expect("checkpoint command contract");
+    assert!(checkpoint_command["stable_flags"]
+        .as_array()
+        .expect("checkpoint stable flags")
+        .iter()
+        .any(|flag| flag == "create --project"));
+    assert!(checkpoint_command["stable_flags"]
+        .as_array()
+        .expect("checkpoint stable flags")
+        .iter()
+        .any(|flag| flag == "diff --to"));
+
+    let cli_contract_doc =
+        fs::read_to_string(repo_root().join("docs/cli-contract.md")).expect("read cli contract");
+    assert!(
+        cli_contract_doc.contains("aic checkpoint"),
+        "cli contract doc missing checkpoint command reference"
+    );
+    assert!(
+        cli_contract_doc.contains("Stable `checkpoint` flags include"),
+        "cli contract doc missing checkpoint flag section"
+    );
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains("aic checkpoint diff"),
+        "agent tooling README missing checkpoint command reference"
+    );
+
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/aic-command-playbook.md"))
+            .expect("read command playbook");
+    assert!(
+        playbook.contains("aic checkpoint"),
+        "command playbook missing checkpoint command reference"
     );
 }

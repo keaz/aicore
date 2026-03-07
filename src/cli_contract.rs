@@ -287,6 +287,21 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json"],
     },
     CommandContract {
+        name: "checkpoint",
+        description:
+            "Create, list, diff, and restore deterministic workspace checkpoints with integrity validation",
+        stable_flags: &[
+            "subcommands:create,list,restore,diff",
+            "--json",
+            "create --project",
+            "list --project",
+            "restore --project",
+            "diff --project",
+            "diff --to",
+        ],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "release",
         description: "Release security and operations workflows",
         stable_flags: &["subcommands"],

@@ -46,6 +46,7 @@ Published parse/check/build/fix/testgen schemas:
 - `aic scaffold`
 - `aic synthesize`
 - `aic testgen`
+- `aic checkpoint`
 - `aic patch`
 - `aic metrics`
 - `aic ir-migrate`
@@ -92,6 +93,14 @@ Stable `testgen` flags include:
 - `--emit-dir <path>` (materialize generated fixtures under the provided root using each artifact `path_hint`)
 - `--seed <N>` (deterministic value-synthesis seed)
 - `--json` (machine-readable test-generation response)
+
+Stable `checkpoint` flags include:
+
+- `create --project <path>` (capture deterministic workspace snapshot rooted at the resolved project path)
+- `list --project <path>` (enumerate stored checkpoints in deterministic id order)
+- `restore <checkpoint> --project <path>` (validate snapshot integrity and restore checkpointed files)
+- `diff <checkpoint> [--to <checkpoint>] --project <path>` (compare checkpoint to workspace or another checkpoint)
+- `--json` (machine-readable checkpoint response envelope)
 
 Stable `run` flags include:
 
@@ -322,6 +331,59 @@ Generation behavior:
 - `effect-coverage` emits a declared-effect `run-pass` fixture and, for effectful targets, a missing-effect `compile-fail` fixture
 - generated values are deterministic for a fixed seed and selector
 - unsupported strategy/target pairs fail with actionable diagnostics instead of producing partial output
+
+## `aic checkpoint` output modes
+
+Usage:
+
+```bash
+aic checkpoint create --project . --json
+aic checkpoint list --project . --json
+aic checkpoint diff ckpt-0001 --to ckpt-0002 --project . --json
+aic checkpoint restore ckpt-0001 --project . --json
+```
+
+JSON payloads:
+
+- common envelope:
+  - `protocol_version`
+  - `phase` (`checkpoint`)
+  - `command` (`create|list|diff|restore`)
+- `create`
+  - `checkpoint` (`id`, `file_count`, `total_bytes`, `digest`)
+- `list`
+  - `checkpoints[]` (`id`, `file_count`, `total_bytes`, `digest`)
+- `diff`
+  - `from`
+  - `to`
+  - `summary`
+    - `added`
+    - `removed`
+    - `modified`
+    - `unchanged`
+    - `semantic_breaking`
+    - `semantic_non_breaking`
+  - `files[]`
+    - `path`
+    - `status` (`added|removed|modified|unchanged`)
+    - optional `old_sha256`
+    - optional `new_sha256`
+    - optional `semantic` (`changes[]`, `summary.breaking`, `summary.non_breaking`)
+    - optional `semantic_error` when text/hash comparison succeeded but semantic parsing failed
+- `restore`
+  - `checkpoint`
+  - `restored_files`
+  - `restored_paths[]`
+  - `verified`
+
+Checkpoint behavior:
+
+- snapshots include deterministic project inputs under the resolved project root: `aic.toml`, `aic.lock`, and `*.aic`
+- metadata is versioned with `schema_version = 1`; readers reject unknown future versions
+- snapshot manifests and per-file SHA256 hashes are validated before diff/restore proceeds
+- restore uses staged temp files plus rollback of backed-up originals so validation failures never partially rewrite the workspace
+- `diff` defaults to `checkpoint -> current workspace`; `--to` switches to checkpoint-to-checkpoint comparison
+- semantic summaries are produced for changed `.aic` files using the same semantic engine as `aic diff --semantic`
 
 ## `aic metrics` JSON output
 

@@ -11,11 +11,12 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 3. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --json`.
 4. Need a spec-first implementation preview: use `aic synthesize --from spec <name> --project . --json`.
 5. Need deterministic harness fixtures from contracts/types/effects: use `aic testgen --strategy <strategy> --for <selector> --project . --json`.
-6. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
-7. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
-8. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
-9. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
-10. Need interactive editor integration: use `aic lsp`.
+6. Need a reversible workspace snapshot before or after edits: use `aic checkpoint create --project . --json`, then `aic checkpoint diff`/`restore`.
+7. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
+8. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
+9. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
+10. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
+11. Need interactive editor integration: use `aic lsp`.
 
 ## Decision matrix for autonomous loops
 
@@ -25,6 +26,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 | Context-window minimization | `aic context --for function <name> --depth <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
 | Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
 | Harness fixture generation | `aic testgen --strategy <strategy> --for <selector> --project . --json` | Strategy-specific fixture artifacts emitted deterministically | Adjust selector/strategy pair or simplify unsupported contracts/invariants |
+| Checkpoint safety rail | `aic checkpoint create --project . --json` then `aic checkpoint diff <id> [--to <id>] --project . --json` | Stable checkpoint id plus deterministic file/hash/semantic diff summary | Use `aic checkpoint restore <id> --project . --json` to revert checkpointed files; corruption returns non-zero with no partial restore |
 | Safe autofix planning | `aic diag apply-fixes <entry> --dry-run --json` | `ok: true` with deterministic edit plan | Resolve conflicts manually, re-run dry-run |
 | Structured patch planning | `aic patch --preview <patch.json> --json` | `ok: true`, non-empty `applied_edits[]`/`previews[]` | Resolve reported `conflicts[]`, re-run preview |
 | Canonical source shape | `aic fmt <entry> --check` | Exit `0` | Run `aic fmt <entry>`, re-check |
@@ -46,6 +48,7 @@ These are the command outputs automation should parse directly:
 | `aic context --json` | Context window JSON (`target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
 | `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`) |
 | `aic testgen --json` | Harness-generation JSON (`strategy`, `seed`, `target`, `artifacts[]`, `notes[]`) |
+| `aic checkpoint --json` | Checkpoint JSON (`checkpoint`, `checkpoints[]`, `summary`, `files[]`, `restored_paths[]`) |
 | `aic patch --json` | Structured patch JSON (`ok`, `applied_edits`, `previews`, `conflicts`) |
 | `aic ast --json` | AST+IR response including type/effect/import metadata |
 | `aic ir --emit json` | Canonical IR JSON |
@@ -79,6 +82,7 @@ These are the command outputs automation should parse directly:
 | `aic scaffold ...` | Generate typed boilerplate templates | Text/JSON scaffold payload |
 | `aic synthesize --from spec <name> [--json]` | Spec-first function + test fixture synthesis preview | Text/JSON artifact bundle |
 | `aic testgen --strategy <strategy> --for <selector> [--emit-dir <dir>] [--json]` | Deterministic harness fixture generation from contracts/types/effects | Text/JSON artifact bundle |
+| `aic checkpoint create/list/restore/diff ...` | Deterministic workspace snapshot, diff, and rollback protocol | Text/JSON checkpoint responses |
 | `aic patch --preview|--apply <patch.json>` | Structured add/modify edits by symbol intent | Text/JSON patch response |
 | `aic metrics <input> [--check]` | Complexity/perf guardrails in CI | JSON metrics/check status |
 | `aic ir-migrate <ir.json>` | Upgrading legacy IR snapshots | Migrated IR JSON |

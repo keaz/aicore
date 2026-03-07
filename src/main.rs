@@ -11,6 +11,7 @@ mod coverage;
 mod profile;
 
 use aicore::attr_test_runner::run_attribute_tests;
+use aicore::checkpoint;
 use aicore::cli_contract::{
     contract_json, EXIT_DIAGNOSTIC_ERROR, EXIT_INTERNAL_ERROR, EXIT_OK, EXIT_USAGE_ERROR,
 };
@@ -399,6 +400,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    Checkpoint {
+        #[command(subcommand)]
+        command: CheckpointSubcommand,
+        #[arg(long, global = true)]
+        json: bool,
+    },
     Contract {
         #[arg(long)]
         json: bool,
@@ -605,6 +612,30 @@ enum ScaffoldSubcommand {
         run_pass: bool,
         #[arg(long)]
         compile_fail: bool,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum CheckpointSubcommand {
+    Create {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+    List {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+    Restore {
+        checkpoint: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+    Diff {
+        checkpoint: String,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
     },
 }
 
@@ -2474,6 +2505,83 @@ fn run_cli() -> anyhow::Result<i32> {
                 println!("{}", testgen::format_text(&response));
             }
             EXIT_OK
+        }
+        Command::Checkpoint { command, json } => {
+            let result = match command {
+                CheckpointSubcommand::Create { project } => {
+                    let project_root = resolve_project_root(&project);
+                    let response = match checkpoint::create_checkpoint(&project_root) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("checkpoint: {err}");
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", checkpoint::format_create_text(&response));
+                    }
+                    EXIT_OK
+                }
+                CheckpointSubcommand::List { project } => {
+                    let project_root = resolve_project_root(&project);
+                    let response = match checkpoint::list_checkpoints(&project_root) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("checkpoint: {err}");
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", checkpoint::format_list_text(&response));
+                    }
+                    EXIT_OK
+                }
+                CheckpointSubcommand::Restore {
+                    checkpoint: id,
+                    project,
+                } => {
+                    let project_root = resolve_project_root(&project);
+                    let response = match checkpoint::restore_checkpoint(&project_root, &id) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("checkpoint: {err}");
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", checkpoint::format_restore_text(&response));
+                    }
+                    EXIT_OK
+                }
+                CheckpointSubcommand::Diff {
+                    checkpoint: id,
+                    to,
+                    project,
+                } => {
+                    let project_root = resolve_project_root(&project);
+                    let response =
+                        match checkpoint::diff_checkpoint(&project_root, &id, to.as_deref()) {
+                            Ok(response) => response,
+                            Err(err) => {
+                                eprintln!("checkpoint: {err}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+                        };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", checkpoint::format_diff_text(&response));
+                    }
+                    EXIT_OK
+                }
+            };
+            result
         }
         Command::Grammar { ebnf, json } => {
             debug_assert!(ebnf ^ json);
