@@ -43,6 +43,10 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_fix.json",
         ),
         (
+            "docs/agent-tooling/schemas/testgen-response.schema.json",
+            "examples/agent/protocol_testgen.json",
+        ),
+        (
             "docs/agent-tooling/schemas/parse-response.schema.json",
             "examples/agent/protocol_parse_error.json",
         ),
@@ -80,7 +84,7 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
     assert_eq!(contract["protocol"]["name"], "aic-compiler-json");
     assert_eq!(contract["protocol"]["selected_version"], "1.0");
 
-    for phase in ["parse", "check", "build", "fix"] {
+    for phase in ["parse", "check", "build", "fix", "testgen"] {
         assert!(contract["schemas"][phase]["path"].is_string());
         assert!(contract["examples"][phase].is_string());
     }
@@ -222,6 +226,33 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     let fix_json: Value = serde_json::from_slice(&fix.stdout).expect("fix json");
     assert_eq!(fix_json["phase"], "fix");
     assert_eq!(fix_json["mode"], "dry-run");
+
+    let testgen_fixture = read_json("examples/agent/protocol_testgen.json");
+    let testgen = run_aic(&[
+        "testgen",
+        "--strategy",
+        testgen_fixture["strategy"]
+            .as_str()
+            .expect("testgen strategy"),
+        "--for",
+        testgen_fixture["target"]["kind"]
+            .as_str()
+            .expect("testgen target kind"),
+        testgen_fixture["target"]["name"]
+            .as_str()
+            .expect("testgen target name"),
+        "--project",
+        "examples/e7/spec_first",
+        "--json",
+    ]);
+    assert_eq!(testgen.status.code(), Some(0));
+    let testgen_json: Value = serde_json::from_slice(&testgen.stdout).expect("testgen json");
+    assert_eq!(testgen_json["phase"], "testgen");
+    assert_eq!(testgen_json["strategy"], testgen_fixture["strategy"]);
+    assert_eq!(
+        testgen_json["target"]["name"],
+        testgen_fixture["target"]["name"]
+    );
 }
 
 #[test]
@@ -264,6 +295,8 @@ fn protocol_doc_references_full_agent_tooling_surface() {
         "docs/agent-tooling/schemas/check-response.schema.json",
         "docs/agent-tooling/schemas/build-response.schema.json",
         "docs/agent-tooling/schemas/fix-response.schema.json",
+        "docs/agent-tooling/schemas/testgen-response.schema.json",
+        "examples/agent/protocol_testgen.json",
         "examples/agent/lsp_workflow.json",
         "docs/agent-tooling/incremental-daemon.md",
         "docs/agent-recipes/",

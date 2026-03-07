@@ -273,6 +273,20 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json"],
     },
     CommandContract {
+        name: "testgen",
+        description:
+            "Generate deterministic harness fixtures from contracts, invariants, enums, and effects",
+        stable_flags: &[
+            "--strategy",
+            "--for",
+            "--project",
+            "--emit-dir",
+            "--seed",
+            "--json",
+        ],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "release",
         description: "Release security and operations workflows",
         stable_flags: &["subcommands"],
@@ -310,6 +324,12 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/fix-response.schema.json",
         example_path: "examples/agent/protocol_fix.json",
         description: "Deterministic autofix planning/application protocol envelope.",
+    },
+    PhaseSchemaContract {
+        phase: "testgen",
+        schema_path: "docs/agent-tooling/schemas/testgen-response.schema.json",
+        example_path: "examples/agent/protocol_testgen.json",
+        description: "Deterministic test-generation response with previewed or materialized harness artifacts.",
     },
 ];
 

@@ -75,7 +75,7 @@ fn main() -> Int {
 Use this checklist to gate closure of epic `#62`. Keep epic status as In Progress until all items are complete with evidence.
 
 - [ ] Protocol contract docs are current: `docs/agent-tooling/protocol-v1.md`
-- [ ] Protocol schemas are current: `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`
+- [ ] Protocol schemas are current: `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`, `docs/agent-tooling/schemas/testgen-response.schema.json`
 - [ ] Incremental daemon docs are current: `docs/agent-tooling/incremental-daemon.md`
 - [ ] LSP example reflects the implemented workflow: `examples/agent/lsp_workflow.json`
 - [ ] Agent recipe docs are current and aligned: `docs/agent-recipes/`
@@ -489,17 +489,19 @@ Diagnostics:
 - Agent protocol schemas:
   - `docs/agent-tooling/schemas/parse-response.schema.json`
   - `docs/agent-tooling/schemas/ast-response.schema.json`
-  - `docs/agent-tooling/schemas/check-response.schema.json`
-  - `docs/agent-tooling/schemas/build-response.schema.json`
-  - `docs/agent-tooling/schemas/fix-response.schema.json`
+- `docs/agent-tooling/schemas/check-response.schema.json`
+- `docs/agent-tooling/schemas/build-response.schema.json`
+- `docs/agent-tooling/schemas/fix-response.schema.json`
+- `docs/agent-tooling/schemas/testgen-response.schema.json`
 - Protocol guide:
   - `docs/agent-tooling/protocol-v1.md`
 - Protocol fixtures:
   - `examples/agent/protocol_parse.json`
   - `examples/agent/protocol_ast.md`
-  - `examples/agent/protocol_check.json`
-  - `examples/agent/protocol_build.json`
-  - `examples/agent/protocol_fix.json`
+- `examples/agent/protocol_check.json`
+- `examples/agent/protocol_build.json`
+- `examples/agent/protocol_fix.json`
+- `examples/agent/protocol_testgen.json`
 - Autofix engine:
   - planner/applicator in `src/diag_fixes.rs`
   - command: `aic diag apply-fixes <path> [--dry-run] [--json] [--offline]`

@@ -47,6 +47,7 @@ pub mod symbol_query;
 pub mod synthesize;
 pub mod telemetry;
 pub mod test_harness;
+pub mod testgen;
 pub mod toolchain;
 pub mod typecheck;
 pub mod unused_analysis;

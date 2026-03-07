@@ -245,6 +245,38 @@ fn write_synthesize_fixture(root: &std::path::Path) {
     .expect("write synthesize spec");
 }
 
+fn write_testgen_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"testgen_fixture\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write testgen aic.toml");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.testgen;\n",
+            "import std.io;\n\n",
+            "struct User {\n",
+            "    age: Int,\n",
+            "} invariant age >= 0\n\n",
+            "enum WorkflowState {\n",
+            "    Idle,\n",
+            "    Running(Int),\n",
+            "    Failed,\n",
+            "}\n\n",
+            "fn normalize_age(age: Int) -> Int requires age >= 0 ensures result >= 0 {\n",
+            "    age\n",
+            "}\n\n",
+            "fn emit_signal(x: Int) -> Int effects { io } capabilities { io } {\n",
+            "    print_int(x);\n",
+            "    x\n",
+            "}\n",
+        ),
+    )
+    .expect("write testgen source");
+}
+
 fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
     let events = read_events(telemetry_path).expect("read telemetry events");
     events
@@ -419,6 +451,7 @@ fn cli_help_snapshots_are_stable() {
         "symbols",
         "scaffold",
         "synthesize",
+        "testgen",
         "patch",
         "coverage",
         "metrics",
@@ -501,6 +534,23 @@ fn cli_help_snapshots_are_stable() {
         assert!(
             synthesize_help_text.contains(flag),
             "missing `{flag}` in synthesize help:\n{synthesize_help_text}"
+        );
+    }
+
+    let testgen_help = run_aic(&["testgen", "--help"]);
+    assert!(testgen_help.status.success());
+    let testgen_help_text = String::from_utf8_lossy(&testgen_help.stdout);
+    for flag in [
+        "--strategy <STRATEGY>",
+        "--for <TARGET>...",
+        "--project <PROJECT>",
+        "--emit-dir <DIR>",
+        "--seed <N>",
+        "--json",
+    ] {
+        assert!(
+            testgen_help_text.contains(flag),
+            "missing `{flag}` in testgen help:\n{testgen_help_text}"
         );
     }
 
@@ -876,6 +926,161 @@ fn synthesize_command_emits_spec_first_artifacts_and_runnable_fixture() {
     assert_eq!(
         first.stdout, second.stdout,
         "aic synthesize --json output must be deterministic"
+    );
+}
+
+#[test]
+fn testgen_command_emits_deterministic_harness_artifacts_and_runs_them() {
+    let project = tempdir().expect("tempdir");
+    write_testgen_fixture(project.path());
+
+    let boundary_args = [
+        "testgen",
+        "--strategy",
+        "boundary",
+        "--for",
+        "function",
+        "normalize_age",
+        "--project",
+        ".",
+        "--emit-dir",
+        ".",
+        "--seed",
+        "17",
+        "--json",
+    ];
+    let boundary_first = run_aic_in_dir(project.path(), &boundary_args);
+    assert_eq!(
+        boundary_first.status.code(),
+        Some(0),
+        "boundary stdout={}\nstderr={}",
+        String::from_utf8_lossy(&boundary_first.stdout),
+        String::from_utf8_lossy(&boundary_first.stderr)
+    );
+    let boundary_json: Value =
+        serde_json::from_slice(&boundary_first.stdout).expect("boundary json");
+    assert_eq!(boundary_json["phase"], "testgen");
+    assert_eq!(boundary_json["strategy"], "boundary");
+    assert_eq!(boundary_json["target"]["name"], "normalize_age");
+    assert!(boundary_json["artifacts"]
+        .as_array()
+        .expect("boundary artifacts")
+        .iter()
+        .any(|artifact| {
+            artifact["kind"] == "attribute-test-fixture"
+                && artifact["written_path"].as_str().is_some_and(|path| {
+                    project.path().join(path).exists() || PathBuf::from(path).exists()
+                })
+        }));
+
+    let boundary_second = run_aic_in_dir(project.path(), &boundary_args);
+    assert_eq!(boundary_second.status.code(), Some(0));
+    assert_eq!(
+        boundary_first.stdout, boundary_second.stdout,
+        "aic testgen --json output must be deterministic for fixed seed"
+    );
+
+    for args in [
+        vec![
+            "testgen",
+            "--strategy",
+            "invariant-violation",
+            "--for",
+            "struct",
+            "User",
+            "--project",
+            ".",
+            "--emit-dir",
+            ".",
+            "--seed",
+            "17",
+            "--json",
+        ],
+        vec![
+            "testgen",
+            "--strategy",
+            "exhaustive-match",
+            "--for",
+            "enum",
+            "WorkflowState",
+            "--project",
+            ".",
+            "--emit-dir",
+            ".",
+            "--seed",
+            "17",
+            "--json",
+        ],
+        vec![
+            "testgen",
+            "--strategy",
+            "effect-coverage",
+            "--for",
+            "function",
+            "emit_signal",
+            "--project",
+            ".",
+            "--emit-dir",
+            ".",
+            "--seed",
+            "17",
+            "--json",
+        ],
+    ] {
+        let output = run_aic_in_dir(project.path(), &args);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "testgen stdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let payload: Value = serde_json::from_slice(&output.stdout).expect("testgen json");
+        assert_eq!(payload["phase"], "testgen");
+        assert!(!payload["artifacts"]
+            .as_array()
+            .expect("artifacts")
+            .is_empty());
+    }
+
+    let run_output = run_aic_in_dir(project.path(), &["test", ".", "--json"]);
+    assert_eq!(
+        run_output.status.code(),
+        Some(0),
+        "generated tests stdout={}\nstderr={}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&run_output.stdout).expect("test report");
+    assert_eq!(report["failed"], 0);
+    assert_eq!(report["by_category"]["run-pass"], 2);
+    assert_eq!(report["by_category"]["compile-fail"], 1);
+    assert_eq!(report["by_category"]["attribute-test"], 6);
+}
+
+#[test]
+fn testgen_command_reports_actionable_strategy_target_failures() {
+    let project = tempdir().expect("tempdir");
+    write_testgen_fixture(project.path());
+
+    let output = run_aic_in_dir(
+        project.path(),
+        &[
+            "testgen",
+            "--strategy",
+            "boundary",
+            "--for",
+            "struct",
+            "User",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("strategy `boundary` requires a function target"),
+        "expected actionable diagnostic, got stderr={stderr}"
     );
 }
 
@@ -2112,6 +2317,11 @@ fn explain_and_contract_commands_work() {
         .as_array()
         .expect("commands")
         .iter()
+        .any(|c| c["name"] == "testgen"));
+    assert!(contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
         .any(|c| c["name"] == "patch"));
     let bench_contract = contract_json["commands"]
         .as_array()
@@ -2199,6 +2409,22 @@ fn explain_and_contract_commands_work() {
         .expect("synthesize stable flags")
         .iter()
         .any(|flag| flag == "--project"));
+    let testgen_contract = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|c| c["name"] == "testgen")
+        .expect("testgen command contract");
+    assert!(testgen_contract["stable_flags"]
+        .as_array()
+        .expect("testgen stable flags")
+        .iter()
+        .any(|flag| flag == "--strategy"));
+    assert!(testgen_contract["stable_flags"]
+        .as_array()
+        .expect("testgen stable flags")
+        .iter()
+        .any(|flag| flag == "--emit-dir"));
     assert!(patch_contract["stable_flags"]
         .as_array()
         .expect("patch stable flags")
@@ -2209,7 +2435,7 @@ fn explain_and_contract_commands_work() {
         .expect("patch stable flags")
         .iter()
         .any(|flag| flag == "--apply"));
-    for phase in ["parse", "ast", "check", "build", "fix"] {
+    for phase in ["parse", "ast", "check", "build", "fix", "testgen"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
     }
@@ -2435,6 +2661,73 @@ fn ast_schema_references_are_consistent_in_contract_and_docs() {
     );
     assert!(
         protocol_doc.contains(ast_example_path),
+        "protocol doc missing example reference"
+    );
+}
+
+#[test]
+fn testgen_schema_references_are_consistent_in_contract_and_docs() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    let schema_path = contract_json["schemas"]["testgen"]["path"]
+        .as_str()
+        .expect("testgen schema path");
+    let example_path = contract_json["examples"]["testgen"]
+        .as_str()
+        .expect("testgen example path");
+
+    assert_eq!(
+        schema_path,
+        "docs/agent-tooling/schemas/testgen-response.schema.json"
+    );
+    assert_eq!(example_path, "examples/agent/protocol_testgen.json");
+    assert!(
+        repo_root().join(schema_path).exists(),
+        "missing schema file at {schema_path}"
+    );
+    assert!(
+        repo_root().join(example_path).exists(),
+        "missing example artifact at {example_path}"
+    );
+
+    let command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|entry| entry["name"] == "testgen")
+        .expect("testgen command contract");
+    assert!(command["stable_flags"]
+        .as_array()
+        .expect("testgen stable flags")
+        .iter()
+        .any(|flag| flag == "--strategy"));
+    assert!(command["stable_flags"]
+        .as_array()
+        .expect("testgen stable flags")
+        .iter()
+        .any(|flag| flag == "--emit-dir"));
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains(schema_path),
+        "agent tooling README missing schema reference"
+    );
+    assert!(
+        tooling_readme.contains("aic testgen --strategy"),
+        "agent tooling README missing testgen command reference"
+    );
+
+    let protocol_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/protocol-v1.md"))
+        .expect("read protocol doc");
+    assert!(
+        protocol_doc.contains(schema_path),
+        "protocol doc missing schema reference"
+    );
+    assert!(
+        protocol_doc.contains(example_path),
         "protocol doc missing example reference"
     );
 }

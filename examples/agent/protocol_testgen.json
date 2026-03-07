@@ -1,0 +1,28 @@
+{
+  "protocol_version": "1.0",
+  "phase": "testgen",
+  "strategy": "invariant-violation",
+  "seed": 11,
+  "target": {
+    "name": "User",
+    "kind": "struct",
+    "module": "demo.spec_first"
+  },
+  "artifacts": [
+    {
+      "kind": "run-pass-fixture",
+      "name": "User_invariant_valid",
+      "path_hint": "tests/generated/run-pass/invariant_user_valid.aic",
+      "content": "// expect: 1\nmodule generated.testgen.inv.user_valid;\n\nimport std.io;\n\nstruct User {\n    age: Int,\n    name: String,\n} invariant age >= 0\n\nfn main() -> Int effects { io } capabilities { io } {\n    let valid_value = User { age: 0, name: \"name-5\" };\n    valid_value.age;\n    print_int(1);\n    0\n}",
+      "reason": "valid invariant-preserving construction case"
+    },
+    {
+      "kind": "attribute-test-fixture",
+      "name": "User_invariant_invalid",
+      "path_hint": "tests/generated/invariant_user_invalid.aic",
+      "content": "module generated.testgen.inv.user_invalid;\n\nstruct User {\n    age: Int,\n    name: String,\n} invariant age >= 0\n\n#[test]\n#[should_panic]\nfn test_user_invariant_rejects_invalid_construction() -> () {\n    let invalid_value = User { age: -1, name: \"name-5\" };\n    invalid_value.age;\n}",
+      "reason": "invalid construction case expected to panic through the lowered invariant helper"
+    }
+  ],
+  "notes": []
+}

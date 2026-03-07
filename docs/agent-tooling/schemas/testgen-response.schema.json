@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/testgen-response-1.0.schema.json",
+  "title": "AIC Agent Testgen Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "phase", "strategy", "seed", "target", "artifacts", "notes"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "phase": { "const": "testgen" },
+    "strategy": {
+      "type": "string",
+      "enum": ["boundary", "invariant-violation", "exhaustive-match", "effect-coverage"]
+    },
+    "seed": { "type": "integer", "minimum": 0 },
+    "target": { "$ref": "#/$defs/target" },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "type": "string", "enum": ["function", "struct", "enum"] },
+        "module": { "type": "string" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "path_hint", "content"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["attribute-test-fixture", "run-pass-fixture", "compile-fail-fixture"]
+        },
+        "name": { "type": "string" },
+        "path_hint": { "type": "string" },
+        "content": { "type": "string" },
+        "written_path": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

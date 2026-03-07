@@ -70,6 +70,7 @@ use aicore::symbol_query;
 use aicore::synthesize;
 use aicore::telemetry;
 use aicore::test_harness::{run_harness_with_golden_mode, GoldenMode, HarnessMode, ReplayMetadata};
+use aicore::testgen;
 use aicore::toolchain::install_std;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -384,6 +385,20 @@ enum Command {
         #[arg(long, conflicts_with = "update_golden")]
         check_golden: bool,
     },
+    Testgen {
+        #[arg(long, value_enum)]
+        strategy: TestgenStrategyArg,
+        #[arg(long = "for", value_name = "TARGET", num_args = 1..)]
+        target: Vec<String>,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_name = "DIR")]
+        emit_dir: Option<PathBuf>,
+        #[arg(long, value_name = "N", default_value_t = 0)]
+        seed: u64,
+        #[arg(long)]
+        json: bool,
+    },
     Contract {
         #[arg(long)]
         json: bool,
@@ -505,6 +520,14 @@ enum TestModeArg {
     RunPass,
     CompileFail,
     Golden,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TestgenStrategyArg {
+    Boundary,
+    InvariantViolation,
+    ExhaustiveMatch,
+    EffectCoverage,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -739,6 +762,17 @@ impl TestModeArg {
             "compile-fail" => Some(TestModeArg::CompileFail),
             "golden" => Some(TestModeArg::Golden),
             _ => None,
+        }
+    }
+}
+
+impl TestgenStrategyArg {
+    fn to_strategy(self) -> testgen::TestStrategy {
+        match self {
+            Self::Boundary => testgen::TestStrategy::Boundary,
+            Self::InvariantViolation => testgen::TestStrategy::InvariantViolation,
+            Self::ExhaustiveMatch => testgen::TestStrategy::ExhaustiveMatch,
+            Self::EffectCoverage => testgen::TestStrategy::EffectCoverage,
         }
     }
 }
@@ -2411,6 +2445,35 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 EXIT_OK
             }
+        }
+        Command::Testgen {
+            strategy,
+            target,
+            project,
+            emit_dir,
+            seed,
+            json,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let response = match testgen::generate(
+                &project_root,
+                strategy.to_strategy(),
+                &target,
+                seed,
+                emit_dir.as_deref(),
+            ) {
+                Ok(response) => response,
+                Err(err) => {
+                    eprintln!("testgen: {err}");
+                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                }
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&response)?);
+            } else {
+                println!("{}", testgen::format_text(&response));
+            }
+            EXIT_OK
         }
         Command::Grammar { ebnf, json } => {
             debug_assert!(ebnf ^ json);

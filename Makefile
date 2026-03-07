@@ -172,6 +172,7 @@ docs-check:
 	@test -f docs/agent-tooling/schemas/check-response.schema.json
 	@test -f docs/agent-tooling/schemas/build-response.schema.json
 	@test -f docs/agent-tooling/schemas/fix-response.schema.json
+	@test -f docs/agent-tooling/schemas/testgen-response.schema.json
 	@test -f docs/package-workflow.md
 	@test -f docs/ai-agent-rest-guide.md
 	@test -f docs/package-ecosystem/README.md
@@ -223,6 +224,7 @@ docs-check:
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/build-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/fix-response.schema.json >/dev/null
+	@python3 -m json.tool docs/agent-tooling/schemas/testgen-response.schema.json >/dev/null
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
 	@python3 -m json.tool docs/errors/secure-networking-error-contract.v1.json >/dev/null

@@ -14,12 +14,13 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix schemas:
+Published parse/check/build/fix/testgen schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
 - `docs/agent-tooling/schemas/build-response.schema.json`
 - `docs/agent-tooling/schemas/fix-response.schema.json`
+- `docs/agent-tooling/schemas/testgen-response.schema.json`
 
 ## Exit codes
 
@@ -44,6 +45,7 @@ Published parse/check/build/fix schemas:
 - `aic symbols`
 - `aic scaffold`
 - `aic synthesize`
+- `aic testgen`
 - `aic patch`
 - `aic metrics`
 - `aic ir-migrate`
@@ -81,6 +83,15 @@ Stable `synthesize` flags include:
 - `--from <kind>` (`spec` in the current implementation)
 - `--project <path>` (project root used to discover `spec fn` files and dependent types)
 - `--json` (machine-readable synthesis response)
+
+Stable `testgen` flags include:
+
+- `--strategy <kind>` (`boundary|invariant-violation|exhaustive-match|effect-coverage`)
+- `--for <target...>` (target selector; supports `function <name>`, `struct <name>`, `enum <name>`)
+- `--project <path>` (project root used for symbol discovery and source loading)
+- `--emit-dir <path>` (materialize generated fixtures under the provided root using each artifact `path_hint`)
+- `--seed <N>` (deterministic value-synthesis seed)
+- `--json` (machine-readable test-generation response)
 
 Stable `run` flags include:
 
@@ -278,6 +289,39 @@ Synthesis behavior:
 - mirrors `effects` into `capabilities` when capabilities are omitted in the spec
 - emits a self-contained attribute-test fixture with at least one happy-path test and one failing contract test when supported by the spec
 - reports non-lowerable clauses in `notes[]` instead of forcing them into runnable artifacts
+
+## `aic testgen` output modes
+
+Usage:
+
+```bash
+aic testgen --strategy boundary --for function normalize_age --project . --emit-dir . --seed 17 --json
+```
+
+JSON payload:
+
+- `protocol_version`
+- `phase` (`testgen`)
+- `strategy` (`boundary|invariant-violation|exhaustive-match|effect-coverage`)
+- `seed`
+- `target` (`name`, `kind`, optional `module`)
+- `artifacts[]`
+  - `kind` (`attribute-test-fixture`, `run-pass-fixture`, `compile-fail-fixture`)
+  - `name`
+  - `path_hint`
+  - `content`
+  - optional `written_path` when `--emit-dir` materializes the artifact
+  - optional `reason`
+- `notes[]`
+
+Generation behavior:
+
+- `boundary` derives direct integer edge cases from supported `requires` clauses and emits runnable attribute tests
+- `invariant-violation` emits one valid `run-pass` fixture and one failing attribute-test fixture for supported struct invariants
+- `exhaustive-match` emits one attribute test per enum variant with a generated exhaustive `match`
+- `effect-coverage` emits a declared-effect `run-pass` fixture and, for effectful targets, a missing-effect `compile-fail` fixture
+- generated values are deterministic for a fixed seed and selector
+- unsupported strategy/target pairs fail with actionable diagnostics instead of producing partial output
 
 ## `aic metrics` JSON output
 
