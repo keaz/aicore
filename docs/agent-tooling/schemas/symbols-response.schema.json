@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/symbols-response-1.0.schema.json",
+  "title": "AIC Symbols Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "ok",
+    "project_root",
+    "symbol_count",
+    "symbols"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "command": {
+      "const": "symbols"
+    },
+    "ok": {
+      "const": true
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "symbol_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol_record"
+      }
+    }
+  },
+  "$defs": {
+    "symbol_kind": {
+      "type": "string",
+      "enum": [
+        "function",
+        "struct",
+        "enum",
+        "variant",
+        "trait",
+        "impl",
+        "module"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column",
+        "span_start",
+        "span_end"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "span_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "span_end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "symbol_contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "string"
+        },
+        "ensures": {
+          "type": "string"
+        },
+        "invariant": {
+          "type": "string"
+        }
+      }
+    },
+    "symbol_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "signature",
+        "module",
+        "location",
+        "effects",
+        "contracts"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbol_kind"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contracts": {
+          "$ref": "#/$defs/symbol_contracts"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "generics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "container": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

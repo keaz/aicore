@@ -1,0 +1,4 @@
+[package]
+name = "symbol_query"
+version = "0.1.0"
+main = "src/main.aic"

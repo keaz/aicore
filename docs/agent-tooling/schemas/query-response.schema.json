@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/query-response-1.0.schema.json",
+  "title": "AIC Query Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "ok",
+    "project_root",
+    "total_symbols",
+    "matched_symbols",
+    "filters",
+    "symbols"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "command": {
+      "const": "query"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "total_symbols": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "matched_symbols": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "filters": {
+      "$ref": "#/$defs/query_filters"
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol_record"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/query_error"
+    }
+  },
+  "$defs": {
+    "symbol_kind": {
+      "type": "string",
+      "enum": [
+        "function",
+        "struct",
+        "enum",
+        "variant",
+        "trait",
+        "impl",
+        "module"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column",
+        "span_start",
+        "span_end"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "span_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "span_end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "symbol_contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "string"
+        },
+        "ensures": {
+          "type": "string"
+        },
+        "invariant": {
+          "type": "string"
+        }
+      }
+    },
+    "symbol_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "signature",
+        "module",
+        "location",
+        "effects",
+        "contracts"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbol_kind"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contracts": {
+          "$ref": "#/$defs/symbol_contracts"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "generics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "container": {
+          "type": "string"
+        }
+      }
+    },
+    "query_filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "has_contract",
+        "has_invariant",
+        "has_requires",
+        "has_ensures"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/symbol_kind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "has_contract": {
+          "type": "boolean"
+        },
+        "has_invariant": {
+          "type": "boolean"
+        },
+        "generic_over": {
+          "type": "string"
+        },
+        "has_requires": {
+          "type": "boolean"
+        },
+        "has_ensures": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      }
+    },
+    "query_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "details"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

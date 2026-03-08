@@ -63,6 +63,14 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_suggest.json",
         ),
         (
+            "docs/agent-tooling/schemas/query-response.schema.json",
+            "examples/agent/protocol_query.json",
+        ),
+        (
+            "docs/agent-tooling/schemas/symbols-response.schema.json",
+            "examples/agent/protocol_symbols.json",
+        ),
+        (
             "docs/agent-tooling/schemas/parse-response.schema.json",
             "examples/agent/protocol_parse_error.json",
         ),
@@ -110,6 +118,8 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
         "validate-call",
         "validate-type",
         "suggest",
+        "query",
+        "symbols",
     ] {
         assert!(contract["schemas"][phase]["path"].is_string());
         assert!(contract["examples"][phase].is_string());
@@ -357,6 +367,71 @@ fn validate_and_suggest_json_validate_against_published_schemas() {
 }
 
 #[test]
+fn query_and_symbols_json_validate_against_published_schemas() {
+    let project_path = repo_root().join("examples/e7/symbol_query");
+    let project_str = project_path.to_str().expect("project path");
+
+    let query = run_aic(&[
+        "query",
+        "--project",
+        project_str,
+        "--kind",
+        "function",
+        "--name",
+        "validate*",
+        "--module",
+        "demo.search",
+        "--effects",
+        "io",
+        "--has-contract",
+        "--generic-over",
+        "T",
+        "--limit",
+        "10",
+        "--json",
+    ]);
+    assert_eq!(query.status.code(), Some(0));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query response");
+    let query_schema = read_json("docs/agent-tooling/schemas/query-response.schema.json");
+    let query_compiled = JSONSchema::compile(&query_schema).expect("compile query schema");
+    assert!(
+        query_compiled.validate(&query_json).is_ok(),
+        "query response does not satisfy schema"
+    );
+
+    let symbols = run_aic(&["symbols", "--project", project_str, "--json"]);
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols response");
+    let symbols_schema = read_json("docs/agent-tooling/schemas/symbols-response.schema.json");
+    let symbols_compiled = JSONSchema::compile(&symbols_schema).expect("compile symbols schema");
+    assert!(
+        symbols_compiled.validate(&symbols_json).is_ok(),
+        "symbols response does not satisfy schema"
+    );
+
+    let invalid = run_aic(&[
+        "query",
+        "--project",
+        project_str,
+        "--kind",
+        "function",
+        "--has-invariant",
+        "--json",
+    ]);
+    assert_eq!(invalid.status.code(), Some(2));
+    let invalid_json: Value = serde_json::from_slice(&invalid.stdout).expect("invalid query json");
+    assert!(
+        query_compiled.validate(&invalid_json).is_ok(),
+        "invalid query response does not satisfy schema"
+    );
+    assert_eq!(invalid_json["ok"], false);
+    assert_eq!(
+        invalid_json["error"]["code"],
+        "unsupported_filter_combination"
+    );
+}
+
+#[test]
 fn documented_protocol_fixtures_smoke_against_cli() {
     let check_fixture = read_json("examples/agent/protocol_check.json");
     assert_eq!(
@@ -456,6 +531,72 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     assert_eq!(
         testgen_json["target"]["name"],
         testgen_fixture["target"]["name"]
+    );
+}
+
+#[test]
+fn documented_query_and_symbols_fixtures_smoke_against_cli() {
+    let query_fixture = read_json("examples/agent/protocol_query.json");
+    let query = run_aic(&[
+        "query",
+        "--project",
+        query_fixture["project_root"]
+            .as_str()
+            .expect("query fixture root"),
+        "--kind",
+        query_fixture["filters"]["kind"]
+            .as_str()
+            .expect("query fixture kind"),
+        "--name",
+        query_fixture["filters"]["name"]
+            .as_str()
+            .expect("query fixture name"),
+        "--module",
+        query_fixture["filters"]["module"]
+            .as_str()
+            .expect("query fixture module"),
+        "--effects",
+        query_fixture["filters"]["effects"][0]
+            .as_str()
+            .expect("query fixture effect"),
+        "--has-contract",
+        "--generic-over",
+        query_fixture["filters"]["generic_over"]
+            .as_str()
+            .expect("query fixture generic"),
+        "--limit",
+        &query_fixture["filters"]["limit"].to_string(),
+        "--json",
+    ]);
+    assert_eq!(query.status.code(), Some(0));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query json");
+    assert_eq!(
+        query_json["symbols"][0]["name"],
+        query_fixture["symbols"][0]["name"]
+    );
+    assert_eq!(
+        query_json["symbols"][0]["contracts"]["requires"],
+        query_fixture["symbols"][0]["contracts"]["requires"]
+    );
+
+    let symbols_fixture = read_json("examples/agent/protocol_symbols.json");
+    let symbols = run_aic(&[
+        "symbols",
+        "--project",
+        symbols_fixture["project_root"]
+            .as_str()
+            .expect("symbols fixture root"),
+        "--json",
+    ]);
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
+    assert_eq!(
+        symbols_json["symbol_count"],
+        symbols_fixture["symbol_count"]
+    );
+    assert_eq!(
+        symbols_json["symbols"][0]["name"],
+        symbols_fixture["symbols"][0]["name"]
     );
 }
 

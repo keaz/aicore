@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "command": "query",
+  "ok": true,
+  "project_root": "examples/e7/symbol_query",
+  "total_symbols": 11,
+  "matched_symbols": 1,
+  "filters": {
+    "kind": "function",
+    "name": "validate*",
+    "module": "demo.search",
+    "effects": [
+      "io"
+    ],
+    "has_contract": true,
+    "has_invariant": false,
+    "generic_over": "T",
+    "has_requires": false,
+    "has_ensures": false,
+    "limit": 10
+  },
+  "symbols": [
+    {
+      "name": "validate_user",
+      "kind": "function",
+      "signature": "fn validate_user[T](user: User[T]) -> Bool effects { io } capabilities { io } requires user.age >= 0 ensures result == true",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 14,
+        "column": 1,
+        "span_start": 164,
+        "span_end": 300
+      },
+      "effects": [
+        "io"
+      ],
+      "contracts": {
+        "requires": "user.age >= 0",
+        "ensures": "result == true"
+      },
+      "capabilities": [
+        "io"
+      ],
+      "generics": [
+        "T"
+      ]
+    }
+  ]
+}

@@ -197,8 +197,12 @@ enum Command {
         kind: Option<QueryKindArg>,
         #[arg(long)]
         name: Option<String>,
+        #[arg(long)]
+        module: Option<String>,
         #[arg(long, value_name = "EFFECT", value_delimiter = ',')]
         effects: Vec<String>,
+        #[arg(long)]
+        has_contract: bool,
         #[arg(long)]
         has_invariant: bool,
         #[arg(long, value_name = "TYPE_PARAM")]
@@ -1495,7 +1499,9 @@ fn run_cli() -> anyhow::Result<i32> {
             project,
             kind,
             name,
+            module,
             effects,
+            has_contract,
             has_invariant,
             generic_over,
             has_requires,
@@ -1506,31 +1512,59 @@ fn run_cli() -> anyhow::Result<i32> {
             let filters = symbol_query::QueryFilters {
                 kind: kind.map(QueryKindArg::to_symbol_kind),
                 name_pattern: name,
+                module_pattern: module,
                 effects,
+                has_contract,
                 has_invariant,
                 generic_over,
                 has_requires,
                 has_ensures,
                 limit,
             };
-            let report = symbol_query::query_symbols(&project, filters)?;
             if json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+                let response = symbol_query::build_query_response(&project, filters)?;
+                println!("{}", serde_json::to_string_pretty(&response)?);
+                if response.ok {
+                    EXIT_OK
+                } else {
+                    response
+                        .error
+                        .as_ref()
+                        .map(|error| {
+                            if error.is_usage_error() {
+                                EXIT_USAGE_ERROR
+                            } else {
+                                EXIT_DIAGNOSTIC_ERROR
+                            }
+                        })
+                        .unwrap_or(EXIT_DIAGNOSTIC_ERROR)
+                }
             } else {
+                let report = match symbol_query::query_symbols(&project, filters) {
+                    Ok(report) => report,
+                    Err(err) => {
+                        eprintln!("{err}");
+                        return Ok(if err.is_usage_error() {
+                            EXIT_USAGE_ERROR
+                        } else {
+                            EXIT_DIAGNOSTIC_ERROR
+                        });
+                    }
+                };
                 print_symbol_query_report(&report);
+                EXIT_OK
             }
-            EXIT_OK
         }
         Command::Symbols {
             project,
             format,
             json,
         } => {
-            let symbols = symbol_query::list_symbols(&project)?;
+            let response = symbol_query::build_symbols_response(&project)?;
             if json || matches!(format, SymbolsFormatArg::Json) {
-                println!("{}", serde_json::to_string_pretty(&symbols)?);
+                println!("{}", serde_json::to_string_pretty(&response)?);
             } else {
-                print_symbol_list(&symbols);
+                print_symbol_list(&response.symbols);
             }
             EXIT_OK
         }

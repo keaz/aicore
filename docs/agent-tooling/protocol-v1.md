@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session and fast API-conformance workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session, semantic symbol query workflows, and fast API-conformance workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -29,6 +29,8 @@ Negotiation rules:
 - Validate-call response: `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - Validate-type response: `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - Suggest response: `docs/agent-tooling/schemas/suggest-response.schema.json`
+- Query response: `docs/agent-tooling/schemas/query-response.schema.json`
+- Symbols response: `docs/agent-tooling/schemas/symbols-response.schema.json`
 - Shared raw diagnostics array: `docs/diagnostics.schema.json`
 
 Positive fixtures:
@@ -43,6 +45,8 @@ Positive fixtures:
 - `examples/agent/protocol_validate_call.json`
 - `examples/agent/protocol_validate_type.json`
 - `examples/agent/protocol_suggest.json`
+- `examples/agent/protocol_query.json`
+- `examples/agent/protocol_symbols.json`
 
 Negative/error fixtures:
 
@@ -134,6 +138,22 @@ Behavior:
 - `suggest --partial` ranks workspace symbol candidates deterministically by match bucket, edit distance, name-length delta, kind priority, module, name, file, and span
 - performance budget is front-end only: no codegen, execution, artifact writes, or session/daemon mutation
 - default candidate cap is `8`; callers may lower or raise it with `--limit`
+
+## Semantic query workflow
+
+Reference commands:
+
+```bash
+aic query --project examples/e7/symbol_query --kind function --name 'validate*' --module demo.search --effects io --has-contract --generic-over T --limit 10 --json
+aic symbols --project examples/e7/symbol_query --json
+```
+
+Behavior:
+
+- `query` applies deterministic filtering over the workspace symbol index by `kind`, `name`, `module`, `effects`, contract presence, and generic parameter name
+- symbol records always include `name`, `kind`, `module`, `signature`, `effects`, `contracts`, and `location`
+- unsupported filter combinations return a stable `ok=false` envelope with `error.code=unsupported_filter_combination` and exit status `2`
+- `--limit` is guarded for deterministic pagination and rejects values above `500`
 
 ## End-to-end loops (AG-T5)
 

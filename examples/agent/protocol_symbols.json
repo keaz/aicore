@@ -1,0 +1,203 @@
+{
+  "schema_version": "1.0",
+  "command": "symbols",
+  "ok": true,
+  "project_root": "examples/e7/symbol_query",
+  "symbol_count": 11,
+  "symbols": [
+    {
+      "name": "AppError",
+      "kind": "enum",
+      "signature": "enum AppError { NotFound, InvalidInput(String) }",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 9,
+        "column": 1,
+        "span_start": 105,
+        "span_end": 162
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "Audit",
+      "kind": "struct",
+      "signature": "struct Audit[T] { item: T }",
+      "module": "demo.admin",
+      "location": {
+        "file": "examples/e7/symbol_query/src/admin.aic",
+        "line": 3,
+        "column": 1,
+        "span_start": 20,
+        "span_end": 52
+      },
+      "effects": [],
+      "contracts": {},
+      "generics": [
+        "T"
+      ]
+    },
+    {
+      "name": "InvalidInput",
+      "kind": "variant",
+      "signature": "AppError::InvalidInput(String)",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 11,
+        "column": 5,
+        "span_start": 139,
+        "span_end": 158
+      },
+      "effects": [],
+      "contracts": {},
+      "container": "AppError"
+    },
+    {
+      "name": "NotFound",
+      "kind": "variant",
+      "signature": "AppError::NotFound",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 10,
+        "column": 5,
+        "span_start": 125,
+        "span_end": 133
+      },
+      "effects": [],
+      "contracts": {},
+      "container": "AppError"
+    },
+    {
+      "name": "User",
+      "kind": "struct",
+      "signature": "struct User[T] { name: String, age: Int, meta: T } invariant age >= 0",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 3,
+        "column": 1,
+        "span_start": 21,
+        "span_end": 84
+      },
+      "effects": [],
+      "contracts": {
+        "invariant": "age >= 0"
+      },
+      "generics": [
+        "T"
+      ]
+    },
+    {
+      "name": "demo.admin",
+      "kind": "module",
+      "signature": "module demo.admin",
+      "module": "demo.admin",
+      "location": {
+        "file": "examples/e7/symbol_query/src/admin.aic",
+        "line": 1,
+        "column": 8,
+        "span_start": 7,
+        "span_end": 17
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "demo.search",
+      "kind": "module",
+      "signature": "module demo.search",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 1,
+        "column": 8,
+        "span_start": 7,
+        "span_end": 18
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "helper",
+      "kind": "function",
+      "signature": "fn helper() -> Int",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 18,
+        "column": 1,
+        "span_start": 302,
+        "span_end": 330
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "main",
+      "kind": "function",
+      "signature": "fn main() -> Int",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 22,
+        "column": 1,
+        "span_start": 332,
+        "span_end": 358
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "save_audit",
+      "kind": "function",
+      "signature": "fn save_audit[T](audit: Audit[T]) -> Bool effects { fs } capabilities { fs }",
+      "module": "demo.admin",
+      "location": {
+        "file": "examples/e7/symbol_query/src/admin.aic",
+        "line": 7,
+        "column": 1,
+        "span_start": 54,
+        "span_end": 143
+      },
+      "effects": [
+        "fs"
+      ],
+      "contracts": {},
+      "capabilities": [
+        "fs"
+      ],
+      "generics": [
+        "T"
+      ]
+    },
+    {
+      "name": "validate_user",
+      "kind": "function",
+      "signature": "fn validate_user[T](user: User[T]) -> Bool effects { io } capabilities { io } requires user.age >= 0 ensures result == true",
+      "module": "demo.search",
+      "location": {
+        "file": "examples/e7/symbol_query/src/main.aic",
+        "line": 14,
+        "column": 1,
+        "span_start": 164,
+        "span_end": 300
+      },
+      "effects": [
+        "io"
+      ],
+      "contracts": {
+        "requires": "user.age >= 0",
+        "ensures": "result == true"
+      },
+      "capabilities": [
+        "io"
+      ],
+      "generics": [
+        "T"
+      ]
+    }
+  ]
+}

@@ -14,7 +14,7 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix/testgen/session/validate/suggest schemas:
+Published parse/check/build/fix/testgen/session/validate/suggest/query/symbols schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
@@ -25,6 +25,8 @@ Published parse/check/build/fix/testgen/session/validate/suggest schemas:
 - `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - `docs/agent-tooling/schemas/suggest-response.schema.json`
+- `docs/agent-tooling/schemas/query-response.schema.json`
+- `docs/agent-tooling/schemas/symbols-response.schema.json`
 
 ## Exit codes
 
@@ -86,6 +88,26 @@ Stable `context` flags include:
 - `--depth <N>` (transitive dependency/caller traversal depth)
 - `--project <path>` (project root used for symbol index + call graph extraction)
 - `--json` (machine-readable context response)
+
+Stable `query` flags include:
+
+- `--project <path>` (project root used for deterministic workspace symbol indexing)
+- `--kind <kind>` (`function|struct|enum|variant|trait|impl|module`)
+- `--name <pattern>` (exact or wildcard symbol-name filter)
+- `--module <pattern>` (exact or wildcard module-name filter)
+- `--effects <effect[,effect...]>` (comma-delimited effect filter; all listed effects must be present)
+- `--has-contract` (matches symbols with any published contract clause)
+- `--has-invariant` (struct-contract filter; rejected with non-struct `--kind`)
+- `--generic-over <type_param>` (match symbols declaring the named generic parameter)
+- `--has-requires` / `--has-ensures` (function-contract filters; rejected with non-function `--kind`)
+- `--limit <N>` (deterministic pagination guard; current maximum is `500`)
+- `--json` (machine-readable query response envelope)
+
+Stable `symbols` flags include:
+
+- `--project <path>` (project root used for deterministic workspace symbol indexing)
+- `--format <format>` (`text|json`)
+- `--json` (machine-readable symbols response envelope; equivalent to `--format json`)
 
 Stable `synthesize` flags include:
 

@@ -1,0 +1,9 @@
+module demo.admin;
+
+struct Audit[T] {
+    item: T,
+}
+
+fn save_audit[T](audit: Audit[T]) -> Bool effects { fs } capabilities { fs } {
+    true
+}

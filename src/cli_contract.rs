@@ -102,7 +102,9 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
             "--project",
             "--kind",
             "--name",
+            "--module",
             "--effects",
+            "--has-contract",
             "--has-invariant",
             "--generic-over",
             "--has-requires",
@@ -414,6 +416,18 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/suggest-response.schema.json",
         example_path: "examples/agent/protocol_suggest.json",
         description: "Deterministic ranked partial-symbol suggestion response for fast hallucination-prevention workflows.",
+    },
+    PhaseSchemaContract {
+        phase: "query",
+        schema_path: "docs/agent-tooling/schemas/query-response.schema.json",
+        example_path: "examples/agent/protocol_query.json",
+        description: "Deterministic semantic symbol-query response with filter validation and ranked symbol matches.",
+    },
+    PhaseSchemaContract {
+        phase: "symbols",
+        schema_path: "docs/agent-tooling/schemas/symbols-response.schema.json",
+        example_path: "examples/agent/protocol_symbols.json",
+        description: "Deterministic workspace symbol index export for agent retrieval and discovery.",
     },
 ];
 

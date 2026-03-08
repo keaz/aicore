@@ -133,12 +133,18 @@ fn write_build_opt_project(root: &std::path::Path) {
 fn write_symbol_query_fixture(root: &std::path::Path) {
     fs::create_dir_all(root.join("src")).expect("mkdir src");
     fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"symbol_query_fixture\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write symbol query aic.toml");
+    fs::write(
         root.join("src/main.aic"),
         concat!(
             "module demo.search;\n",
-            "struct User {\n",
+            "struct User[T] {\n",
             "    name: String,\n",
             "    age: Int,\n",
+            "    meta: T,\n",
             "} invariant age >= 0\n",
             "\n",
             "enum AppError {\n",
@@ -146,7 +152,7 @@ fn write_symbol_query_fixture(root: &std::path::Path) {
             "    InvalidInput(String),\n",
             "}\n",
             "\n",
-            "fn validate_user(user: User) -> Bool effects { io } capabilities { io } ",
+            "fn validate_user[T](user: User[T]) -> Bool effects { io } capabilities { io } ",
             "requires user.age >= 0 ensures result == true {\n",
             "    true\n",
             "}\n",
@@ -154,9 +160,27 @@ fn write_symbol_query_fixture(root: &std::path::Path) {
             "fn helper() -> Int {\n",
             "    0\n",
             "}\n",
+            "\n",
+            "fn main() -> Int {\n",
+            "    0\n",
+            "}\n",
         ),
     )
     .expect("write symbol query fixture");
+    fs::write(
+        root.join("src/admin.aic"),
+        concat!(
+            "module demo.admin;\n",
+            "struct Audit[T] {\n",
+            "    item: T,\n",
+            "}\n",
+            "\n",
+            "fn save_audit[T](audit: Audit[T]) -> Bool effects { fs } capabilities { fs } {\n",
+            "    true\n",
+            "}\n",
+        ),
+    )
+    .expect("write symbol query admin fixture");
 }
 
 fn write_context_fixture(root: &std::path::Path) {
@@ -810,35 +834,216 @@ fn query_and_symbols_commands_emit_deterministic_json_payloads() {
             "function",
             "--name",
             "validate*",
+            "--module",
+            "demo.search",
             "--effects",
             "io",
-            "--has-requires",
-            "--has-ensures",
+            "--has-contract",
+            "--generic-over",
+            "T",
             "--json",
         ],
     );
     assert_eq!(query.status.code(), Some(0));
     let query_json: Value = serde_json::from_slice(&query.stdout).expect("query json");
+    assert_eq!(query_json["schema_version"], "1.0");
+    assert_eq!(query_json["command"], "query");
     assert_eq!(query_json["matched_symbols"], 1);
+    assert_eq!(query_json["filters"]["module"], "demo.search");
+    assert_eq!(query_json["filters"]["has_contract"], true);
     assert_eq!(query_json["symbols"][0]["name"], "validate_user");
     assert_eq!(query_json["symbols"][0]["kind"], "function");
     assert_eq!(query_json["symbols"][0]["effects"][0], "io");
-    assert!(query_json["symbols"][0]["requires"].is_string());
-    assert!(query_json["symbols"][0]["ensures"].is_string());
+    assert!(query_json["symbols"][0]["contracts"]["requires"].is_string());
+    assert!(query_json["symbols"][0]["contracts"]["ensures"].is_string());
 
-    let symbols = run_aic_in_dir(
-        project.path(),
-        &["symbols", "--project", ".", "--format", "json"],
-    );
+    let symbols = run_aic_in_dir(project.path(), &["symbols", "--project", ".", "--json"]);
     assert_eq!(symbols.status.code(), Some(0));
     let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
-    let entries = symbols_json.as_array().expect("symbols array");
+    assert_eq!(symbols_json["schema_version"], "1.0");
+    assert_eq!(symbols_json["command"], "symbols");
+    assert_eq!(symbols_json["symbol_count"], 11);
+    let entries = symbols_json["symbols"].as_array().expect("symbols array");
     assert!(entries
         .iter()
         .any(|entry| entry["name"] == "User" && entry["kind"] == "struct"));
     assert!(entries
         .iter()
         .any(|entry| entry["name"] == "validate_user" && entry["kind"] == "function"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["name"] == "User" && entry["contracts"]["invariant"] == "age >= 0"));
+}
+
+#[test]
+fn query_command_covers_each_filter_dimension() {
+    let project = tempdir().expect("tempdir");
+    write_symbol_query_fixture(project.path());
+
+    let kind = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--kind", "struct", "--json"],
+    );
+    assert_eq!(kind.status.code(), Some(0));
+    let kind_json: Value = serde_json::from_slice(&kind.stdout).expect("kind query json");
+    assert_eq!(kind_json["matched_symbols"], 2);
+    assert!(kind_json["symbols"]
+        .as_array()
+        .expect("kind query symbols")
+        .iter()
+        .all(|entry| entry["kind"] == "struct"));
+
+    let name = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--name", "validate*", "--json"],
+    );
+    assert_eq!(name.status.code(), Some(0));
+    let name_json: Value = serde_json::from_slice(&name.stdout).expect("name query json");
+    assert_eq!(name_json["matched_symbols"], 1);
+    assert_eq!(name_json["symbols"][0]["name"], "validate_user");
+
+    let module = run_aic_in_dir(
+        project.path(),
+        &[
+            "query",
+            "--project",
+            ".",
+            "--module",
+            "demo.admin",
+            "--json",
+        ],
+    );
+    assert_eq!(module.status.code(), Some(0));
+    let module_json: Value = serde_json::from_slice(&module.stdout).expect("module query json");
+    assert_eq!(module_json["matched_symbols"], 3);
+    assert!(module_json["symbols"]
+        .as_array()
+        .expect("module query symbols")
+        .iter()
+        .all(|entry| entry["module"] == "demo.admin"));
+
+    let effects = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--effects", "io", "--json"],
+    );
+    assert_eq!(effects.status.code(), Some(0));
+    let effects_json: Value = serde_json::from_slice(&effects.stdout).expect("effects query json");
+    assert_eq!(effects_json["matched_symbols"], 1);
+    assert_eq!(effects_json["symbols"][0]["name"], "validate_user");
+
+    let has_contract = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--has-contract", "--json"],
+    );
+    assert_eq!(has_contract.status.code(), Some(0));
+    let has_contract_json: Value =
+        serde_json::from_slice(&has_contract.stdout).expect("has-contract query json");
+    assert_eq!(has_contract_json["matched_symbols"], 2);
+    assert!(has_contract_json["symbols"]
+        .as_array()
+        .expect("contract query symbols")
+        .iter()
+        .any(|entry| entry["contracts"]["invariant"] == "age >= 0"));
+    assert!(has_contract_json["symbols"]
+        .as_array()
+        .expect("contract query symbols")
+        .iter()
+        .any(|entry| entry["contracts"]["requires"] == "user.age >= 0"));
+
+    let generic = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--generic-over", "T", "--json"],
+    );
+    assert_eq!(generic.status.code(), Some(0));
+    let generic_json: Value = serde_json::from_slice(&generic.stdout).expect("generic query json");
+    assert_eq!(generic_json["matched_symbols"], 4);
+    assert!(generic_json["symbols"]
+        .as_array()
+        .expect("generic query symbols")
+        .iter()
+        .all(|entry| entry["generics"]
+            .as_array()
+            .expect("generics")
+            .iter()
+            .any(|value| value == "T")));
+}
+
+#[test]
+fn query_command_rejects_invalid_filter_combinations_stably() {
+    let project = tempdir().expect("tempdir");
+    write_symbol_query_fixture(project.path());
+
+    let text = run_aic_in_dir(
+        project.path(),
+        &[
+            "query",
+            "--project",
+            ".",
+            "--has-contract",
+            "--has-requires",
+        ],
+    );
+    assert_eq!(text.status.code(), Some(2));
+    let text_stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(text_stderr.contains("query: unsupported filter combination"));
+    assert!(text_stderr.contains("--has-contract cannot be combined"));
+
+    let json = run_aic_in_dir(
+        project.path(),
+        &[
+            "query",
+            "--project",
+            ".",
+            "--kind",
+            "function",
+            "--has-invariant",
+            "--json",
+        ],
+    );
+    assert_eq!(json.status.code(), Some(2));
+    let json_value: Value = serde_json::from_slice(&json.stdout).expect("invalid query json");
+    assert_eq!(json_value["ok"], false);
+    assert_eq!(
+        json_value["error"]["code"],
+        "unsupported_filter_combination"
+    );
+    assert!(json_value["error"]["details"]
+        .as_array()
+        .expect("error details")
+        .iter()
+        .any(|detail| detail == "--has-invariant is only supported with --kind struct"));
+}
+
+#[test]
+fn query_and_symbols_help_include_stable_flags() {
+    let query_help = run_aic(&["query", "--help"]);
+    assert_eq!(query_help.status.code(), Some(0));
+    let query_help_text = String::from_utf8_lossy(&query_help.stdout);
+    for flag in [
+        "--kind <KIND>",
+        "--name <NAME>",
+        "--module <MODULE>",
+        "--effects <EFFECT>",
+        "--has-contract",
+        "--generic-over <TYPE_PARAM>",
+        "--limit <N>",
+        "--json",
+    ] {
+        assert!(
+            query_help_text.contains(flag),
+            "missing `{flag}` in query help:\n{query_help_text}"
+        );
+    }
+
+    let symbols_help = run_aic(&["symbols", "--help"]);
+    assert_eq!(symbols_help.status.code(), Some(0));
+    let symbols_help_text = String::from_utf8_lossy(&symbols_help.stdout);
+    for flag in ["--project <PROJECT>", "--format <FORMAT>", "--json"] {
+        assert!(
+            symbols_help_text.contains(flag),
+            "missing `{flag}` in symbols help:\n{symbols_help_text}"
+        );
+    }
 }
 
 #[test]
@@ -6515,14 +6720,24 @@ fn validate_docs_and_contract_references_are_consistent() {
     assert_eq!(contract.status.code(), Some(0));
     let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
 
-    for command_name in ["validate-call", "validate-type", "suggest"] {
+    for command_name in [
+        "validate-call",
+        "validate-type",
+        "suggest",
+        "query",
+        "symbols",
+    ] {
         let command = contract_json["commands"]
             .as_array()
             .expect("commands")
             .iter()
             .find(|entry| entry["name"] == command_name)
             .unwrap_or_else(|| panic!("missing {command_name} command contract"));
-        assert_eq!(command["output_modes"], json!(["json"]));
+        let expected_modes = match command_name {
+            "query" | "symbols" => json!(["text", "json"]),
+            _ => json!(["json"]),
+        };
+        assert_eq!(command["output_modes"], expected_modes);
     }
 
     assert_eq!(
@@ -6538,6 +6753,14 @@ fn validate_docs_and_contract_references_are_consistent() {
         "docs/agent-tooling/schemas/suggest-response.schema.json"
     );
     assert_eq!(
+        contract_json["schemas"]["query"]["path"],
+        "docs/agent-tooling/schemas/query-response.schema.json"
+    );
+    assert_eq!(
+        contract_json["schemas"]["symbols"]["path"],
+        "docs/agent-tooling/schemas/symbols-response.schema.json"
+    );
+    assert_eq!(
         contract_json["examples"]["validate-call"],
         "examples/agent/protocol_validate_call.json"
     );
@@ -6548,6 +6771,14 @@ fn validate_docs_and_contract_references_are_consistent() {
     assert_eq!(
         contract_json["examples"]["suggest"],
         "examples/agent/protocol_suggest.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["query"],
+        "examples/agent/protocol_query.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["symbols"],
+        "examples/agent/protocol_symbols.json"
     );
 
     let cli_contract_doc =
@@ -6564,6 +6795,18 @@ fn validate_docs_and_contract_references_are_consistent() {
         cli_contract_doc.contains("aic suggest --partial"),
         "cli contract doc missing suggest reference"
     );
+    assert!(
+        cli_contract_doc.contains("query-response.schema.json"),
+        "cli contract doc missing query schema reference"
+    );
+    assert!(
+        cli_contract_doc.contains("symbols-response.schema.json"),
+        "cli contract doc missing symbols schema reference"
+    );
+    assert!(
+        cli_contract_doc.contains("Stable `query` flags include"),
+        "cli contract doc missing query flag section"
+    );
 
     let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
         .expect("read agent tooling README");
@@ -6574,6 +6817,22 @@ fn validate_docs_and_contract_references_are_consistent() {
     assert!(
         tooling_readme.contains("aic validate-call"),
         "agent tooling README missing validate-call command reference"
+    );
+    assert!(
+        tooling_readme.contains("query-response.schema.json"),
+        "agent tooling README missing query schema"
+    );
+    assert!(
+        tooling_readme.contains("symbols-response.schema.json"),
+        "agent tooling README missing symbols schema"
+    );
+    assert!(
+        tooling_readme.contains("aic query"),
+        "agent tooling README missing query command reference"
+    );
+    assert!(
+        tooling_readme.contains("aic symbols"),
+        "agent tooling README missing symbols command reference"
     );
 
     let playbook =
@@ -6586,5 +6845,13 @@ fn validate_docs_and_contract_references_are_consistent() {
     assert!(
         playbook.contains("aic suggest --partial"),
         "command playbook missing suggest partial reference"
+    );
+    assert!(
+        playbook.contains("aic query"),
+        "command playbook missing query reference"
+    );
+    assert!(
+        playbook.contains("aic symbols"),
+        "command playbook missing symbols reference"
     );
 }

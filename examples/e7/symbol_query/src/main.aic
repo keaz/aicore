@@ -1,0 +1,24 @@
+module demo.search;
+
+struct User[T] {
+    name: String,
+    age: Int,
+    meta: T,
+} invariant age >= 0
+
+enum AppError {
+    NotFound,
+    InvalidInput(String),
+}
+
+fn validate_user[T](user: User[T]) -> Bool effects { io } capabilities { io } requires user.age >= 0 ensures result == true {
+    true
+}
+
+fn helper() -> Int {
+    0
+}
+
+fn main() -> Int {
+    0
+}

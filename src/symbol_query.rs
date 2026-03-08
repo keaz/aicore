@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::{error::Error, fmt};
 
 use anyhow::Context;
 use serde::Serialize;
@@ -7,6 +8,12 @@ use serde::Serialize;
 use crate::ast;
 use crate::parser;
 use crate::span::Span;
+
+const SCHEMA_VERSION: &str = "1.0";
+const QUERY_MAX_LIMIT: usize = 500;
+const QUERY_ERROR_UNSUPPORTED_FILTER_COMBINATION: &str = "unsupported_filter_combination";
+const QUERY_ERROR_LIMIT_OUT_OF_RANGE: &str = "limit_out_of_range";
+const QUERY_ERROR_INDEX_FAILED: &str = "symbol_index_failed";
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -34,6 +41,22 @@ impl SymbolKind {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct SymbolContracts {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ensures: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invariant: Option<String>,
+}
+
+impl SymbolContracts {
+    pub fn has_any(&self) -> bool {
+        self.requires.is_some() || self.ensures.is_some() || self.invariant.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SymbolLocation {
     pub file: String,
@@ -48,20 +71,20 @@ pub struct SymbolRecord {
     pub name: String,
     pub kind: SymbolKind,
     pub signature: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
     pub location: SymbolLocation,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub effects: Vec<String>,
+    #[serde(default)]
+    pub contracts: SymbolContracts,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub capabilities: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub generics: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub requires: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub ensures: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub invariant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<String>,
@@ -71,10 +94,14 @@ pub struct SymbolRecord {
 pub struct QueryFilters {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<SymbolKind>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "name", skip_serializing_if = "Option::is_none")]
     pub name_pattern: Option<String>,
+    #[serde(rename = "module", skip_serializing_if = "Option::is_none")]
+    pub module_pattern: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub effects: Vec<String>,
+    #[serde(default)]
+    pub has_contract: bool,
     #[serde(default)]
     pub has_invariant: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +121,59 @@ pub struct QueryReport {
     pub filters: QueryFilters,
     pub symbols: Vec<SymbolRecord>,
 }
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct QueryResponse {
+    pub schema_version: &'static str,
+    pub command: &'static str,
+    pub ok: bool,
+    pub project_root: String,
+    pub total_symbols: usize,
+    pub matched_symbols: usize,
+    pub filters: QueryFilters,
+    pub symbols: Vec<SymbolRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<QueryError>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SymbolsResponse {
+    pub schema_version: &'static str,
+    pub command: &'static str,
+    pub ok: bool,
+    pub project_root: String,
+    pub symbol_count: usize,
+    pub symbols: Vec<SymbolRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct QueryError {
+    pub code: &'static str,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<String>,
+}
+
+impl QueryError {
+    pub fn is_usage_error(&self) -> bool {
+        matches!(
+            self.code,
+            QUERY_ERROR_UNSUPPORTED_FILTER_COMBINATION | QUERY_ERROR_LIMIT_OUT_OF_RANGE
+        )
+    }
+}
+
+impl fmt::Display for QueryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)?;
+        if !self.details.is_empty() {
+            write!(f, ": {}", self.details.join("; "))?;
+        }
+        Ok(())
+    }
+}
+
+impl Error for QueryError {}
 
 pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
     let root = symbol_index_root(entry_path);
@@ -128,6 +208,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                 module: Some(module_value),
                 location: location_for_span(&file, &source, module_decl.span),
                 effects: Vec::new(),
+                contracts: SymbolContracts::default(),
                 capabilities: Vec::new(),
                 generics: Vec::new(),
                 requires: None,
@@ -189,6 +270,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                         module: module_name.clone(),
                         location: location_for_span(&file, &source, impl_def.span),
                         effects: Vec::new(),
+                        contracts: SymbolContracts::default(),
                         capabilities: Vec::new(),
                         generics: Vec::new(),
                         requires: None,
@@ -222,8 +304,13 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
     Ok(records)
 }
 
-pub fn query_symbols(entry_path: &Path, filters: QueryFilters) -> anyhow::Result<QueryReport> {
-    let all_symbols = list_symbols(entry_path)?;
+pub fn query_symbols(entry_path: &Path, filters: QueryFilters) -> Result<QueryReport, QueryError> {
+    validate_query_filters(&filters)?;
+    let all_symbols = list_symbols(entry_path).map_err(|err| QueryError {
+        code: QUERY_ERROR_INDEX_FAILED,
+        message: format!("query: failed to index project symbols ({err})"),
+        details: Vec::new(),
+    })?;
     let total_symbols = all_symbols.len();
 
     let mut matched = all_symbols
@@ -240,6 +327,51 @@ pub fn query_symbols(entry_path: &Path, filters: QueryFilters) -> anyhow::Result
         matched_symbols: matched.len(),
         filters,
         symbols: matched,
+    })
+}
+
+pub fn build_query_response(
+    entry_path: &Path,
+    filters: QueryFilters,
+) -> anyhow::Result<QueryResponse> {
+    let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
+    let response = match query_symbols(entry_path, filters.clone()) {
+        Ok(report) => QueryResponse {
+            schema_version: SCHEMA_VERSION,
+            command: "query",
+            ok: true,
+            project_root,
+            total_symbols: report.total_symbols,
+            matched_symbols: report.matched_symbols,
+            filters: report.filters,
+            symbols: report.symbols,
+            error: None,
+        },
+        Err(error) => QueryResponse {
+            schema_version: SCHEMA_VERSION,
+            command: "query",
+            ok: false,
+            project_root,
+            total_symbols: 0,
+            matched_symbols: 0,
+            filters,
+            symbols: Vec::new(),
+            error: Some(error),
+        },
+    };
+    Ok(response)
+}
+
+pub fn build_symbols_response(entry_path: &Path) -> anyhow::Result<SymbolsResponse> {
+    let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
+    let symbols = list_symbols(entry_path)?;
+    Ok(SymbolsResponse {
+        schema_version: SCHEMA_VERSION,
+        command: "symbols",
+        ok: true,
+        project_root,
+        symbol_count: symbols.len(),
+        symbols,
     })
 }
 
@@ -274,6 +406,11 @@ fn function_symbol_record(
         module: module.clone(),
         location: location_for_span(file, source, function.span),
         effects,
+        contracts: SymbolContracts {
+            requires: requires.clone(),
+            ensures: ensures.clone(),
+            invariant: None,
+        },
         capabilities,
         generics: function
             .generics
@@ -305,6 +442,11 @@ fn struct_symbol_record(
         module: module.clone(),
         location: location_for_span(file, source, strukt.span),
         effects: Vec::new(),
+        contracts: SymbolContracts {
+            requires: None,
+            ensures: None,
+            invariant: invariant.clone(),
+        },
         capabilities: Vec::new(),
         generics: strukt
             .generics
@@ -331,6 +473,7 @@ fn enum_symbol_record(
         module: module.clone(),
         location: location_for_span(file, source, enm.span),
         effects: Vec::new(),
+        contracts: SymbolContracts::default(),
         capabilities: Vec::new(),
         generics: enm
             .generics
@@ -358,6 +501,7 @@ fn enum_variant_symbol_record(
         module: module.clone(),
         location: location_for_span(file, source, variant.span),
         effects: Vec::new(),
+        contracts: SymbolContracts::default(),
         capabilities: Vec::new(),
         generics: Vec::new(),
         requires: None,
@@ -380,6 +524,7 @@ fn trait_symbol_record(
         module: module.clone(),
         location: location_for_span(file, source, trait_def.span),
         effects: Vec::new(),
+        contracts: SymbolContracts::default(),
         capabilities: Vec::new(),
         generics: trait_def
             .generics
@@ -406,6 +551,15 @@ fn symbol_matches_filters(symbol: &SymbolRecord, filters: &QueryFilters) -> bool
         }
     }
 
+    if let Some(pattern) = &filters.module_pattern {
+        let Some(module) = symbol.module.as_deref() else {
+            return false;
+        };
+        if !name_matches_pattern(pattern, module) {
+            return false;
+        }
+    }
+
     if !filters.effects.is_empty() {
         let symbol_effects = symbol
             .effects
@@ -419,6 +573,10 @@ fn symbol_matches_filters(symbol: &SymbolRecord, filters: &QueryFilters) -> bool
         {
             return false;
         }
+    }
+
+    if filters.has_contract && !symbol.contracts.has_any() {
+        return false;
     }
 
     if filters.has_invariant && symbol.invariant.is_none() {
@@ -447,6 +605,53 @@ fn name_matches_pattern(pattern: &str, value: &str) -> bool {
         wildcard_match(pattern.as_bytes(), value.as_bytes())
     } else {
         value == pattern
+    }
+}
+
+pub fn validate_query_filters(filters: &QueryFilters) -> Result<(), QueryError> {
+    if let Some(limit) = filters.limit {
+        if limit > QUERY_MAX_LIMIT {
+            return Err(QueryError {
+                code: QUERY_ERROR_LIMIT_OUT_OF_RANGE,
+                message: format!(
+                    "query: --limit must be between 1 and {QUERY_MAX_LIMIT} for deterministic pagination"
+                ),
+                details: vec![format!("received limit {limit}")],
+            });
+        }
+    }
+
+    let mut details = Vec::new();
+    if filters.has_contract
+        && (filters.has_requires || filters.has_ensures || filters.has_invariant)
+    {
+        details.push(
+            "--has-contract cannot be combined with --has-requires, --has-ensures, or --has-invariant"
+                .to_string(),
+        );
+    }
+
+    if let Some(kind) = filters.kind {
+        if filters.has_invariant && kind != SymbolKind::Struct {
+            details.push("--has-invariant is only supported with --kind struct".to_string());
+        }
+
+        if (filters.has_requires || filters.has_ensures) && kind != SymbolKind::Function {
+            details.push(
+                "--has-requires and --has-ensures are only supported with --kind function"
+                    .to_string(),
+            );
+        }
+    }
+
+    if details.is_empty() {
+        Ok(())
+    } else {
+        Err(QueryError {
+            code: QUERY_ERROR_UNSUPPORTED_FILTER_COMBINATION,
+            message: "query: unsupported filter combination".to_string(),
+            details,
+        })
     }
 }
 
@@ -808,7 +1013,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{query_symbols, QueryFilters, SymbolKind};
+    use super::{query_symbols, validate_query_filters, QueryFilters, SymbolKind};
 
     #[test]
     fn wildcard_query_filters_are_applied_deterministically() {
@@ -839,7 +1044,9 @@ fn helper() -> Int {
             QueryFilters {
                 kind: Some(SymbolKind::Function),
                 name_pattern: Some("validate*".to_string()),
+                module_pattern: None,
                 effects: vec!["io".to_string()],
+                has_contract: false,
                 has_invariant: false,
                 generic_over: None,
                 has_requires: true,
@@ -879,7 +1086,9 @@ struct Empty {
             QueryFilters {
                 kind: Some(SymbolKind::Struct),
                 name_pattern: None,
+                module_pattern: None,
                 effects: Vec::new(),
+                has_contract: false,
                 has_invariant: true,
                 generic_over: None,
                 has_requires: false,
@@ -891,5 +1100,28 @@ struct Empty {
 
         assert_eq!(report.matched_symbols, 1);
         assert_eq!(report.symbols[0].name, "User");
+    }
+
+    #[test]
+    fn invalid_filter_combinations_are_rejected_stably() {
+        let error = validate_query_filters(&QueryFilters {
+            kind: Some(SymbolKind::Function),
+            name_pattern: None,
+            module_pattern: None,
+            effects: Vec::new(),
+            has_contract: false,
+            has_invariant: true,
+            generic_over: None,
+            has_requires: false,
+            has_ensures: false,
+            limit: None,
+        })
+        .expect_err("expected invalid query filters");
+
+        assert_eq!(error.code, "unsupported_filter_combination");
+        assert!(error
+            .details
+            .iter()
+            .any(|detail| detail == "--has-invariant is only supported with --kind struct"));
     }
 }

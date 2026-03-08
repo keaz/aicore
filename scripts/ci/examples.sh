@@ -105,6 +105,7 @@ check_pass=(
   "examples/e7/cli_smoke.aic"
   "examples/e7/test_harness_sample.aic"
   "examples/e7/lsp_project"
+  "examples/e7/symbol_query"
   "examples/vscode/snippets_showcase.aic"
   "examples/vscode/inlay_hints_demo.aic"
   "examples/vscode/semantic_highlighting_showcase.aic"
@@ -818,6 +819,10 @@ case "$MODE" in
     fi
     "${AIC[@]}" contract --json >/tmp/aic-example.out
     python3 -m json.tool /tmp/aic-example.out >/dev/null
+    "${AIC[@]}" query --project "examples/e7/symbol_query" --kind function --name 'validate*' --module demo.search --effects io --has-contract --generic-over T --limit 10 --json >"$ARTIFACT_DIR/query_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/query_report.json" >/dev/null
+    "${AIC[@]}" symbols --project "examples/e7/symbol_query" --json >"$ARTIFACT_DIR/symbols_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/symbols_report.json" >/dev/null
     "${AIC[@]}" test "examples/e7/harness" --json >"$ARTIFACT_DIR/harness_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/harness_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/harness_report.json"
