@@ -107,6 +107,7 @@ check_pass=(
   "examples/e7/test_harness_sample.aic"
   "examples/e7/lsp_project"
   "examples/e7/symbol_query"
+  "examples/e7/patch_protocol"
   "examples/vscode/snippets_showcase.aic"
   "examples/vscode/inlay_hints_demo.aic"
   "examples/vscode/semantic_highlighting_showcase.aic"
@@ -745,6 +746,7 @@ case "$MODE" in
     expect_run_value "examples/e6/pkg_app" "42"
     expect_run_value "examples/e7/cli_smoke.aic" "42"
     expect_run_value "examples/e7/scaffold_examples" "42"
+    expect_run_value "examples/e7/patch_protocol" "42"
     expect_run_value "examples/vscode/snippets_showcase.aic" "42"
     expect_run_value "examples/vscode/inlay_hints_demo.aic" "42"
     expect_run_value "examples/vscode/semantic_highlighting_showcase.aic" "42"
@@ -832,6 +834,31 @@ case "$MODE" in
     python3 -m json.tool "$ARTIFACT_DIR/scaffold_examples_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/scaffold_examples_report.json"
     grep -q '"total": 1' "$ARTIFACT_DIR/scaffold_examples_report.json"
+    patch_project="$ARTIFACT_DIR/patch_protocol_project"
+    cp -R "examples/e7/patch_protocol" "$patch_project"
+    "${AIC[@]}" patch --preview "$patch_project/patches/valid_patch.json" --project "$patch_project" --json >"$ARTIFACT_DIR/patch_preview.json"
+    python3 -m json.tool "$ARTIFACT_DIR/patch_preview.json" >/dev/null
+    grep -q '"ok": true' "$ARTIFACT_DIR/patch_preview.json"
+    "${AIC[@]}" patch --apply "$patch_project/patches/valid_patch.json" --project "$patch_project" --json >"$ARTIFACT_DIR/patch_apply.json"
+    python3 -m json.tool "$ARTIFACT_DIR/patch_apply.json" >/dev/null
+    grep -q '"ok": true' "$ARTIFACT_DIR/patch_apply.json"
+    "${AIC[@]}" check "$patch_project" >/dev/null
+    invalid_patch_project="$ARTIFACT_DIR/patch_protocol_invalid_project"
+    cp -R "examples/e7/patch_protocol" "$invalid_patch_project"
+    if "${AIC[@]}" patch --apply "$invalid_patch_project/patches/invalid_semantic_patch.json" --project "$invalid_patch_project" --json >"$ARTIFACT_DIR/patch_invalid.json"; then
+      echo "expected invalid semantic patch failure but passed" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/patch_invalid.json" >/dev/null
+    grep -q '"kind": "validate_semantics"' "$ARTIFACT_DIR/patch_invalid.json"
+    overlap_patch_project="$ARTIFACT_DIR/patch_protocol_overlap_project"
+    cp -R "examples/e7/patch_protocol" "$overlap_patch_project"
+    if "${AIC[@]}" patch --preview "$overlap_patch_project/patches/overlap_patch.json" --project "$overlap_patch_project" --json >"$ARTIFACT_DIR/patch_overlap.json"; then
+      echo "expected overlap patch preview failure but passed" >&2
+      exit 1
+    fi
+    python3 -m json.tool "$ARTIFACT_DIR/patch_overlap.json" >/dev/null
+    grep -q '"kind": "overlap"' "$ARTIFACT_DIR/patch_overlap.json"
     "${AIC[@]}" test "examples/e7/test_framework" --json >"$ARTIFACT_DIR/test_framework_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/test_framework_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/test_framework_report.json"

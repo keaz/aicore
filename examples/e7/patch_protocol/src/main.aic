@@ -1,0 +1,19 @@
+module demo.patch_protocol;
+
+import std.io;
+
+struct Config {
+    port: Int
+}
+
+fn handle_result(x: Result[Int, Int]) -> Int {
+    match x {
+        Ok(v) => v,
+        Err(e) => e,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(handle_result(Ok(42)));
+    0
+}

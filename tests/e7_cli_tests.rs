@@ -69,6 +69,29 @@ fn run_repl_session(args: &[&str], input: &str) -> std::process::Output {
     child.wait_with_output().expect("wait repl output")
 }
 
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
+    fs::create_dir_all(dst).expect("mkdir dst");
+    for entry in fs::read_dir(src).expect("read dir") {
+        let entry = entry.expect("dir entry");
+        let file_type = entry.file_type().expect("file type");
+        let target = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).expect("copy file");
+        }
+    }
+}
+
+fn copy_patch_protocol_fixture() -> tempfile::TempDir {
+    let project = tempdir().expect("tempdir");
+    copy_dir_recursive(
+        &repo_root().join("examples/e7/patch_protocol"),
+        project.path(),
+    );
+    project
+}
+
 fn normalize_help_snapshot(text: &str) -> String {
     text.lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
@@ -2486,8 +2509,9 @@ fn session_conflicts_and_merge_validation_emit_machine_readable_results() {
     assert!(invalid_merge_json["conflicts"]
         .as_array()
         .expect("invalid conflicts")
-        .is_empty());
-    assert!(!invalid_merge_json["diagnostics"]
+        .iter()
+        .any(|entry| entry["kind"] == "patch_conflict"));
+    assert!(invalid_merge_json["diagnostics"]
         .as_array()
         .expect("invalid diagnostics")
         .is_empty());
@@ -2638,6 +2662,151 @@ fn patch_command_reports_conflicts_without_writing_files() {
 
     let after = fs::read_to_string(&source_path).expect("read after failed apply");
     assert_eq!(after, "module demo.patch;\nfn main() -> Int {\n    0\n}\n");
+}
+
+#[test]
+fn patch_command_example_fixture_preview_and_apply_are_deterministic() {
+    let project = copy_patch_protocol_fixture();
+    let source_path = project.path().join("src/main.aic");
+    let patch_arg = "patches/valid_patch.json";
+    let original = fs::read_to_string(&source_path).expect("read original source");
+
+    let preview_one = run_aic_in_dir(
+        project.path(),
+        &["patch", "--preview", patch_arg, "--project", ".", "--json"],
+    );
+    let preview_two = run_aic_in_dir(
+        project.path(),
+        &["patch", "--preview", patch_arg, "--project", ".", "--json"],
+    );
+    assert_eq!(preview_one.status.code(), Some(0));
+    assert_eq!(preview_two.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&preview_one.stdout),
+        String::from_utf8_lossy(&preview_two.stdout),
+        "preview output must be deterministic"
+    );
+
+    let preview_json: Value = serde_json::from_slice(&preview_one.stdout).expect("preview json");
+    assert_eq!(preview_json["phase"], "patch");
+    assert_eq!(preview_json["mode"], "preview");
+    assert_eq!(preview_json["ok"], true);
+    assert_eq!(
+        preview_json["files_changed"]
+            .as_array()
+            .expect("files changed")
+            .len(),
+        1
+    );
+    assert!(
+        preview_json["applied_edits"]
+            .as_array()
+            .expect("applied edits")
+            .len()
+            >= 3
+    );
+    assert!(preview_json["previews"]
+        .as_array()
+        .expect("previews")
+        .iter()
+        .all(|preview| preview["file"] == "./src/main.aic"));
+
+    let after_preview = fs::read_to_string(&source_path).expect("read source after preview");
+    assert_eq!(after_preview, original, "preview must not mutate source");
+
+    let apply = run_aic_in_dir(
+        project.path(),
+        &["patch", "--apply", patch_arg, "--project", ".", "--json"],
+    );
+    assert_eq!(apply.status.code(), Some(0));
+    let apply_json: Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(apply_json["mode"], "apply");
+    assert_eq!(apply_json["ok"], true);
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
+    assert!(rewritten.contains("timeout: Int"));
+    assert!(rewritten.contains("Err(e) => 0 - e"));
+    assert!(rewritten.contains("fn validate_port(c: Config) -> Bool"));
+    assert!(rewritten.contains("module demo.patch_protocol;"));
+    assert!(rewritten.contains("import std.io;"));
+    assert!(rewritten.contains("print_int(handle_result(Ok(42)));"));
+
+    let check = run_aic_in_dir(project.path(), &["check", ".", "--json"]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+#[test]
+fn patch_command_invalid_semantic_fixture_is_rejected_without_writes() {
+    let project = copy_patch_protocol_fixture();
+    let source_path = project.path().join("src/main.aic");
+    let original = fs::read_to_string(&source_path).expect("read original source");
+
+    let apply = run_aic_in_dir(
+        project.path(),
+        &[
+            "patch",
+            "--apply",
+            "patches/invalid_semantic_patch.json",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(apply.status.code(), Some(1));
+    let apply_json: Value = serde_json::from_slice(&apply.stdout).expect("apply json");
+    assert_eq!(apply_json["ok"], false);
+    assert_eq!(
+        apply_json["conflicts"][0]["operation_index"],
+        serde_json::json!(0)
+    );
+    assert_eq!(apply_json["conflicts"][0]["kind"], "validate_semantics");
+    assert!(!apply_json["conflicts"][0]["message"]
+        .as_str()
+        .expect("conflict message")
+        .is_empty());
+
+    let after = fs::read_to_string(&source_path).expect("read source after failed apply");
+    assert_eq!(after, original);
+}
+
+#[test]
+fn patch_command_overlap_fixture_reports_operation_index_and_keeps_source_unchanged() {
+    let project = copy_patch_protocol_fixture();
+    let source_path = project.path().join("src/main.aic");
+    let original = fs::read_to_string(&source_path).expect("read original source");
+
+    let preview = run_aic_in_dir(
+        project.path(),
+        &[
+            "patch",
+            "--preview",
+            "patches/overlap_patch.json",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(preview.status.code(), Some(1));
+    let preview_json: Value = serde_json::from_slice(&preview.stdout).expect("preview json");
+    assert_eq!(preview_json["ok"], false);
+    assert_eq!(
+        preview_json["conflicts"][0]["operation_index"],
+        serde_json::json!(1)
+    );
+    assert_eq!(preview_json["conflicts"][0]["kind"], "overlap");
+    assert!(preview_json["conflicts"][0]["message"]
+        .as_str()
+        .expect("conflict message")
+        .contains("operation overlaps semantic target"));
+
+    let after = fs::read_to_string(&source_path).expect("read source after overlap preview");
+    assert_eq!(after, original);
 }
 
 #[test]
@@ -4071,7 +4240,7 @@ fn explain_and_contract_commands_work() {
         .expect("patch stable flags")
         .iter()
         .any(|flag| flag == "--apply"));
-    for phase in ["parse", "ast", "check", "build", "fix", "testgen"] {
+    for phase in ["parse", "ast", "check", "build", "fix", "testgen", "patch"] {
         assert!(contract_json["schemas"][phase]["path"].is_string());
         assert!(contract_json["examples"][phase].is_string());
     }

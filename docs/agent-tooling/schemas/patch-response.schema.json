@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/patch-response-1.0.schema.json",
+  "title": "AIC Agent Patch Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "phase",
+    "mode",
+    "ok",
+    "files_changed",
+    "applied_edits",
+    "conflicts",
+    "previews"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "phase": { "const": "patch" },
+    "mode": {
+      "type": "string",
+      "enum": ["preview", "apply"]
+    },
+    "ok": { "type": "boolean" },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "applied_edits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edit" }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/conflict" }
+    },
+    "previews": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/preview" }
+    }
+  },
+  "$defs": {
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end", "replacement", "message", "operation_index"],
+      "properties": {
+        "file": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "replacement": { "type": "string" },
+        "message": { "type": "string" },
+        "operation_index": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end", "before", "after", "message", "operation_index"],
+      "properties": {
+        "file": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "before": { "type": "string" },
+        "after": { "type": "string" },
+        "message": { "type": "string" },
+        "operation_index": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_index", "kind", "message", "file"],
+      "properties": {
+        "operation_index": { "type": "integer", "minimum": 0 },
+        "kind": { "type": "string" },
+        "message": { "type": "string" },
+        "file": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

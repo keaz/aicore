@@ -1,0 +1,20 @@
+{
+  "operations": [
+    {
+      "kind": "modify_match_arm",
+      "target_file": "src/main.aic",
+      "target_function": "handle_result",
+      "match_index": 0,
+      "arm_pattern": "Err(e)",
+      "new_body": "0 - e"
+    },
+    {
+      "kind": "modify_match_arm",
+      "target_file": "src/main.aic",
+      "target_function": "handle_result",
+      "match_index": 0,
+      "arm_pattern": "Err(e)",
+      "new_body": "e + 1"
+    }
+  ]
+}

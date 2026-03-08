@@ -1,11 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
 use crate::ast::{self, Expr, ExprKind, Pattern, PatternKind, Stmt};
+use crate::driver::{has_errors, run_frontend_with_options, FrontendOptions};
+use crate::package_workflow::read_manifest;
 use crate::parser;
 use crate::span::Span;
 use crate::symbol_query::{self, SymbolKind};
@@ -28,12 +32,13 @@ impl PatchMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PatchDocument {
     pub operations: Vec<PatchOperation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatchOperation {
     AddFunction {
         #[serde(default)]
@@ -59,6 +64,7 @@ pub enum PatchOperation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PatchFunctionSpec {
     pub name: String,
     #[serde(default)]
@@ -76,12 +82,14 @@ pub struct PatchFunctionSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PatchParamSpec {
     pub name: String,
     pub ty: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PatchFieldSpec {
     pub name: String,
     pub ty: String,
@@ -135,6 +143,22 @@ struct FileState {
     current: String,
 }
 
+struct ValidationWorkspace {
+    path: PathBuf,
+}
+
+impl ValidationWorkspace {
+    fn root(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ValidationWorkspace {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OperationApply {
     edits: Vec<PatchEdit>,
@@ -170,8 +194,10 @@ pub fn run_patch(
     patch_path: &Path,
     mode: PatchMode,
 ) -> anyhow::Result<PatchResponse> {
-    let document = read_patch_document(patch_path)?;
-    apply_patch_document(project_root, &document, mode)
+    match read_patch_document(patch_path) {
+        Ok(document) => apply_patch_document(project_root, &document, mode),
+        Err(err) => Ok(document_error_response(patch_path, mode, err.to_string())),
+    }
 }
 
 pub fn apply_patch_document(
@@ -183,9 +209,18 @@ pub fn apply_patch_document(
     let mut applied_edits = Vec::<PatchEdit>::new();
     let mut previews = Vec::<PatchPreview>::new();
     let mut conflicts = Vec::<PatchConflict>::new();
+    let mut validation_workspace = None;
+    let mut seen_operation_targets = BTreeMap::<String, usize>::new();
 
     for (operation_index, operation) in document.operations.iter().enumerate() {
-        match apply_operation(project_root, operation, operation_index, &mut file_states) {
+        match apply_operation(
+            project_root,
+            operation,
+            operation_index,
+            &mut file_states,
+            &mut validation_workspace,
+            &mut seen_operation_targets,
+        ) {
             Ok(applied) => {
                 applied_edits.extend(applied.edits);
                 previews.extend(applied.previews);
@@ -209,12 +244,10 @@ pub fn apply_patch_document(
     changed_paths.sort();
 
     if matches!(mode, PatchMode::Apply) && conflicts.is_empty() {
-        for path in &changed_paths {
-            let state = file_states
-                .get(path)
-                .ok_or_else(|| anyhow!("missing in-memory state for {}", path.display()))?;
-            fs::write(path, &state.current)
-                .with_context(|| format!("failed to write patched file {}", path.display()))?;
+        if let Err(conflict) =
+            write_changed_files_transactionally(&changed_paths, &file_states, &applied_edits)
+        {
+            conflicts.push(conflict);
         }
     }
 
@@ -242,6 +275,8 @@ fn apply_operation(
     operation: &PatchOperation,
     operation_index: usize,
     file_states: &mut BTreeMap<PathBuf, FileState>,
+    validation_workspace: &mut Option<ValidationWorkspace>,
+    seen_operation_targets: &mut BTreeMap<String, usize>,
 ) -> Result<OperationApply, PatchConflict> {
     let target_path = match resolve_target_file(project_root, operation) {
         Ok(path) => path,
@@ -255,8 +290,23 @@ fn apply_operation(
         }
     };
 
-    let state = match ensure_file_state(file_states, &target_path) {
-        Ok(state) => state,
+    let operation_target = operation_target_key(&target_path, operation);
+    if let Some(previous_operation) =
+        seen_operation_targets.insert(operation_target.clone(), operation_index)
+    {
+        return Err(PatchConflict {
+            operation_index,
+            kind: "overlap".to_string(),
+            message: format!(
+                "operation overlaps semantic target from operation {}: {}",
+                previous_operation, operation_target
+            ),
+            file: Some(display_path(&target_path)),
+        });
+    }
+
+    let current_source = match ensure_file_state(file_states, &target_path) {
+        Ok(state) => state.current.clone(),
         Err(err) => {
             return Err(PatchConflict {
                 operation_index,
@@ -268,7 +318,7 @@ fn apply_operation(
     };
 
     let parse_label = display_path(&target_path);
-    let (program, diagnostics) = parser::parse(&state.current, &parse_label);
+    let (program, diagnostics) = parser::parse(&current_source, &parse_label);
     if diagnostics.iter().any(|diag| diag.is_error()) {
         return Err(PatchConflict {
             operation_index,
@@ -290,7 +340,7 @@ fn apply_operation(
         operation,
         operation_index,
         &target_path,
-        &state.current,
+        &current_source,
         &program,
     ) {
         Ok(edits) => edits,
@@ -310,8 +360,7 @@ fn apply_operation(
             file: edit.file.clone(),
             start: edit.start,
             end: edit.end,
-            before: state
-                .current
+            before: current_source
                 .get(edit.start..edit.end)
                 .unwrap_or_default()
                 .to_string(),
@@ -321,7 +370,7 @@ fn apply_operation(
         })
         .collect::<Vec<_>>();
 
-    let updated = match apply_text_edits(&state.current, &edits) {
+    let updated = match apply_text_edits(&current_source, &edits) {
         Ok(updated) => updated,
         Err(err) => {
             return Err(PatchConflict {
@@ -342,6 +391,33 @@ fn apply_operation(
         });
     }
 
+    if let Err(message) = validate_semantics(
+        project_root,
+        &target_path,
+        &current_source,
+        &updated,
+        file_states,
+        validation_workspace,
+    ) {
+        return Err(PatchConflict {
+            operation_index,
+            kind: "validate_semantics".to_string(),
+            message,
+            file: Some(display_path(&target_path)),
+        });
+    }
+
+    let state = file_states
+        .get_mut(&target_path)
+        .ok_or_else(|| PatchConflict {
+            operation_index,
+            kind: "state".to_string(),
+            message: format!(
+                "failed to reload in-memory state for {}",
+                display_path(&target_path)
+            ),
+            file: Some(display_path(&target_path)),
+        })?;
     state.current = updated;
 
     Ok(OperationApply { edits, previews })
@@ -409,6 +485,35 @@ fn resolve_target_file(project_root: &Path, operation: &PatchOperation) -> Resul
                 resolve_symbol_file(project_root, SymbolKind::Struct, target_struct)
             }
         }
+    }
+}
+
+fn operation_target_key(target_path: &Path, operation: &PatchOperation) -> String {
+    let file = display_path(target_path);
+    match operation {
+        PatchOperation::AddFunction { function, .. } => {
+            format!("add_function::{file}::{}", function.name.trim())
+        }
+        PatchOperation::ModifyMatchArm {
+            target_function,
+            match_index,
+            arm_pattern,
+            ..
+        } => format!(
+            "modify_match_arm::{file}::{}::{}::{}",
+            target_function.trim(),
+            match_index,
+            normalize_ws(arm_pattern)
+        ),
+        PatchOperation::AddField {
+            target_struct,
+            field,
+            ..
+        } => format!(
+            "add_field::{file}::{}::{}",
+            target_struct.trim(),
+            field.name.trim()
+        ),
     }
 }
 
@@ -1119,6 +1224,10 @@ fn validate_source_parses(file: &Path, source: &str) -> Result<(), String> {
 }
 
 fn summarize_parse_errors(diagnostics: &[crate::diagnostics::Diagnostic]) -> String {
+    summarize_error_diagnostics(diagnostics)
+}
+
+fn summarize_error_diagnostics(diagnostics: &[crate::diagnostics::Diagnostic]) -> String {
     diagnostics
         .iter()
         .filter(|diag| diag.is_error())
@@ -1130,6 +1239,266 @@ fn summarize_parse_errors(diagnostics: &[crate::diagnostics::Diagnostic]) -> Str
 
 fn display_path(path: &Path) -> String {
     path.to_string_lossy().to_string()
+}
+
+fn document_error_response(path: &Path, mode: PatchMode, message: String) -> PatchResponse {
+    PatchResponse {
+        protocol_version: PATCH_PROTOCOL_VERSION.to_string(),
+        phase: "patch".to_string(),
+        mode: mode.as_str().to_string(),
+        ok: false,
+        files_changed: Vec::new(),
+        applied_edits: Vec::new(),
+        conflicts: vec![PatchConflict {
+            operation_index: 0,
+            kind: "document".to_string(),
+            message,
+            file: Some(display_path(path)),
+        }],
+        previews: Vec::new(),
+    }
+}
+
+fn write_changed_files_transactionally(
+    changed_paths: &[PathBuf],
+    file_states: &BTreeMap<PathBuf, FileState>,
+    applied_edits: &[PatchEdit],
+) -> Result<(), PatchConflict> {
+    let mut written = Vec::<(PathBuf, String)>::new();
+
+    for path in changed_paths {
+        let state = file_states.get(path).ok_or_else(|| PatchConflict {
+            operation_index: 0,
+            kind: "write".to_string(),
+            message: format!("missing in-memory state for {}", path.display()),
+            file: Some(display_path(path)),
+        })?;
+        let operation_index = applied_edits
+            .iter()
+            .filter(|edit| edit.file == display_path(path))
+            .map(|edit| edit.operation_index)
+            .max()
+            .unwrap_or(0);
+
+        if let Err(err) = fs::write(path, &state.current) {
+            let rollback_errors = rollback_written_files(&written);
+            let mut message = format!("failed to write patched file {}: {err}", path.display());
+            if !rollback_errors.is_empty() {
+                message.push_str("; rollback also failed for ");
+                message.push_str(&rollback_errors.join(", "));
+            }
+            return Err(PatchConflict {
+                operation_index,
+                kind: "write".to_string(),
+                message,
+                file: Some(display_path(path)),
+            });
+        }
+        written.push((path.clone(), state.original.clone()));
+    }
+
+    Ok(())
+}
+
+fn rollback_written_files(written: &[(PathBuf, String)]) -> Vec<String> {
+    let mut failures = Vec::new();
+    for (path, original) in written.iter().rev() {
+        if let Err(err) = fs::write(path, original) {
+            failures.push(format!("{} ({err})", path.display()));
+        }
+    }
+    failures
+}
+
+fn validate_semantics(
+    project_root: &Path,
+    target_path: &Path,
+    previous_source: &str,
+    updated_source: &str,
+    file_states: &BTreeMap<PathBuf, FileState>,
+    validation_workspace: &mut Option<ValidationWorkspace>,
+) -> Result<(), String> {
+    let workspace = prepare_validation_workspace(project_root, validation_workspace)?;
+    let temp_target = map_validation_path(workspace.root(), project_root, target_path);
+    if let Some(parent) = temp_target.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to prepare validation path {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+
+    fs::write(&temp_target, updated_source).map_err(|err| {
+        format!(
+            "failed to stage semantic validation input {}: {err}",
+            temp_target.display()
+        )
+    })?;
+
+    let result = run_validation_inputs(
+        project_root,
+        workspace.root(),
+        file_states.keys().collect::<Vec<_>>(),
+    );
+    if let Err(message) = result {
+        let _ = fs::write(&temp_target, previous_source);
+        return Err(message);
+    }
+
+    Ok(())
+}
+
+fn prepare_validation_workspace<'a>(
+    project_root: &Path,
+    validation_workspace: &'a mut Option<ValidationWorkspace>,
+) -> Result<&'a mut ValidationWorkspace, String> {
+    if validation_workspace.is_none() {
+        let path = fresh_temp_workspace("patch");
+        fs::create_dir_all(&path)
+            .map_err(|err| format!("failed to create temp validation workspace: {err}"))?;
+        copy_tree(project_root, &path)
+            .map_err(|err| format!("failed to copy validation workspace: {err}"))?;
+        *validation_workspace = Some(ValidationWorkspace { path });
+    }
+
+    validation_workspace
+        .as_mut()
+        .ok_or_else(|| "failed to initialize validation workspace".to_string())
+}
+
+fn run_validation_inputs(
+    project_root: &Path,
+    temp_root: &Path,
+    changed_paths: Vec<&PathBuf>,
+) -> Result<(), String> {
+    let inputs = resolve_validation_inputs(project_root, temp_root, changed_paths)?;
+    for input in inputs {
+        let output =
+            run_frontend_with_options(&input, FrontendOptions::default()).map_err(|err| {
+                format!(
+                    "failed to run semantic validation for {}: {err}",
+                    input.display()
+                )
+            })?;
+        if has_errors(&output.diagnostics) {
+            return Err(format!(
+                "semantic validation failed for {}: {}",
+                input.display(),
+                summarize_error_diagnostics(&output.diagnostics)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_validation_inputs(
+    project_root: &Path,
+    temp_root: &Path,
+    changed_paths: Vec<&PathBuf>,
+) -> Result<Vec<PathBuf>, String> {
+    if let Some(manifest) = read_manifest(project_root)
+        .map_err(|err| format!("failed to read project manifest for semantic validation: {err}"))?
+    {
+        return Ok(vec![temp_root.join(manifest.main)]);
+    }
+
+    let fallback = project_root.join("src/main.aic");
+    if fallback.exists() {
+        return Ok(vec![temp_root.join("src/main.aic")]);
+    }
+
+    let mut inputs = changed_paths
+        .into_iter()
+        .map(|path| map_validation_path(temp_root, project_root, path))
+        .collect::<Vec<_>>();
+    inputs.sort();
+    inputs.dedup();
+
+    if inputs.is_empty() {
+        return Err("no changed files available for semantic validation".to_string());
+    }
+
+    Ok(inputs)
+}
+
+fn map_validation_path(temp_root: &Path, project_root: &Path, path: &Path) -> PathBuf {
+    if let Ok(relative) = path.strip_prefix(project_root) {
+        temp_root.join(relative)
+    } else {
+        temp_root
+            .join("external")
+            .join(sanitize_external_path(path))
+    }
+}
+
+fn sanitize_external_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
+}
+
+fn copy_tree(source_root: &Path, destination_root: &Path) -> anyhow::Result<()> {
+    fs::create_dir_all(destination_root)
+        .with_context(|| format!("failed to create {}", destination_root.display()))?;
+    let mut entries = fs::read_dir(source_root)
+        .with_context(|| format!("failed to read {}", source_root.display()))?
+        .collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let source_path = entry.path();
+        let name = source_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if matches!(
+            name,
+            ".git" | "target" | ".aic-checkpoints" | ".aic-sessions"
+        ) {
+            continue;
+        }
+        let destination_path = destination_root.join(entry.file_name());
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_tree(&source_path, &destination_path)?;
+        } else if ty.is_file() {
+            if let Some(parent) = destination_path.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            fs::copy(&source_path, &destination_path).with_context(|| {
+                format!(
+                    "failed to copy {} into {}",
+                    source_path.display(),
+                    destination_path.display()
+                )
+            })?;
+            let mut permissions = fs::metadata(&destination_path)?.permissions();
+            if permissions.readonly() {
+                permissions.set_readonly(false);
+                fs::set_permissions(&destination_path, permissions).with_context(|| {
+                    format!(
+                        "failed to normalize temp validation permissions for {}",
+                        destination_path.display()
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn fresh_temp_workspace(tag: &str) -> PathBuf {
+    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let seq = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
 }
 
 pub fn format_patch_response_text(response: &PatchResponse) -> String {
@@ -1177,6 +1546,7 @@ pub fn format_patch_response_text(response: &PatchResponse) -> String {
 mod tests {
     use std::fs;
 
+    use serde_json::json;
     use tempfile::tempdir;
 
     use super::{
@@ -1273,6 +1643,26 @@ mod tests {
     }
 
     #[test]
+    fn patch_document_rejects_unknown_fields() {
+        let err = serde_json::from_value::<PatchDocument>(json!({
+            "operations": [
+                {
+                    "kind": "add_function",
+                    "target_file": "src/main.aic",
+                    "function": {
+                        "name": "helper",
+                        "return_type": "Int",
+                        "body": "0",
+                        "unexpected": true
+                    }
+                }
+            ]
+        }))
+        .expect_err("unknown fields must be rejected");
+        assert!(err.to_string().contains("unexpected"));
+    }
+
+    #[test]
     fn patch_conflict_is_reported_for_missing_struct() {
         let dir = tempdir().expect("tempdir");
         let src_dir = dir.path().join("src");
@@ -1304,5 +1694,171 @@ mod tests {
         let after = fs::read_to_string(&source_path).expect("read source after failed patch");
         assert!(after.contains("fn main() -> Int"));
         assert!(!after.contains("timeout"));
+    }
+
+    #[test]
+    fn patch_semantic_validation_rejects_invalid_function_body() {
+        let dir = tempdir().expect("tempdir");
+        let src_dir = dir.path().join("src");
+        fs::create_dir_all(&src_dir).expect("mkdir src");
+        let source_path = src_dir.join("main.aic");
+
+        let original = "module demo.patch;\nfn main() -> Int {\n    0\n}\n";
+        fs::write(&source_path, original).expect("write source");
+
+        let document = PatchDocument {
+            operations: vec![PatchOperation::AddFunction {
+                target_file: Some("src/main.aic".to_string()),
+                after_symbol: Some("main".to_string()),
+                function: super::PatchFunctionSpec {
+                    name: "broken".to_string(),
+                    params: Vec::new(),
+                    return_type: "Int".to_string(),
+                    body: "true".to_string(),
+                    effects: Vec::new(),
+                    capabilities: Vec::new(),
+                    requires: None,
+                    ensures: None,
+                },
+            }],
+        };
+
+        let preview = apply_patch_document(dir.path(), &document, PatchMode::Preview)
+            .expect("preview response");
+        assert!(!preview.ok);
+        assert_eq!(preview.conflicts.len(), 1);
+        assert_eq!(preview.conflicts[0].kind, "validate_semantics");
+
+        let apply =
+            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("apply response");
+        assert!(!apply.ok);
+        assert_eq!(apply.conflicts.len(), 1);
+        assert_eq!(apply.conflicts[0].kind, "validate_semantics");
+
+        let after = fs::read_to_string(&source_path).expect("read source after semantic failure");
+        assert_eq!(after, original);
+    }
+
+    #[test]
+    fn patch_overlapping_match_arm_operations_are_rejected() {
+        let dir = tempdir().expect("tempdir");
+        let src_dir = dir.path().join("src");
+        fs::create_dir_all(&src_dir).expect("mkdir src");
+        let source_path = src_dir.join("main.aic");
+
+        let original = concat!(
+            "module demo.patch;\n",
+            "fn main() -> Int {\n",
+            "    match Ok(1) {\n",
+            "        Ok(v) => v,\n",
+            "        Err(e) => e,\n",
+            "    }\n",
+            "}\n",
+        );
+        fs::write(&source_path, original).expect("write source");
+
+        let document = PatchDocument {
+            operations: vec![
+                PatchOperation::ModifyMatchArm {
+                    target_file: Some("src/main.aic".to_string()),
+                    target_function: "main".to_string(),
+                    match_index: 0,
+                    arm_pattern: "Err(e)".to_string(),
+                    new_body: "0 - e".to_string(),
+                },
+                PatchOperation::ModifyMatchArm {
+                    target_file: Some("src/main.aic".to_string()),
+                    target_function: "main".to_string(),
+                    match_index: 0,
+                    arm_pattern: "Err(e)".to_string(),
+                    new_body: "e + 1".to_string(),
+                },
+            ],
+        };
+
+        let response =
+            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("patch response");
+        assert!(!response.ok);
+        assert_eq!(response.conflicts.len(), 1);
+        assert_eq!(response.conflicts[0].kind, "overlap");
+
+        let after = fs::read_to_string(&source_path).expect("read source after overlap conflict");
+        assert_eq!(after, original);
+    }
+
+    #[test]
+    fn patch_write_failure_rolls_back_prior_writes() {
+        let dir = tempdir().expect("tempdir");
+        let first_dir = dir.path().join("a");
+        let second_dir = dir.path().join("z");
+        fs::create_dir_all(&first_dir).expect("mkdir first");
+        fs::create_dir_all(&second_dir).expect("mkdir second");
+
+        let first_path = first_dir.join("one.aic");
+        let second_path = second_dir.join("two.aic");
+        let first_original = "fn main() -> Int {\n    1\n}\n";
+        let second_original = "fn main() -> Int {\n    2\n}\n";
+        fs::write(&first_path, first_original).expect("write first source");
+        fs::write(&second_path, second_original).expect("write second source");
+
+        let mut second_permissions = fs::metadata(&second_path)
+            .expect("second metadata")
+            .permissions();
+        second_permissions.set_readonly(true);
+        fs::set_permissions(&second_path, second_permissions).expect("lock second file");
+
+        let document = PatchDocument {
+            operations: vec![
+                PatchOperation::AddFunction {
+                    target_file: Some("a/one.aic".to_string()),
+                    after_symbol: Some("main".to_string()),
+                    function: super::PatchFunctionSpec {
+                        name: "helper_one".to_string(),
+                        params: Vec::new(),
+                        return_type: "Int".to_string(),
+                        body: "1".to_string(),
+                        effects: Vec::new(),
+                        capabilities: Vec::new(),
+                        requires: None,
+                        ensures: None,
+                    },
+                },
+                PatchOperation::AddFunction {
+                    target_file: Some("z/two.aic".to_string()),
+                    after_symbol: Some("main".to_string()),
+                    function: super::PatchFunctionSpec {
+                        name: "helper_two".to_string(),
+                        params: Vec::new(),
+                        return_type: "Int".to_string(),
+                        body: "2".to_string(),
+                        effects: Vec::new(),
+                        capabilities: Vec::new(),
+                        requires: None,
+                        ensures: None,
+                    },
+                },
+            ],
+        };
+
+        let response =
+            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("apply response");
+
+        let mut unlocked = fs::metadata(&second_path)
+            .expect("second metadata after apply")
+            .permissions();
+        unlocked.set_readonly(false);
+        fs::set_permissions(&second_path, unlocked).expect("unlock second file");
+
+        assert!(!response.ok);
+        assert_eq!(response.conflicts.len(), 1);
+        assert_eq!(response.conflicts[0].kind, "write");
+        assert_eq!(
+            fs::read_to_string(&first_path).expect("read first after rollback"),
+            first_original
+        );
+        assert_eq!(
+            fs::read_to_string(&second_path).expect("read second after failed write"),
+            second_original
+        );
     }
 }

@@ -14,7 +14,7 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix/testgen/session/validate/suggest/query/symbols schemas:
+Published parse/check/build/fix/testgen/session/patch/validate/suggest/query/symbols schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
@@ -22,11 +22,16 @@ Published parse/check/build/fix/testgen/session/validate/suggest/query/symbols s
 - `docs/agent-tooling/schemas/fix-response.schema.json`
 - `docs/agent-tooling/schemas/testgen-response.schema.json`
 - `docs/agent-tooling/schemas/session-response.schema.json`
+- `docs/agent-tooling/schemas/patch-response.schema.json`
 - `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - `docs/agent-tooling/schemas/suggest-response.schema.json`
 - `docs/agent-tooling/schemas/query-response.schema.json`
 - `docs/agent-tooling/schemas/symbols-response.schema.json`
+
+Published patch authoring schema:
+
+- `docs/agent-tooling/schemas/patch-request.schema.json`
 
 ## Exit codes
 
@@ -518,6 +523,57 @@ Generation behavior:
 - generated values are deterministic for a fixed seed and selector
 - unsupported strategy/target pairs fail with actionable diagnostics instead of producing partial output
 
+## `aic patch` output modes
+
+Usage:
+
+```bash
+aic patch --preview patches/valid_patch.json --project . --json
+aic patch --apply patches/valid_patch.json --project . --json
+```
+
+Patch authoring contract:
+
+- request schema: `docs/agent-tooling/schemas/patch-request.schema.json`
+- authoring guide: `docs/agent-tooling/patch-authoring.md`
+
+JSON payload:
+
+- `protocol_version`
+- `phase` (`patch`)
+- `mode` (`preview|apply`)
+- `ok`
+- `files_changed[]`
+- `applied_edits[]`
+  - `file`
+  - `start`
+  - `end`
+  - `replacement`
+  - `message`
+  - `operation_index`
+- `previews[]`
+  - `file`
+  - `start`
+  - `end`
+  - `before`
+  - `after`
+  - `message`
+  - `operation_index`
+- `conflicts[]`
+  - `operation_index`
+  - `kind`
+  - `message`
+  - optional `file`
+
+Patch behavior:
+
+- supported operation kinds are `add_function`, `modify_match_arm`, and `add_field`
+- `preview` is deterministic and write-free for a fixed project + patch document
+- `apply` writes only after every operation parses cleanly and the patched project passes frontend type/effect validation
+- semantically invalid intermediate states are rejected as `conflicts[].kind = "validate_semantics"` with the failing `operation_index`
+- overlapping semantic targets are rejected as `conflicts[].kind = "overlap"` before any write is attempted
+- apply writes are transactional across touched files and roll back previously written files if a later write fails
+
 ## `aic checkpoint` output modes
 
 Usage:
@@ -637,7 +693,7 @@ Session behavior:
 - lock ownership is exclusive per resolved symbol key; active conflicting acquisitions return `ok: false` with `denied_by`
 - expired leases are reclaimable deterministically; successful reclaims surface `reclaimed_from`
 - `conflicts` consumes patch-backed plan documents and reports unknown sessions, unresolved symbols, overlapping symbol edits, and merge-time lock violations without mutating the workspace
-- `merge` is validation-only: it applies plan patches inside an isolated temp workspace, then runs the frontend on the merged result and rejects type/effect-invalid combined state with structured diagnostics
+- `merge` is validation-only: it applies plan patches inside an isolated temp workspace, rejects individually invalid patch documents as `conflicts[]`, then runs the frontend on the merged result and rejects type/effect-invalid combined state with structured `diagnostics[]`
 - current lock keys are based on deterministic source selectors (`kind`, module/name, project-relative file, span start) rather than persistent IR ids
 
 ## `aic metrics` JSON output

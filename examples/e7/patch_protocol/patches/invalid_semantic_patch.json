@@ -1,0 +1,14 @@
+{
+  "operations": [
+    {
+      "kind": "add_function",
+      "target_file": "src/main.aic",
+      "after_symbol": "handle_result",
+      "function": {
+        "name": "broken_result",
+        "return_type": "Int",
+        "body": "true"
+      }
+    }
+  ]
+}

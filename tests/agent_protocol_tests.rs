@@ -51,6 +51,10 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_session.json",
         ),
         (
+            "docs/agent-tooling/schemas/patch-response.schema.json",
+            "examples/agent/protocol_patch.json",
+        ),
+        (
             "docs/agent-tooling/schemas/validate-call-response.schema.json",
             "examples/agent/protocol_validate_call.json",
         ),
@@ -115,6 +119,7 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
         "fix",
         "testgen",
         "session",
+        "patch",
         "validate-call",
         "validate-type",
         "suggest",
@@ -170,6 +175,42 @@ fn contract_negotiation_reports_incompatible_major() {
     let contract: Value = serde_json::from_slice(&out.stdout).expect("contract json");
     assert_eq!(contract["protocol"]["compatible"], false);
     assert!(contract["protocol"]["selected_version"].is_null());
+}
+
+#[test]
+fn patch_request_fixture_validates_against_published_schema() {
+    let schema = read_json("docs/agent-tooling/schemas/patch-request.schema.json");
+    let fixture = read_json("examples/e7/patch_protocol/patches/valid_patch.json");
+    let compiled = JSONSchema::compile(&schema).expect("compile patch request schema");
+    let result = compiled.validate(&fixture);
+    assert!(
+        result.is_ok(),
+        "patch request fixture does not satisfy schema: {:?}",
+        result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
+}
+
+#[test]
+fn patch_preview_json_validates_against_published_schema() {
+    let out = run_aic(&[
+        "patch",
+        "--preview",
+        "examples/e7/patch_protocol/patches/valid_patch.json",
+        "--project",
+        "examples/e7/patch_protocol",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(0));
+
+    let response: Value = serde_json::from_slice(&out.stdout).expect("patch preview response");
+    let schema = read_json("docs/agent-tooling/schemas/patch-response.schema.json");
+    let compiled = JSONSchema::compile(&schema).expect("compile patch response schema");
+    let result = compiled.validate(&response);
+    assert!(
+        result.is_ok(),
+        "patch response does not satisfy schema: {:?}",
+        result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
 }
 
 #[test]

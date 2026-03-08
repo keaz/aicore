@@ -75,7 +75,7 @@ fn main() -> Int {
 Use this checklist to gate closure of epic `#62`. Keep epic status as In Progress until all items are complete with evidence.
 
 - [ ] Protocol contract docs are current: `docs/agent-tooling/protocol-v1.md`
-- [ ] Protocol schemas are current: `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`, `docs/agent-tooling/schemas/testgen-response.schema.json`, `docs/agent-tooling/schemas/session-response.schema.json`, `docs/agent-tooling/schemas/validate-call-response.schema.json`, `docs/agent-tooling/schemas/validate-type-response.schema.json`, `docs/agent-tooling/schemas/suggest-response.schema.json`, `docs/agent-tooling/schemas/query-response.schema.json`, `docs/agent-tooling/schemas/symbols-response.schema.json`
+- [ ] Protocol schemas are current: `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`, `docs/agent-tooling/schemas/testgen-response.schema.json`, `docs/agent-tooling/schemas/session-response.schema.json`, `docs/agent-tooling/schemas/patch-response.schema.json`, `docs/agent-tooling/schemas/patch-request.schema.json`, `docs/agent-tooling/schemas/validate-call-response.schema.json`, `docs/agent-tooling/schemas/validate-type-response.schema.json`, `docs/agent-tooling/schemas/suggest-response.schema.json`, `docs/agent-tooling/schemas/query-response.schema.json`, `docs/agent-tooling/schemas/symbols-response.schema.json`
 - [ ] Incremental daemon docs are current: `docs/agent-tooling/incremental-daemon.md`
 - [ ] LSP example reflects the implemented workflow: `examples/agent/lsp_workflow.json`
 - [ ] Agent recipe docs are current and aligned: `docs/agent-recipes/`
@@ -487,6 +487,7 @@ Diagnostics:
 - Command/flag/exit contract metadata: `src/cli_contract.rs`
 - CLI contract command: `aic contract --json [--accept-version <v1,v2,...>]`
 - Scaffold usage guide with exact command/output pairs: `docs/agent-tooling/scaffold-guide.md`
+- Patch authoring guide: `docs/agent-tooling/patch-authoring.md`
 - Agent protocol schemas:
   - `docs/agent-tooling/schemas/parse-response.schema.json`
   - `docs/agent-tooling/schemas/ast-response.schema.json`
@@ -495,6 +496,8 @@ Diagnostics:
 - `docs/agent-tooling/schemas/fix-response.schema.json`
 - `docs/agent-tooling/schemas/testgen-response.schema.json`
 - `docs/agent-tooling/schemas/session-response.schema.json`
+- `docs/agent-tooling/schemas/patch-response.schema.json`
+- `docs/agent-tooling/schemas/patch-request.schema.json`
 - `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - `docs/agent-tooling/schemas/suggest-response.schema.json`
@@ -510,6 +513,7 @@ Diagnostics:
 - `examples/agent/protocol_fix.json`
 - `examples/agent/protocol_testgen.json`
 - `examples/agent/protocol_session.json`
+- `examples/agent/protocol_patch.json`
 - `examples/agent/protocol_validate_call.json`
 - `examples/agent/protocol_query.json`
 - `examples/agent/protocol_symbols.json`

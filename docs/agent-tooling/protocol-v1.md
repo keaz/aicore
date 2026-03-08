@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session, semantic symbol query workflows, and fast API-conformance workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session/patch workflows, semantic symbol query workflows, and fast API-conformance workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -26,12 +26,14 @@ Negotiation rules:
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
 - Testgen response: `docs/agent-tooling/schemas/testgen-response.schema.json`
 - Session response: `docs/agent-tooling/schemas/session-response.schema.json`
+- Patch response: `docs/agent-tooling/schemas/patch-response.schema.json`
 - Validate-call response: `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - Validate-type response: `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - Suggest response: `docs/agent-tooling/schemas/suggest-response.schema.json`
 - Query response: `docs/agent-tooling/schemas/query-response.schema.json`
 - Symbols response: `docs/agent-tooling/schemas/symbols-response.schema.json`
 - Shared raw diagnostics array: `docs/diagnostics.schema.json`
+- Patch request schema: `docs/agent-tooling/schemas/patch-request.schema.json`
 
 Positive fixtures:
 
@@ -42,6 +44,7 @@ Positive fixtures:
 - `examples/agent/protocol_fix.json`
 - `examples/agent/protocol_testgen.json`
 - `examples/agent/protocol_session.json`
+- `examples/agent/protocol_patch.json`
 - `examples/agent/protocol_validate_call.json`
 - `examples/agent/protocol_validate_type.json`
 - `examples/agent/protocol_suggest.json`
@@ -119,7 +122,25 @@ Behavior:
 - `create` persists deterministic session ids under `.aic-sessions/state.json`
 - `lock acquire` enforces exclusive symbol ownership with reclaimable expiry leases
 - `conflicts` reports overlap and ownership problems as structured `conflicts[]`, not transport errors
-- `merge` applies a plan inside an isolated temp workspace and rejects type/effect-invalid combined state with structured diagnostics
+- `merge` applies a plan inside an isolated temp workspace, rejects individually invalid patch documents as structured `conflicts[]`, and rejects type/effect-invalid combined state as structured `diagnostics[]`
+
+## Structured patch workflow (AG-T7)
+
+Reference commands:
+
+```bash
+aic patch --preview examples/e7/patch_protocol/patches/valid_patch.json --project examples/e7/patch_protocol --json
+aic patch --apply examples/e7/patch_protocol/patches/valid_patch.json --project examples/e7/patch_protocol --json
+```
+
+Behavior:
+
+- patch documents follow `docs/agent-tooling/schemas/patch-request.schema.json`
+- supported operation kinds are `add_function`, `modify_match_arm`, and `add_field`
+- `preview` computes deterministic `applied_edits[]` and `previews[]` without filesystem writes
+- `apply` is transactional across touched files; later write failures trigger rollback of earlier writes
+- overlapping semantic targets are rejected as `conflicts[].kind = "overlap"` before any write
+- parse-invalid or type/effect-invalid candidate states are rejected with stable `conflicts[]` entries that include `operation_index`, `message`, and optional `file`
 
 ## API conformance fast-path workflow
 

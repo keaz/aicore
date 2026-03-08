@@ -14,7 +14,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 6. Need deterministic harness fixtures from contracts/types/effects: use `aic testgen --strategy <strategy> --for <selector> --project . --json`.
 7. Need a reversible workspace snapshot before or after edits: use `aic checkpoint create --project . --json`, then `aic checkpoint diff`/`restore`.
 8. Need multi-agent lock ownership or merge validation before applying queued patches: use `aic session lock ...`, `aic session conflicts <plan.json> --project . --json`, or `aic session merge <plan.json> --project . --json`.
-9. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
+9. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json` and author documents against `docs/agent-tooling/patch-authoring.md`.
 10. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
 11. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
 12. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
@@ -32,7 +32,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 | Checkpoint safety rail | `aic checkpoint create --project . --json` then `aic checkpoint diff <id> [--to <id>] --project . --json` | Stable checkpoint id plus deterministic file/hash/semantic diff summary | Use `aic checkpoint restore <id> --project . --json` to revert checkpointed files; corruption returns non-zero with no partial restore |
 | Multi-agent coordination gate | `aic session conflicts <plan.json> --project . --json` then `aic session merge <plan.json> --project . --json` | Conflict-free plan plus merge validation with no frontend errors | Acquire/reclaim the required symbol locks, fix `conflicts[]`/`diagnostics[]`, and re-run |
 | Safe autofix planning | `aic diag apply-fixes <entry> --dry-run --json` | `ok: true` with deterministic edit plan | Resolve conflicts manually, re-run dry-run |
-| Structured patch planning | `aic patch --preview <patch.json> --json` | `ok: true`, non-empty `applied_edits[]`/`previews[]` | Resolve reported `conflicts[]`, re-run preview |
+| Structured patch planning | `aic patch --preview <patch.json> --json` | `ok: true`, non-empty `applied_edits[]`/`previews[]` | Resolve reported `conflicts[]`, re-run preview; keep request shape aligned with `docs/agent-tooling/patch-authoring.md` |
 | Canonical source shape | `aic fmt <entry> --check` | Exit `0` | Run `aic fmt <entry>`, re-check |
 | Semantic compatibility gate | `aic diff --semantic <old> <new> --fail-on-breaking` | Exit `0`, `summary.breaking == 0` | Inspect `changes[]`, adjust API/contracts/effects |
 | Build artifact production | `aic build <entry> ...` | Exit `0`, artifact emitted | Re-run `aic check --json`; fix frontend/backend diagnostics |
@@ -100,7 +100,7 @@ Reasoning metadata notes:
 | `aic testgen --strategy <strategy> --for <selector> [--emit-dir <dir>] [--json]` | Deterministic harness fixture generation from contracts/types/effects | Text/JSON artifact bundle |
 | `aic checkpoint create/list/restore/diff ...` | Deterministic workspace snapshot, diff, and rollback protocol | Text/JSON checkpoint responses |
 | `aic session create/list/lock/conflicts/merge ...` | Collaboration session registry, symbol lock leasing, overlap detection, and validation-only merge protocol | Text/JSON session responses |
-| `aic patch --preview|--apply <patch.json>` | Structured add/modify edits by symbol intent | Text/JSON patch response |
+| `aic patch --preview|--apply <patch.json>` | Structured add/modify edits by symbol intent; request schema lives in `docs/agent-tooling/patch-authoring.md` | Text/JSON patch response |
 | `aic metrics <input> [--check]` | Complexity/perf guardrails in CI | JSON metrics/check status |
 | `aic ir-migrate <ir.json>` | Upgrading legacy IR snapshots | Migrated IR JSON |
 | `aic migrate [path] [--json]` | Source/IR migration planning | Migration summary/JSON |

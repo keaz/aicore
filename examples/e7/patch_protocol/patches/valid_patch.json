@@ -1,0 +1,37 @@
+{
+  "operations": [
+    {
+      "kind": "add_field",
+      "target_file": "src/main.aic",
+      "target_struct": "Config",
+      "field": {
+        "name": "timeout",
+        "ty": "Int"
+      }
+    },
+    {
+      "kind": "modify_match_arm",
+      "target_file": "src/main.aic",
+      "target_function": "handle_result",
+      "match_index": 0,
+      "arm_pattern": "Err(e)",
+      "new_body": "0 - e"
+    },
+    {
+      "kind": "add_function",
+      "target_file": "src/main.aic",
+      "after_symbol": "handle_result",
+      "function": {
+        "name": "validate_port",
+        "params": [
+          {
+            "name": "c",
+            "ty": "Config"
+          }
+        ],
+        "return_type": "Bool",
+        "body": "c.port >= 0"
+      }
+    }
+  ]
+}

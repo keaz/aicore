@@ -1,0 +1,82 @@
+{
+  "protocol_version": "1.0",
+  "phase": "patch",
+  "mode": "preview",
+  "ok": true,
+  "files_changed": [
+    "examples/e7/patch_protocol/src/main.aic"
+  ],
+  "applied_edits": [
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 74,
+      "end": 74,
+      "replacement": ",",
+      "message": "normalize trailing comma before adding `timeout` to `Config`",
+      "operation_index": 0
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 75,
+      "end": 75,
+      "replacement": "\n    timeout: Int,",
+      "message": "add field `timeout` to struct `Config`",
+      "operation_index": 0
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 196,
+      "end": 197,
+      "replacement": "0 - e",
+      "message": "modify match arm `Err(e)` in function `handle_result` (match #0)",
+      "operation_index": 1
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 210,
+      "end": 210,
+      "replacement": "\n\nfn validate_port(c: Config) -> Bool {\n    c.port >= 0\n}",
+      "message": "add function `validate_port`",
+      "operation_index": 2
+    }
+  ],
+  "conflicts": [],
+  "previews": [
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 74,
+      "end": 74,
+      "before": "",
+      "after": ",",
+      "message": "normalize trailing comma before adding `timeout` to `Config`",
+      "operation_index": 0
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 75,
+      "end": 75,
+      "before": "",
+      "after": "\n    timeout: Int,",
+      "message": "add field `timeout` to struct `Config`",
+      "operation_index": 0
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 196,
+      "end": 197,
+      "before": "e",
+      "after": "0 - e",
+      "message": "modify match arm `Err(e)` in function `handle_result` (match #0)",
+      "operation_index": 1
+    },
+    {
+      "file": "examples/e7/patch_protocol/src/main.aic",
+      "start": 210,
+      "end": 210,
+      "before": "",
+      "after": "\n\nfn validate_port(c: Config) -> Bool {\n    c.port >= 0\n}",
+      "message": "add function `validate_port`",
+      "operation_index": 2
+    }
+  ]
+}

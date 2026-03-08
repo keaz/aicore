@@ -417,6 +417,12 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         description: "Deterministic collaboration session response for session registry, locks, conflicts, and merge validation.",
     },
     PhaseSchemaContract {
+        phase: "patch",
+        schema_path: "docs/agent-tooling/schemas/patch-response.schema.json",
+        example_path: "examples/agent/protocol_patch.json",
+        description: "Deterministic structured patch preview/apply response with edits, previews, and conflicts.",
+    },
+    PhaseSchemaContract {
         phase: "validate-call",
         schema_path: "docs/agent-tooling/schemas/validate-call-response.schema.json",
         example_path: "examples/agent/protocol_validate_call.json",
