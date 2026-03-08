@@ -1,0 +1,9 @@
+module api_conformance.models;
+
+pub struct User {
+    id: Int,
+}
+
+pub enum AppError {
+    NotFound,
+}

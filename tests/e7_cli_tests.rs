@@ -337,6 +337,54 @@ fn write_session_fixture(root: &std::path::Path) {
     .expect("write session source");
 }
 
+fn write_api_conformance_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"api_conformance\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write api conformance aic.toml");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module api_conformance.main;\n",
+            "import api_conformance.math;\n",
+            "import api_conformance.models;\n",
+            "\n",
+            "fn handle_result(user: User, amount: Int) -> Int {\n",
+            "    math.add(40, amount)\n",
+            "}\n",
+        ),
+    )
+    .expect("write api conformance main");
+    fs::write(
+        root.join("src/math.aic"),
+        concat!(
+            "module api_conformance.math;\n",
+            "\n",
+            "pub fn add(x: Int, y: Int) -> Int {\n",
+            "    x + y\n",
+            "}\n",
+        ),
+    )
+    .expect("write api conformance math");
+    fs::write(
+        root.join("src/models.aic"),
+        concat!(
+            "module api_conformance.models;\n",
+            "\n",
+            "pub struct User {\n",
+            "    id: Int,\n",
+            "}\n",
+            "\n",
+            "pub enum AppError {\n",
+            "    NotFound,\n",
+            "}\n",
+        ),
+    )
+    .expect("write api conformance models");
+}
+
 fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
     let events = read_events(telemetry_path).expect("read telemetry events");
     events
@@ -506,6 +554,9 @@ fn cli_help_snapshots_are_stable() {
         "ast",
         "impact",
         "suggest-effects",
+        "validate-call",
+        "validate-type",
+        "suggest",
         "context",
         "query",
         "symbols",
@@ -3065,6 +3116,36 @@ fn resource_protocol_violation_reports_e2006_for_fs_and_net_proc_examples() {
             "expected E2006 for {input}; diagnostics={diagnostics:#}"
         );
     }
+
+    let validate_call_help = run_aic(&["validate-call", "--help"]);
+    assert!(validate_call_help.status.success());
+    let validate_call_help_text = String::from_utf8_lossy(&validate_call_help.stdout);
+    for flag in ["--arg <TYPE>", "--project <PROJECT>", "--offline"] {
+        assert!(
+            validate_call_help_text.contains(flag),
+            "missing `{flag}` in validate-call help:\n{validate_call_help_text}"
+        );
+    }
+
+    let validate_type_help = run_aic(&["validate-type", "--help"]);
+    assert!(validate_type_help.status.success());
+    let validate_type_help_text = String::from_utf8_lossy(&validate_type_help.stdout);
+    for flag in ["--project <PROJECT>", "--offline"] {
+        assert!(
+            validate_type_help_text.contains(flag),
+            "missing `{flag}` in validate-type help:\n{validate_type_help_text}"
+        );
+    }
+
+    let suggest_help = run_aic(&["suggest", "--help"]);
+    assert!(suggest_help.status.success());
+    let suggest_help_text = String::from_utf8_lossy(&suggest_help.stdout);
+    for flag in ["--partial <PARTIAL>", "--project <PROJECT>", "--limit <N>"] {
+        assert!(
+            suggest_help_text.contains(flag),
+            "missing `{flag}` in suggest help:\n{suggest_help_text}"
+        );
+    }
 }
 
 #[test]
@@ -3082,6 +3163,159 @@ fn missing_capability_reports_e2009() {
         items.iter().any(|diag| diag["code"] == "E2009"),
         "expected E2009 capability diagnostic; diagnostics={diagnostics:#}"
     );
+}
+
+#[test]
+fn validate_call_and_type_commands_emit_machine_readable_fast_path_reports() {
+    let project = tempdir().expect("tempdir");
+    write_api_conformance_fixture(project.path());
+
+    let validate_call = run_aic_in_dir(
+        project.path(),
+        &[
+            "validate-call",
+            "math.add",
+            "--arg",
+            "Int",
+            "--arg",
+            "Int",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(validate_call.status.code(), Some(0));
+    let validate_call_json: Value =
+        serde_json::from_slice(&validate_call.stdout).expect("validate-call json");
+    assert_eq!(validate_call_json["ok"], true);
+    assert_eq!(validate_call_json["fast_path"], true);
+    assert_eq!(
+        validate_call_json["resolved"]["qualified_name"],
+        "api_conformance.math.add"
+    );
+    assert_eq!(
+        validate_call_json["resolved"]["signature"],
+        "fn api_conformance.math.add(x: Int, y: Int) -> Int"
+    );
+
+    let validate_type = run_aic_in_dir(
+        project.path(),
+        &["validate-type", "Result[User, AppError]", "--project", "."],
+    );
+    assert_eq!(validate_type.status.code(), Some(0));
+    let validate_type_json: Value =
+        serde_json::from_slice(&validate_type.stdout).expect("validate-type json");
+    assert_eq!(validate_type_json["ok"], true);
+    assert_eq!(validate_type_json["canonical"], "Result[User, AppError]");
+    assert_eq!(validate_type_json["kind"], "named");
+    assert_eq!(
+        validate_type_json["named_types"],
+        json!(["AppError", "Result", "User"])
+    );
+}
+
+#[test]
+fn validate_call_failures_and_partial_suggest_are_deterministic() {
+    let project = tempdir().expect("tempdir");
+    write_api_conformance_fixture(project.path());
+
+    let arity = run_aic_in_dir(
+        project.path(),
+        &[
+            "validate-call",
+            "math.add",
+            "--arg",
+            "Int",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(arity.status.code(), Some(1));
+    let arity_json: Value = serde_json::from_slice(&arity.stdout).expect("arity json");
+    assert_eq!(arity_json["ok"], false);
+    assert_eq!(arity_json["diagnostics"][0]["code"], "E1214");
+    assert!(arity_json["diagnostics"][0]["message"]
+        .as_str()
+        .expect("arity message")
+        .contains("expected 2 argument(s), found 1"));
+
+    let mismatch = run_aic_in_dir(
+        project.path(),
+        &[
+            "validate-call",
+            "math.add",
+            "--arg",
+            "String",
+            "--arg",
+            "Int",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(mismatch.status.code(), Some(1));
+    let mismatch_json: Value = serde_json::from_slice(&mismatch.stdout).expect("mismatch json");
+    assert_eq!(mismatch_json["diagnostics"][0]["code"], "E1214");
+    assert!(mismatch_json["diagnostics"][0]["message"]
+        .as_str()
+        .expect("mismatch message")
+        .contains("expected 'Int', found 'String'"));
+
+    let unknown = run_aic_in_dir(
+        project.path(),
+        &[
+            "validate-call",
+            "math.adz",
+            "--arg",
+            "Int",
+            "--arg",
+            "Int",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(unknown.status.code(), Some(1));
+    let unknown_json: Value = serde_json::from_slice(&unknown.stdout).expect("unknown json");
+    assert_eq!(unknown_json["diagnostics"][0]["code"], "E1218");
+    assert_eq!(
+        unknown_json["suggestions"][0]["qualified_name"],
+        "api_conformance.math.add"
+    );
+    assert_eq!(unknown_json["suggestions"][0]["match_kind"], "fuzzy");
+
+    let suggest = run_aic_in_dir(
+        project.path(),
+        &[
+            "suggest",
+            "--partial",
+            "add",
+            "--project",
+            ".",
+            "--limit",
+            "5",
+        ],
+    );
+    assert_eq!(suggest.status.code(), Some(0));
+    let suggest_json: Value = serde_json::from_slice(&suggest.stdout).expect("suggest json");
+    assert_eq!(suggest_json["candidate_count"], 1);
+    assert_eq!(
+        suggest_json["candidates"][0]["qualified_name"],
+        "api_conformance.math.add"
+    );
+    assert_eq!(suggest_json["candidates"][0]["match_kind"], "exact");
+
+    let validate_type = run_aic_in_dir(
+        project.path(),
+        &["validate-type", "Result[User AppError]", "--project", "."],
+    );
+    assert_eq!(validate_type.status.code(), Some(1));
+    let validate_type_json: Value =
+        serde_json::from_slice(&validate_type.stdout).expect("invalid validate-type json");
+    let codes = validate_type_json["diagnostics"]
+        .as_array()
+        .expect("validate-type diagnostics")
+        .iter()
+        .filter_map(|diag| diag["code"].as_str())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"E1028"));
 }
 
 #[test]
@@ -6248,5 +6482,85 @@ fn session_docs_and_contract_references_are_consistent() {
     assert!(
         daemon_doc.contains("session.create"),
         "incremental daemon doc missing session.create reference"
+    );
+}
+
+#[test]
+fn validate_docs_and_contract_references_are_consistent() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    for command_name in ["validate-call", "validate-type", "suggest"] {
+        let command = contract_json["commands"]
+            .as_array()
+            .expect("commands")
+            .iter()
+            .find(|entry| entry["name"] == command_name)
+            .unwrap_or_else(|| panic!("missing {command_name} command contract"));
+        assert_eq!(command["output_modes"], json!(["json"]));
+    }
+
+    assert_eq!(
+        contract_json["schemas"]["validate-call"]["path"],
+        "docs/agent-tooling/schemas/validate-call-response.schema.json"
+    );
+    assert_eq!(
+        contract_json["schemas"]["validate-type"]["path"],
+        "docs/agent-tooling/schemas/validate-type-response.schema.json"
+    );
+    assert_eq!(
+        contract_json["schemas"]["suggest"]["path"],
+        "docs/agent-tooling/schemas/suggest-response.schema.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["validate-call"],
+        "examples/agent/protocol_validate_call.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["validate-type"],
+        "examples/agent/protocol_validate_type.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["suggest"],
+        "examples/agent/protocol_suggest.json"
+    );
+
+    let cli_contract_doc =
+        fs::read_to_string(repo_root().join("docs/cli-contract.md")).expect("read cli contract");
+    assert!(
+        cli_contract_doc.contains("aic validate-call"),
+        "cli contract doc missing validate-call reference"
+    );
+    assert!(
+        cli_contract_doc.contains("aic validate-type"),
+        "cli contract doc missing validate-type reference"
+    );
+    assert!(
+        cli_contract_doc.contains("aic suggest --partial"),
+        "cli contract doc missing suggest reference"
+    );
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains("validate-call-response.schema.json"),
+        "agent tooling README missing validate-call schema"
+    );
+    assert!(
+        tooling_readme.contains("aic validate-call"),
+        "agent tooling README missing validate-call command reference"
+    );
+
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/aic-command-playbook.md"))
+            .expect("read command playbook");
+    assert!(
+        playbook.contains("aic validate-call"),
+        "command playbook missing validate-call reference"
+    );
+    assert!(
+        playbook.contains("aic suggest --partial"),
+        "command playbook missing suggest partial reference"
     );
 }

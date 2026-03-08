@@ -1,3 +1,4 @@
+pub mod api_conformance;
 pub mod ast;
 pub mod attr_test_runner;
 pub mod checkpoint;

@@ -63,6 +63,62 @@ pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> Type
     checker.finish()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightParameter {
+    pub name: String,
+    pub ty: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightCallable {
+    pub module: Option<String>,
+    pub name: String,
+    pub signature: String,
+    pub parameters: Vec<PreflightParameter>,
+    pub return_type: String,
+    pub effects: Vec<String>,
+    pub capabilities: Vec<String>,
+    pub generics: Vec<String>,
+    pub generic_bindings: BTreeMap<String, String>,
+    pub is_async: bool,
+    pub is_unsafe: bool,
+    pub is_extern: bool,
+    pub extern_abi: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightCallResult {
+    pub callable: Option<PreflightCallable>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightTypeResult {
+    pub normalized_type: Option<String>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+pub fn validate_call_fast(
+    program: &ir::Program,
+    resolution: &Resolution,
+    file: &str,
+    target: &str,
+    arg_types: &[String],
+) -> PreflightCallResult {
+    let mut checker = Checker::new(program, resolution, file);
+    checker.preflight_validate_call(target, arg_types)
+}
+
+pub fn validate_type_fast(
+    program: &ir::Program,
+    resolution: &Resolution,
+    file: &str,
+    ty: &str,
+) -> PreflightTypeResult {
+    let mut checker = Checker::new(program, resolution, file);
+    checker.preflight_validate_type(ty)
+}
+
 #[derive(Debug, Clone)]
 struct FnSig {
     is_async: bool,
@@ -539,6 +595,355 @@ impl<'a> Checker<'a> {
             holes: self.typed_holes,
             call_arg_orders: self.call_arg_orders,
         }
+    }
+
+    fn preflight_validate_call(
+        &mut self,
+        target: &str,
+        arg_types: &[String],
+    ) -> PreflightCallResult {
+        let Some((module, name, sig)) = self.resolve_preflight_callable(target) else {
+            return PreflightCallResult {
+                callable: None,
+                diagnostics: self.take_preflight_diagnostics(),
+            };
+        };
+
+        if arg_types.len() != sig.params.len() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1214",
+                    format!(
+                        "call to '{}' expected {} argument(s), found {}",
+                        preflight_render_target(module.as_deref(), &name),
+                        sig.params.len(),
+                        arg_types.len()
+                    ),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                )
+                .with_help(
+                    "adjust the provided argument type list to match the callable signature",
+                ),
+            );
+            return PreflightCallResult {
+                callable: Some(preflight_callable_from_sig(
+                    module,
+                    name,
+                    &sig,
+                    sig.params.clone(),
+                    sig.ret.clone(),
+                    BTreeMap::new(),
+                )),
+                diagnostics: self.take_preflight_diagnostics(),
+            };
+        }
+
+        let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
+        let mut generic_bindings = BTreeMap::new();
+        for (expected_raw, found_raw) in sig.params.iter().zip(arg_types.iter()) {
+            let expected_norm = self.normalize_type(expected_raw);
+            let found_norm = self.normalize_type(found_raw);
+            let _ = infer_generic_bindings(
+                &expected_norm,
+                &found_norm,
+                &generic_set,
+                &mut generic_bindings,
+            );
+        }
+
+        let unresolved = sig
+            .generic_params
+            .iter()
+            .filter(|generic| {
+                generic_bindings
+                    .get(*generic)
+                    .map(|bound| contains_unresolved_type(bound))
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !unresolved.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1212",
+                    format!(
+                        "cannot infer generic parameters for '{}': {}",
+                        preflight_render_target(module.as_deref(), &name),
+                        unresolved.join(", ")
+                    ),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                )
+                .with_help(
+                    "provide concrete argument types that fully specialize the callable signature",
+                ),
+            );
+        }
+
+        for (generic_name, bounds) in &sig.generic_bounds {
+            let Some(bound_ty) = generic_bindings.get(generic_name) else {
+                continue;
+            };
+            if contains_unresolved_type(bound_ty) {
+                continue;
+            }
+            for bound_trait in bounds {
+                let marker_failure = self.marker_trait_failure_reason(bound_trait, bound_ty);
+                let implemented = if Self::is_auto_marker_trait(bound_trait) {
+                    marker_failure.is_none()
+                } else {
+                    self.trait_is_implemented_for(bound_trait, bound_ty)
+                };
+                if !implemented {
+                    let mut diag = Diagnostic::error(
+                        "E1258",
+                        format!(
+                            "type '{}' does not satisfy trait bound '{}: {}'",
+                            bound_ty, generic_name, bound_trait
+                        ),
+                        self.file,
+                        crate::span::Span::new(0, 0),
+                    );
+                    if Self::is_auto_marker_trait(bound_trait) {
+                        let reason = marker_failure.unwrap_or_else(|| {
+                            format!("type '{}' is not {}", bound_ty, bound_trait)
+                        });
+                        diag = diag.with_help(reason);
+                    } else {
+                        diag =
+                            diag.with_help(format!("use a type that implements '{}'", bound_trait));
+                    }
+                    self.diagnostics.push(diag);
+                }
+            }
+        }
+
+        let instantiated_params = sig
+            .params
+            .iter()
+            .map(|param| substitute_type_vars(param, &generic_bindings, &generic_set))
+            .collect::<Vec<_>>();
+        for (index, (expected, found)) in
+            instantiated_params.iter().zip(arg_types.iter()).enumerate()
+        {
+            if !self.types_compatible(expected, found) {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1214",
+                    format!(
+                        "argument {} to '{}' expected '{}', found '{}'",
+                        index + 1,
+                        preflight_render_target(module.as_deref(), &name),
+                        expected,
+                        found
+                    ),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                ));
+            }
+        }
+
+        let return_type = substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+        let callable = preflight_callable_from_sig(
+            module,
+            name,
+            &sig,
+            instantiated_params,
+            return_type,
+            generic_bindings,
+        );
+
+        PreflightCallResult {
+            callable: Some(callable),
+            diagnostics: self.take_preflight_diagnostics(),
+        }
+    }
+
+    fn preflight_validate_type(&mut self, ty: &str) -> PreflightTypeResult {
+        self.validate_preflight_type_repr(ty, crate::span::Span::new(0, 0));
+        let diagnostics = self.take_preflight_diagnostics();
+        let normalized_type = if diagnostics.iter().any(Diagnostic::is_error) {
+            None
+        } else {
+            Some(self.normalize_type(ty))
+        };
+        PreflightTypeResult {
+            normalized_type,
+            diagnostics,
+        }
+    }
+
+    fn validate_preflight_type_repr(&mut self, ty: &str, span: crate::span::Span) {
+        let trimmed = ty.trim();
+        if trimmed.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1228",
+                "type expression must not be empty",
+                self.file,
+                span,
+            ));
+            return;
+        }
+
+        if let Some(trait_name) = parse_dyn_trait_name(trimmed) {
+            let _ = self.validate_dyn_trait_object_safety(&trait_name, span);
+            return;
+        }
+
+        self.check_generic_arity(trimmed, span);
+
+        let base = canonical_builtin_type_name(base_type_name(trimmed));
+        let args = extract_generic_args(trimmed).unwrap_or_default();
+
+        if base == "Fn" {
+            for arg in args {
+                self.validate_preflight_type_repr(&arg, span);
+            }
+            return;
+        }
+
+        if preflight_builtin_type_known(base) {
+            for arg in args {
+                self.validate_preflight_type_repr(&arg, span);
+            }
+            return;
+        }
+
+        let unqualified = Self::unqualified_name(base);
+        let known_alias =
+            self.type_aliases.contains_key(base) || self.type_aliases.contains_key(unqualified);
+        let known_struct = self.resolution.structs.contains_key(base)
+            || self.resolution.structs.contains_key(unqualified);
+        let known_enum = self.resolution.enums.contains_key(base)
+            || self.resolution.enums.contains_key(unqualified);
+        let known_trait = self.resolution.traits.contains_key(base)
+            || self.resolution.traits.contains_key(unqualified);
+
+        if !(known_alias || known_struct || known_enum || known_trait) {
+            self.diagnostics.push(
+                Diagnostic::error("E1228", format!("unknown type '{}'", base), self.file, span)
+                    .with_help(
+                        "use a builtin type, imported type alias, struct, enum, or dyn trait",
+                    ),
+            );
+            return;
+        }
+
+        for arg in args {
+            self.validate_preflight_type_repr(&arg, span);
+        }
+    }
+
+    fn resolve_preflight_callable(
+        &mut self,
+        target: &str,
+    ) -> Option<(Option<String>, String, FnSig)> {
+        let normalized = target.replace("::", ".");
+        let path = normalized
+            .split('.')
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+
+        let Some(name) = path.last().cloned() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1218",
+                "call target must not be empty",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        };
+
+        if path.len() > 1 {
+            let module = path[..path.len() - 1].join(".");
+            let Some(sig) = self
+                .module_functions
+                .get(&(module.clone(), name.clone()))
+                .cloned()
+                .or_else(|| self.functions.get(&name).cloned())
+            else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1218",
+                    format!("unknown callable '{}'", normalized),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                ));
+                return None;
+            };
+            return Some((Some(module), name, sig));
+        }
+
+        let candidate_modules = self
+            .resolution
+            .function_modules
+            .get(&name)
+            .map(|modules| modules.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        if candidate_modules.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1218",
+                format!("unknown callable '{}'", name),
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+
+        if candidate_modules.len() > 1 {
+            let mut modules = candidate_modules;
+            modules.sort();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2104",
+                    format!("ambiguous callable '{}' from multiple modules", name),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                )
+                .with_help(format!(
+                    "qualify the target with one of: {}",
+                    modules.join(", ")
+                )),
+            );
+            return None;
+        }
+
+        let module = candidate_modules.into_iter().next();
+        let sig = if let Some(module_name) = module.as_ref() {
+            self.module_functions
+                .get(&(module_name.clone(), name.clone()))
+                .cloned()
+                .or_else(|| self.functions.get(&name).cloned())
+        } else {
+            self.functions.get(&name).cloned()
+        };
+
+        let Some(sig) = sig else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1218",
+                format!("unknown callable '{}'", name),
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        };
+
+        Some((module, name, sig))
+    }
+
+    fn take_preflight_diagnostics(&mut self) -> Vec<Diagnostic> {
+        let mut diagnostics = std::mem::take(&mut self.diagnostics);
+        diagnostics.sort_by(|lhs, rhs| {
+            let lhs_span = lhs.spans.first().map(|span| (span.start, span.end));
+            let rhs_span = rhs.spans.first().map(|span| (span.start, span.end));
+            lhs.code
+                .cmp(&rhs.code)
+                .then(lhs.message.cmp(&rhs.message))
+                .then(lhs_span.cmp(&rhs_span))
+        });
+        diagnostics
     }
 
     fn check_type_alias_item(&mut self, func: &ir::Function) {
@@ -9338,6 +9743,119 @@ fn canonical_builtin_type_name(base: &str) -> &str {
         "Float" => "Float64",
         _ => base,
     }
+}
+
+fn preflight_builtin_type_known(base: &str) -> bool {
+    matches!(
+        base,
+        "()" | "Bool"
+            | "String"
+            | "Char"
+            | "Bytes"
+            | "ByteBuffer"
+            | "JsonValue"
+            | "Option"
+            | "Result"
+            | "Async"
+            | "Ref"
+            | "RefMut"
+            | "Tuple"
+            | "Vec"
+            | "Map"
+            | "Set"
+            | "Deque"
+    ) || matches!(
+        base,
+        "Int" | "Float32" | "Float64" | "ISize" | "USize" | "UInt"
+    ) || FIXED_WIDTH_INTEGER_PRIMITIVES
+        .iter()
+        .any(|primitive| primitive == &base)
+}
+
+fn preflight_callable_from_sig(
+    module: Option<String>,
+    name: String,
+    sig: &FnSig,
+    instantiated_params: Vec<String>,
+    return_type: String,
+    generic_bindings: BTreeMap<String, String>,
+) -> PreflightCallable {
+    let parameters = sig
+        .param_names
+        .iter()
+        .cloned()
+        .zip(instantiated_params)
+        .map(|(name, ty)| PreflightParameter { name, ty })
+        .collect::<Vec<_>>();
+    let mut effects = sig.effects.iter().cloned().collect::<Vec<_>>();
+    effects.sort();
+    let mut capabilities = sig.capabilities.iter().cloned().collect::<Vec<_>>();
+    capabilities.sort();
+
+    PreflightCallable {
+        signature: preflight_render_signature(
+            module.as_deref(),
+            &name,
+            sig,
+            &parameters,
+            &return_type,
+        ),
+        module,
+        name,
+        parameters,
+        return_type,
+        effects,
+        capabilities,
+        generics: sig.generic_params.clone(),
+        generic_bindings,
+        is_async: sig.is_async,
+        is_unsafe: sig.is_unsafe,
+        is_extern: sig.is_extern,
+        extern_abi: sig.extern_abi.clone(),
+    }
+}
+
+fn preflight_render_signature(
+    module: Option<&str>,
+    name: &str,
+    sig: &FnSig,
+    parameters: &[PreflightParameter],
+    return_type: &str,
+) -> String {
+    let mut prefix = String::new();
+    if sig.is_extern {
+        prefix.push_str("extern ");
+        if let Some(abi) = &sig.extern_abi {
+            prefix.push_str(abi);
+            prefix.push(' ');
+        }
+    }
+    if sig.is_unsafe {
+        prefix.push_str("unsafe ");
+    }
+    if sig.is_async {
+        prefix.push_str("async ");
+    }
+
+    let rendered_name = preflight_render_target(module, name);
+    let generics = if sig.generic_params.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", sig.generic_params.join(", "))
+    };
+    let params = parameters
+        .iter()
+        .map(|param| format!("{}: {}", param.name, param.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{prefix}fn {rendered_name}{generics}({params}) -> {return_type}")
+}
+
+fn preflight_render_target(module: Option<&str>, name: &str) -> String {
+    module
+        .filter(|module| !module.is_empty() && *module != "<root>")
+        .map(|module| format!("{module}.{name}"))
+        .unwrap_or_else(|| name.to_string())
 }
 
 fn base_type_name(ty: &str) -> &str {

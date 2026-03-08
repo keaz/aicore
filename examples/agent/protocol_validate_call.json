@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "command": "validate-call",
+  "ok": true,
+  "fast_path": true,
+  "project_root": "examples/e7/api_conformance",
+  "target": "math.add",
+  "arg_types": ["Int", "Int"],
+  "resolved": {
+    "qualified_name": "api_conformance.math.add",
+    "name": "add",
+    "module": "api_conformance.math",
+    "signature": "fn api_conformance.math.add(x: Int, y: Int) -> Int",
+    "location": {
+      "file": "examples/e7/api_conformance/src/math.aic",
+      "line": 3,
+      "column": 5,
+      "span_start": 22,
+      "span_end": 65
+    },
+    "arity": 2,
+    "is_async": false,
+    "is_unsafe": false,
+    "is_extern": false
+  },
+  "diagnostics": []
+}

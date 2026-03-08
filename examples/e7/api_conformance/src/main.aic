@@ -1,0 +1,7 @@
+module api_conformance.main;
+import api_conformance.math;
+import api_conformance.models;
+
+fn handle_result(user: User, amount: Int) -> Int {
+    math.add(40, amount)
+}

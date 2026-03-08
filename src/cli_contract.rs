@@ -72,6 +72,24 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json"],
     },
     CommandContract {
+        name: "validate-call",
+        description: "Preflight callable existence and argument-type compatibility without full build",
+        stable_flags: &["--arg", "--project", "--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
+        name: "validate-type",
+        description: "Preflight type-expression parsing and symbol resolution without full build",
+        stable_flags: &["--project", "--offline"],
+        output_modes: &["json"],
+    },
+    CommandContract {
+        name: "suggest",
+        description: "Return deterministic ranked symbol candidates for a partial name query",
+        stable_flags: &["--partial", "--project", "--limit"],
+        output_modes: &["json"],
+    },
+    CommandContract {
         name: "context",
         description: "Emit minimal dependency/caller/contracts context for a target symbol",
         stable_flags: &["--for", "--depth", "--project", "--json"],
@@ -378,6 +396,24 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/session-response.schema.json",
         example_path: "examples/agent/protocol_session.json",
         description: "Deterministic collaboration session response for session registry, locks, conflicts, and merge validation.",
+    },
+    PhaseSchemaContract {
+        phase: "validate-call",
+        schema_path: "docs/agent-tooling/schemas/validate-call-response.schema.json",
+        example_path: "examples/agent/protocol_validate_call.json",
+        description: "Deterministic validate-call response for callable existence, arity, and type compatibility checks.",
+    },
+    PhaseSchemaContract {
+        phase: "validate-type",
+        schema_path: "docs/agent-tooling/schemas/validate-type-response.schema.json",
+        example_path: "examples/agent/protocol_validate_type.json",
+        description: "Deterministic validate-type response for type-expression parsing and symbol resolution checks.",
+    },
+    PhaseSchemaContract {
+        phase: "suggest",
+        schema_path: "docs/agent-tooling/schemas/suggest-response.schema.json",
+        example_path: "examples/agent/protocol_suggest.json",
+        description: "Deterministic ranked partial-symbol suggestion response for fast hallucination-prevention workflows.",
     },
 ];
 

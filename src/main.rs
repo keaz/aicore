@@ -10,6 +10,7 @@ use std::time::Instant;
 mod coverage;
 mod profile;
 
+use aicore::api_conformance;
 use aicore::attr_test_runner::run_attribute_tests;
 use aicore::checkpoint;
 use aicore::cli_contract::{
@@ -149,6 +150,35 @@ enum Command {
         json: bool,
         #[arg(long)]
         offline: bool,
+    },
+    ValidateCall {
+        target: String,
+        #[arg(long = "arg", value_name = "TYPE")]
+        arg_types: Vec<String>,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
+    ValidateType {
+        type_expr: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
+    Suggest {
+        #[arg(long)]
+        partial: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = 10,
+            value_parser = parse_positive_usize
+        )]
+        limit: usize,
     },
     Context {
         #[arg(long = "for", value_name = "TARGET", num_args = 1..)]
@@ -1399,6 +1429,46 @@ fn run_cli() -> anyhow::Result<i32> {
             } else {
                 EXIT_OK
             }
+        }
+        Command::ValidateCall {
+            target,
+            arg_types,
+            project,
+            offline,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let response =
+                api_conformance::validate_call(&project_root, &target, &arg_types, offline)?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            if response.ok {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
+            }
+        }
+        Command::ValidateType {
+            type_expr,
+            project,
+            offline,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let response = api_conformance::validate_type(&project_root, &type_expr, offline)?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            if response.ok {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
+            }
+        }
+        Command::Suggest {
+            partial,
+            project,
+            limit,
+        } => {
+            let project_root = resolve_project_root(&project);
+            let response = api_conformance::suggest_partial(&project_root, &partial, Some(limit))?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            EXIT_OK
         }
         Command::Context {
             target,

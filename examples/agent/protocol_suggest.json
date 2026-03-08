@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "command": "suggest",
+  "ok": true,
+  "fast_path": true,
+  "project_root": "examples/e7/api_conformance",
+  "partial": "add",
+  "candidate_count": 1,
+  "candidates": [
+    {
+      "qualified_name": "api_conformance.math.add",
+      "name": "add",
+      "kind": "function",
+      "module": "api_conformance.math",
+      "signature": "fn add(x: Int, y: Int) -> Int",
+      "match_kind": "exact",
+      "distance": 0,
+      "score": 1000,
+      "location": {
+        "file": "examples/e7/api_conformance/src/math.aic",
+        "line": 3,
+        "column": 5,
+        "span_start": 22,
+        "span_end": 65
+      }
+    }
+  ],
+  "diagnostics": []
+}

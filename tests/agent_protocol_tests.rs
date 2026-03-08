@@ -51,6 +51,18 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_session.json",
         ),
         (
+            "docs/agent-tooling/schemas/validate-call-response.schema.json",
+            "examples/agent/protocol_validate_call.json",
+        ),
+        (
+            "docs/agent-tooling/schemas/validate-type-response.schema.json",
+            "examples/agent/protocol_validate_type.json",
+        ),
+        (
+            "docs/agent-tooling/schemas/suggest-response.schema.json",
+            "examples/agent/protocol_suggest.json",
+        ),
+        (
             "docs/agent-tooling/schemas/parse-response.schema.json",
             "examples/agent/protocol_parse_error.json",
         ),
@@ -88,7 +100,17 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
     assert_eq!(contract["protocol"]["name"], "aic-compiler-json");
     assert_eq!(contract["protocol"]["selected_version"], "1.0");
 
-    for phase in ["parse", "check", "build", "fix", "testgen", "session"] {
+    for phase in [
+        "parse",
+        "check",
+        "build",
+        "fix",
+        "testgen",
+        "session",
+        "validate-call",
+        "validate-type",
+        "suggest",
+    ] {
         assert!(contract["schemas"][phase]["path"].is_string());
         assert!(contract["examples"][phase].is_string());
     }
@@ -221,6 +243,116 @@ fn session_lock_json_validates_against_session_schema() {
         result.is_ok(),
         "session response does not satisfy schema: {:?}",
         result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
+}
+
+#[test]
+fn validate_and_suggest_json_validate_against_published_schemas() {
+    let dir = tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
+    fs::write(
+        dir.path().join("aic.toml"),
+        "[package]\nname = \"api_conformance\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+    fs::write(
+        dir.path().join("src/main.aic"),
+        concat!(
+            "module api_conformance.main;\n",
+            "import api_conformance.math;\n",
+            "import api_conformance.models;\n",
+            "\n",
+            "fn handle_result(user: User, amount: Int) -> Int {\n",
+            "    math.add(40, amount)\n",
+            "}\n",
+        ),
+    )
+    .expect("write main");
+    fs::write(
+        dir.path().join("src/math.aic"),
+        concat!(
+            "module api_conformance.math;\n",
+            "\n",
+            "pub fn add(x: Int, y: Int) -> Int {\n",
+            "    x + y\n",
+            "}\n",
+        ),
+    )
+    .expect("write math");
+    fs::write(
+        dir.path().join("src/models.aic"),
+        concat!(
+            "module api_conformance.models;\n",
+            "\n",
+            "pub struct User {\n",
+            "    id: Int,\n",
+            "}\n",
+            "\n",
+            "pub enum AppError {\n",
+            "    NotFound,\n",
+            "}\n",
+        ),
+    )
+    .expect("write models");
+
+    let project_path = dir.path().to_str().expect("project path");
+
+    let validate_call = run_aic(&[
+        "validate-call",
+        "math.add",
+        "--arg",
+        "Int",
+        "--arg",
+        "Int",
+        "--project",
+        project_path,
+    ]);
+    assert_eq!(validate_call.status.code(), Some(0));
+    let validate_call_json: Value =
+        serde_json::from_slice(&validate_call.stdout).expect("validate-call response");
+    let validate_call_schema =
+        read_json("docs/agent-tooling/schemas/validate-call-response.schema.json");
+    let validate_call_compiled =
+        JSONSchema::compile(&validate_call_schema).expect("compile validate-call schema");
+    assert!(
+        validate_call_compiled.validate(&validate_call_json).is_ok(),
+        "validate-call response does not satisfy schema"
+    );
+
+    let validate_type = run_aic(&[
+        "validate-type",
+        "Result[User, AppError]",
+        "--project",
+        project_path,
+    ]);
+    assert_eq!(validate_type.status.code(), Some(0));
+    let validate_type_json: Value =
+        serde_json::from_slice(&validate_type.stdout).expect("validate-type response");
+    let validate_type_schema =
+        read_json("docs/agent-tooling/schemas/validate-type-response.schema.json");
+    let validate_type_compiled =
+        JSONSchema::compile(&validate_type_schema).expect("compile validate-type schema");
+    assert!(
+        validate_type_compiled.validate(&validate_type_json).is_ok(),
+        "validate-type response does not satisfy schema"
+    );
+
+    let suggest = run_aic(&[
+        "suggest",
+        "--partial",
+        "add",
+        "--project",
+        project_path,
+        "--limit",
+        "5",
+    ]);
+    assert_eq!(suggest.status.code(), Some(0));
+    let suggest_json: Value = serde_json::from_slice(&suggest.stdout).expect("suggest response");
+    let suggest_schema = read_json("docs/agent-tooling/schemas/suggest-response.schema.json");
+    let suggest_compiled = JSONSchema::compile(&suggest_schema).expect("compile suggest schema");
+    assert!(
+        suggest_compiled.validate(&suggest_json).is_ok(),
+        "suggest response does not satisfy schema"
     );
 }
 
@@ -359,7 +491,13 @@ fn protocol_doc_references_full_agent_tooling_surface() {
         "docs/agent-tooling/schemas/build-response.schema.json",
         "docs/agent-tooling/schemas/fix-response.schema.json",
         "docs/agent-tooling/schemas/testgen-response.schema.json",
+        "docs/agent-tooling/schemas/validate-call-response.schema.json",
+        "docs/agent-tooling/schemas/validate-type-response.schema.json",
+        "docs/agent-tooling/schemas/suggest-response.schema.json",
         "examples/agent/protocol_testgen.json",
+        "examples/agent/protocol_validate_call.json",
+        "examples/agent/protocol_validate_type.json",
+        "examples/agent/protocol_suggest.json",
         "examples/agent/lsp_workflow.json",
         "docs/agent-tooling/incremental-daemon.md",
         "docs/agent-recipes/",

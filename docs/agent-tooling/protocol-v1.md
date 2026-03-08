@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session and fast API-conformance workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -26,6 +26,9 @@ Negotiation rules:
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
 - Testgen response: `docs/agent-tooling/schemas/testgen-response.schema.json`
 - Session response: `docs/agent-tooling/schemas/session-response.schema.json`
+- Validate-call response: `docs/agent-tooling/schemas/validate-call-response.schema.json`
+- Validate-type response: `docs/agent-tooling/schemas/validate-type-response.schema.json`
+- Suggest response: `docs/agent-tooling/schemas/suggest-response.schema.json`
 
 Positive fixtures:
 
@@ -36,6 +39,9 @@ Positive fixtures:
 - `examples/agent/protocol_fix.json`
 - `examples/agent/protocol_testgen.json`
 - `examples/agent/protocol_session.json`
+- `examples/agent/protocol_validate_call.json`
+- `examples/agent/protocol_validate_type.json`
+- `examples/agent/protocol_suggest.json`
 
 Negative/error fixtures:
 
@@ -101,6 +107,24 @@ Behavior:
 - `lock acquire` enforces exclusive symbol ownership with reclaimable expiry leases
 - `conflicts` reports overlap and ownership problems as structured `conflicts[]`, not transport errors
 - `merge` applies a plan inside an isolated temp workspace and rejects type/effect-invalid combined state with structured diagnostics
+
+## API conformance fast-path workflow
+
+Reference commands:
+
+```bash
+aic validate-call math.add --arg Int --arg Int --project examples/e7/api_conformance
+aic validate-type 'Result[User, AppError]' --project examples/e7/api_conformance
+aic suggest --partial add --project examples/e7/api_conformance --limit 5
+```
+
+Behavior:
+
+- `validate-call` checks callable existence, arity, and argument compatibility via parser/resolver/typechecker fast paths only
+- `validate-type` checks type-expression syntax plus resolver-visible named types without codegen
+- `suggest --partial` ranks workspace symbol candidates deterministically by match bucket, edit distance, name-length delta, kind priority, module, name, file, and span
+- performance budget is front-end only: no codegen, execution, artifact writes, or session/daemon mutation
+- default candidate cap is `8`; callers may lower or raise it with `--limit`
 
 ## End-to-end loops (AG-T5)
 

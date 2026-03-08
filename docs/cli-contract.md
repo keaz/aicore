@@ -14,7 +14,7 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix/testgen/session schemas:
+Published parse/check/build/fix/testgen/session/validate/suggest schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
@@ -22,6 +22,9 @@ Published parse/check/build/fix/testgen/session schemas:
 - `docs/agent-tooling/schemas/fix-response.schema.json`
 - `docs/agent-tooling/schemas/testgen-response.schema.json`
 - `docs/agent-tooling/schemas/session-response.schema.json`
+- `docs/agent-tooling/schemas/validate-call-response.schema.json`
+- `docs/agent-tooling/schemas/validate-type-response.schema.json`
+- `docs/agent-tooling/schemas/suggest-response.schema.json`
 
 ## Exit codes
 
@@ -41,6 +44,9 @@ Published parse/check/build/fix/testgen/session schemas:
 - `aic impact`
 - `aic suggest-effects`
 - `aic suggest-contracts`
+- `aic validate-call`
+- `aic validate-type`
+- `aic suggest`
 - `aic context`
 - `aic query`
 - `aic symbols`
@@ -122,6 +128,24 @@ Stable `session` flags include:
 - `merge <plan.json> --project <path>` (validation-only merge of a patch-backed session plan)
 - `merge --offline` (validate merge under offline dependency resolution)
 - `merge --now-ms <N>`
+
+Stable `validate-call` flags include:
+
+- `--arg <type>` (repeatable argument type list in call-order)
+- `--project <path>` (resolved project root used for symbol tables/import aliases)
+- `--offline` (disable dependency/network resolution during fast-path load)
+
+Stable `validate-type` flags include:
+
+- `<type_expr>` (type expression to validate against the current project/import context)
+- `--project <path>` (resolved project root used for visible type aliases/structs/enums/traits)
+- `--offline` (disable dependency/network resolution during fast-path load)
+
+Stable `suggest` flags include:
+
+- `--partial <text>` (partial symbol text to rank against the workspace symbol index)
+- `--project <path>` (resolved project root used for symbol index extraction)
+- `--limit <N>` (maximum number of ranked candidates returned)
 
 Stable `run` flags include:
 
@@ -260,6 +284,114 @@ Contract inference scope:
 Text mode:
 
 - default mode (without `--json`) is human-readable and grouped by function
+
+## `aic validate-call` JSON output
+
+Usage:
+
+```bash
+aic validate-call math.add --arg Int --arg Int --project examples/e7/api_conformance
+```
+
+JSON payload:
+
+- `schema_version`
+- `command` (`validate-call`)
+- `ok`
+- `fast_path`
+- `project_root`
+- `target`
+- `arg_types[]`
+- optional `resolved`
+  - `qualified_name`
+  - `name`
+  - optional `module`
+  - `signature`
+  - `location` (`file`, `line`, `column`, `span_start`, `span_end`)
+  - `arity`
+  - `is_async`
+  - `is_unsafe`
+  - `is_extern`
+  - optional `extern_abi`
+  - optional `effects[]`, `capabilities[]`, `generics[]`, `generic_bindings`, `requires`, `ensures`
+- optional `suggestions[]`
+  - `qualified_name`
+  - `kind`
+  - `match_kind`
+  - `distance`
+  - `score`
+- `diagnostics[]`
+
+Behavior:
+
+- validates callable existence against the resolver/typechecker fast-path without codegen
+- normalizes single-segment module aliases (for example `math.add`) through the current entry-module import table
+- performance budget is front-end only: parse, resolve, and signature/type compatibility checks; no codegen, execution, artifact writes, or daemon state mutation
+- returns `1` on unknown callables, arity mismatch, or argument type mismatch
+
+## `aic validate-type` JSON output
+
+Usage:
+
+```bash
+aic validate-type 'Result[User, AppError]' --project examples/e7/api_conformance
+```
+
+JSON payload:
+
+- `schema_version`
+- `command` (`validate-type`)
+- `ok`
+- `fast_path`
+- `project_root`
+- `type_expr`
+- optional `canonical`
+- optional `kind` (`unit|named|dyn_trait|hole`)
+- optional `named_types[]`
+- `diagnostics[]`
+
+Behavior:
+
+- validates type-expression syntax and resolver visibility against the current project/import context
+- combines parser diagnostics for malformed expressions with fast-path type availability/arity diagnostics
+- performance budget is front-end only: parse, resolve, and type-shape validation; no codegen, execution, artifact writes, or daemon state mutation
+- returns `1` when any error diagnostics are present
+
+## `aic suggest --partial` JSON output
+
+Usage:
+
+```bash
+aic suggest --partial add --project examples/e7/api_conformance --limit 5
+```
+
+JSON payload:
+
+- `schema_version`
+- `command` (`suggest`)
+- `ok`
+- `fast_path`
+- `project_root`
+- `partial`
+- `candidate_count`
+- `candidates[]`
+  - `qualified_name`
+  - `name`
+  - `kind`
+  - optional `module`
+  - `signature`
+  - `match_kind` (`exact|case_insensitive_exact|prefix|substring|wildcard|fuzzy`)
+  - `distance`
+  - `score`
+  - `location`
+- `diagnostics[]`
+
+Ranking behavior:
+
+- candidate source is the workspace symbol index (`aic symbols`/`aic query` source data), not a full compile
+- performance budget is resolve/index only; `aic suggest --partial` must not trigger codegen, execution, or file writes
+- ordering is deterministic by match bucket, edit distance, name-length delta, kind priority, module, name, file, and span
+- fuzzy fallback is bounded; unmatched queries return an empty `candidates[]` array with exit `0`
 
 ## `aic context` output modes
 

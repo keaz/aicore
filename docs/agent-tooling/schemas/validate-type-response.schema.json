@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/validate-type-response-1.0.schema.json",
+  "title": "AIC Validate Type Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "ok",
+    "fast_path",
+    "project_root",
+    "type_expr",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "command": { "const": "validate-type" },
+    "ok": { "type": "boolean" },
+    "fast_path": { "type": "boolean" },
+    "project_root": { "type": "string" },
+    "type_expr": { "type": "string" },
+    "canonical": { "type": "string" },
+    "kind": { "type": "string", "enum": ["unit", "named", "dyn_trait", "hole"] },
+    "named_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "diagnostic_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end", "label"],
+      "properties": {
+        "file": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "label": { "type": ["string", "null"] }
+      }
+    },
+    "suggested_fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "replacement", "start", "end"],
+      "properties": {
+        "message": { "type": "string" },
+        "replacement": { "type": ["string", "null"] },
+        "start": { "type": ["integer", "null"], "minimum": 0 },
+        "end": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning", "note"] },
+        "message": { "type": "string" },
+        "spans": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic_span" }
+        },
+        "help": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/suggested_fix" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "command": "validate-type",
+  "ok": true,
+  "fast_path": true,
+  "project_root": "examples/e7/api_conformance",
+  "type_expr": "Result[User, AppError]",
+  "canonical": "Result[User, AppError]",
+  "kind": "named",
+  "named_types": ["AppError", "Result", "User"],
+  "diagnostics": []
+}

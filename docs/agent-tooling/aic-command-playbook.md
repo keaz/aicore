@@ -7,23 +7,25 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 ## Command selection flow
 
 1. Need parse/type/effect feedback: use `aic check --json`.
-2. Need deterministic edits from diagnostics: use `aic diag apply-fixes --dry-run --json`.
-3. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --json`.
-4. Need a spec-first implementation preview: use `aic synthesize --from spec <name> --project . --json`.
-5. Need deterministic harness fixtures from contracts/types/effects: use `aic testgen --strategy <strategy> --for <selector> --project . --json`.
-6. Need a reversible workspace snapshot before or after edits: use `aic checkpoint create --project . --json`, then `aic checkpoint diff`/`restore`.
-7. Need multi-agent lock ownership or merge validation before applying queued patches: use `aic session lock ...`, `aic session conflicts <plan.json> --project . --json`, or `aic session merge <plan.json> --project . --json`.
-8. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
-9. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
-10. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
-11. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
-12. Need interactive editor integration: use `aic lsp`.
+2. Need fast hallucination-prevention checks before drafting a call/type: use `aic validate-call`, `aic validate-type`, or `aic suggest --partial`.
+3. Need deterministic edits from diagnostics: use `aic diag apply-fixes --dry-run --json`.
+4. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --json`.
+5. Need a spec-first implementation preview: use `aic synthesize --from spec <name> --project . --json`.
+6. Need deterministic harness fixtures from contracts/types/effects: use `aic testgen --strategy <strategy> --for <selector> --project . --json`.
+7. Need a reversible workspace snapshot before or after edits: use `aic checkpoint create --project . --json`, then `aic checkpoint diff`/`restore`.
+8. Need multi-agent lock ownership or merge validation before applying queued patches: use `aic session lock ...`, `aic session conflicts <plan.json> --project . --json`, or `aic session merge <plan.json> --project . --json`.
+9. Need structured symbol-aware edits: use `aic patch --preview <patch.json> --json`.
+10. Need IR/source normalization: use `aic fmt` and `aic ir --emit json`.
+11. Need executable artifact: use `aic build` (or `aic run` for compile+execute).
+12. Need semantic compatibility gate: use `aic diff --semantic --fail-on-breaking`.
+13. Need interactive editor integration: use `aic lsp`.
 
 ## Decision matrix for autonomous loops
 
 | Loop stage | Primary command | Success signal | Failure handling path |
 |---|---|---|---|
 | Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>`, then apply targeted edits |
+| Hallucination preflight | `aic validate-call <target> --arg <type> ... --project .`, `aic validate-type <type_expr> --project .`, `aic suggest --partial <text> --project . --limit <n>` | `ok: true` with resolved callable/type or ranked candidates | Adjust call/type text from `diagnostics[]`/`suggestions[]`, then retry before entering a full compile loop |
 | Context-window minimization | `aic context --for function <name> --depth <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
 | Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
 | Harness fixture generation | `aic testgen --strategy <strategy> --for <selector> --project . --json` | Strategy-specific fixture artifacts emitted deterministically | Adjust selector/strategy pair or simplify unsupported contracts/invariants |
@@ -46,6 +48,9 @@ These are the command outputs automation should parse directly:
 | `aic check --json` | JSON diagnostics array (`code`, `severity`, `message`, `spans`, `help`, `suggested_fixes`) |
 | `aic check --sarif` | SARIF 2.1.0 JSON document |
 | `aic check --show-holes` | Typed-hole JSON (`holes[]` with line/inferred/context) |
+| `aic validate-call` | Fast-path callable conformance JSON (`resolved`, `suggestions`, `diagnostics`) |
+| `aic validate-type` | Fast-path type conformance JSON (`canonical`, `named_types`, `diagnostics`) |
+| `aic suggest --partial` | Ranked symbol candidate JSON (`candidate_count`, `candidates[]`) |
 | `aic diag apply-fixes --json` | Autofix plan/apply JSON (`ok`, `applied_edits`, `conflicts`) |
 | `aic context --json` | Context window JSON (`target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
 | `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`) |
@@ -79,6 +84,9 @@ These are the command outputs automation should parse directly:
 | `aic impact <function> [input]` | Blast-radius estimation for refactors | JSON impact report |
 | `aic suggest-effects <input>` | Inferring missing effects/capabilities | JSON suggestions |
 | `aic suggest-contracts <input> [--json]` | Contract proposal generation | Text/JSON suggestions |
+| `aic validate-call <target> --arg <type> ... [--project <path>] [--offline]` | Fast-path callable existence and argument compatibility check | JSON validation report |
+| `aic validate-type <type_expr> [--project <path>] [--offline]` | Fast-path type-expression parsing and symbol visibility check | JSON validation report |
+| `aic suggest --partial <text> [--project <path>] [--limit <n>]` | Ranked symbol suggestion for partial/hallucinated names | JSON candidate report |
 | `aic context --for ... [--depth N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
 | `aic query [--kind ... --name ...]` | Semantic symbol retrieval by kind/name/effects/contracts | Text/JSON symbol report |
 | `aic symbols [--format text|json]` | Full workspace symbol export | Text/JSON symbol list |
@@ -104,6 +112,12 @@ These are the command outputs automation should parse directly:
 | `aic contract --json` | CLI protocol negotiation/compatibility | Contract JSON |
 | `aic release ...` | Manifest/SBOM/provenance/policy/LTS/security ops | Text/JSON release outputs |
 | `aic run [input] ...` | Compile and execute with sandbox/runtime options | Program output + exit status |
+
+## Fast-path budget
+
+- `aic validate-call`, `aic validate-type`, and `aic suggest --partial` are budgeted to stay on parser/resolver/typechecker and symbol-index paths.
+- Treat any future codegen, execution, artifact writes, or session/daemon mutation in these commands as a regression.
+- Keep `aic suggest --partial` candidate ranking deterministic and bounded by `--limit` (default `8`).
 
 ## Additional implemented commands (outside stable list)
 

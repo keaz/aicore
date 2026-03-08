@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/validate-call-response-1.0.schema.json",
+  "title": "AIC Validate Call Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "ok",
+    "fast_path",
+    "project_root",
+    "target",
+    "arg_types",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "command": { "const": "validate-call" },
+    "ok": { "type": "boolean" },
+    "fast_path": { "type": "boolean" },
+    "project_root": { "type": "string" },
+    "target": { "type": "string" },
+    "arg_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "resolved": { "$ref": "#/$defs/resolved_callable" },
+    "suggestions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/suggest_candidate" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "symbol_kind": {
+      "type": "string",
+      "enum": ["function", "struct", "enum", "variant", "trait", "impl", "module"]
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "column", "span_start", "span_end"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "span_start": { "type": "integer", "minimum": 0 },
+        "span_end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "resolved_callable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualified_name",
+        "name",
+        "signature",
+        "location",
+        "arity",
+        "is_async",
+        "is_unsafe",
+        "is_extern"
+      ],
+      "properties": {
+        "qualified_name": { "type": "string" },
+        "name": { "type": "string" },
+        "module": { "type": "string" },
+        "signature": { "type": "string" },
+        "location": { "$ref": "#/$defs/location" },
+        "arity": { "type": "integer", "minimum": 0 },
+        "is_async": { "type": "boolean" },
+        "is_unsafe": { "type": "boolean" },
+        "is_extern": { "type": "boolean" },
+        "extern_abi": { "type": "string" },
+        "effects": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generic_bindings": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "requires": { "type": "string" },
+        "ensures": { "type": "string" }
+      }
+    },
+    "suggest_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualified_name",
+        "name",
+        "kind",
+        "signature",
+        "match_kind",
+        "distance",
+        "score",
+        "location"
+      ],
+      "properties": {
+        "qualified_name": { "type": "string" },
+        "name": { "type": "string" },
+        "kind": { "$ref": "#/$defs/symbol_kind" },
+        "module": { "type": "string" },
+        "signature": { "type": "string" },
+        "match_kind": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "case_insensitive_exact",
+            "prefix",
+            "substring",
+            "wildcard",
+            "fuzzy"
+          ]
+        },
+        "distance": { "type": "integer", "minimum": 0 },
+        "score": { "type": "integer" },
+        "location": { "$ref": "#/$defs/location" },
+        "effects": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "generics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requires": { "type": "string" },
+        "ensures": { "type": "string" },
+        "container": { "type": "string" }
+      }
+    },
+    "diagnostic_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end", "label"],
+      "properties": {
+        "file": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "label": { "type": ["string", "null"] }
+      }
+    },
+    "suggested_fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "replacement", "start", "end"],
+      "properties": {
+        "message": { "type": "string" },
+        "replacement": { "type": ["string", "null"] },
+        "start": { "type": ["integer", "null"], "minimum": 0 },
+        "end": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning", "note"] },
+        "message": { "type": "string" },
+        "spans": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic_span" }
+        },
+        "help": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_fixes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/suggested_fix" }
+        }
+      }
+    }
+  }
+}
