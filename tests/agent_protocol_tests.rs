@@ -359,6 +359,10 @@ fn validate_and_suggest_json_validate_against_published_schemas() {
 #[test]
 fn documented_protocol_fixtures_smoke_against_cli() {
     let check_fixture = read_json("examples/agent/protocol_check.json");
+    assert_eq!(
+        check_fixture["diagnostics"][0]["reasoning"]["strategy"],
+        "parser-missing-semicolon"
+    );
     let check_input = check_fixture["input"]
         .as_str()
         .expect("check fixture input");
@@ -369,6 +373,7 @@ fn documented_protocol_fixtures_smoke_against_cli() {
         .as_str()
         .expect("fixture check code");
     assert_eq!(check_json[0]["code"], expected_code);
+    assert_eq!(check_json[0]["reasoning"]["schema_version"], "1.0");
 
     let build_fixture = read_json("examples/agent/protocol_build.json");
     let build_input = build_fixture["input"]
@@ -410,6 +415,10 @@ fn documented_protocol_fixtures_smoke_against_cli() {
         "expected build failure diagnostic E2001; stdout={} stderr={}",
         String::from_utf8_lossy(&build_error.stdout),
         stderr
+    );
+    assert_eq!(
+        build_error_fixture["diagnostics"][0]["reasoning"]["strategy"],
+        "missing-effects"
     );
 
     let fix_fixture = read_json("examples/agent/protocol_fix.json");

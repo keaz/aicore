@@ -21,7 +21,43 @@
       "help": [
         "add `effects { io }` on the enclosing function"
       ],
-      "suggested_fixes": []
+      "suggested_fixes": [],
+      "reasoning": {
+        "schema_version": "1.0",
+        "strategy": "missing-effects",
+        "summary": "The call to 'io_fn' is effectful, but the enclosing function has not declared io.",
+        "confidence": 99,
+        "evidence": [
+          "Compiler message: calling 'io_fn' requires undeclared effects: io",
+          "Compiler help: add `effects { io }` on the enclosing function",
+          "Missing effect set inferred from the diagnostic payload: io."
+        ],
+        "hypotheses": [
+          {
+            "kind": "caller-missing-effects-clause",
+            "title": "The enclosing function omits required effects",
+            "detail": "The effect checker tracked effectful behavior and determined that `io` is used without being declared on the caller.",
+            "confidence": 99
+          },
+          {
+            "kind": "pure-wrapper-drift",
+            "title": "A previously-pure wrapper started calling effectful helpers",
+            "detail": "This often appears after introducing IO/time/rand/net/fs helpers without updating the wrapper signature.",
+            "confidence": 73
+          }
+        ],
+        "next_actions": [
+          "Add or update `effects { io }` on the enclosing function.",
+          "If the function should remain pure, move the effectful call into a dedicated helper with an explicit effects clause.",
+          "add `effects { io }` on the enclosing function",
+          "add missing effects in `effects { ... }` on the caller",
+          "or refactor to call a pure helper without side effects"
+        ],
+        "spec_refs": [
+          "docs/effect-system.md",
+          "docs/spec.md"
+        ]
+      }
     }
   ]
 }

@@ -1,6 +1,8 @@
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostic_reasoning::DiagnosticReasoning;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -33,12 +35,14 @@ pub struct Diagnostic {
     pub spans: Vec<DiagnosticSpan>,
     pub help: Vec<String>,
     pub suggested_fixes: Vec<SuggestedFix>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<Box<DiagnosticReasoning>>,
 }
 
 impl Diagnostic {
     pub fn error(code: &str, message: impl Into<String>, file: &str, span: Span) -> Self {
         crate::diagnostic_codes::assert_registered(code);
-        Self {
+        let mut diagnostic = Self {
             code: code.to_string(),
             severity: Severity::Error,
             message: message.into(),
@@ -50,12 +54,15 @@ impl Diagnostic {
             }],
             help: Vec::new(),
             suggested_fixes: Vec::new(),
-        }
+            reasoning: None,
+        };
+        diagnostic.refresh_reasoning();
+        diagnostic
     }
 
     pub fn warning(code: &str, message: impl Into<String>, file: &str, span: Span) -> Self {
         crate::diagnostic_codes::assert_registered(code);
-        Self {
+        let mut diagnostic = Self {
             code: code.to_string(),
             severity: Severity::Warning,
             message: message.into(),
@@ -67,28 +74,38 @@ impl Diagnostic {
             }],
             help: Vec::new(),
             suggested_fixes: Vec::new(),
-        }
+            reasoning: None,
+        };
+        diagnostic.refresh_reasoning();
+        diagnostic
     }
 
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         if let Some(first) = self.spans.first_mut() {
             first.label = Some(label.into());
         }
+        self.refresh_reasoning();
         self
     }
 
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         self.help.push(help.into());
+        self.refresh_reasoning();
         self
     }
 
     pub fn with_fix(mut self, fix: SuggestedFix) -> Self {
         self.suggested_fixes.push(fix);
+        self.refresh_reasoning();
         self
     }
 
     pub fn is_error(&self) -> bool {
         matches!(self.severity, Severity::Error)
+    }
+
+    pub fn refresh_reasoning(&mut self) {
+        self.reasoning = crate::diagnostic_reasoning::derive_reasoning(self).map(Box::new);
     }
 }
 

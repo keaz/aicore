@@ -18,6 +18,12 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - `docs/agent-tooling/schemas/suggest-response.schema.json`
+- `docs/diagnostics.schema.json` (shared raw `aic check --json` / `aic diag --json` diagnostics array)
+
+Diagnostic transport note:
+
+- `diagnostics[*].reasoning` is optional and versioned by `reasoning.schema_version`.
+- When the field is absent, treat that as the stable fallback for unsupported diagnostic families.
 
 ## Tooling workflows
 

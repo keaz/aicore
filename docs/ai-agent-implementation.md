@@ -557,6 +557,7 @@ Diagnostics:
   - coverage includes functions, structs, enums, traits, and enum variants
 - Diagnostics parity:
   - LSP diagnostics are built from frontend diagnostics and filtered by file.
+  - JSON diagnostic transports may include optional `reasoning` metadata for supported high-frequency codes; absence is the stable fallback for unsupported families.
 - Autofix integration:
   - code actions are emitted from diagnostic `suggested_fixes` with deterministic quick-fix edits
   - missing effect declaration diagnostics (`E2001`, `E2005`) carry deterministic effect-clause edits

@@ -4,57 +4,218 @@
   "title": "AIC Agent Check Response v1.0",
   "type": "object",
   "additionalProperties": false,
-  "required": ["protocol_version", "phase", "input", "ok", "diagnostics"],
+  "required": [
+    "protocol_version",
+    "phase",
+    "input",
+    "ok",
+    "diagnostics"
+  ],
   "properties": {
-    "protocol_version": { "const": "1.0" },
-    "phase": { "const": "check" },
-    "input": { "type": "string" },
-    "ok": { "type": "boolean" },
+    "protocol_version": {
+      "const": "1.0"
+    },
+    "phase": {
+      "const": "check"
+    },
+    "input": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
     "diagnostics": {
       "type": "array",
-      "items": { "$ref": "#/$defs/diagnostic" }
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
     }
   },
   "$defs": {
     "diagnostic": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "spans",
+        "help",
+        "suggested_fixes"
+      ],
       "properties": {
-        "code": { "type": "string" },
-        "severity": { "type": "string", "enum": ["error", "warning", "note"] },
-        "message": { "type": "string" },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "note"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
         "spans": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["file", "start", "end", "label"],
+            "required": [
+              "file",
+              "start",
+              "end",
+              "label"
+            ],
             "properties": {
-              "file": { "type": "string" },
-              "start": { "type": "integer", "minimum": 0 },
-              "end": { "type": "integer", "minimum": 0 },
-              "label": { "type": ["string", "null"] }
+              "file": {
+                "type": "string"
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         },
         "help": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "suggested_fixes": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["message", "replacement", "start", "end"],
+            "required": [
+              "message",
+              "replacement",
+              "start",
+              "end"
+            ],
             "properties": {
-              "message": { "type": "string" },
-              "replacement": { "type": ["string", "null"] },
-              "start": { "type": ["integer", "null"], "minimum": 0 },
-              "end": { "type": ["integer", "null"], "minimum": 0 }
+              "message": {
+                "type": "string"
+              },
+              "replacement": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "start": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "end": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
             }
           }
+        },
+        "reasoning": {
+          "$ref": "#/$defs/diagnostic_reasoning"
+        }
+      }
+    },
+    "diagnostic_reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "strategy",
+        "summary",
+        "confidence",
+        "evidence",
+        "hypotheses",
+        "next_actions",
+        "spec_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic_hypothesis"
+          }
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "diagnostic_hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "title",
+        "detail",
+        "confidence"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
         }
       }
     }

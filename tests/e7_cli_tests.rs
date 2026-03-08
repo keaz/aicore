@@ -484,6 +484,7 @@ fn make_diag(code: &str, message: &str, file: &str, start: usize, end: usize) ->
         }],
         help: vec!["help".to_string()],
         suggested_fixes: vec![],
+        reasoning: None,
     }
 }
 
@@ -2385,6 +2386,29 @@ fn diagnostics_json_and_sarif_outputs_are_structured() {
     assert!(first.get("code").is_some());
     assert!(first.get("severity").is_some());
     assert!(first.get("spans").is_some());
+    let reasoning = first["reasoning"].as_object().expect("check reasoning");
+    assert_eq!(reasoning["schema_version"], "1.0");
+    let hypotheses = reasoning["hypotheses"]
+        .as_array()
+        .expect("check hypotheses");
+    assert!(
+        hypotheses.windows(2).all(|window| {
+            let left = window[0]["confidence"].as_u64().expect("left confidence");
+            let right = window[1]["confidence"].as_u64().expect("right confidence");
+            left >= right
+        }),
+        "hypotheses must be sorted by descending confidence: {hypotheses:#?}"
+    );
+
+    let diag_json_out = run_aic(&["diag", "examples/e7/diag_errors.aic", "--json"]);
+    assert_eq!(diag_json_out.status.code(), Some(1));
+    let diag_json: serde_json::Value =
+        serde_json::from_slice(&diag_json_out.stdout).expect("diag diagnostics json");
+    assert_eq!(
+        diag_json[0]["reasoning"]["strategy"],
+        diagnostics[0]["reasoning"]["strategy"]
+    );
+    assert_eq!(diag_json[0]["reasoning"]["schema_version"], "1.0");
 
     let sarif_out = run_aic(&["diag", "examples/e7/diag_errors.aic", "--sarif"]);
     assert_eq!(sarif_out.status.code(), Some(1));

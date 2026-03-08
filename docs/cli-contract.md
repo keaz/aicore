@@ -680,6 +680,13 @@ Check mode behavior:
 
 `--json`, `--sarif`, and `--show-holes` are mutually exclusive for `aic check`.
 
+Diagnostic JSON versioning notes:
+
+- `diagnostics[*].reasoning` is optional. Omission means no reasoning strategy pack is published for that diagnostic/code path yet.
+- When present, `reasoning.schema_version` is currently `1.0`.
+- Additive reasoning fields remain compatible within `schema_version: 1.x`; a breaking reasoning-shape change must bump `reasoning.schema_version` and update the published schemas/examples.
+- `aic check --json` and `aic diag --json` are the canonical reasoning-bearing surfaces for supported families (`E1033`, `E1100`, `E1214`, `E1218`, `E1250`, `E2001`, `E2102` in this wave).
+
 Autofix API:
 
 ```bash

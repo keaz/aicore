@@ -5,44 +5,192 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["code", "severity", "message", "spans", "help", "suggested_fixes"],
+    "required": [
+      "code",
+      "severity",
+      "message",
+      "spans",
+      "help",
+      "suggested_fixes"
+    ],
     "properties": {
-      "code": { "type": "string", "pattern": "^[EWN][0-9]{4}$" },
-      "severity": { "type": "string", "enum": ["error", "warning", "note"] },
-      "message": { "type": "string" },
+      "code": {
+        "type": "string",
+        "pattern": "^[EWN][0-9]{4}$"
+      },
+      "severity": {
+        "type": "string",
+        "enum": [
+          "error",
+          "warning",
+          "note"
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
       "spans": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["file", "start", "end", "label"],
+          "required": [
+            "file",
+            "start",
+            "end",
+            "label"
+          ],
           "properties": {
-            "file": { "type": "string" },
-            "start": { "type": "integer", "minimum": 0 },
-            "end": { "type": "integer", "minimum": 0 },
-            "label": { "type": ["string", "null"] }
+            "file": {
+              "type": "string"
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           },
           "additionalProperties": false
         }
       },
       "help": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "suggested_fixes": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["message", "replacement", "start", "end"],
+          "required": [
+            "message",
+            "replacement",
+            "start",
+            "end"
+          ],
           "properties": {
-            "message": { "type": "string" },
-            "replacement": { "type": ["string", "null"] },
-            "start": { "type": ["integer", "null"], "minimum": 0 },
-            "end": { "type": ["integer", "null"], "minimum": 0 }
+            "message": {
+              "type": "string"
+            },
+            "replacement": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "end": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
           },
           "additionalProperties": false
         }
+      },
+      "reasoning": {
+        "$ref": "#/$defs/diagnostic_reasoning"
       }
     },
     "additionalProperties": false
+  },
+  "$defs": {
+    "diagnostic_reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "strategy",
+        "summary",
+        "confidence",
+        "evidence",
+        "hypotheses",
+        "next_actions",
+        "spec_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic_hypothesis"
+          }
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "diagnostic_hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "title",
+        "detail",
+        "confidence"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    }
   }
 }

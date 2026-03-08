@@ -24,7 +24,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 
 | Loop stage | Primary command | Success signal | Failure handling path |
 |---|---|---|---|
-| Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>`, then apply targeted edits |
+| Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>` and `diagnostics[*].reasoning` when present, then apply targeted edits |
 | Hallucination preflight | `aic validate-call <target> --arg <type> ... --project .`, `aic validate-type <type_expr> --project .`, `aic suggest --partial <text> --project . --limit <n>` | `ok: true` with resolved callable/type or ranked candidates | Adjust call/type text from `diagnostics[]`/`suggestions[]`, then retry before entering a full compile loop |
 | Context-window minimization | `aic context --for function <name> --depth <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
 | Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
@@ -45,7 +45,7 @@ These are the command outputs automation should parse directly:
 
 | Command | Machine-oriented output contract |
 |---|---|
-| `aic check --json` | JSON diagnostics array (`code`, `severity`, `message`, `spans`, `help`, `suggested_fixes`) |
+| `aic check --json` | JSON diagnostics array (`code`, `severity`, `message`, `spans`, `help`, `suggested_fixes`, optional `reasoning`) |
 | `aic check --sarif` | SARIF 2.1.0 JSON document |
 | `aic check --show-holes` | Typed-hole JSON (`holes[]` with line/inferred/context) |
 | `aic validate-call` | Fast-path callable conformance JSON (`resolved`, `suggestions`, `diagnostics`) |
@@ -67,6 +67,11 @@ These are the command outputs automation should parse directly:
 | `aic diff --semantic` | Semantic change JSON (`changes[]`, `summary.breaking`, `summary.non_breaking`) |
 | `aic contract --json` | CLI compatibility contract JSON |
 | `aic lsp` / `aic daemon` | JSON-RPC 2.0 over stdio |
+
+Reasoning metadata notes:
+
+- `diagnostics[*].reasoning` is optional; absence means the diagnostic has no published reasoning strategy pack yet.
+- When present, `reasoning.schema_version` is currently `1.0` and `hypotheses[]` are ordered by descending confidence.
 
 ## Contract-stable command families
 

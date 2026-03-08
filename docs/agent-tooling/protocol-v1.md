@@ -29,6 +29,7 @@ Negotiation rules:
 - Validate-call response: `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - Validate-type response: `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - Suggest response: `docs/agent-tooling/schemas/suggest-response.schema.json`
+- Shared raw diagnostics array: `docs/diagnostics.schema.json`
 
 Positive fixtures:
 
@@ -48,6 +49,14 @@ Negative/error fixtures:
 - `examples/agent/protocol_parse_error.json`
 - `examples/agent/protocol_build_error.json`
 - `examples/agent/protocol_fix_conflict.json`
+
+## Diagnostic reasoning metadata
+
+- Any protocol surface that embeds `diagnostics[]` may include optional `diagnostics[*].reasoning`.
+- Absence is the explicit fallback: no strategy pack is available yet for that diagnostic code/message variant.
+- When present, `reasoning.schema_version` versions the nested reasoning object independently from the outer protocol version.
+- `aic check --json` and `aic diag --json` must emit reasoning for the currently supported high-frequency families: `E1033`, `E1100`, `E1214`, `E1218`, `E1250`, `E2001`, `E2102`.
+- Within `reasoning`, `hypotheses[]` are sorted deterministically by descending `confidence`, then stable identity fields.
 
 ## Autofix contract (AG-T2)
 

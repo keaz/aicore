@@ -17,9 +17,7 @@
           "label": null
         }
       ],
-      "help": [
-        "insert ';' after let binding"
-      ],
+      "help": [],
       "suggested_fixes": [
         {
           "message": "insert ';' after let binding",
@@ -27,7 +25,43 @@
           "start": 38,
           "end": 38
         }
-      ]
+      ],
+      "reasoning": {
+        "schema_version": "1.0",
+        "strategy": "parser-missing-semicolon",
+        "summary": "Parser recovery indicates that a `let` binding was not terminated with `;`.",
+        "confidence": 98,
+        "evidence": [
+          "Compiler message: expected ';' after let binding",
+          "Machine-applicable fixes attached: 1",
+          "E1033 is emitted when the parser recovers from a missing `;` after a let binding.",
+          "The compiler produced a safe fix that inserts a semicolon at the binding tail."
+        ],
+        "hypotheses": [
+          {
+            "kind": "missing-terminator",
+            "title": "Semicolon omitted after the binding expression",
+            "detail": "The parser advanced past the let-binding expression and could not find the required statement terminator.",
+            "confidence": 98
+          },
+          {
+            "kind": "cascade-recovery",
+            "title": "Later parser errors may be secondary recovery noise",
+            "detail": "After the missing `;`, later parse spans can shift until the parser resynchronizes.",
+            "confidence": 63
+          }
+        ],
+        "next_actions": [
+          "Apply the suggested semicolon fix.",
+          "Re-run `aic check --json` after the syntax repair to discard recovery noise.",
+          "fix the token sequence around the highlighted span",
+          "prefer building incrementally and re-running `aic check`"
+        ],
+        "spec_refs": [
+          "docs/spec.md",
+          "docs/syntax.md"
+        ]
+      }
     }
   ]
 }

@@ -11,6 +11,7 @@ pub mod daemon;
 pub mod diag_fixes;
 pub mod diagnostic_codes;
 pub mod diagnostic_explain;
+pub mod diagnostic_reasoning;
 pub mod diagnostics;
 pub mod differential;
 pub mod docgen;
