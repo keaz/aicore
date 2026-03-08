@@ -103,6 +103,7 @@ check_pass=(
   "examples/pkg/workspace_demo"
   "examples/e6/pkg_app"
   "examples/e7/cli_smoke.aic"
+  "examples/e7/scaffold_examples"
   "examples/e7/test_harness_sample.aic"
   "examples/e7/lsp_project"
   "examples/e7/symbol_query"
@@ -743,6 +744,7 @@ case "$MODE" in
     expect_run_value "examples/e6/deps_checksum.aic" "42"
     expect_run_value "examples/e6/pkg_app" "42"
     expect_run_value "examples/e7/cli_smoke.aic" "42"
+    expect_run_value "examples/e7/scaffold_examples" "42"
     expect_run_value "examples/vscode/snippets_showcase.aic" "42"
     expect_run_value "examples/vscode/inlay_hints_demo.aic" "42"
     expect_run_value "examples/vscode/semantic_highlighting_showcase.aic" "42"
@@ -826,6 +828,10 @@ case "$MODE" in
     "${AIC[@]}" test "examples/e7/harness" --json >"$ARTIFACT_DIR/harness_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/harness_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/harness_report.json"
+    "${AIC[@]}" test "examples/e7/scaffold_examples" --json >"$ARTIFACT_DIR/scaffold_examples_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/scaffold_examples_report.json" >/dev/null
+    grep -q '"failed": 0' "$ARTIFACT_DIR/scaffold_examples_report.json"
+    grep -q '"total": 1' "$ARTIFACT_DIR/scaffold_examples_report.json"
     "${AIC[@]}" test "examples/e7/test_framework" --json >"$ARTIFACT_DIR/test_framework_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/test_framework_report.json" >/dev/null
     grep -q '"failed": 0' "$ARTIFACT_DIR/test_framework_report.json"

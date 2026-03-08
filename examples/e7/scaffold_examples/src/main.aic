@@ -1,0 +1,33 @@
+module scaffold.examples;
+
+import std.io;
+
+struct User {
+    name: String,
+    age: Int,
+} invariant age >= 0
+
+enum AppError {
+    NotFound,
+    InvalidInput(String),
+}
+
+fn process_user(u: User) -> Result[Int, AppError] effects { io } capabilities { io } requires u.age >= 0 ensures true {
+    Ok(0)
+}
+
+fn render_age(maybe_user: Option[User]) -> Int {
+    match maybe_user {
+        Some(v) => v.age,
+        None => 0,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let user = User {
+        name: "Ada",
+        age: 42,
+    };
+    print_int(render_age(Some(user)));
+    0
+}

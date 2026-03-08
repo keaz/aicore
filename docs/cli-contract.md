@@ -109,6 +109,17 @@ Stable `symbols` flags include:
 - `--format <format>` (`text|json`)
 - `--json` (machine-readable symbols response envelope; equivalent to `--format json`)
 
+Stable `scaffold` flags include:
+
+- `struct <name> --field <NAME:TYPE>... [--with-invariant <expr>]`
+- `struct <name> { name: Type, ... }` (inline trailing field list form)
+- `enum <name> --variant <NAME[:TYPE]>...`
+- `enum <name> { Variant, Payload(Type), ... }` (inline trailing variant list form)
+- `fn <name> --param <NAME:TYPE>... --return <TYPE> [--effect <EFFECT>] [--capability <CAP>] [--requires <expr>] [--ensures <expr>]`
+- `match <expr> --arm <PATTERN=>BODY>... [--exhaustive]`
+- `test --for <target> [--run-pass] [--compile-fail]`
+- `--json` (machine-readable scaffold payload with `kind`, `name`, and `content`)
+
 Stable `synthesize` flags include:
 
 - `--from <kind>` (`spec` in the current implementation)

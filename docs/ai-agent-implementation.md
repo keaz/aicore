@@ -486,6 +486,7 @@ Diagnostics:
 
 - Command/flag/exit contract metadata: `src/cli_contract.rs`
 - CLI contract command: `aic contract --json [--accept-version <v1,v2,...>]`
+- Scaffold usage guide with exact command/output pairs: `docs/agent-tooling/scaffold-guide.md`
 - Agent protocol schemas:
   - `docs/agent-tooling/schemas/parse-response.schema.json`
   - `docs/agent-tooling/schemas/ast-response.schema.json`

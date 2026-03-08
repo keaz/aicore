@@ -76,6 +76,42 @@ fn normalize_help_snapshot(text: &str) -> String {
         .join("\n")
 }
 
+fn extract_markdown_fenced_blocks_after(doc: &str, marker: &str, limit: usize) -> Vec<String> {
+    let start = doc
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing marker `{marker}` in doc"));
+    let rest = &doc[start + marker.len()..];
+    let mut blocks = Vec::new();
+    let mut in_block = false;
+    let mut current = Vec::new();
+
+    for line in rest.lines() {
+        if line.starts_with("## ") && !blocks.is_empty() && !in_block {
+            break;
+        }
+
+        if line.starts_with("```") {
+            if in_block {
+                blocks.push(current.join("\n"));
+                current.clear();
+                in_block = false;
+                if blocks.len() == limit {
+                    break;
+                }
+            } else {
+                in_block = true;
+            }
+            continue;
+        }
+
+        if in_block {
+            current.push(line.to_string());
+        }
+    }
+
+    blocks
+}
+
 fn write_many_check_diagnostics_fixture() -> (tempfile::TempDir, String) {
     let project = tempdir().expect("project");
     fs::create_dir_all(project.path().join("src")).expect("mkdir src");
@@ -1191,7 +1227,7 @@ fn scaffold_command_generates_wave1_templates() {
         "--arm",
         "Ok(v)=>v",
         "--arm",
-        "Err(e)=>todo()",
+        "Err(e)=>0",
         "--exhaustive",
     ]);
     assert_eq!(match_scaffold.status.code(), Some(0));
@@ -1204,6 +1240,278 @@ fn scaffold_command_generates_wave1_templates() {
     let test_text = String::from_utf8_lossy(&test_scaffold.stdout);
     assert!(test_text.contains("#[test]"));
     assert!(test_text.contains("compile-fail fixture template"));
+    assert!(!test_text.contains("/* args */"));
+}
+
+#[test]
+fn scaffold_outputs_are_compile_clean_for_happy_path_inputs() {
+    let project = tempdir().expect("tempdir");
+    fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    fs::create_dir_all(project.path().join("tests")).expect("mkdir tests");
+    fs::write(
+        project.path().join("aic.toml"),
+        "[package]\nname = \"scaffold_happy_path\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+
+    let strukt = run_aic(&[
+        "scaffold",
+        "struct",
+        "User",
+        "--field",
+        "name:String",
+        "--field",
+        "age:Int",
+        "--with-invariant",
+        "age >= 0",
+    ]);
+    assert_eq!(strukt.status.code(), Some(0));
+    let enum_out = run_aic(&[
+        "scaffold",
+        "enum",
+        "AppError",
+        "--variant",
+        "NotFound",
+        "--variant",
+        "InvalidInput:String",
+    ]);
+    assert_eq!(enum_out.status.code(), Some(0));
+    let function = run_aic(&[
+        "scaffold",
+        "fn",
+        "process_user",
+        "--param",
+        "u:User",
+        "--return",
+        "Result[Int, AppError]",
+        "--effect",
+        "io",
+        "--capability",
+        "io",
+        "--requires",
+        "u.age >= 0",
+        "--ensures",
+        "true",
+    ]);
+    assert_eq!(function.status.code(), Some(0));
+    let match_out = run_aic(&[
+        "scaffold",
+        "match",
+        "maybe_user",
+        "--arm",
+        "Some(v)=>v.age",
+        "--arm",
+        "None=>0",
+        "--exhaustive",
+    ]);
+    assert_eq!(match_out.status.code(), Some(0));
+    let test_out = run_aic(&["scaffold", "test", "--for", "process_user"]);
+    assert_eq!(test_out.status.code(), Some(0));
+
+    let main_source = format!(
+        "module scaffold.happy_path;\n\n{}\n\n{}\n\n{}\n\nfn render_age(maybe_user: Option[User]) -> Int {{\n    {}\n}}\n\nfn main() -> Int {{\n    let user = User {{name: \"Ada\", age: 42}};\n    render_age(Some(user))\n}}\n",
+        String::from_utf8_lossy(&strukt.stdout).trim(),
+        String::from_utf8_lossy(&enum_out.stdout).trim(),
+        String::from_utf8_lossy(&function.stdout).trim(),
+        String::from_utf8_lossy(&match_out.stdout)
+            .lines()
+            .map(|line| {
+                if line.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("    {line}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    fs::write(project.path().join("src/main.aic"), main_source).expect("write source");
+    fs::write(
+        project.path().join("tests/generated_tests.aic"),
+        String::from_utf8_lossy(&test_out.stdout).as_ref(),
+    )
+    .expect("write generated tests");
+
+    let check = run_aic_in_dir(project.path(), &["check", "src/main.aic"]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "check failed: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let harness = run_aic_in_dir(project.path(), &["test", ".", "--json"]);
+    assert_eq!(
+        harness.status.code(),
+        Some(0),
+        "aic test failed: {}",
+        String::from_utf8_lossy(&harness.stderr)
+    );
+    let harness_json: Value = serde_json::from_slice(&harness.stdout).expect("test json");
+    assert_eq!(harness_json["failed"], 0);
+    assert_eq!(harness_json["total"], 1);
+}
+
+#[test]
+fn scaffold_command_rejects_invalid_specs_with_usage_errors() {
+    let bad_field = run_aic(&["scaffold", "struct", "User", "--field", "name"]);
+    assert_eq!(bad_field.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&bad_field.stderr)
+        .contains("scaffold: invalid spec `name`: expected name:type"));
+
+    let bad_return = run_aic(&["scaffold", "fn", "build_user", "--return", "User"]);
+    assert_eq!(bad_return.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&bad_return.stderr).contains("unsupported return type `User`"));
+
+    let missing_body = run_aic(&["scaffold", "match", "value", "--arm", "Some(v)"]);
+    assert_eq!(missing_body.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&missing_body.stderr).contains("each --arm to include =>BODY"));
+
+    let missing_fallback = run_aic(&["scaffold", "match", "value", "--arm", "Some(v)=>v"]);
+    assert_eq!(missing_fallback.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&missing_fallback.stderr).contains("explicit _=>BODY fallback arm")
+    );
+}
+
+#[test]
+fn scaffold_help_and_docs_are_consistent() {
+    let scaffold_help = run_aic(&["scaffold", "--help"]);
+    assert_eq!(scaffold_help.status.code(), Some(0));
+    let scaffold_help_text = String::from_utf8_lossy(&scaffold_help.stdout);
+    for flag in ["struct", "enum", "fn", "match", "test", "--json"] {
+        assert!(
+            scaffold_help_text.contains(flag),
+            "missing `{flag}` in scaffold help:\n{scaffold_help_text}"
+        );
+    }
+
+    let fn_help = run_aic(&["scaffold", "fn", "--help"]);
+    assert_eq!(fn_help.status.code(), Some(0));
+    let fn_help_text = String::from_utf8_lossy(&fn_help.stdout);
+    for flag in [
+        "--param <NAME:TYPE>",
+        "--return <TYPE>",
+        "--effect <EFFECT>",
+        "--capability <CAP>",
+        "--requires <REQUIRES>",
+        "--ensures <ENSURES>",
+    ] {
+        assert!(
+            fn_help_text.contains(flag),
+            "missing `{flag}` in scaffold fn help:\n{fn_help_text}"
+        );
+    }
+
+    let match_help = run_aic(&["scaffold", "match", "--help"]);
+    assert_eq!(match_help.status.code(), Some(0));
+    let match_help_text = String::from_utf8_lossy(&match_help.stdout);
+    for flag in ["--arm <PATTERN=>BODY>", "--exhaustive"] {
+        assert!(
+            match_help_text.contains(flag),
+            "missing `{flag}` in scaffold match help:\n{match_help_text}"
+        );
+    }
+
+    let scaffold_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/scaffold-guide.md"))
+        .expect("read scaffold guide");
+    let readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling readme");
+    let cli_contract_doc =
+        fs::read_to_string(repo_root().join("docs/cli-contract.md")).expect("read cli contract");
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/aic-command-playbook.md"))
+            .expect("read playbook");
+    let ai_impl = fs::read_to_string(repo_root().join("docs/ai-agent-implementation.md"))
+        .expect("read ai agent implementation");
+
+    assert!(readme.contains("docs/agent-tooling/scaffold-guide.md"));
+    assert!(cli_contract_doc.contains("Stable `scaffold` flags include"));
+    assert!(playbook.contains("aic scaffold struct|enum|fn|match|test"));
+    assert!(ai_impl.contains("docs/agent-tooling/scaffold-guide.md"));
+
+    let struct_blocks = extract_markdown_fenced_blocks_after(&scaffold_doc, "## Struct", 2);
+    let struct_out = run_aic(&[
+        "scaffold",
+        "struct",
+        "User",
+        "--field",
+        "name:String",
+        "--field",
+        "age:Int",
+        "--with-invariant",
+        "age >= 0",
+    ]);
+    assert_eq!(struct_out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&struct_out.stdout).trim(),
+        struct_blocks[1].trim()
+    );
+
+    let enum_blocks = extract_markdown_fenced_blocks_after(&scaffold_doc, "## Enum", 2);
+    let enum_out = run_aic(&[
+        "scaffold",
+        "enum",
+        "AppError",
+        "--variant",
+        "NotFound",
+        "--variant",
+        "InvalidInput:String",
+    ]);
+    assert_eq!(enum_out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&enum_out.stdout).trim(),
+        enum_blocks[1].trim()
+    );
+
+    let fn_blocks = extract_markdown_fenced_blocks_after(&scaffold_doc, "## Function", 2);
+    let fn_out = run_aic(&[
+        "scaffold",
+        "fn",
+        "process_user",
+        "--param",
+        "u:User",
+        "--return",
+        "Result[Int, AppError]",
+        "--effect",
+        "io",
+        "--capability",
+        "io",
+        "--requires",
+        "u.age >= 0",
+        "--ensures",
+        "true",
+    ]);
+    assert_eq!(fn_out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&fn_out.stdout).trim(),
+        fn_blocks[1].trim()
+    );
+
+    let match_blocks = extract_markdown_fenced_blocks_after(&scaffold_doc, "## Match", 2);
+    let match_out = run_aic(&[
+        "scaffold",
+        "match",
+        "maybe_user",
+        "--arm",
+        "Some(v)=>v.age",
+        "--arm",
+        "None=>0",
+        "--exhaustive",
+    ]);
+    assert_eq!(match_out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&match_out.stdout).trim(),
+        match_blocks[1].trim()
+    );
+
+    let test_blocks = extract_markdown_fenced_blocks_after(&scaffold_doc, "## Test", 2);
+    let test_out = run_aic(&["scaffold", "test", "--for", "process_user"]);
+    assert_eq!(test_out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&test_out.stdout).trim(),
+        test_blocks[1].trim()
+    );
 }
 
 #[test]
@@ -6166,7 +6474,7 @@ fn test_real_proc_side_effect_is_blocked() -> () effects { io, env, proc } capab
 }
 
 #[test]
-fn intrinsic_placeholder_guard_policy_passes_and_rejects_stubs() {
+fn intrinsic_placeholder_guard_policy_passes_and_rejects_placeholder_intrinsics() {
     let root = repo_root();
     let script = root.join("scripts/ci/intrinsic_placeholder_guard.py");
 
@@ -6183,7 +6491,7 @@ fn intrinsic_placeholder_guard_policy_passes_and_rejects_stubs() {
     );
 
     let fixture = tempdir().expect("fixture");
-    let bad_file = fixture.path().join("stub_intrinsic.aic");
+    let bad_file = fixture.path().join("placeholder_intrinsic.aic");
     fs::write(
         &bad_file,
         concat!(

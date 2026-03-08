@@ -95,7 +95,7 @@ Reasoning metadata notes:
 | `aic context --for ... [--depth N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
 | `aic query [--kind ... --name ... --module ...]` | Semantic symbol retrieval by kind/name/module/effects/contracts/generics | Text/JSON query envelope |
 | `aic symbols [--format text|json]` | Full workspace symbol export with contract-aware records | Text/JSON symbols envelope |
-| `aic scaffold ...` | Generate typed boilerplate templates | Text/JSON scaffold payload |
+| `aic scaffold struct|enum|fn|match|test ...` | Generate compile-clean boilerplate templates for the selected target | Text/JSON scaffold payload |
 | `aic synthesize --from spec <name> [--json]` | Spec-first function + test fixture synthesis preview | Text/JSON artifact bundle |
 | `aic testgen --strategy <strategy> --for <selector> [--emit-dir <dir>] [--json]` | Deterministic harness fixture generation from contracts/types/effects | Text/JSON artifact bundle |
 | `aic checkpoint create/list/restore/diff ...` | Deterministic workspace snapshot, diff, and rollback protocol | Text/JSON checkpoint responses |

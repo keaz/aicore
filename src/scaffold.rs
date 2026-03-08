@@ -131,17 +131,17 @@ pub fn scaffold_struct(
 ) -> ScaffoldOutput {
     let mut lines = Vec::new();
     lines.push(format!("struct {name} {{"));
-    if fields.is_empty() {
-        lines.push("    // TODO: add fields".to_string());
-    } else {
+    if !fields.is_empty() {
         for field in fields {
             lines.push(format!("    {}: {},", field.name, field.ty));
         }
     }
-    lines.push("}".to_string());
+    let mut closing = "}".to_string();
     if let Some(invariant) = invariant {
-        lines.push(format!("invariant {}", invariant.trim()));
+        closing.push_str(" invariant ");
+        closing.push_str(invariant.trim());
     }
+    lines.push(closing);
 
     ScaffoldOutput {
         kind: "struct".to_string(),
@@ -153,9 +153,7 @@ pub fn scaffold_struct(
 pub fn scaffold_enum(name: &str, variants: &[VariantSpec]) -> ScaffoldOutput {
     let mut lines = Vec::new();
     lines.push(format!("enum {name} {{"));
-    if variants.is_empty() {
-        lines.push("    // TODO: add variants".to_string());
-    } else {
+    if !variants.is_empty() {
         for variant in variants {
             if let Some(payload) = &variant.payload {
                 lines.push(format!("    {}({}),", variant.name, payload));
@@ -173,9 +171,9 @@ pub fn scaffold_enum(name: &str, variants: &[VariantSpec]) -> ScaffoldOutput {
     }
 }
 
-pub fn scaffold_function(options: &FnScaffoldOptions) -> ScaffoldOutput {
-    let default_body = default_expression_for_return_type(&options.return_type);
-    scaffold_function_with_body(options, &format!("// TODO: implement\n{default_body}"))
+pub fn scaffold_function(options: &FnScaffoldOptions) -> anyhow::Result<ScaffoldOutput> {
+    let default_body = default_expression_for_return_type(&options.return_type)?;
+    Ok(scaffold_function_with_body(options, &default_body))
 }
 
 pub fn scaffold_function_with_body(options: &FnScaffoldOptions, body: &str) -> ScaffoldOutput {
@@ -230,24 +228,25 @@ pub fn scaffold_function_with_body(options: &FnScaffoldOptions, body: &str) -> S
 
 pub fn scaffold_match(
     expr: &str,
-    mut arms: Vec<MatchArmSpec>,
+    arms: Vec<MatchArmSpec>,
     exhaustive: bool,
 ) -> anyhow::Result<ScaffoldOutput> {
-    if exhaustive && arms.is_empty() {
-        bail!("--exhaustive requires at least one --arm pattern");
+    if arms.is_empty() {
+        bail!("match scaffold requires at least one --arm PATTERN=>BODY");
+    }
+
+    if arms.iter().any(|arm| arm.body.is_none()) {
+        bail!("match scaffold requires each --arm to include =>BODY");
     }
 
     if !exhaustive && !arms.iter().any(|arm| arm.pattern == "_") {
-        arms.push(MatchArmSpec {
-            pattern: "_".to_string(),
-            body: Some("todo()".to_string()),
-        });
+        bail!("non-exhaustive match scaffold requires explicit _=>BODY fallback arm");
     }
 
     let mut lines = Vec::new();
     lines.push(format!("match {} {{", expr.trim()));
     for arm in arms {
-        let body = arm.body.unwrap_or_else(|| "todo()".to_string());
+        let body = arm.body.expect("validated match arm body");
         lines.push(format!("    {} => {},", arm.pattern, body));
     }
     lines.push("}".to_string());
@@ -265,14 +264,14 @@ pub fn scaffold_test(options: &TestScaffoldOptions) -> ScaffoldOutput {
 
     if options.include_run_pass {
         blocks.push(format!(
-            "#[test]\nfn test_{}_run_pass() -> () {{\n    // TODO: provide valid arguments for {}\n    let _out = {}(/* args */);\n    assert(true);\n}}",
-            base_name, options.target_function, options.target_function
+            "#[test]\nfn test_{}_run_pass() -> () {{\n    // add a valid {} invocation when fixture inputs are available\n    assert(true);\n}}",
+            base_name, options.target_function
         ));
     }
 
     if options.include_compile_fail {
         blocks.push(format!(
-            "// compile-fail fixture template:\n// #[test]\n// fn test_{}_compile_fail() -> () {{\n//     // TODO: intentionally pass invalid arguments to {} and assert diagnostics.\n// }}",
+            "// compile-fail fixture template:\n// #[test]\n// fn test_{}_compile_fail() -> () {{\n//     // add intentionally invalid {} usage and assert diagnostics\n//     // assert(true);\n// }}",
             base_name, options.target_function
         ));
     }
@@ -343,9 +342,9 @@ fn parse_variant_spec(spec: &str) -> anyhow::Result<VariantSpec> {
     })
 }
 
-fn default_expression_for_return_type(return_type: &str) -> String {
+fn default_expression_for_return_type(return_type: &str) -> anyhow::Result<String> {
     let compact = return_type.split_whitespace().collect::<String>();
-    match compact.as_str() {
+    let expr = match compact.as_str() {
         "Unit" | "()" => "()".to_string(),
         "Bool" => "false".to_string(),
         "String" => "\"\"".to_string(),
@@ -354,13 +353,19 @@ fn default_expression_for_return_type(return_type: &str) -> String {
         other if other.starts_with("Option[") => "None".to_string(),
         other if other.starts_with("Result[") => {
             if let Some(ok_ty) = top_level_generic_arguments(other).first() {
-                format!("Ok({})", default_expression_for_return_type(ok_ty))
+                format!("Ok({})", default_expression_for_return_type(ok_ty)?)
             } else {
                 "Ok(())".to_string()
             }
         }
-        _ => "todo()".to_string(),
-    }
+        _ => {
+            bail!(
+                "unsupported return type `{}` for compile-clean fn scaffold; supported defaults cover Unit, Bool, String, numeric primitives, Option[T], and Result[T, E]",
+                return_type.trim()
+            )
+        }
+    };
+    Ok(expr)
 }
 
 fn indent_block(body: &str) -> String {
@@ -439,10 +444,26 @@ fn sanitize_identifier(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::formatter::format_program;
+    use crate::ir_builder;
+    use crate::parser;
+
     use super::{
         parse_inline_items, parse_struct_fields, scaffold_function, scaffold_match,
-        scaffold_struct, FieldSpec, FnScaffoldOptions, MatchArmSpec,
+        scaffold_struct, scaffold_test, FieldSpec, FnScaffoldOptions, MatchArmSpec,
+        TestScaffoldOptions,
     };
+
+    fn format_wrapped_source(source: &str) -> String {
+        let (program, diagnostics) = parser::parse(source, "<scaffold-test>");
+        assert!(
+            !diagnostics.iter().any(|diag| diag.is_error()),
+            "parse diagnostics: {diagnostics:#?}"
+        );
+        let program = program.expect("parsed program");
+        let ir = ir_builder::build(&program);
+        format_program(&ir)
+    }
 
     #[test]
     fn parse_inline_items_supports_brace_style_input() {
@@ -471,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn function_scaffold_emits_effects_and_contract_stubs() {
+    fn function_scaffold_emits_effects_and_contract_clauses() {
         let output = scaffold_function(&FnScaffoldOptions {
             name: "process_user".to_string(),
             params: parse_struct_fields(&["u: User".to_string()])
@@ -487,15 +508,16 @@ mod tests {
             capabilities: Vec::new(),
             requires: Some("true".to_string()),
             ensures: Some("true".to_string()),
-        });
+        })
+        .expect("scaffold function");
         assert!(output.content.contains("effects { io }"));
         assert!(output.content.contains("requires true"));
         assert!(output.content.contains("ensures true"));
     }
 
     #[test]
-    fn match_scaffold_adds_wildcard_when_not_exhaustive() {
-        let output = scaffold_match(
+    fn match_scaffold_requires_explicit_bodies_and_fallbacks() {
+        let missing_body = scaffold_match(
             "value",
             vec![MatchArmSpec {
                 pattern: "Some(v)".to_string(),
@@ -503,8 +525,138 @@ mod tests {
             }],
             false,
         )
-        .expect("scaffold match");
-        assert!(output.content.contains("Some(v) => todo()"));
-        assert!(output.content.contains("_ => todo()"));
+        .expect_err("missing body should fail");
+        assert!(missing_body
+            .to_string()
+            .contains("each --arm to include =>BODY"));
+
+        let missing_fallback = scaffold_match(
+            "value",
+            vec![MatchArmSpec {
+                pattern: "Some(v)".to_string(),
+                body: Some("v".to_string()),
+            }],
+            false,
+        )
+        .expect_err("missing fallback should fail");
+        assert!(missing_fallback
+            .to_string()
+            .contains("explicit _=>BODY fallback arm"));
+    }
+
+    #[test]
+    fn test_scaffold_is_harness_runnable_template() {
+        let output = scaffold_test(&TestScaffoldOptions {
+            target_function: "process_user".to_string(),
+            include_run_pass: true,
+            include_compile_fail: true,
+        });
+        assert!(output.content.contains("#[test]"));
+        assert!(output.content.contains("assert(true);"));
+        assert!(!output.content.contains("/* args */"));
+    }
+
+    #[test]
+    fn function_scaffold_rejects_unsupported_return_type() {
+        let error = scaffold_function(&FnScaffoldOptions {
+            name: "build_user".to_string(),
+            params: Vec::new(),
+            return_type: "User".to_string(),
+            effects: Vec::new(),
+            capabilities: Vec::new(),
+            requires: None,
+            ensures: None,
+        })
+        .expect_err("unsupported return type should fail");
+        assert!(error.to_string().contains("unsupported return type `User`"));
+    }
+
+    #[test]
+    fn struct_enum_and_function_scaffolds_are_formatter_stable_when_wrapped() {
+        let strukt = scaffold_struct(
+            "User",
+            &[
+                FieldSpec {
+                    name: "name".to_string(),
+                    ty: "String".to_string(),
+                },
+                FieldSpec {
+                    name: "age".to_string(),
+                    ty: "Int".to_string(),
+                },
+            ],
+            Some("age >= 0"),
+        );
+        let enm = super::scaffold_enum(
+            "AppError",
+            &[
+                super::VariantSpec {
+                    name: "NotFound".to_string(),
+                    payload: None,
+                },
+                super::VariantSpec {
+                    name: "InvalidInput".to_string(),
+                    payload: Some("String".to_string()),
+                },
+            ],
+        );
+        let function = scaffold_function(&FnScaffoldOptions {
+            name: "process_user".to_string(),
+            params: vec![super::ParamSpec {
+                name: "u".to_string(),
+                ty: "User".to_string(),
+            }],
+            return_type: "Result[Int, AppError]".to_string(),
+            effects: vec!["io".to_string()],
+            capabilities: vec!["io".to_string()],
+            requires: Some("u.age >= 0".to_string()),
+            ensures: Some("true".to_string()),
+        })
+        .expect("function scaffold");
+
+        let source = format!(
+            "module scaffold.format_items;\n\n{}\n\n{}\n\n{}\n\nfn main() -> Int {{\n    0\n}}\n",
+            strukt.content, enm.content, function.content
+        );
+        assert_eq!(format_wrapped_source(&source), source);
+    }
+
+    #[test]
+    fn match_scaffold_is_formatter_stable_when_wrapped() {
+        let output = scaffold_match(
+            "maybe_user",
+            vec![
+                MatchArmSpec {
+                    pattern: "Some(v)".to_string(),
+                    body: Some("v.age".to_string()),
+                },
+                MatchArmSpec {
+                    pattern: "None".to_string(),
+                    body: Some("0".to_string()),
+                },
+            ],
+            true,
+        )
+        .expect("match scaffold");
+        let indented_match = output
+            .content
+            .lines()
+            .enumerate()
+            .map(|(idx, line)| {
+                if line.is_empty() {
+                    String::new()
+                } else if idx == 0 {
+                    line.to_string()
+                } else {
+                    format!("    {line}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            "module scaffold.format_match;\n\nstruct User {{\n    age: Int,\n}}\n\nenum Option[T] {{\n    None,\n    Some(T),\n}}\n\nfn render_age(maybe_user: Option[User]) -> Int {{\n    {}\n}}\n\nfn main() -> Int {{\n    0\n}}\n",
+            indented_match
+        );
+        assert_eq!(format_wrapped_source(&source), source);
     }
 }

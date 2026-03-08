@@ -39,6 +39,8 @@ Diagnostic transport note:
   - `docs/agent-tooling/language-feature-playbook.md`
 - Full CLI command decision playbook:
   - `docs/agent-tooling/aic-command-playbook.md`
+- Scaffold command guide with exact command/output pairs:
+  - `docs/agent-tooling/scaffold-guide.md`
 - Deep command guides:
   - `docs/agent-tooling/commands/aic-init.md`
   - `docs/agent-tooling/commands/aic-lsp.md`
@@ -52,6 +54,7 @@ Diagnostic transport note:
 - `aic context --for function <name> --depth <n> --json`
 - `aic query --kind function --name 'validate*' --module demo.search --has-contract --project examples/e7/symbol_query --json`
 - `aic symbols --project examples/e7/symbol_query --json`
+- `aic scaffold fn process_user --param u:User --return 'Result[Int, AppError]' --effect io --capability io --requires 'u.age >= 0' --ensures 'true'`
 - `aic validate-call <target> --arg <type> --project .`
 - `aic validate-type <type_expr> --project .`
 - `aic suggest --partial <text> --project . --limit <n>`

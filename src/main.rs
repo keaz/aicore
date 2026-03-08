@@ -1569,68 +1569,76 @@ fn run_cli() -> anyhow::Result<i32> {
             EXIT_OK
         }
         Command::Scaffold { command, json } => {
-            let scaffold = match command {
-                ScaffoldSubcommand::Struct {
-                    name,
-                    fields,
-                    with_invariant,
-                    inline_fields,
-                } => {
-                    let mut field_specs = fields;
-                    field_specs.extend(scaffold::parse_inline_items(&inline_fields)?);
-                    let parsed_fields = scaffold::parse_struct_fields(&field_specs)?;
-                    scaffold::scaffold_struct(&name, &parsed_fields, with_invariant.as_deref())
-                }
-                ScaffoldSubcommand::Enum {
-                    name,
-                    variants,
-                    inline_variants,
-                } => {
-                    let mut variant_specs = variants;
-                    variant_specs.extend(scaffold::parse_inline_items(&inline_variants)?);
-                    let parsed_variants = scaffold::parse_enum_variants(&variant_specs)?;
-                    scaffold::scaffold_enum(&name, &parsed_variants)
-                }
-                ScaffoldSubcommand::Fn {
-                    name,
-                    params,
-                    return_type,
-                    effects,
-                    capabilities,
-                    requires,
-                    ensures,
-                } => {
-                    let parsed_params = scaffold::parse_params(&params)?;
-                    scaffold::scaffold_function(&scaffold::FnScaffoldOptions {
+            let scaffold = match (|| -> anyhow::Result<scaffold::ScaffoldOutput> {
+                Ok(match command {
+                    ScaffoldSubcommand::Struct {
                         name,
-                        params: parsed_params,
+                        fields,
+                        with_invariant,
+                        inline_fields,
+                    } => {
+                        let mut field_specs = fields;
+                        field_specs.extend(scaffold::parse_inline_items(&inline_fields)?);
+                        let parsed_fields = scaffold::parse_struct_fields(&field_specs)?;
+                        scaffold::scaffold_struct(&name, &parsed_fields, with_invariant.as_deref())
+                    }
+                    ScaffoldSubcommand::Enum {
+                        name,
+                        variants,
+                        inline_variants,
+                    } => {
+                        let mut variant_specs = variants;
+                        variant_specs.extend(scaffold::parse_inline_items(&inline_variants)?);
+                        let parsed_variants = scaffold::parse_enum_variants(&variant_specs)?;
+                        scaffold::scaffold_enum(&name, &parsed_variants)
+                    }
+                    ScaffoldSubcommand::Fn {
+                        name,
+                        params,
                         return_type,
                         effects,
                         capabilities,
                         requires,
                         ensures,
-                    })
-                }
-                ScaffoldSubcommand::Match {
-                    expr,
-                    arms,
-                    exhaustive,
-                } => {
-                    let parsed_arms = scaffold::parse_match_arms(&arms)?;
-                    scaffold::scaffold_match(&expr, parsed_arms, exhaustive)?
-                }
-                ScaffoldSubcommand::Test {
-                    target,
-                    run_pass,
-                    compile_fail,
-                } => {
-                    let include_run_pass = run_pass || !compile_fail;
-                    let include_compile_fail = compile_fail || !run_pass;
-                    scaffold::scaffold_test(&scaffold::TestScaffoldOptions {
-                        target_function: target,
-                        include_run_pass,
-                        include_compile_fail,
-                    })
+                    } => {
+                        let parsed_params = scaffold::parse_params(&params)?;
+                        scaffold::scaffold_function(&scaffold::FnScaffoldOptions {
+                            name,
+                            params: parsed_params,
+                            return_type,
+                            effects,
+                            capabilities,
+                            requires,
+                            ensures,
+                        })?
+                    }
+                    ScaffoldSubcommand::Match {
+                        expr,
+                        arms,
+                        exhaustive,
+                    } => {
+                        let parsed_arms = scaffold::parse_match_arms(&arms)?;
+                        scaffold::scaffold_match(&expr, parsed_arms, exhaustive)?
+                    }
+                    ScaffoldSubcommand::Test {
+                        target,
+                        run_pass,
+                        compile_fail,
+                    } => {
+                        let include_run_pass = run_pass || !compile_fail;
+                        let include_compile_fail = compile_fail || !run_pass;
+                        scaffold::scaffold_test(&scaffold::TestScaffoldOptions {
+                            target_function: target,
+                            include_run_pass,
+                            include_compile_fail,
+                        })
+                    }
+                })
+            })() {
+                Ok(scaffold) => scaffold,
+                Err(err) => {
+                    eprintln!("scaffold: {err}");
+                    return Ok(EXIT_USAGE_ERROR);
                 }
             };
 
