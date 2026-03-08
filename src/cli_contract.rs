@@ -302,6 +302,33 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
         output_modes: &["text", "json"],
     },
     CommandContract {
+        name: "session",
+        description:
+            "Manage collaboration sessions, symbol locks, conflict reports, and merge validation",
+        stable_flags: &[
+            "subcommands:create,list,lock,conflicts,merge",
+            "--json",
+            "create --project",
+            "create --label",
+            "create --now-ms",
+            "list --project",
+            "list --now-ms",
+            "lock acquire --for",
+            "lock acquire --lease-ms",
+            "lock acquire --operation-id",
+            "lock acquire --project",
+            "lock acquire --now-ms",
+            "lock release --for",
+            "lock release --project",
+            "lock release --now-ms",
+            "conflicts --project",
+            "merge --project",
+            "merge --offline",
+            "merge --now-ms",
+        ],
+        output_modes: &["text", "json"],
+    },
+    CommandContract {
         name: "release",
         description: "Release security and operations workflows",
         stable_flags: &["subcommands"],
@@ -345,6 +372,12 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/testgen-response.schema.json",
         example_path: "examples/agent/protocol_testgen.json",
         description: "Deterministic test-generation response with previewed or materialized harness artifacts.",
+    },
+    PhaseSchemaContract {
+        phase: "session",
+        schema_path: "docs/agent-tooling/schemas/session-response.schema.json",
+        example_path: "examples/agent/protocol_session.json",
+        description: "Deterministic collaboration session response for session registry, locks, conflicts, and merge validation.",
     },
 ];
 

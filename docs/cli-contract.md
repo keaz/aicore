@@ -14,13 +14,14 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix/testgen schemas:
+Published parse/check/build/fix/testgen/session schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
 - `docs/agent-tooling/schemas/build-response.schema.json`
 - `docs/agent-tooling/schemas/fix-response.schema.json`
 - `docs/agent-tooling/schemas/testgen-response.schema.json`
+- `docs/agent-tooling/schemas/session-response.schema.json`
 
 ## Exit codes
 
@@ -47,6 +48,7 @@ Published parse/check/build/fix/testgen schemas:
 - `aic synthesize`
 - `aic testgen`
 - `aic checkpoint`
+- `aic session`
 - `aic patch`
 - `aic metrics`
 - `aic ir-migrate`
@@ -101,6 +103,25 @@ Stable `checkpoint` flags include:
 - `restore <checkpoint> --project <path>` (validate snapshot integrity and restore checkpointed files)
 - `diff <checkpoint> [--to <checkpoint>] --project <path>` (compare checkpoint to workspace or another checkpoint)
 - `--json` (machine-readable checkpoint response envelope)
+
+Stable `session` flags include:
+
+- `create --project <path>` (create a deterministic collaboration session rooted at the resolved project path)
+- `create --label <name>` (attach a human-readable label to the session)
+- `create --now-ms <N>` (override lease/event clock for deterministic automation/testing)
+- `list --project <path>` (enumerate recorded sessions and current lock table)
+- `list --now-ms <N>` (mark expired locks deterministically during listing)
+- `lock acquire <session> --for <target...>` (claim exclusive symbol ownership for an existing session)
+- `lock acquire --lease-ms <N>` (lease duration in milliseconds before another session may reclaim an expired lock)
+- `lock acquire --operation-id <id>` (associate the lease with a specific planned operation)
+- `lock acquire --project <path>`
+- `lock acquire --now-ms <N>`
+- `lock release <session> --for <target...> --project <path>`
+- `lock release --now-ms <N>`
+- `conflicts <plan.json> --project <path>` (machine-readable overlap/ownership analysis for patch-backed session plans)
+- `merge <plan.json> --project <path>` (validation-only merge of a patch-backed session plan)
+- `merge --offline` (validate merge under offline dependency resolution)
+- `merge --now-ms <N>`
 
 Stable `run` flags include:
 
@@ -384,6 +405,75 @@ Checkpoint behavior:
 - restore uses staged temp files plus rollback of backed-up originals so validation failures never partially rewrite the workspace
 - `diff` defaults to `checkpoint -> current workspace`; `--to` switches to checkpoint-to-checkpoint comparison
 - semantic summaries are produced for changed `.aic` files using the same semantic engine as `aic diff --semantic`
+
+## `aic session` output modes
+
+Usage:
+
+```bash
+aic session create --project . --label alpha --now-ms 100 --json
+aic session list --project . --now-ms 1000 --json
+aic session lock acquire sess-0002 --for function handle_result --lease-ms 30000 --operation-id op-valid-modify --project . --json
+aic session conflicts plans/valid_plan.json --project examples/e7/session_protocol --json
+aic session merge plans/valid_plan.json --project examples/e7/session_protocol --json
+```
+
+JSON payloads:
+
+- common envelope:
+  - `protocol_version`
+  - `phase` (`session`)
+  - `command` (`create|list|lock|conflicts|merge`)
+- `create`
+  - `session` (`id`, optional `label`, `created_ms`, `active_locks`)
+- `list`
+  - `sessions[]` (`id`, optional `label`, `created_ms`, `active_locks`)
+  - `locks[]`
+    - `session_id`
+    - optional `operation_id`
+    - `acquired_ms`
+    - `expires_ms`
+    - `expired`
+    - `target`
+- `lock`
+  - `action` (`acquire|release`)
+  - `ok`
+  - `session_id`
+  - `target`
+  - optional `lock`
+  - optional `denied_by`
+  - optional `reclaimed_from`
+  - `message`
+- `conflicts`
+  - `plan`
+  - `ok`
+  - `operations[]` (`session_id`, `operation_id`, `patch`, `symbols[]`)
+  - `conflicts[]`
+    - `kind`
+    - optional `symbol`
+    - `sessions[]`
+    - `operation_ids[]`
+    - `patches[]`
+    - `message`
+- `merge`
+  - `plan`
+  - `ok`
+  - `valid`
+  - `entry`
+  - `merged_files[]`
+  - `operations[]`
+  - `conflicts[]`
+  - `diagnostics[]`
+
+Session behavior:
+
+- session registry state is persisted under `.aic-sessions/state.json` inside the resolved project root
+- session ids are deterministic (`sess-0001`, `sess-0002`, ...)
+- lock ownership is exclusive per resolved symbol key; active conflicting acquisitions return `ok: false` with `denied_by`
+- expired leases are reclaimable deterministically; successful reclaims surface `reclaimed_from`
+- `conflicts` consumes patch-backed plan documents and reports unknown sessions, unresolved symbols, overlapping symbol edits, and merge-time lock violations without mutating the workspace
+- `merge` is validation-only: it applies plan patches inside an isolated temp workspace, then runs the frontend on the merged result and rejects type/effect-invalid combined state with structured diagnostics
+- current lock keys are based on deterministic source selectors (`kind`, module/name, project-relative file, span start) rather than persistent IR ids
 
 ## `aic metrics` JSON output
 

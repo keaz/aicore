@@ -22,6 +22,7 @@ use crate::package_workflow::{
     compute_package_checksum_for_path, native_link_config, resolve_dependency_context,
     NativeLinkConfig, PackageOptions,
 };
+use crate::session;
 
 #[derive(Default)]
 struct DaemonState {
@@ -48,6 +49,7 @@ struct DaemonStats {
     requests_total: u64,
     check_requests: u64,
     build_requests: u64,
+    session_requests: u64,
     stats_requests: u64,
     frontend_cache_hits: u64,
     frontend_cache_misses: u64,
@@ -142,6 +144,30 @@ pub fn run_stdio() -> anyhow::Result<()> {
                 state.stats.build_requests += 1;
                 state.handle_build(&params)
             }
+            "session.create" => {
+                state.stats.session_requests += 1;
+                state.handle_session_create(&params)
+            }
+            "session.list" => {
+                state.stats.session_requests += 1;
+                state.handle_session_list(&params)
+            }
+            "session.lock.acquire" => {
+                state.stats.session_requests += 1;
+                state.handle_session_lock_acquire(&params)
+            }
+            "session.lock.release" => {
+                state.stats.session_requests += 1;
+                state.handle_session_lock_release(&params)
+            }
+            "session.conflicts" => {
+                state.stats.session_requests += 1;
+                state.handle_session_conflicts(&params)
+            }
+            "session.merge" => {
+                state.stats.session_requests += 1;
+                state.handle_session_merge(&params)
+            }
             "stats" => {
                 state.stats.stats_requests += 1;
                 Ok(state.stats_response())
@@ -175,11 +201,12 @@ pub fn run_stdio() -> anyhow::Result<()> {
                 )?;
             }
             Err(err) => {
-                let code = if method == "check" || method == "build" {
-                    -32602
-                } else {
-                    -32601
-                };
+                let code =
+                    if method == "check" || method == "build" || method.starts_with("session.") {
+                        -32602
+                    } else {
+                        -32601
+                    };
                 write_response(&mut writer, &rpc_error(id, code, err.to_string()))?;
             }
         }
@@ -354,6 +381,74 @@ impl DaemonState {
         }))
     }
 
+    fn handle_session_create(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let label = params.get("label").and_then(Value::as_str);
+        let now_ms = optional_u64(params, "now_ms")?;
+        Ok(serde_json::to_value(session::create_session(
+            &project, label, now_ms,
+        )?)?)
+    }
+
+    fn handle_session_list(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let now_ms = optional_u64(params, "now_ms")?;
+        Ok(serde_json::to_value(session::list_sessions(
+            &project, now_ms,
+        )?)?)
+    }
+
+    fn handle_session_lock_acquire(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let session_id = request_string(params, "session_id")?;
+        let target = request_string_array(params, "target")?;
+        let lease_ms = optional_u64(params, "lease_ms")?.unwrap_or_else(session::default_lease_ms);
+        let operation_id = params.get("operation_id").and_then(Value::as_str);
+        let now_ms = optional_u64(params, "now_ms")?;
+        Ok(serde_json::to_value(session::acquire_lock(
+            &project,
+            &session_id,
+            &target,
+            lease_ms,
+            operation_id,
+            now_ms,
+        )?)?)
+    }
+
+    fn handle_session_lock_release(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let session_id = request_string(params, "session_id")?;
+        let target = request_string_array(params, "target")?;
+        let now_ms = optional_u64(params, "now_ms")?;
+        Ok(serde_json::to_value(session::release_lock(
+            &project,
+            &session_id,
+            &target,
+            now_ms,
+        )?)?)
+    }
+
+    fn handle_session_conflicts(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let plan = request_path(params, "plan")?;
+        Ok(serde_json::to_value(session::detect_conflicts(
+            &project, &plan,
+        )?)?)
+    }
+
+    fn handle_session_merge(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let project = request_project_path(params);
+        let plan = request_path(params, "plan")?;
+        let offline = params
+            .get("offline")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let now_ms = optional_u64(params, "now_ms")?;
+        Ok(serde_json::to_value(session::validate_merge(
+            &project, &plan, offline, now_ms,
+        )?)?)
+    }
+
     fn frontend_output(
         &mut self,
         input: &Path,
@@ -391,6 +486,7 @@ impl DaemonState {
             "requests_total": self.stats.requests_total,
             "check_requests": self.stats.check_requests,
             "build_requests": self.stats.build_requests,
+            "session_requests": self.stats.session_requests,
             "stats_requests": self.stats.stats_requests,
             "frontend_cache_hits": self.stats.frontend_cache_hits,
             "frontend_cache_misses": self.stats.frontend_cache_misses,
@@ -411,6 +507,58 @@ fn request_path(params: &Value, key: &str) -> anyhow::Result<PathBuf> {
         anyhow::bail!("parameter '{key}' must not be empty");
     }
     Ok(PathBuf::from(raw))
+}
+
+fn request_project_path(params: &Value) -> PathBuf {
+    params
+        .get("project")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn request_string(params: &Value, key: &str) -> anyhow::Result<String> {
+    let raw = params
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("missing string parameter: {key}"))?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("parameter '{key}' must not be empty");
+    }
+    Ok(trimmed.to_string())
+}
+
+fn request_string_array(params: &Value, key: &str) -> anyhow::Result<Vec<String>> {
+    let values = params
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("missing array parameter: {key}"))?;
+    let out = values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .ok_or_else(|| anyhow::anyhow!("parameter '{key}' must contain non-empty strings"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    if out.is_empty() {
+        anyhow::bail!("parameter '{key}' must contain at least one selector token");
+    }
+    Ok(out)
+}
+
+fn optional_u64(params: &Value, key: &str) -> anyhow::Result<Option<u64>> {
+    match params.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("parameter '{key}' must be an unsigned integer")),
+    }
 }
 
 fn compute_input_fingerprint(input: &Path, offline: bool) -> anyhow::Result<String> {

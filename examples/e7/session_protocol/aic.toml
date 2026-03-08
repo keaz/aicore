@@ -1,0 +1,3 @@
+[package]
+name = "session_protocol"
+main = "src/main.aic"

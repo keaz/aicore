@@ -40,6 +40,7 @@ pub mod sandbox;
 pub mod sarif;
 pub mod scaffold;
 pub mod semantic_diff;
+pub mod session;
 pub mod span;
 pub mod std_policy;
 pub mod suggest_contracts;

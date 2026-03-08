@@ -1,0 +1,12 @@
+{
+  "operations": [
+    {
+      "kind": "modify_match_arm",
+      "target_file": "src/main.aic",
+      "target_function": "handle_result",
+      "match_index": 0,
+      "arm_pattern": "Err(e)",
+      "new_body": "abs_error(e)"
+    }
+  ]
+}

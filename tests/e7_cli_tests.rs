@@ -298,6 +298,45 @@ fn write_checkpoint_fixture(root: &std::path::Path) {
     .expect("write checkpoint source");
 }
 
+fn write_session_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"session_fixture\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write session aic.toml");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.session;\n",
+            "struct Config {\n",
+            "    port: Int\n",
+            "}\n",
+            "\n",
+            "fn helper_status(x: Int) -> Int {\n",
+            "    x\n",
+            "}\n",
+            "\n",
+            "fn default_config() -> Config {\n",
+            "    Config { port: 7 }\n",
+            "}\n",
+            "\n",
+            "fn handle_result(x: Result[Int, Int]) -> Int {\n",
+            "    match x {\n",
+            "        Ok(v) => v,\n",
+            "        Err(e) => helper_status(e),\n",
+            "    }\n",
+            "}\n",
+            "\n",
+            "fn main() -> Int {\n",
+            "    let cfg = default_config();\n",
+            "    handle_result(Ok(cfg.port))\n",
+            "}\n",
+        ),
+    )
+    .expect("write session source");
+}
+
 fn read_clang_opt_level(telemetry_path: &std::path::Path) -> String {
     let events = read_events(telemetry_path).expect("read telemetry events");
     events
@@ -474,6 +513,7 @@ fn cli_help_snapshots_are_stable() {
         "synthesize",
         "testgen",
         "checkpoint",
+        "session",
         "patch",
         "coverage",
         "metrics",
@@ -601,6 +641,32 @@ fn cli_help_snapshots_are_stable() {
         assert!(
             checkpoint_diff_help_text.contains(token),
             "missing `{token}` in checkpoint diff help:\n{checkpoint_diff_help_text}"
+        );
+    }
+
+    let session_help = run_aic(&["session", "--help"]);
+    assert!(session_help.status.success());
+    let session_help_text = String::from_utf8_lossy(&session_help.stdout);
+    for token in ["create", "list", "lock", "conflicts", "merge", "--json"] {
+        assert!(
+            session_help_text.contains(token),
+            "missing `{token}` in session help:\n{session_help_text}"
+        );
+    }
+
+    let session_lock_acquire_help = run_aic(&["session", "lock", "acquire", "--help"]);
+    assert!(session_lock_acquire_help.status.success());
+    let session_lock_acquire_help_text = String::from_utf8_lossy(&session_lock_acquire_help.stdout);
+    for token in [
+        "--for <TARGET>...",
+        "--lease-ms <N>",
+        "--operation-id <OPERATION_ID>",
+        "--project <PROJECT>",
+        "--now-ms <N>",
+    ] {
+        assert!(
+            session_lock_acquire_help_text.contains(token),
+            "missing `{token}` in session lock acquire help:\n{session_lock_acquire_help_text}"
         );
     }
 
@@ -1332,6 +1398,534 @@ fn checkpoint_command_reports_corrupt_snapshot_without_partial_restore() {
             "}\n",
         )
     );
+}
+
+#[test]
+fn session_command_manages_locks_and_reclaims_expired_leases() {
+    let project = tempdir().expect("tempdir");
+    write_session_fixture(project.path());
+
+    let create_alpha = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "create",
+            "--project",
+            ".",
+            "--label",
+            "alpha",
+            "--now-ms",
+            "100",
+            "--json",
+        ],
+    );
+    assert_eq!(create_alpha.status.code(), Some(0));
+    let alpha_json: Value = serde_json::from_slice(&create_alpha.stdout).expect("alpha json");
+    assert_eq!(alpha_json["command"], "create");
+    assert_eq!(alpha_json["session"]["id"], "sess-0001");
+
+    let create_beta = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "create",
+            "--project",
+            ".",
+            "--label",
+            "beta",
+            "--now-ms",
+            "101",
+            "--json",
+        ],
+    );
+    assert_eq!(create_beta.status.code(), Some(0));
+    let beta_json: Value = serde_json::from_slice(&create_beta.stdout).expect("beta json");
+    assert_eq!(beta_json["session"]["id"], "sess-0002");
+
+    let acquire_alpha = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0001",
+            "--for",
+            "function",
+            "handle_result",
+            "--lease-ms",
+            "25",
+            "--operation-id",
+            "op-alpha",
+            "--project",
+            ".",
+            "--now-ms",
+            "1000",
+            "--json",
+        ],
+    );
+    assert_eq!(acquire_alpha.status.code(), Some(0));
+    let acquire_alpha_json: Value =
+        serde_json::from_slice(&acquire_alpha.stdout).expect("acquire alpha json");
+    assert_eq!(acquire_alpha_json["ok"], true);
+    assert_eq!(acquire_alpha_json["lock"]["session_id"], "sess-0001");
+
+    let denied_beta = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0002",
+            "--for",
+            "function",
+            "handle_result",
+            "--lease-ms",
+            "25",
+            "--operation-id",
+            "op-beta",
+            "--project",
+            ".",
+            "--now-ms",
+            "1010",
+            "--json",
+        ],
+    );
+    assert_eq!(denied_beta.status.code(), Some(1));
+    let denied_beta_json: Value =
+        serde_json::from_slice(&denied_beta.stdout).expect("denied beta json");
+    assert_eq!(denied_beta_json["ok"], false);
+    assert_eq!(denied_beta_json["denied_by"], "sess-0001");
+
+    let reclaimed_beta = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0002",
+            "--for",
+            "function",
+            "handle_result",
+            "--lease-ms",
+            "25",
+            "--operation-id",
+            "op-beta",
+            "--project",
+            ".",
+            "--now-ms",
+            "1030",
+            "--json",
+        ],
+    );
+    assert_eq!(reclaimed_beta.status.code(), Some(0));
+    let reclaimed_beta_json: Value =
+        serde_json::from_slice(&reclaimed_beta.stdout).expect("reclaimed beta json");
+    assert_eq!(reclaimed_beta_json["ok"], true);
+    assert_eq!(reclaimed_beta_json["reclaimed_from"], "sess-0001");
+    assert_eq!(reclaimed_beta_json["lock"]["session_id"], "sess-0002");
+
+    let release_alpha = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "release",
+            "sess-0001",
+            "--for",
+            "function",
+            "handle_result",
+            "--project",
+            ".",
+            "--now-ms",
+            "1031",
+            "--json",
+        ],
+    );
+    assert_eq!(release_alpha.status.code(), Some(1));
+    let release_alpha_json: Value =
+        serde_json::from_slice(&release_alpha.stdout).expect("release alpha json");
+    assert_eq!(release_alpha_json["ok"], false);
+    assert_eq!(release_alpha_json["denied_by"], "sess-0002");
+
+    let list_output = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "list",
+            "--project",
+            ".",
+            "--now-ms",
+            "1031",
+            "--json",
+        ],
+    );
+    assert_eq!(list_output.status.code(), Some(0));
+    let list_json: Value = serde_json::from_slice(&list_output.stdout).expect("session list");
+    assert_eq!(list_json["sessions"].as_array().expect("sessions").len(), 2);
+    assert_eq!(list_json["locks"].as_array().expect("locks").len(), 1);
+    assert_eq!(list_json["locks"][0]["session_id"], "sess-0002");
+}
+
+#[test]
+fn session_conflicts_and_merge_validation_emit_machine_readable_results() {
+    let project = tempdir().expect("tempdir");
+    write_session_fixture(project.path());
+
+    for (label, now_ms) in [("alpha", "100"), ("beta", "101")] {
+        let created = run_aic_in_dir(
+            project.path(),
+            &[
+                "session",
+                "create",
+                "--project",
+                ".",
+                "--label",
+                label,
+                "--now-ms",
+                now_ms,
+                "--json",
+            ],
+        );
+        assert_eq!(created.status.code(), Some(0));
+    }
+
+    let conflict_a = project.path().join("conflict_a.json");
+    fs::write(
+        &conflict_a,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "helper_status(0 - e)"
+                }
+            ]
+        }))
+        .expect("encode conflict a"),
+    )
+    .expect("write conflict a");
+    let conflict_b = project.path().join("conflict_b.json");
+    fs::write(
+        &conflict_b,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "0"
+                }
+            ]
+        }))
+        .expect("encode conflict b"),
+    )
+    .expect("write conflict b");
+    let conflict_plan = project.path().join("conflict_plan.json");
+    fs::write(
+        &conflict_plan,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "session_id": "sess-0001",
+                    "operation_id": "op-conflict-a",
+                    "patch": "conflict_a.json"
+                },
+                {
+                    "session_id": "sess-0002",
+                    "operation_id": "op-conflict-b",
+                    "patch": "conflict_b.json"
+                }
+            ]
+        }))
+        .expect("encode conflict plan"),
+    )
+    .expect("write conflict plan");
+
+    let conflicts = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "conflicts",
+            conflict_plan.to_str().expect("conflict plan path"),
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(conflicts.status.code(), Some(1));
+    let conflicts_json: Value = serde_json::from_slice(&conflicts.stdout).expect("conflicts json");
+    assert_eq!(conflicts_json["phase"], "session");
+    assert_eq!(conflicts_json["command"], "conflicts");
+    assert_eq!(conflicts_json["ok"], false);
+    assert!(conflicts_json["conflicts"]
+        .as_array()
+        .expect("conflicts array")
+        .iter()
+        .any(|entry| {
+            entry["kind"] == "symbol_overlap"
+                && entry["sessions"]
+                    .as_array()
+                    .expect("sessions")
+                    .iter()
+                    .any(|value| value == "sess-0001")
+                && entry["sessions"]
+                    .as_array()
+                    .expect("sessions")
+                    .iter()
+                    .any(|value| value == "sess-0002")
+                && entry["operation_ids"]
+                    .as_array()
+                    .expect("op ids")
+                    .iter()
+                    .any(|value| value == "op-conflict-a")
+                && entry["operation_ids"]
+                    .as_array()
+                    .expect("op ids")
+                    .iter()
+                    .any(|value| value == "op-conflict-b")
+        }));
+
+    let acquire_handle = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0002",
+            "--for",
+            "function",
+            "handle_result",
+            "--operation-id",
+            "op-valid-modify",
+            "--project",
+            ".",
+            "--now-ms",
+            "1000",
+            "--json",
+        ],
+    );
+    assert_eq!(acquire_handle.status.code(), Some(0));
+
+    let valid_add = project.path().join("valid_add.json");
+    fs::write(
+        &valid_add,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "add_function",
+                    "target_file": "src/main.aic",
+                    "after_symbol": "handle_result",
+                    "function": {
+                        "name": "abs_error",
+                        "params": [ { "name": "x", "ty": "Int" } ],
+                        "return_type": "Int",
+                        "body": "if x < 0 { 0 - x } else { x }"
+                    }
+                }
+            ]
+        }))
+        .expect("encode valid add"),
+    )
+    .expect("write valid add");
+    let valid_modify = project.path().join("valid_modify.json");
+    fs::write(
+        &valid_modify,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "abs_error(e)"
+                }
+            ]
+        }))
+        .expect("encode valid modify"),
+    )
+    .expect("write valid modify");
+    let valid_plan = project.path().join("valid_plan.json");
+    fs::write(
+        &valid_plan,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "session_id": "sess-0001",
+                    "operation_id": "op-valid-add",
+                    "patch": "valid_add.json"
+                },
+                {
+                    "session_id": "sess-0002",
+                    "operation_id": "op-valid-modify",
+                    "patch": "valid_modify.json"
+                }
+            ]
+        }))
+        .expect("encode valid plan"),
+    )
+    .expect("write valid plan");
+
+    let valid_merge = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "merge",
+            valid_plan.to_str().expect("valid plan path"),
+            "--project",
+            ".",
+            "--now-ms",
+            "1000",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        valid_merge.status.code(),
+        Some(0),
+        "valid merge stdout={}\nstderr={}",
+        String::from_utf8_lossy(&valid_merge.stdout),
+        String::from_utf8_lossy(&valid_merge.stderr)
+    );
+    let valid_merge_json: Value =
+        serde_json::from_slice(&valid_merge.stdout).expect("valid merge json");
+    assert_eq!(valid_merge_json["command"], "merge");
+    assert_eq!(valid_merge_json["valid"], true);
+    assert!(valid_merge_json["diagnostics"]
+        .as_array()
+        .expect("valid diagnostics")
+        .is_empty());
+    assert!(valid_merge_json["merged_files"]
+        .as_array()
+        .expect("merged files")
+        .iter()
+        .any(|entry| entry == "src/main.aic"));
+
+    let acquire_config = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0001",
+            "--for",
+            "struct",
+            "Config",
+            "--operation-id",
+            "op-invalid-field",
+            "--project",
+            ".",
+            "--now-ms",
+            "1100",
+            "--json",
+        ],
+    );
+    assert_eq!(acquire_config.status.code(), Some(0));
+    let reacquire_handle = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "lock",
+            "acquire",
+            "sess-0002",
+            "--for",
+            "function",
+            "handle_result",
+            "--operation-id",
+            "op-invalid-modify",
+            "--project",
+            ".",
+            "--now-ms",
+            "1100",
+            "--json",
+        ],
+    );
+    assert_eq!(reacquire_handle.status.code(), Some(0));
+
+    let invalid_add_field = project.path().join("invalid_add_field.json");
+    fs::write(
+        &invalid_add_field,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "add_field",
+                    "target_file": "src/main.aic",
+                    "target_struct": "Config",
+                    "field": { "name": "timeout", "ty": "Int" }
+                }
+            ]
+        }))
+        .expect("encode invalid field"),
+    )
+    .expect("write invalid field");
+    let invalid_modify = project.path().join("invalid_modify.json");
+    fs::write(
+        &invalid_modify,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "helper_status(0 - e)"
+                }
+            ]
+        }))
+        .expect("encode invalid modify"),
+    )
+    .expect("write invalid modify");
+    let invalid_plan = project.path().join("invalid_plan.json");
+    fs::write(
+        &invalid_plan,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "session_id": "sess-0001",
+                    "operation_id": "op-invalid-field",
+                    "patch": "invalid_add_field.json"
+                },
+                {
+                    "session_id": "sess-0002",
+                    "operation_id": "op-invalid-modify",
+                    "patch": "invalid_modify.json"
+                }
+            ]
+        }))
+        .expect("encode invalid plan"),
+    )
+    .expect("write invalid plan");
+
+    let invalid_merge = run_aic_in_dir(
+        project.path(),
+        &[
+            "session",
+            "merge",
+            invalid_plan.to_str().expect("invalid plan path"),
+            "--project",
+            ".",
+            "--now-ms",
+            "1100",
+            "--json",
+        ],
+    );
+    assert_eq!(invalid_merge.status.code(), Some(1));
+    let invalid_merge_json: Value =
+        serde_json::from_slice(&invalid_merge.stdout).expect("invalid merge json");
+    assert_eq!(invalid_merge_json["valid"], false);
+    assert!(invalid_merge_json["conflicts"]
+        .as_array()
+        .expect("invalid conflicts")
+        .is_empty());
+    assert!(!invalid_merge_json["diagnostics"]
+        .as_array()
+        .expect("invalid diagnostics")
+        .is_empty());
 }
 
 #[test]
@@ -4078,6 +4672,118 @@ fn daemon_warm_and_cold_builds_are_deterministic() {
 }
 
 #[test]
+fn daemon_session_methods_round_trip_locking_and_conflict_reports() {
+    let project = tempdir().expect("tempdir");
+    write_session_fixture(project.path());
+    let project_path = project.path().to_string_lossy().to_string();
+
+    let mut daemon = DaemonHarness::spawn(&repo_root());
+    let created = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 20,
+        "method": "session.create",
+        "params": {
+            "project": project_path,
+            "label": "alpha",
+            "now_ms": 100
+        }
+    }));
+    assert!(created.get("error").is_none(), "created={created:#}");
+    assert_eq!(created["result"]["session"]["id"], "sess-0001");
+
+    let acquired = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "session.lock.acquire",
+        "params": {
+            "project": project.path().to_string_lossy(),
+            "session_id": "sess-0001",
+            "target": ["function", "handle_result"],
+            "operation_id": "op-alpha",
+            "lease_ms": 20,
+            "now_ms": 1000
+        }
+    }));
+    assert!(acquired.get("error").is_none(), "acquired={acquired:#}");
+    assert_eq!(acquired["result"]["ok"], true);
+    assert_eq!(acquired["result"]["lock"]["session_id"], "sess-0001");
+
+    let listed = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 22,
+        "method": "session.list",
+        "params": {
+            "project": project.path().to_string_lossy(),
+            "now_ms": 1001
+        }
+    }));
+    assert!(listed.get("error").is_none(), "listed={listed:#}");
+    assert_eq!(
+        listed["result"]["sessions"]
+            .as_array()
+            .expect("sessions")
+            .len(),
+        1
+    );
+    assert_eq!(
+        listed["result"]["locks"].as_array().expect("locks").len(),
+        1
+    );
+
+    let plan = project.path().join("daemon_conflict_plan.json");
+    fs::write(
+        project.path().join("daemon_conflict_patch.json"),
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "kind": "modify_match_arm",
+                    "target_file": "src/main.aic",
+                    "target_function": "handle_result",
+                    "match_index": 0,
+                    "arm_pattern": "Err(e)",
+                    "new_body": "0"
+                }
+            ]
+        }))
+        .expect("encode daemon conflict patch"),
+    )
+    .expect("write daemon conflict patch");
+    fs::write(
+        &plan,
+        serde_json::to_string_pretty(&json!({
+            "operations": [
+                {
+                    "session_id": "sess-missing",
+                    "operation_id": "op-daemon",
+                    "patch": "daemon_conflict_patch.json"
+                }
+            ]
+        }))
+        .expect("encode daemon conflict plan"),
+    )
+    .expect("write daemon conflict plan");
+
+    let conflicts = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 23,
+        "method": "session.conflicts",
+        "params": {
+            "project": project.path().to_string_lossy(),
+            "plan": plan.to_string_lossy()
+        }
+    }));
+    assert!(conflicts.get("error").is_none(), "conflicts={conflicts:#}");
+    assert_eq!(conflicts["result"]["ok"], false);
+    assert!(conflicts["result"]["conflicts"]
+        .as_array()
+        .expect("daemon conflicts")
+        .iter()
+        .any(|entry| entry["kind"] == "unknown_session"));
+
+    daemon.shutdown();
+}
+
+#[test]
 fn pkg_trust_policy_enforces_signatures_and_emits_audit_records() {
     let registry = tempdir().expect("registry");
     let package = tempdir().expect("package");
@@ -5475,5 +6181,72 @@ fn checkpoint_docs_and_contract_references_are_consistent() {
     assert!(
         playbook.contains("aic checkpoint"),
         "command playbook missing checkpoint command reference"
+    );
+}
+
+#[test]
+fn session_docs_and_contract_references_are_consistent() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    let session_command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|entry| entry["name"] == "session")
+        .expect("session command contract");
+    assert!(session_command["stable_flags"]
+        .as_array()
+        .expect("session stable flags")
+        .iter()
+        .any(|flag| flag == "lock acquire --lease-ms"));
+    assert!(session_command["stable_flags"]
+        .as_array()
+        .expect("session stable flags")
+        .iter()
+        .any(|flag| flag == "merge --offline"));
+
+    assert_eq!(
+        contract_json["schemas"]["session"]["path"],
+        "docs/agent-tooling/schemas/session-response.schema.json"
+    );
+    assert_eq!(
+        contract_json["examples"]["session"],
+        "examples/agent/protocol_session.json"
+    );
+
+    let cli_contract_doc =
+        fs::read_to_string(repo_root().join("docs/cli-contract.md")).expect("read cli contract");
+    assert!(
+        cli_contract_doc.contains("aic session"),
+        "cli contract doc missing session command reference"
+    );
+    assert!(
+        cli_contract_doc.contains("Stable `session` flags include"),
+        "cli contract doc missing session flag section"
+    );
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains("aic session merge"),
+        "agent tooling README missing session merge reference"
+    );
+
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/aic-command-playbook.md"))
+            .expect("read command playbook");
+    assert!(
+        playbook.contains("aic session"),
+        "command playbook missing session command reference"
+    );
+
+    let daemon_doc =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/incremental-daemon.md"))
+            .expect("read incremental daemon doc");
+    assert!(
+        daemon_doc.contains("session.create"),
+        "incremental daemon doc missing session.create reference"
     );
 }

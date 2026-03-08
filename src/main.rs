@@ -64,6 +64,7 @@ use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, Sandb
 use aicore::sarif::diagnostics_to_sarif;
 use aicore::scaffold;
 use aicore::semantic_diff;
+use aicore::session;
 use aicore::std_policy::{
     collect_std_api_snapshot, compare_snapshots, default_std_root, StdApiSnapshot,
 };
@@ -406,6 +407,12 @@ enum Command {
         #[arg(long, global = true)]
         json: bool,
     },
+    Session {
+        #[command(subcommand)]
+        command: SessionSubcommand,
+        #[arg(long, global = true)]
+        json: bool,
+    },
     Contract {
         #[arg(long)]
         json: bool,
@@ -636,6 +643,68 @@ enum CheckpointSubcommand {
         to: Option<String>,
         #[arg(long, default_value = ".")]
         project: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum SessionSubcommand {
+    Create {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        label: Option<String>,
+        #[arg(long, value_name = "N")]
+        now_ms: Option<u64>,
+    },
+    List {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_name = "N")]
+        now_ms: Option<u64>,
+    },
+    Lock {
+        #[command(subcommand)]
+        command: SessionLockSubcommand,
+    },
+    Conflicts {
+        plan: PathBuf,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+    Merge {
+        plan: PathBuf,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        offline: bool,
+        #[arg(long, value_name = "N")]
+        now_ms: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum SessionLockSubcommand {
+    Acquire {
+        session: String,
+        #[arg(long = "for", value_name = "TARGET", num_args = 1..)]
+        target: Vec<String>,
+        #[arg(long, default_value_t = session::default_lease_ms(), value_name = "N")]
+        lease_ms: u64,
+        #[arg(long)]
+        operation_id: Option<String>,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_name = "N")]
+        now_ms: Option<u64>,
+    },
+    Release {
+        session: String,
+        #[arg(long = "for", value_name = "TARGET", num_args = 1..)]
+        target: Vec<String>,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_name = "N")]
+        now_ms: Option<u64>,
     },
 }
 
@@ -2579,6 +2648,160 @@ fn run_cli() -> anyhow::Result<i32> {
                         println!("{}", checkpoint::format_diff_text(&response));
                     }
                     EXIT_OK
+                }
+            };
+            result
+        }
+        Command::Session { command, json } => {
+            let result = match command {
+                SessionSubcommand::Create {
+                    project,
+                    label,
+                    now_ms,
+                } => {
+                    let project_root = resolve_project_root(&project);
+                    let response =
+                        match session::create_session(&project_root, label.as_deref(), now_ms) {
+                            Ok(response) => response,
+                            Err(err) => {
+                                eprintln!("session: {err}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+                        };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", session::format_create_text(&response));
+                    }
+                    EXIT_OK
+                }
+                SessionSubcommand::List { project, now_ms } => {
+                    let project_root = resolve_project_root(&project);
+                    let response = match session::list_sessions(&project_root, now_ms) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("session: {err}");
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", session::format_list_text(&response));
+                    }
+                    EXIT_OK
+                }
+                SessionSubcommand::Lock { command } => match command {
+                    SessionLockSubcommand::Acquire {
+                        session: session_id,
+                        target,
+                        lease_ms,
+                        operation_id,
+                        project,
+                        now_ms,
+                    } => {
+                        let project_root = resolve_project_root(&project);
+                        let response = match session::acquire_lock(
+                            &project_root,
+                            &session_id,
+                            &target,
+                            lease_ms,
+                            operation_id.as_deref(),
+                            now_ms,
+                        ) {
+                            Ok(response) => response,
+                            Err(err) => {
+                                eprintln!("session: {err}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+                        };
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&response)?);
+                        } else {
+                            println!("{}", session::format_lock_text(&response));
+                        }
+                        if response.ok {
+                            EXIT_OK
+                        } else {
+                            EXIT_DIAGNOSTIC_ERROR
+                        }
+                    }
+                    SessionLockSubcommand::Release {
+                        session: session_id,
+                        target,
+                        project,
+                        now_ms,
+                    } => {
+                        let project_root = resolve_project_root(&project);
+                        let response = match session::release_lock(
+                            &project_root,
+                            &session_id,
+                            &target,
+                            now_ms,
+                        ) {
+                            Ok(response) => response,
+                            Err(err) => {
+                                eprintln!("session: {err}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+                        };
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&response)?);
+                        } else {
+                            println!("{}", session::format_lock_text(&response));
+                        }
+                        if response.ok {
+                            EXIT_OK
+                        } else {
+                            EXIT_DIAGNOSTIC_ERROR
+                        }
+                    }
+                },
+                SessionSubcommand::Conflicts { plan, project } => {
+                    let project_root = resolve_project_root(&project);
+                    let response = match session::detect_conflicts(&project_root, &plan) {
+                        Ok(response) => response,
+                        Err(err) => {
+                            eprintln!("session: {err}");
+                            return Ok(EXIT_DIAGNOSTIC_ERROR);
+                        }
+                    };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", session::format_conflicts_text(&response));
+                    }
+                    if response.ok {
+                        EXIT_OK
+                    } else {
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
+                }
+                SessionSubcommand::Merge {
+                    plan,
+                    project,
+                    offline,
+                    now_ms,
+                } => {
+                    let project_root = resolve_project_root(&project);
+                    let response =
+                        match session::validate_merge(&project_root, &plan, offline, now_ms) {
+                            Ok(response) => response,
+                            Err(err) => {
+                                eprintln!("session: {err}");
+                                return Ok(EXIT_DIAGNOSTIC_ERROR);
+                            }
+                        };
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&response)?);
+                    } else {
+                        println!("{}", session::format_merge_text(&response));
+                    }
+                    if response.valid {
+                        EXIT_OK
+                    } else {
+                        EXIT_DIAGNOSTIC_ERROR
+                    }
                 }
             };
             result

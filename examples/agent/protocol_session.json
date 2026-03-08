@@ -1,0 +1,36 @@
+{
+  "protocol_version": "1.0",
+  "phase": "session",
+  "command": "lock",
+  "action": "acquire",
+  "ok": true,
+  "session_id": "sess-0002",
+  "target": {
+    "key": "function:demo.session:handle_result:src/main.aic:153",
+    "kind": "function",
+    "name": "handle_result",
+    "module": "demo.session",
+    "file": "src/main.aic",
+    "span_start": 153,
+    "span_end": 261,
+    "synthetic": false
+  },
+  "lock": {
+    "session_id": "sess-0002",
+    "operation_id": "op-valid-modify",
+    "acquired_ms": 1000,
+    "expires_ms": 31000,
+    "expired": false,
+    "target": {
+      "key": "function:demo.session:handle_result:src/main.aic:153",
+      "kind": "function",
+      "name": "handle_result",
+      "module": "demo.session",
+      "file": "src/main.aic",
+      "span_start": 153,
+      "span_end": 261,
+      "synthetic": false
+    }
+  },
+  "message": "lock acquired"
+}

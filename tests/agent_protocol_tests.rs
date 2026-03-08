@@ -47,6 +47,10 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_testgen.json",
         ),
         (
+            "docs/agent-tooling/schemas/session-response.schema.json",
+            "examples/agent/protocol_session.json",
+        ),
+        (
             "docs/agent-tooling/schemas/parse-response.schema.json",
             "examples/agent/protocol_parse_error.json",
         ),
@@ -84,7 +88,7 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
     assert_eq!(contract["protocol"]["name"], "aic-compiler-json");
     assert_eq!(contract["protocol"]["selected_version"], "1.0");
 
-    for phase in ["parse", "check", "build", "fix", "testgen"] {
+    for phase in ["parse", "check", "build", "fix", "testgen", "session"] {
         assert!(contract["schemas"][phase]["path"].is_string());
         assert!(contract["examples"][phase].is_string());
     }
@@ -157,6 +161,65 @@ fn diag_apply_fixes_json_validates_against_fix_schema() {
     assert!(
         result.is_ok(),
         "fix response does not satisfy schema: {:?}",
+        result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
+}
+
+#[test]
+fn session_lock_json_validates_against_session_schema() {
+    let dir = tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
+    fs::write(
+        dir.path().join("aic.toml"),
+        "[package]\nname = \"session_schema\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+    fs::write(
+        dir.path().join("src/main.aic"),
+        concat!(
+            "module session.schema;\n",
+            "fn helper(x: Int) -> Int {\n",
+            "    x\n",
+            "}\n",
+            "fn main() -> Int {\n",
+            "    helper(1)\n",
+            "}\n",
+        ),
+    )
+    .expect("write source");
+
+    let create = run_aic(&[
+        "session",
+        "create",
+        "--project",
+        dir.path().to_str().expect("project path"),
+        "--json",
+    ]);
+    assert_eq!(create.status.code(), Some(0));
+
+    let lock = run_aic(&[
+        "session",
+        "lock",
+        "acquire",
+        "sess-0001",
+        "--for",
+        "function",
+        "main",
+        "--project",
+        dir.path().to_str().expect("project path"),
+        "--now-ms",
+        "1000",
+        "--json",
+    ]);
+    assert_eq!(lock.status.code(), Some(0));
+    let response: Value = serde_json::from_slice(&lock.stdout).expect("session lock response");
+
+    let schema = read_json("docs/agent-tooling/schemas/session-response.schema.json");
+    let compiled = JSONSchema::compile(&schema).expect("compile session schema");
+    let result = compiled.validate(&response);
+    assert!(
+        result.is_ok(),
+        "session response does not satisfy schema: {:?}",
         result.err().map(|errs| errs.collect::<Vec<_>>())
     );
 }

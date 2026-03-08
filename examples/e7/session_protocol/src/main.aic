@@ -1,0 +1,25 @@
+module demo.session;
+
+struct Config {
+    port: Int
+}
+
+fn helper_status(x: Int) -> Int {
+    x
+}
+
+fn default_config() -> Config {
+    Config { port: 7 }
+}
+
+fn handle_result(x: Result[Int, Int]) -> Int {
+    match x {
+        Ok(v) => v,
+        Err(e) => helper_status(e),
+    }
+}
+
+fn main() -> Int {
+    let cfg = default_config();
+    handle_result(Ok(cfg.port))
+}

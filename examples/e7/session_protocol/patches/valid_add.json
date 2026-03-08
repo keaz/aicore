@@ -1,0 +1,17 @@
+{
+  "operations": [
+    {
+      "kind": "add_function",
+      "target_file": "src/main.aic",
+      "after_symbol": "handle_result",
+      "function": {
+        "name": "abs_error",
+        "params": [
+          { "name": "x", "ty": "Int" }
+        ],
+        "return_type": "Int",
+        "body": "if x < 0 { 0 - x } else { x }"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "operations": [
+    {
+      "session_id": "sess-0001",
+      "operation_id": "op-valid-add",
+      "patch": "patches/valid_add.json"
+    },
+    {
+      "session_id": "sess-0002",
+      "operation_id": "op-valid-modify",
+      "patch": "patches/valid_modify.json"
+    }
+  ]
+}

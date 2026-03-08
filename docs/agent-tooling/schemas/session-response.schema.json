@@ -1,0 +1,243 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/session-response-1.0.schema.json",
+  "title": "AIC Agent Session Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "phase", "command"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "phase": { "const": "session" },
+    "command": {
+      "type": "string",
+      "enum": ["create", "list", "lock", "conflicts", "merge"]
+    },
+    "action": { "type": "string", "enum": ["acquire", "release"] },
+    "session": { "$ref": "#/$defs/session_summary" },
+    "sessions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/session_summary" }
+    },
+    "locks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/lock" }
+    },
+    "ok": { "type": "boolean" },
+    "session_id": { "type": "string" },
+    "target": { "$ref": "#/$defs/symbol" },
+    "lock": { "$ref": "#/$defs/lock" },
+    "denied_by": { "type": "string" },
+    "reclaimed_from": { "type": "string" },
+    "message": { "type": "string" },
+    "plan": { "type": "string" },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/conflict" }
+    },
+    "valid": { "type": "boolean" },
+    "entry": { "type": "string" },
+    "merged_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["protocol_version", "phase", "command", "session"],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "phase": { "const": "session" },
+        "command": { "const": "create" },
+        "session": { "$ref": "#/$defs/session_summary" }
+      }
+    },
+    {
+      "required": ["protocol_version", "phase", "command", "sessions", "locks"],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "phase": { "const": "session" },
+        "command": { "const": "list" },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/session_summary" }
+        },
+        "locks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lock" }
+        }
+      }
+    },
+    {
+      "required": [
+        "protocol_version",
+        "phase",
+        "command",
+        "action",
+        "ok",
+        "session_id",
+        "target",
+        "message"
+      ],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "phase": { "const": "session" },
+        "command": { "const": "lock" },
+        "action": { "type": "string", "enum": ["acquire", "release"] },
+        "ok": { "type": "boolean" },
+        "session_id": { "type": "string" },
+        "target": { "$ref": "#/$defs/symbol" },
+        "lock": { "$ref": "#/$defs/lock" },
+        "denied_by": { "type": "string" },
+        "reclaimed_from": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    {
+      "required": ["protocol_version", "phase", "command", "plan", "ok", "operations", "conflicts"],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "phase": { "const": "session" },
+        "command": { "const": "conflicts" },
+        "plan": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conflict" }
+        }
+      }
+    },
+    {
+      "required": [
+        "protocol_version",
+        "phase",
+        "command",
+        "plan",
+        "ok",
+        "valid",
+        "entry",
+        "merged_files",
+        "operations",
+        "conflicts",
+        "diagnostics"
+      ],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "phase": { "const": "session" },
+        "command": { "const": "merge" },
+        "plan": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "valid": { "type": "boolean" },
+        "entry": { "type": "string" },
+        "merged_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conflict" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "session_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "created_ms", "active_locks"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "created_ms": { "type": "integer", "minimum": 0 },
+        "active_locks": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "kind", "name", "synthetic"],
+      "properties": {
+        "key": { "type": "string" },
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "module": { "type": "string" },
+        "file": { "type": "string" },
+        "span_start": { "type": "integer", "minimum": 0 },
+        "span_end": { "type": "integer", "minimum": 0 },
+        "synthetic": { "type": "boolean" }
+      }
+    },
+    "lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "acquired_ms", "expires_ms", "expired", "target"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "operation_id": { "type": "string" },
+        "acquired_ms": { "type": "integer", "minimum": 0 },
+        "expires_ms": { "type": "integer", "minimum": 0 },
+        "expired": { "type": "boolean" },
+        "target": { "$ref": "#/$defs/symbol" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "operation_id", "patch", "symbols"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "operation_id": { "type": "string" },
+        "patch": { "type": "string" },
+        "symbols": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/symbol" }
+        }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sessions", "operation_ids", "patches", "message"],
+      "properties": {
+        "kind": { "type": "string" },
+        "symbol": { "$ref": "#/$defs/symbol" },
+        "sessions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "operation_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "patches": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

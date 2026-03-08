@@ -14,6 +14,7 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - `docs/agent-tooling/schemas/build-response.schema.json`
 - `docs/agent-tooling/schemas/fix-response.schema.json`
 - `docs/agent-tooling/schemas/testgen-response.schema.json`
+- `docs/agent-tooling/schemas/session-response.schema.json`
 
 ## Tooling workflows
 
@@ -41,6 +42,7 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - `aic synthesize --from spec <name> --project . --json`
 - `aic testgen --strategy boundary --for function <name> --project . --json`
 - `aic checkpoint diff <checkpoint> [--to <checkpoint>] --project . --json`
+- `aic session merge plans/valid_plan.json --project examples/e7/session_protocol --json`
 - `aic diag apply-fixes <path> --dry-run --json`
 - `aic lsp`
 - `aic daemon`
@@ -65,7 +67,7 @@ Before merging command/feature documentation updates:
 
 Use this checklist when preparing closure evidence for epic `#62`. Keep the epic open until every item below is complete and evidenced.
 
-- [ ] Protocol docs + schemas match implemented behavior: `docs/agent-tooling/protocol-v1.md`, `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`, `docs/agent-tooling/schemas/testgen-response.schema.json`
+- [ ] Protocol docs + schemas match implemented behavior: `docs/agent-tooling/protocol-v1.md`, `docs/agent-tooling/schemas/parse-response.schema.json`, `docs/agent-tooling/schemas/ast-response.schema.json`, `docs/agent-tooling/schemas/check-response.schema.json`, `docs/agent-tooling/schemas/build-response.schema.json`, `docs/agent-tooling/schemas/fix-response.schema.json`, `docs/agent-tooling/schemas/testgen-response.schema.json`, `docs/agent-tooling/schemas/session-response.schema.json`
 - [ ] Daemon docs reflect current incremental behavior and troubleshooting: `docs/agent-tooling/incremental-daemon.md`
 - [ ] LSP workflow example is current and runnable: `examples/agent/lsp_workflow.json`
 - [ ] Agent recipes are current for end-to-end loops: `docs/agent-recipes/`

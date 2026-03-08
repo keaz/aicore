@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/ast/check/build/fix/testgen workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -25,6 +25,7 @@ Negotiation rules:
 - Build response: `docs/agent-tooling/schemas/build-response.schema.json`
 - Fix response: `docs/agent-tooling/schemas/fix-response.schema.json`
 - Testgen response: `docs/agent-tooling/schemas/testgen-response.schema.json`
+- Session response: `docs/agent-tooling/schemas/session-response.schema.json`
 
 Positive fixtures:
 
@@ -34,6 +35,7 @@ Positive fixtures:
 - `examples/agent/protocol_build.json`
 - `examples/agent/protocol_fix.json`
 - `examples/agent/protocol_testgen.json`
+- `examples/agent/protocol_session.json`
 
 Negative/error fixtures:
 
@@ -77,9 +79,28 @@ Includes unknown-method error response examples for client fallback handling.
 See `docs/agent-tooling/incremental-daemon.md` for:
 
 - daemon methods (`check`, `build`, `stats`, `shutdown`)
+- session methods (`session.create`, `session.list`, `session.lock.acquire`, `session.lock.release`, `session.conflicts`, `session.merge`)
 - cache invalidation rules based on content hashes
 - warm/cold parity verification via `output_sha256`
 - troubleshooting common daemon failures
+
+## Collaboration session workflow (AG-T8)
+
+Reference commands:
+
+```bash
+aic session create --project examples/e7/session_protocol --label alpha --json
+aic session lock acquire sess-0002 --for function handle_result --operation-id op-valid-modify --project examples/e7/session_protocol --json
+aic session conflicts examples/e7/session_protocol/plans/valid_plan.json --project examples/e7/session_protocol --json
+aic session merge examples/e7/session_protocol/plans/valid_plan.json --project examples/e7/session_protocol --json
+```
+
+Behavior:
+
+- `create` persists deterministic session ids under `.aic-sessions/state.json`
+- `lock acquire` enforces exclusive symbol ownership with reclaimable expiry leases
+- `conflicts` reports overlap and ownership problems as structured `conflicts[]`, not transport errors
+- `merge` applies a plan inside an isolated temp workspace and rejects type/effect-invalid combined state with structured diagnostics
 
 ## End-to-end loops (AG-T5)
 
