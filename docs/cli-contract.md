@@ -14,7 +14,7 @@ Agent JSON protocol negotiation:
 aic contract --json --accept-version 1.2,1.0
 ```
 
-Published parse/check/build/fix/testgen/session/patch/validate/suggest/query/symbols schemas:
+Published parse/check/build/fix/testgen/session/patch/validate/suggest/context/query/symbols schemas:
 
 - `docs/agent-tooling/schemas/parse-response.schema.json`
 - `docs/agent-tooling/schemas/check-response.schema.json`
@@ -26,6 +26,7 @@ Published parse/check/build/fix/testgen/session/patch/validate/suggest/query/sym
 - `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - `docs/agent-tooling/schemas/suggest-response.schema.json`
+- `docs/agent-tooling/schemas/context-response.schema.json`
 - `docs/agent-tooling/schemas/query-response.schema.json`
 - `docs/agent-tooling/schemas/symbols-response.schema.json`
 
@@ -91,6 +92,7 @@ Stable `context` flags include:
 
 - `--for <target...>` (target selector; supports `function <name>` or `<module>.<name>`)
 - `--depth <N>` (transitive dependency/caller traversal depth)
+- `--limit <N>` (truncate ranked `dependencies[]`, `callers[]`, and `related_tests[]` after deterministic ordering)
 - `--project <path>` (project root used for symbol index + call graph extraction)
 - `--json` (machine-readable context response)
 
@@ -444,6 +446,8 @@ JSON payload:
 - `protocol_version`
 - `phase` (`context`)
 - `depth`
+- optional `limit`
+- `signature` (top-level target signature mirror for agent convenience)
 - `target` (`name`, `kind`, `signature`, optional `module`)
 - `dependencies[]` (`name`, `kind`, `signature`, optional `module`, `relation`, `distance`, optional contracts/effects/capabilities)
 - `callers[]` (`name`, `signature`, optional `module`, `distance`)

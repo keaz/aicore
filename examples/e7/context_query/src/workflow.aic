@@ -1,0 +1,15 @@
+module demo.context.workflow;
+import demo.context.models;
+import demo.context.validators;
+
+pub enum AppError {
+    InvalidInput,
+}
+
+pub fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {
+    if validate_user(user) {
+        Ok(1)
+    } else {
+        Err(InvalidInput())
+    }
+}

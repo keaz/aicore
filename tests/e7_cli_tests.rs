@@ -245,28 +245,63 @@ fn write_symbol_query_fixture(root: &std::path::Path) {
 fn write_context_fixture(root: &std::path::Path) {
     fs::create_dir_all(root.join("src")).expect("mkdir src");
     fs::write(
-        root.join("src/main.aic"),
+        root.join("aic.toml"),
+        "[package]\nname = \"context_fixture\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write context fixture manifest");
+    fs::write(
+        root.join("src/models.aic"),
         concat!(
-            "module demo.context;\n",
-            "struct User {\n",
-            "    age: Int,\n",
+            "module demo.context.models;\n",
+            "pub struct User {\n",
+            "    pub age: Int,\n",
             "} invariant age >= 0\n",
+        ),
+    )
+    .expect("write context models fixture");
+    fs::write(
+        root.join("src/validators.aic"),
+        concat!(
+            "module demo.context.validators;\n",
+            "import demo.context.models;\n",
             "\n",
-            "enum AppError {\n",
+            "pub fn normalize_age(age: Int) -> Int requires age >= 0 ensures result >= 0 {\n",
+            "    age\n",
+            "}\n",
+            "\n",
+            "pub fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {\n",
+            "    normalize_age(user.age) >= 0\n",
+            "}\n",
+        ),
+    )
+    .expect("write context validators fixture");
+    fs::write(
+        root.join("src/workflow.aic"),
+        concat!(
+            "module demo.context.workflow;\n",
+            "import demo.context.models;\n",
+            "import demo.context.validators;\n",
+            "\n",
+            "pub enum AppError {\n",
             "    InvalidInput,\n",
             "}\n",
             "\n",
-            "fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {\n",
-            "    true\n",
-            "}\n",
-            "\n",
-            "fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {\n",
+            "pub fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {\n",
             "    if validate_user(user) {\n",
             "        Ok(1)\n",
             "    } else {\n",
             "        Err(InvalidInput())\n",
             "    }\n",
             "}\n",
+        ),
+    )
+    .expect("write context workflow fixture");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.context.app;\n",
+            "import demo.context.models;\n",
+            "import demo.context.workflow;\n",
             "\n",
             "fn orchestrate() -> Int {\n",
             "    match process_user(User { age: 1 }) {\n",
@@ -275,16 +310,28 @@ fn write_context_fixture(root: &std::path::Path) {
             "    }\n",
             "}\n",
             "\n",
-            "fn test_process_user_ok() -> Int {\n",
-            "    orchestrate()\n",
-            "}\n",
-            "\n",
             "fn main() -> Int {\n",
             "    orchestrate()\n",
             "}\n",
         ),
     )
-    .expect("write context fixture");
+    .expect("write context main fixture");
+    fs::write(
+        root.join("src/tests_support.aic"),
+        concat!(
+            "module demo.context.tests;\n",
+            "import demo.context.models;\n",
+            "import demo.context.workflow;\n",
+            "\n",
+            "fn test_process_user_ok() -> Int {\n",
+            "    match process_user(User { age: 1 }) {\n",
+            "        Ok(v) => v,\n",
+            "        Err(_) => 0,\n",
+            "    }\n",
+            "}\n",
+        ),
+    )
+    .expect("write context tests fixture");
 }
 
 fn write_synthesize_fixture(root: &std::path::Path) {
@@ -715,6 +762,7 @@ fn cli_help_snapshots_are_stable() {
     for flag in [
         "--for <TARGET>...",
         "--depth <N>",
+        "--limit <N>",
         "--project <PROJECT>",
         "--json",
     ] {
@@ -1110,6 +1158,29 @@ fn context_command_emits_ranked_context_window_payload() {
     let project = tempdir().expect("tempdir");
     write_context_fixture(project.path());
 
+    let shallow = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "process_user",
+            "--depth",
+            "1",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        shallow.status.code(),
+        Some(0),
+        "context stdout={}\nstderr={}",
+        String::from_utf8_lossy(&shallow.stdout),
+        String::from_utf8_lossy(&shallow.stderr)
+    );
+    let shallow_json: Value = serde_json::from_slice(&shallow.stdout).expect("context json");
+
     let first = run_aic_in_dir(
         project.path(),
         &[
@@ -1124,18 +1195,14 @@ fn context_command_emits_ranked_context_window_payload() {
             "--json",
         ],
     );
-    assert_eq!(
-        first.status.code(),
-        Some(0),
-        "context stdout={}\nstderr={}",
-        String::from_utf8_lossy(&first.stdout),
-        String::from_utf8_lossy(&first.stderr)
-    );
+    assert_eq!(first.status.code(), Some(0));
     let first_json: Value = serde_json::from_slice(&first.stdout).expect("context json");
     assert_eq!(first_json["phase"], "context");
     assert_eq!(first_json["depth"], 2);
+    assert_eq!(first_json["signature"], first_json["target"]["signature"]);
     assert_eq!(first_json["target"]["name"], "process_user");
     assert_eq!(first_json["target"]["kind"], "function");
+    assert_eq!(first_json["target"]["module"], "demo.context.workflow");
     assert!(first_json["target"]["signature"]
         .as_str()
         .expect("target signature")
@@ -1159,6 +1226,16 @@ fn context_command_emits_ranked_context_window_payload() {
                 && dependency["relation"] == "call"
                 && dependency["distance"] == 1
         }));
+    assert!(first_json["dependencies"]
+        .as_array()
+        .expect("dependencies")
+        .iter()
+        .any(|dependency| {
+            dependency["name"] == "normalize_age"
+                && dependency["kind"] == "function"
+                && dependency["relation"] == "call"
+                && dependency["distance"] == 2
+        }));
     assert!(first_json["callers"]
         .as_array()
         .expect("callers")
@@ -1168,7 +1245,7 @@ fn context_command_emits_ranked_context_window_payload() {
         .as_array()
         .expect("callers")
         .iter()
-        .any(|caller| caller["name"] == "test_process_user_ok" && caller["distance"] == 2));
+        .any(|caller| caller["name"] == "test_process_user_ok" && caller["distance"] == 1));
     assert!(first_json["related_tests"]
         .as_array()
         .expect("related tests")
@@ -1177,6 +1254,17 @@ fn context_command_emits_ranked_context_window_payload() {
             .as_str()
             .unwrap_or_default()
             .ends_with(".test_process_user_ok")));
+    assert!(
+        shallow_json["dependencies"]
+            .as_array()
+            .expect("shallow dependencies")
+            .len()
+            < first_json["dependencies"]
+                .as_array()
+                .expect("deep dependencies")
+                .len(),
+        "expected deeper traversal to expose additional dependencies"
+    );
 
     let second = run_aic_in_dir(
         project.path(),
@@ -1196,6 +1284,69 @@ fn context_command_emits_ranked_context_window_payload() {
     assert_eq!(
         first.stdout, second.stdout,
         "aic context --json output must be deterministic"
+    );
+}
+
+#[test]
+fn context_command_applies_limit_and_reports_stable_invalid_targets() {
+    let project = tempdir().expect("tempdir");
+    write_context_fixture(project.path());
+
+    let limited = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "process_user",
+            "--depth",
+            "2",
+            "--limit",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(limited.status.code(), Some(0));
+    let limited_json: Value = serde_json::from_slice(&limited.stdout).expect("limited context");
+    assert_eq!(limited_json["limit"], 2);
+    assert_eq!(
+        limited_json["dependencies"].as_array().expect("deps").len(),
+        2
+    );
+    assert_eq!(
+        limited_json["callers"].as_array().expect("callers").len(),
+        2
+    );
+    assert_eq!(
+        limited_json["related_tests"]
+            .as_array()
+            .expect("tests")
+            .len(),
+        1
+    );
+
+    let invalid = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "missing_target",
+            "--depth",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(invalid.status.code(), Some(1));
+    assert!(invalid.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&invalid.stderr);
+    assert!(
+        stderr.contains("context: unknown context target `missing_target`"),
+        "unexpected stderr: {stderr}"
     );
 }
 
@@ -4523,6 +4674,64 @@ fn testgen_schema_references_are_consistent_in_contract_and_docs() {
     assert!(
         tooling_readme.contains("aic testgen --strategy"),
         "agent tooling README missing testgen command reference"
+    );
+
+    let protocol_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/protocol-v1.md"))
+        .expect("read protocol doc");
+    assert!(
+        protocol_doc.contains(schema_path),
+        "protocol doc missing schema reference"
+    );
+    assert!(
+        protocol_doc.contains(example_path),
+        "protocol doc missing example reference"
+    );
+}
+
+#[test]
+fn context_schema_references_are_consistent_in_contract_and_docs() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+
+    let schema_path = contract_json["schemas"]["context"]["path"]
+        .as_str()
+        .expect("context schema path");
+    let example_path = contract_json["examples"]["context"]
+        .as_str()
+        .expect("context example path");
+
+    assert_eq!(
+        schema_path,
+        "docs/agent-tooling/schemas/context-response.schema.json"
+    );
+    assert_eq!(example_path, "examples/agent/protocol_context.json");
+    assert!(
+        repo_root().join(schema_path).exists(),
+        "missing schema file at {schema_path}"
+    );
+    assert!(
+        repo_root().join(example_path).exists(),
+        "missing example artifact at {example_path}"
+    );
+
+    let command = contract_json["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .find(|entry| entry["name"] == "context")
+        .expect("context command contract");
+    assert!(command["stable_flags"]
+        .as_array()
+        .expect("context stable flags")
+        .iter()
+        .any(|flag| flag == "--limit"));
+
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    assert!(
+        tooling_readme.contains(schema_path),
+        "agent tooling README missing schema reference"
     );
 
     let protocol_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/protocol-v1.md"))

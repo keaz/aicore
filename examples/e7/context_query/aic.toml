@@ -1,0 +1,3 @@
+[package]
+name = "context_query"
+main = "src/main.aic"

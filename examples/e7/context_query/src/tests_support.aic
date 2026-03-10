@@ -1,0 +1,10 @@
+module demo.context.tests;
+import demo.context.models;
+import demo.context.workflow;
+
+fn test_process_user_ok() -> Int {
+    match process_user(User { age: 1 }) {
+        Ok(v) => v,
+        Err(_) => 0,
+    }
+}

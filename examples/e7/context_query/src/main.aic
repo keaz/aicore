@@ -1,0 +1,14 @@
+module demo.context.app;
+import demo.context.models;
+import demo.context.workflow;
+
+fn orchestrate() -> Int {
+    match process_user(User { age: 1 }) {
+        Ok(v) => v,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int {
+    orchestrate()
+}

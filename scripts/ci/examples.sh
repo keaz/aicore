@@ -106,6 +106,7 @@ check_pass=(
   "examples/e7/scaffold_examples"
   "examples/e7/test_harness_sample.aic"
   "examples/e7/lsp_project"
+  "examples/e7/context_query"
   "examples/e7/symbol_query"
   "examples/e7/patch_protocol"
   "examples/vscode/snippets_showcase.aic"
@@ -823,6 +824,9 @@ case "$MODE" in
     fi
     "${AIC[@]}" contract --json >/tmp/aic-example.out
     python3 -m json.tool /tmp/aic-example.out >/dev/null
+    "${AIC[@]}" context --project "examples/e7/context_query" --for function process_user --depth 2 --limit 3 --json >"$ARTIFACT_DIR/context_report.json"
+    python3 -m json.tool "$ARTIFACT_DIR/context_report.json" >/dev/null
+    grep -q '"phase": "context"' "$ARTIFACT_DIR/context_report.json"
     "${AIC[@]}" query --project "examples/e7/symbol_query" --kind function --name 'validate*' --module demo.search --effects io --has-contract --generic-over T --limit 10 --json >"$ARTIFACT_DIR/query_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/query_report.json" >/dev/null
     "${AIC[@]}" symbols --project "examples/e7/symbol_query" --json >"$ARTIFACT_DIR/symbols_report.json"

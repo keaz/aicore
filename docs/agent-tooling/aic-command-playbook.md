@@ -9,7 +9,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 1. Need parse/type/effect feedback: use `aic check --json`.
 2. Need fast hallucination-prevention checks before drafting a call/type: use `aic validate-call`, `aic validate-type`, or `aic suggest --partial`.
 3. Need deterministic edits from diagnostics: use `aic diag apply-fixes --dry-run --json`.
-4. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --json`.
+4. Need focused transitive context around a symbol: use `aic context --for function <name> --depth <n> --limit <n> --json`.
 5. Need a spec-first implementation preview: use `aic synthesize --from spec <name> --project . --json`.
 6. Need deterministic harness fixtures from contracts/types/effects: use `aic testgen --strategy <strategy> --for <selector> --project . --json`.
 7. Need a reversible workspace snapshot before or after edits: use `aic checkpoint create --project . --json`, then `aic checkpoint diff`/`restore`.
@@ -26,7 +26,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 |---|---|---|---|
 | Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>` and `diagnostics[*].reasoning` when present, then apply targeted edits |
 | Hallucination preflight | `aic validate-call <target> --arg <type> ... --project .`, `aic validate-type <type_expr> --project .`, `aic suggest --partial <text> --project . --limit <n>` | `ok: true` with resolved callable/type or ranked candidates | Adjust call/type text from `diagnostics[]`/`suggestions[]`, then retry before entering a full compile loop |
-| Context-window minimization | `aic context --for function <name> --depth <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
+| Context-window minimization | `aic context --for function <name> --depth <n> --limit <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
 | Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
 | Harness fixture generation | `aic testgen --strategy <strategy> --for <selector> --project . --json` | Strategy-specific fixture artifacts emitted deterministically | Adjust selector/strategy pair or simplify unsupported contracts/invariants |
 | Checkpoint safety rail | `aic checkpoint create --project . --json` then `aic checkpoint diff <id> [--to <id>] --project . --json` | Stable checkpoint id plus deterministic file/hash/semantic diff summary | Use `aic checkpoint restore <id> --project . --json` to revert checkpointed files; corruption returns non-zero with no partial restore |
@@ -52,7 +52,7 @@ These are the command outputs automation should parse directly:
 | `aic validate-type` | Fast-path type conformance JSON (`canonical`, `named_types`, `diagnostics`) |
 | `aic suggest --partial` | Ranked symbol candidate JSON (`candidate_count`, `candidates[]`) |
 | `aic diag apply-fixes --json` | Autofix plan/apply JSON (`ok`, `applied_edits`, `conflicts`) |
-| `aic context --json` | Context window JSON (`target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
+| `aic context --json` | Context window JSON (`signature`, `target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
 | `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`) |
 | `aic testgen --json` | Harness-generation JSON (`strategy`, `seed`, `target`, `artifacts[]`, `notes[]`) |
 | `aic checkpoint --json` | Checkpoint JSON (`checkpoint`, `checkpoints[]`, `summary`, `files[]`, `restored_paths[]`) |
@@ -92,7 +92,7 @@ Reasoning metadata notes:
 | `aic validate-call <target> --arg <type> ... [--project <path>] [--offline]` | Fast-path callable existence and argument compatibility check | JSON validation report |
 | `aic validate-type <type_expr> [--project <path>] [--offline]` | Fast-path type-expression parsing and symbol visibility check | JSON validation report |
 | `aic suggest --partial <text> [--project <path>] [--limit <n>]` | Ranked symbol suggestion for partial/hallucinated names | JSON candidate report |
-| `aic context --for ... [--depth N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
+| `aic context --for ... [--depth N] [--limit N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
 | `aic query [--kind ... --name ... --module ...]` | Semantic symbol retrieval by kind/name/module/effects/contracts/generics | Text/JSON query envelope |
 | `aic symbols [--format text|json]` | Full workspace symbol export with contract-aware records | Text/JSON symbols envelope |
 | `aic scaffold struct|enum|fn|match|test ...` | Generate compile-clean boilerplate templates for the selected target | Text/JSON scaffold payload |

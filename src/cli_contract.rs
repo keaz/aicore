@@ -92,7 +92,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "context",
         description: "Emit minimal dependency/caller/contracts context for a target symbol",
-        stable_flags: &["--for", "--depth", "--project", "--json"],
+        stable_flags: &["--for", "--depth", "--limit", "--project", "--json"],
         output_modes: &["text", "json"],
     },
     CommandContract {
@@ -439,6 +439,12 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         schema_path: "docs/agent-tooling/schemas/suggest-response.schema.json",
         example_path: "examples/agent/protocol_suggest.json",
         description: "Deterministic ranked partial-symbol suggestion response for fast hallucination-prevention workflows.",
+    },
+    PhaseSchemaContract {
+        phase: "context",
+        schema_path: "docs/agent-tooling/schemas/context-response.schema.json",
+        example_path: "examples/agent/protocol_context.json",
+        description: "Deterministic focused context-window response with ranked dependencies, callers, contracts, and related tests.",
     },
     PhaseSchemaContract {
         phase: "query",

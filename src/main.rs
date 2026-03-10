@@ -185,6 +185,8 @@ enum Command {
         target: Vec<String>,
         #[arg(long, value_name = "N", default_value_t = 1, value_parser = parse_positive_usize)]
         depth: usize,
+        #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+        limit: Option<usize>,
         #[arg(long, default_value = ".")]
         project: PathBuf,
         #[arg(long)]
@@ -1477,17 +1479,19 @@ fn run_cli() -> anyhow::Result<i32> {
         Command::Context {
             target,
             depth,
+            limit,
             project,
             json,
         } => {
             let project_root = resolve_project_root(&project);
-            let report = match context_query::build_context_report(&project_root, &target, depth) {
-                Ok(report) => report,
-                Err(err) => {
-                    eprintln!("context: {err}");
-                    return Ok(EXIT_DIAGNOSTIC_ERROR);
-                }
-            };
+            let report =
+                match context_query::build_context_report(&project_root, &target, depth, limit) {
+                    Ok(report) => report,
+                    Err(err) => {
+                        eprintln!("context: {err}");
+                        return Ok(EXIT_DIAGNOSTIC_ERROR);
+                    }
+                };
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {

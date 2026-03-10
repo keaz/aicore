@@ -1,0 +1,203 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aicore.dev/schemas/agent/context-response-1.0.schema.json",
+  "title": "AIC Context Response v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "phase",
+    "depth",
+    "signature",
+    "target",
+    "dependencies",
+    "callers",
+    "contracts",
+    "related_tests"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "1.0"
+    },
+    "phase": {
+      "const": "context"
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "signature": {
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/context_target"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/context_dependency"
+      }
+    },
+    "callers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/context_caller"
+      }
+    },
+    "contracts": {
+      "$ref": "#/$defs/context_contracts"
+    },
+    "related_tests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "symbol_kind": {
+      "type": "string",
+      "enum": [
+        "function",
+        "struct",
+        "enum",
+        "variant",
+        "trait",
+        "impl",
+        "module"
+      ]
+    },
+    "context_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "signature"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbol_kind"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "context_dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "signature",
+        "relation",
+        "distance"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbol_kind"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relation": {
+          "type": "string",
+          "enum": [
+            "signature_type",
+            "call"
+          ]
+        },
+        "distance": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires": {
+          "type": "string"
+        },
+        "ensures": {
+          "type": "string"
+        },
+        "invariant": {
+          "type": "string"
+        }
+      }
+    },
+    "context_caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "signature",
+        "distance"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "distance": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "context_contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "string"
+        },
+        "ensures": {
+          "type": "string"
+        },
+        "invariant": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

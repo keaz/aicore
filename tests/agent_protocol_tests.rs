@@ -67,6 +67,10 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_suggest.json",
         ),
         (
+            "docs/agent-tooling/schemas/context-response.schema.json",
+            "examples/agent/protocol_context.json",
+        ),
+        (
             "docs/agent-tooling/schemas/query-response.schema.json",
             "examples/agent/protocol_query.json",
         ),
@@ -123,6 +127,7 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
         "validate-call",
         "validate-type",
         "suggest",
+        "context",
         "query",
         "symbols",
     ] {
@@ -473,6 +478,34 @@ fn query_and_symbols_json_validate_against_published_schemas() {
 }
 
 #[test]
+fn context_json_validates_against_published_schema() {
+    let project_path = repo_root().join("examples/e7/context_query");
+    let project_str = project_path.to_str().expect("project path");
+
+    let context = run_aic(&[
+        "context",
+        "--project",
+        project_str,
+        "--for",
+        "function",
+        "process_user",
+        "--depth",
+        "2",
+        "--limit",
+        "3",
+        "--json",
+    ]);
+    assert_eq!(context.status.code(), Some(0));
+    let context_json: Value = serde_json::from_slice(&context.stdout).expect("context response");
+    let context_schema = read_json("docs/agent-tooling/schemas/context-response.schema.json");
+    let context_compiled = JSONSchema::compile(&context_schema).expect("compile context schema");
+    assert!(
+        context_compiled.validate(&context_json).is_ok(),
+        "context response does not satisfy schema"
+    );
+}
+
+#[test]
 fn documented_protocol_fixtures_smoke_against_cli() {
     let check_fixture = read_json("examples/agent/protocol_check.json");
     assert_eq!(
@@ -490,6 +523,34 @@ fn documented_protocol_fixtures_smoke_against_cli() {
         .expect("fixture check code");
     assert_eq!(check_json[0]["code"], expected_code);
     assert_eq!(check_json[0]["reasoning"]["schema_version"], "1.0");
+
+    let context_fixture = read_json("examples/agent/protocol_context.json");
+    let context = run_aic(&[
+        "context",
+        "--project",
+        "examples/e7/context_query",
+        "--for",
+        "function",
+        "process_user",
+        "--depth",
+        "2",
+        "--limit",
+        "3",
+        "--json",
+    ]);
+    assert_eq!(context.status.code(), Some(0));
+    let context_json: Value = serde_json::from_slice(&context.stdout).expect("context json");
+    assert_eq!(context_json["phase"], "context");
+    assert_eq!(context_json["signature"], context_fixture["signature"]);
+    assert_eq!(
+        context_json["target"]["name"],
+        context_fixture["target"]["name"]
+    );
+    assert_eq!(context_json["limit"], context_fixture["limit"]);
+    assert_eq!(
+        context_json["dependencies"][0]["name"],
+        context_fixture["dependencies"][0]["name"]
+    );
 
     let build_fixture = read_json("examples/agent/protocol_build.json");
     let build_input = build_fixture["input"]

@@ -67,6 +67,9 @@ pub struct ContextReport {
     pub protocol_version: String,
     pub phase: String,
     pub depth: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    pub signature: String,
     pub target: ContextTarget,
     pub dependencies: Vec<ContextDependency>,
     pub callers: Vec<ContextCaller>,
@@ -85,6 +88,7 @@ pub fn build_context_report(
     project_root: &Path,
     target_tokens: &[String],
     depth: usize,
+    limit: Option<usize>,
 ) -> anyhow::Result<ContextReport> {
     if depth == 0 {
         bail!("--depth must be greater than 0");
@@ -95,7 +99,10 @@ pub fn build_context_report(
     let target_symbol = select_target_symbol(&symbols, &selector)?;
 
     let front = run_frontend_with_options(project_root, FrontendOptions::default())?;
-    let call_graph = normalize_call_graph(&front.typecheck.call_graph);
+    let call_graph = merge_call_graphs(
+        normalize_call_graph(&front.typecheck.call_graph),
+        collect_syntactic_call_graph(project_root)?,
+    );
 
     let type_dependency_names = collect_type_dependency_names(&target_symbol)?;
     let mut dependencies = Vec::new();
@@ -151,7 +158,7 @@ pub fn build_context_report(
     dependencies.sort_by(|lhs, rhs| {
         lhs.distance
             .cmp(&rhs.distance)
-            .then(lhs.relation.cmp(&rhs.relation))
+            .then(relation_rank(&lhs.relation).cmp(&relation_rank(&rhs.relation)))
             .then(lhs.kind.as_str().cmp(rhs.kind.as_str()))
             .then(lhs.name.cmp(&rhs.name))
             .then(lhs.module.cmp(&rhs.module))
@@ -194,12 +201,18 @@ pub fn build_context_report(
         Vec::new()
     };
 
-    let related_tests = collect_related_tests(&symbols, &target_symbol.name, &callers);
+    let mut related_tests = collect_related_tests(&symbols, &target_symbol.name, &callers);
+    truncate_if_needed(&mut dependencies, limit);
+    truncate_if_needed(&mut related_tests, limit);
+    let mut callers = callers;
+    truncate_if_needed(&mut callers, limit);
 
     Ok(ContextReport {
         protocol_version: CONTEXT_PROTOCOL_VERSION.to_string(),
         phase: "context".to_string(),
         depth,
+        limit,
+        signature: target_symbol.signature.clone(),
         target: ContextTarget {
             name: target_symbol.name.clone(),
             kind: target_symbol.kind,
@@ -224,8 +237,11 @@ pub fn format_context_report_text(report: &ContextReport) -> String {
         report.target.kind.as_str(),
         qualified_name(&report.target.module, &report.target.name)
     ));
-    lines.push(format!("signature: {}", report.target.signature));
+    lines.push(format!("signature: {}", report.signature));
     lines.push(format!("depth: {}", report.depth));
+    if let Some(limit) = report.limit {
+        lines.push(format!("limit: {limit}"));
+    }
 
     let has_contracts = report.contracts.requires.is_some()
         || report.contracts.ensures.is_some()
@@ -495,10 +511,239 @@ fn normalize_call_graph(raw: &BTreeMap<String, Vec<String>>) -> BTreeMap<String,
         .collect()
 }
 
+fn merge_call_graphs(
+    lhs: BTreeMap<String, Vec<String>>,
+    rhs: BTreeMap<String, Vec<String>>,
+) -> BTreeMap<String, Vec<String>> {
+    let mut merged = BTreeMap::<String, BTreeSet<String>>::new();
+    for (caller, callees) in lhs.into_iter().chain(rhs) {
+        let entry = merged.entry(caller).or_default();
+        for callee in callees {
+            entry.insert(callee);
+        }
+    }
+    merged
+        .into_iter()
+        .map(|(caller, callees)| (caller, callees.into_iter().collect()))
+        .collect()
+}
+
 fn normalize_function_key(raw: &str) -> String {
     raw.rsplit_once("::")
         .map(|(_, name)| name.to_string())
         .unwrap_or_else(|| raw.to_string())
+}
+
+fn collect_syntactic_call_graph(
+    project_root: &Path,
+) -> anyhow::Result<BTreeMap<String, Vec<String>>> {
+    let mut files = Vec::new();
+    collect_context_aic_files(project_root, &mut files)?;
+    files.sort();
+
+    let mut graph = BTreeMap::<String, BTreeSet<String>>::new();
+    for file in files {
+        let source = match fs::read_to_string(&file) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let (program, diagnostics) = parser::parse(&source, &file.to_string_lossy());
+        if diagnostics.iter().any(|diag| diag.is_error()) {
+            continue;
+        }
+        let Some(program) = program else {
+            continue;
+        };
+
+        for item in &program.items {
+            match item {
+                ast::Item::Function(function) => {
+                    graph.entry(function.name.clone()).or_default();
+                    collect_block_call_names(&function.body, &function.name, &mut graph);
+                }
+                ast::Item::Trait(trait_def) => {
+                    for method in &trait_def.methods {
+                        graph.entry(method.name.clone()).or_default();
+                        collect_block_call_names(&method.body, &method.name, &mut graph);
+                    }
+                }
+                ast::Item::Impl(impl_def) => {
+                    for method in &impl_def.methods {
+                        graph.entry(method.name.clone()).or_default();
+                        collect_block_call_names(&method.body, &method.name, &mut graph);
+                    }
+                }
+                ast::Item::Struct(_) | ast::Item::Enum(_) => {}
+            }
+        }
+    }
+
+    Ok(graph
+        .into_iter()
+        .map(|(caller, callees)| (caller, callees.into_iter().collect()))
+        .collect())
+}
+
+fn collect_context_aic_files(root: &Path, out: &mut Vec<std::path::PathBuf>) -> anyhow::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+
+    let mut entries = fs::read_dir(root)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            if matches!(
+                path.file_name().and_then(|value| value.to_str()),
+                Some(".git" | "target" | ".aic" | ".aic-cache")
+            ) {
+                continue;
+            }
+            collect_context_aic_files(&path, out)?;
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) == Some("aic") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn collect_block_call_names(
+    block: &ast::Block,
+    caller_name: &str,
+    call_graph: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            ast::Stmt::Let { expr, .. }
+            | ast::Stmt::Assign { expr, .. }
+            | ast::Stmt::Expr { expr, .. }
+            | ast::Stmt::Assert { expr, .. } => {
+                collect_expr_call_names(expr, caller_name, call_graph);
+            }
+            ast::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_expr_call_names(expr, caller_name, call_graph);
+                }
+            }
+        }
+    }
+
+    if let Some(tail) = &block.tail {
+        collect_expr_call_names(tail, caller_name, call_graph);
+    }
+}
+
+fn collect_expr_call_names(
+    expr: &ast::Expr,
+    caller_name: &str,
+    call_graph: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    match &expr.kind {
+        ast::ExprKind::Call { callee, args, .. } => {
+            if let Some(callee_name) = extract_callee_name(callee) {
+                call_graph
+                    .entry(caller_name.to_string())
+                    .or_default()
+                    .insert(callee_name);
+            }
+            collect_expr_call_names(callee, caller_name, call_graph);
+            for arg in args {
+                collect_expr_call_names(arg, caller_name, call_graph);
+            }
+        }
+        ast::ExprKind::Closure { body, .. } => {
+            collect_block_call_names(body, caller_name, call_graph);
+        }
+        ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr_call_names(cond, caller_name, call_graph);
+            collect_block_call_names(then_block, caller_name, call_graph);
+            collect_block_call_names(else_block, caller_name, call_graph);
+        }
+        ast::ExprKind::While { cond, body } => {
+            collect_expr_call_names(cond, caller_name, call_graph);
+            collect_block_call_names(body, caller_name, call_graph);
+        }
+        ast::ExprKind::Loop { body } => {
+            collect_block_call_names(body, caller_name, call_graph);
+        }
+        ast::ExprKind::Break { expr } => {
+            if let Some(expr) = expr {
+                collect_expr_call_names(expr, caller_name, call_graph);
+            }
+        }
+        ast::ExprKind::Continue => {}
+        ast::ExprKind::Match { expr, arms } => {
+            collect_expr_call_names(expr, caller_name, call_graph);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_call_names(guard, caller_name, call_graph);
+                }
+                collect_expr_call_names(&arm.body, caller_name, call_graph);
+            }
+        }
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_expr_call_names(lhs, caller_name, call_graph);
+            collect_expr_call_names(rhs, caller_name, call_graph);
+        }
+        ast::ExprKind::Unary { expr, .. }
+        | ast::ExprKind::Borrow { expr, .. }
+        | ast::ExprKind::Await { expr }
+        | ast::ExprKind::Try { expr } => {
+            collect_expr_call_names(expr, caller_name, call_graph);
+        }
+        ast::ExprKind::UnsafeBlock { block } => {
+            collect_block_call_names(block, caller_name, call_graph);
+        }
+        ast::ExprKind::StructInit { fields, .. } => {
+            for (_, field_expr, _) in fields {
+                collect_expr_call_names(field_expr, caller_name, call_graph);
+            }
+        }
+        ast::ExprKind::FieldAccess { base, .. } => {
+            collect_expr_call_names(base, caller_name, call_graph);
+        }
+        ast::ExprKind::Int(_)
+        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Bool(_)
+        | ast::ExprKind::Char(_)
+        | ast::ExprKind::String(_)
+        | ast::ExprKind::Unit
+        | ast::ExprKind::Var(_) => {}
+    }
+}
+
+fn extract_callee_name(expr: &ast::Expr) -> Option<String> {
+    let mut segments = Vec::new();
+    if !collect_expr_path_segments(expr, &mut segments) {
+        return None;
+    }
+    segments.pop()
+}
+
+fn collect_expr_path_segments(expr: &ast::Expr, out: &mut Vec<String>) -> bool {
+    match &expr.kind {
+        ast::ExprKind::Var(name) => {
+            out.push(name.clone());
+            true
+        }
+        ast::ExprKind::FieldAccess { base, field } => {
+            if collect_expr_path_segments(base, out) {
+                out.push(field.clone());
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }
 
 fn collect_caller_distances(
@@ -768,6 +1013,20 @@ fn qualified_name(module: &Option<String>, name: &str) -> String {
     }
 }
 
+fn relation_rank(relation: &str) -> usize {
+    match relation {
+        "signature_type" => 0,
+        "call" => 1,
+        _ => 2,
+    }
+}
+
+fn truncate_if_needed<T>(items: &mut Vec<T>, limit: Option<usize>) {
+    if let Some(limit) = limit {
+        items.truncate(limit);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -776,33 +1035,66 @@ mod tests {
 
     use super::build_context_report;
 
-    #[test]
-    fn context_report_collects_dependencies_and_callers() {
-        let project = tempdir().expect("tempdir");
-        fs::create_dir_all(project.path().join("src")).expect("mkdir src");
+    fn write_context_fixture(root: &std::path::Path) {
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
         fs::write(
-            project.path().join("src/main.aic"),
+            root.join("aic.toml"),
+            "[package]\nname = \"context_fixture\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("write aic.toml");
+        fs::write(
+            root.join("src/models.aic"),
             concat!(
-                "module demo.context;\n",
-                "struct User {\n",
-                "    age: Int,\n",
+                "module demo.context.models;\n",
+                "pub struct User {\n",
+                "    pub age: Int,\n",
                 "} invariant age >= 0\n",
+            ),
+        )
+        .expect("write models");
+        fs::write(
+            root.join("src/validators.aic"),
+            concat!(
+                "module demo.context.validators;\n",
+                "import demo.context.models;\n",
                 "\n",
-                "enum AppError {\n",
+                "pub fn normalize_age(age: Int) -> Int requires age >= 0 ensures result >= 0 {\n",
+                "    age\n",
+                "}\n",
+                "\n",
+                "pub fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {\n",
+                "    normalize_age(user.age) >= 0\n",
+                "}\n",
+            ),
+        )
+        .expect("write validators");
+        fs::write(
+            root.join("src/workflow.aic"),
+            concat!(
+                "module demo.context.workflow;\n",
+                "import demo.context.models;\n",
+                "import demo.context.validators;\n",
+                "\n",
+                "pub enum AppError {\n",
                 "    InvalidInput,\n",
                 "}\n",
                 "\n",
-                "fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {\n",
-                "    true\n",
-                "}\n",
-                "\n",
-                "fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {\n",
+                "pub fn process_user(user: User) -> Result[Int, AppError] requires user.age >= 0 ensures true {\n",
                 "    if validate_user(user) {\n",
                 "        Ok(1)\n",
                 "    } else {\n",
                 "        Err(InvalidInput())\n",
                 "    }\n",
                 "}\n",
+            ),
+        )
+        .expect("write workflow");
+        fs::write(
+            root.join("src/main.aic"),
+            concat!(
+                "module demo.context.app;\n",
+                "import demo.context.models;\n",
+                "import demo.context.workflow;\n",
                 "\n",
                 "fn orchestrate() -> Int {\n",
                 "    match process_user(User { age: 1 }) {\n",
@@ -811,25 +1103,45 @@ mod tests {
                 "    }\n",
                 "}\n",
                 "\n",
-                "fn test_process_user_ok() -> Int {\n",
-                "    orchestrate()\n",
-                "}\n",
-                "\n",
                 "fn main() -> Int {\n",
                 "    orchestrate()\n",
                 "}\n",
             ),
         )
-        .expect("write source");
+        .expect("write main");
+        fs::write(
+            root.join("src/tests_support.aic"),
+            concat!(
+                "module demo.context.tests;\n",
+                "import demo.context.models;\n",
+                "import demo.context.workflow;\n",
+                "\n",
+                "fn test_process_user_ok() -> Int {\n",
+                "    match process_user(User { age: 1 }) {\n",
+                "        Ok(v) => v,\n",
+                "        Err(_) => 0,\n",
+                "    }\n",
+                "}\n",
+            ),
+        )
+        .expect("write tests");
+    }
+
+    #[test]
+    fn context_report_collects_dependencies_and_callers() {
+        let project = tempdir().expect("tempdir");
+        write_context_fixture(project.path());
 
         let report = build_context_report(
             project.path(),
             &["function".to_string(), "process_user".to_string()],
             2,
+            None,
         )
         .expect("context report");
 
         assert_eq!(report.target.name, "process_user");
+        assert!(report.signature.contains("fn process_user"));
         assert!(
             report
                 .dependencies
@@ -842,13 +1154,19 @@ mod tests {
             .iter()
             .any(|dependency| dependency.name == "validate_user" && dependency.relation == "call"));
         assert!(report
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.name == "normalize_age"
+                && dependency.relation == "call"
+                && dependency.distance == 2));
+        assert!(report
             .callers
             .iter()
             .any(|caller| caller.name == "orchestrate" && caller.distance == 1));
         assert!(report
             .callers
             .iter()
-            .any(|caller| caller.name == "test_process_user_ok" && caller.distance == 2));
+            .any(|caller| caller.name == "test_process_user_ok" && caller.distance == 1));
         assert!(report
             .related_tests
             .iter()
@@ -880,11 +1198,32 @@ mod tests {
         )
         .expect("write secondary source");
 
-        let err = build_context_report(project.path(), &["duplicate".to_string()], 1)
+        let err = build_context_report(project.path(), &["duplicate".to_string()], 1, None)
             .expect_err("ambiguous target should fail");
         assert!(
             err.to_string().contains("ambiguous"),
             "unexpected error: {err:#}"
         );
+    }
+
+    #[test]
+    fn context_report_applies_limit_after_deterministic_sort() {
+        let project = tempdir().expect("tempdir");
+        write_context_fixture(project.path());
+
+        let report = build_context_report(
+            project.path(),
+            &["function".to_string(), "process_user".to_string()],
+            2,
+            Some(2),
+        )
+        .expect("context report");
+
+        assert_eq!(report.limit, Some(2));
+        assert_eq!(report.dependencies.len(), 2);
+        assert_eq!(report.callers.len(), 2);
+        assert_eq!(report.related_tests.len(), 1);
+        assert_eq!(report.dependencies[0].name, "AppError");
+        assert_eq!(report.dependencies[1].name, "User");
     }
 }

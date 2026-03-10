@@ -1,0 +1,10 @@
+module demo.context.validators;
+import demo.context.models;
+
+pub fn normalize_age(age: Int) -> Int requires age >= 0 ensures result >= 0 {
+    age
+}
+
+pub fn validate_user(user: User) -> Bool requires user.age >= 0 ensures result == true {
+    normalize_age(user.age) >= 0
+}

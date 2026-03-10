@@ -1,6 +1,6 @@
 # Agent Compiler Protocol v1.0
 
-This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session/patch workflows, semantic symbol query workflows, and fast API-conformance workflows and their compatibility guarantees.
+This document defines machine-facing contracts for parse/ast/check/build/fix/testgen/session/patch workflows, context-window and semantic symbol query workflows, and fast API-conformance workflows and their compatibility guarantees.
 
 ## Version negotiation
 
@@ -30,6 +30,7 @@ Negotiation rules:
 - Validate-call response: `docs/agent-tooling/schemas/validate-call-response.schema.json`
 - Validate-type response: `docs/agent-tooling/schemas/validate-type-response.schema.json`
 - Suggest response: `docs/agent-tooling/schemas/suggest-response.schema.json`
+- Context response: `docs/agent-tooling/schemas/context-response.schema.json`
 - Query response: `docs/agent-tooling/schemas/query-response.schema.json`
 - Symbols response: `docs/agent-tooling/schemas/symbols-response.schema.json`
 - Shared raw diagnostics array: `docs/diagnostics.schema.json`
@@ -48,6 +49,7 @@ Positive fixtures:
 - `examples/agent/protocol_validate_call.json`
 - `examples/agent/protocol_validate_type.json`
 - `examples/agent/protocol_suggest.json`
+- `examples/agent/protocol_context.json`
 - `examples/agent/protocol_query.json`
 - `examples/agent/protocol_symbols.json`
 
@@ -159,6 +161,21 @@ Behavior:
 - `suggest --partial` ranks workspace symbol candidates deterministically by match bucket, edit distance, name-length delta, kind priority, module, name, file, and span
 - performance budget is front-end only: no codegen, execution, artifact writes, or session/daemon mutation
 - default candidate cap is `8`; callers may lower or raise it with `--limit`
+
+## Context-window workflow
+
+Reference command:
+
+```bash
+aic context --project examples/e7/context_query --for function process_user --depth 2 --limit 3 --json
+```
+
+Behavior:
+
+- `context` emits a deterministic focused context envelope with `target`, top-level `signature`, ranked `dependencies[]`, `callers[]`, `contracts`, and `related_tests[]`
+- `--depth` expands transitive call and caller closure predictably; larger values may reveal additional indirect dependencies/callers
+- `--limit` truncates ranked `dependencies[]`, `callers[]`, and `related_tests[]` after deterministic ordering
+- invalid or ambiguous targets return stable non-zero diagnostics instead of partial JSON output
 
 ## Semantic query workflow
 

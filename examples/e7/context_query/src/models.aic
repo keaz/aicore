@@ -1,0 +1,4 @@
+module demo.context.models;
+pub struct User {
+    pub age: Int,
+} invariant age >= 0
