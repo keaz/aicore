@@ -7683,3 +7683,42 @@ fn validate_docs_and_contract_references_are_consistent() {
         "command playbook missing symbols reference"
     );
 }
+
+#[test]
+fn language_feature_playbook_is_discoverable_and_grounded_in_reference_docs() {
+    let root_readme = fs::read_to_string(repo_root().join("README.md")).expect("read README");
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/language-feature-playbook.md"))
+            .expect("read language feature playbook");
+
+    assert!(
+        root_readme.contains("docs/agent-tooling/language-feature-playbook.md"),
+        "root README missing language feature playbook reference"
+    );
+    assert!(
+        tooling_readme.contains("docs/agent-tooling/language-feature-playbook.md"),
+        "agent tooling README missing language feature playbook reference"
+    );
+
+    for expected in [
+        "## Core Features (Issue #322)",
+        "## Advanced Features (Issue #323)",
+        "[`syntax.md`](../reference/syntax.md)",
+        "[`modules.md`](../reference/modules.md)",
+        "[`pattern-matching.md`](../reference/pattern-matching.md)",
+        "[`effects.md`](../reference/effects.md)",
+        "[`docs/diagnostic-codes.md`](../diagnostic-codes.md)",
+        "[`docs/reference/open-issue-contracts.md`](../reference/open-issue-contracts.md)",
+        "aic fmt <file> --check",
+        "aic check <file> --json",
+        "aic ir <entry> --emit json",
+        "aic diff --semantic <old> <new> --fail-on-breaking",
+    ] {
+        assert!(
+            playbook.contains(expected),
+            "language feature playbook missing `{expected}`"
+        );
+    }
+}
