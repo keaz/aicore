@@ -7722,3 +7722,79 @@ fn language_feature_playbook_is_discoverable_and_grounded_in_reference_docs() {
         );
     }
 }
+
+#[test]
+fn command_deep_dive_guides_are_linked_and_cover_bootstrap_editor_and_diff_loops() {
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+    let playbook =
+        fs::read_to_string(repo_root().join("docs/agent-tooling/aic-command-playbook.md"))
+            .expect("read command playbook");
+    let init_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/commands/aic-init.md"))
+        .expect("read aic init guide");
+    let lsp_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/commands/aic-lsp.md"))
+        .expect("read aic lsp guide");
+    let diff_doc = fs::read_to_string(repo_root().join("docs/agent-tooling/commands/aic-diff.md"))
+        .expect("read aic diff guide");
+
+    for path in [
+        "docs/agent-tooling/commands/aic-init.md",
+        "docs/agent-tooling/commands/aic-lsp.md",
+        "docs/agent-tooling/commands/aic-diff.md",
+    ] {
+        assert!(
+            tooling_readme.contains(path),
+            "agent tooling README missing `{path}`"
+        );
+    }
+
+    for link in [
+        "[`aic init`](commands/aic-init.md)",
+        "[`aic lsp`](commands/aic-lsp.md)",
+        "[`aic diff --semantic`](commands/aic-diff.md)",
+    ] {
+        assert!(
+            playbook.contains(link),
+            "command playbook missing deep-dive link `{link}`"
+        );
+    }
+
+    for expected in [
+        "[Agent-First aic Command Playbook](../aic-command-playbook.md)",
+        "Existing files at those paths are overwritten.",
+        "aic check src/main.aic --json",
+        "aic run src/main.aic",
+        "aic lock .",
+    ] {
+        assert!(
+            init_doc.contains(expected),
+            "aic init guide missing `{expected}`"
+        );
+    }
+
+    for expected in [
+        "[`examples/agent/lsp_workflow.json`](../../../examples/agent/lsp_workflow.json)",
+        "JSON-RPC 2.0",
+        "Minimal client launch config (stdio):",
+        "## Deterministic agent loop handoff",
+        "aic check src/main.aic --json",
+    ] {
+        assert!(
+            lsp_doc.contains(expected),
+            "aic lsp guide missing `{expected}`"
+        );
+    }
+
+    for expected in [
+        "[`src/semantic_diff.rs`](../../src/semantic_diff.rs)",
+        "--fail-on-breaking",
+        "## Pre/post refactor snapshot workflow",
+        "aic diff --semantic before/main.aic src/main.aic --fail-on-breaking",
+        "Semantic diff can fail before comparison if parsing/import resolution fails.",
+    ] {
+        assert!(
+            diff_doc.contains(expected),
+            "aic diff guide missing `{expected}`"
+        );
+    }
+}

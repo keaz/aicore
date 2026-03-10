@@ -167,6 +167,6 @@ aic fmt src/main.aic --check
 
 ## Deep dives
 
-- `aic init`: `docs/agent-tooling/commands/aic-init.md`
-- `aic lsp`: `docs/agent-tooling/commands/aic-lsp.md`
-- `aic diff --semantic`: `docs/agent-tooling/commands/aic-diff.md`
+- [`aic init`](commands/aic-init.md)
+- [`aic lsp`](commands/aic-lsp.md)
+- [`aic diff --semantic`](commands/aic-diff.md)
