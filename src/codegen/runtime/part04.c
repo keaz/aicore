@@ -1078,7 +1078,7 @@ static int aic_rt_net_get_nonblocking_state(aic_rt_socket_t fd, int* out_state) 
     if (flags < 0) {
         return errno;
     }
-    *out_state = flags;
+    *out_state = (flags & O_NONBLOCK) != 0 ? 1 : 0;
     return 0;
 }
 
