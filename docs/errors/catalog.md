@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from /Users/kasunranasinghe/Projects/Rust/aicore/src/diagnostic_codes.rs (251 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (251 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -17,8 +17,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 
 `aic explain` covers compiler/runtime diagnostics (`E...`). Module-level secure-networking failures are standardized separately:
 
-- Contract file: `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`
-- Deterministic replay file: `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/postgres-tls-scram-replay.v1.json`
+- Contract file: `docs/errors/secure-networking-error-contract.v1.json`
+- Deterministic replay file: `docs/security-ops/postgres-tls-scram-replay.v1.json`
 - AIC mapping APIs: `std.secure_errors` (`buffer_error_info`, `crypto_error_info`, `tls_error_info`, `pool_error_info`)
 - Compatibility rules:
   - existing `code` values are immutable
@@ -298,5 +298,5 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 
 ## Catalog Coverage Backfill
 
-The following registered diagnostics are included for catalog completeness:
+The following registered diagnostics are included for catalog completeness (including historical compatibility code `E6007`):
 `E1082`, `E1083`, `E1086`, `E1087`, `E1088`, `E1089`, `E1092`, `E1106`, `E1107`, `E1108`, `E1109`, `E6007`.

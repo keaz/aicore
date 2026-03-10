@@ -196,6 +196,48 @@ jobs:
             target/e8/rest-runtime-soak-report-*.json
           if-no-files-found: ignore
 
+  execution-windows-smoke:
+    name: Windows Runtime Smoke
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Process runtime smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_proc_run_pipe_spawn_wait_and_kill -- --exact
+
+      - name: Process runtime env/cwd/timeout smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_proc_run_with_stdin_env_cwd_and_timeout -- --exact
+
+      - name: Process runtime pipe/is-running smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_proc_pipe_chain_is_running_and_current_pid -- --exact
+
+      - name: Net runtime loopback smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_net_tcp_loopback_echo -- --exact
+
+      - name: Net runtime async lifecycle smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_net_async_wait_negative_paths_are_stable -- --exact
+
+      - name: Concurrency runtime smoke
+        shell: pwsh
+        run: cargo test --locked --test execution_tests exec_concurrency_worker_pool_is_deterministic -- --exact
+
+      - name: Windows target net object smoke
+        shell: pwsh
+        run: cargo test --locked --test e7_build_hermetic_tests build_windows_target_allows_net_effect_usage_without_e6007 -- --exact
+
   cross-platform-build:
     name: Cross Platform Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

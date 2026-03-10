@@ -42,7 +42,8 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 
 - Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/retry/concurrency.
 - Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
-- Windows: process runtime APIs are available (spawn/run/wait/kill/is_running/run_with/run_timeout/pipe_chain); network and concurrency runtime paths are still unsupported-style and map deterministically via enum codes.
+- Windows: `std.proc`, `std.net`, and `std.concurrent` use the shared runtime backend and are validated by Windows CI smoke coverage for proc lifecycle, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
+- Windows: `std.tls` remains backend-dependent, and async TLS pressure reporting is still partial (`queue_depth = 0`, `queue_limit = 0`).
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 
 ## Quick-Start Templates

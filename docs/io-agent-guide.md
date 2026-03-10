@@ -7,12 +7,12 @@ It is intentionally deterministic and aligned with current runtime/codegen behav
 
 Before changing IO code:
 
-1. Confirm target APIs in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`.
+1. Confirm target APIs in `docs/io-api-reference.md`.
 2. Confirm effect requirements for all edited functions.
 3. Confirm platform caveats for `std.proc`, `std.net`, and `std.tls`.
-4. Confirm TLS policy contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/tls-policy.v1.json`.
-5. Confirm unified secure error contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/errors/secure-networking-error-contract.v1.json`.
-6. Confirm Postgres TLS/SCRAM deterministic replay contract in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/security-ops/postgres-tls-scram-replay.v1.json`.
+4. Confirm TLS policy contract in `docs/security-ops/tls-policy.v1.json`.
+5. Confirm unified secure error contract in `docs/errors/secure-networking-error-contract.v1.json`.
+6. Confirm Postgres TLS/SCRAM deterministic replay contract in `docs/security-ops/postgres-tls-scram-replay.v1.json`.
 
 ## 2. Effect-First Authoring
 
@@ -46,15 +46,12 @@ Treat error enums as control-flow boundaries, not exceptions.
 
 - Linux/macOS:
   - full runtime behavior for documented `std.io/fs/env/path/time/rand`.
-  - `std.proc` and `std.net` implementations are active.
+  - `std.proc`, `std.net`, and `std.concurrent` implementations are active.
 - Windows:
-  - `aic build --target x86_64-windows` rejects non-std `net`/`tls` usage at check time with `E6007`.
-  - Direct unsupported runtime paths still map `std.net` failures to `NetError::Io`.
-  - Direct unsupported runtime paths still map `std.tls` failures to `TlsError::ProtocolError`.
-  - `std.proc` partial behavior:
-    - `run`, `pipe`, `current_pid` available.
-    - `spawn`, `run_with`, `run_timeout`, `pipe_chain` return `ProcError::Io`.
-    - `wait`, `kill`, `is_running` return `ProcError::UnknownProcess`.
+  - `aic build --target x86_64-windows` allows non-std `net`/`tls` usage; the backend links `ws2_32` and uses the shared proc/net/concurrency runtime.
+  - Windows CI smoke covers `std.proc` lifecycle paths, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
+  - `std.tls` remains backend-dependent; async TLS APIs stay partial where backend availability or pressure accounting is not yet uniform.
+  - `std.signal` remains unsupported and returns `SignalError::UnsupportedPlatform`.
 - Postgres TLS/SCRAM replay reference (`examples/io/postgres_tls_scram_reference.aic`):
   - deterministic and CI-safe (no external network dependency).
   - secure-flow error compatibility still maps via `PoolErrorContract` when normalizing into `std.secure_errors`.
@@ -110,4 +107,4 @@ When `std/*.aic` changes (for example #122 API work):
 1. Regenerate baseline:
    - `cargo run --quiet --bin aic -- std-compat > docs/std-api-baseline.json`
 2. Re-run docs/examples checks.
-3. Update signatures in `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md` and recipe references as needed.
+3. Update signatures in `docs/io-api-reference.md` and recipe references as needed.

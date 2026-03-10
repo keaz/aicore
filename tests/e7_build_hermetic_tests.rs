@@ -44,8 +44,8 @@ fn write_wasm_io_fixture_source(root: &Path) -> PathBuf {
     source
 }
 
-fn write_windows_net_guard_fixture_source(root: &Path) -> PathBuf {
-    let source = root.join("windows_net_guard.aic");
+fn write_windows_net_fixture_source(root: &Path) -> PathBuf {
+    let source = root.join("windows_net_fixture.aic");
     fs::write(
         &source,
         concat!(
@@ -56,7 +56,7 @@ fn write_windows_net_guard_fixture_source(root: &Path) -> PathBuf {
             "}\n",
         ),
     )
-    .expect("write windows net guard fixture source");
+    .expect("write windows net fixture source");
     source
 }
 
@@ -81,6 +81,37 @@ fn assert_wasm_build_succeeded_or_skip(run: &std::process::Output) -> bool {
     }
     panic!(
         "wasm build failed:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&run.stdout),
+        stderr
+    );
+}
+
+fn windows_target_unavailable(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("windows.h' file not found")
+        || lower.contains("winsock2.h' file not found")
+        || lower.contains("ws2tcpip.h' file not found")
+        || (lower.contains("x86_64-pc-windows-msvc")
+            && (lower.contains("unknown target")
+                || lower.contains("unable to create target")
+                || lower.contains("is not a valid target")
+                || lower.contains("unable to find vc")
+                || lower.contains("linker command failed")))
+}
+
+fn assert_windows_target_build_succeeded_or_skip(run: &std::process::Output) -> bool {
+    if run.status.success() {
+        return true;
+    }
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    if windows_target_unavailable(&stderr) {
+        eprintln!(
+            "skipping windows target build test; toolchain does not support windows target here: {stderr}"
+        );
+        return false;
+    }
+    panic!(
+        "windows target build failed:\nstdout={}\nstderr={}",
         String::from_utf8_lossy(&run.stdout),
         stderr
     );
@@ -313,48 +344,36 @@ fn build_rejects_static_link_for_non_linux_target() {
 }
 
 #[test]
-fn build_windows_target_rejects_net_effect_usage_with_e6007() {
+fn build_windows_target_allows_net_effect_usage_without_e6007() {
     let dir = tempdir().expect("temp dir");
-    let input = write_windows_net_guard_fixture_source(dir.path());
-    let output = dir.path().join("demo-windows-net");
+    let input = write_windows_net_fixture_source(dir.path());
+    let output = dir.path().join("demo-windows-net.o");
 
     let input_arg = input.to_string_lossy().to_string();
     let output_arg = output.to_string_lossy().to_string();
     let args = vec![
         "build",
         input_arg.as_str(),
+        "--artifact",
+        "obj",
         "-o",
         output_arg.as_str(),
         "--target",
         "x86_64-windows",
     ];
     let run = run_aic_in_dir(dir.path(), &args);
-    assert_eq!(
-        run.status.code(),
-        Some(1),
-        "expected diagnostic failure\nstdout={}\nstderr={}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    );
-
-    let stdout = String::from_utf8_lossy(&run.stdout);
+    if !assert_windows_target_build_succeeded_or_skip(&run) {
+        return;
+    }
     assert!(
-        stdout.contains("E6007"),
-        "expected E6007 in diagnostics:\n{stdout}"
-    );
-    assert!(
-        stdout
-            .contains("target `x86_64-windows` does not currently support net/TLS runtime parity"),
-        "expected Windows net/TLS guard message in diagnostics:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("functions requiring `net`"),
-        "expected net offender hint in diagnostics:\n{stdout}"
-    );
-    assert!(
-        !output.exists(),
-        "guard should fail before writing output artifact at {}",
+        output.exists(),
+        "expected windows object artifact at {}",
         output.display()
+    );
+    let metadata = fs::metadata(&output).expect("windows object metadata");
+    assert!(
+        metadata.len() > 0,
+        "windows object artifact should be non-empty"
     );
 }
 

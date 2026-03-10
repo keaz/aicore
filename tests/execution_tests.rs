@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use aicore::codegen::{
@@ -54,6 +54,70 @@ where
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
 
     setup(dir.path());
+    let mut command = Command::new(exe);
+    command
+        .current_dir(dir.path())
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    let mut child = command.spawn().expect("run exe");
+    {
+        let mut stdin = child.stdin.take().expect("child stdin");
+        stdin
+            .write_all(stdin_input.as_bytes())
+            .expect("write stdin");
+    }
+    let output = child.wait_with_output().expect("run exe");
+    (
+        output.status.code().unwrap_or(1),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+struct ChildGuard(Option<Child>);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn compile_and_run_with_server_setup_and_args_and_input_and_env<F>(
+    source: &str,
+    args: &[&str],
+    stdin_input: &str,
+    envs: &[(&str, &str)],
+    setup: F,
+) -> (i32, String, String)
+where
+    F: FnOnce(&Path) -> Option<Child>,
+{
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("main.aic");
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+
+    let exe = dir.path().join("app");
+    compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
+
+    let _server_guard = ChildGuard(setup(dir.path()));
     let mut command = Command::new(exe);
     command
         .current_dir(dir.path())
@@ -185,6 +249,73 @@ fn openssl_cli_available_for_tests() -> bool {
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
+}
+
+fn generate_local_tls_cert(root: &Path) {
+    let cert_path = root.join("tls_cert.pem");
+    let key_path = root.join("tls_key.pem");
+    let req_status = Command::new("openssl")
+        .current_dir(root)
+        .args([
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-sha256",
+            "-nodes",
+            "-days",
+            "8",
+            "-subj",
+            "/CN=localhost",
+            "-keyout",
+            key_path.to_str().expect("key path"),
+            "-out",
+            cert_path.to_str().expect("cert path"),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("generate tls cert");
+    assert!(req_status.success(), "openssl req failed");
+}
+
+fn spawn_local_tls_server(root: &Path, port: u16, www: bool) -> Child {
+    let mut args = vec![
+        "s_server".to_string(),
+        "-accept".to_string(),
+        port.to_string(),
+        "-cert".to_string(),
+        "tls_cert.pem".to_string(),
+        "-key".to_string(),
+        "tls_key.pem".to_string(),
+    ];
+    if www {
+        args.push("-www".to_string());
+    }
+    args.push("-quiet".to_string());
+
+    Command::new("openssl")
+        .current_dir(root)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("start tls server")
+}
+
+fn wait_for_local_tls_server(port: u16, server: &mut Child) {
+    let addr = format!("127.0.0.1:{port}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if std::net::TcpStream::connect(&addr).is_ok() {
+            return;
+        }
+        if let Some(status) = server.try_wait().expect("poll tls server") {
+            panic!("openssl s_server exited early: {status}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("openssl s_server did not start listening on {addr}");
 }
 
 fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
@@ -4459,7 +4590,6 @@ fn main() -> Int effects { io, time } capabilities { io, time  } {
     assert_eq!(stdout, "42\n");
 }
 
-#[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_concurrency_worker_pool_is_deterministic() {
     let src = r#"
@@ -6706,7 +6836,6 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
     assert_eq!(stdout, "");
 }
 
-#[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_net_tcp_loopback_echo() {
     let src = r#"
@@ -8242,7 +8371,6 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     assert_eq!(stdout, "42\n", "stderr={stderr}");
 }
 
-#[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_net_timeout_and_invalid_input_errors_are_stable() {
     let src = r#"
@@ -8412,7 +8540,6 @@ fn main() -> Int effects { io, net } capabilities { io, net  } {
     assert_eq!(stdout, "53\n");
 }
 
-#[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_net_async_wait_negative_paths_are_stable() {
     let src = r#"
@@ -13532,67 +13659,15 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
         ("AIC_TLS_CA_PATH", cert_env.as_str()),
     ];
     let (code, stdout, stderr) =
-        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
             if !(backend_enabled && openssl_cli_available) {
-                return;
+                return None;
             }
 
-            let cert_path = root.join("tls_cert.pem");
-            let key_path = root.join("tls_key.pem");
-            let req_status = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-sha256",
-                    "-nodes",
-                    "-days",
-                    "8",
-                    "-subj",
-                    "/CN=localhost",
-                    "-keyout",
-                    key_path.to_str().expect("key path"),
-                    "-out",
-                    cert_path.to_str().expect("cert path"),
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .expect("generate tls cert");
-            assert!(req_status.success(), "openssl req failed");
-
-            let accept_count = "8".to_string();
-            let port_flag = port.to_string();
-            let _server = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "s_server",
-                    "-accept",
-                    port_flag.as_str(),
-                    "-cert",
-                    "tls_cert.pem",
-                    "-key",
-                    "tls_key.pem",
-                    "-www",
-                    "-naccept",
-                    accept_count.as_str(),
-                    "-quiet",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("start tls server");
-
-            let addr = format!("127.0.0.1:{port}");
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                if std::net::TcpStream::connect(&addr).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
         });
     assert_eq!(code, 0, "stderr={stderr}");
     if backend_enabled && openssl_cli_available {
@@ -13696,62 +13771,11 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
     let addr_env = format!("127.0.0.1:{port}");
     let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
     let (code, stdout, stderr) =
-        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
-            let cert_path = root.join("tls_cert.pem");
-            let key_path = root.join("tls_key.pem");
-            let req_status = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-sha256",
-                    "-nodes",
-                    "-days",
-                    "8",
-                    "-subj",
-                    "/CN=localhost",
-                    "-keyout",
-                    key_path.to_str().expect("key path"),
-                    "-out",
-                    cert_path.to_str().expect("cert path"),
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .expect("generate tls cert");
-            assert!(req_status.success(), "openssl req failed");
-
-            let port_flag = port.to_string();
-            let _server = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "s_server",
-                    "-accept",
-                    port_flag.as_str(),
-                    "-cert",
-                    "tls_cert.pem",
-                    "-key",
-                    "tls_key.pem",
-                    "-www",
-                    "-naccept",
-                    "8",
-                    "-quiet",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("start tls server");
-
-            let addr = format!("127.0.0.1:{port}");
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                if std::net::TcpStream::connect(&addr).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
         });
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
@@ -13867,61 +13891,11 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
     let addr_env = format!("127.0.0.1:{port}");
     let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
     let (code, stdout, stderr) =
-        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
-            let cert_path = root.join("tls_cert.pem");
-            let key_path = root.join("tls_key.pem");
-            let req_status = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-sha256",
-                    "-nodes",
-                    "-days",
-                    "8",
-                    "-subj",
-                    "/CN=localhost",
-                    "-keyout",
-                    key_path.to_str().expect("key path"),
-                    "-out",
-                    cert_path.to_str().expect("cert path"),
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .expect("generate tls cert");
-            assert!(req_status.success(), "openssl req failed");
-
-            let port_flag = port.to_string();
-            let _server = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "s_server",
-                    "-accept",
-                    port_flag.as_str(),
-                    "-cert",
-                    "tls_cert.pem",
-                    "-key",
-                    "tls_key.pem",
-                    "-naccept",
-                    "2",
-                    "-quiet",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("start tls server");
-
-            let addr = format!("127.0.0.1:{port}");
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                if std::net::TcpStream::connect(&addr).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
         });
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
@@ -14766,61 +14740,11 @@ fn main() -> Int effects { io, env, net, concurrency } capabilities { io, env, n
         ("AIC_RT_LIMIT_NET_HANDLES", "8"),
     ];
     let (code, stdout, stderr) =
-        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
-            let cert_path = root.join("tls_cert.pem");
-            let key_path = root.join("tls_key.pem");
-            let req_status = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-sha256",
-                    "-nodes",
-                    "-days",
-                    "8",
-                    "-subj",
-                    "/CN=localhost",
-                    "-keyout",
-                    key_path.to_str().expect("key path"),
-                    "-out",
-                    cert_path.to_str().expect("cert path"),
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .expect("generate tls cert");
-            assert!(req_status.success(), "openssl req failed");
-
-            let port_flag = port.to_string();
-            let _server = Command::new("openssl")
-                .current_dir(root)
-                .args([
-                    "s_server",
-                    "-accept",
-                    port_flag.as_str(),
-                    "-cert",
-                    "tls_cert.pem",
-                    "-key",
-                    "tls_key.pem",
-                    "-naccept",
-                    "64",
-                    "-quiet",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("start tls server");
-
-            let addr = format!("127.0.0.1:{port}");
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                if std::net::TcpStream::connect(&addr).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
         });
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");

@@ -99,7 +99,7 @@ Recent core-language additions:
 - `E6004`: unused import warning with safe remove-import autofix.
 - `E6005`: unreachable/unused function warning.
 - `E6006`: unused variable warning with safe underscore-prefix autofix.
-- `E6007`: Windows build target net/TLS strategy guard (compile-time policy diagnostic).
+- `E6007`: historical Windows build target net/TLS strategy guard (retained for compatibility; not emitted after Windows parity landed).
 
 ## IO + Runtime Quick Reference
 
@@ -126,7 +126,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |
-| `E6007` | Windows-target build includes non-std `net` effect usage while net/TLS runtime parity is unavailable. | Remove `net` usage for Windows artifacts or build for linux/macos until parity lands. |
+| `E6007` | Historical compatibility code for the retired Windows net/TLS build guard. Current builds should not emit it after Windows parity landed. | If it appears, you are likely using stale tooling or stale generated artifacts; rebuild with the current compiler/runtime. |
 
 ## Change policy
 

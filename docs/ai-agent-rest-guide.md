@@ -74,7 +74,7 @@ This matrix captures implementation state as of the current code/tests and shoul
 | Net async reactor APIs (`async_*`) | Supported | `std/net.aic` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable` |
 | `await` submit bridge for async net handles | Supported | execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` + example `examples/io/async_await_submit_bridge.aic` |
 | TLS async reactor APIs (`tls_async_*`) | Partial | API + runtime paths exist; pressure queue fields are fixed zero and full handshake behavior depends on TLS backend availability in tests |
-| REST/async runtime on Windows | Unsupported | Windows runtime stubs in `part04.c` return deterministic errors; REST/async execution tests are `#[cfg(not(target_os = "windows"))]` |
+| REST/async runtime on Windows | Partial | Shared Windows net/async runtime support now backs client-library transport flows and Windows CI smoke coverage (`exec_net_tcp_loopback_echo`, `exec_net_async_wait_negative_paths_are_stable`), but native async HTTP server APIs still do not exist |
 
 ## 4. Deterministic End-To-End Workflow
 

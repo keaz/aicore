@@ -848,867 +848,14 @@ long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size) {
 }
 #endif
 
-#ifdef _WIN32
-long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_listen", 2);
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    if (out_handle != NULL) {
-        *out_handle = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_local_addr", 2);
-    (void)handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_accept", 2);
-    (void)listener;
-    (void)timeout_ms;
-    if (out_handle != NULL) {
-        *out_handle = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_connect(
-    const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    long timeout_ms,
-    long* out_handle
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_connect", 2);
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    (void)timeout_ms;
-    if (out_handle != NULL) {
-        *out_handle = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_send(
-    long handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_send", 2);
-    (void)handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    if (out_sent != NULL) {
-        *out_sent = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_send_timeout(
-    long handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_send_timeout", 2);
-    (void)handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    (void)timeout_ms;
-    if (out_sent != NULL) {
-        *out_sent = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_recv(
-    long handle,
-    long max_bytes,
-    long timeout_ms,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_recv", 2);
-    (void)handle;
-    (void)max_bytes;
-    (void)timeout_ms;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_close(long handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_close", 2);
-    (void)handle;
-    return 7;
-}
-
-long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_nodelay", 2);
-    (void)handle;
-    (void)enabled;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_nodelay", 2);
-    (void)handle;
-    if (out_enabled != NULL) {
-        *out_enabled = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive", 2);
-    (void)handle;
-    (void)enabled;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive", 2);
-    (void)handle;
-    if (out_enabled != NULL) {
-        *out_enabled = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_idle_secs", 2);
-    (void)handle;
-    (void)idle_secs;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_idle_secs", 2);
-    (void)handle;
-    if (out_idle_secs != NULL) {
-        *out_idle_secs = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_interval_secs", 2);
-    (void)handle;
-    (void)interval_secs;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_secs) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_interval_secs", 2);
-    (void)handle;
-    if (out_interval_secs != NULL) {
-        *out_interval_secs = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_count", 2);
-    (void)handle;
-    (void)probe_count;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_count", 2);
-    (void)handle;
-    if (out_probe_count != NULL) {
-        *out_probe_count = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_peer_addr", 2);
-    (void)handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_shutdown(long handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown", 2);
-    (void)handle;
-    return 7;
-}
-
-long aic_rt_net_tcp_shutdown_read(long handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_read", 2);
-    (void)handle;
-    return 7;
-}
-
-long aic_rt_net_tcp_shutdown_write(long handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_write", 2);
-    (void)handle;
-    return 7;
-}
-
-long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_send_buffer_size", 2);
-    (void)handle;
-    (void)size_bytes;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_send_buffer_size", 2);
-    (void)handle;
-    if (out_size_bytes != NULL) {
-        *out_size_bytes = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_set_recv_buffer_size", 2);
-    (void)handle;
-    (void)size_bytes;
-    return 7;
-}
-
-long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
-    AIC_RT_SANDBOX_BLOCK_NET("tcp_get_recv_buffer_size", 2);
-    (void)handle;
-    if (out_size_bytes != NULL) {
-        *out_size_bytes = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("udp_bind", 2);
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    if (out_handle != NULL) {
-        *out_handle = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("udp_local_addr", 2);
-    (void)handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_udp_send_to(
-    long handle,
-    const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("udp_send_to", 2);
-    (void)handle;
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    if (out_sent != NULL) {
-        *out_sent = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_udp_recv_from(
-    long handle,
-    long max_bytes,
-    long timeout_ms,
-    char** out_from_ptr,
-    long* out_from_len,
-    char** out_payload_ptr,
-    long* out_payload_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("udp_recv_from", 2);
-    (void)handle;
-    (void)max_bytes;
-    (void)timeout_ms;
-    if (out_from_ptr != NULL) {
-        *out_from_ptr = NULL;
-    }
-    if (out_from_len != NULL) {
-        *out_from_len = 0;
-    }
-    if (out_payload_ptr != NULL) {
-        *out_payload_ptr = NULL;
-    }
-    if (out_payload_len != NULL) {
-        *out_payload_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_udp_close(long handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("udp_close", 2);
-    (void)handle;
-    return 7;
-}
-
-long aic_rt_net_dns_lookup(
-    const char* host_ptr,
-    long host_len,
-    long host_cap,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
-    (void)host_ptr;
-    (void)host_len;
-    (void)host_cap;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_dns_lookup_all(
-    const char* host_ptr,
-    long host_len,
-    long host_cap,
-    char** out_ptr,
-    long* out_count
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("dns_lookup_all", 2);
-    (void)host_ptr;
-    (void)host_len;
-    (void)host_cap;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_count != NULL) {
-        *out_count = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_dns_reverse(
-    const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("dns_reverse", 2);
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_accept_submit", 2);
-    (void)listener;
-    (void)timeout_ms;
-    if (out_op != NULL) {
-        *out_op = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_send_submit(
-    long handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_op
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_send_submit", 2);
-    (void)handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    if (out_op != NULL) {
-        *out_op = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, long* out_op) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_recv_submit", 2);
-    (void)handle;
-    (void)max_bytes;
-    (void)timeout_ms;
-    if (out_op != NULL) {
-        *out_op = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_wait_int", 2);
-    (void)op_handle;
-    (void)timeout_ms;
-    if (out_value != NULL) {
-        *out_value = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_wait_string(
-    long op_handle,
-    long timeout_ms,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_wait_string", 2);
-    (void)op_handle;
-    (void)timeout_ms;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_cancel", 2);
-    (void)op_handle;
-    if (out_cancelled != NULL) {
-        *out_cancelled = 0;
-    }
-    return 7;
-}
-
-long aic_rt_net_async_shutdown(void) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
-    return 7;
-}
-
-long aic_rt_net_async_pressure(
-    long* out_active_ops,
-    long* out_queue_depth,
-    long* out_op_limit,
-    long* out_queue_limit
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("async_pressure", 2);
-    if (out_active_ops != NULL) {
-        *out_active_ops = 0;
-    }
-    if (out_queue_depth != NULL) {
-        *out_queue_depth = 0;
-    }
-    if (out_op_limit != NULL) {
-        *out_op_limit = 0;
-    }
-    if (out_queue_limit != NULL) {
-        *out_queue_limit = 0;
-    }
-    return 7;
-}
-
-long aic_rt_tls_async_send_submit(
-    long tls_handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_op
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_send_submit", 2);
-    (void)tls_handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    (void)timeout_ms;
-    if (out_op != NULL) {
-        *out_op = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_async_recv_submit(
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
-    long* out_op
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_recv_submit", 2);
-    (void)tls_handle;
-    (void)max_bytes;
-    (void)timeout_ms;
-    if (out_op != NULL) {
-        *out_op = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_int", 2);
-    (void)op_handle;
-    (void)timeout_ms;
-    if (out_value != NULL) {
-        *out_value = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_async_wait_string(
-    long op_handle,
-    long timeout_ms,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_string", 2);
-    (void)op_handle;
-    (void)timeout_ms;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_cancel", 2);
-    (void)op_handle;
-    if (out_cancelled != NULL) {
-        *out_cancelled = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_async_shutdown(void) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
-    return 5;
-}
-
-long aic_rt_tls_async_pressure(
-    long* out_active_ops,
-    long* out_queue_depth,
-    long* out_op_limit,
-    long* out_queue_limit
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_async_pressure", 2);
-    if (out_active_ops != NULL) {
-        *out_active_ops = 0;
-    }
-    if (out_queue_depth != NULL) {
-        *out_queue_depth = 0;
-    }
-    if (out_op_limit != NULL) {
-        *out_op_limit = 0;
-    }
-    if (out_queue_limit != NULL) {
-        *out_queue_limit = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_connect(
-    long tcp_handle,
-    long verify_server,
-    const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
-    const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
-    const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
-    const char* server_name_ptr,
-    long server_name_len,
-    long server_name_cap,
-    long has_server_name,
-    long* out_tls_handle
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_connect", 2);
-    (void)tcp_handle;
-    (void)verify_server;
-    (void)ca_cert_ptr;
-    (void)ca_cert_len;
-    (void)ca_cert_cap;
-    (void)has_ca_cert;
-    (void)client_cert_ptr;
-    (void)client_cert_len;
-    (void)client_cert_cap;
-    (void)has_client_cert;
-    (void)client_key_ptr;
-    (void)client_key_len;
-    (void)client_key_cap;
-    (void)has_client_key;
-    (void)server_name_ptr;
-    (void)server_name_len;
-    (void)server_name_cap;
-    (void)has_server_name;
-    if (out_tls_handle != NULL) {
-        *out_tls_handle = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_connect_addr(
-    const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    long verify_server,
-    const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
-    const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
-    const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
-    const char* server_name_ptr,
-    long server_name_len,
-    long server_name_cap,
-    long has_server_name,
-    long timeout_ms,
-    long* out_tls_handle
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_connect_addr", 2);
-    (void)addr_ptr;
-    (void)addr_len;
-    (void)addr_cap;
-    (void)verify_server;
-    (void)ca_cert_ptr;
-    (void)ca_cert_len;
-    (void)ca_cert_cap;
-    (void)has_ca_cert;
-    (void)client_cert_ptr;
-    (void)client_cert_len;
-    (void)client_cert_cap;
-    (void)has_client_cert;
-    (void)client_key_ptr;
-    (void)client_key_len;
-    (void)client_key_cap;
-    (void)has_client_key;
-    (void)server_name_ptr;
-    (void)server_name_len;
-    (void)server_name_cap;
-    (void)has_server_name;
-    (void)timeout_ms;
-    if (out_tls_handle != NULL) {
-        *out_tls_handle = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_accept(
-    long listener_handle,
-    long verify_server,
-    const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
-    const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
-    const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
-    long timeout_ms,
-    long* out_tls_handle
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_accept", 2);
-    (void)listener_handle;
-    (void)verify_server;
-    (void)ca_cert_ptr;
-    (void)ca_cert_len;
-    (void)ca_cert_cap;
-    (void)has_ca_cert;
-    (void)client_cert_ptr;
-    (void)client_cert_len;
-    (void)client_cert_cap;
-    (void)has_client_cert;
-    (void)client_key_ptr;
-    (void)client_key_len;
-    (void)client_key_cap;
-    (void)has_client_key;
-    (void)timeout_ms;
-    if (out_tls_handle != NULL) {
-        *out_tls_handle = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_send(
-    long tls_handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_send", 2);
-    (void)tls_handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    if (out_sent != NULL) {
-        *out_sent = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_send_timeout(
-    long tls_handle,
-    const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_send_timeout", 2);
-    (void)tls_handle;
-    (void)payload_ptr;
-    (void)payload_len;
-    (void)payload_cap;
-    (void)timeout_ms;
-    if (out_sent != NULL) {
-        *out_sent = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_recv(
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
-    char** out_ptr,
-    long* out_len
-) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_recv", 2);
-    (void)tls_handle;
-    (void)max_bytes;
-    (void)timeout_ms;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_close(long tls_handle) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_close", 2);
-    (void)tls_handle;
-    return 5;
-}
-
-long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_subject", 2);
-    (void)tls_handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_peer_issuer(long tls_handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_issuer", 2);
-    (void)tls_handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_peer_fingerprint_sha256(long tls_handle, char** out_ptr, long* out_len) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_fingerprint_sha256", 2);
-    (void)tls_handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_len != NULL) {
-        *out_len = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_count) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_peer_san_entries", 2);
-    (void)tls_handle;
-    if (out_ptr != NULL) {
-        *out_ptr = NULL;
-    }
-    if (out_count != NULL) {
-        *out_count = 0;
-    }
-    return 5;
-}
-
-long aic_rt_tls_version(long tls_handle, long* out_version) {
-    AIC_RT_SANDBOX_BLOCK_NET("tls_version", 2);
-    (void)tls_handle;
-    if (out_version != NULL) {
-        *out_version = 0;
-    }
-    return 5;
-}
+#if defined(_WIN32) && !defined(AIC_RT_WINDOWS_SHARED_RUNTIME)
+#error "AIC runtime Windows support requires AIC_RT_WINDOWS_SHARED_RUNTIME before part04 net runtime"
 #else
+static int aic_rt_net_socket_ensure_initialized(void);
+static int aic_rt_net_last_socket_error(void);
+static int aic_rt_net_get_nonblocking_state(aic_rt_socket_t fd, int* out_state);
+static int aic_rt_net_set_nonblocking_state(aic_rt_socket_t fd, int enabled);
+
 static long aic_rt_net_map_errno(int err) {
     switch (err) {
         case ENOENT:
@@ -1716,6 +863,28 @@ static long aic_rt_net_map_errno(int err) {
         case EACCES:
         case EPERM:
             return 2;  // PermissionDenied
+#ifdef _WIN32
+        case WSAEACCES:
+            return 2;  // PermissionDenied
+        case WSAECONNREFUSED:
+            return 3;  // Refused
+        case WSAETIMEDOUT:
+        case WSAEWOULDBLOCK:
+        case WSAEINPROGRESS:
+            return 4;  // Timeout
+        case WSAEADDRINUSE:
+            return 5;  // AddressInUse
+        case WSAECONNRESET:
+        case WSAESHUTDOWN:
+        case WSAENOTCONN:
+            return 8;  // ConnectionClosed
+        case WSAEINVAL:
+        case WSAEAFNOSUPPORT:
+        case WSAENOTSOCK:
+        case WSAEDESTADDRREQ:
+        case WSAEPROTOTYPE:
+            return 6;  // InvalidInput
+#endif
 #ifdef ECONNREFUSED
         case ECONNREFUSED:
             return 3;  // Refused
@@ -1804,7 +973,11 @@ static long aic_rt_net_map_gai_error(int err) {
 #endif
 #ifdef EAI_SYSTEM
         case EAI_SYSTEM:
-            return aic_rt_net_map_errno(errno);
+#ifdef _WIN32
+            return aic_rt_net_map_errno(WSAGetLastError());
+#else
+            return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
+#endif
 #endif
         default:
             return 7;  // Io
@@ -1818,7 +991,7 @@ static long aic_rt_net_map_gai_error(int err) {
 
 typedef struct {
     int active;
-    int fd;
+    aic_rt_socket_t fd;
     int kind;
 } AicNetSlot;
 
@@ -1839,19 +1012,108 @@ static void aic_rt_net_limits_ensure(void) {
     (void)pthread_once(&aic_rt_net_limits_once, aic_rt_net_limits_init);
 }
 
+#ifdef _WIN32
+static INIT_ONCE aic_rt_net_winsock_once = INIT_ONCE_STATIC_INIT;
+static int aic_rt_net_winsock_ready = 0;
+
+static BOOL CALLBACK aic_rt_net_winsock_once_callback(
+    PINIT_ONCE init_once,
+    PVOID parameter,
+    PVOID* context
+) {
+    (void)init_once;
+    (void)parameter;
+    (void)context;
+    WSADATA data;
+    aic_rt_net_winsock_ready = (WSAStartup(MAKEWORD(2, 2), &data) == 0) ? 1 : 0;
+    return TRUE;
+}
+
+static int aic_rt_net_socket_ensure_initialized(void) {
+    if (!InitOnceExecuteOnce(
+            &aic_rt_net_winsock_once,
+            aic_rt_net_winsock_once_callback,
+            NULL,
+            NULL
+        )) {
+        return 0;
+    }
+    return aic_rt_net_winsock_ready;
+}
+
+static int aic_rt_net_last_socket_error(void) {
+    return WSAGetLastError();
+}
+
+static int aic_rt_net_get_nonblocking_state(aic_rt_socket_t fd, int* out_state) {
+    (void)fd;
+    if (out_state == NULL) {
+        return EINVAL;
+    }
+    *out_state = 0;
+    return 0;
+}
+
+static int aic_rt_net_set_nonblocking_state(aic_rt_socket_t fd, int enabled) {
+    u_long mode = enabled ? 1UL : 0UL;
+    if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
+        return aic_rt_net_last_socket_error();
+    }
+    return 0;
+}
+#else
+static int aic_rt_net_socket_ensure_initialized(void) {
+    return 1;
+}
+
+static int aic_rt_net_last_socket_error(void) {
+    return errno;
+}
+
+static int aic_rt_net_get_nonblocking_state(aic_rt_socket_t fd, int* out_state) {
+    if (out_state == NULL) {
+        return EINVAL;
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return errno;
+    }
+    *out_state = flags;
+    return 0;
+}
+
+static int aic_rt_net_set_nonblocking_state(aic_rt_socket_t fd, int enabled) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return errno;
+    }
+    int next = enabled ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+    if (fcntl(fd, F_SETFL, next) != 0) {
+        return errno;
+    }
+    return 0;
+}
+#endif
+
 static void aic_rt_net_reset_slot(AicNetSlot* slot) {
     if (slot == NULL) {
         return;
     }
     slot->active = 0;
-    slot->fd = -1;
+    slot->fd = AIC_RT_INVALID_SOCKET;
     slot->kind = 0;
 }
 
-static long aic_rt_net_close_fd(int fd) {
-    if (close(fd) != 0) {
-        return aic_rt_net_map_errno(errno);
+static long aic_rt_net_close_fd(aic_rt_socket_t fd) {
+#ifdef _WIN32
+    if (closesocket(fd) != 0) {
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
+#else
+    if (close(fd) != 0) {
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
+    }
+#endif
     return 0;
 }
 
@@ -1867,7 +1129,7 @@ static AicNetSlot* aic_rt_net_get_slot(long handle) {
     return slot;
 }
 
-static long aic_rt_net_alloc_handle(int fd, int kind, long* out_handle) {
+static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -1887,9 +1149,12 @@ static long aic_rt_net_alloc_handle(int fd, int kind, long* out_handle) {
     return 7;
 }
 
-static long aic_rt_net_wait_fd(int fd, int want_read, long timeout_ms) {
+static long aic_rt_net_wait_fd(aic_rt_socket_t fd, int want_read, long timeout_ms) {
     if (timeout_ms < 0) {
         return 6;
+    }
+    if (!aic_rt_net_socket_ensure_initialized()) {
+        return 7;
     }
 
     fd_set read_set;
@@ -1906,12 +1171,22 @@ static long aic_rt_net_wait_fd(int fd, int want_read, long timeout_ms) {
     tv.tv_sec = (time_t)(timeout_ms / 1000);
     tv.tv_usec = (suseconds_t)((timeout_ms % 1000) * 1000);
 
-    int rc = select(fd + 1, want_read ? &read_set : NULL, want_read ? NULL : &write_set, NULL, &tv);
+#ifdef _WIN32
+    int rc = select(0, want_read ? &read_set : NULL, want_read ? NULL : &write_set, NULL, &tv);
+#else
+    int rc = select(
+        (int)fd + 1,
+        want_read ? &read_set : NULL,
+        want_read ? NULL : &write_set,
+        NULL,
+        &tv
+    );
+#endif
     if (rc == 0) {
         return 4;
     }
     if (rc < 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 }
@@ -1982,6 +1257,9 @@ static long aic_rt_net_resolve(
         return 6;
     }
     *out = NULL;
+    if (!aic_rt_net_socket_ensure_initialized()) {
+        return 7;
+    }
     if (port == NULL || port[0] == '\0') {
         return 6;
     }
@@ -2006,6 +1284,9 @@ static long aic_rt_net_resolve(
 
 static char* aic_rt_net_format_sockaddr(const struct sockaddr* addr, socklen_t addr_len) {
     if (addr == NULL) {
+        return NULL;
+    }
+    if (!aic_rt_net_socket_ensure_initialized()) {
         return NULL;
     }
     char host[NI_MAXHOST];
@@ -2103,7 +1384,7 @@ typedef struct {
     long out_int;
     char* out_string_ptr;
     long out_string_len;
-    int reactor_fd;
+    aic_rt_socket_t reactor_fd;
     int reactor_events;
     int nonblocking_held;
     long send_progress;
@@ -2113,7 +1394,7 @@ typedef struct {
 } AicNetAsyncOp;
 
 typedef struct {
-    int fd;
+    aic_rt_socket_t fd;
     int events;
     int ready;
 } AicNetAsyncWatcher;
@@ -2182,7 +1463,7 @@ static void aic_rt_net_async_reset_op(AicNetAsyncOp* op) {
     op->err_code = 0;
     op->out_int = 0;
     op->out_string_len = 0;
-    op->reactor_fd = -1;
+    op->reactor_fd = AIC_RT_INVALID_SOCKET;
     op->reactor_events = 0;
     op->nonblocking_held = 0;
     op->send_progress = 0;
@@ -2194,7 +1475,7 @@ static int aic_rt_net_async_make_deadline(long timeout_ms, struct timespec* out_
         return EINVAL;
     }
     if (clock_gettime(CLOCK_REALTIME, out_deadline) != 0) {
-        return errno;
+        return EINVAL;
     }
     out_deadline->tv_sec += (time_t)(timeout_ms / 1000);
     out_deadline->tv_nsec += (long)((timeout_ms % 1000) * 1000000L);
@@ -2255,14 +1536,16 @@ static long aic_rt_net_async_enable_nonblocking_for_handle(long handle) {
         return 6;
     }
     if (aic_rt_net_async_nonblock_refs[idx] == 0) {
-        int flags = fcntl(slot->fd, F_GETFL, 0);
-        if (flags < 0) {
-            return aic_rt_net_map_errno(errno);
+        int prev_state = 0;
+        int get_rc = aic_rt_net_get_nonblocking_state(slot->fd, &prev_state);
+        if (get_rc != 0) {
+            return aic_rt_net_map_errno(get_rc);
         }
-        aic_rt_net_async_nonblock_prev_flags[idx] = flags;
-        if ((flags & O_NONBLOCK) == 0) {
-            if (fcntl(slot->fd, F_SETFL, flags | O_NONBLOCK) != 0) {
-                return aic_rt_net_map_errno(errno);
+        aic_rt_net_async_nonblock_prev_flags[idx] = prev_state;
+        if (prev_state == 0) {
+            int set_rc = aic_rt_net_set_nonblocking_state(slot->fd, 1);
+            if (set_rc != 0) {
+                return aic_rt_net_map_errno(set_rc);
             }
         }
     }
@@ -2287,7 +1570,7 @@ static void aic_rt_net_async_release_nonblocking_for_handle(long handle) {
     if (slot == NULL) {
         return;
     }
-    (void)fcntl(slot->fd, F_SETFL, aic_rt_net_async_nonblock_prev_flags[idx]);
+    (void)aic_rt_net_set_nonblocking_state(slot->fd, aic_rt_net_async_nonblock_prev_flags[idx]);
 }
 
 static void aic_rt_net_async_complete_op(
@@ -2320,7 +1603,7 @@ static void aic_rt_net_async_complete_op(
         op->out_string_len = out_len;
         op->done = 1;
         op->queued = 0;
-        op->reactor_fd = -1;
+        op->reactor_fd = AIC_RT_INVALID_SOCKET;
         op->reactor_events = 0;
         op->deadline_ms = -1;
         if (op->nonblocking_held) {
@@ -2363,7 +1646,7 @@ static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long*
         timeout_ms = op->arg2;
     }
     op->queued = 0;
-    op->reactor_fd = -1;
+    op->reactor_fd = AIC_RT_INVALID_SOCKET;
     op->reactor_events = 0;
     op->send_progress = 0;
     op->deadline_ms = -1;
@@ -2439,7 +1722,7 @@ static void aic_rt_net_async_build_watchers(
             continue;
         }
         AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-        int fd = -1;
+        aic_rt_socket_t fd = AIC_RT_INVALID_SOCKET;
         int events = 0;
         int lock_rc = pthread_mutex_lock(&op->mutex);
         if (lock_rc != 0) {
@@ -2450,7 +1733,7 @@ static void aic_rt_net_async_build_watchers(
             events = op->reactor_events;
         }
         pthread_mutex_unlock(&op->mutex);
-        if (fd < 0 || events == 0) {
+        if (fd == AIC_RT_INVALID_SOCKET || events == 0) {
             continue;
         }
 
@@ -2629,6 +1912,52 @@ static int aic_rt_net_async_reactor_wait(
     }
 #endif
 
+#ifdef _WIN32
+    {
+        fd_set read_set;
+        fd_set write_set;
+        fd_set error_set;
+        FD_ZERO(&read_set);
+        FD_ZERO(&write_set);
+        FD_ZERO(&error_set);
+        for (long i = 0; i < watcher_len; ++i) {
+            if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_READ) {
+                FD_SET(watchers[i].fd, &read_set);
+            }
+            if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_WRITE) {
+                FD_SET(watchers[i].fd, &write_set);
+            }
+            FD_SET(watchers[i].fd, &error_set);
+        }
+        struct timeval timeout_tv;
+        struct timeval* timeout_ptr = NULL;
+        if (timeout_ms >= 0) {
+            timeout_tv.tv_sec = (long)(timeout_ms / 1000);
+            timeout_tv.tv_usec = (long)((timeout_ms % 1000) * 1000);
+            timeout_ptr = &timeout_tv;
+        }
+        int ready_n = select(0, &read_set, &write_set, &error_set, timeout_ptr);
+        if (ready_n < 0) {
+            int err = aic_rt_net_last_socket_error();
+            if (err == WSAEINTR) {
+                return 1;
+            }
+            return 0;
+        }
+        for (long i = 0; i < watcher_len; ++i) {
+            if (FD_ISSET(watchers[i].fd, &read_set)) {
+                watchers[i].ready |= AIC_RT_NET_ASYNC_EVENT_READ;
+            }
+            if (FD_ISSET(watchers[i].fd, &write_set)) {
+                watchers[i].ready |= AIC_RT_NET_ASYNC_EVENT_WRITE;
+            }
+            if (FD_ISSET(watchers[i].fd, &error_set)) {
+                watchers[i].ready |= AIC_RT_NET_ASYNC_EVENT_ERROR;
+            }
+        }
+        return 1;
+    }
+#else
     {
         struct pollfd pollers[AIC_RT_NET_ASYNC_WATCHER_CAP];
         memset(pollers, 0, sizeof(pollers));
@@ -2663,9 +1992,10 @@ static int aic_rt_net_async_reactor_wait(
         }
         return 1;
     }
+#endif
 }
 
-static int aic_rt_net_async_op_matches_fd(long op_handle, int fd) {
+static int aic_rt_net_async_op_matches_fd(long op_handle, aic_rt_socket_t fd) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 0;
     }
@@ -2688,7 +2018,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
     long kind = 0;
-    int reactor_fd = -1;
+    aic_rt_socket_t reactor_fd = AIC_RT_INVALID_SOCKET;
     int reactor_events = 0;
     long payload_len = 0;
     long send_progress = 0;
@@ -2711,7 +2041,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
     max_bytes = op->arg1;
     pthread_mutex_unlock(&op->mutex);
 
-    if (reactor_fd < 0) {
+    if (reactor_fd == AIC_RT_INVALID_SOCKET) {
         aic_rt_net_async_complete_op(op_handle, 6, 0, NULL, 0);
         return 1;
     }
@@ -2722,9 +2052,9 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
     if (kind == AIC_RT_NET_ASYNC_OP_ACCEPT) {
         struct sockaddr_storage peer;
         socklen_t peer_len = (socklen_t)sizeof(peer);
-        int client_fd = (int)accept(reactor_fd, (struct sockaddr*)&peer, &peer_len);
-        if (client_fd < 0) {
-            int err = errno;
+        aic_rt_socket_t client_fd = accept(reactor_fd, (struct sockaddr*)&peer, &peer_len);
+        if (client_fd == AIC_RT_INVALID_SOCKET) {
+            int err = aic_rt_net_last_socket_error();
             if (err == EINTR || aic_rt_net_async_is_would_block_errno(err)) {
                 return 0;
             }
@@ -2771,7 +2101,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
             aic_rt_net_async_complete_op(op_handle, 0, send_progress, NULL, 0);
             return 1;
         }
-        int err = errno;
+        int err = aic_rt_net_last_socket_error();
         if (err == EINTR || aic_rt_net_async_is_would_block_errno(err)) {
             return 0;
         }
@@ -2796,7 +2126,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
 #endif
         ssize_t n = recv(reactor_fd, buffer, cap, recv_flags);
         if (n < 0) {
-            int err = errno;
+            int err = aic_rt_net_last_socket_error();
             free(buffer);
             if (err == EINTR || aic_rt_net_async_is_would_block_errno(err)) {
                 return 0;
@@ -3520,20 +2850,20 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
 
     long result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
-        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) {
-            result = aic_rt_net_map_errno(errno);
+        aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd == AIC_RT_INVALID_SOCKET) {
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             continue;
         }
         int one = 1;
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
         if (bind(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen) != 0) {
-            result = aic_rt_net_map_errno(errno);
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             aic_rt_net_close_fd(fd);
             continue;
         }
         if (listen(fd, 128) != 0) {
-            result = aic_rt_net_map_errno(errno);
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             aic_rt_net_close_fd(fd);
             continue;
         }
@@ -3563,7 +2893,7 @@ long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
     struct sockaddr_storage addr;
     socklen_t addr_len = (socklen_t)sizeof(addr);
     if (getsockname(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
     if (text == NULL) {
@@ -3595,9 +2925,9 @@ long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
     }
     struct sockaddr_storage peer;
     socklen_t peer_len = (socklen_t)sizeof(peer);
-    int client_fd = (int)accept(slot->fd, (struct sockaddr*)&peer, &peer_len);
-    if (client_fd < 0) {
-        return aic_rt_net_map_errno(errno);
+    aic_rt_socket_t client_fd = accept(slot->fd, (struct sockaddr*)&peer, &peer_len);
+    if (client_fd == AIC_RT_INVALID_SOCKET) {
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return aic_rt_net_alloc_handle(client_fd, AIC_RT_NET_KIND_TCP_STREAM, out_handle);
 }
@@ -3641,27 +2971,28 @@ long aic_rt_net_tcp_connect(
 
     long result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
-        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) {
-            result = aic_rt_net_map_errno(errno);
+        aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd == AIC_RT_INVALID_SOCKET) {
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             continue;
         }
 
-        int prev_flags = fcntl(fd, F_GETFL, 0);
-        if (prev_flags < 0) {
-            result = aic_rt_net_map_errno(errno);
+        int prev_flags = 0;
+        int prev_flags_rc = aic_rt_net_get_nonblocking_state(fd, &prev_flags);
+        if (prev_flags_rc != 0) {
+            result = aic_rt_net_map_errno(prev_flags_rc);
             aic_rt_net_close_fd(fd);
             continue;
         }
-        if (fcntl(fd, F_SETFL, prev_flags | O_NONBLOCK) != 0) {
-            result = aic_rt_net_map_errno(errno);
+        if (aic_rt_net_set_nonblocking_state(fd, 1) != 0) {
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             aic_rt_net_close_fd(fd);
             continue;
         }
 
         int rc = connect(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen);
         if (rc != 0) {
-            int err = errno;
+            int err = aic_rt_net_last_socket_error();
             int in_progress = 0;
 #ifdef EINPROGRESS
             if (err == EINPROGRESS) {
@@ -3670,6 +3001,11 @@ long aic_rt_net_tcp_connect(
 #endif
 #ifdef EWOULDBLOCK
             if (err == EWOULDBLOCK) {
+                in_progress = 1;
+            }
+#endif
+#ifdef _WIN32
+            if (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS) {
                 in_progress = 1;
             }
 #endif
@@ -3683,7 +3019,7 @@ long aic_rt_net_tcp_connect(
                 int so_err = 0;
                 socklen_t so_len = (socklen_t)sizeof(so_err);
                 if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err, &so_len) != 0) {
-                    result = aic_rt_net_map_errno(errno);
+                    result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
                     aic_rt_net_close_fd(fd);
                     continue;
                 }
@@ -3699,8 +3035,8 @@ long aic_rt_net_tcp_connect(
             }
         }
 
-        if (fcntl(fd, F_SETFL, prev_flags) != 0) {
-            result = aic_rt_net_map_errno(errno);
+        if (aic_rt_net_set_nonblocking_state(fd, prev_flags) != 0) {
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             aic_rt_net_close_fd(fd);
             continue;
         }
@@ -3744,10 +3080,11 @@ long aic_rt_net_tcp_send(
 #endif
         ssize_t n = send(slot->fd, cursor, remaining, flags);
         if (n < 0) {
-            if (errno == EINTR) {
+            int err = aic_rt_net_last_socket_error();
+            if (err == EINTR) {
                 continue;
             }
-            return aic_rt_net_map_errno(errno);
+            return aic_rt_net_map_errno(err);
         }
         if (n == 0) {
             break;
@@ -3826,17 +3163,18 @@ long aic_rt_net_tcp_send_timeout(
 #endif
         ssize_t n = send(slot->fd, cursor, remaining, flags);
         if (n < 0) {
-            if (errno == EINTR) {
+            int err = aic_rt_net_last_socket_error();
+            if (err == EINTR) {
                 continue;
             }
 #ifdef EAGAIN
-            if (errno == EAGAIN) {
+            if (err == EAGAIN) {
                 continue;
             }
 #endif
 #ifdef EWOULDBLOCK
 #if !defined(EAGAIN) || EWOULDBLOCK != EAGAIN
-            if (errno == EWOULDBLOCK) {
+            if (err == EWOULDBLOCK) {
                 continue;
             }
 #endif
@@ -3844,7 +3182,7 @@ long aic_rt_net_tcp_send_timeout(
             if (out_sent != NULL) {
                 *out_sent = (long)total;
             }
-            return aic_rt_net_map_errno(errno);
+            return aic_rt_net_map_errno(err);
         }
         if (n == 0) {
             if (out_sent != NULL) {
@@ -3894,7 +3232,7 @@ long aic_rt_net_tcp_recv(
     }
     ssize_t n = recv(slot->fd, buffer, cap, 0);
     if (n < 0) {
-        int err = errno;
+        int err = aic_rt_net_last_socket_error();
         free(buffer);
         return aic_rt_net_map_errno(err);
     }
@@ -3920,7 +3258,7 @@ long aic_rt_net_tcp_close(long handle) {
     if (slot == NULL || (slot->kind != AIC_RT_NET_KIND_TCP_LISTENER && slot->kind != AIC_RT_NET_KIND_TCP_STREAM)) {
         return 6;
     }
-    int fd = slot->fd;
+        aic_rt_socket_t fd = slot->fd;
     aic_rt_net_reset_slot(slot);
     return aic_rt_net_close_fd(fd);
 }
@@ -3937,7 +3275,7 @@ long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
 #ifdef TCP_NODELAY
     int flag = (enabled != 0) ? 1 : 0;
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -3958,7 +3296,7 @@ long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
     int flag = 0;
     socklen_t flag_len = (socklen_t)sizeof(flag);
     if (getsockopt(slot->fd, IPPROTO_TCP, TCP_NODELAY, &flag, &flag_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_enabled != NULL) {
         *out_enabled = (flag != 0) ? 1 : 0;
@@ -3981,7 +3319,7 @@ long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
 #ifdef SO_KEEPALIVE
     int flag = (enabled != 0) ? 1 : 0;
     if (setsockopt(slot->fd, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4002,7 +3340,7 @@ long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
     int flag = 0;
     socklen_t flag_len = (socklen_t)sizeof(flag);
     if (getsockopt(slot->fd, SOL_SOCKET, SO_KEEPALIVE, &flag, &flag_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_enabled != NULL) {
         *out_enabled = (flag != 0) ? 1 : 0;
@@ -4028,7 +3366,7 @@ long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPIDLE, &value, sizeof(value)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #elif defined(TCP_KEEPALIVE)
@@ -4037,7 +3375,7 @@ long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPALIVE, &value, sizeof(value)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4058,7 +3396,7 @@ long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
     int value = 0;
     socklen_t value_len = (socklen_t)sizeof(value);
     if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPIDLE, &value, &value_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_idle_secs != NULL) {
         *out_idle_secs = (long)value;
@@ -4068,7 +3406,7 @@ long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
     int value = 0;
     socklen_t value_len = (socklen_t)sizeof(value);
     if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPALIVE, &value, &value_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_idle_secs != NULL) {
         *out_idle_secs = (long)value;
@@ -4094,7 +3432,7 @@ long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs)
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPINTVL, &value, sizeof(value)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4115,7 +3453,7 @@ long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_
     int value = 0;
     socklen_t value_len = (socklen_t)sizeof(value);
     if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPINTVL, &value, &value_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_interval_secs != NULL) {
         *out_interval_secs = (long)value;
@@ -4141,7 +3479,7 @@ long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPCNT, &value, sizeof(value)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4162,7 +3500,7 @@ long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
     int value = 0;
     socklen_t value_len = (socklen_t)sizeof(value);
     if (getsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPCNT, &value, &value_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_probe_count != NULL) {
         *out_probe_count = (long)value;
@@ -4190,7 +3528,7 @@ long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
     struct sockaddr_storage addr;
     socklen_t addr_len = (socklen_t)sizeof(addr);
     if (getpeername(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
     if (text == NULL) {
@@ -4213,7 +3551,7 @@ static long aic_rt_net_tcp_shutdown_mode(long handle, int how) {
         return 6;
     }
     if (shutdown(slot->fd, how) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 }
@@ -4263,7 +3601,7 @@ long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
         return 6;
     }
     if (setsockopt(slot->fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4284,7 +3622,7 @@ long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
     int size = 0;
     socklen_t size_len = (socklen_t)sizeof(size);
     if (getsockopt(slot->fd, SOL_SOCKET, SO_SNDBUF, &size, &size_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_size_bytes != NULL) {
         *out_size_bytes = (long)size;
@@ -4310,7 +3648,7 @@ long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
         return 6;
     }
     if (setsockopt(slot->fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     return 0;
 #else
@@ -4331,7 +3669,7 @@ long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
     int size = 0;
     socklen_t size_len = (socklen_t)sizeof(size);
     if (getsockopt(slot->fd, SOL_SOCKET, SO_RCVBUF, &size, &size_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_size_bytes != NULL) {
         *out_size_bytes = (long)size;
@@ -4373,13 +3711,13 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
 
     long result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
-        int fd = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) {
-            result = aic_rt_net_map_errno(errno);
+        aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd == AIC_RT_INVALID_SOCKET) {
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             continue;
         }
         if (bind(fd, ai->ai_addr, (socklen_t)ai->ai_addrlen) != 0) {
-            result = aic_rt_net_map_errno(errno);
+            result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
             aic_rt_net_close_fd(fd);
             continue;
         }
@@ -4407,7 +3745,7 @@ long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
     struct sockaddr_storage addr;
     socklen_t addr_len = (socklen_t)sizeof(addr);
     if (getsockname(slot->fd, (struct sockaddr*)&addr, &addr_len) != 0) {
-        return aic_rt_net_map_errno(errno);
+        return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     char* text = aic_rt_net_format_sockaddr((struct sockaddr*)&addr, addr_len);
     if (text == NULL) {
@@ -4492,7 +3830,7 @@ long aic_rt_net_udp_send_to(
             result = 0;
             break;
         }
-        result = aic_rt_net_map_errno(errno);
+        result = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     freeaddrinfo(infos);
     return result;
@@ -4550,7 +3888,7 @@ long aic_rt_net_udp_recv_from(
         &from_len
     );
     if (got < 0) {
-        int err = errno;
+        int err = aic_rt_net_last_socket_error();
         free(payload);
         return aic_rt_net_map_errno(err);
     }
@@ -4588,7 +3926,7 @@ long aic_rt_net_udp_close(long handle) {
     if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
         return 6;
     }
-    int fd = slot->fd;
+    aic_rt_socket_t fd = slot->fd;
     aic_rt_net_reset_slot(slot);
     return aic_rt_net_close_fd(fd);
 }
@@ -4835,7 +4173,7 @@ typedef struct {
     SSL* ssl;
     SSL_CTX* ctx;
 #endif
-    int fd;
+    aic_rt_socket_t fd;
     long consumed_net_handle;
 } AicTlsSlot;
 
@@ -4898,7 +4236,7 @@ static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
     slot->ssl = NULL;
     slot->ctx = NULL;
 #endif
-    slot->fd = -1;
+    slot->fd = AIC_RT_INVALID_SOCKET;
     slot->consumed_net_handle = 0;
 }
 
@@ -4919,7 +4257,7 @@ static long aic_rt_tls_alloc_slot(
     SSL* ssl,
     SSL_CTX* ctx,
 #endif
-    int fd,
+    aic_rt_socket_t fd,
     long consumed_net_handle,
     long* out_tls_handle
 ) {
@@ -5628,7 +4966,18 @@ static long aic_rt_tls_connect_core(
     if (net_slot == NULL || net_slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
         return 5;
     }
-    int fd = net_slot->fd;
+    aic_rt_socket_t fd = net_slot->fd;
+    int nonblocking_state = 0;
+    int nonblocking_rc = aic_rt_net_get_nonblocking_state(fd, &nonblocking_state);
+    if (nonblocking_rc != 0) {
+        return aic_rt_tls_map_net_error(aic_rt_net_map_errno(nonblocking_rc));
+    }
+    if (nonblocking_state != 0) {
+        int restore_rc = aic_rt_net_set_nonblocking_state(fd, 0);
+        if (restore_rc != 0) {
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(restore_rc));
+        }
+    }
 
     char* ca_cert = NULL;
     char* client_cert = NULL;
@@ -5854,7 +5203,18 @@ static long aic_rt_tls_accept_core(
     if (net_slot == NULL || net_slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
         return 5;
     }
-    int fd = net_slot->fd;
+    aic_rt_socket_t fd = net_slot->fd;
+    int nonblocking_state = 0;
+    int nonblocking_rc = aic_rt_net_get_nonblocking_state(fd, &nonblocking_state);
+    if (nonblocking_rc != 0) {
+        return aic_rt_tls_map_net_error(aic_rt_net_map_errno(nonblocking_rc));
+    }
+    if (nonblocking_state != 0) {
+        int restore_rc = aic_rt_net_set_nonblocking_state(fd, 0);
+        if (restore_rc != 0) {
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(restore_rc));
+        }
+    }
 
     char* ca_cert = NULL;
     char* client_cert = NULL;
@@ -6149,7 +5509,7 @@ long aic_rt_tls_send(
         return 5;
     }
     AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
-    if (slot == NULL || slot->fd < 0) {
+    if (slot == NULL || slot->fd == AIC_RT_INVALID_SOCKET) {
         return 5;
     }
 #if !AIC_RT_TLS_OPENSSL
@@ -6176,7 +5536,7 @@ long aic_rt_tls_send(
             if (errno == 0) {
                 return 6;
             }
-            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(aic_rt_net_last_socket_error()));
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
             continue;
@@ -6207,7 +5567,7 @@ long aic_rt_tls_send_timeout(
         return 5;
     }
     AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
-    if (slot == NULL || slot->fd < 0) {
+    if (slot == NULL || slot->fd == AIC_RT_INVALID_SOCKET) {
         return 5;
     }
 #if !AIC_RT_TLS_OPENSSL
@@ -6251,7 +5611,7 @@ long aic_rt_tls_send_timeout(
             if (errno == 0) {
                 return 6;
             }
-            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(aic_rt_net_last_socket_error()));
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
             long wait_timeout = timeout_ms;
@@ -6307,7 +5667,7 @@ long aic_rt_tls_recv(
         return 5;
     }
     AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
-    if (slot == NULL || slot->fd < 0) {
+    if (slot == NULL || slot->fd == AIC_RT_INVALID_SOCKET) {
         return 5;
     }
 #if !AIC_RT_TLS_OPENSSL
@@ -6371,7 +5731,7 @@ long aic_rt_tls_recv(
             if (errno == 0) {
                 return 6;
             }
-            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(errno));
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(aic_rt_net_last_socket_error()));
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
             continue;
@@ -6388,7 +5748,7 @@ long aic_rt_tls_close(long tls_handle) {
     if (slot == NULL) {
         return 5;
     }
-    int fd = slot->fd;
+    aic_rt_socket_t fd = slot->fd;
 #if AIC_RT_TLS_OPENSSL
     SSL* ssl = slot->ssl;
     SSL_CTX* ctx = slot->ctx;

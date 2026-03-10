@@ -2232,16 +2232,6 @@ fn run_cli() -> anyhow::Result<i32> {
                                 print!("{}", diagnostics_pretty(&front.diagnostics));
                                 return Ok(EXIT_DIAGNOSTIC_ERROR);
                             }
-                            if let Some(diag) = windows_net_tls_policy_guard_diagnostic(
-                                &front,
-                                &entry,
-                                resolved_target,
-                                &target_label,
-                            ) {
-                                print!("{}", diagnostics_pretty(&[diag]));
-                                return Ok(EXIT_DIAGNOSTIC_ERROR);
-                            }
-
                             let lowered = lower_runtime_asserts(&front.ir);
                             let llvm = match emit_llvm_with_options(
                                 &lowered,
@@ -2307,16 +2297,6 @@ fn run_cli() -> anyhow::Result<i32> {
                             print!("{}", diagnostics_pretty(&front.diagnostics));
                             EXIT_DIAGNOSTIC_ERROR
                         } else {
-                            if let Some(diag) = windows_net_tls_policy_guard_diagnostic(
-                                &front,
-                                &input,
-                                resolved_target,
-                                &target_label,
-                            ) {
-                                print!("{}", diagnostics_pretty(&[diag]));
-                                return Ok(EXIT_DIAGNOSTIC_ERROR);
-                            }
-
                             let lowered = lower_runtime_asserts(&front.ir);
                             let llvm = match emit_llvm_with_options(
                                 &lowered,
@@ -2379,16 +2359,6 @@ fn run_cli() -> anyhow::Result<i32> {
                     print!("{}", diagnostics_pretty(&front.diagnostics));
                     EXIT_DIAGNOSTIC_ERROR
                 } else {
-                    if let Some(diag) = windows_net_tls_policy_guard_diagnostic(
-                        &front,
-                        &input,
-                        resolved_target,
-                        &target_label,
-                    ) {
-                        print!("{}", diagnostics_pretty(&[diag]));
-                        return Ok(EXIT_DIAGNOSTIC_ERROR);
-                    }
-
                     let lowered = lower_runtime_asserts(&front.ir);
                     let llvm = match emit_llvm_with_options(
                         &lowered,
@@ -4812,79 +4782,6 @@ fn is_valid_sha256_hex(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn windows_net_tls_policy_guard_diagnostic(
-    front: &FrontendOutput,
-    input: &Path,
-    target: Option<BuildTarget>,
-    target_label: &str,
-) -> Option<Diagnostic> {
-    if !windows_build_target_selected(target, target_label) {
-        return None;
-    }
-
-    let mut offenders = BTreeSet::new();
-    for (function, effects) in &front.typecheck.function_effect_usage {
-        if !effects.contains("net") {
-            continue;
-        }
-
-        let Some(modules) = front.resolution.function_modules.get(function) else {
-            offenders.insert(function.clone());
-            continue;
-        };
-
-        for module in modules {
-            if module == "std" || module.starts_with("std.") {
-                continue;
-            }
-            if module == "<root>" {
-                offenders.insert(function.clone());
-            } else {
-                offenders.insert(format!("{module}::{function}"));
-            }
-        }
-    }
-
-    if offenders.is_empty() {
-        return None;
-    }
-
-    let offenders = offenders.into_iter().collect::<Vec<_>>();
-    let preview = offenders
-        .iter()
-        .take(5)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(", ");
-    let remaining = offenders.len().saturating_sub(5);
-
-    let mut diag = Diagnostic::error(
-        "E6007",
-        format!("target `{target_label}` does not currently support net/TLS runtime parity"),
-        &input.to_string_lossy(),
-        aicore::span::Span::new(0, 0),
-    )
-    .with_help(
-        "remove `net` effect usage (including std.net/std.tls calls) for Windows-targeted builds",
-    )
-    .with_help("or build this artifact for linux/macos targets until Windows net/TLS parity lands");
-
-    if remaining == 0 {
-        diag = diag.with_help(format!("functions requiring `net`: {preview}"));
-    } else {
-        diag = diag.with_help(format!(
-            "functions requiring `net`: {preview} (+{remaining} more)"
-        ));
-    }
-
-    Some(diag)
-}
-
-fn windows_build_target_selected(target: Option<BuildTarget>, target_label: &str) -> bool {
-    target.map(BuildTarget::is_windows).unwrap_or(false)
-        || (target.is_none() && target_label == "windows")
-}
-
 fn process_built_artifact(
     input: &Path,
     output: &Path,
@@ -5076,10 +4973,6 @@ impl BuildTarget {
 
     fn is_wasm(self) -> bool {
         matches!(self, BuildTarget::Wasm32)
-    }
-
-    fn is_windows(self) -> bool {
-        matches!(self, BuildTarget::X8664Windows)
     }
 }
 

@@ -19,7 +19,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 | `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
 | Async HTTP-server API surface | Unsupported | `std/http_server.aic` exposes synchronous APIs only; no `http_server.async_*` surface exists |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
-| Windows async runtime backend | Unsupported | Windows net/async runtime paths return deterministic unsupported errors in `part04.c`; async execution coverage is `#[cfg(not(target_os = "windows"))]` |
+| Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
 
 ## API Surface
 

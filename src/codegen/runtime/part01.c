@@ -6,12 +6,20 @@
 #include <limits.h>
 #include <stdint.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <sys/stat.h>
 #include <time.h>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <direct.h>
 #include <io.h>
+#include <process.h>
+#include <mstcpip.h>
 #include <windows.h>
 #else
 #include <arpa/inet.h>
@@ -24,7 +32,6 @@
 #include <pthread.h>
 #include <regex.h>
 #include <sched.h>
-#include <stdatomic.h>
 #include <unistd.h>
 #include <signal.h>
 #include <poll.h>
@@ -35,6 +42,428 @@
 #include <sys/wait.h>
 #ifdef __linux__
 #include <sys/epoll.h>
+#endif
+
+#ifdef _WIN32
+#define AIC_RT_WINDOWS_SHARED_RUNTIME 1
+
+#ifndef _TIMESPEC_DEFINED
+#define _TIMESPEC_DEFINED
+struct timespec {
+    time_t tv_sec;
+    long tv_nsec;
+};
+#endif
+
+#ifndef CLOCK_REALTIME
+#define CLOCK_REALTIME 0
+#endif
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
+#ifndef ETIMEDOUT
+#define ETIMEDOUT 138
+#endif
+#ifndef ECANCELED
+#define ECANCELED 125
+#endif
+#ifndef SHUT_RD
+#define SHUT_RD SD_RECEIVE
+#endif
+#ifndef SHUT_WR
+#define SHUT_WR SD_SEND
+#endif
+#ifndef SHUT_RDWR
+#define SHUT_RDWR SD_BOTH
+#endif
+
+typedef long suseconds_t;
+typedef SSIZE_T ssize_t;
+typedef SOCKET aic_rt_socket_t;
+
+#define AIC_RT_INVALID_SOCKET INVALID_SOCKET
+
+typedef INIT_ONCE pthread_once_t;
+typedef SRWLOCK pthread_mutex_t;
+typedef CONDITION_VARIABLE pthread_cond_t;
+typedef HANDLE pthread_t;
+typedef DWORD pthread_key_t;
+
+#define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
+#define PTHREAD_MUTEX_INITIALIZER SRWLOCK_INIT
+#define PTHREAD_COND_INITIALIZER CONDITION_VARIABLE_INIT
+
+typedef struct {
+    SRWLOCK state_lock;
+    LONG readers;
+    LONG writer;
+    DWORD writer_thread;
+} pthread_rwlock_t;
+
+static int clock_gettime(int clock_id, struct timespec* out_ts) {
+    if (out_ts == NULL) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return -1;
+    }
+    if (clock_id == CLOCK_REALTIME) {
+        FILETIME ft;
+        ULARGE_INTEGER ticks;
+        GetSystemTimeAsFileTime(&ft);
+        ticks.LowPart = ft.dwLowDateTime;
+        ticks.HighPart = ft.dwHighDateTime;
+        unsigned long long nanos_since_windows_epoch = ticks.QuadPart * 100ULL;
+        const unsigned long long unix_epoch_offset_ns = 11644473600000000000ULL;
+        if (nanos_since_windows_epoch < unix_epoch_offset_ns) {
+            out_ts->tv_sec = 0;
+            out_ts->tv_nsec = 0;
+            return 0;
+        }
+        unsigned long long unix_ns = nanos_since_windows_epoch - unix_epoch_offset_ns;
+        out_ts->tv_sec = (time_t)(unix_ns / 1000000000ULL);
+        out_ts->tv_nsec = (long)(unix_ns % 1000000000ULL);
+        return 0;
+    }
+    if (clock_id == CLOCK_MONOTONIC) {
+        static LARGE_INTEGER freq;
+        static int freq_ready = 0;
+        LARGE_INTEGER counter;
+        if (!freq_ready) {
+            if (!QueryPerformanceFrequency(&freq)) {
+                SetLastError(GetLastError());
+                return -1;
+            }
+            freq_ready = 1;
+        }
+        if (!QueryPerformanceCounter(&counter)) {
+            SetLastError(GetLastError());
+            return -1;
+        }
+        long long seconds = counter.QuadPart / freq.QuadPart;
+        long long remainder = counter.QuadPart % freq.QuadPart;
+        out_ts->tv_sec = (time_t)seconds;
+        out_ts->tv_nsec = (long)((remainder * 1000000000LL) / freq.QuadPart);
+        return 0;
+    }
+    SetLastError(ERROR_INVALID_PARAMETER);
+    return -1;
+}
+
+static int nanosleep(const struct timespec* req, struct timespec* rem) {
+    if (req == NULL || req->tv_sec < 0 || req->tv_nsec < 0 || req->tv_nsec >= 1000000000L) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return -1;
+    }
+    unsigned long long total_ms = (unsigned long long)req->tv_sec * 1000ULL;
+    total_ms += (unsigned long long)((req->tv_nsec + 999999L) / 1000000L);
+    if (total_ms > 0x7fffffffULL) {
+        total_ms = 0x7fffffffULL;
+    }
+    if (rem != NULL) {
+        rem->tv_sec = 0;
+        rem->tv_nsec = 0;
+    }
+    Sleep((DWORD)total_ms);
+    return 0;
+}
+
+static BOOL CALLBACK aic_rt_pthread_once_callback(
+    PINIT_ONCE init_once,
+    PVOID parameter,
+    PVOID* context
+) {
+    (void)init_once;
+    (void)context;
+    ((void (*)(void))parameter)();
+    return TRUE;
+}
+
+static int pthread_once(pthread_once_t* once, void (*init_routine)(void)) {
+    if (once == NULL || init_routine == NULL) {
+        return EINVAL;
+    }
+    if (!InitOnceExecuteOnce(once, aic_rt_pthread_once_callback, (PVOID)init_routine, NULL)) {
+        return EINVAL;
+    }
+    return 0;
+}
+
+static int pthread_mutex_init(pthread_mutex_t* mutex, const void* attr) {
+    (void)attr;
+    if (mutex == NULL) {
+        return EINVAL;
+    }
+    InitializeSRWLock(mutex);
+    return 0;
+}
+
+static int pthread_mutex_destroy(pthread_mutex_t* mutex) {
+    (void)mutex;
+    return 0;
+}
+
+static int pthread_mutex_lock(pthread_mutex_t* mutex) {
+    if (mutex == NULL) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(mutex);
+    return 0;
+}
+
+static int pthread_mutex_unlock(pthread_mutex_t* mutex) {
+    if (mutex == NULL) {
+        return EINVAL;
+    }
+    ReleaseSRWLockExclusive(mutex);
+    return 0;
+}
+
+static int pthread_cond_init(pthread_cond_t* cond, const void* attr) {
+    (void)attr;
+    if (cond == NULL) {
+        return EINVAL;
+    }
+    InitializeConditionVariable(cond);
+    return 0;
+}
+
+static int pthread_cond_destroy(pthread_cond_t* cond) {
+    (void)cond;
+    return 0;
+}
+
+static int pthread_cond_signal(pthread_cond_t* cond) {
+    if (cond == NULL) {
+        return EINVAL;
+    }
+    WakeConditionVariable(cond);
+    return 0;
+}
+
+static int pthread_cond_broadcast(pthread_cond_t* cond) {
+    if (cond == NULL) {
+        return EINVAL;
+    }
+    WakeAllConditionVariable(cond);
+    return 0;
+}
+
+static int pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+    if (cond == NULL || mutex == NULL) {
+        return EINVAL;
+    }
+    if (!SleepConditionVariableSRW(cond, mutex, INFINITE, 0)) {
+        return EINVAL;
+    }
+    return 0;
+}
+
+static int pthread_cond_timedwait(
+    pthread_cond_t* cond,
+    pthread_mutex_t* mutex,
+    const struct timespec* abs_timeout
+) {
+    if (cond == NULL || mutex == NULL || abs_timeout == NULL) {
+        return EINVAL;
+    }
+
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+        return EINVAL;
+    }
+
+    long long now_ms = (long long)now.tv_sec * 1000LL + (long long)(now.tv_nsec / 1000000L);
+    long long deadline_ms =
+        (long long)abs_timeout->tv_sec * 1000LL + (long long)(abs_timeout->tv_nsec / 1000000L);
+    DWORD wait_ms = 0;
+    if (deadline_ms > now_ms) {
+        long long delta = deadline_ms - now_ms;
+        if (delta > 0x7fffffffLL) {
+            delta = 0x7fffffffLL;
+        }
+        wait_ms = (DWORD)delta;
+    }
+
+    if (!SleepConditionVariableSRW(cond, mutex, wait_ms, 0)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_TIMEOUT) {
+            return ETIMEDOUT;
+        }
+        return EINVAL;
+    }
+    return 0;
+}
+
+static int pthread_rwlock_init(pthread_rwlock_t* lock, const void* attr) {
+    (void)attr;
+    if (lock == NULL) {
+        return EINVAL;
+    }
+    InitializeSRWLock(&lock->state_lock);
+    lock->readers = 0;
+    lock->writer = 0;
+    lock->writer_thread = 0;
+    return 0;
+}
+
+static int pthread_rwlock_destroy(pthread_rwlock_t* lock) {
+    (void)lock;
+    return 0;
+}
+
+static int pthread_rwlock_tryrdlock(pthread_rwlock_t* lock) {
+    if (lock == NULL) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(&lock->state_lock);
+    if (lock->writer) {
+        ReleaseSRWLockExclusive(&lock->state_lock);
+        return EBUSY;
+    }
+    lock->readers += 1;
+    ReleaseSRWLockExclusive(&lock->state_lock);
+    return 0;
+}
+
+static int pthread_rwlock_trywrlock(pthread_rwlock_t* lock) {
+    if (lock == NULL) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(&lock->state_lock);
+    if (lock->writer || lock->readers > 0) {
+        ReleaseSRWLockExclusive(&lock->state_lock);
+        return EBUSY;
+    }
+    lock->writer = 1;
+    lock->writer_thread = GetCurrentThreadId();
+    ReleaseSRWLockExclusive(&lock->state_lock);
+    return 0;
+}
+
+static int pthread_rwlock_unlock(pthread_rwlock_t* lock) {
+    if (lock == NULL) {
+        return EINVAL;
+    }
+    AcquireSRWLockExclusive(&lock->state_lock);
+    if (lock->writer && lock->writer_thread == GetCurrentThreadId()) {
+        lock->writer = 0;
+        lock->writer_thread = 0;
+        ReleaseSRWLockExclusive(&lock->state_lock);
+        return 0;
+    }
+    if (lock->readers > 0) {
+        lock->readers -= 1;
+        ReleaseSRWLockExclusive(&lock->state_lock);
+        return 0;
+    }
+    ReleaseSRWLockExclusive(&lock->state_lock);
+    return EINVAL;
+}
+
+typedef struct {
+    void* (*start_routine)(void*);
+    void* arg;
+} AicPthreadStartContext;
+
+static unsigned __stdcall aic_rt_pthread_start_trampoline(void* raw) {
+    AicPthreadStartContext* context = (AicPthreadStartContext*)raw;
+    void* (*start_routine)(void*) = context->start_routine;
+    void* arg = context->arg;
+    free(context);
+    if (start_routine != NULL) {
+        (void)start_routine(arg);
+    }
+    return 0;
+}
+
+static int pthread_create(
+    pthread_t* thread,
+    const void* attr,
+    void* (*start_routine)(void*),
+    void* arg
+) {
+    (void)attr;
+    if (thread == NULL || start_routine == NULL) {
+        return EINVAL;
+    }
+    *thread = NULL;
+    AicPthreadStartContext* context =
+        (AicPthreadStartContext*)malloc(sizeof(AicPthreadStartContext));
+    if (context == NULL) {
+        return ENOMEM;
+    }
+    context->start_routine = start_routine;
+    context->arg = arg;
+    uintptr_t handle = _beginthreadex(
+        NULL,
+        0,
+        aic_rt_pthread_start_trampoline,
+        context,
+        0,
+        NULL
+    );
+    if (handle == 0) {
+        free(context);
+        return EAGAIN;
+    }
+    *thread = (HANDLE)handle;
+    return 0;
+}
+
+static int pthread_join(pthread_t thread, void** retval) {
+    if (retval != NULL) {
+        *retval = NULL;
+    }
+    if (thread == NULL) {
+        return EINVAL;
+    }
+    DWORD wait_rc = WaitForSingleObject(thread, INFINITE);
+    if (wait_rc != WAIT_OBJECT_0) {
+        return EINVAL;
+    }
+    CloseHandle(thread);
+    return 0;
+}
+
+static int pthread_detach(pthread_t thread) {
+    if (thread == NULL) {
+        return EINVAL;
+    }
+    CloseHandle(thread);
+    return 0;
+}
+
+static int pthread_key_create(pthread_key_t* key, void (*destructor)(void*)) {
+    if (key == NULL) {
+        return EINVAL;
+    }
+    DWORD slot = FlsAlloc((PFLS_CALLBACK_FUNCTION)destructor);
+    if (slot == FLS_OUT_OF_INDEXES) {
+        return EAGAIN;
+    }
+    *key = slot;
+    return 0;
+}
+
+static int pthread_key_delete(pthread_key_t key) {
+    if (!FlsFree(key)) {
+        return EINVAL;
+    }
+    return 0;
+}
+
+static void* pthread_getspecific(pthread_key_t key) {
+    return FlsGetValue(key);
+}
+
+static int pthread_setspecific(pthread_key_t key, const void* value) {
+    if (!FlsSetValue(key, (PVOID)value)) {
+        return EINVAL;
+    }
+    return 0;
+}
+#else
+typedef int aic_rt_socket_t;
+#define AIC_RT_INVALID_SOCKET (-1)
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
 #include <sys/event.h>

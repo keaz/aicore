@@ -37,7 +37,7 @@ Related runtime note:
 | `std.net` async operations requiring `effects { concurrency }` | Supported | Async reactor runtime in `docs/async-event-loop.md` with submit/wait/poll/cancel coverage |
 | `await` submit bridge for async net/tls handles | Supported | Cooperative poll helper usage (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) and async bridge execution coverage |
 | Linux/macOS concurrency runtime paths | Supported | Full task/channel/mutex/rwlock/arc/atomic behavior implemented |
-| Windows concurrency runtime paths | Partial | APIs remain available but unsupported runtime branches return deterministic `ConcurrencyError::Io` / `ChannelError::Closed` outcomes |
+| Windows concurrency runtime paths | Supported (client-runtime scope) | Shared runtime backend in `src/codegen/runtime/part03.c` + Windows CI smoke coverage for `exec_concurrency_worker_pool_is_deterministic` alongside async/net coordination tests |
 
 ## Types
 

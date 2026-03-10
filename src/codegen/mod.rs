@@ -2151,6 +2151,9 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                     command.arg("-static");
                 }
                 append_link_options(&mut command, &options.link);
+                if target_is_windows(options.target_triple.as_deref()) {
+                    command.arg("-lws2_32");
+                }
                 for flag in &tls_flags.link_flags {
                     command.arg(flag);
                 }
@@ -2575,6 +2578,13 @@ fn target_is_macos(target_triple: Option<&str>) -> bool {
     match target_triple {
         Some(target) => target.contains("apple-darwin"),
         None => cfg!(target_os = "macos"),
+    }
+}
+
+fn target_is_windows(target_triple: Option<&str>) -> bool {
+    match target_triple {
+        Some(target) => target.contains("windows"),
+        None => cfg!(target_os = "windows"),
     }
 }
 
