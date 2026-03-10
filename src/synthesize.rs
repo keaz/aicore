@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,8 +7,12 @@ use anyhow::{anyhow, bail, Context};
 use serde::Serialize;
 
 use crate::ast::{self, BinOp, Expr, ExprKind, Item, TypeExpr, TypeKind, UnaryOp};
+use crate::diagnostics::Diagnostic;
+use crate::formatter::format_program;
+use crate::ir_builder;
 use crate::parser;
 use crate::scaffold::{self, FnScaffoldOptions, ParamSpec};
+use crate::span::Span;
 
 const SYNTHESIZE_PROTOCOL_VERSION: &str = "1.0";
 const SYNTHESIZE_PHASE: &str = "synthesize";
@@ -38,18 +43,20 @@ pub struct SynthesizeArtifact {
 #[derive(Debug, Clone)]
 struct ParsedSpec {
     file: PathBuf,
+    source: String,
     function: ast::Function,
     raw_requires: Option<String>,
     raw_ensures: Option<String>,
     auto_capabilities: bool,
+    source_map: SyntheticSourceMap,
 }
 
 #[derive(Debug, Clone, Default)]
 struct SpecClauses {
-    requires: Option<String>,
-    ensures: Option<String>,
-    effects: Vec<String>,
-    capabilities: Vec<String>,
+    requires: Option<SourceFragment>,
+    ensures: Option<SourceFragment>,
+    effects: Option<ListFragment>,
+    capabilities: Option<ListFragment>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,7 +108,168 @@ enum LiteralValue {
     String(String),
 }
 
+#[derive(Debug, Clone)]
+struct SourceFragment {
+    text: String,
+    span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct ListFragment {
+    values: Vec<String>,
+    inner: SourceFragment,
+}
+
+#[derive(Debug, Clone)]
+struct SyntheticSourceMap {
+    file: PathBuf,
+    source: String,
+    synthetic_source: String,
+    fallback_span: Span,
+    mappings: Vec<SpanMapping>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpanMapping {
+    synthetic: Span,
+    original: Span,
+}
+
+#[derive(Debug, Clone)]
+struct SynthesizeFailure {
+    summary: String,
+    diagnostics: Vec<SynthesizeRenderedDiagnostic>,
+}
+
+#[derive(Debug, Clone)]
+struct SynthesizeRenderedDiagnostic {
+    code: Option<String>,
+    severity: &'static str,
+    message: String,
+    file: String,
+    span: Span,
+    line: usize,
+    column: usize,
+    label: Option<String>,
+    help: Vec<String>,
+    remediations: Vec<String>,
+}
+
 type OverrideMap = BTreeMap<Vec<String>, String>;
+
+impl SourceFragment {
+    fn trimmed_text(&self) -> String {
+        self.text.trim().to_string()
+    }
+}
+
+impl SpecClauses {
+    fn raw_requires(&self) -> Option<String> {
+        self.requires.as_ref().map(SourceFragment::trimmed_text)
+    }
+
+    fn raw_ensures(&self) -> Option<String> {
+        self.ensures.as_ref().map(SourceFragment::trimmed_text)
+    }
+}
+
+impl SyntheticSourceMap {
+    fn resolve_span(&self, span: Span) -> SynthesizeRenderedDiagnosticSpan {
+        let start = self
+            .map_offset(span.start)
+            .unwrap_or(self.fallback_span.start);
+        let end = self
+            .map_offset(span.end)
+            .or_else(|| self.map_offset(span.start))
+            .unwrap_or(start);
+        let resolved = Span::new(
+            start.min(self.source.len()),
+            end.min(self.source.len()).max(start),
+        );
+        let (line, column) = line_col_for_offset(&self.source, resolved.start);
+        SynthesizeRenderedDiagnosticSpan {
+            file: self.file.to_string_lossy().to_string(),
+            span: resolved,
+            line,
+            column,
+        }
+    }
+
+    fn map_offset(&self, offset: usize) -> Option<usize> {
+        let clamped = offset.min(self.synthetic_source.len());
+        if let Some(mapped) = self.mappings.iter().find_map(|mapping| {
+            if clamped < mapping.synthetic.start || clamped > mapping.synthetic.end {
+                return None;
+            }
+            let relative = clamped.saturating_sub(mapping.synthetic.start);
+            let original_len = mapping.original.end.saturating_sub(mapping.original.start);
+            Some(mapping.original.start + relative.min(original_len))
+        }) {
+            return Some(mapped);
+        }
+
+        self.mappings
+            .iter()
+            .rev()
+            .find(|mapping| mapping.synthetic.end <= clamped)
+            .map(|mapping| mapping.original.end)
+            .or_else(|| {
+                self.mappings
+                    .iter()
+                    .find(|mapping| mapping.synthetic.start >= clamped)
+                    .map(|mapping| mapping.original.start)
+            })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SynthesizeRenderedDiagnosticSpan {
+    span: Span,
+    file: String,
+    line: usize,
+    column: usize,
+}
+
+impl fmt::Display for SynthesizeFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.summary)?;
+        for (index, diagnostic) in self.diagnostics.iter().enumerate() {
+            if index > 0 {
+                writeln!(f)?;
+            }
+            if let Some(code) = &diagnostic.code {
+                writeln!(
+                    f,
+                    "{}[{}]: {}",
+                    diagnostic.severity, code, diagnostic.message
+                )?;
+            } else {
+                writeln!(f, "{}: {}", diagnostic.severity, diagnostic.message)?;
+            }
+            writeln!(
+                f,
+                "  --> {}:{}:{} [{}..{}]",
+                diagnostic.file,
+                diagnostic.line,
+                diagnostic.column,
+                diagnostic.span.start,
+                diagnostic.span.end
+            )?;
+            if let Some(label) = &diagnostic.label {
+                writeln!(f, "      = {}", label)?;
+            }
+            for help in &diagnostic.help {
+                writeln!(f, "      help: {}", help)?;
+            }
+            for remediation in &diagnostic.remediations {
+                writeln!(f, "      remediation: {}", remediation)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for SynthesizeFailure {}
 
 pub fn synthesize_from_spec(
     project_root: &Path,
@@ -109,11 +277,14 @@ pub fn synthesize_from_spec(
 ) -> anyhow::Result<SynthesizeResponse> {
     let spec = load_spec(project_root, target)?;
     let type_index = build_type_index(project_root)?;
+    validate_signature_types(&spec, &type_index)?;
     let body_expr = synthesize_body_expression(&spec, &type_index)?;
     let materialized_ensures = materialized_ensures(&spec);
     let options = synthesize_fn_options(&spec, materialized_ensures.clone());
-    let function_scaffold = scaffold::scaffold_function_with_body(&options, &body_expr);
-    let fixture = build_self_contained_fixture(&spec, &type_index, &function_scaffold.content)?;
+    let function_content = format_artifact_source(
+        &scaffold::scaffold_function_with_body(&options, &body_expr).content,
+    )?;
+    let fixture = build_self_contained_fixture(&spec, &type_index, &function_content)?;
 
     let base_name = sanitize_identifier(&spec.function.name);
     let mut notes = Vec::new();
@@ -148,7 +319,7 @@ pub fn synthesize_from_spec(
                 kind: "function".to_string(),
                 name: spec.function.name.clone(),
                 path_hint: format!("src/generated/{base_name}.aic"),
-                content: function_scaffold.content,
+                content: function_content,
                 reason: Some(
                     "materialize this into project source once the synthesized body is ready for iterative refinement"
                         .to_string(),
@@ -266,40 +437,126 @@ fn find_next_spec_start(source: &str, from: usize) -> Option<usize> {
 
 fn parse_spec_at(source: &str, file: &Path, start: usize) -> anyhow::Result<(ParsedSpec, usize)> {
     let after_spec = start + "spec ".len();
-    let body_start = find_spec_body_start(source, after_spec)?;
-    let body_end = find_matching_brace(source, body_start)?;
-    let header = source[after_spec..body_start].trim();
-    if !header.starts_with("fn ") {
-        bail!(
-            "{}: spec declarations must start with `spec fn`",
-            file.display()
-        );
+    let body_start = find_spec_body_start(source, after_spec).map_err(|_| {
+        single_synthesize_error(
+            "invalid spec declaration",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                "unterminated spec header",
+                file,
+                source,
+                Span::new(
+                    start,
+                    source.len().min(after_spec.max(start + "spec fn".len())),
+                ),
+                None,
+                Vec::new(),
+                vec![
+                    "Terminate the signature with a `{ ... }` body that contains the spec clauses."
+                        .to_string(),
+                ],
+            ),
+        )
+    })?;
+    let body_end = find_matching_brace(source, body_start).map_err(|_| {
+        single_synthesize_error(
+            "invalid spec declaration",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                "unterminated spec body",
+                file,
+                source,
+                Span::new(body_start, source.len()),
+                None,
+                Vec::new(),
+                vec!["Close the spec body with `}` after the final clause line.".to_string()],
+            ),
+        )
+    })?;
+    let header = trimmed_fragment(source, after_spec, body_start).ok_or_else(|| {
+        single_synthesize_error(
+            "invalid spec declaration",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                "spec declarations must start with `spec fn`",
+                file,
+                source,
+                Span::new(start, body_start.min(start + "spec fn".len())),
+                None,
+                Vec::new(),
+                vec!["Start the declaration with `spec fn <name>(...) -> <type>`.".to_string()],
+            ),
+        )
+    })?;
+    if !header.text.starts_with("fn ") {
+        return Err(single_synthesize_error(
+            "invalid spec declaration",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                "spec declarations must start with `spec fn`",
+                file,
+                source,
+                header.span,
+                None,
+                Vec::new(),
+                vec!["Start the declaration with `spec fn <name>(...) -> <type>`.".to_string()],
+            ),
+        ));
     }
     for keyword in [" effects ", " capabilities ", " requires ", " ensures "] {
-        if header.contains(keyword) {
-            bail!(
-                "{}: keep `effects`, `capabilities`, `requires`, and `ensures` inside the spec body for `aic synthesize`",
-                file.display()
-            );
+        if let Some(relative) = header.text.find(keyword.trim()) {
+            return Err(single_synthesize_error(
+                "invalid spec declaration",
+                render_manual_synthesize_diagnostic(
+                    None,
+                    "error",
+                    "keep `effects`, `capabilities`, `requires`, and `ensures` inside the spec body for `aic synthesize`",
+                    file,
+                    source,
+                    Span::new(
+                        header.span.start + relative,
+                        header.span.start + relative + keyword.trim().len(),
+                    ),
+                    None,
+                    vec![
+                        "Only the function signature belongs in the `spec fn` header.".to_string(),
+                    ],
+                    vec![
+                        "Move clause declarations into the `{ ... }` body, one clause per line."
+                            .to_string(),
+                    ],
+                ),
+            ));
         }
     }
 
     let body = &source[body_start + 1..body_end];
-    let mut clauses = parse_spec_body(body).with_context(|| format!("in {}", file.display()))?;
-    let auto_capabilities = clauses.capabilities.is_empty() && !clauses.effects.is_empty();
+    let mut clauses = parse_spec_body(body, file, source, body_start + 1)?;
+    let auto_capabilities = clauses.capabilities.is_none() && clauses.effects.is_some();
     if auto_capabilities {
-        clauses.capabilities = clauses.effects.clone();
+        if let Some(effects) = &clauses.effects {
+            clauses.capabilities = Some(ListFragment {
+                values: effects.values.clone(),
+                inner: effects.inner.clone(),
+            });
+        }
     }
-    let synthetic = build_synthetic_function_source(header, &clauses);
+    let synthetic = build_synthetic_function_source(file, source, &header, &clauses);
     let function = parse_synthetic_function(&synthetic)?;
 
     Ok((
         ParsedSpec {
             file: file.to_path_buf(),
+            source: source.to_string(),
             function,
-            raw_requires: clauses.requires,
-            raw_ensures: clauses.ensures,
+            raw_requires: clauses.raw_requires(),
+            raw_ensures: clauses.raw_ensures(),
             auto_capabilities,
+            source_map: synthetic,
         },
         body_end + 1,
     ))
@@ -376,42 +633,155 @@ fn find_matching_brace(source: &str, open_brace: usize) -> anyhow::Result<usize>
     bail!("unterminated spec body")
 }
 
-fn parse_spec_body(body: &str) -> anyhow::Result<SpecClauses> {
+fn parse_spec_body(
+    body: &str,
+    file: &Path,
+    source: &str,
+    body_start: usize,
+) -> anyhow::Result<SpecClauses> {
     let mut clauses = SpecClauses::default();
-    for line in body.lines() {
-        let raw = strip_line_comment(line).trim();
+    let mut offset = body_start;
+    for raw_line in body.split_inclusive('\n') {
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let without_comment = strip_line_comment(line);
+        let raw = without_comment.trim();
         if raw.is_empty() {
+            offset += raw_line.len();
             continue;
         }
+        let trimmed_start_in_line = without_comment.find(raw).unwrap_or(0);
+        let trimmed_start = offset + trimmed_start_in_line;
+        let trimmed_span = Span::new(trimmed_start, trimmed_start + raw.len());
         if let Some(rest) = raw.strip_prefix("requires ") {
             if clauses.requires.is_some() {
-                bail!("duplicate `requires` clause");
+                return Err(single_synthesize_error(
+                    "invalid spec clause",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        "duplicate `requires` clause",
+                        file,
+                        source,
+                        trimmed_span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Keep a single `requires` line in the spec body and merge conditions with `&&` if needed.".to_string(),
+                        ],
+                    ),
+                ));
             }
-            clauses.requires = Some(rest.trim().to_string());
+            let value_start = trimmed_start + "requires ".len();
+            clauses.requires = Some(SourceFragment {
+                text: rest.to_string(),
+                span: Span::new(value_start, value_start + rest.len()),
+            });
+            offset += raw_line.len();
             continue;
         }
         if let Some(rest) = raw.strip_prefix("ensures ") {
             if clauses.ensures.is_some() {
-                bail!("duplicate `ensures` clause");
+                return Err(single_synthesize_error(
+                    "invalid spec clause",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        "duplicate `ensures` clause",
+                        file,
+                        source,
+                        trimmed_span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Keep a single `ensures` line in the spec body and merge conditions with `&&` if needed.".to_string(),
+                        ],
+                    ),
+                ));
             }
-            clauses.ensures = Some(rest.trim().to_string());
+            let value_start = trimmed_start + "ensures ".len();
+            clauses.ensures = Some(SourceFragment {
+                text: rest.to_string(),
+                span: Span::new(value_start, value_start + rest.len()),
+            });
+            offset += raw_line.len();
             continue;
         }
-        if let Some(rest) = raw.strip_prefix("effects") {
-            if !clauses.effects.is_empty() {
-                bail!("duplicate `effects` clause");
+        if raw.starts_with("effects") {
+            if clauses.effects.is_some() {
+                return Err(single_synthesize_error(
+                    "invalid spec clause",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        "duplicate `effects` clause",
+                        file,
+                        source,
+                        trimmed_span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Keep one `effects { ... }` line and list every required effect inside the same braces.".to_string(),
+                        ],
+                    ),
+                ));
             }
-            clauses.effects = parse_braced_clause(rest, "effects")?;
+            clauses.effects = Some(parse_braced_clause(
+                raw,
+                "effects",
+                trimmed_start,
+                file,
+                source,
+            )?);
+            offset += raw_line.len();
             continue;
         }
-        if let Some(rest) = raw.strip_prefix("capabilities") {
-            if !clauses.capabilities.is_empty() {
-                bail!("duplicate `capabilities` clause");
+        if raw.starts_with("capabilities") {
+            if clauses.capabilities.is_some() {
+                return Err(single_synthesize_error(
+                    "invalid spec clause",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        "duplicate `capabilities` clause",
+                        file,
+                        source,
+                        trimmed_span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Keep one `capabilities { ... }` line and list every required capability inside the same braces.".to_string(),
+                        ],
+                    ),
+                ));
             }
-            clauses.capabilities = parse_braced_clause(rest, "capabilities")?;
+            clauses.capabilities = Some(parse_braced_clause(
+                raw,
+                "capabilities",
+                trimmed_start,
+                file,
+                source,
+            )?);
+            offset += raw_line.len();
             continue;
         }
-        bail!("unsupported spec clause `{raw}`");
+        return Err(single_synthesize_error(
+            "invalid spec clause",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                format!("unsupported spec clause `{raw}`"),
+                file,
+                source,
+                trimmed_span,
+                None,
+                vec![
+                    "Supported clauses are `requires`, `ensures`, `effects { ... }`, and `capabilities { ... }`.".to_string(),
+                ],
+                vec![
+                    "Rewrite the line to one of the supported clause forms before re-running `aic synthesize`.".to_string(),
+                ],
+            ),
+        ));
     }
     Ok(clauses)
 }
@@ -420,48 +790,103 @@ fn strip_line_comment(line: &str) -> &str {
     line.split_once("//").map(|(head, _)| head).unwrap_or(line)
 }
 
-fn parse_braced_clause(rest: &str, keyword: &str) -> anyhow::Result<Vec<String>> {
-    let trimmed = rest.trim();
-    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
-        bail!("`{keyword}` clauses must use `{{ ... }}`");
+fn parse_braced_clause(
+    raw: &str,
+    keyword: &str,
+    trimmed_start: usize,
+    file: &Path,
+    source: &str,
+) -> anyhow::Result<ListFragment> {
+    let rest = raw[keyword.len()..].trim();
+    if !rest.starts_with('{') || !rest.ends_with('}') {
+        return Err(single_synthesize_error(
+            "invalid spec clause",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                format!("`{keyword}` clauses must use `{{ ... }}`"),
+                file,
+                source,
+                Span::new(trimmed_start, trimmed_start + raw.len()),
+                None,
+                Vec::new(),
+                vec![format!(
+                    "Write `{keyword} {{ item1, item2 }}` with comma-separated names inside braces."
+                )],
+            ),
+        ));
     }
-    let inner = &trimmed[1..trimmed.len() - 1];
-    Ok(inner
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .collect())
+    let open_rel = raw
+        .find('{')
+        .ok_or_else(|| anyhow!("missing opening brace in `{keyword}` clause"))?;
+    let close_rel = raw
+        .rfind('}')
+        .ok_or_else(|| anyhow!("missing closing brace in `{keyword}` clause"))?;
+    let inner = raw[open_rel + 1..close_rel].to_string();
+    Ok(ListFragment {
+        values: inner
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .collect(),
+        inner: SourceFragment {
+            text: inner,
+            span: Span::new(trimmed_start + open_rel + 1, trimmed_start + close_rel),
+        },
+    })
 }
 
-fn build_synthetic_function_source(header: &str, clauses: &SpecClauses) -> String {
-    let mut signature = header.trim().to_string();
-    if !clauses.effects.is_empty() {
-        signature.push_str(" effects { ");
-        signature.push_str(&clauses.effects.join(", "));
-        signature.push_str(" }");
+fn build_synthetic_function_source(
+    file: &Path,
+    source: &str,
+    header: &SourceFragment,
+    clauses: &SpecClauses,
+) -> SyntheticSourceMap {
+    let mut synthetic = String::from("module synth.internal;\n");
+    let mut mappings = Vec::new();
+
+    append_mapped_fragment(&mut synthetic, &mut mappings, header);
+    if let Some(effects) = &clauses.effects {
+        synthetic.push_str(" effects { ");
+        append_mapped_fragment(&mut synthetic, &mut mappings, &effects.inner);
+        synthetic.push_str(" }");
     }
-    if !clauses.capabilities.is_empty() {
-        signature.push_str(" capabilities { ");
-        signature.push_str(&clauses.capabilities.join(", "));
-        signature.push_str(" }");
+    if let Some(capabilities) = &clauses.capabilities {
+        synthetic.push_str(" capabilities { ");
+        append_mapped_fragment(&mut synthetic, &mut mappings, &capabilities.inner);
+        synthetic.push_str(" }");
     }
     if let Some(requires) = &clauses.requires {
-        signature.push_str(" requires ");
-        signature.push_str(requires.trim());
+        synthetic.push_str(" requires ");
+        append_mapped_fragment(&mut synthetic, &mut mappings, requires);
     }
     if let Some(ensures) = &clauses.ensures {
-        signature.push_str(" ensures ");
-        signature.push_str(ensures.trim());
+        synthetic.push_str(" ensures ");
+        append_mapped_fragment(&mut synthetic, &mut mappings, ensures);
     }
+    synthetic.push_str(" {\n    ()\n}\n");
 
-    format!("module synth.internal;\n{signature} {{\n    ()\n}}\n")
+    SyntheticSourceMap {
+        file: file.to_path_buf(),
+        source: source.to_string(),
+        synthetic_source: synthetic,
+        fallback_span: header.span,
+        mappings,
+    }
 }
 
-fn parse_synthetic_function(source: &str) -> anyhow::Result<ast::Function> {
-    let (program, diagnostics) = parser::parse(source, "<synthesize-spec>");
+fn parse_synthetic_function(source: &SyntheticSourceMap) -> anyhow::Result<ast::Function> {
+    let (program, diagnostics) = parser::parse(&source.synthetic_source, "<synthesize-spec>");
     if diagnostics.iter().any(|diag| diag.is_error()) {
-        bail!("failed to parse synthesized runtime function from spec: {diagnostics:#?}");
+        return Err(mapped_synthesize_error(
+            "failed to parse synthesized runtime function from spec",
+            source,
+            diagnostics
+                .iter()
+                .filter(|diag| diag.is_error())
+                .collect::<Vec<_>>(),
+        ));
     }
     let program = program.ok_or_else(|| anyhow!("synthetic spec parse produced no AST"))?;
     for item in program.items {
@@ -470,6 +895,275 @@ fn parse_synthetic_function(source: &str) -> anyhow::Result<ast::Function> {
         }
     }
     bail!("synthetic spec parse did not produce a function")
+}
+
+fn trimmed_fragment(source: &str, start: usize, end: usize) -> Option<SourceFragment> {
+    let slice = source.get(start..end)?;
+    let trimmed = slice.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let leading = slice.len().saturating_sub(slice.trim_start().len());
+    let trailing = slice.len().saturating_sub(slice.trim_end().len());
+    let trimmed_start = start + leading;
+    let trimmed_end = end.saturating_sub(trailing);
+    Some(SourceFragment {
+        text: source[trimmed_start..trimmed_end].to_string(),
+        span: Span::new(trimmed_start, trimmed_end),
+    })
+}
+
+fn append_mapped_fragment(
+    synthetic: &mut String,
+    mappings: &mut Vec<SpanMapping>,
+    fragment: &SourceFragment,
+) {
+    let start = synthetic.len();
+    synthetic.push_str(&fragment.text);
+    let end = synthetic.len();
+    mappings.push(SpanMapping {
+        synthetic: Span::new(start, end),
+        original: fragment.span,
+    });
+}
+
+fn single_synthesize_error(
+    summary: impl Into<String>,
+    diagnostic: SynthesizeRenderedDiagnostic,
+) -> anyhow::Error {
+    SynthesizeFailure {
+        summary: summary.into(),
+        diagnostics: vec![diagnostic],
+    }
+    .into()
+}
+
+fn mapped_synthesize_error(
+    summary: impl Into<String>,
+    source_map: &SyntheticSourceMap,
+    diagnostics: Vec<&Diagnostic>,
+) -> anyhow::Error {
+    SynthesizeFailure {
+        summary: summary.into(),
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| render_mapped_synthesize_diagnostic(source_map, diagnostic))
+            .collect(),
+    }
+    .into()
+}
+
+fn render_manual_synthesize_diagnostic(
+    code: Option<&str>,
+    severity: &'static str,
+    message: impl Into<String>,
+    file: &Path,
+    source: &str,
+    span: Span,
+    label: Option<String>,
+    help: Vec<String>,
+    remediations: Vec<String>,
+) -> SynthesizeRenderedDiagnostic {
+    let resolved_span = Span::new(
+        span.start.min(source.len()),
+        span.end.min(source.len()).max(span.start.min(source.len())),
+    );
+    let (line, column) = line_col_for_offset(source, resolved_span.start);
+    SynthesizeRenderedDiagnostic {
+        code: code.map(ToString::to_string),
+        severity,
+        message: message.into(),
+        file: file.to_string_lossy().to_string(),
+        span: resolved_span,
+        line,
+        column,
+        label,
+        help,
+        remediations,
+    }
+}
+
+fn render_mapped_synthesize_diagnostic(
+    source_map: &SyntheticSourceMap,
+    diagnostic: &Diagnostic,
+) -> SynthesizeRenderedDiagnostic {
+    let resolved = diagnostic
+        .spans
+        .first()
+        .map(|span| source_map.resolve_span(Span::new(span.start, span.end)))
+        .unwrap_or_else(|| source_map.resolve_span(source_map.fallback_span));
+    let mut remediations = diagnostic
+        .suggested_fixes
+        .iter()
+        .map(|fix| match &fix.replacement {
+            Some(replacement) => {
+                format!("{}; suggested replacement `{}`", fix.message, replacement)
+            }
+            None => fix.message.clone(),
+        })
+        .collect::<Vec<_>>();
+    if remediations.is_empty() {
+        remediations.push(
+            "Correct the spec clause syntax and rerun `aic synthesize --from spec <name>`."
+                .to_string(),
+        );
+    }
+    SynthesizeRenderedDiagnostic {
+        code: Some(diagnostic.code.clone()),
+        severity: "error",
+        message: diagnostic.message.clone(),
+        file: resolved.file,
+        span: resolved.span,
+        line: resolved.line,
+        column: resolved.column,
+        label: diagnostic.spans.first().and_then(|span| span.label.clone()),
+        help: diagnostic.help.clone(),
+        remediations,
+    }
+}
+
+fn line_col_for_offset(source: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1usize;
+    let mut column = 1usize;
+
+    for byte in source.as_bytes().iter().take(offset.min(source.len())) {
+        if *byte == b'\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+
+    (line, column)
+}
+
+fn format_artifact_source(source: &str) -> anyhow::Result<String> {
+    let (program, diagnostics) = parser::parse(source, "<synthesize-artifact>");
+    if diagnostics.iter().any(|diag| diag.is_error()) {
+        bail!("failed to format synthesized artifact: {diagnostics:#?}");
+    }
+    let program = program.ok_or_else(|| anyhow!("synthesized artifact parse produced no AST"))?;
+    Ok(format_program(&ir_builder::build(&program)))
+}
+
+fn validate_signature_types(spec: &ParsedSpec, type_index: &TypeIndex) -> anyhow::Result<()> {
+    for param in &spec.function.params {
+        validate_signature_type(
+            spec,
+            type_index,
+            &param.ty,
+            &format!("parameter `{}`", param.name),
+        )?;
+    }
+    validate_signature_type(spec, type_index, &spec.function.ret_type, "return type")
+}
+
+fn validate_signature_type(
+    spec: &ParsedSpec,
+    type_index: &TypeIndex,
+    ty: &TypeExpr,
+    context: &str,
+) -> anyhow::Result<()> {
+    match &ty.kind {
+        TypeKind::Unit => Ok(()),
+        TypeKind::Hole => Err(single_synthesize_error(
+            "invalid spec type",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                format!("type holes are not supported in the {context} for `aic synthesize`"),
+                &spec.file,
+                &spec.source,
+                spec.source_map.resolve_span(ty.span).span,
+                None,
+                Vec::new(),
+                vec!["Replace `_` with a concrete type before synthesizing.".to_string()],
+            ),
+        )),
+        TypeKind::DynTrait { trait_name } => Err(single_synthesize_error(
+            "invalid spec type",
+            render_manual_synthesize_diagnostic(
+                None,
+                "error",
+                format!("dynamic trait type `dyn {trait_name}` is not supported in the {context} for `aic synthesize`"),
+                &spec.file,
+                &spec.source,
+                spec.source_map.resolve_span(ty.span).span,
+                None,
+                vec![
+                    "The current synthesize flow only supports concrete named and builtin types in spec signatures.".to_string(),
+                ],
+                vec!["Replace the dynamic trait type with a concrete project type.".to_string()],
+            ),
+        )),
+        TypeKind::Named { name, args } => {
+            for arg in args {
+                validate_signature_type(spec, type_index, arg, context)?;
+            }
+            if is_builtin_type(name) {
+                return Ok(());
+            }
+
+            let struct_lookup = type_index.struct_shape(name);
+            let enum_lookup = type_index.enum_shape(name);
+            match (struct_lookup, enum_lookup) {
+                (Ok(Some(_)), Ok(None)) | (Ok(None), Ok(Some(_))) => Ok(()),
+                (Ok(None), Ok(None)) => Err(single_synthesize_error(
+                    "invalid spec type",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        format!("unknown type `{name}` in {context}"),
+                        &spec.file,
+                        &spec.source,
+                        spec.source_map.resolve_span(ty.span).span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Declare the type in project sources outside `specs/`, or correct the referenced type name.".to_string(),
+                        ],
+                    ),
+                )),
+                (Err(err), _) | (_, Err(err)) => Err(single_synthesize_error(
+                    "invalid spec type",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        err.to_string(),
+                        &spec.file,
+                        &spec.source,
+                        spec.source_map.resolve_span(ty.span).span,
+                        None,
+                        vec![
+                            format!(
+                                "The {context} must resolve to exactly one project-defined type before synthesis can continue."
+                            ),
+                        ],
+                        vec![
+                            "Rename or remove conflicting type definitions so the spec refers to a single project type.".to_string(),
+                        ],
+                    ),
+                )),
+                (Ok(Some(_)), Ok(Some(_))) => Err(single_synthesize_error(
+                    "invalid spec type",
+                    render_manual_synthesize_diagnostic(
+                        None,
+                        "error",
+                        format!("type `{name}` is ambiguous across multiple project definitions"),
+                        &spec.file,
+                        &spec.source,
+                        spec.source_map.resolve_span(ty.span).span,
+                        None,
+                        Vec::new(),
+                        vec![
+                            "Rename or remove the conflicting project types so the spec resolves uniquely.".to_string(),
+                        ],
+                    ),
+                )),
+            }
+        }
+    }
 }
 
 fn build_type_index(project_root: &Path) -> anyhow::Result<TypeIndex> {
@@ -1593,6 +2287,9 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::attr_test_runner::run_attribute_tests;
+    use crate::formatter::format_program;
+    use crate::ir_builder;
+    use crate::parser;
 
     use super::{format_text, synthesize_from_spec};
 
@@ -1625,6 +2322,17 @@ mod tests {
         )
         .expect("write main.aic");
         fs::write(root.join("specs/validate_user.aic"), spec_body).expect("write spec");
+    }
+
+    fn format_stable(source: &str) -> String {
+        let (program, diagnostics) = parser::parse(source, "<synthesize-test>");
+        assert!(
+            !diagnostics.iter().any(|diag| diag.is_error()),
+            "parse diagnostics: {diagnostics:#?}"
+        );
+        let program = program.expect("parsed program");
+        let ir = ir_builder::build(&program);
+        format_program(&ir)
     }
 
     #[test]
@@ -1702,5 +2410,78 @@ mod tests {
             .content
             .contains("assert(!(result == true));"));
         assert!(format_text(&response).contains("synthesize: spec validate_user"));
+    }
+
+    #[test]
+    fn synthesize_maps_parse_and_type_failures_back_to_spec_source() {
+        let project = tempdir().expect("tempdir");
+        write_spec_project(
+            project.path(),
+            concat!(
+                "spec fn validate_user(user: User) -> Bool {\n",
+                "    requires user.age >\n",
+                "}\n",
+            ),
+        );
+
+        let parse_error = synthesize_from_spec(project.path(), "validate_user")
+            .expect_err("expected parse error");
+        let parse_message = parse_error.to_string();
+        assert!(parse_message.contains("failed to parse synthesized runtime function from spec"));
+        assert!(parse_message.contains("specs/validate_user.aic:2:24"));
+        assert!(parse_message.contains("remediation: insert an expression"));
+
+        write_spec_project(
+            project.path(),
+            concat!(
+                "spec fn validate_user(user: MissingUser) -> Bool {\n",
+                "    ensures result == true\n",
+                "}\n",
+            ),
+        );
+
+        let type_error =
+            synthesize_from_spec(project.path(), "validate_user").expect_err("expected type error");
+        let type_message = type_error.to_string();
+        assert!(type_message.contains("invalid spec type"));
+        assert!(type_message.contains("unknown type `MissingUser` in parameter `user`"));
+        assert!(type_message.contains("specs/validate_user.aic:1:29"));
+        assert!(type_message.contains("remediation:"));
+    }
+
+    #[test]
+    fn synthesized_artifacts_are_formatter_stable() {
+        let project = tempdir().expect("tempdir");
+        write_spec_project(
+            project.path(),
+            concat!(
+                "spec fn validate_user(user: User) -> Result[Bool, ValidationError] {\n",
+                "    requires user.age >= 0\n",
+                "    ensures result == Ok(false)\n",
+                "    effects { io }\n",
+                "}\n",
+            ),
+        );
+
+        let response =
+            synthesize_from_spec(project.path(), "validate_user").expect("synthesize response");
+        let function = response
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == "function")
+            .expect("function artifact");
+        let fixture = response
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == "attribute-test-fixture")
+            .expect("fixture artifact");
+
+        let wrapped_function = format!(
+            "module synth.format;\n\nstruct User {{\n    age: Int,\n    name: String,\n}} invariant age >= 0\n\nenum ValidationError {{\n    Internal,\n    EmptyName,\n}}\n\n{}\n",
+            function.content
+        );
+        let formatted_once = format_stable(&wrapped_function);
+        assert_eq!(format_stable(&formatted_once), formatted_once);
+        assert!(fixture.content.contains("#[test]"));
     }
 }

@@ -1723,48 +1723,6 @@ fn synthesize_command_emits_spec_first_artifacts_and_runnable_fixture() {
         .iter()
         .any(|note| note.as_str().unwrap_or_default().contains("capability")));
 
-    let artifacts = synth_json["artifacts"].as_array().expect("artifacts");
-    let function = artifacts
-        .iter()
-        .find(|artifact| artifact["kind"] == "function")
-        .expect("function artifact");
-    assert_eq!(function["path_hint"], "src/generated/validate_user.aic");
-    let function_content = function["content"].as_str().expect("function content");
-    assert!(
-        function_content.contains("fn validate_user(user: User) -> Result[Bool, ValidationError]")
-    );
-    assert!(function_content.contains("effects { io }"));
-    assert!(function_content.contains("capabilities { io }"));
-    assert!(function_content.contains("Ok(false)"));
-
-    let fixture = artifacts
-        .iter()
-        .find(|artifact| artifact["kind"] == "attribute-test-fixture")
-        .expect("fixture artifact");
-    let fixture_content = fixture["content"].as_str().expect("fixture content");
-    assert!(fixture_content.contains("#[test]"));
-    assert!(fixture_content.contains("#[should_panic]"));
-    assert!(fixture_content.contains("struct User {"));
-    assert!(fixture_content.contains("enum ValidationError {"));
-
-    fs::write(project.path().join("generated_tests.aic"), fixture_content)
-        .expect("write generated fixture");
-    let test_output = run_aic_in_dir(
-        project.path(),
-        &["test", ".", "--filter", "validate_user", "--json"],
-    );
-    assert_eq!(
-        test_output.status.code(),
-        Some(0),
-        "generated tests stdout={}\nstderr={}",
-        String::from_utf8_lossy(&test_output.stdout),
-        String::from_utf8_lossy(&test_output.stderr)
-    );
-    let test_json: Value =
-        serde_json::from_slice(&test_output.stdout).expect("generated test json");
-    assert_eq!(test_json["failed"], 0);
-    assert_eq!(test_json["passed"], 2);
-
     let second = run_aic_in_dir(
         project.path(),
         &[
@@ -1781,6 +1739,190 @@ fn synthesize_command_emits_spec_first_artifacts_and_runnable_fixture() {
     assert_eq!(
         first.stdout, second.stdout,
         "aic synthesize --json output must be deterministic"
+    );
+
+    let artifacts = synth_json["artifacts"].as_array().expect("artifacts");
+    let function = artifacts
+        .iter()
+        .find(|artifact| artifact["kind"] == "function")
+        .expect("function artifact");
+    assert_eq!(function["path_hint"], "src/generated/validate_user.aic");
+    let function_content = function["content"].as_str().expect("function content");
+    assert!(
+        function_content.contains("fn validate_user(user: User) -> Result[Bool, ValidationError]")
+    );
+    assert!(function_content.contains("effects { io }"));
+    assert!(function_content.contains("capabilities { io }"));
+    assert!(function_content.contains("Ok(false)"));
+    fs::create_dir_all(project.path().join("src/generated")).expect("mkdir generated src");
+    fs::write(
+        project.path().join("src/generated/validate_user.aic"),
+        function_content,
+    )
+    .expect("write generated function");
+
+    let fixture = artifacts
+        .iter()
+        .find(|artifact| artifact["kind"] == "attribute-test-fixture")
+        .expect("fixture artifact");
+    let fixture_content = fixture["content"].as_str().expect("fixture content");
+    assert!(fixture_content.contains("#[test]"));
+    assert!(fixture_content.contains("#[should_panic]"));
+    assert!(fixture_content.contains("struct User {"));
+    assert!(fixture_content.contains("enum ValidationError {"));
+
+    fs::write(project.path().join("generated_tests.aic"), fixture_content)
+        .expect("write generated fixture");
+    fs::write(
+        project.path().join("generated_preview.aic"),
+        format!(
+            concat!(
+                "module demo.generated_preview;\n",
+                "struct User {{\n",
+                "    age: Int,\n",
+                "    name: String,\n",
+                "}} invariant age >= 0\n",
+                "\n",
+                "enum ValidationError {{\n",
+                "    Internal,\n",
+                "    EmptyName,\n",
+                "}}\n",
+                "\n",
+                "{}\n",
+                "\n",
+                "fn main() -> Int {{\n",
+                "    0\n",
+                "}}\n"
+            ),
+            function_content
+        ),
+    )
+    .expect("write generated preview");
+    let check_output = run_aic_in_dir(
+        project.path(),
+        &["check", "generated_preview.aic", "--json"],
+    );
+    assert_eq!(
+        check_output.status.code(),
+        Some(0),
+        "generated check stdout={}\nstderr={}",
+        String::from_utf8_lossy(&check_output.stdout),
+        String::from_utf8_lossy(&check_output.stderr)
+    );
+    let check_json: Value =
+        serde_json::from_slice(&check_output.stdout).expect("generated check json");
+    assert!(check_json
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .all(|diag| diag["severity"].as_str() != Some("error")));
+
+    let fmt_output = run_aic_in_dir(
+        project.path(),
+        &["fmt", "src/generated/validate_user.aic", "--check"],
+    );
+    assert_eq!(
+        fmt_output.status.code(),
+        Some(0),
+        "fmt --check failed for generated function\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&fmt_output.stdout),
+        String::from_utf8_lossy(&fmt_output.stderr)
+    );
+    let test_output = run_aic_in_dir(
+        project.path(),
+        &["test", ".", "--filter", "validate_user", "--json"],
+    );
+    assert_eq!(
+        test_output.status.code(),
+        Some(0),
+        "generated tests stdout={}\nstderr={}",
+        String::from_utf8_lossy(&test_output.stdout),
+        String::from_utf8_lossy(&test_output.stderr)
+    );
+    let test_json: Value =
+        serde_json::from_slice(&test_output.stdout).expect("generated test json");
+    assert_eq!(test_json["failed"], 0);
+    assert_eq!(test_json["passed"], 2);
+}
+
+#[test]
+fn synthesize_command_reports_source_mapped_failures() {
+    let project = tempdir().expect("tempdir");
+    write_synthesize_fixture(project.path());
+    fs::write(
+        project.path().join("specs/validate_user.aic"),
+        concat!(
+            "spec fn validate_user(user: User) -> Bool {\n",
+            "    requires user.age >\n",
+            "}\n",
+        ),
+    )
+    .expect("write malformed synthesize spec");
+
+    let parse_fail = run_aic_in_dir(
+        project.path(),
+        &[
+            "synthesize",
+            "--from",
+            "spec",
+            "validate_user",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(parse_fail.status.code(), Some(1));
+    let parse_stderr = String::from_utf8_lossy(&parse_fail.stderr);
+    assert!(
+        parse_stderr.contains("synthesize: failed to parse synthesized runtime function from spec"),
+        "missing synthesize parse failure summary:\n{parse_stderr}"
+    );
+    assert!(
+        parse_stderr.contains("specs/validate_user.aic:2:24"),
+        "missing mapped parse span:\n{parse_stderr}"
+    );
+    assert!(
+        parse_stderr.contains("remediation: insert an expression"),
+        "missing parse remediation:\n{parse_stderr}"
+    );
+
+    fs::write(
+        project.path().join("specs/validate_user.aic"),
+        concat!(
+            "spec fn validate_user(user: MissingUser) -> Bool {\n",
+            "    ensures result == true\n",
+            "}\n",
+        ),
+    )
+    .expect("write unknown-type synthesize spec");
+
+    let type_fail = run_aic_in_dir(
+        project.path(),
+        &[
+            "synthesize",
+            "--from",
+            "spec",
+            "validate_user",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(type_fail.status.code(), Some(1));
+    let type_stderr = String::from_utf8_lossy(&type_fail.stderr);
+    assert!(
+        type_stderr.contains("synthesize: invalid spec type"),
+        "missing synthesize type failure summary:\n{type_stderr}"
+    );
+    assert!(
+        type_stderr.contains("unknown type `MissingUser` in parameter `user`"),
+        "missing unknown type detail:\n{type_stderr}"
+    );
+    assert!(
+        type_stderr.contains("specs/validate_user.aic:1:29"),
+        "missing mapped type span:\n{type_stderr}"
+    );
+    assert!(
+        type_stderr.contains("remediation:"),
+        "missing type remediation:\n{type_stderr}"
     );
 }
 

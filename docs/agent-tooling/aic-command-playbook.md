@@ -27,7 +27,7 @@ Implementation source: `src/main.rs` (command surface), `docs/cli-contract.md` (
 | Parse/type/effect validation | `aic check <entry> --json` | Exit `0`, diagnostics array has no errors | Use `aic explain <code>` and `diagnostics[*].reasoning` when present, then apply targeted edits |
 | Hallucination preflight | `aic validate-call <target> --arg <type> ... --project .`, `aic validate-type <type_expr> --project .`, `aic suggest --partial <text> --project . --limit <n>` | `ok: true` with resolved callable/type or ranked candidates | Adjust call/type text from `diagnostics[]`/`suggestions[]`, then retry before entering a full compile loop |
 | Context-window minimization | `aic context --for function <name> --depth <n> --limit <n> --json` | Target signature + ranked `dependencies[]`/`callers[]` | Narrow selector or reduce depth; resolve ambiguity errors |
-| Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous dependent types, then re-run |
+| Spec-first skeleton synthesis | `aic synthesize --from spec <name> --project . --json` | Function + attribute-test fixture artifacts emitted deterministically | Fix malformed spec clauses or missing/ambiguous signature types using the reported spec-file span/remediation hints, then re-run |
 | Harness fixture generation | `aic testgen --strategy <strategy> --for <selector> --project . --json` | Strategy-specific fixture artifacts emitted deterministically | Adjust selector/strategy pair or simplify unsupported contracts/invariants |
 | Checkpoint safety rail | `aic checkpoint create --project . --json` then `aic checkpoint diff <id> [--to <id>] --project . --json` | Stable checkpoint id plus deterministic file/hash/semantic diff summary | Use `aic checkpoint restore <id> --project . --json` to revert checkpointed files; corruption returns non-zero with no partial restore |
 | Multi-agent coordination gate | `aic session conflicts <plan.json> --project . --json` then `aic session merge <plan.json> --project . --json` | Conflict-free plan plus merge validation with no frontend errors | Acquire/reclaim the required symbol locks, fix `conflicts[]`/`diagnostics[]`, and re-run |
@@ -53,7 +53,7 @@ These are the command outputs automation should parse directly:
 | `aic suggest --partial` | Ranked symbol candidate JSON (`candidate_count`, `candidates[]`) |
 | `aic diag apply-fixes --json` | Autofix plan/apply JSON (`ok`, `applied_edits`, `conflicts`) |
 | `aic context --json` | Context window JSON (`signature`, `target`, `dependencies`, `callers`, `contracts`, `related_tests`) |
-| `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`) |
+| `aic synthesize --json` | Spec-first artifact JSON (`spec_file`, `artifacts[]`, `notes[]`); failures report original spec-file spans and remediation hints on stderr |
 | `aic testgen --json` | Harness-generation JSON (`strategy`, `seed`, `target`, `artifacts[]`, `notes[]`) |
 | `aic checkpoint --json` | Checkpoint JSON (`checkpoint`, `checkpoints[]`, `summary`, `files[]`, `restored_paths[]`) |
 | `aic session --json` | Session JSON (`session`, `sessions[]`, `locks[]`, `operations[]`, `conflicts[]`, `diagnostics[]`) |

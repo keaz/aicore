@@ -490,9 +490,11 @@ JSON payload:
 Synthesis behavior:
 
 - emits an executable function skeleton carrying the declared signature/contracts/effects
+- formats the synthesized function artifact into the compiler's canonical source shape before returning it
 - mirrors `effects` into `capabilities` when capabilities are omitted in the spec
 - emits a self-contained attribute-test fixture with at least one happy-path test and one failing contract test when supported by the spec
 - reports non-lowerable clauses in `notes[]` instead of forcing them into runnable artifacts
+- reports spec parse/signature-type failures against the original spec file path with line/column spans and remediation hints on stderr
 
 ## `aic testgen` output modes
 
