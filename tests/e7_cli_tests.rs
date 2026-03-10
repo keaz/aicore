@@ -1599,7 +1599,7 @@ fn scaffold_help_and_docs_are_consistent() {
     let ai_impl = fs::read_to_string(repo_root().join("docs/ai-agent-implementation.md"))
         .expect("read ai agent implementation");
 
-    assert!(readme.contains("docs/agent-tooling/scaffold-guide.md"));
+    assert!(readme.contains("scaffold-guide.md"));
     assert!(cli_contract_doc.contains("Stable `scaffold` flags include"));
     assert!(playbook.contains("aic scaffold struct|enum|fn|match|test"));
     assert!(ai_impl.contains("docs/agent-tooling/scaffold-guide.md"));
@@ -7698,7 +7698,7 @@ fn language_feature_playbook_is_discoverable_and_grounded_in_reference_docs() {
         "root README missing language feature playbook reference"
     );
     assert!(
-        tooling_readme.contains("docs/agent-tooling/language-feature-playbook.md"),
+        tooling_readme.contains("language-feature-playbook.md"),
         "agent tooling README missing language feature playbook reference"
     );
 
@@ -7738,9 +7738,9 @@ fn command_deep_dive_guides_are_linked_and_cover_bootstrap_editor_and_diff_loops
         .expect("read aic diff guide");
 
     for path in [
-        "docs/agent-tooling/commands/aic-init.md",
-        "docs/agent-tooling/commands/aic-lsp.md",
-        "docs/agent-tooling/commands/aic-diff.md",
+        "commands/aic-init.md",
+        "commands/aic-lsp.md",
+        "commands/aic-diff.md",
     ] {
         assert!(
             tooling_readme.contains(path),
@@ -7795,6 +7795,57 @@ fn command_deep_dive_guides_are_linked_and_cover_bootstrap_editor_and_diff_loops
         assert!(
             diff_doc.contains(expected),
             "aic diff guide missing `{expected}`"
+        );
+    }
+}
+
+#[test]
+fn agent_doc_entry_points_use_resolved_relative_links() {
+    let root_readme = fs::read_to_string(repo_root().join("README.md")).expect("read README");
+    let tooling_readme = fs::read_to_string(repo_root().join("docs/agent-tooling/README.md"))
+        .expect("read agent tooling README");
+
+    for expected in [
+        "[Agent tooling docs index](docs/agent-tooling/README.md)",
+        "[Language feature playbook](docs/agent-tooling/language-feature-playbook.md)",
+        "[CLI command playbook](docs/agent-tooling/aic-command-playbook.md)",
+        "[aic init deep dive](docs/agent-tooling/commands/aic-init.md)",
+        "[aic lsp deep dive](docs/agent-tooling/commands/aic-lsp.md)",
+        "[aic diff --semantic deep dive](docs/agent-tooling/commands/aic-diff.md)",
+    ] {
+        assert!(
+            root_readme.contains(expected),
+            "root README missing `{expected}`"
+        );
+    }
+
+    for expected in [
+        "agent-native, IR-first",
+        "## Docs Validation Checklist",
+        "[protocol-v1.md](protocol-v1.md)",
+        "[language-feature-playbook.md](language-feature-playbook.md)",
+        "[aic-command-playbook.md](aic-command-playbook.md)",
+        "[commands/aic-init.md](commands/aic-init.md)",
+        "[commands/aic-lsp.md](commands/aic-lsp.md)",
+        "[commands/aic-diff.md](commands/aic-diff.md)",
+    ] {
+        assert!(
+            tooling_readme.contains(expected),
+            "agent tooling README missing `{expected}`"
+        );
+    }
+
+    for path in [
+        "docs/agent-tooling/README.md",
+        "docs/agent-tooling/language-feature-playbook.md",
+        "docs/agent-tooling/aic-command-playbook.md",
+        "docs/agent-tooling/commands/aic-init.md",
+        "docs/agent-tooling/commands/aic-lsp.md",
+        "docs/agent-tooling/commands/aic-diff.md",
+    ] {
+        assert!(
+            repo_root().join(path).exists(),
+            "missing linked path `{path}`"
         );
     }
 }

@@ -629,11 +629,12 @@ aic check <file> --sarif    # SARIF diagnostics export
 
 For agent-first usage guidance (feature selection, command strategy, and workflow playbooks):
 
-- `docs/agent-tooling/language-feature-playbook.md`
-- `docs/agent-tooling/aic-command-playbook.md`
-- `docs/agent-tooling/commands/aic-init.md`
-- `docs/agent-tooling/commands/aic-lsp.md`
-- `docs/agent-tooling/commands/aic-diff.md`
+- [Agent tooling docs index](docs/agent-tooling/README.md)
+- [Language feature playbook](docs/agent-tooling/language-feature-playbook.md)
+- [CLI command playbook](docs/agent-tooling/aic-command-playbook.md)
+- [aic init deep dive](docs/agent-tooling/commands/aic-init.md)
+- [aic lsp deep dive](docs/agent-tooling/commands/aic-lsp.md)
+- [aic diff --semantic deep dive](docs/agent-tooling/commands/aic-diff.md)
 
 ---
 

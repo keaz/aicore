@@ -1,29 +1,29 @@
 # Agent Tooling Docs (AG-T6)
 
-Machine-first reference for autonomous compiler/diagnostic/editor integration.
+Machine-first reference for agent-native, IR-first compiler, diagnostic, and editor integration.
 
 Development note: this project has been developed mainly using **GPT-5.3-Codex** as the primary implementation agent.
 
 ## Versioned protocol
 
-- Protocol contract: `docs/agent-tooling/protocol-v1.md`
+- Protocol contract: [protocol-v1.md](protocol-v1.md)
 - Schemas:
-  - `docs/agent-tooling/schemas/parse-response.schema.json`
-  - `docs/agent-tooling/schemas/ast-response.schema.json`
-- `docs/agent-tooling/schemas/check-response.schema.json`
-- `docs/agent-tooling/schemas/build-response.schema.json`
-- `docs/agent-tooling/schemas/fix-response.schema.json`
-- `docs/agent-tooling/schemas/testgen-response.schema.json`
-- `docs/agent-tooling/schemas/session-response.schema.json`
-- `docs/agent-tooling/schemas/patch-response.schema.json`
-- `docs/agent-tooling/schemas/validate-call-response.schema.json`
-- `docs/agent-tooling/schemas/validate-type-response.schema.json`
-- `docs/agent-tooling/schemas/suggest-response.schema.json`
-- `docs/agent-tooling/schemas/context-response.schema.json`
-- `docs/agent-tooling/schemas/query-response.schema.json`
-- `docs/agent-tooling/schemas/symbols-response.schema.json`
-- Patch authoring schema: `docs/agent-tooling/schemas/patch-request.schema.json`
-- `docs/diagnostics.schema.json` (shared raw `aic check --json` / `aic diag --json` diagnostics array)
+  - [parse-response.schema.json](schemas/parse-response.schema.json)
+  - [ast-response.schema.json](schemas/ast-response.schema.json)
+- [check-response.schema.json](schemas/check-response.schema.json)
+- [build-response.schema.json](schemas/build-response.schema.json)
+- [fix-response.schema.json](schemas/fix-response.schema.json)
+- [testgen-response.schema.json](schemas/testgen-response.schema.json)
+- [session-response.schema.json](schemas/session-response.schema.json)
+- [patch-response.schema.json](schemas/patch-response.schema.json)
+- [validate-call-response.schema.json](schemas/validate-call-response.schema.json)
+- [validate-type-response.schema.json](schemas/validate-type-response.schema.json)
+- [suggest-response.schema.json](schemas/suggest-response.schema.json)
+- [context-response.schema.json](schemas/context-response.schema.json)
+- [query-response.schema.json](schemas/query-response.schema.json)
+- [symbols-response.schema.json](schemas/symbols-response.schema.json)
+- Patch authoring schema: [patch-request.schema.json](schemas/patch-request.schema.json)
+- [`docs/diagnostics.schema.json`](../diagnostics.schema.json) (shared raw `aic check --json` / `aic diag --json` diagnostics array)
 
 Diagnostic transport note:
 
@@ -32,24 +32,24 @@ Diagnostic transport note:
 
 ## Tooling workflows
 
-- LSP capabilities and examples: `examples/agent/lsp_workflow.json`
-- Incremental daemon behavior/troubleshooting: `docs/agent-tooling/incremental-daemon.md`
-- Agent cookbook end-to-end loops: `docs/agent-recipes/`
+- LSP capabilities and examples: [`examples/agent/lsp_workflow.json`](../../examples/agent/lsp_workflow.json)
+- Incremental daemon behavior/troubleshooting: [incremental-daemon.md](incremental-daemon.md)
+- Agent cookbook end-to-end loops: [`docs/agent-recipes/`](../agent-recipes/)
 
 ## Agent-first playbooks
 
 - Language feature guidance (when/how to use each implemented feature):
-  - `docs/agent-tooling/language-feature-playbook.md`
+  - [language-feature-playbook.md](language-feature-playbook.md)
 - Full CLI command decision playbook:
-  - `docs/agent-tooling/aic-command-playbook.md`
+  - [aic-command-playbook.md](aic-command-playbook.md)
 - Scaffold command guide with exact command/output pairs:
-  - `docs/agent-tooling/scaffold-guide.md`
+  - [scaffold-guide.md](scaffold-guide.md)
 - Patch authoring guide:
-  - `docs/agent-tooling/patch-authoring.md`
+  - [patch-authoring.md](patch-authoring.md)
 - Deep command guides:
-  - `docs/agent-tooling/commands/aic-init.md`
-  - `docs/agent-tooling/commands/aic-lsp.md`
-  - `docs/agent-tooling/commands/aic-diff.md`
+  - [commands/aic-init.md](commands/aic-init.md)
+  - [commands/aic-lsp.md](commands/aic-lsp.md)
+  - [commands/aic-diff.md](commands/aic-diff.md)
 
 ## Core commands
 
@@ -84,7 +84,7 @@ Fast-path budget for hallucination-prevention commands:
 - Recipe docs-as-tests: `tests/agent_recipe_tests.rs`
 - LSP/autofix/daemon integration tests: `tests/lsp_smoke_tests.rs`, `tests/e7_cli_tests.rs`
 
-## Docs maintenance checklist
+## Docs Validation Checklist
 
 Before merging command/feature documentation updates:
 
