@@ -2042,6 +2042,11 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
                 visit_expr(arg, visit);
             }
         }
+        ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                visit_expr(arg, visit);
+            }
+        }
         ExprKind::Closure { body, .. } => visit_block(body, visit),
         ExprKind::If {
             cond,

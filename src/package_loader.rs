@@ -630,6 +630,9 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
             ) || expr_uses_compiler_iterator_helpers(callee)
                 || args.iter().any(expr_uses_compiler_iterator_helpers)
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            args.iter().any(expr_uses_compiler_iterator_helpers)
+        }
         ast::ExprKind::Closure { body, .. } => block_uses_compiler_iterator_helpers(body),
         ast::ExprKind::If {
             cond,

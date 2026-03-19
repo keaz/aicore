@@ -2341,6 +2341,18 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
+            ir::ExprKind::TemplateLiteral { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5023",
+                    format!(
+                        "const '{}' initializer uses unsupported template literal in LLVM backend",
+                        const_name
+                    ),
+                    self.file,
+                    expr.span,
+                ));
+                None
+            }
             ir::ExprKind::Closure { .. } => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5023",

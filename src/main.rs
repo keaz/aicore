@@ -4253,6 +4253,7 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
         aicore::ast::ExprKind::Unit => "unit literal",
         aicore::ast::ExprKind::Var(_) => "variable",
         aicore::ast::ExprKind::Call { .. } => "function call",
+        aicore::ast::ExprKind::TemplateLiteral { .. } => "template literal",
         aicore::ast::ExprKind::Closure { .. } => "closure",
         aicore::ast::ExprKind::If { .. } => "if expression",
         aicore::ast::ExprKind::While { .. } => "while expression",

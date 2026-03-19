@@ -655,6 +655,11 @@ fn collect_expr_call_names(
                 collect_expr_call_names(arg, caller_name, call_graph);
             }
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_expr_call_names(arg, caller_name, call_graph);
+            }
+        }
         ast::ExprKind::Closure { body, .. } => {
             collect_block_call_names(body, caller_name, call_graph);
         }

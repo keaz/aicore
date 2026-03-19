@@ -896,6 +896,7 @@ fn render_expr(expr: &ir::Expr) -> String {
                 .join(", ");
             format!("{}({})", render_expr(callee), rendered_args)
         }
+        ir::ExprKind::TemplateLiteral { template, args } => render_template_literal(template, args),
         ir::ExprKind::Closure { params, .. } => {
             let rendered = params
                 .iter()
@@ -953,6 +954,42 @@ fn render_expr(expr: &ir::Expr) -> String {
         }
         ir::ExprKind::FieldAccess { base, field } => format!("{}.{}", render_expr(base), field),
         ir::ExprKind::UnsafeBlock { .. } => "unsafe { ... }".to_string(),
+    }
+}
+
+fn render_template_literal(template: &str, args: &[ir::Expr]) -> String {
+    let mut out = String::from("f\"");
+    let mut cursor = 0usize;
+    for (idx, arg) in args.iter().enumerate() {
+        let placeholder = format!("{{{idx}}}");
+        let Some(rel) = template[cursor..].find(&placeholder) else {
+            break;
+        };
+        let split_at = cursor + rel;
+        push_escaped_template_segment(&mut out, &template[cursor..split_at]);
+        out.push('{');
+        out.push_str(&render_expr(arg));
+        out.push('}');
+        cursor = split_at + placeholder.len();
+    }
+    push_escaped_template_segment(&mut out, &template[cursor..]);
+    out.push('"');
+    out
+}
+
+fn push_escaped_template_segment(out: &mut String, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            _ => out.push(ch),
+        }
     }
 }
 

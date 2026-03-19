@@ -293,6 +293,11 @@ impl<'a> Analyzer<'a> {
                     self.visit_expr(arg, module_name, caller);
                 }
             }
+            ast::ExprKind::TemplateLiteral { args, .. } => {
+                for arg in args {
+                    self.visit_expr(arg, module_name, caller);
+                }
+            }
             ast::ExprKind::Closure {
                 params,
                 ret_type,
@@ -752,6 +757,11 @@ impl<'a> VariableAnalyzer<'a> {
             ast::ExprKind::Var(name) => self.mark_used(name),
             ast::ExprKind::Call { callee, args, .. } => {
                 self.visit_expr(callee);
+                for arg in args {
+                    self.visit_expr(arg);
+                }
+            }
+            ast::ExprKind::TemplateLiteral { args, .. } => {
                 for arg in args {
                     self.visit_expr(arg);
                 }

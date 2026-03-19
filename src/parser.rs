@@ -20,7 +20,6 @@ pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
         diagnostics: Vec::new(),
         for_counter: 0,
         tuple_binding_counter: 0,
-        template_counter: 0,
         disallow_struct_literal: false,
     };
     let program = parser.parse_program();
@@ -35,7 +34,6 @@ struct Parser<'a> {
     diagnostics: Vec<Diagnostic>,
     for_counter: usize,
     tuple_binding_counter: usize,
-    template_counter: usize,
     disallow_struct_literal: bool,
 }
 
@@ -2684,97 +2682,8 @@ impl<'a> Parser<'a> {
                 span: token_span,
             });
         }
-
-        let string_ty = TypeExpr {
-            kind: TypeKind::Named {
-                name: "String".to_string(),
-                args: Vec::new(),
-            },
-            span: token_span,
-        };
-        let vec_string_ty = TypeExpr {
-            kind: TypeKind::Named {
-                name: "Vec".to_string(),
-                args: vec![string_ty.clone()],
-            },
-            span: token_span,
-        };
-
-        let template_id = self.template_counter;
-        self.template_counter += 1;
-        let mut stmts = Vec::new();
-
-        let make_var_expr = |name: &str| Expr {
-            kind: ExprKind::Var(name.to_string()),
-            span: token_span,
-        };
-        let make_call_expr = |callee: &str, args: Vec<Expr>| Expr {
-            kind: ExprKind::Call {
-                callee: Box::new(Expr {
-                    kind: ExprKind::Var(callee.to_string()),
-                    span: token_span,
-                }),
-                args,
-                arg_names: Vec::new(),
-            },
-            span: token_span,
-        };
-
-        let first_name = format!("__aic_template_args_{template_id}_0");
-        stmts.push(Stmt::Let {
-            name: first_name.clone(),
-            mutable: false,
-            ty: Some(vec_string_ty),
-            expr: make_call_expr("aic_vec_new_intrinsic", Vec::new()),
-            span: token_span,
-        });
-
-        let mut current_name = first_name;
-        for (idx, arg) in args.into_iter().enumerate() {
-            let next_name = format!("__aic_template_args_{template_id}_{}", idx + 1);
-            stmts.push(Stmt::Let {
-                name: next_name.clone(),
-                mutable: false,
-                ty: None,
-                expr: make_call_expr(
-                    "aic_vec_push_intrinsic",
-                    vec![make_var_expr(&current_name), arg],
-                ),
-                span: token_span,
-            });
-            current_name = next_name;
-        }
-
-        let format_call = make_call_expr(
-            "aic_string_format_intrinsic",
-            vec![
-                Expr {
-                    kind: ExprKind::String(template),
-                    span: token_span,
-                },
-                make_var_expr(&current_name),
-            ],
-        );
-
-        let closure = Expr {
-            kind: ExprKind::Closure {
-                params: Vec::new(),
-                ret_type: string_ty,
-                body: Block {
-                    stmts,
-                    tail: Some(Box::new(format_call)),
-                    span: token_span,
-                },
-            },
-            span: token_span,
-        };
-
         Some(Expr {
-            kind: ExprKind::Call {
-                callee: Box::new(closure),
-                args: Vec::new(),
-                arg_names: Vec::new(),
-            },
+            kind: ExprKind::TemplateLiteral { template, args },
             span: token_span,
         })
     }
@@ -2793,7 +2702,6 @@ impl<'a> Parser<'a> {
             diagnostics: Vec::new(),
             for_counter: self.for_counter,
             tuple_binding_counter: self.tuple_binding_counter,
-            template_counter: self.template_counter,
             disallow_struct_literal: false,
         };
 
@@ -2814,7 +2722,6 @@ impl<'a> Parser<'a> {
 
         self.for_counter = parser.for_counter;
         self.tuple_binding_counter = parser.tuple_binding_counter;
-        self.template_counter = parser.template_counter;
 
         let mut expr = expr?;
         expr.span = interp_span;
@@ -4632,109 +4539,17 @@ fn main() -> String {
         };
 
         let tail = function.body.tail.as_ref().expect("tail expression");
-        let ExprKind::Call {
-            callee: closure_callee,
-            args: invoke_args,
-            ..
-        } = &tail.kind
-        else {
-            panic!("expected immediate closure invocation");
+        let ExprKind::TemplateLiteral { template, args } = &tail.kind else {
+            panic!("expected parsed template literal AST node");
         };
-        assert!(invoke_args.is_empty());
-
-        let ExprKind::Closure {
-            params,
-            ret_type,
-            body,
-        } = &closure_callee.kind
-        else {
-            panic!("expected template desugar closure");
-        };
-        assert!(params.is_empty());
-        assert!(matches!(
-            &ret_type.kind,
-            TypeKind::Named { name, args } if name == "String" && args.is_empty()
-        ));
-        assert_eq!(body.stmts.len(), 3);
-
-        let Stmt::Let {
-            ty: Some(first_ty),
-            expr: first_expr,
-            ..
-        } = &body.stmts[0]
-        else {
-            panic!("expected typed vec initialization");
-        };
-        assert!(matches!(
-            &first_ty.kind,
-            TypeKind::Named { name, args }
-                if name == "Vec"
-                    && args.len() == 1
-                    && matches!(&args[0].kind, TypeKind::Named { name, args } if name == "String" && args.is_empty())
-        ));
-        let ExprKind::Call {
-            callee: first_callee,
-            args: first_args,
-            ..
-        } = &first_expr.kind
-        else {
-            panic!("expected vec new call");
-        };
-        assert!(matches!(
-            first_callee.kind,
-            ExprKind::Var(ref name) if name == "aic_vec_new_intrinsic"
-        ));
-        assert!(first_args.is_empty());
-
-        let Stmt::Let {
-            expr: second_expr, ..
-        } = &body.stmts[1]
-        else {
-            panic!("expected first vec push statement");
-        };
-        let ExprKind::Call {
-            callee: second_callee,
-            args: second_args,
-            ..
-        } = &second_expr.kind
-        else {
-            panic!("expected vec push call");
-        };
-        assert!(matches!(
-            second_callee.kind,
-            ExprKind::Var(ref name) if name == "aic_vec_push_intrinsic"
-        ));
-        assert_eq!(second_args.len(), 2);
-        assert!(matches!(
-            second_args[1].kind,
-            ExprKind::Var(ref name) if name == "name"
-        ));
-
-        let Stmt::Let {
-            expr: third_expr, ..
-        } = &body.stmts[2]
-        else {
-            panic!("expected second vec push statement");
-        };
-        let ExprKind::Call {
-            callee: third_callee,
-            args: third_args,
-            ..
-        } = &third_expr.kind
-        else {
-            panic!("expected vec push call");
-        };
-        assert!(matches!(
-            third_callee.kind,
-            ExprKind::Var(ref name) if name == "aic_vec_push_intrinsic"
-        ));
-        assert_eq!(third_args.len(), 2);
-
+        assert_eq!(template, "Hello, {0} {1}");
+        assert_eq!(args.len(), 2);
+        assert!(matches!(args[0].kind, ExprKind::Var(ref name) if name == "name"));
         let ExprKind::Call {
             callee: nested_callee,
             args: nested_args,
             ..
-        } = &third_args[1].kind
+        } = &args[1].kind
         else {
             panic!("expected nested interpolation call");
         };
@@ -4746,29 +4561,6 @@ fn main() -> String {
         assert!(matches!(
             nested_args[0].kind,
             ExprKind::Binary { op: BinOp::Add, .. }
-        ));
-
-        let format_expr = body.tail.as_ref().expect("format call tail");
-        let ExprKind::Call {
-            callee: format_callee,
-            args: format_args,
-            ..
-        } = &format_expr.kind
-        else {
-            panic!("expected format call in closure tail");
-        };
-        assert!(matches!(
-            format_callee.kind,
-            ExprKind::Var(ref name) if name == "aic_string_format_intrinsic"
-        ));
-        assert_eq!(format_args.len(), 2);
-        assert!(matches!(
-            &format_args[0].kind,
-            ExprKind::String(template) if template == "Hello, {0} {1}"
-        ));
-        assert!(matches!(
-            &format_args[1].kind,
-            ExprKind::Var(name) if name.starts_with("__aic_template_args_")
         ));
     }
 

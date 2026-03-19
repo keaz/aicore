@@ -1076,6 +1076,11 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
                 collect_match_expr_candidates_from_expr(arg, out);
             }
         }
+        ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_match_expr_candidates_from_expr(arg, out);
+            }
+        }
         ExprKind::Closure { body, .. } => collect_match_expr_candidates_from_block(body, out),
         ExprKind::If {
             cond,

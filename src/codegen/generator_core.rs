@@ -2694,6 +2694,15 @@ impl<'a> Generator<'a> {
                 }
                 self.gen_call(&path, args, expr.span, expected_ty, fctx)
             }
+            ir::ExprKind::TemplateLiteral { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5023",
+                    "template literals must be lowered before LLVM codegen",
+                    self.file,
+                    expr.span,
+                ));
+                None
+            }
             ir::ExprKind::Closure {
                 params,
                 ret_type,

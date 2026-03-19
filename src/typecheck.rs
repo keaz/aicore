@@ -1456,15 +1456,11 @@ impl<'a> Checker<'a> {
         {
             return false;
         }
-        let template_desugar_intrinsic = matches!(
-            name,
-            "aic_vec_new_intrinsic" | "aic_vec_push_intrinsic" | "aic_string_format_intrinsic"
-        );
         let Some(source) = self.source.as_ref() else {
-            return !template_desugar_intrinsic;
+            return true;
         };
         if span.end > source.len() || span.start >= span.end {
-            return !template_desugar_intrinsic;
+            return true;
         }
         source[span.start..span.end].contains(name)
     }
@@ -2453,6 +2449,11 @@ impl<'a> Checker<'a> {
                     allow_closed_use,
                 );
             }
+            ir::ExprKind::TemplateLiteral { args, .. } => {
+                for arg in args {
+                    self.check_resource_protocol_expr_mode(arg, state, binding_types, false);
+                }
+            }
             ir::ExprKind::Closure { body, .. } => {
                 let mut closure_state = state.clone();
                 let mut closure_binding_types = binding_types.clone();
@@ -2888,6 +2889,13 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Call { callee, args, .. } => {
                 let mut borrows = self.check_borrow_expr(callee, mutability, state, binding_types);
+                for arg in args {
+                    borrows.extend(self.check_borrow_expr(arg, mutability, state, binding_types));
+                }
+                borrows
+            }
+            ir::ExprKind::TemplateLiteral { args, .. } => {
+                let mut borrows = Vec::new();
                 for arg in args {
                     borrows.extend(self.check_borrow_expr(arg, mutability, state, binding_types));
                 }
@@ -3963,6 +3971,31 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Bool(_) => "Bool".to_string(),
             ir::ExprKind::Char(_) => "Char".to_string(),
             ir::ExprKind::String(_) => "String".to_string(),
+            ir::ExprKind::TemplateLiteral { args, .. } => {
+                for (idx, arg) in args.iter().enumerate() {
+                    let arg_ty = self.check_expr_with_expected(
+                        arg,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        Some("String"),
+                    );
+                    if !self.types_compatible("String", &arg_ty) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1204",
+                            format!(
+                                "template interpolation {} expected 'String', found '{}'",
+                                idx + 1,
+                                arg_ty
+                            ),
+                            self.file,
+                            arg.span,
+                        ));
+                    }
+                }
+                "String".to_string()
+            }
             ir::ExprKind::Unit => "()".to_string(),
             ir::ExprKind::Var(name) => {
                 if let Some(local_ty) = locals.get(name).cloned() {

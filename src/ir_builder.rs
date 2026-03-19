@@ -500,6 +500,10 @@ impl Builder {
             ast::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
             ast::ExprKind::Char(v) => ir::ExprKind::Char(*v),
             ast::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
+            ast::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
+                template: template.clone(),
+                args: args.iter().map(|a| self.lower_expr(a)).collect(),
+            },
             ast::ExprKind::Unit => ir::ExprKind::Unit,
             ast::ExprKind::Var(v) => ir::ExprKind::Var(v.clone()),
             ast::ExprKind::Call {

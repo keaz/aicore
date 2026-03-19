@@ -1981,7 +1981,8 @@ pub fn emit_llvm_with_options(
     options: CodegenOptions,
 ) -> Result<CodegenOutput, Vec<Diagnostic>> {
     let started = Instant::now();
-    let mut gen = Generator::new(program, file, options);
+    let template_lowered = crate::template_lowering::lower_template_literals(program);
+    let mut gen = Generator::new(&template_lowered, file, options);
     gen.generate();
     let mut attrs = BTreeMap::from([
         ("file".to_string(), json!(file)),
@@ -2992,6 +2993,11 @@ fn collect_direct_calls_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
                 collect_direct_calls_in_expr(value, out);
             }
         }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_direct_calls_in_expr(arg, out);
+            }
+        }
         ir::ExprKind::FieldAccess { base, .. }
         | ir::ExprKind::Unary { expr: base, .. }
         | ir::ExprKind::Borrow { expr: base, .. }
@@ -3321,6 +3327,11 @@ fn collect_closure_captures_expr(
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
                 collect_closure_captures_expr(value, scopes, captures, known_functions);
+            }
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_closure_captures_expr(arg, scopes, captures, known_functions);
             }
         }
         ir::ExprKind::FieldAccess { base, .. } => {

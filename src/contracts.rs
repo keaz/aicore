@@ -888,6 +888,11 @@ fn rewrite_struct_inits_in_expr(
                 rewrite_struct_inits_in_expr(arg, helper_names, field_orders, alloc);
             }
         }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                rewrite_struct_inits_in_expr(arg, helper_names, field_orders, alloc);
+            }
+        }
         ir::ExprKind::Closure { body, .. } => {
             rewrite_struct_inits_in_block(body, helper_names, field_orders, alloc);
         }
@@ -1068,6 +1073,11 @@ fn lower_ensures_in_expr(
     match &mut expr.kind {
         ir::ExprKind::Call { callee, args, .. } => {
             lower_ensures_in_expr(callee, ensures, ret_type, function_name, alloc);
+            for arg in args {
+                lower_ensures_in_expr(arg, ensures, ret_type, function_name, alloc);
+            }
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
             for arg in args {
                 lower_ensures_in_expr(arg, ensures, ret_type, function_name, alloc);
             }
@@ -1413,6 +1423,10 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
             arg_names: arg_names.clone(),
         },
+        ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
+            template: template.clone(),
+            args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
+        },
         ir::ExprKind::Closure {
             params,
             ret_type,
@@ -1607,6 +1621,13 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .map(|a| substitute_result_var(a, result_name, alloc))
                 .collect(),
             arg_names: arg_names.clone(),
+        },
+        ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
+            template: template.clone(),
+            args: args
+                .iter()
+                .map(|arg| substitute_result_var(arg, result_name, alloc))
+                .collect(),
         },
         ir::ExprKind::Closure {
             params,
@@ -1943,6 +1964,9 @@ fn make(x: Int) -> NonEmpty {
             ir::ExprKind::Call { callee, args, .. } => {
                 count_asserts_in_expr(callee)
                     + args.iter().map(count_asserts_in_expr).sum::<usize>()
+            }
+            ir::ExprKind::TemplateLiteral { args, .. } => {
+                args.iter().map(count_asserts_in_expr).sum::<usize>()
             }
             ir::ExprKind::Closure { body, .. } => count_asserts_in_block(body),
             ir::ExprKind::Binary { lhs, rhs, .. } => {

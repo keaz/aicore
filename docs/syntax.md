@@ -198,7 +198,7 @@ fn route(method: String, user: User, c: Char) -> Int {
 
 Template literals:
 - Supported prefixes are `f"..."` and `$"..."`.
-- Interpolation segments use `{expr}` and are lowered to `aic_string_format_intrinsic(template, args)`.
+- Interpolation segments use `{expr}` and are represented as template-literal expressions before a dedicated lowering phase rewrites them to `aic_string_format_intrinsic(template, args)`.
 - Literal braces can be written as `{{` and `}}` (or escaped as `\{` and `\}`).
 - Interpolated values must type-check as `String`; use explicit conversion helpers like `int_to_string(...)` when needed.
 

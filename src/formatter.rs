@@ -565,6 +565,9 @@ fn format_expr(
             }
             out.push(')');
         }
+        ir::ExprKind::TemplateLiteral { template, args } => {
+            format_template_literal_expr(out, template, args, type_map, indent);
+        }
         ir::ExprKind::Closure {
             params,
             ret_type,
@@ -1047,6 +1050,51 @@ fn escape_aic_string_literal(value: &str) -> String {
     escaped
 }
 
+fn format_template_literal_expr(
+    out: &mut String,
+    template: &str,
+    args: &[ir::Expr],
+    type_map: &BTreeMap<ir::TypeId, String>,
+    indent: usize,
+) {
+    out.push('f');
+    out.push('"');
+    let mut cursor = 0usize;
+    for (idx, arg) in args.iter().enumerate() {
+        let placeholder = format!("{{{idx}}}");
+        let Some(rel) = template[cursor..].find(&placeholder) else {
+            break;
+        };
+        let split_at = cursor + rel;
+        escape_template_literal_segment_into(out, &template[cursor..split_at]);
+        out.push('{');
+        format_expr(out, arg, 0, type_map, indent);
+        out.push('}');
+        cursor = split_at + placeholder.len();
+    }
+    escape_template_literal_segment_into(out, &template[cursor..]);
+    out.push('"');
+}
+
+fn escape_template_literal_segment_into(out: &mut String, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            '\u{0001}'..='\u{001F}' | '\u{007F}' => {
+                let _ = write!(out, "\\u{{{:X}}}", ch as u32);
+            }
+            _ => out.push(ch),
+        }
+    }
+}
+
 fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
     match &pattern.kind {
         ir::PatternKind::Wildcard => out.push('_'),
@@ -1334,6 +1382,32 @@ fn main() -> Int {
 
         assert!(
             formatted.contains("\"\\n\\t\\r\\0\\u{1}\\u{7F}\\\"\\\\\""),
+            "formatted={formatted}"
+        );
+
+        let (reparsed, reparsed_diags) = parse(&formatted, "formatted.aic");
+        assert!(
+            reparsed_diags.is_empty(),
+            "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted}"
+        );
+        let reformatted = format_program(&build(&reparsed.expect("program")));
+        assert_eq!(formatted, reformatted);
+    }
+
+    #[test]
+    fn template_literal_formatting_is_valid_and_stable() {
+        let src = r#"
+fn main(name: String) -> String {
+    f"left \{literal\} {name} right"
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted = format_program(&ir);
+
+        assert!(
+            formatted.contains("f\"left {{literal}} {name} right\""),
             "formatted={formatted}"
         );
 

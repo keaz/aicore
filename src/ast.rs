@@ -534,6 +534,10 @@ pub enum ExprKind {
     Bool(bool),
     Char(char),
     String(String),
+    TemplateLiteral {
+        template: String,
+        args: Vec<Expr>,
+    },
     Unit,
     Var(String),
     Call {

@@ -368,6 +368,11 @@ impl ComplexityAnalyzer {
                     self.visit_expr(arg, depth);
                 }
             }
+            ExprKind::TemplateLiteral { args, .. } => {
+                for arg in args {
+                    self.visit_expr(arg, depth);
+                }
+            }
             ExprKind::Closure { body, .. } => {
                 self.visit_block(body, depth);
             }

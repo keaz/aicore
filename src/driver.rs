@@ -329,6 +329,11 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
                 }
             }
         }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args.iter_mut() {
+                reorder_call_args_in_expr(arg, orders);
+            }
+        }
         ir::ExprKind::Closure { body, .. } => reorder_call_args_in_block(body, orders),
         ir::ExprKind::If {
             cond,

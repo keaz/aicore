@@ -301,6 +301,11 @@ fn collect_requires_from_expr(
                 collect_requires_from_expr(arg, param_names, requires);
             }
         }
+        ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_requires_from_expr(arg, param_names, requires);
+            }
+        }
         ExprKind::Binary { lhs, rhs, .. } => {
             collect_requires_from_expr(lhs, param_names, requires);
             collect_requires_from_expr(rhs, param_names, requires);
@@ -479,6 +484,11 @@ fn collect_explicit_returns_from_expr<'a>(
                 collect_explicit_returns_from_expr(arg, observations);
             }
         }
+        ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_explicit_returns_from_expr(arg, observations);
+            }
+        }
         ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
                 collect_explicit_returns_from_expr(value, observations);
@@ -577,6 +587,11 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
         }
         ExprKind::Call { callee, args, .. } => {
             collect_value_vars(callee, VarContext::Callee, out);
+            for arg in args {
+                collect_value_vars(arg, VarContext::Value, out);
+            }
+        }
+        ExprKind::TemplateLiteral { args, .. } => {
             for arg in args {
                 collect_value_vars(arg, VarContext::Value, out);
             }
@@ -750,6 +765,9 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
                 parent_prec,
             )
         }
+        ExprKind::TemplateLiteral { template, args } => {
+            Some(render_template_literal(template, args))
+        }
         ExprKind::FieldAccess { base, field } => parenthesize(
             format!("{}.{}", render_expr(base, PREC_POSTFIX)?, field),
             PREC_POSTFIX,
@@ -788,6 +806,42 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
         | ExprKind::Break { .. }
         | ExprKind::Continue
         | ExprKind::UnsafeBlock { .. } => None,
+    }
+}
+
+fn render_template_literal(template: &str, args: &[Expr]) -> String {
+    let mut out = String::from("f\"");
+    let mut cursor = 0usize;
+    for (idx, arg) in args.iter().enumerate() {
+        let placeholder = format!("{{{idx}}}");
+        let Some(rel) = template[cursor..].find(&placeholder) else {
+            break;
+        };
+        let split_at = cursor + rel;
+        push_escaped_template_segment(&mut out, &template[cursor..split_at]);
+        out.push('{');
+        out.push_str(&render_expr(arg, 0).unwrap_or_else(|| "_".to_string()));
+        out.push('}');
+        cursor = split_at + placeholder.len();
+    }
+    push_escaped_template_segment(&mut out, &template[cursor..]);
+    out.push('"');
+    out
+}
+
+fn push_escaped_template_segment(out: &mut String, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            _ => out.push(ch),
+        }
     }
 }
 

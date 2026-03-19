@@ -1609,6 +1609,11 @@ fn collect_expr_semantic_tokens(
                 collect_expr_semantic_tokens(tokens, source, arg, effectful_functions);
             }
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_expr_semantic_tokens(tokens, source, arg, effectful_functions);
+            }
+        }
         ast::ExprKind::Closure {
             params,
             ret_type: _,
@@ -2256,6 +2261,17 @@ fn collect_expr_call_sites(
                 );
             }
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_expr_call_sites(
+                    arg,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                );
+            }
+        }
         ast::ExprKind::Closure { body, .. } => {
             collect_block_call_sites(
                 body,
@@ -2638,6 +2654,11 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
                 collect_expr_folding_ranges(arg, source, ranges);
             }
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_expr_folding_ranges(arg, source, ranges);
+            }
+        }
         ast::ExprKind::Closure { body, .. } => collect_block_folding_ranges(body, source, ranges),
         ast::ExprKind::If {
             cond,
@@ -2937,6 +2958,11 @@ fn collect_expr_selection_spans(
     match &expr.kind {
         ast::ExprKind::Call { callee, args, .. } => {
             collect_expr_selection_spans(callee, offset, stmt_spans, block_spans, expr_spans);
+            for arg in args {
+                collect_expr_selection_spans(arg, offset, stmt_spans, block_spans, expr_spans);
+            }
+        }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
             for arg in args {
                 collect_expr_selection_spans(arg, offset, stmt_spans, block_spans, expr_spans);
             }
@@ -3515,6 +3541,11 @@ fn collect_expr_inlay_hints(
                 collect_expr_inlay_hints(arg, source, show_effect_hints, signature_lookup, hints);
             }
         }
+        ast::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_expr_inlay_hints(arg, source, show_effect_hints, signature_lookup, hints);
+            }
+        }
         ast::ExprKind::Closure { body, .. } => {
             collect_block_inlay_hints(
                 body,
@@ -3641,6 +3672,7 @@ fn infer_expr_type(
         ast::ExprKind::Bool(_) => Some("Bool".to_string()),
         ast::ExprKind::Char(_) => Some("Char".to_string()),
         ast::ExprKind::String(_) => Some("String".to_string()),
+        ast::ExprKind::TemplateLiteral { .. } => Some("String".to_string()),
         ast::ExprKind::Unit => Some("Unit".to_string()),
         ast::ExprKind::StructInit { name, .. } => Some(name.clone()),
         ast::ExprKind::Call { callee, .. } => {

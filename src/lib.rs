@@ -50,6 +50,7 @@ pub mod suggest_effects;
 pub mod symbol_query;
 pub mod synthesize;
 pub mod telemetry;
+pub mod template_lowering;
 pub mod test_harness;
 pub mod testgen;
 pub mod toolchain;
