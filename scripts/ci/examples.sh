@@ -739,6 +739,7 @@ case "$MODE" in
     expect_run_value "examples/data/serde_models.aic" "42"
     expect_run_value "examples/data/serde_negative_cases.aic" "42"
     expect_run_value "examples/data/string_ops.aic" "42"
+    expect_run_value "examples/data/string_unicode_case_trim.aic" "42"
     expect_run_value "examples/data/template_literals.aic" "42"
     expect_run_value "examples/data/http_types.aic" "42"
     expect_run_value "examples/data/audit_timestamps.aic" "42"

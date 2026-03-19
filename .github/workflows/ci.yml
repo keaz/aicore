@@ -177,6 +177,12 @@ jobs:
       - name: Run host execution matrix suite
         run: cargo test --locked --test e8_matrix_tests
 
+      - name: Run string Unicode conformance suite
+        run: cargo test --locked --test execution_tests exec_string_unicode_conformance_and_utf8_invariants -- --exact
+
+      - name: Run seeded fuzz gate (includes formatter roundtrip target)
+        run: cargo test --locked --test e8_fuzz_tests fuzz_seeded_corpus_has_no_panics -- --exact
+
       - name: Run host perf gate suite
         run: cargo test --locked --test e8_perf_tests
 

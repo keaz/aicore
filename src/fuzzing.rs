@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::formatter::format_program;
 use crate::ir_builder;
 use crate::lexer;
 use crate::parser;
@@ -18,6 +19,7 @@ pub enum FuzzTarget {
     Lexer,
     Parser,
     Typecheck,
+    Formatter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +195,20 @@ fn run_target(target: FuzzTarget, source: &str) {
                 let ir = ir_builder::build(&program);
                 let (resolution, _resolve_diags) = resolver::resolve(&ir, "fuzz_typecheck.aic");
                 let _ = typecheck::check(&ir, &resolution, "fuzz_typecheck.aic");
+            }
+        }
+        FuzzTarget::Formatter => {
+            let (program, _parse_diags) = parser::parse(source, "fuzz_formatter.aic");
+            if let Some(program) = program {
+                let ir = ir_builder::build(&program);
+                let formatted = format_program(&ir);
+                let (reparsed, _reparse_diags) =
+                    parser::parse(&formatted, "fuzz_formatter_roundtrip.aic");
+                if let Some(reparsed) = reparsed {
+                    let reparsed_ir = ir_builder::build(&reparsed);
+                    let reformatted = format_program(&reparsed_ir);
+                    assert_eq!(formatted, reformatted, "formatter roundtrip unstable");
+                }
             }
         }
     }
@@ -380,6 +396,7 @@ fn target_dir_name(target: FuzzTarget) -> &'static str {
         FuzzTarget::Lexer => "lexer",
         FuzzTarget::Parser => "parser",
         FuzzTarget::Typecheck => "typecheck",
+        FuzzTarget::Formatter => "formatter",
     }
 }
 

@@ -1,0 +1,4 @@
+fn render(name: String) -> String {
+    let left = "\u{00A0}é";
+    f"start {{literal}} {name} {left} \n"
+}

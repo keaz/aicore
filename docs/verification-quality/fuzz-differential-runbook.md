@@ -26,6 +26,20 @@ make test-e8-nightly-fuzz
 cargo test --locked --test e8_fuzz_tests -- --ignored
 ```
 
+## String Conformance Scope (Issue #372)
+
+Coverage:
+
+- Unicode-heavy execution conformance for `substring`, `char_at`, `trim`, `to_upper`, `to_lower`
+- UTF-8 invariants over string-producing operations (`substring`, trim/case transforms, `join`, `format`, `bytes_to_string_lossy`)
+- formatter round-trip fuzz target (`FuzzTarget::Formatter`) that enforces parse -> format -> parse -> format stability
+
+Known exclusions:
+
+- grapheme-cluster segmentation guarantees are out of scope (current indexing contract is Unicode scalar index, not grapheme index)
+- locale-specific/contextual full case mapping (for example Turkish dotted/dotless I or final sigma rules) is out of scope for simple-case APIs
+- canonical normalization equivalence (`NFC`/`NFD`) is not enforced by runtime string APIs
+
 ## CI + Nightly Execution Map (Issue #105 / #63)
 
 - PR/push gate workflow: `.github/workflows/ci.yml` (`tests-linux-full` -> `E8 verification gates`) runs `make test-e8` and includes `e8_fuzz_tests` + `e8_differential_tests`.

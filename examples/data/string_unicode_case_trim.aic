@@ -1,15 +1,28 @@
 import std.io;
+import std.option;
 import std.string;
+
+fn opt_len(v: Option[String]) -> Int {
+    match v {
+        Some(value) => len(value),
+        None => 0,
+    }
+}
 
 fn main() -> Int effects { io } capabilities { io  } {
     let trimmed = trim("  Aicore　");
     let upper = to_upper("éπя");
     let lower = to_lower("ÉΠЯ");
+    let combining = "e\u{301}";
+    let emoji = "👍🏽";
 
     let checks =
         (if len(trimmed) == 6 { 1 } else { 0 }) +
         (if len(trim_start("  hi ")) == 3 { 1 } else { 0 }) +
         (if len(trim_end(" hi　 ")) == 3 { 1 } else { 0 }) +
+        (if byte_length(substring(combining, 1, 2)) == 2 { 1 } else { 0 }) +
+        (if opt_len(char_at(emoji, 0)) == 4 { 1 } else { 0 }) +
+        (if opt_len(char_at(emoji, 1)) == 4 { 1 } else { 0 }) +
         (if byte_length(upper) == 6 &&
             string.contains(upper, "É") &&
             string.contains(upper, "Π") &&
@@ -26,9 +39,10 @@ fn main() -> Int effects { io } capabilities { io  } {
         } else {
             0
         }) +
-        (if byte_length(to_upper("ß")) == 2 { 1 } else { 0 });
+        (if byte_length(to_upper("ß")) == 2 { 1 } else { 0 }) +
+        (if to_lower("Σ") == "σ" && to_upper("σ") == "Σ" { 1 } else { 0 });
 
-    if checks == 6 {
+    if checks == 10 {
         print_int(42);
     } else {
         print_int(0);

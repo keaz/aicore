@@ -1,0 +1,4 @@
+fn main(name: String) -> String {
+    let base = "é🙂\n\t";
+    f"hello {name} {base}"
+}

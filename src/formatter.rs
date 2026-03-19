@@ -1395,6 +1395,35 @@ fn main() -> Int {
     }
 
     #[test]
+    fn unicode_string_and_template_literals_roundtrip_with_control_escapes() {
+        let src = r#"
+fn main(name: String) -> String {
+    let literal = "é🙂\u{10FFFF}\n\t\u{202F}";
+    f"hi {name} {literal} é🙂\n\t"
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted = format_program(&ir);
+
+        assert!(formatted.contains("é🙂"), "formatted={formatted}");
+        assert!(
+            formatted.contains("\\u{10FFFF}") || formatted.contains("\u{10FFFF}"),
+            "formatted={formatted}"
+        );
+        assert!(formatted.contains("\\n\\t"), "formatted={formatted}");
+
+        let (reparsed, reparsed_diags) = parse(&formatted, "formatted.aic");
+        assert!(
+            reparsed_diags.is_empty(),
+            "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted}"
+        );
+        let reformatted = format_program(&build(&reparsed.expect("program")));
+        assert_eq!(formatted, reformatted);
+    }
+
+    #[test]
     fn template_literal_formatting_is_valid_and_stable() {
         let src = r#"
 fn main(name: String) -> String {

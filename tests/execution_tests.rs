@@ -2256,6 +2256,100 @@ fn main() -> Int {
 }
 
 #[test]
+fn exec_string_unicode_conformance_and_utf8_invariants() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.option;
+import std.string;
+
+fn opt_len(v: Option[String]) -> Int {
+    match v {
+        Some(value) => len(value),
+        None => 0,
+    }
+}
+
+fn utf8_ok(value: String) -> Int {
+    if string.is_valid_utf8(string_to_bytes(value)) { 1 } else { 0 }
+}
+
+fn load_invalid() -> Bytes effects { fs } capabilities { fs  } {
+    match read_bytes("invalid.bin") {
+        Ok(value) => Bytes { data: value.data },
+        Err(_) => string_to_bytes(""),
+    }
+}
+
+fn main() -> Int effects { io, fs } capabilities { io, fs  } {
+    let combining = "e\u{301}";
+    let combining_head_ok = if byte_length(substring(combining, 0, 1)) == 1 { 1 } else { 0 };
+    let combining_mark_ok = if byte_length(substring(combining, 1, 2)) == 2 { 1 } else { 0 };
+    let combining_mark_char_ok = if opt_len(char_at(combining, 1)) == 2 { 1 } else { 0 };
+
+    let emoji = "👍🏽";
+    let emoji_first_ok = if opt_len(char_at(emoji, 0)) == 4 { 1 } else { 0 };
+    let emoji_second_ok = if opt_len(char_at(emoji, 1)) == 4 { 1 } else { 0 };
+    let emoji_oob_ok = if opt_len(char_at(emoji, 2)) == 0 { 1 } else { 0 };
+
+    let max_scalar_ok = if byte_length("\u{10FFFF}") == 4 { 1 } else { 0 };
+
+    let trim_unicode_ok = if trim("\u{00A0}\u{2003}hi\u{3000}") == "hi" { 1 } else { 0 };
+    let trim_start_unicode_ok = if trim_start("\u{2009}\u{205F}ok ") == "ok " { 1 } else { 0 };
+    let trim_end_unicode_ok = if trim_end(" ok\u{202F}\u{3000}") == " ok" { 1 } else { 0 };
+
+    let upper_sigma_ok = if to_upper("σ") == "Σ" { 1 } else { 0 };
+    let lower_sigma_ok = if to_lower("Σ") == "σ" { 1 } else { 0 };
+    let sharp_s_ok = if byte_length(to_upper("ß")) == 2 { 1 } else { 0 };
+
+    let invariant_sub_ok = utf8_ok(substring("é🙂z", 0, 2));
+    let invariant_trim_ok = utf8_ok(trim("\u{00A0}é🙂\u{3000}"));
+    let invariant_case_ok = utf8_ok(to_lower("ÉΠЯ"));
+    let invariant_join_ok = utf8_ok(join(split("α,β,γ", ","), "|"));
+    let invariant_format_ok = utf8_ok(format("tag:{0}", split("é🙂", ",")));
+    let invariant_lossy_ok = utf8_ok(bytes_to_string_lossy(load_invalid()));
+
+    let score =
+        combining_head_ok +
+        combining_mark_ok +
+        combining_mark_char_ok +
+        emoji_first_ok +
+        emoji_second_ok +
+        emoji_oob_ok +
+        max_scalar_ok +
+        trim_unicode_ok +
+        trim_start_unicode_ok +
+        trim_end_unicode_ok +
+        upper_sigma_ok +
+        lower_sigma_ok +
+        sharp_s_ok +
+        invariant_sub_ok +
+        invariant_trim_ok +
+        invariant_case_ok +
+        invariant_join_ok +
+        invariant_format_ok +
+        invariant_lossy_ok;
+
+    if score == 19 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
+        fs::write(
+            root.join("invalid.bin"),
+            [0x66_u8, 0x6f_u8, 0x80_u8, 0x6f_u8],
+        )
+        .expect("write invalid bytes");
+    });
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_math_ops_full_surface_and_edge_cases() {
     let src = r#"
 import std.io;

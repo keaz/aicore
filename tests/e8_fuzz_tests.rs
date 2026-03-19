@@ -26,7 +26,12 @@ fn fuzz_seeded_corpus_has_no_panics() {
         seed: 0xE8F0_00D1,
     };
 
-    for target in [FuzzTarget::Lexer, FuzzTarget::Parser, FuzzTarget::Typecheck] {
+    for target in [
+        FuzzTarget::Lexer,
+        FuzzTarget::Parser,
+        FuzzTarget::Typecheck,
+        FuzzTarget::Formatter,
+    ] {
         let corpus = load_corpus(&corpus_root(), target).expect("load corpus");
         assert!(!corpus.is_empty(), "empty corpus for {target:?}");
 
@@ -50,7 +55,12 @@ fn fuzz_seeded_corpus_has_no_panics() {
 
 #[test]
 fn fuzz_regressions_replay_without_panics() {
-    for target in [FuzzTarget::Lexer, FuzzTarget::Parser, FuzzTarget::Typecheck] {
+    for target in [
+        FuzzTarget::Lexer,
+        FuzzTarget::Parser,
+        FuzzTarget::Typecheck,
+        FuzzTarget::Formatter,
+    ] {
         let replay = replay_regressions(&regressions_root(), target).expect("replay");
         assert!(!replay.is_empty(), "no regression fixtures for {target:?}");
         for case in replay {
@@ -69,7 +79,12 @@ fn fuzz_nightly_stress_suite() {
     };
 
     let mut reports = Vec::new();
-    for target in [FuzzTarget::Lexer, FuzzTarget::Parser, FuzzTarget::Typecheck] {
+    for target in [
+        FuzzTarget::Lexer,
+        FuzzTarget::Parser,
+        FuzzTarget::Typecheck,
+        FuzzTarget::Formatter,
+    ] {
         let corpus = load_corpus(&corpus_root(), target).expect("load corpus");
         let report = run_seeded_fuzz(target, &corpus, config);
         assert!(

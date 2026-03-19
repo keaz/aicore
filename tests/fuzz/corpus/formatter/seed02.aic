@@ -1,0 +1,10 @@
+fn classify(s: String) -> Int {
+    match s {
+        "\n\t\r\0\u{1}\u{7F}\"\\" => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int {
+    classify("\n\t\r\0\u{1}\u{7F}\"\\")
+}
