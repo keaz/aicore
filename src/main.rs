@@ -216,6 +216,8 @@ enum Command {
         #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
         limit: Option<usize>,
         #[arg(long)]
+        strict_index: bool,
+        #[arg(long)]
         json: bool,
     },
     Symbols {
@@ -223,6 +225,8 @@ enum Command {
         project: PathBuf,
         #[arg(long, value_enum, default_value = "text")]
         format: SymbolsFormatArg,
+        #[arg(long)]
+        strict_index: bool,
         #[arg(long, conflicts_with = "format")]
         json: bool,
     },
@@ -1262,6 +1266,13 @@ fn collect_import_graph(
 }
 
 fn print_symbol_query_report(report: &symbol_query::QueryReport) {
+    print_symbol_index_warnings(
+        report.files_scanned,
+        report.files_indexed,
+        report.files_skipped,
+        &report.skipped_files,
+    );
+
     if report.symbols.is_empty() {
         println!("query: no symbols matched");
         return;
@@ -1272,6 +1283,50 @@ fn print_symbol_query_report(report: &symbol_query::QueryReport) {
         report.matched_symbols, report.total_symbols
     );
     print_symbol_list(&report.symbols);
+}
+
+fn print_symbol_index_warnings(
+    files_scanned: usize,
+    files_indexed: usize,
+    files_skipped: usize,
+    warnings: &[symbol_query::SymbolIndexWarning],
+) {
+    if warnings.is_empty() {
+        return;
+    }
+
+    println!(
+        "index: scanned {files_scanned} file(s), indexed {files_indexed}, skipped {files_skipped}"
+    );
+    println!("index warnings:");
+    for warning in warnings {
+        println!("  - {}: {}", warning.file, warning.summary);
+        if !warning.codes.is_empty() {
+            println!("    codes: {}", warning.codes.join(", "));
+        }
+    }
+}
+
+fn eprint_symbol_index_warnings(
+    files_scanned: usize,
+    files_indexed: usize,
+    files_skipped: usize,
+    warnings: &[symbol_query::SymbolIndexWarning],
+) {
+    if warnings.is_empty() {
+        return;
+    }
+
+    eprintln!(
+        "index: scanned {files_scanned} file(s), indexed {files_indexed}, skipped {files_skipped}"
+    );
+    eprintln!("index warnings:");
+    for warning in warnings {
+        eprintln!("  - {}: {}", warning.file, warning.summary);
+        if !warning.codes.is_empty() {
+            eprintln!("    codes: {}", warning.codes.join(", "));
+        }
+    }
 }
 
 fn print_symbol_list(symbols: &[symbol_query::SymbolRecord]) {
@@ -1511,6 +1566,7 @@ fn run_cli() -> anyhow::Result<i32> {
             has_requires,
             has_ensures,
             limit,
+            strict_index,
             json,
         } => {
             let filters = symbol_query::QueryFilters {
@@ -1526,7 +1582,11 @@ fn run_cli() -> anyhow::Result<i32> {
                 limit,
             };
             if json {
-                let response = symbol_query::build_query_response(&project, filters)?;
+                let response = symbol_query::build_query_response_with_options(
+                    &project,
+                    filters,
+                    strict_index,
+                )?;
                 println!("{}", serde_json::to_string_pretty(&response)?);
                 if response.ok {
                     EXIT_OK
@@ -1555,6 +1615,19 @@ fn run_cli() -> anyhow::Result<i32> {
                         });
                     }
                 };
+                if strict_index && report.files_skipped > 0 {
+                    eprintln!(
+                        "query: strict index mode failed because {} file(s) were skipped",
+                        report.files_skipped
+                    );
+                    eprint_symbol_index_warnings(
+                        report.files_scanned,
+                        report.files_indexed,
+                        report.files_skipped,
+                        &report.skipped_files,
+                    );
+                    return Ok(EXIT_DIAGNOSTIC_ERROR);
+                }
                 print_symbol_query_report(&report);
                 EXIT_OK
             }
@@ -1562,15 +1635,27 @@ fn run_cli() -> anyhow::Result<i32> {
         Command::Symbols {
             project,
             format,
+            strict_index,
             json,
         } => {
-            let response = symbol_query::build_symbols_response(&project)?;
+            let response =
+                symbol_query::build_symbols_response_with_options(&project, strict_index)?;
             if json || matches!(format, SymbolsFormatArg::Json) {
                 println!("{}", serde_json::to_string_pretty(&response)?);
             } else {
+                print_symbol_index_warnings(
+                    response.files_scanned,
+                    response.files_indexed,
+                    response.files_skipped,
+                    &response.skipped_files,
+                );
                 print_symbol_list(&response.symbols);
             }
-            EXIT_OK
+            if response.ok {
+                EXIT_OK
+            } else {
+                EXIT_DIAGNOSTIC_ERROR
+            }
         }
         Command::Scaffold { command, json } => {
             let scaffold = match (|| -> anyhow::Result<scaffold::ScaffoldOutput> {

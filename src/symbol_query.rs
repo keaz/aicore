@@ -14,6 +14,8 @@ const QUERY_MAX_LIMIT: usize = 500;
 const QUERY_ERROR_UNSUPPORTED_FILTER_COMBINATION: &str = "unsupported_filter_combination";
 const QUERY_ERROR_LIMIT_OUT_OF_RANGE: &str = "limit_out_of_range";
 const QUERY_ERROR_INDEX_FAILED: &str = "symbol_index_failed";
+const QUERY_ERROR_INDEX_PARTIAL: &str = "symbol_index_partial";
+const INDEX_WARNING_CODE_IO_READ_FAILED: &str = "io_read_failed";
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -120,6 +122,10 @@ pub struct QueryReport {
     pub matched_symbols: usize,
     pub filters: QueryFilters,
     pub symbols: Vec<SymbolRecord>,
+    pub files_scanned: usize,
+    pub files_indexed: usize,
+    pub files_skipped: usize,
+    pub skipped_files: Vec<SymbolIndexWarning>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -132,6 +138,10 @@ pub struct QueryResponse {
     pub matched_symbols: usize,
     pub filters: QueryFilters,
     pub symbols: Vec<SymbolRecord>,
+    pub files_scanned: usize,
+    pub files_indexed: usize,
+    pub files_skipped: usize,
+    pub skipped_files: Vec<SymbolIndexWarning>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<QueryError>,
 }
@@ -144,6 +154,30 @@ pub struct SymbolsResponse {
     pub project_root: String,
     pub symbol_count: usize,
     pub symbols: Vec<SymbolRecord>,
+    pub files_scanned: usize,
+    pub files_indexed: usize,
+    pub files_skipped: usize,
+    pub skipped_files: Vec<SymbolIndexWarning>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<QueryError>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SymbolIndexWarning {
+    pub file: String,
+    pub error_count: usize,
+    pub code_count: usize,
+    pub codes: Vec<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SymbolIndexReport {
+    symbols: Vec<SymbolRecord>,
+    files_scanned: usize,
+    files_indexed: usize,
+    files_skipped: usize,
+    skipped_files: Vec<SymbolIndexWarning>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -176,32 +210,52 @@ impl fmt::Display for QueryError {
 impl Error for QueryError {}
 
 pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
+    Ok(index_symbols(entry_path)?.symbols)
+}
+
+fn index_symbols(entry_path: &Path) -> anyhow::Result<SymbolIndexReport> {
     let root = symbol_index_root(entry_path);
     let mut files = Vec::new();
     collect_aic_files(&root, &mut files)?;
     files.sort();
 
-    let mut records = Vec::new();
+    let mut symbols = Vec::new();
+    let mut files_scanned = 0usize;
+    let mut files_indexed = 0usize;
+    let mut skipped_files = Vec::new();
     for file in files {
+        files_scanned += 1;
         let source = match fs::read_to_string(&file) {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(err) => {
+                skipped_files.push(io_read_warning(&file, &err));
+                continue;
+            }
         };
 
         let (program, diagnostics) = parser::parse(&source, &file.to_string_lossy());
         if diagnostics.iter().any(|diag| diag.is_error()) {
+            skipped_files.push(parse_error_warning(&file, &diagnostics));
             continue;
         }
         let Some(program) = program else {
+            skipped_files.push(SymbolIndexWarning {
+                file: file.to_string_lossy().to_string(),
+                error_count: 1,
+                code_count: 0,
+                codes: Vec::new(),
+                summary: "parser produced no program".to_string(),
+            });
             continue;
         };
+        files_indexed += 1;
 
         let module_name = program.module.as_ref().map(|module| module.path.join("."));
         if let Some(module_decl) = &program.module {
             let module_value = module_name
                 .clone()
                 .unwrap_or_else(|| module_decl.path.join("."));
-            records.push(SymbolRecord {
+            symbols.push(SymbolRecord {
                 name: module_value.clone(),
                 kind: SymbolKind::Module,
                 signature: format!("module {module_value}"),
@@ -221,7 +275,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
         for item in program.items {
             match item {
                 ast::Item::Function(function) => {
-                    records.push(function_symbol_record(
+                    symbols.push(function_symbol_record(
                         &file,
                         &source,
                         &module_name,
@@ -230,12 +284,12 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                     ));
                 }
                 ast::Item::Struct(strukt) => {
-                    records.push(struct_symbol_record(&file, &source, &module_name, &strukt));
+                    symbols.push(struct_symbol_record(&file, &source, &module_name, &strukt));
                 }
                 ast::Item::Enum(enm) => {
-                    records.push(enum_symbol_record(&file, &source, &module_name, &enm));
+                    symbols.push(enum_symbol_record(&file, &source, &module_name, &enm));
                     for variant in &enm.variants {
-                        records.push(enum_variant_symbol_record(
+                        symbols.push(enum_variant_symbol_record(
                             &file,
                             &source,
                             &module_name,
@@ -245,14 +299,14 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                     }
                 }
                 ast::Item::Trait(trait_def) => {
-                    records.push(trait_symbol_record(
+                    symbols.push(trait_symbol_record(
                         &file,
                         &source,
                         &module_name,
                         &trait_def,
                     ));
                     for method in &trait_def.methods {
-                        records.push(function_symbol_record(
+                        symbols.push(function_symbol_record(
                             &file,
                             &source,
                             &module_name,
@@ -263,7 +317,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                 }
                 ast::Item::Impl(impl_def) => {
                     let impl_signature = render_impl_signature(&impl_def);
-                    records.push(SymbolRecord {
+                    symbols.push(SymbolRecord {
                         name: impl_symbol_name(&impl_def),
                         kind: SymbolKind::Impl,
                         signature: impl_signature.clone(),
@@ -279,7 +333,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
                         container: None,
                     });
                     for method in &impl_def.methods {
-                        records.push(function_symbol_record(
+                        symbols.push(function_symbol_record(
                             &file,
                             &source,
                             &module_name,
@@ -292,7 +346,7 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
         }
     }
 
-    records.sort_by(|lhs, rhs| {
+    symbols.sort_by(|lhs, rhs| {
         lhs.name
             .cmp(&rhs.name)
             .then(lhs.kind.as_str().cmp(rhs.kind.as_str()))
@@ -301,19 +355,63 @@ pub fn list_symbols(entry_path: &Path) -> anyhow::Result<Vec<SymbolRecord>> {
             .then(lhs.location.span_start.cmp(&rhs.location.span_start))
     });
 
-    Ok(records)
+    let files_skipped = skipped_files.len();
+    Ok(SymbolIndexReport {
+        symbols,
+        files_scanned,
+        files_indexed,
+        files_skipped,
+        skipped_files,
+    })
+}
+
+fn io_read_warning(file: &Path, err: &std::io::Error) -> SymbolIndexWarning {
+    SymbolIndexWarning {
+        file: file.to_string_lossy().to_string(),
+        error_count: 1,
+        code_count: 1,
+        codes: vec![INDEX_WARNING_CODE_IO_READ_FAILED.to_string()],
+        summary: format!("failed to read source file: {err}"),
+    }
+}
+
+fn parse_error_warning(
+    file: &Path,
+    diagnostics: &[crate::diagnostics::Diagnostic],
+) -> SymbolIndexWarning {
+    let mut code_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut summaries = Vec::new();
+    for diagnostic in diagnostics.iter().filter(|diag| diag.is_error()) {
+        *code_counts.entry(diagnostic.code.clone()).or_insert(0) += 1;
+        summaries.push(format!("{}: {}", diagnostic.code, diagnostic.message));
+    }
+    summaries.sort();
+    summaries.dedup();
+    let summary = summaries
+        .into_iter()
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    SymbolIndexWarning {
+        file: file.to_string_lossy().to_string(),
+        error_count: code_counts.values().sum(),
+        code_count: code_counts.len(),
+        codes: code_counts.keys().cloned().collect(),
+        summary,
+    }
 }
 
 pub fn query_symbols(entry_path: &Path, filters: QueryFilters) -> Result<QueryReport, QueryError> {
     validate_query_filters(&filters)?;
-    let all_symbols = list_symbols(entry_path).map_err(|err| QueryError {
+    let index = index_symbols(entry_path).map_err(|err| QueryError {
         code: QUERY_ERROR_INDEX_FAILED,
         message: format!("query: failed to index project symbols ({err})"),
         details: Vec::new(),
     })?;
-    let total_symbols = all_symbols.len();
+    let total_symbols = index.symbols.len();
 
-    let mut matched = all_symbols
+    let mut matched = index
+        .symbols
         .into_iter()
         .filter(|symbol| symbol_matches_filters(symbol, &filters))
         .collect::<Vec<_>>();
@@ -327,6 +425,10 @@ pub fn query_symbols(entry_path: &Path, filters: QueryFilters) -> Result<QueryRe
         matched_symbols: matched.len(),
         filters,
         symbols: matched,
+        files_scanned: index.files_scanned,
+        files_indexed: index.files_indexed,
+        files_skipped: index.files_skipped,
+        skipped_files: index.skipped_files,
     })
 }
 
@@ -334,19 +436,38 @@ pub fn build_query_response(
     entry_path: &Path,
     filters: QueryFilters,
 ) -> anyhow::Result<QueryResponse> {
+    build_query_response_with_options(entry_path, filters, false)
+}
+
+pub fn build_query_response_with_options(
+    entry_path: &Path,
+    filters: QueryFilters,
+    strict_index: bool,
+) -> anyhow::Result<QueryResponse> {
     let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
     let response = match query_symbols(entry_path, filters.clone()) {
-        Ok(report) => QueryResponse {
-            schema_version: SCHEMA_VERSION,
-            command: "query",
-            ok: true,
-            project_root,
-            total_symbols: report.total_symbols,
-            matched_symbols: report.matched_symbols,
-            filters: report.filters,
-            symbols: report.symbols,
-            error: None,
-        },
+        Ok(report) => {
+            let strict_error = if strict_index {
+                strict_index_error("query", report.files_skipped, &report.skipped_files)
+            } else {
+                None
+            };
+            QueryResponse {
+                schema_version: SCHEMA_VERSION,
+                command: "query",
+                ok: strict_error.is_none(),
+                project_root,
+                total_symbols: report.total_symbols,
+                matched_symbols: report.matched_symbols,
+                filters: report.filters,
+                symbols: report.symbols,
+                files_scanned: report.files_scanned,
+                files_indexed: report.files_indexed,
+                files_skipped: report.files_skipped,
+                skipped_files: report.skipped_files,
+                error: strict_error,
+            }
+        }
         Err(error) => QueryResponse {
             schema_version: SCHEMA_VERSION,
             command: "query",
@@ -356,6 +477,10 @@ pub fn build_query_response(
             matched_symbols: 0,
             filters,
             symbols: Vec::new(),
+            files_scanned: 0,
+            files_indexed: 0,
+            files_skipped: 0,
+            skipped_files: Vec::new(),
             error: Some(error),
         },
     };
@@ -363,15 +488,54 @@ pub fn build_query_response(
 }
 
 pub fn build_symbols_response(entry_path: &Path) -> anyhow::Result<SymbolsResponse> {
+    build_symbols_response_with_options(entry_path, false)
+}
+
+pub fn build_symbols_response_with_options(
+    entry_path: &Path,
+    strict_index: bool,
+) -> anyhow::Result<SymbolsResponse> {
     let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
-    let symbols = list_symbols(entry_path)?;
+    let index = index_symbols(entry_path)?;
+    let strict_error = if strict_index {
+        strict_index_error("symbols", index.files_skipped, &index.skipped_files)
+    } else {
+        None
+    };
     Ok(SymbolsResponse {
         schema_version: SCHEMA_VERSION,
         command: "symbols",
-        ok: true,
+        ok: strict_error.is_none(),
         project_root,
-        symbol_count: symbols.len(),
-        symbols,
+        symbol_count: index.symbols.len(),
+        symbols: index.symbols,
+        files_scanned: index.files_scanned,
+        files_indexed: index.files_indexed,
+        files_skipped: index.files_skipped,
+        skipped_files: index.skipped_files,
+        error: strict_error,
+    })
+}
+
+fn strict_index_error(
+    command: &str,
+    files_skipped: usize,
+    skipped_files: &[SymbolIndexWarning],
+) -> Option<QueryError> {
+    if files_skipped == 0 {
+        return None;
+    }
+    let mut details = skipped_files
+        .iter()
+        .map(|warning| format!("{}: {}", warning.file, warning.summary))
+        .collect::<Vec<_>>();
+    details.sort();
+    Some(QueryError {
+        code: QUERY_ERROR_INDEX_PARTIAL,
+        message: format!(
+            "{command}: strict index mode failed because {files_skipped} file(s) could not be indexed"
+        ),
+        details,
     })
 }
 
@@ -1022,7 +1186,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{query_symbols, validate_query_filters, QueryFilters, SymbolKind};
+    use super::{
+        build_query_response_with_options, build_symbols_response_with_options, query_symbols,
+        validate_query_filters, QueryFilters, SymbolKind,
+    };
 
     #[test]
     fn wildcard_query_filters_are_applied_deterministically() {
@@ -1132,5 +1299,100 @@ struct Empty {
             .details
             .iter()
             .any(|detail| detail == "--has-invariant is only supported with --kind struct"));
+    }
+
+    #[test]
+    fn query_reports_partial_index_metadata_for_parse_failures() {
+        let dir = tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("mkdir src");
+
+        fs::write(
+            src.join("main.aic"),
+            r#"module demo.main;
+fn main() -> Int { 0 }
+"#,
+        )
+        .expect("write source");
+        fs::write(
+            src.join("broken.aic"),
+            "module demo.broken;\nfn broken( -> Int { 0 }\n",
+        )
+        .expect("write broken source");
+
+        let report = query_symbols(
+            dir.path(),
+            QueryFilters {
+                kind: None,
+                name_pattern: None,
+                module_pattern: None,
+                effects: Vec::new(),
+                has_contract: false,
+                has_invariant: false,
+                generic_over: None,
+                has_requires: false,
+                has_ensures: false,
+                limit: None,
+            },
+        )
+        .expect("query symbols");
+
+        assert_eq!(report.files_scanned, 2);
+        assert_eq!(report.files_indexed, 1);
+        assert_eq!(report.files_skipped, 1);
+        assert_eq!(report.skipped_files.len(), 1);
+        assert!(report.skipped_files[0].file.ends_with("broken.aic"));
+        assert!(!report.skipped_files[0].summary.is_empty());
+    }
+
+    #[test]
+    fn strict_index_mode_returns_stable_partial_index_error() {
+        let dir = tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("mkdir src");
+
+        fs::write(
+            src.join("main.aic"),
+            r#"module demo.main;
+fn main() -> Int { 0 }
+"#,
+        )
+        .expect("write source");
+        fs::write(
+            src.join("broken.aic"),
+            "module demo.broken;\nfn broken( -> Int { 0 }\n",
+        )
+        .expect("write broken source");
+
+        let query = build_query_response_with_options(
+            dir.path(),
+            QueryFilters {
+                kind: None,
+                name_pattern: None,
+                module_pattern: None,
+                effects: Vec::new(),
+                has_contract: false,
+                has_invariant: false,
+                generic_over: None,
+                has_requires: false,
+                has_ensures: false,
+                limit: None,
+            },
+            true,
+        )
+        .expect("query response");
+        assert!(!query.ok);
+        assert_eq!(
+            query.error.as_ref().expect("query strict error").code,
+            "symbol_index_partial"
+        );
+
+        let symbols =
+            build_symbols_response_with_options(dir.path(), true).expect("symbols response");
+        assert!(!symbols.ok);
+        assert_eq!(
+            symbols.error.as_ref().expect("symbols strict error").code,
+            "symbol_index_partial"
+        );
     }
 }

@@ -51,7 +51,9 @@ Positive fixtures:
 - `examples/agent/protocol_suggest.json`
 - `examples/agent/protocol_context.json`
 - `examples/agent/protocol_query.json`
+- `examples/agent/protocol_query_partial.json`
 - `examples/agent/protocol_symbols.json`
+- `examples/agent/protocol_symbols_partial.json`
 
 Negative/error fixtures:
 
@@ -67,6 +69,16 @@ Negative/error fixtures:
 - `aic check --json` and `aic diag --json` must emit reasoning for the currently supported high-frequency families: `E1033`, `E1100`, `E1214`, `E1218`, `E1250`, `E2001`, `E2102`.
 - Within `reasoning`, `hypotheses[]` are sorted deterministically by descending `confidence`, then stable identity fields.
 - For multi-file programs, `diagnostics[*].spans[*].file` must identify the originating source file for that span (not the entry file fallback) whenever the span comes from real source.
+
+## Symbol index partial-result metadata
+
+- `query` and `symbols` JSON responses include:
+  - `files_scanned`
+  - `files_indexed`
+  - `files_skipped`
+  - `skipped_files[]` (`file`, `error_count`, `code_count`, `codes[]`, `summary`)
+- Parse/read failures are never silently dropped from machine-facing responses.
+- `--strict-index` is supported for both commands; when any file is skipped, responses set `ok=false` with a stable `error.code = "symbol_index_partial"`.
 
 ## Autofix contract (AG-T2)
 

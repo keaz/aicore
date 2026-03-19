@@ -75,8 +75,16 @@ fn protocol_examples_validate_against_published_schemas() {
             "examples/agent/protocol_query.json",
         ),
         (
+            "docs/agent-tooling/schemas/query-response.schema.json",
+            "examples/agent/protocol_query_partial.json",
+        ),
+        (
             "docs/agent-tooling/schemas/symbols-response.schema.json",
             "examples/agent/protocol_symbols.json",
+        ),
+        (
+            "docs/agent-tooling/schemas/symbols-response.schema.json",
+            "examples/agent/protocol_symbols_partial.json",
         ),
         (
             "docs/agent-tooling/schemas/parse-response.schema.json",

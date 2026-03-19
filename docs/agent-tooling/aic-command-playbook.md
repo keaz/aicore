@@ -93,8 +93,8 @@ Reasoning metadata notes:
 | `aic validate-type <type_expr> [--project <path>] [--offline]` | Fast-path type-expression parsing and symbol visibility check | JSON validation report |
 | `aic suggest --partial <text> [--project <path>] [--limit <n>]` | Ranked symbol suggestion for partial/hallucinated names | JSON candidate report |
 | `aic context --for ... [--depth N] [--limit N] [--json]` | Focused transitive symbol context window | Text/JSON context report |
-| `aic query [--kind ... --name ... --module ...]` | Semantic symbol retrieval by kind/name/module/effects/contracts/generics | Text/JSON query envelope |
-| `aic symbols [--format text|json]` | Full workspace symbol export with contract-aware records | Text/JSON symbols envelope |
+| `aic query [--kind ... --name ... --module ... --strict-index]` | Semantic symbol retrieval by kind/name/module/effects/contracts/generics with partial-index visibility (`files_scanned/indexed/skipped`, `skipped_files[]`) | Text/JSON query envelope |
+| `aic symbols [--format text|json] [--strict-index]` | Full workspace symbol export with contract-aware records and partial-index warnings | Text/JSON symbols envelope |
 | `aic scaffold struct|enum|fn|match|test ...` | Generate compile-clean boilerplate templates for the selected target | Text/JSON scaffold payload |
 | `aic synthesize --from spec <name> [--json]` | Spec-first function + test fixture synthesis preview | Text/JSON artifact bundle |
 | `aic testgen --strategy <strategy> --for <selector> [--emit-dir <dir>] [--json]` | Deterministic harness fixture generation from contracts/types/effects | Text/JSON artifact bundle |

@@ -4,6 +4,10 @@
   "ok": true,
   "project_root": "examples/e7/symbol_query",
   "symbol_count": 11,
+  "files_scanned": 2,
+  "files_indexed": 2,
+  "files_skipped": 0,
+  "skipped_files": [],
   "symbols": [
     {
       "name": "AppError",

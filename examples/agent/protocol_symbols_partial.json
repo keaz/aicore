@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "command": "symbols",
+  "ok": true,
+  "project_root": "examples/e7/symbol_query_partial",
+  "symbol_count": 3,
+  "files_scanned": 2,
+  "files_indexed": 1,
+  "files_skipped": 1,
+  "skipped_files": [
+    {
+      "file": "examples/e7/symbol_query_partial/src/broken.aic",
+      "error_count": 1,
+      "code_count": 1,
+      "codes": [
+        "E1001"
+      ],
+      "summary": "E1001: expected ')' after parameter list"
+    }
+  ],
+  "symbols": [
+    {
+      "name": "demo.main",
+      "kind": "module",
+      "signature": "module demo.main",
+      "module": "demo.main",
+      "location": {
+        "file": "examples/e7/symbol_query_partial/src/main.aic",
+        "line": 1,
+        "column": 8,
+        "span_start": 7,
+        "span_end": 16
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "main",
+      "kind": "function",
+      "signature": "fn main() -> Int",
+      "module": "demo.main",
+      "location": {
+        "file": "examples/e7/symbol_query_partial/src/main.aic",
+        "line": 2,
+        "column": 1,
+        "span_start": 18,
+        "span_end": 44
+      },
+      "effects": [],
+      "contracts": {}
+    },
+    {
+      "name": "value",
+      "kind": "struct",
+      "signature": "struct value { n: Int }",
+      "module": "demo.main",
+      "location": {
+        "file": "examples/e7/symbol_query_partial/src/main.aic",
+        "line": 3,
+        "column": 1,
+        "span_start": 46,
+        "span_end": 68
+      },
+      "effects": [],
+      "contracts": {}
+    }
+  ]
+}

@@ -10,7 +10,11 @@
     "ok",
     "project_root",
     "symbol_count",
-    "symbols"
+    "symbols",
+    "files_scanned",
+    "files_indexed",
+    "files_skipped",
+    "skipped_files"
   ],
   "properties": {
     "schema_version": {
@@ -20,7 +24,7 @@
       "const": "symbols"
     },
     "ok": {
-      "const": true
+      "type": "boolean"
     },
     "project_root": {
       "type": "string"
@@ -34,9 +38,76 @@
       "items": {
         "$ref": "#/$defs/symbol_record"
       }
+    },
+    "files_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "files_indexed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "files_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "skipped_files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol_index_warning"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/query_error"
     }
   },
   "$defs": {
+    "symbol_index_warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "error_count", "code_count", "codes", "summary"],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "code_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "query_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "symbol_kind": {
       "type": "string",
       "enum": [

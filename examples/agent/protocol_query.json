@@ -5,6 +5,10 @@
   "project_root": "examples/e7/symbol_query",
   "total_symbols": 11,
   "matched_symbols": 1,
+  "files_scanned": 2,
+  "files_indexed": 2,
+  "files_skipped": 0,
+  "skipped_files": [],
   "filters": {
     "kind": "function",
     "name": "validate*",

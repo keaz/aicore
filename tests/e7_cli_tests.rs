@@ -1027,6 +1027,107 @@ fn query_and_symbols_commands_emit_deterministic_json_payloads() {
     assert!(entries
         .iter()
         .any(|entry| entry["name"] == "User" && entry["contracts"]["invariant"] == "age >= 0"));
+    assert_eq!(symbols_json["files_scanned"], 2);
+    assert_eq!(symbols_json["files_indexed"], 2);
+    assert_eq!(symbols_json["files_skipped"], 0);
+    assert_eq!(
+        symbols_json["skipped_files"]
+            .as_array()
+            .expect("symbols skipped files")
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn query_and_symbols_report_partial_index_metadata_when_parse_errors_exist() {
+    let project = tempdir().expect("tempdir");
+    write_symbol_query_fixture(project.path());
+    fs::write(
+        project.path().join("src/broken.aic"),
+        "module demo.broken;\nfn broken( -> Int { 0 }\n",
+    )
+    .expect("write broken source");
+
+    let query_first = run_aic_in_dir(project.path(), &["query", "--project", ".", "--json"]);
+    let query_second = run_aic_in_dir(project.path(), &["query", "--project", ".", "--json"]);
+    assert_eq!(query_first.status.code(), Some(0));
+    assert_eq!(query_second.status.code(), Some(0));
+    assert_eq!(
+        query_first.stdout, query_second.stdout,
+        "query --json output with partial index must be deterministic"
+    );
+    let query_json: Value = serde_json::from_slice(&query_first.stdout).expect("query json");
+    assert_eq!(query_json["ok"], true);
+    assert_eq!(query_json["files_scanned"], 3);
+    assert_eq!(query_json["files_indexed"], 2);
+    assert_eq!(query_json["files_skipped"], 1);
+    let skipped = query_json["skipped_files"]
+        .as_array()
+        .expect("query skipped files");
+    assert_eq!(skipped.len(), 1);
+    assert!(
+        skipped[0]["file"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("src/broken.aic")),
+        "expected broken file path in query skipped files: {query_json:#}"
+    );
+    assert!(skipped[0]["summary"].as_str().is_some());
+
+    let symbols = run_aic_in_dir(project.path(), &["symbols", "--project", ".", "--json"]);
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
+    assert_eq!(symbols_json["ok"], true);
+    assert_eq!(symbols_json["files_scanned"], 3);
+    assert_eq!(symbols_json["files_indexed"], 2);
+    assert_eq!(symbols_json["files_skipped"], 1);
+    let symbols_skipped = symbols_json["skipped_files"]
+        .as_array()
+        .expect("symbols skipped files");
+    assert_eq!(symbols_skipped.len(), 1);
+    assert!(
+        symbols_skipped[0]["file"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("src/broken.aic")),
+        "expected broken file path in symbols skipped files: {symbols_json:#}"
+    );
+
+    let query_text = run_aic_in_dir(project.path(), &["query", "--project", "."]);
+    assert_eq!(query_text.status.code(), Some(0));
+    let query_text_stdout = String::from_utf8_lossy(&query_text.stdout);
+    assert!(query_text_stdout.contains("index warnings:"));
+    assert!(query_text_stdout.contains("broken.aic"));
+}
+
+#[test]
+fn query_and_symbols_strict_index_fail_when_files_are_skipped() {
+    let project = tempdir().expect("tempdir");
+    write_symbol_query_fixture(project.path());
+    fs::write(
+        project.path().join("src/broken.aic"),
+        "module demo.broken;\nfn broken( -> Int { 0 }\n",
+    )
+    .expect("write broken source");
+
+    let query = run_aic_in_dir(
+        project.path(),
+        &["query", "--project", ".", "--strict-index", "--json"],
+    );
+    assert_eq!(query.status.code(), Some(1));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query strict json");
+    assert_eq!(query_json["ok"], false);
+    assert_eq!(query_json["error"]["code"], "symbol_index_partial");
+    assert_eq!(query_json["files_skipped"], 1);
+
+    let symbols = run_aic_in_dir(
+        project.path(),
+        &["symbols", "--project", ".", "--strict-index", "--json"],
+    );
+    assert_eq!(symbols.status.code(), Some(1));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols strict json");
+    assert_eq!(symbols_json["ok"], false);
+    assert_eq!(symbols_json["error"]["code"], "symbol_index_partial");
+    assert_eq!(symbols_json["files_skipped"], 1);
 }
 
 #[test]
@@ -1181,6 +1282,7 @@ fn query_and_symbols_help_include_stable_flags() {
         "--has-contract",
         "--generic-over <TYPE_PARAM>",
         "--limit <N>",
+        "--strict-index",
         "--json",
     ] {
         assert!(
@@ -1192,7 +1294,12 @@ fn query_and_symbols_help_include_stable_flags() {
     let symbols_help = run_aic(&["symbols", "--help"]);
     assert_eq!(symbols_help.status.code(), Some(0));
     let symbols_help_text = String::from_utf8_lossy(&symbols_help.stdout);
-    for flag in ["--project <PROJECT>", "--format <FORMAT>", "--json"] {
+    for flag in [
+        "--project <PROJECT>",
+        "--format <FORMAT>",
+        "--strict-index",
+        "--json",
+    ] {
         assert!(
             symbols_help_text.contains(flag),
             "missing `{flag}` in symbols help:\n{symbols_help_text}"
