@@ -1627,6 +1627,73 @@ static int aic_rt_string_is_space(char ch) {
     return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
 }
 
+static int aic_rt_unicode_is_whitespace(uint32_t codepoint) {
+    if (codepoint <= 0x20u) {
+        return codepoint == 0x20u || (codepoint >= 0x09u && codepoint <= 0x0Du);
+    }
+    if (codepoint == 0x0085u || codepoint == 0x00A0u || codepoint == 0x1680u ||
+        codepoint == 0x2028u || codepoint == 0x2029u || codepoint == 0x202Fu ||
+        codepoint == 0x205Fu || codepoint == 0x3000u) {
+        return 1;
+    }
+    return codepoint >= 0x2000u && codepoint <= 0x200Au;
+}
+
+static uint32_t aic_rt_unicode_simple_to_upper(uint32_t codepoint) {
+    if (codepoint >= 0x61u && codepoint <= 0x7Au) {
+        return codepoint - 0x20u;
+    }
+    if ((codepoint >= 0x00E0u && codepoint <= 0x00F6u && codepoint != 0x00F7u) ||
+        (codepoint >= 0x00F8u && codepoint <= 0x00FEu)) {
+        return codepoint - 0x20u;
+    }
+    if (codepoint == 0x00FFu) {
+        return 0x0178u;
+    }
+    if (codepoint >= 0x03B1u && codepoint <= 0x03C1u) {
+        return codepoint - 0x20u;
+    }
+    if (codepoint == 0x03C2u) {
+        return 0x03A3u;
+    }
+    if (codepoint >= 0x03C3u && codepoint <= 0x03CBu) {
+        return codepoint - 0x20u;
+    }
+    if (codepoint >= 0x0430u && codepoint <= 0x044Fu) {
+        return codepoint - 0x20u;
+    }
+    if (codepoint >= 0x0450u && codepoint <= 0x045Fu) {
+        return codepoint - 0x50u;
+    }
+    return codepoint;
+}
+
+static uint32_t aic_rt_unicode_simple_to_lower(uint32_t codepoint) {
+    if (codepoint >= 0x41u && codepoint <= 0x5Au) {
+        return codepoint + 0x20u;
+    }
+    if ((codepoint >= 0x00C0u && codepoint <= 0x00D6u && codepoint != 0x00D7u) ||
+        (codepoint >= 0x00D8u && codepoint <= 0x00DEu)) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint == 0x0178u) {
+        return 0x00FFu;
+    }
+    if (codepoint >= 0x0391u && codepoint <= 0x03A1u) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint >= 0x03A3u && codepoint <= 0x03ABu) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint >= 0x0410u && codepoint <= 0x042Fu) {
+        return codepoint + 0x20u;
+    }
+    if (codepoint >= 0x0400u && codepoint <= 0x040Fu) {
+        return codepoint + 0x50u;
+    }
+    return codepoint;
+}
+
 static int aic_rt_string_slice_valid(const char* ptr, long len) {
     return len >= 0 && (len == 0 || ptr != NULL);
 }
@@ -1841,11 +1908,41 @@ static void aic_rt_string_trim_bounds(
 ) {
     size_t start = 0;
     size_t end = text_len;
-    while (start < end && aic_rt_string_is_space(text[start])) {
-        start += 1;
-    }
-    while (end > start && aic_rt_string_is_space(text[end - 1])) {
-        end -= 1;
+    if (text != NULL && text_len > 0 && aic_rt_string_utf8_is_valid(text, text_len)) {
+        while (start < end) {
+            uint32_t codepoint = 0;
+            size_t width =
+                aic_rt_char_decode_utf8((const unsigned char*)(text + start), end - start, &codepoint);
+            if (width == 0 || !aic_rt_unicode_is_whitespace(codepoint)) {
+                break;
+            }
+            start += width;
+        }
+        while (end > start) {
+            size_t scalar_start = end - 1;
+            while (scalar_start > start &&
+                   (((unsigned char)text[scalar_start] & 0xC0u) == 0x80u)) {
+                scalar_start -= 1;
+            }
+            uint32_t codepoint = 0;
+            size_t width = aic_rt_char_decode_utf8(
+                (const unsigned char*)(text + scalar_start),
+                end - scalar_start,
+                &codepoint
+            );
+            if (width == 0 || scalar_start + width != end ||
+                !aic_rt_unicode_is_whitespace(codepoint)) {
+                break;
+            }
+            end = scalar_start;
+        }
+    } else {
+        while (start < end && aic_rt_string_is_space(text[start])) {
+            start += 1;
+        }
+        while (end > start && aic_rt_string_is_space(text[end - 1])) {
+            end -= 1;
+        }
     }
     if (out_start != NULL) {
         *out_start = start;

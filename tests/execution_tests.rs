@@ -1937,9 +1937,33 @@ fn main() -> Int effects { io } capabilities { io  } {
     let trim_ok = if len(trim(" \t  hello \n")) == 5 { 1 } else { 0 };
     let trim_start_ok = if len(trim_start("   hello ")) == 6 { 1 } else { 0 };
     let trim_end_ok = if len(trim_end(" hello   ")) == 6 { 1 } else { 0 };
+    let trim_unicode_ok = if len(trim("  hello　")) == 5 { 1 } else { 0 };
+    let trim_start_unicode_ok = if len(trim_start("  hello ")) == 6 { 1 } else { 0 };
+    let trim_end_unicode_ok = if len(trim_end(" hello　 ")) == 6 { 1 } else { 0 };
 
     let upper_ok = if len(to_upper("abcXYZ")) == 6 { 1 } else { 0 };
     let lower_ok = if len(to_lower("ABCxyz")) == 6 { 1 } else { 0 };
+    let upper_unicode = to_upper("éπя");
+    let upper_unicode_ok =
+        if byte_length(upper_unicode) == 6 &&
+            string.contains(upper_unicode, "É") &&
+            string.contains(upper_unicode, "Π") &&
+            string.contains(upper_unicode, "Я") {
+            1
+        } else {
+            0
+        };
+    let lower_unicode = to_lower("ÉΠЯ");
+    let lower_unicode_ok =
+        if byte_length(lower_unicode) == 6 &&
+            string.contains(lower_unicode, "é") &&
+            string.contains(lower_unicode, "π") &&
+            string.contains(lower_unicode, "я") {
+            1
+        } else {
+            0
+        };
+    let upper_unmapped_ok = if byte_length(to_upper("ß")) == 2 { 1 } else { 0 };
     let replace_ok = if len(replace("a-b-c", "-", "/")) == 5 { 1 } else { 0 };
     let repeat_ok = if len(repeat("ab", 3)) == 6 { 1 } else { 0 };
     let repeat_neg_ok = if len(repeat("ab", -2)) == 0 { 1 } else { 0 };
@@ -1978,8 +2002,14 @@ fn main() -> Int effects { io } capabilities { io  } {
         trim_ok +
         trim_start_ok +
         trim_end_ok +
+        trim_unicode_ok +
+        trim_start_unicode_ok +
+        trim_end_unicode_ok +
         upper_ok +
         lower_ok +
+        upper_unicode_ok +
+        lower_unicode_ok +
+        upper_unmapped_ok +
         replace_ok +
         repeat_ok +
         repeat_neg_ok +
@@ -1992,7 +2022,7 @@ fn main() -> Int effects { io } capabilities { io  } {
         join_ok +
         join_empty_ok;
 
-    if score == 34 {
+    if score == 40 {
         print_int(42);
     } else {
         print_int(0);

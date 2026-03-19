@@ -751,6 +751,9 @@ fn split_first(s: String, delimiter: String) -> Option[Vec[String]] {
 /// // Import `std.string` and call `trim` with module-specific arguments.
 /// ```
 ///
+/// Trims Unicode whitespace (for example: ASCII space, NBSP, U+2000..U+200A,
+/// U+2028/U+2029, U+202F, U+205F, U+3000) using locale-independent rules.
+///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
 ///
@@ -766,6 +769,8 @@ fn trim(s: String) -> String {
 /// ```aic
 /// // Import `std.string` and call `trim_start` with module-specific arguments.
 /// ```
+///
+/// Trims leading Unicode whitespace using locale-independent rules.
 ///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
@@ -783,6 +788,8 @@ fn trim_start(s: String) -> String {
 /// // Import `std.string` and call `trim_end` with module-specific arguments.
 /// ```
 ///
+/// Trims trailing Unicode whitespace using locale-independent rules.
+///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
 ///
@@ -799,6 +806,10 @@ fn trim_end(s: String) -> String {
 /// // Import `std.string` and call `to_upper` with module-specific arguments.
 /// ```
 ///
+/// Applies locale-independent simple Unicode case mapping for ASCII,
+/// Latin-1 Supplement letters, basic Greek, and basic Cyrillic ranges.
+/// Unmapped scalars are left unchanged; no multi-scalar expansions are applied.
+///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
 ///
@@ -814,6 +825,10 @@ fn to_upper(s: String) -> String {
 /// ```aic
 /// // Import `std.string` and call `to_lower` with module-specific arguments.
 /// ```
+///
+/// Applies locale-independent simple Unicode case mapping for ASCII,
+/// Latin-1 Supplement letters, basic Greek, and basic Cyrillic ranges.
+/// Unmapped scalars are left unchanged; no multi-scalar expansions are applied.
 ///
 /// ## Effects
 /// See the function signature for required effects and capabilities.

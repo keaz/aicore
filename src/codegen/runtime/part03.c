@@ -503,11 +503,9 @@ void aic_rt_string_trim_start(
         return;
     }
     size_t start = 0;
-    size_t end = (size_t)s_len;
-    while (start < end && aic_rt_string_is_space(s_ptr[start])) {
-        start += 1;
-    }
-    char* out = aic_rt_copy_bytes(s_ptr + start, end - start);
+    size_t ignored_end = 0;
+    aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &start, &ignored_end);
+    char* out = aic_rt_copy_bytes(s_ptr + start, (size_t)s_len - start);
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
@@ -529,10 +527,9 @@ void aic_rt_string_trim_end(
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
         return;
     }
-    size_t end = (size_t)s_len;
-    while (end > 0 && aic_rt_string_is_space(s_ptr[end - 1])) {
-        end -= 1;
-    }
+    size_t ignored_start = 0;
+    size_t end = 0;
+    aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &ignored_start, &end);
     char* out = aic_rt_copy_bytes(s_ptr, end);
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
@@ -556,20 +553,57 @@ void aic_rt_string_to_upper(
         return;
     }
     size_t n = (size_t)s_len;
-    char* out = (char*)malloc(n + 1);
+    if (!aic_rt_string_utf8_is_valid(s_ptr, n)) {
+        char* out = (char*)malloc(n + 1);
+        if (out == NULL) {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        for (size_t i = 0; i < n; ++i) {
+            char ch = s_ptr[i];
+            if (ch >= 'a' && ch <= 'z') {
+                out[i] = (char)(ch - ('a' - 'A'));
+            } else {
+                out[i] = ch;
+            }
+        }
+        out[n] = '\0';
+        aic_rt_write_string_out(out_ptr, out_len, out);
+        return;
+    }
+    if (n > (SIZE_MAX - 1) / 4) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    size_t max_out = n * 4 + 1;
+    char* out = (char*)malloc(max_out);
     if (out == NULL) {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
         return;
     }
-    for (size_t i = 0; i < n; ++i) {
-        char ch = s_ptr[i];
-        if (ch >= 'a' && ch <= 'z') {
-            out[i] = (char)(ch - ('a' - 'A'));
-        } else {
-            out[i] = ch;
+    size_t cursor = 0;
+    size_t out_cursor = 0;
+    while (cursor < n) {
+        uint32_t codepoint = 0;
+        size_t width = aic_rt_char_decode_utf8((const unsigned char*)(s_ptr + cursor), n - cursor, &codepoint);
+        if (width == 0) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
         }
+        uint32_t mapped = aic_rt_unicode_simple_to_upper(codepoint);
+        unsigned char encoded[4] = { 0, 0, 0, 0 };
+        size_t encoded_len = aic_rt_char_encode_utf8(mapped, encoded);
+        if (encoded_len == 0 || out_cursor > max_out - 1 - encoded_len) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        memcpy(out + out_cursor, encoded, encoded_len);
+        out_cursor += encoded_len;
+        cursor += width;
     }
-    out[n] = '\0';
+    out[out_cursor] = '\0';
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
@@ -592,20 +626,57 @@ void aic_rt_string_to_lower(
         return;
     }
     size_t n = (size_t)s_len;
-    char* out = (char*)malloc(n + 1);
+    if (!aic_rt_string_utf8_is_valid(s_ptr, n)) {
+        char* out = (char*)malloc(n + 1);
+        if (out == NULL) {
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        for (size_t i = 0; i < n; ++i) {
+            char ch = s_ptr[i];
+            if (ch >= 'A' && ch <= 'Z') {
+                out[i] = (char)(ch + ('a' - 'A'));
+            } else {
+                out[i] = ch;
+            }
+        }
+        out[n] = '\0';
+        aic_rt_write_string_out(out_ptr, out_len, out);
+        return;
+    }
+    if (n > (SIZE_MAX - 1) / 4) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    size_t max_out = n * 4 + 1;
+    char* out = (char*)malloc(max_out);
     if (out == NULL) {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
         return;
     }
-    for (size_t i = 0; i < n; ++i) {
-        char ch = s_ptr[i];
-        if (ch >= 'A' && ch <= 'Z') {
-            out[i] = (char)(ch + ('a' - 'A'));
-        } else {
-            out[i] = ch;
+    size_t cursor = 0;
+    size_t out_cursor = 0;
+    while (cursor < n) {
+        uint32_t codepoint = 0;
+        size_t width = aic_rt_char_decode_utf8((const unsigned char*)(s_ptr + cursor), n - cursor, &codepoint);
+        if (width == 0) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
         }
+        uint32_t mapped = aic_rt_unicode_simple_to_lower(codepoint);
+        unsigned char encoded[4] = { 0, 0, 0, 0 };
+        size_t encoded_len = aic_rt_char_encode_utf8(mapped, encoded);
+        if (encoded_len == 0 || out_cursor > max_out - 1 - encoded_len) {
+            free(out);
+            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            return;
+        }
+        memcpy(out + out_cursor, encoded, encoded_len);
+        out_cursor += encoded_len;
+        cursor += width;
     }
-    out[n] = '\0';
+    out[out_cursor] = '\0';
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 

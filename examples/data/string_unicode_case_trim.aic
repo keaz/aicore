@@ -1,0 +1,37 @@
+import std.io;
+import std.string;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let trimmed = trim("  Aicore　");
+    let upper = to_upper("éπя");
+    let lower = to_lower("ÉΠЯ");
+
+    let checks =
+        (if len(trimmed) == 6 { 1 } else { 0 }) +
+        (if len(trim_start("  hi ")) == 3 { 1 } else { 0 }) +
+        (if len(trim_end(" hi　 ")) == 3 { 1 } else { 0 }) +
+        (if byte_length(upper) == 6 &&
+            string.contains(upper, "É") &&
+            string.contains(upper, "Π") &&
+            string.contains(upper, "Я") {
+            1
+        } else {
+            0
+        }) +
+        (if byte_length(lower) == 6 &&
+            string.contains(lower, "é") &&
+            string.contains(lower, "π") &&
+            string.contains(lower, "я") {
+            1
+        } else {
+            0
+        }) +
+        (if byte_length(to_upper("ß")) == 2 { 1 } else { 0 });
+
+    if checks == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
