@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, UnaryOp};
 use crate::ir;
@@ -540,7 +541,7 @@ fn format_expr(
         ir::ExprKind::Char(v) => out.push_str(&format!("{:?}", v)),
         ir::ExprKind::String(v) => {
             out.push('"');
-            out.push_str(&v.replace('\\', "\\\\").replace('"', "\\\""));
+            out.push_str(&escape_aic_string_literal(v));
             out.push('"');
         }
         ir::ExprKind::Unit => out.push_str("()"),
@@ -1027,6 +1028,25 @@ fn render_float_literal(value: f64) -> String {
     }
 }
 
+fn escape_aic_string_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\0' => escaped.push_str("\\0"),
+            '\u{0001}'..='\u{001F}' | '\u{007F}' => {
+                let _ = write!(&mut escaped, "\\u{{{:X}}}", ch as u32);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
     match &pattern.kind {
         ir::PatternKind::Wildcard => out.push('_'),
@@ -1042,7 +1062,7 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
         ir::PatternKind::Char(v) => out.push_str(&format!("{:?}", v)),
         ir::PatternKind::String(v) => {
             out.push('"');
-            out.push_str(&v.replace('\\', "\\\\").replace('"', "\\\""));
+            out.push_str(&escape_aic_string_literal(v));
             out.push('"');
         }
         ir::PatternKind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
@@ -1290,5 +1310,39 @@ fn main() -> Int effects { io } capabilities { io } {
         assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
         let ir = build(&program.expect("program"));
         assert_eq!(format_program(&ir), expected);
+    }
+
+    #[test]
+    fn string_literal_escaping_is_valid_and_stable_for_exprs_and_patterns() {
+        let src = r#"
+fn classify(s: String) -> Int {
+    match s {
+        "\n\t\r\0\u{1}\u{7f}\"\\" => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int {
+    let value = "\n\t\r\0\u{1}\u{7f}\"\\";
+    classify(value)
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let ir = build(&program.expect("program"));
+        let formatted = format_program(&ir);
+
+        assert!(
+            formatted.contains("\"\\n\\t\\r\\0\\u{1}\\u{7F}\\\"\\\\\""),
+            "formatted={formatted}"
+        );
+
+        let (reparsed, reparsed_diags) = parse(&formatted, "formatted.aic");
+        assert!(
+            reparsed_diags.is_empty(),
+            "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted}"
+        );
+        let reformatted = format_program(&build(&reparsed.expect("program")));
+        assert_eq!(formatted, reformatted);
     }
 }
