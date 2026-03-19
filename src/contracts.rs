@@ -5,6 +5,7 @@ use crate::diagnostics::{Diagnostic, Severity};
 use crate::ir;
 
 type RangeEnv = BTreeMap<String, IntRange>;
+const ROOT_MODULE: &str = "<root>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProofState {
@@ -72,9 +73,20 @@ struct InvariantSpec {
 }
 
 pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
+    verify_static_with_context(program, file, None, None)
+}
+
+pub fn verify_static_with_context(
+    program: &ir::Program,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_files: Option<&BTreeMap<String, String>>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for item in &program.items {
+    for (index, item) in program.items.iter().enumerate() {
+        let module_name = module_for_item(program, item_modules, index);
+        let item_file = file_for_module(module_files, &module_name, file);
         match item {
             ir::Item::Function(func) => {
                 let param_env = unconstrained_param_env(func);
@@ -84,13 +96,13 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             Diagnostic::error(
                                 "E4001",
                                 format!("requires contract for '{}' is always false", func.name),
-                                file,
+                                item_file,
                                 req.span,
                             )
                             .with_help("fix the contract or function preconditions"),
                         ),
                         ProofState::True => diagnostics.push(discharge_note(
-                            file,
+                            item_file,
                             req.span,
                             format!(
                                 "requires contract for '{}' discharged at compile time",
@@ -98,7 +110,7 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             ),
                         )),
                         ProofState::Unknown => diagnostics.push(residual_note(
-                            file,
+                            item_file,
                             req.span,
                             format!(
                                 "requires contract for '{}' kept as residual runtime obligation",
@@ -114,13 +126,13 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             Diagnostic::error(
                                 "E4002",
                                 format!("ensures contract for '{}' is always false", func.name),
-                                file,
+                                item_file,
                                 ens.span,
                             )
                             .with_help("fix the postcondition expression"),
                         ),
                         ProofState::True => diagnostics.push(discharge_note(
-                            file,
+                            item_file,
                             ens.span,
                             format!(
                                 "ensures contract for '{}' discharged at compile time",
@@ -128,7 +140,7 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             ),
                         )),
                         ProofState::Unknown => diagnostics.push(residual_note(
-                            file,
+                            item_file,
                             ens.span,
                             format!(
                                 "ensures contract for '{}' kept as residual runtime obligation",
@@ -146,13 +158,13 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             Diagnostic::error(
                                 "E4004",
                                 format!("invariant for struct '{}' is always false", strukt.name),
-                                file,
+                                item_file,
                                 inv.span,
                             )
                             .with_help("fix the invariant expression"),
                         ),
                         ProofState::True => diagnostics.push(discharge_note(
-                            file,
+                            item_file,
                             inv.span,
                             format!(
                                 "invariant for struct '{}' discharged at compile time",
@@ -160,7 +172,7 @@ pub fn verify_static(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
                             ),
                         )),
                         ProofState::Unknown => diagnostics.push(residual_note(
-                            file,
+                            item_file,
                             inv.span,
                             format!(
                                 "invariant for struct '{}' kept as residual runtime obligation",
@@ -269,6 +281,33 @@ fn residual_note(file: &str, span: crate::span::Span, message: String) -> Diagno
     let mut diag = Diagnostic::error("E4003", message, file, span);
     diag.severity = Severity::Note;
     diag
+}
+
+fn module_for_item(
+    program: &ir::Program,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    index: usize,
+) -> String {
+    if let Some(module) = item_modules
+        .and_then(|mods| mods.get(index))
+        .and_then(|module| module.as_ref())
+    {
+        return module.join(".");
+    }
+    if let Some(module) = &program.module {
+        return module.join(".");
+    }
+    ROOT_MODULE.to_string()
+}
+
+fn file_for_module<'a>(
+    module_files: Option<&'a BTreeMap<String, String>>,
+    module_name: &str,
+    fallback: &'a str,
+) -> &'a str {
+    module_files
+        .and_then(|files| files.get(module_name).map(|path| path.as_str()))
+        .unwrap_or(fallback)
 }
 
 fn contract_message(kind: &str, owner: &str) -> String {

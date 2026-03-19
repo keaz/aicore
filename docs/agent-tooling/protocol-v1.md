@@ -66,6 +66,7 @@ Negative/error fixtures:
 - When present, `reasoning.schema_version` versions the nested reasoning object independently from the outer protocol version.
 - `aic check --json` and `aic diag --json` must emit reasoning for the currently supported high-frequency families: `E1033`, `E1100`, `E1214`, `E1218`, `E1250`, `E2001`, `E2102`.
 - Within `reasoning`, `hypotheses[]` are sorted deterministically by descending `confidence`, then stable identity fields.
+- For multi-file programs, `diagnostics[*].spans[*].file` must identify the originating source file for that span (not the entry file fallback) whenever the span comes from real source.
 
 ## Autofix contract (AG-T2)
 

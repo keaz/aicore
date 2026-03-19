@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostics::Diagnostic;
 use crate::ir;
@@ -26,13 +26,25 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
 ];
 
 pub fn normalize_effect_declarations(program: &mut ir::Program, file: &str) -> Vec<Diagnostic> {
+    normalize_effect_declarations_with_context(program, file, None, None)
+}
+
+pub fn normalize_effect_declarations_with_context(
+    program: &mut ir::Program,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_files: Option<&BTreeMap<String, String>>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let known: BTreeSet<&str> = KNOWN_EFFECTS.iter().copied().collect();
+    let entry_module = program.module.as_ref();
 
-    for item in &mut program.items {
+    for (index, item) in program.items.iter_mut().enumerate() {
         let ir::Item::Function(func) = item else {
             continue;
         };
+        let module_name = module_for_item(entry_module, item_modules, index);
+        let diag_file = file_for_module(&module_name, file, module_files);
 
         let mut seen = BTreeSet::new();
         let mut normalized = Vec::new();
@@ -42,7 +54,7 @@ pub fn normalize_effect_declarations(program: &mut ir::Program, file: &str) -> V
                 let mut diag = Diagnostic::error(
                     "E2003",
                     format!("unknown effect '{}'", effect),
-                    file,
+                    diag_file,
                     func.span,
                 )
                 .with_help(format!("known effects: {}", KNOWN_EFFECTS.join(", ")));
@@ -56,7 +68,7 @@ pub fn normalize_effect_declarations(program: &mut ir::Program, file: &str) -> V
                 diagnostics.push(Diagnostic::error(
                     "E2004",
                     format!("duplicate effect '{}' in signature", effect),
-                    file,
+                    diag_file,
                     func.span,
                 ));
                 continue;
@@ -77,13 +89,25 @@ pub fn check_effect_declarations(program: &ir::Program, file: &str) -> Vec<Diagn
 }
 
 pub fn normalize_capability_declarations(program: &mut ir::Program, file: &str) -> Vec<Diagnostic> {
+    normalize_capability_declarations_with_context(program, file, None, None)
+}
+
+pub fn normalize_capability_declarations_with_context(
+    program: &mut ir::Program,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_files: Option<&BTreeMap<String, String>>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let known: BTreeSet<&str> = KNOWN_CAPABILITIES.iter().copied().collect();
+    let entry_module = program.module.as_ref();
 
-    for item in &mut program.items {
+    for (index, item) in program.items.iter_mut().enumerate() {
         let ir::Item::Function(func) = item else {
             continue;
         };
+        let module_name = module_for_item(entry_module, item_modules, index);
+        let diag_file = file_for_module(&module_name, file, module_files);
 
         let mut seen = BTreeSet::new();
         let mut normalized = Vec::new();
@@ -93,7 +117,7 @@ pub fn normalize_capability_declarations(program: &mut ir::Program, file: &str) 
                 let mut diag = Diagnostic::error(
                     "E2007",
                     format!("unknown capability '{}'", capability),
-                    file,
+                    diag_file,
                     func.span,
                 )
                 .with_help(format!(
@@ -110,7 +134,7 @@ pub fn normalize_capability_declarations(program: &mut ir::Program, file: &str) 
                 diagnostics.push(Diagnostic::error(
                     "E2008",
                     format!("duplicate capability '{}' in signature", capability),
-                    file,
+                    diag_file,
                     func.span,
                 ));
                 continue;
@@ -128,6 +152,33 @@ pub fn normalize_capability_declarations(program: &mut ir::Program, file: &str) 
 pub fn check_capability_declarations(program: &ir::Program, file: &str) -> Vec<Diagnostic> {
     let mut cloned = program.clone();
     normalize_capability_declarations(&mut cloned, file)
+}
+
+fn module_for_item(
+    entry_module: Option<&Vec<String>>,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    index: usize,
+) -> String {
+    if let Some(module) = item_modules
+        .and_then(|mods| mods.get(index))
+        .and_then(|module| module.as_ref())
+    {
+        return module.join(".");
+    }
+    if let Some(module) = entry_module {
+        return module.join(".");
+    }
+    "<root>".to_string()
+}
+
+fn file_for_module<'a>(
+    module: &str,
+    fallback_file: &'a str,
+    module_files: Option<&'a BTreeMap<String, String>>,
+) -> &'a str {
+    module_files
+        .and_then(|files| files.get(module).map(|path| path.as_str()))
+        .unwrap_or(fallback_file)
 }
 
 fn closest_known_effect(effect: &str) -> Option<&'static str> {

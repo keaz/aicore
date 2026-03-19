@@ -12,9 +12,11 @@ use crate::codegen::{
     compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
     CompileOptions, LinkOptions, OptimizationLevel,
 };
-use crate::contracts::{lower_runtime_asserts, verify_static};
+use crate::contracts::{lower_runtime_asserts, verify_static_with_context};
 use crate::diagnostics::{Diagnostic, Severity, SuggestedFix};
-use crate::effects::{normalize_capability_declarations, normalize_effect_declarations};
+use crate::effects::{
+    normalize_capability_declarations_with_context, normalize_effect_declarations_with_context,
+};
 use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
@@ -139,29 +141,51 @@ pub fn run_frontend_with_options(
     let mut ir = ir_builder::build(&ast);
     timings.ir_build_ms = elapsed_ms(ir_build_started);
     let normalize_started = Instant::now();
-    diagnostics.extend(normalize_effect_declarations(&mut ir, &file));
-    diagnostics.extend(normalize_capability_declarations(&mut ir, &file));
+    diagnostics.extend(normalize_effect_declarations_with_context(
+        &mut ir,
+        &file,
+        Some(&load.item_modules),
+        Some(&load.module_files),
+    ));
+    diagnostics.extend(normalize_capability_declarations_with_context(
+        &mut ir,
+        &file,
+        Some(&load.item_modules),
+        Some(&load.module_files),
+    ));
     timings.effect_normalize_ms = elapsed_ms(normalize_started);
 
     let resolve_started = Instant::now();
-    let (resolution, resolve_diags) = resolver::resolve_with_item_modules_and_imports(
+    let (resolution, resolve_diags) = resolver::resolve_with_item_modules_imports_and_files(
         &ir,
         &file,
         Some(&load.item_modules),
         Some(&load.module_imports),
+        Some(&load.module_files),
     );
     timings.resolve_ms = elapsed_ms(resolve_started);
     diagnostics.extend(resolve_diags);
 
     let typecheck_started = Instant::now();
-    let typecheck = typecheck::check(&ir, &resolution, &file);
+    let typecheck = typecheck::check_with_context(
+        &ir,
+        &resolution,
+        &file,
+        Some(&load.item_modules),
+        Some(&load.module_files),
+    );
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
     diagnostics.extend(typecheck.diagnostics.iter().cloned());
 
     let verify_started = Instant::now();
-    diagnostics.extend(verify_static(&ir, &file));
+    diagnostics.extend(verify_static_with_context(
+        &ir,
+        &file,
+        Some(&load.item_modules),
+        Some(&load.module_files),
+    ));
     timings.verify_ms = elapsed_ms(verify_started);
 
     sort_diagnostics(&mut diagnostics);

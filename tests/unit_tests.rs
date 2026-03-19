@@ -6240,6 +6240,166 @@ fn print_int(x: Int) -> () effects { io } {
 }
 
 #[test]
+fn unit_multi_file_type_diagnostic_points_to_imported_module_file() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.lib;
+
+fn main() -> Int {
+    lib.bad()
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/lib.aic"),
+        r#"module app.lib;
+
+pub fn bad() -> Int {
+    true
+}
+"#,
+    )
+    .expect("write lib");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "E1202" && d.message.contains("function 'bad'"))
+        .expect("missing return type mismatch diagnostic");
+    let file = diag
+        .spans
+        .first()
+        .map(|span| span.file.as_str())
+        .expect("diagnostic span");
+    assert!(
+        file.ends_with("/src/lib.aic") || file.ends_with("\\src\\lib.aic"),
+        "expected imported module path for diagnostic, got: {file}"
+    );
+}
+
+#[test]
+fn unit_multi_file_effect_diagnostic_points_to_imported_module_file() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::create_dir_all(root.join("std")).expect("mkdir std");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.lib;
+
+fn main() -> Int {
+    lib.a()
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/lib.aic"),
+        r#"module app.lib;
+import std.io;
+
+pub fn c() -> Int effects { io } capabilities { io } {
+    print_int(1);
+    1
+}
+
+pub fn b() -> Int {
+    c()
+}
+
+pub fn a() -> Int {
+    b()
+}
+"#,
+    )
+    .expect("write lib");
+
+    fs::write(
+        root.join("std/io.aic"),
+        r#"module std.io;
+
+fn print_int(x: Int) -> () effects { io } capabilities { io } {
+    ()
+}
+"#,
+    )
+    .expect("write std io");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "E2005" && d.message.contains("function 'a'"))
+        .expect("missing transitive effect diagnostic");
+    let file = diag
+        .spans
+        .first()
+        .map(|span| span.file.as_str())
+        .expect("diagnostic span");
+    assert!(
+        file.ends_with("/src/lib.aic") || file.ends_with("\\src\\lib.aic"),
+        "expected imported module path for diagnostic, got: {file}"
+    );
+}
+
+#[test]
+fn unit_multi_file_contract_diagnostic_points_to_imported_module_file() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+
+    fs::write(
+        root.join("src/main.aic"),
+        r#"module app.main;
+import app.lib;
+
+fn main() -> Int {
+    lib.broken(1)
+}
+"#,
+    )
+    .expect("write main");
+
+    fs::write(
+        root.join("src/lib.aic"),
+        r#"module app.lib;
+
+pub fn broken(x: Int) -> Int ensures false {
+    x
+}
+"#,
+    )
+    .expect("write lib");
+
+    let out = run_frontend(&root.join("src/main.aic")).expect("frontend");
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "E4002" && d.message.contains("broken"))
+        .expect("missing ensures contract diagnostic");
+    let file = diag
+        .spans
+        .first()
+        .map(|span| span.file.as_str())
+        .expect("diagnostic span");
+    assert!(
+        file.ends_with("/src/lib.aic") || file.ends_with("\\src\\lib.aic"),
+        "expected imported module path for diagnostic, got: {file}"
+    );
+}
+
+#[test]
 fn unit_std_modules_can_be_resolved_from_global_std_root() {
     let _env_guard = env_lock();
 

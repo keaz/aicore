@@ -222,6 +222,16 @@ pub fn resolve_with_item_modules_and_imports(
     item_modules: Option<&[Option<Vec<String>>]>,
     module_imports: Option<&BTreeMap<String, BTreeSet<String>>>,
 ) -> (Resolution, Vec<Diagnostic>) {
+    resolve_with_item_modules_imports_and_files(program, file, item_modules, module_imports, None)
+}
+
+pub fn resolve_with_item_modules_imports_and_files(
+    program: &ir::Program,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_imports: Option<&BTreeMap<String, BTreeSet<String>>>,
+    module_files: Option<&BTreeMap<String, String>>,
+) -> (Resolution, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
 
     let mut functions = BTreeMap::new();
@@ -278,12 +288,13 @@ pub fn resolve_with_item_modules_and_imports(
 
     for (index, item) in program.items.iter().enumerate() {
         let module_name = module_for_item(program, item_modules, index);
+        let item_file = file_for_module(module_files, &module_name, file);
 
         match item {
             ir::Item::Function(f) => register_function_item(
                 &module_name,
                 f,
-                file,
+                item_file,
                 &mut value_decl_kind_by_module_name,
                 &mut type_decl_kind_by_module_name,
                 &mut diagnostics,
@@ -304,7 +315,7 @@ pub fn resolve_with_item_modules_and_imports(
                                 "duplicate symbol '{}', kinds '{}' and 'struct'",
                                 s.name, existing_kind
                             ),
-                            file,
+                            item_file,
                             s.span,
                         )
                         .with_help("rename one declaration to keep symbol names unique per module"),
@@ -320,7 +331,7 @@ pub fn resolve_with_item_modules_and_imports(
                         diagnostics.push(Diagnostic::error(
                             "E1101",
                             format!("duplicate struct field '{}.{}'", s.name, field.name),
-                            file,
+                            item_file,
                             field.span,
                         ));
                     }
@@ -356,7 +367,7 @@ pub fn resolve_with_item_modules_and_imports(
                                 "duplicate symbol '{}', kinds '{}' and 'enum'",
                                 e.name, existing_kind
                             ),
-                            file,
+                            item_file,
                             e.span,
                         )
                         .with_help("rename one declaration to keep symbol names unique per module"),
@@ -373,7 +384,7 @@ pub fn resolve_with_item_modules_and_imports(
                         diagnostics.push(Diagnostic::error(
                             "E1102",
                             format!("duplicate enum variant '{}.{}'", e.name, variant.name),
-                            file,
+                            item_file,
                             variant.span,
                         ));
                     }
@@ -400,7 +411,7 @@ pub fn resolve_with_item_modules_and_imports(
                                 "duplicate symbol '{}', kinds '{}' and 'trait'",
                                 t.name, existing_kind
                             ),
-                            file,
+                            item_file,
                             t.span,
                         )
                         .with_help("rename one declaration to keep symbol names unique per module"),
@@ -418,7 +429,7 @@ pub fn resolve_with_item_modules_and_imports(
                             Diagnostic::error(
                                 "E1107",
                                 format!("duplicate trait method '{}.{}'", t.name, method_key),
-                                file,
+                                item_file,
                                 method.span,
                             )
                             .with_help("keep exactly one signature per trait method name"),
@@ -452,7 +463,7 @@ pub fn resolve_with_item_modules_and_imports(
                         diagnostics.push(Diagnostic::error(
                             "E1106",
                             format!("unknown type '{}' in inherent impl", target_name),
-                            file,
+                            item_file,
                             impl_def.span,
                         ));
                     }
@@ -460,7 +471,7 @@ pub fn resolve_with_item_modules_and_imports(
                         register_function_item(
                             &module_name,
                             method,
-                            file,
+                            item_file,
                             &mut value_decl_kind_by_module_name,
                             &mut type_decl_kind_by_module_name,
                             &mut diagnostics,
@@ -504,7 +515,7 @@ pub fn resolve_with_item_modules_and_imports(
                     diagnostics.push(Diagnostic::error(
                         "E1103",
                         format!("unknown trait '{}' in impl", impl_def.trait_name),
-                        file,
+                        item_file,
                         impl_def.span,
                     ));
                     continue;
@@ -520,7 +531,7 @@ pub fn resolve_with_item_modules_and_imports(
                             "impl for trait '{}' expects {} type arguments, found {}",
                             impl_def.trait_name, trait_arity, impl_arg_count
                         ),
-                        file,
+                        item_file,
                         impl_def.span,
                     ));
                     continue;
@@ -549,7 +560,7 @@ pub fn resolve_with_item_modules_and_imports(
                                 "conflicting impl for trait '{}' with type arguments [{}]",
                                 impl_def.trait_name, key
                             ),
-                            file,
+                            item_file,
                             impl_def.span,
                         )
                         .with_help("remove duplicate impl or use a different concrete type"),
@@ -631,7 +642,7 @@ pub fn resolve_with_item_modules_and_imports(
                                     "method '{}' is not declared by trait '{}'",
                                     method_name, impl_def.trait_name
                                 ),
-                                file,
+                                item_file,
                                 method.span,
                             )
                             .with_help("remove this method or add it to the trait declaration"),
@@ -651,7 +662,7 @@ pub fn resolve_with_item_modules_and_imports(
                                     "method '{}.{}' does not match trait signature: {}",
                                     impl_def.trait_name, method_name, reason
                                 ),
-                                file,
+                                item_file,
                                 method.span,
                             )
                             .with_help(
@@ -665,7 +676,7 @@ pub fn resolve_with_item_modules_and_imports(
                     register_function_item(
                         &module_name,
                         method,
-                        file,
+                        item_file,
                         &mut value_decl_kind_by_module_name,
                         &mut type_decl_kind_by_module_name,
                         &mut diagnostics,
@@ -958,6 +969,16 @@ fn module_for_item(
     }
 
     ROOT_MODULE.to_string()
+}
+
+fn file_for_module<'a>(
+    module_files: Option<&'a BTreeMap<String, String>>,
+    module_name: &str,
+    fallback: &'a str,
+) -> &'a str {
+    module_files
+        .and_then(|files| files.get(module_name).map(|path| path.as_str()))
+        .unwrap_or(fallback)
 }
 
 fn base_type_name(ty: &str) -> &str {

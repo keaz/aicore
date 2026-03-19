@@ -6,7 +6,9 @@ use serde::Serialize;
 
 use crate::ast::{self, TypeExpr};
 use crate::diagnostics::Diagnostic;
-use crate::effects::{normalize_capability_declarations, normalize_effect_declarations};
+use crate::effects::{
+    normalize_capability_declarations_with_context, normalize_effect_declarations_with_context,
+};
 use crate::ir;
 use crate::ir_builder;
 use crate::package_loader::{self, LoadOptions};
@@ -191,13 +193,24 @@ impl FastContext {
 
         let program = load.program.unwrap_or_else(empty_ast_program);
         let mut ir = ir_builder::build(&program);
-        diagnostics.extend(normalize_effect_declarations(&mut ir, &file_label));
-        diagnostics.extend(normalize_capability_declarations(&mut ir, &file_label));
-        let (resolution, resolve_diags) = resolver::resolve_with_item_modules_and_imports(
+        diagnostics.extend(normalize_effect_declarations_with_context(
+            &mut ir,
+            &file_label,
+            Some(&load.item_modules),
+            Some(&load.module_files),
+        ));
+        diagnostics.extend(normalize_capability_declarations_with_context(
+            &mut ir,
+            &file_label,
+            Some(&load.item_modules),
+            Some(&load.module_files),
+        ));
+        let (resolution, resolve_diags) = resolver::resolve_with_item_modules_imports_and_files(
             &ir,
             &file_label,
             Some(&load.item_modules),
             Some(&load.module_imports),
+            Some(&load.module_files),
         );
         diagnostics.extend(resolve_diags);
         sort_diagnostics(&mut diagnostics);

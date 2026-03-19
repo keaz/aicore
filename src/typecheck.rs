@@ -53,12 +53,23 @@ pub struct TypedHole {
 
 #[derive(Debug, Clone)]
 struct DeferredHole {
+    file: String,
     span: crate::span::Span,
     context: String,
 }
 
 pub fn check(program: &ir::Program, resolution: &Resolution, file: &str) -> TypecheckOutput {
-    let mut checker = Checker::new(program, resolution, file);
+    check_with_context(program, resolution, file, None, None)
+}
+
+pub fn check_with_context(
+    program: &ir::Program,
+    resolution: &Resolution,
+    file: &str,
+    item_modules: Option<&[Option<Vec<String>>]>,
+    module_files: Option<&BTreeMap<String, String>>,
+) -> TypecheckOutput {
+    let mut checker = Checker::new(program, resolution, file, item_modules, module_files);
     checker.run();
     checker.finish()
 }
@@ -105,7 +116,7 @@ pub fn validate_call_fast(
     target: &str,
     arg_types: &[String],
 ) -> PreflightCallResult {
-    let mut checker = Checker::new(program, resolution, file);
+    let mut checker = Checker::new(program, resolution, file, None, None);
     checker.preflight_validate_call(target, arg_types)
 }
 
@@ -115,7 +126,7 @@ pub fn validate_type_fast(
     file: &str,
     ty: &str,
 ) -> PreflightTypeResult {
-    let mut checker = Checker::new(program, resolution, file);
+    let mut checker = Checker::new(program, resolution, file, None, None);
     checker.preflight_validate_type(ty)
 }
 
@@ -143,8 +154,12 @@ struct AliasDef {
 struct Checker<'a> {
     program: &'a ir::Program,
     resolution: &'a Resolution,
+    entry_file: &'a str,
     file: &'a str,
+    item_modules: Option<&'a [Option<Vec<String>>]>,
+    module_files: Option<&'a BTreeMap<String, String>>,
     source: Option<String>,
+    source_cache: BTreeMap<String, Option<String>>,
     diagnostics: Vec<Diagnostic>,
     types: BTreeMap<ir::TypeId, String>,
     functions: BTreeMap<String, FnSig>,
@@ -154,7 +169,7 @@ struct Checker<'a> {
     effect_usage: BTreeMap<String, BTreeSet<String>>,
     effect_reasons: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     call_graph: BTreeMap<String, Vec<CallEdge>>,
-    function_spans: BTreeMap<String, (crate::span::Span, crate::span::Span)>,
+    function_spans: BTreeMap<String, FunctionSpanInfo>,
     current_function: Option<String>,
     current_module: Option<String>,
     current_function_is_async: bool,
@@ -208,13 +223,22 @@ struct PendingInstantiation {
 #[derive(Debug, Clone)]
 struct CallEdge {
     callee: String,
+    file: String,
     span: crate::span::Span,
 }
 
 #[derive(Debug, Clone)]
 struct EffectPath {
     nodes: Vec<String>,
+    file: String,
     span: crate::span::Span,
+}
+
+#[derive(Debug, Clone)]
+struct FunctionSpanInfo {
+    file: String,
+    function_span: crate::span::Span,
+    body_span: crate::span::Span,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -301,7 +325,13 @@ struct ResourceProtocolOp {
 }
 
 impl<'a> Checker<'a> {
-    fn new(program: &'a ir::Program, resolution: &'a Resolution, file: &'a str) -> Self {
+    fn new(
+        program: &'a ir::Program,
+        resolution: &'a Resolution,
+        file: &'a str,
+        item_modules: Option<&'a [Option<Vec<String>>]>,
+        module_files: Option<&'a BTreeMap<String, String>>,
+    ) -> Self {
         let mut types = BTreeMap::new();
         for ty in &program.types {
             types.insert(ty.id, ty.repr.clone());
@@ -492,12 +522,19 @@ impl<'a> Checker<'a> {
                 generic_bounds: BTreeMap::new(),
             },
         );
+        let entry_source = std::fs::read_to_string(file).ok();
+        let mut source_cache = BTreeMap::new();
+        source_cache.insert(file.to_string(), entry_source.clone());
 
         Self {
             program,
             resolution,
+            entry_file: file,
             file,
-            source: std::fs::read_to_string(file).ok(),
+            item_modules,
+            module_files,
+            source: entry_source,
+            source_cache,
             diagnostics: Vec::new(),
             types,
             functions,
@@ -533,7 +570,8 @@ impl<'a> Checker<'a> {
 
     fn run(&mut self) {
         self.check_no_null_boundary();
-        for item in &self.program.items {
+        for (index, item) in self.program.items.iter().enumerate() {
+            self.activate_item_file(index);
             match item {
                 ir::Item::Function(func) => {
                     if decode_internal_type_alias(&func.name).is_some() {
@@ -556,6 +594,46 @@ impl<'a> Checker<'a> {
         }
         self.check_transitive_effects();
         self.check_capability_authority();
+    }
+
+    fn activate_item_file(&mut self, index: usize) {
+        let module = self.module_name_for_item(index);
+        self.activate_module_file(Some(module.as_str()));
+    }
+
+    fn activate_module_file(&mut self, module: Option<&str>) {
+        let active_file = module
+            .and_then(|module_name| {
+                self.module_files
+                    .and_then(|files| files.get(module_name).map(|path| path.as_str()))
+            })
+            .unwrap_or(self.entry_file);
+        let active_file_owned = active_file.to_string();
+        self.file = active_file;
+        self.source = self.cached_source(&active_file_owned);
+    }
+
+    fn module_name_for_item(&self, index: usize) -> String {
+        if let Some(module) = self
+            .item_modules
+            .and_then(|mods| mods.get(index))
+            .and_then(|module| module.as_ref())
+        {
+            return module.join(".");
+        }
+        if let Some(module) = &self.program.module {
+            return module.join(".");
+        }
+        "<root>".to_string()
+    }
+
+    fn cached_source(&mut self, file: &str) -> Option<String> {
+        if let Some(source) = self.source_cache.get(file) {
+            return source.clone();
+        }
+        let loaded = std::fs::read_to_string(file).ok();
+        self.source_cache.insert(file.to_string(), loaded.clone());
+        loaded
     }
 
     fn finish(mut self) -> TypecheckOutput {
@@ -1089,6 +1167,8 @@ impl<'a> Checker<'a> {
             .cloned()
             .or_else(|| self.resolution.entry_module.clone())
             .or_else(|| Some("<root>".to_string()));
+        let active_module = self.current_module.clone();
+        self.activate_module_file(active_module.as_deref());
         let current_function_key = self.current_function_key_for(&func.name);
         self.current_function = Some(current_function_key.clone());
         self.current_function_is_async = func.is_async;
@@ -1097,8 +1177,14 @@ impl<'a> Checker<'a> {
         self.call_graph
             .entry(current_function_key.clone())
             .or_default();
-        self.function_spans
-            .insert(current_function_key.clone(), (func.span, func.body.span));
+        self.function_spans.insert(
+            current_function_key.clone(),
+            FunctionSpanInfo {
+                file: self.file.to_string(),
+                function_span: func.span,
+                body_span: func.body.span,
+            },
+        );
         self.current_param_positions.clear();
 
         let declared_effects: BTreeSet<String> = func.effects.iter().cloned().collect();
@@ -1115,6 +1201,7 @@ impl<'a> Checker<'a> {
                 self.fn_param_holes
                     .entry(key.clone())
                     .or_insert(DeferredHole {
+                        file: self.file.to_string(),
                         span: param.span,
                         context: format!("parameter '{}' in function '{}'", param.name, func.name),
                     });
@@ -1135,6 +1222,7 @@ impl<'a> Checker<'a> {
             self.fn_return_holes
                 .entry(func.name.clone())
                 .or_insert(DeferredHole {
+                    file: self.file.to_string(),
                     span: func.span,
                     context: format!("return type in function '{}'", func.name),
                 });
@@ -1310,13 +1398,16 @@ impl<'a> Checker<'a> {
                 missing.join(", ")
             ));
 
-            if let Some(fix) = self.effect_declaration_fix(
-                &func.name,
-                func.span,
-                func.body.span,
-                &required_effects,
-            ) {
-                diagnostic = diagnostic.with_fix(fix);
+            if let Some(source) = self.source.as_deref() {
+                if let Some(fix) = self.effect_declaration_fix(
+                    &func.name,
+                    source,
+                    func.span,
+                    func.body.span,
+                    &required_effects,
+                ) {
+                    diagnostic = diagnostic.with_fix(fix);
+                }
             }
 
             self.diagnostics.push(diagnostic);
@@ -1798,6 +1889,7 @@ impl<'a> Checker<'a> {
             .or_default()
             .push(CallEdge {
                 callee: callee.to_string(),
+                file: self.file.to_string(),
                 span,
             });
     }
@@ -1898,23 +1990,24 @@ impl<'a> Checker<'a> {
                         effect,
                         path.nodes.join(" -> ")
                     ),
-                    self.file,
+                    &path.file,
                     path.span,
                 )
                 .with_help(format!(
                     "declare `effects {{ {} }}` on '{}' or refactor the call chain",
                     effect, function_name
                 ));
-                if let Some((function_span, body_span)) =
-                    self.function_spans.get(function_key).copied()
-                {
-                    if let Some(fix) = self.effect_declaration_fix(
-                        function_name,
-                        function_span,
-                        body_span,
-                        &closure,
-                    ) {
-                        diagnostic = diagnostic.with_fix(fix);
+                if let Some(span_info) = self.function_spans.get(function_key).cloned() {
+                    if let Some(source) = self.cached_source(&span_info.file) {
+                        if let Some(fix) = self.effect_declaration_fix(
+                            function_name,
+                            &source,
+                            span_info.function_span,
+                            span_info.body_span,
+                            &closure,
+                        ) {
+                            diagnostic = diagnostic.with_fix(fix);
+                        }
                     }
                 }
                 self.diagnostics.push(diagnostic);
@@ -1955,7 +2048,7 @@ impl<'a> Checker<'a> {
                             capability,
                             path.nodes.join(" -> ")
                         ),
-                        self.file,
+                        &path.file,
                         path.span,
                     )
                     .with_help(format!(
@@ -1963,16 +2056,20 @@ impl<'a> Checker<'a> {
                         capability, function_name
                     ))
                 } else {
+                    let fallback = self.function_spans.get(function_key).cloned();
                     Diagnostic::error(
                         "E2009",
                         format!(
                             "function '{}' declares effect '{}' but is missing capability '{}'",
                             function_name, capability, capability
                         ),
-                        self.file,
-                        self.function_spans
-                            .get(function_key)
-                            .map(|(span, _)| *span)
+                        fallback
+                            .as_ref()
+                            .map(|info| info.file.as_str())
+                            .unwrap_or(self.file),
+                        fallback
+                            .as_ref()
+                            .map(|info| info.function_span)
                             .unwrap_or(crate::span::Span::new(0, 0)),
                     )
                     .with_help(format!(
@@ -1981,16 +2078,17 @@ impl<'a> Checker<'a> {
                     ))
                 };
 
-                if let Some((function_span, body_span)) =
-                    self.function_spans.get(function_key).copied()
-                {
-                    if let Some(fix) = self.capability_declaration_fix(
-                        function_name,
-                        function_span,
-                        body_span,
-                        &required_effects,
-                    ) {
-                        diagnostic = diagnostic.with_fix(fix);
+                if let Some(span_info) = self.function_spans.get(function_key).cloned() {
+                    if let Some(source) = self.cached_source(&span_info.file) {
+                        if let Some(fix) = self.capability_declaration_fix(
+                            function_name,
+                            &source,
+                            span_info.function_span,
+                            span_info.body_span,
+                            &required_effects,
+                        ) {
+                            diagnostic = diagnostic.with_fix(fix);
+                        }
                     }
                 }
 
@@ -2054,14 +2152,16 @@ impl<'a> Checker<'a> {
         visited.insert(start.to_string());
         queue.push_back((start.to_string(), vec![start.to_string()], None));
 
-        while let Some((node, path, first_span)) = queue.pop_front() {
+        while let Some((node, path, first_site)) = queue.pop_front() {
             let Some(edges) = self.call_graph.get(&node) else {
                 continue;
             };
             for edge in edges {
                 let mut next_path = path.clone();
                 next_path.push(edge.callee.clone());
-                let span = first_span.unwrap_or(edge.span);
+                let first_site = first_site
+                    .clone()
+                    .unwrap_or_else(|| (edge.file.clone(), edge.span));
 
                 if self
                     .fn_sig_for_key(&edge.callee)
@@ -2070,7 +2170,8 @@ impl<'a> Checker<'a> {
                 {
                     return Some(EffectPath {
                         nodes: next_path,
-                        span,
+                        file: first_site.0,
+                        span: first_site.1,
                     });
                 }
 
@@ -2078,7 +2179,7 @@ impl<'a> Checker<'a> {
                     continue;
                 }
                 if visited.insert(edge.callee.clone()) {
-                    queue.push_back((edge.callee.clone(), next_path, Some(span)));
+                    queue.push_back((edge.callee.clone(), next_path, Some(first_site)));
                 }
             }
         }
@@ -2089,11 +2190,11 @@ impl<'a> Checker<'a> {
     fn effect_declaration_fix(
         &self,
         function_name: &str,
+        source: &str,
         function_span: crate::span::Span,
         body_span: crate::span::Span,
         required_effects: &BTreeSet<String>,
     ) -> Option<SuggestedFix> {
-        let source = self.source.as_ref()?;
         if required_effects.is_empty()
             || function_span.start > function_span.end
             || body_span.start < function_span.start
@@ -2158,11 +2259,11 @@ impl<'a> Checker<'a> {
     fn capability_declaration_fix(
         &self,
         function_name: &str,
+        source: &str,
         function_span: crate::span::Span,
         body_span: crate::span::Span,
         required_capabilities: &BTreeSet<String>,
     ) -> Option<SuggestedFix> {
-        let source = self.source.as_ref()?;
         if required_capabilities.is_empty()
             || function_span.start > function_span.end
             || body_span.start < function_span.start
@@ -3348,6 +3449,7 @@ impl<'a> Checker<'a> {
                 self.struct_field_holes
                     .entry(key.clone())
                     .or_insert(DeferredHole {
+                        file: self.file.to_string(),
                         span: field.span,
                         context: format!("struct field '{}.{}'", strukt.name, field.name),
                     });
@@ -3425,14 +3527,20 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn note_typed_hole(&mut self, span: crate::span::Span, inferred: &str, context: &str) {
+    fn note_typed_hole(
+        &mut self,
+        file: &str,
+        span: crate::span::Span,
+        inferred: &str,
+        context: &str,
+    ) {
         let inferred = if inferred.is_empty() {
             "<?>".to_string()
         } else {
             inferred.to_string()
         };
         self.typed_holes.push(TypedHole {
-            file: self.file.to_string(),
+            file: file.to_string(),
             span,
             inferred: inferred.clone(),
             context: context.to_string(),
@@ -3441,7 +3549,7 @@ impl<'a> Checker<'a> {
             Diagnostic::warning(
                 "E6003",
                 format!("typed hole in {context} inferred as '{inferred}'"),
-                self.file,
+                file,
                 span,
             )
             .with_help("replace `_` with the inferred type when ready"),
@@ -3490,7 +3598,7 @@ impl<'a> Checker<'a> {
                 .get(&key)
                 .cloned()
                 .unwrap_or_else(|| "<?>".to_string());
-            self.note_typed_hole(hole.span, &inferred, &hole.context);
+            self.note_typed_hole(&hole.file, hole.span, &inferred, &hole.context);
         }
 
         let return_holes = self
@@ -3504,7 +3612,7 @@ impl<'a> Checker<'a> {
                 .get(&name)
                 .cloned()
                 .unwrap_or_else(|| "<?>".to_string());
-            self.note_typed_hole(hole.span, &inferred, &hole.context);
+            self.note_typed_hole(&hole.file, hole.span, &inferred, &hole.context);
         }
 
         let struct_field_holes = self
@@ -3518,7 +3626,7 @@ impl<'a> Checker<'a> {
                 .get(&key)
                 .cloned()
                 .unwrap_or_else(|| "<?>".to_string());
-            self.note_typed_hole(hole.span, &inferred, &hole.context);
+            self.note_typed_hole(&hole.file, hole.span, &inferred, &hole.context);
         }
     }
 
@@ -3606,6 +3714,7 @@ impl<'a> Checker<'a> {
                         let binding_ty = if contains_unresolved_type(&ann_ty) {
                             let inferred_ty = self.merge_compatible_types(&ann_ty, &expr_ty);
                             self.note_typed_hole(
+                                self.file,
                                 *span,
                                 &inferred_ty,
                                 &format!("let binding '{}'", name),
