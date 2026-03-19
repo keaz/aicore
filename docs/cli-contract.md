@@ -34,6 +34,16 @@ Published patch authoring schema:
 
 - `docs/agent-tooling/schemas/patch-request.schema.json`
 
+## Canonical schema mapping by live surface
+
+- `aic check --json` and `aic diag --json` emit raw diagnostics arrays conforming to `docs/diagnostics.schema.json`.
+- `aic build` is text-only in the CLI contract (no JSON payload surface).
+- `aic daemon` JSON-RPC `result` payload mappings:
+  - `parse` -> `docs/agent-tooling/schemas/parse-response.schema.json`
+  - `check` -> `docs/agent-tooling/schemas/check-response.schema.json`
+  - `build` -> `docs/agent-tooling/schemas/build-response.schema.json`
+- Other machine-readable CLI commands map to their corresponding protocol schemas via `aic contract --json` `surface_schemas[]`.
+
 ## Exit codes
 
 - `0`: success
@@ -804,7 +814,7 @@ aic daemon
 ```
 
 - Protocol: line-delimited JSON-RPC 2.0 over stdio.
-- Methods: `check`, `build`, `stats`, `shutdown`.
+- Methods: `parse`, `check`, `build`, `stats`, `shutdown`.
 - Reference: `docs/agent-tooling/incremental-daemon.md`.
 
 Agent cookbook references:

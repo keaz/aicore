@@ -11,7 +11,13 @@
     "artifact",
     "output",
     "ok",
-    "diagnostics"
+    "cache_hit",
+    "frontend_cache_hit",
+    "fingerprint",
+    "has_errors",
+    "diagnostics",
+    "output_sha256",
+    "duration_ms"
   ],
   "properties": {
     "protocol_version": {
@@ -37,11 +43,33 @@
     "ok": {
       "type": "boolean"
     },
+    "cache_hit": {
+      "type": "boolean"
+    },
+    "frontend_cache_hit": {
+      "type": "boolean"
+    },
+    "fingerprint": {
+      "type": "string"
+    },
+    "has_errors": {
+      "type": "boolean"
+    },
     "diagnostics": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/diagnostic"
       }
+    },
+    "output_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "$defs": {

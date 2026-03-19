@@ -5,5 +5,11 @@
   "artifact": "exe",
   "output": "target/agent/cli_smoke",
   "ok": true,
-  "diagnostics": []
+  "cache_hit": false,
+  "frontend_cache_hit": true,
+  "fingerprint": "input=examples/e7/cli_smoke.aic\nproject_root=examples/e7\noffline=false\nself=sha256:<redacted>\nlockfile_used=false\nartifact=exe\ndebug_info=false\noutput=target/agent/cli_smoke",
+  "has_errors": false,
+  "diagnostics": [],
+  "output_sha256": "sha256:<redacted>",
+  "duration_ms": 320
 }

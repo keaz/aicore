@@ -3,6 +3,9 @@
   "phase": "check",
   "input": "examples/agent/fixable_imports.aic",
   "ok": false,
+  "cache_hit": false,
+  "fingerprint": "input=examples/agent/fixable_imports.aic\nproject_root=examples/agent\noffline=false\nself=sha256:<redacted>\nlockfile_used=false",
+  "has_errors": true,
   "diagnostics": [
     {
       "code": "E1033",
@@ -62,5 +65,6 @@
         ]
       }
     }
-  ]
+  ],
+  "duration_ms": 7
 }

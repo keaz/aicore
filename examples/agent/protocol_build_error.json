@@ -5,6 +5,10 @@
   "artifact": "exe",
   "output": "target/agent/effects_reject",
   "ok": false,
+  "cache_hit": false,
+  "frontend_cache_hit": false,
+  "fingerprint": "input=examples/effects_reject.aic\nproject_root=examples\noffline=false\nself=sha256:<redacted>\nlockfile_used=false\nartifact=exe\ndebug_info=false\noutput=target/agent/effects_reject",
+  "has_errors": true,
   "diagnostics": [
     {
       "code": "E2001",
@@ -59,5 +63,7 @@
         ]
       }
     }
-  ]
+  ],
+  "output_sha256": null,
+  "duration_ms": 140
 }

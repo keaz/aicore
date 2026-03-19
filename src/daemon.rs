@@ -22,7 +22,10 @@ use crate::package_workflow::{
     compute_package_checksum_for_path, native_link_config, resolve_dependency_context,
     NativeLinkConfig, PackageOptions,
 };
+use crate::parser;
 use crate::session;
+
+const DAEMON_PROTOCOL_VERSION: &str = "1.0";
 
 #[derive(Default)]
 struct DaemonState {
@@ -47,6 +50,7 @@ struct BuildCacheEntry {
 #[derive(Debug, Clone, Serialize, Default)]
 struct DaemonStats {
     requests_total: u64,
+    parse_requests: u64,
     check_requests: u64,
     build_requests: u64,
     session_requests: u64,
@@ -199,6 +203,10 @@ pub fn run_stdio() -> anyhow::Result<()> {
 
         state.stats.requests_total += 1;
         let result = match method {
+            "parse" => {
+                state.stats.parse_requests += 1;
+                state.handle_parse(&params)
+            }
             "check" => {
                 state.stats.check_requests += 1;
                 state.handle_check(&params)
@@ -294,6 +302,23 @@ pub fn run_stdio() -> anyhow::Result<()> {
 }
 
 impl DaemonState {
+    fn handle_parse(&mut self, params: &Value) -> anyhow::Result<Value> {
+        let input = request_path(params, "input")?;
+        let source = fs::read_to_string(&input)
+            .with_context(|| format!("failed to read input '{}'", input.display()))?;
+        let input_name = input.to_string_lossy().to_string();
+        let (program, diagnostics) = parser::parse(&source, &input_name);
+        let ast_items = program.as_ref().map_or(0, |ast| ast.items.len());
+        Ok(json!({
+            "protocol_version": DAEMON_PROTOCOL_VERSION,
+            "phase": "parse",
+            "input": normalize_path(&canonical_or_self(input)),
+            "ok": !has_errors(&diagnostics),
+            "ast_items": ast_items,
+            "diagnostics": diagnostics,
+        }))
+    }
+
     fn handle_check(&mut self, params: &Value) -> anyhow::Result<Value> {
         let started = Instant::now();
         let input = request_path(params, "input")?;
@@ -305,12 +330,16 @@ impl DaemonState {
 
         let (front, cache_hit) = self.frontend_output(&input, offline, &fingerprint)?;
         let diagnostics = front.diagnostics.clone();
+        let ok = !has_errors(&diagnostics);
 
         Ok(json!({
+            "protocol_version": DAEMON_PROTOCOL_VERSION,
+            "phase": "check",
             "input": normalize_path(&canonical_or_self(input)),
+            "ok": ok,
             "cache_hit": cache_hit,
             "fingerprint": fingerprint,
-            "has_errors": has_errors(&diagnostics),
+            "has_errors": !ok,
             "diagnostics": diagnostics,
             "duration_ms": started.elapsed().as_millis(),
         }))
@@ -353,9 +382,12 @@ impl DaemonState {
             if existing.fingerprint == fingerprint && existing.output.exists() {
                 self.stats.build_cache_hits += 1;
                 return Ok(json!({
+                    "protocol_version": DAEMON_PROTOCOL_VERSION,
+                    "phase": "build",
                     "input": normalize_path(&canonical_or_self(input)),
                     "output": normalize_path(&existing.output),
                     "artifact": artifact.as_str(),
+                    "ok": true,
                     "cache_hit": true,
                     "frontend_cache_hit": true,
                     "fingerprint": fingerprint,
@@ -372,9 +404,12 @@ impl DaemonState {
             self.frontend_output(&input, offline, &output_fingerprint)?;
         if has_errors(&front.diagnostics) {
             return Ok(json!({
+                "protocol_version": DAEMON_PROTOCOL_VERSION,
+                "phase": "build",
                 "input": normalize_path(&canonical_or_self(input)),
                 "output": normalize_path(&output),
                 "artifact": artifact.as_str(),
+                "ok": false,
                 "cache_hit": false,
                 "frontend_cache_hit": frontend_cache_hit,
                 "fingerprint": fingerprint,
@@ -394,9 +429,12 @@ impl DaemonState {
             Ok(v) => v,
             Err(diags) => {
                 return Ok(json!({
+                    "protocol_version": DAEMON_PROTOCOL_VERSION,
+                    "phase": "build",
                     "input": normalize_path(&canonical_or_self(input)),
                     "output": normalize_path(&output),
                     "artifact": artifact.as_str(),
+                    "ok": false,
                     "cache_hit": false,
                     "frontend_cache_hit": frontend_cache_hit,
                     "fingerprint": fingerprint,
@@ -445,9 +483,12 @@ impl DaemonState {
         );
 
         Ok(json!({
+            "protocol_version": DAEMON_PROTOCOL_VERSION,
+            "phase": "build",
             "input": normalize_path(&canonical_or_self(input)),
             "output": normalize_path(&output),
             "artifact": artifact.as_str(),
+            "ok": true,
             "cache_hit": false,
             "frontend_cache_hit": frontend_cache_hit,
             "fingerprint": fingerprint,
@@ -561,6 +602,7 @@ impl DaemonState {
     fn stats_response(&self) -> Value {
         json!({
             "requests_total": self.stats.requests_total,
+            "parse_requests": self.stats.parse_requests,
             "check_requests": self.stats.check_requests,
             "build_requests": self.stats.build_requests,
             "session_requests": self.stats.session_requests,
@@ -811,7 +853,7 @@ fn classify_daemon_error(method: &str, err: &anyhow::Error) -> ClassifiedDaemonE
         };
     }
 
-    if method == "check" || method == "build" {
+    if method == "parse" || method == "check" || method == "build" {
         return ClassifiedDaemonError {
             code: -32602,
             data: DaemonErrorData {

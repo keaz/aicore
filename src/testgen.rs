@@ -64,7 +64,7 @@ pub struct TestgenResponse {
     pub seed: u64,
     pub target: TestgenTarget,
     pub artifacts: Vec<TestgenArtifact>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    #[serde(default)]
     pub notes: Vec<String>,
 }
 

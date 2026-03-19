@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use jsonschema::JSONSchema;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -21,6 +23,52 @@ fn run_aic(args: &[&str]) -> std::process::Output {
 fn read_json(path: &str) -> Value {
     let raw = fs::read_to_string(repo_root().join(path)).expect("read json file");
     serde_json::from_str(&raw).expect("parse json")
+}
+
+fn assert_valid_against_schema(schema_path: &str, payload: &Value, context: &str) {
+    let schema = read_json(schema_path);
+    let compiled = JSONSchema::compile(&schema).expect("compile schema");
+    let result = compiled.validate(payload);
+    assert!(
+        result.is_ok(),
+        "{context} does not satisfy schema {}: {:?}",
+        schema_path,
+        result.err().map(|errs| errs.collect::<Vec<_>>())
+    );
+}
+
+fn run_daemon_requests(requests: &[Value]) -> Vec<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("daemon")
+        .current_dir(repo_root())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    {
+        let stdin = child.stdin.as_mut().expect("daemon stdin");
+        for request in requests {
+            let line = serde_json::to_string(request).expect("encode daemon request");
+            stdin
+                .write_all(line.as_bytes())
+                .expect("write daemon request");
+            stdin.write_all(b"\n").expect("newline");
+        }
+    }
+
+    let output = child.wait_with_output().expect("wait daemon");
+    assert!(
+        output.status.success(),
+        "daemon failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("daemon stdout utf8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("decode daemon response"))
+        .collect::<Vec<_>>()
 }
 
 #[test]
@@ -143,6 +191,26 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
         assert!(contract["examples"][phase].is_string());
     }
 
+    let surface_schemas = contract["surface_schemas"]
+        .as_array()
+        .expect("surface schemas");
+    assert!(
+        !surface_schemas.is_empty(),
+        "surface schema mappings must not be empty"
+    );
+    assert!(surface_schemas
+        .iter()
+        .any(|entry| entry["surface"] == "cli.check --json"
+            && entry["path"] == "docs/diagnostics.schema.json"));
+    assert!(surface_schemas
+        .iter()
+        .any(|entry| entry["surface"] == "daemon.check"
+            && entry["path"] == "docs/agent-tooling/schemas/check-response.schema.json"));
+    assert!(surface_schemas
+        .iter()
+        .any(|entry| entry["surface"] == "daemon.build"
+            && entry["path"] == "docs/agent-tooling/schemas/build-response.schema.json"));
+
     let commands = contract["commands"].as_array().expect("command contracts");
     let coverage = commands
         .iter()
@@ -171,6 +239,33 @@ fn contract_json_exposes_protocol_schemas_and_examples() {
 }
 
 #[test]
+fn phase_schema_contracts_have_live_surface_mappings() {
+    let out = run_aic(&["contract", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let contract: Value = serde_json::from_slice(&out.stdout).expect("contract json");
+
+    let schema_paths = contract["schemas"]
+        .as_object()
+        .expect("schemas map")
+        .values()
+        .map(|entry| entry["path"].as_str().expect("schema path"))
+        .collect::<BTreeSet<_>>();
+    let mapped_paths = contract["surface_schemas"]
+        .as_array()
+        .expect("surface_schemas array")
+        .iter()
+        .map(|entry| entry["path"].as_str().expect("surface schema path"))
+        .collect::<BTreeSet<_>>();
+
+    for schema_path in schema_paths {
+        assert!(
+            mapped_paths.contains(schema_path),
+            "missing live surface mapping for schema {schema_path}"
+        );
+    }
+}
+
+#[test]
 fn contract_negotiation_selects_compatible_version() {
     let out = run_aic(&["contract", "--json", "--accept-version", "1.2,2.0"]);
     assert_eq!(out.status.code(), Some(0));
@@ -188,6 +283,92 @@ fn contract_negotiation_reports_incompatible_major() {
     let contract: Value = serde_json::from_slice(&out.stdout).expect("contract json");
     assert_eq!(contract["protocol"]["compatible"], false);
     assert!(contract["protocol"]["selected_version"].is_null());
+}
+
+#[test]
+fn daemon_parse_check_build_outputs_validate_against_advertised_schemas() {
+    let contract = run_aic(&["contract", "--json"]);
+    assert_eq!(contract.status.code(), Some(0));
+    let contract_json: Value = serde_json::from_slice(&contract.stdout).expect("contract json");
+    let surface_schemas = contract_json["surface_schemas"]
+        .as_array()
+        .expect("surface schema entries");
+
+    let surface_schema_path = |surface: &str| {
+        surface_schemas
+            .iter()
+            .find(|entry| entry["surface"] == surface)
+            .and_then(|entry| entry["path"].as_str())
+            .unwrap_or_else(|| panic!("missing schema mapping for surface `{surface}`"))
+            .to_string()
+    };
+
+    let build_output = tempdir()
+        .expect("build output tempdir")
+        .path()
+        .join("daemon_schema_build.o");
+    let build_output = build_output.to_string_lossy().to_string();
+
+    let responses = run_daemon_requests(&[
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "parse",
+            "params": {
+                "input": "examples/agent/fixable_imports.aic"
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "check",
+            "params": {
+                "input": "examples/agent/fixable_imports.aic"
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "build",
+            "params": {
+                "input": "examples/e7/cli_smoke.aic",
+                "artifact": "obj",
+                "output": build_output,
+                "offline": true
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "shutdown",
+            "params": {}
+        }),
+    ]);
+    assert_eq!(
+        responses.len(),
+        4,
+        "expected daemon responses for all requests"
+    );
+
+    let parse_result = responses[0]["result"].clone();
+    let check_result = responses[1]["result"].clone();
+    let build_result = responses[2]["result"].clone();
+
+    assert_valid_against_schema(
+        &surface_schema_path("daemon.parse"),
+        &parse_result,
+        "daemon parse result",
+    );
+    assert_valid_against_schema(
+        &surface_schema_path("daemon.check"),
+        &check_result,
+        "daemon check result",
+    );
+    assert_valid_against_schema(
+        &surface_schema_path("daemon.build"),
+        &build_result,
+        "daemon build result",
+    );
 }
 
 #[test]
@@ -514,7 +695,85 @@ fn context_json_validates_against_published_schema() {
 }
 
 #[test]
-fn documented_protocol_fixtures_smoke_against_cli() {
+fn ast_json_validates_against_published_schema() {
+    let out = run_aic(&["ast", "examples/e7/cli_smoke.aic", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let response: Value = serde_json::from_slice(&out.stdout).expect("ast response");
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/ast-response.schema.json",
+        &response,
+        "ast response",
+    );
+}
+
+#[test]
+fn cli_check_and_diag_json_validate_against_diagnostics_schema() {
+    let check = run_aic(&["check", "examples/agent/fixable_imports.aic", "--json"]);
+    assert_eq!(check.status.code(), Some(1));
+    let check_json: Value = serde_json::from_slice(&check.stdout).expect("check diagnostics json");
+    assert_valid_against_schema(
+        "docs/diagnostics.schema.json",
+        &check_json,
+        "check diagnostics json",
+    );
+
+    let diag = run_aic(&["diag", "examples/agent/fixable_imports.aic", "--json"]);
+    assert_eq!(diag.status.code(), Some(1));
+    let diag_json: Value = serde_json::from_slice(&diag.stdout).expect("diag diagnostics json");
+    assert_valid_against_schema(
+        "docs/diagnostics.schema.json",
+        &diag_json,
+        "diag diagnostics json",
+    );
+}
+
+#[test]
+fn documented_protocol_fixtures_smoke_against_live_surfaces() {
+    let parse_fixture = read_json("examples/agent/protocol_parse_error.json");
+    let parse_input = parse_fixture["input"]
+        .as_str()
+        .expect("parse fixture input");
+    let parse_responses = run_daemon_requests(&[
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "parse",
+            "params": {
+                "input": parse_input
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "shutdown",
+            "params": {}
+        }),
+    ]);
+    assert_eq!(parse_responses.len(), 2, "parse daemon responses");
+    let parse_json = parse_responses[0]["result"].clone();
+    assert_eq!(parse_json["phase"], "parse");
+    assert_eq!(parse_json["diagnostics"][0]["code"], "E1033");
+    assert_eq!(
+        parse_json
+            .as_object()
+            .expect("parse result object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        parse_fixture
+            .as_object()
+            .expect("parse fixture object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        "parse fixture keys drifted from live daemon output",
+    );
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/parse-response.schema.json",
+        &parse_json,
+        "daemon parse fixture smoke",
+    );
+
     let check_fixture = read_json("examples/agent/protocol_check.json");
     assert_eq!(
         check_fixture["diagnostics"][0]["reasoning"]["strategy"],
@@ -523,14 +782,52 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     let check_input = check_fixture["input"]
         .as_str()
         .expect("check fixture input");
-    let check = run_aic(&["check", check_input, "--json"]);
-    assert_eq!(check.status.code(), Some(1));
-    let check_json: Value = serde_json::from_slice(&check.stdout).expect("check json");
+    let check_responses = run_daemon_requests(&[
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "check",
+            "params": {
+                "input": check_input
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "shutdown",
+            "params": {}
+        }),
+    ]);
+    assert_eq!(check_responses.len(), 2, "check daemon responses");
+    let check_json = check_responses[0]["result"].clone();
     let expected_code = check_fixture["diagnostics"][0]["code"]
         .as_str()
         .expect("fixture check code");
-    assert_eq!(check_json[0]["code"], expected_code);
-    assert_eq!(check_json[0]["reasoning"]["schema_version"], "1.0");
+    assert_eq!(check_json["diagnostics"][0]["code"], expected_code);
+    assert_eq!(
+        check_json["diagnostics"][0]["reasoning"]["schema_version"],
+        "1.0"
+    );
+    assert_eq!(
+        check_json
+            .as_object()
+            .expect("check result object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        check_fixture
+            .as_object()
+            .expect("check fixture object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        "check fixture keys drifted from live daemon output",
+    );
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/check-response.schema.json",
+        &check_json,
+        "daemon check fixture smoke",
+    );
 
     let context_fixture = read_json("examples/agent/protocol_context.json");
     let context = run_aic(&[
@@ -567,16 +864,48 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     let temp = tempdir().expect("tempdir");
     let build_output = temp.path().join("build_fixture.o");
     let build_output_str = build_output.to_string_lossy().to_string();
-    let build = run_aic(&[
-        "build",
-        build_input,
-        "--artifact",
-        "obj",
-        "-o",
-        &build_output_str,
+    let build_responses = run_daemon_requests(&[
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "build",
+            "params": {
+                "input": build_input,
+                "artifact": "obj",
+                "output": build_output_str
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "shutdown",
+            "params": {}
+        }),
     ]);
-    assert_eq!(build.status.code(), Some(0));
+    assert_eq!(build_responses.len(), 2, "build daemon responses");
+    let build_json = build_responses[0]["result"].clone();
+    assert_eq!(build_json["ok"], true);
     assert!(build_output.exists(), "expected built artifact");
+    assert_eq!(
+        build_json
+            .as_object()
+            .expect("build result object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        build_fixture
+            .as_object()
+            .expect("build fixture object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        "build fixture keys drifted from live daemon output",
+    );
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/build-response.schema.json",
+        &build_json,
+        "daemon build fixture smoke",
+    );
 
     let build_error_fixture = read_json("examples/agent/protocol_build_error.json");
     let build_error_input = build_error_fixture["input"]
@@ -585,21 +914,57 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     let temp_error = tempdir().expect("tempdir error");
     let temp_error_out = temp_error.path().join("build_error.o");
     let temp_error_out_str = temp_error_out.to_string_lossy().to_string();
-    let build_error = run_aic(&[
-        "build",
-        build_error_input,
-        "--artifact",
-        "obj",
-        "-o",
-        &temp_error_out_str,
+    let build_error_responses = run_daemon_requests(&[
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "build",
+            "params": {
+                "input": build_error_input,
+                "artifact": "obj",
+                "output": temp_error_out_str
+            }
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "shutdown",
+            "params": {}
+        }),
     ]);
-    assert_eq!(build_error.status.code(), Some(1));
-    let stderr = String::from_utf8_lossy(&build_error.stderr);
+    assert_eq!(
+        build_error_responses.len(),
+        2,
+        "build error daemon responses"
+    );
+    let build_error_json = build_error_responses[0]["result"].clone();
+    assert_eq!(build_error_json["ok"], false);
+    let diagnostics = build_error_json["diagnostics"]
+        .as_array()
+        .expect("build error diagnostics");
     assert!(
-        stderr.contains("E2001") || String::from_utf8_lossy(&build_error.stdout).contains("E2001"),
-        "expected build failure diagnostic E2001; stdout={} stderr={}",
-        String::from_utf8_lossy(&build_error.stdout),
-        stderr
+        diagnostics.iter().any(|diag| diag["code"] == "E2001"),
+        "expected build failure diagnostic E2001"
+    );
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/build-response.schema.json",
+        &build_error_json,
+        "daemon build error fixture smoke",
+    );
+    assert_eq!(
+        build_error_json
+            .as_object()
+            .expect("build error result object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        build_error_fixture
+            .as_object()
+            .expect("build error fixture object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        "build error fixture keys drifted from live daemon output",
     );
     assert_eq!(
         build_error_fixture["diagnostics"][0]["reasoning"]["strategy"],
@@ -636,6 +1001,11 @@ fn documented_protocol_fixtures_smoke_against_cli() {
     ]);
     assert_eq!(testgen.status.code(), Some(0));
     let testgen_json: Value = serde_json::from_slice(&testgen.stdout).expect("testgen json");
+    assert_valid_against_schema(
+        "docs/agent-tooling/schemas/testgen-response.schema.json",
+        &testgen_json,
+        "testgen response",
+    );
     assert_eq!(testgen_json["phase"], "testgen");
     assert_eq!(testgen_json["strategy"], testgen_fixture["strategy"]);
     assert_eq!(

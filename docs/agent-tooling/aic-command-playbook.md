@@ -68,6 +68,13 @@ These are the command outputs automation should parse directly:
 | `aic contract --json` | CLI compatibility contract JSON |
 | `aic lsp` / `aic daemon` | JSON-RPC 2.0 over stdio |
 
+Daemon schema mapping:
+
+- `parse` `result` -> `docs/agent-tooling/schemas/parse-response.schema.json`
+- `check` `result` -> `docs/agent-tooling/schemas/check-response.schema.json`
+- `build` `result` -> `docs/agent-tooling/schemas/build-response.schema.json`
+- CLI `aic check --json` / `aic diag --json` -> `docs/diagnostics.schema.json`
+
 Reasoning metadata notes:
 
 - `diagnostics[*].reasoning` is optional; absence means the diagnostic has no published reasoning strategy pack yet.

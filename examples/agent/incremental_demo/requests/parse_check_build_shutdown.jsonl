@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","id":0,"method":"parse","params":{"input":"examples/agent/incremental_demo/app/src/main.aic"}}
+{"jsonrpc":"2.0","id":1,"method":"check","params":{"input":"examples/agent/incremental_demo/app/src/main.aic"}}
+{"jsonrpc":"2.0","id":2,"method":"build","params":{"input":"examples/agent/incremental_demo/app/src/main.aic","artifact":"exe","output":"target/incremental-demo"}}
+{"jsonrpc":"2.0","id":3,"method":"stats","params":{}}
+{"jsonrpc":"2.0","id":4,"method":"shutdown","params":{}}

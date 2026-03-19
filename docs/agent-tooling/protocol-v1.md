@@ -36,6 +36,40 @@ Negotiation rules:
 - Shared raw diagnostics array: `docs/diagnostics.schema.json`
 - Patch request schema: `docs/agent-tooling/schemas/patch-request.schema.json`
 
+## Canonical schema-to-surface mapping
+
+- `docs/diagnostics.schema.json`
+  - `aic check --json`
+  - `aic diag --json`
+- `docs/agent-tooling/schemas/parse-response.schema.json`
+  - daemon JSON-RPC `parse` method `result`
+- `docs/agent-tooling/schemas/check-response.schema.json`
+  - daemon JSON-RPC `check` method `result`
+- `docs/agent-tooling/schemas/build-response.schema.json`
+  - daemon JSON-RPC `build` method `result`
+- `docs/agent-tooling/schemas/ast-response.schema.json`
+  - `aic ast --json`
+- `docs/agent-tooling/schemas/fix-response.schema.json`
+  - `aic diag apply-fixes --json`
+- `docs/agent-tooling/schemas/testgen-response.schema.json`
+  - `aic testgen --json`
+- `docs/agent-tooling/schemas/session-response.schema.json`
+  - `aic session ... --json`
+- `docs/agent-tooling/schemas/patch-response.schema.json`
+  - `aic patch --json`
+- `docs/agent-tooling/schemas/validate-call-response.schema.json`
+  - `aic validate-call`
+- `docs/agent-tooling/schemas/validate-type-response.schema.json`
+  - `aic validate-type`
+- `docs/agent-tooling/schemas/suggest-response.schema.json`
+  - `aic suggest --json`
+- `docs/agent-tooling/schemas/context-response.schema.json`
+  - `aic context --json`
+- `docs/agent-tooling/schemas/query-response.schema.json`
+  - `aic query --json`
+- `docs/agent-tooling/schemas/symbols-response.schema.json`
+  - `aic symbols --json`
+
 Positive fixtures:
 
 - `examples/agent/protocol_parse.json`
@@ -115,7 +149,7 @@ Includes unknown-method error response examples for client fallback handling.
 
 See `docs/agent-tooling/incremental-daemon.md` for:
 
-- daemon methods (`check`, `build`, `stats`, `shutdown`)
+- daemon methods (`parse`, `check`, `build`, `stats`, `shutdown`)
 - session methods (`session.create`, `session.list`, `session.lock.acquire`, `session.lock.release`, `session.conflicts`, `session.merge`)
 - stable daemon JSON-RPC error taxonomy via `error.data.kind`
 - cache invalidation rules based on content hashes

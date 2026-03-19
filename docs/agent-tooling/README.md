@@ -25,6 +25,11 @@ Development note: this project has been developed mainly using **GPT-5.3-Codex**
 - Patch authoring schema: [patch-request.schema.json](schemas/patch-request.schema.json)
 - [`docs/diagnostics.schema.json`](../diagnostics.schema.json) (shared raw `aic check --json` / `aic diag --json` diagnostics array)
 
+Canonical surface note:
+
+- `check-response.schema.json` and `build-response.schema.json` apply to daemon JSON-RPC `check`/`build` `result` payloads.
+- CLI `aic check --json` / `aic diag --json` use `docs/diagnostics.schema.json`.
+
 Diagnostic transport note:
 
 - `diagnostics[*].reasoning` is optional and versioned by `reasoning.schema_version`.

@@ -18,6 +18,7 @@ Each request is a single JSON line. Each response is a single JSON line.
 
 ## Supported methods
 
+- `parse`
 - `check`
 - `build`
 - `session.create`
@@ -37,10 +38,29 @@ Each request is a single JSON line. Each response is a single JSON line.
 
 `check` response includes:
 
+- `protocol_version`: protocol envelope version (`1.0`)
+- `phase`: fixed value `check`
+- `ok`: `true` when `diagnostics[]` has no errors
 - `cache_hit`: whether frontend output came from daemon cache
 - `fingerprint`: deterministic content-hash key (project + dependency checksums)
+- `has_errors`: compatibility mirror of `!ok`
 - `diagnostics`: frontend diagnostics
 - `duration_ms`: wall time for the request
+
+## `parse` request
+
+```json
+{"jsonrpc":"2.0","id":0,"method":"parse","params":{"input":"examples/agent/incremental_demo/app/src/main.aic"}}
+```
+
+`parse` response includes:
+
+- `protocol_version`: protocol envelope version (`1.0`)
+- `phase`: fixed value `parse`
+- `input`: normalized source path
+- `ok`: `true` when parser diagnostics contain no errors
+- `ast_items`: parsed top-level item count (`0` when no AST is produced)
+- `diagnostics`: parser diagnostics
 
 ## `build` request
 
@@ -50,8 +70,12 @@ Each request is a single JSON line. Each response is a single JSON line.
 
 `build` response includes:
 
+- `protocol_version`: protocol envelope version (`1.0`)
+- `phase`: fixed value `build`
+- `ok`: `true` when no frontend/codegen diagnostics are present
 - `cache_hit`: whether artifact build was reused
 - `frontend_cache_hit`: whether frontend output was reused
+- `has_errors`: compatibility mirror of `!ok`
 - `output_sha256`: artifact digest for parity verification
 - `diagnostics`: build/codegen diagnostics (if any)
 - `duration_ms`: wall time for the request
@@ -128,6 +152,7 @@ Any dependency source change causes fingerprint changes and forces a cache miss.
 ## Example fixture
 
 - `examples/agent/incremental_demo/`
+- Request script (parse/check/build): `examples/agent/incremental_demo/requests/parse_check_build_shutdown.jsonl`
 - Request script: `examples/agent/incremental_demo/requests/check_build_shutdown.jsonl`
 - Error taxonomy script: `examples/agent/incremental_demo/requests/error_taxonomy.jsonl`
 - Stale-lock recovery script: `examples/agent/incremental_demo/requests/session_lock_recovery.jsonl`
@@ -135,7 +160,7 @@ Any dependency source change causes fingerprint changes and forces a cache miss.
 Run:
 
 ```bash
-aic daemon < examples/agent/incremental_demo/requests/check_build_shutdown.jsonl
+aic daemon < examples/agent/incremental_demo/requests/parse_check_build_shutdown.jsonl
 ```
 
 For stale-lock recovery workflows, first seed a stale `.aic-sessions/.state.lock`, then run:

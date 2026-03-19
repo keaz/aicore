@@ -27,6 +27,13 @@ pub struct PhaseSchemaContract {
     pub description: &'static str,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SurfaceSchemaContract {
+    pub surface: &'static str,
+    pub schema_path: &'static str,
+    pub description: &'static str,
+}
+
 pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "init",
@@ -378,7 +385,7 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         phase: "parse",
         schema_path: "docs/agent-tooling/schemas/parse-response.schema.json",
         example_path: "examples/agent/protocol_parse.json",
-        description: "Parser-only protocol envelope and diagnostics.",
+        description: "Daemon `parse` method result payload.",
     },
     PhaseSchemaContract {
         phase: "ast",
@@ -390,13 +397,14 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
         phase: "check",
         schema_path: "docs/agent-tooling/schemas/check-response.schema.json",
         example_path: "examples/agent/protocol_check.json",
-        description: "Type/effect/contracts check protocol envelope and diagnostics.",
+        description: "Daemon `check` method result payload with cache metadata and diagnostics.",
     },
     PhaseSchemaContract {
         phase: "build",
         schema_path: "docs/agent-tooling/schemas/build-response.schema.json",
         example_path: "examples/agent/protocol_build.json",
-        description: "Artifact build protocol envelope and diagnostics.",
+        description:
+            "Daemon `build` method result payload with cache/artifact metadata and diagnostics.",
     },
     PhaseSchemaContract {
         phase: "fix",
@@ -460,6 +468,89 @@ pub static PHASE_SCHEMA_CONTRACTS: &[PhaseSchemaContract] = &[
     },
 ];
 
+pub static SURFACE_SCHEMA_CONTRACTS: &[SurfaceSchemaContract] = &[
+    SurfaceSchemaContract {
+        surface: "cli.ast --json",
+        schema_path: "docs/agent-tooling/schemas/ast-response.schema.json",
+        description: "Typed AST/IR metadata envelope emitted by `aic ast --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.check --json",
+        schema_path: "docs/diagnostics.schema.json",
+        description: "Raw diagnostics array emitted by `aic check --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.context --json",
+        schema_path: "docs/agent-tooling/schemas/context-response.schema.json",
+        description: "Context-window response emitted by `aic context --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.diag --json",
+        schema_path: "docs/diagnostics.schema.json",
+        description: "Raw diagnostics array emitted by `aic diag --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.diag apply-fixes --json",
+        schema_path: "docs/agent-tooling/schemas/fix-response.schema.json",
+        description: "Autofix envelope emitted by `aic diag apply-fixes --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.patch --json",
+        schema_path: "docs/agent-tooling/schemas/patch-response.schema.json",
+        description: "Patch preview/apply envelope emitted by `aic patch --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.query --json",
+        schema_path: "docs/agent-tooling/schemas/query-response.schema.json",
+        description: "Semantic query envelope emitted by `aic query --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.session --json",
+        schema_path: "docs/agent-tooling/schemas/session-response.schema.json",
+        description: "Session/lock/conflict/merge envelope emitted by `aic session ... --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.suggest --json",
+        schema_path: "docs/agent-tooling/schemas/suggest-response.schema.json",
+        description: "Suggestion envelope emitted by `aic suggest --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.symbols --json",
+        schema_path: "docs/agent-tooling/schemas/symbols-response.schema.json",
+        description: "Workspace symbol index envelope emitted by `aic symbols --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.testgen --json",
+        schema_path: "docs/agent-tooling/schemas/testgen-response.schema.json",
+        description: "Test generation envelope emitted by `aic testgen --json`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.validate-call",
+        schema_path: "docs/agent-tooling/schemas/validate-call-response.schema.json",
+        description: "Validate-call envelope emitted by `aic validate-call`.",
+    },
+    SurfaceSchemaContract {
+        surface: "cli.validate-type",
+        schema_path: "docs/agent-tooling/schemas/validate-type-response.schema.json",
+        description: "Validate-type envelope emitted by `aic validate-type`.",
+    },
+    SurfaceSchemaContract {
+        surface: "daemon.build",
+        schema_path: "docs/agent-tooling/schemas/build-response.schema.json",
+        description: "JSON-RPC `result` payload for daemon method `build`.",
+    },
+    SurfaceSchemaContract {
+        surface: "daemon.check",
+        schema_path: "docs/agent-tooling/schemas/check-response.schema.json",
+        description: "JSON-RPC `result` payload for daemon method `check`.",
+    },
+    SurfaceSchemaContract {
+        surface: "daemon.parse",
+        schema_path: "docs/agent-tooling/schemas/parse-response.schema.json",
+        description: "JSON-RPC `result` payload for daemon method `parse`.",
+    },
+];
+
 pub fn contract_json(requested_versions: &[String]) -> Value {
     let requested_versions = requested_versions
         .iter()
@@ -481,6 +572,16 @@ pub fn contract_json(requested_versions: &[String]) -> Value {
         );
         examples.insert(schema.phase, schema.example_path);
     }
+    let surface_schemas = SURFACE_SCHEMA_CONTRACTS
+        .iter()
+        .map(|surface| {
+            serde_json::json!({
+                "surface": surface.surface,
+                "path": surface.schema_path,
+                "description": surface.description
+            })
+        })
+        .collect::<Vec<_>>();
 
     serde_json::json!({
         "version": CLI_CONTRACT_VERSION,
@@ -504,6 +605,7 @@ pub fn contract_json(requested_versions: &[String]) -> Value {
             }
         },
         "schemas": schemas,
+        "surface_schemas": surface_schemas,
         "examples": examples,
         "commands": COMMAND_CONTRACTS,
         "policy": "breaking CLI changes require a versioned migration process"
@@ -575,6 +677,7 @@ pub fn negotiate_protocol_version(requested: &[String]) -> (Option<&'static str>
 mod tests {
     use super::{
         contract_json, negotiate_protocol_version, COMMAND_CONTRACTS, PHASE_SCHEMA_CONTRACTS,
+        SURFACE_SCHEMA_CONTRACTS,
     };
 
     #[test]
@@ -602,6 +705,20 @@ mod tests {
         assert!(value["schemas"].is_object());
         assert_eq!(value["schemas"]["check"]["path"], check_schema.schema_path);
         assert_eq!(value["examples"]["check"], check_schema.example_path);
+        assert!(value["surface_schemas"].is_array());
+    }
+
+    #[test]
+    fn surface_schema_contracts_are_unique_and_sorted() {
+        let mut surfaces = SURFACE_SCHEMA_CONTRACTS
+            .iter()
+            .map(|entry| entry.surface)
+            .collect::<Vec<_>>();
+        let mut sorted = surfaces.clone();
+        sorted.sort();
+        sorted.dedup();
+        surfaces.sort();
+        assert_eq!(surfaces, sorted, "surface schema contracts must be unique");
     }
 
     #[test]
