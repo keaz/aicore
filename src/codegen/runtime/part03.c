@@ -205,6 +205,23 @@ long aic_rt_string_char_at(
     return 0;
 }
 
+long aic_rt_string_compare(
+    const char* lhs_ptr,
+    long lhs_len,
+    long lhs_cap,
+    const char* rhs_ptr,
+    long rhs_len,
+    long rhs_cap
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    if (!aic_rt_string_slice_valid(lhs_ptr, lhs_len) ||
+        !aic_rt_string_slice_valid(rhs_ptr, rhs_len)) {
+        return 0;
+    }
+    return (long)aic_rt_map_key_compare_raw(lhs_ptr, lhs_len, rhs_ptr, rhs_len);
+}
+
 long aic_rt_bytes_byte_at(const char* data_ptr, long data_len, long data_cap, long index) {
     (void)data_cap;
     if (!aic_rt_string_slice_valid(data_ptr, data_len) || index < 0 || index >= data_len) {

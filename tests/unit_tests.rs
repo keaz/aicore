@@ -427,6 +427,27 @@ fn main(a: Float32, b: Float64) -> Int {
 }
 
 #[test]
+fn unit_typecheck_rejects_string_ordering_with_stable_diagnostic() {
+    let src = r#"
+fn main() -> Bool {
+    "alpha" < "beta"
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1232"
+            && d.message.contains(
+                "comparison operators require matching integer, float, or Char operands"
+            )),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_typecheck_rejects_float_width_assignment_and_call_mismatches() {
     let src = r#"
 fn want_f32(x: Float32) -> Float32 { x }
@@ -8306,6 +8327,28 @@ fn main() -> Count {
         "internal const pseudo-items must not be emitted as runtime functions"
     );
     assert!(llvm.llvm_ir.contains("define i64 @aic_main()"));
+}
+
+#[test]
+fn unit_codegen_supports_string_equality_and_inequality() {
+    let src = r#"
+fn main() -> Int {
+    let a = "é🙂";
+    let b = "é🙂";
+    let c = "é😎";
+    if a == b && a != c {
+        1
+    } else {
+        0
+    }
+}
+"#;
+    let ir = lower(src);
+    let llvm = emit_llvm(&ir, "unit.aic").expect("emit llvm");
+    assert!(
+        llvm.llvm_ir.contains("call i64 @aic_rt_string_compare"),
+        "string eq/ne codegen must lower through runtime string comparison helper"
+    );
 }
 
 #[test]

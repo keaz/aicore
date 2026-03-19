@@ -2036,6 +2036,30 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_string_eq_ne_support_ascii_and_unicode_consistently() {
+    let src = r#"
+import std.io;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let eq_ascii = if "a" == "a" { 1 } else { 0 };
+    let ne_ascii = if "a" != "b" { 1 } else { 0 };
+    let eq_unicode = if "é🙂" == "é🙂" { 1 } else { 0 };
+    let ne_unicode = if "é🙂" != "é😎" { 1 } else { 0 };
+
+    if eq_ascii + ne_ascii + eq_unicode + ne_unicode == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_char_ops_cover_ascii_and_unicode() {
     let src = r#"
 import std.char;

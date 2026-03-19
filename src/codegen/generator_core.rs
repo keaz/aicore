@@ -99,6 +99,7 @@ impl<'a> Generator<'a> {
             "declare void @aic_rt_string_byte_substring(i8*, i64, i64, i64, i64, i8**, i64*)\n",
         );
         text.push_str("declare i64 @aic_rt_string_char_at(i8*, i64, i64, i64, i8**, i64*)\n");
+        text.push_str("declare i64 @aic_rt_string_compare(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str(
             "declare void @aic_rt_string_split(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
@@ -2925,6 +2926,64 @@ impl<'a> Generator<'a> {
                         ));
                         return None;
                     }
+                }
+                if lhs.ty == LType::String && rhs.ty == LType::String {
+                    if !matches!(op, BinOp::Eq | BinOp::Ne) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5006",
+                            "string ordering comparisons are unsupported; typecheck must reject them",
+                            self.file,
+                            span,
+                        ));
+                        return None;
+                    }
+                    let lhs_repr = lhs.repr.unwrap_or_else(|| default_value(&lhs.ty));
+                    let rhs_repr = rhs.repr.unwrap_or_else(|| default_value(&rhs.ty));
+                    let lhs_ptr = self.new_temp();
+                    let lhs_len = self.new_temp();
+                    let lhs_cap = self.new_temp();
+                    let rhs_ptr = self.new_temp();
+                    let rhs_len = self.new_temp();
+                    let rhs_cap = self.new_temp();
+                    let lhs_llvm_ty = llvm_type(&lhs.ty);
+                    let rhs_llvm_ty = llvm_type(&rhs.ty);
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 0",
+                        lhs_ptr, lhs_llvm_ty, &lhs_repr
+                    ));
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 1",
+                        lhs_len, lhs_llvm_ty, &lhs_repr
+                    ));
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 2",
+                        lhs_cap, lhs_llvm_ty, &lhs_repr
+                    ));
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 0",
+                        rhs_ptr, rhs_llvm_ty, &rhs_repr
+                    ));
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 1",
+                        rhs_len, rhs_llvm_ty, &rhs_repr
+                    ));
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, 2",
+                        rhs_cap, rhs_llvm_ty, &rhs_repr
+                    ));
+                    let cmp = self.new_temp();
+                    fctx.lines.push(format!(
+                        "  {} = call i64 @aic_rt_string_compare(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
+                        cmp, lhs_ptr, lhs_len, lhs_cap, rhs_ptr, rhs_len, rhs_cap
+                    ));
+                    let pred = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
+                    let reg = self.new_temp();
+                    fctx.lines
+                        .push(format!("  {} = icmp {} i64 {}, 0", reg, pred, cmp));
+                    return Some(Value {
+                        ty: LType::Bool,
+                        repr: Some(reg),
+                    });
                 }
 
                 let (cmp, ty) = match (&lhs.ty, &rhs.ty) {

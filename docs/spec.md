@@ -275,6 +275,11 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
 - Arithmetic (`+`, `-`, `*`, `/`, `%`) requires exact integer kind match (signedness + width).
 - Bitwise/shift (`&`, `|`, `^`, `<<`, `>>`, `>>>`) requires exact integer kind match.
 - Integer equality/comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) requires exact integer kind match.
+- Non-integer comparison coverage:
+  - `Bool` supports `==` and `!=`.
+  - `Char` supports `==`, `!=`, `<`, `<=`, `>`, `>=`.
+  - `String` supports `==` and `!=` only (byte-exact UTF-8 sequence comparison).
+  - `String` ordering comparisons (`<`, `<=`, `>`, `>=`) are rejected during typechecking with `E1232`.
 - `UInt`/`USize` are treated as the same integer kind for exact-match checks because `UInt` aliases `USize`.
 - Mismatches report deterministic diagnostics:
   - `E1230` arithmetic/bitwise/shift mismatch
