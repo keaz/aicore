@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast;
 use crate::diagnostics::Diagnostic;
+use crate::machine_paths;
 use crate::package_workflow::{resolve_dependency_context, PackageOptions};
 use crate::parser;
 use crate::span::Span;
@@ -177,7 +178,7 @@ impl Loader {
                     Diagnostic::error(
                         "E2105",
                         format!("duplicate module declaration '{}'", key),
-                        &canonical.to_string_lossy(),
+                        &machine_paths::normalize_separators_path(&canonical),
                         module.span,
                     )
                     .with_help(format!(
@@ -230,7 +231,7 @@ impl Loader {
                         .unwrap_or_else(|| ROOT_MODULE.to_string());
                     module_files
                         .entry(module_name.clone())
-                        .or_insert_with(|| path.to_string_lossy().to_string());
+                        .or_insert_with(|| machine_paths::normalize_separators_path(path));
                     let imports_for_module = module_imports.entry(module_name).or_default();
                     for import in &program.imports {
                         merged_imports
@@ -278,7 +279,7 @@ impl Loader {
                     Diagnostic::error(
                         "E2103",
                         format!("import cycle detected: {cycle_text}"),
-                        &canonical.to_string_lossy(),
+                        &machine_paths::normalize_separators_path(&canonical),
                         Span::new(0, 0),
                     )
                     .with_help("break the cycle by extracting shared code into a separate module"),
@@ -303,7 +304,7 @@ impl Loader {
                 Diagnostic::error(
                     "E2101",
                     "non-entry module must declare `module ...;`",
-                    &canonical.to_string_lossy(),
+                    &machine_paths::normalize_separators_path(&canonical),
                     program.span,
                 )
                 .with_help("add a module declaration matching the import path"),
@@ -369,7 +370,7 @@ impl Loader {
             Diagnostic::error(
                 "E2100",
                 format!("cannot resolve import '{}'", key),
-                &current_file.to_string_lossy(),
+                &machine_paths::normalize_separators_path(current_file),
                 import.span,
             )
             .with_help("create the module file and declaration, or fix the import path"),
@@ -422,7 +423,8 @@ impl Loader {
             return Ok(());
         }
         let source = fs::read_to_string(&canonical)?;
-        let (program, diagnostics) = parser::parse(&source, &canonical.to_string_lossy());
+        let parse_label = machine_paths::normalize_separators_path(&canonical);
+        let (program, diagnostics) = parser::parse(&source, &parse_label);
         self.parse_cache.insert(
             canonical,
             ParsedModule {
@@ -516,7 +518,7 @@ fn canonical_or_self(path: PathBuf) -> PathBuf {
 fn module_label(module: Option<&Vec<String>>, path: &Path) -> String {
     module
         .map(|m| m.join("."))
-        .unwrap_or_else(|| path.to_string_lossy().to_string())
+        .unwrap_or_else(|| machine_paths::normalize_separators_path(path))
 }
 
 fn canonicalize_cycle(cycle: &[String]) -> (String, String) {

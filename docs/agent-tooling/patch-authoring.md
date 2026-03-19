@@ -132,6 +132,12 @@ Successful responses contain:
 - `applied_edits[]`
 - `previews[]`
 
+Path fields in patch responses are canonical machine paths:
+
+- absolute
+- symlink-resolved for existing prefixes
+- separator-normalized to `/`
+
 Conflict responses contain:
 
 - `conflicts[].operation_index`

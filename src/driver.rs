@@ -20,6 +20,7 @@ use crate::effects::{
 use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
+use crate::machine_paths;
 use crate::package_loader;
 use crate::package_loader::LoadOptions;
 use crate::package_workflow::{native_link_config, NativeLinkConfig};
@@ -78,7 +79,7 @@ pub fn run_frontend_with_options(
     path: &Path,
     options: FrontendOptions,
 ) -> anyhow::Result<FrontendOutput> {
-    let file = path.to_string_lossy().to_string();
+    let file = machine_paths::canonical_machine_path(path);
     let mut timings = FrontendTimings::default();
     let load_started = Instant::now();
     let mut load = package_loader::load_entry_with_options(

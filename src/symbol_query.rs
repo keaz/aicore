@@ -6,6 +6,7 @@ use anyhow::Context;
 use serde::Serialize;
 
 use crate::ast;
+use crate::machine_paths;
 use crate::parser;
 use crate::span::Span;
 
@@ -233,14 +234,15 @@ fn index_symbols(entry_path: &Path) -> anyhow::Result<SymbolIndexReport> {
             }
         };
 
-        let (program, diagnostics) = parser::parse(&source, &file.to_string_lossy());
+        let parse_label = machine_paths::canonical_machine_path(&file);
+        let (program, diagnostics) = parser::parse(&source, &parse_label);
         if diagnostics.iter().any(|diag| diag.is_error()) {
             skipped_files.push(parse_error_warning(&file, &diagnostics));
             continue;
         }
         let Some(program) = program else {
             skipped_files.push(SymbolIndexWarning {
-                file: file.to_string_lossy().to_string(),
+                file: machine_paths::canonical_machine_path(&file),
                 error_count: 1,
                 code_count: 0,
                 codes: Vec::new(),
@@ -367,7 +369,7 @@ fn index_symbols(entry_path: &Path) -> anyhow::Result<SymbolIndexReport> {
 
 fn io_read_warning(file: &Path, err: &std::io::Error) -> SymbolIndexWarning {
     SymbolIndexWarning {
-        file: file.to_string_lossy().to_string(),
+        file: machine_paths::canonical_machine_path(file),
         error_count: 1,
         code_count: 1,
         codes: vec![INDEX_WARNING_CODE_IO_READ_FAILED.to_string()],
@@ -393,7 +395,7 @@ fn parse_error_warning(
         .collect::<Vec<_>>()
         .join(" | ");
     SymbolIndexWarning {
-        file: file.to_string_lossy().to_string(),
+        file: machine_paths::canonical_machine_path(file),
         error_count: code_counts.values().sum(),
         code_count: code_counts.len(),
         codes: code_counts.keys().cloned().collect(),
@@ -444,7 +446,7 @@ pub fn build_query_response_with_options(
     filters: QueryFilters,
     strict_index: bool,
 ) -> anyhow::Result<QueryResponse> {
-    let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
+    let project_root = machine_paths::canonical_machine_path(&symbol_index_root(entry_path));
     let response = match query_symbols(entry_path, filters.clone()) {
         Ok(report) => {
             let strict_error = if strict_index {
@@ -495,7 +497,7 @@ pub fn build_symbols_response_with_options(
     entry_path: &Path,
     strict_index: bool,
 ) -> anyhow::Result<SymbolsResponse> {
-    let project_root = symbol_index_root(entry_path).to_string_lossy().to_string();
+    let project_root = machine_paths::canonical_machine_path(&symbol_index_root(entry_path));
     let index = index_symbols(entry_path)?;
     let strict_error = if strict_index {
         strict_index_error("symbols", index.files_skipped, &index.skipped_files)
@@ -843,7 +845,7 @@ fn wildcard_match(pattern: &[u8], value: &[u8]) -> bool {
 fn location_for_span(file: &Path, source: &str, span: Span) -> SymbolLocation {
     let (line, column) = line_col_for_offset(source, span.start);
     SymbolLocation {
-        file: file.to_string_lossy().to_string(),
+        file: machine_paths::canonical_machine_path(file),
         line,
         column,
         span_start: span.start,
@@ -1109,11 +1111,12 @@ fn render_type_expr(ty: &ast::TypeExpr) -> String {
 }
 
 fn symbol_index_root(entry_path: &Path) -> PathBuf {
-    if entry_path.is_dir() {
+    let root = if entry_path.is_dir() {
         entry_path.to_path_buf()
     } else {
         find_project_root(entry_path)
-    }
+    };
+    machine_paths::canonical_machine_path_buf(&root)
 }
 
 fn find_project_root(entry: &Path) -> PathBuf {
@@ -1235,6 +1238,8 @@ fn helper() -> Int {
         assert_eq!(report.matched_symbols, 1);
         assert_eq!(report.symbols[0].name, "validate_user");
         assert_eq!(report.symbols[0].kind, SymbolKind::Function);
+        let expected = crate::machine_paths::canonical_machine_path(&src.join("main.aic"));
+        assert_eq!(report.symbols[0].location.file, expected);
     }
 
     #[test]

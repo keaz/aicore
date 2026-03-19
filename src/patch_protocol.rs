@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ast::{self, Expr, ExprKind, Pattern, PatternKind, Stmt};
 use crate::driver::{has_errors, run_frontend_with_options, FrontendOptions};
+use crate::machine_paths;
 use crate::package_workflow::read_manifest;
 use crate::parser;
 use crate::span::Span;
@@ -208,6 +209,7 @@ pub fn apply_patch_document(
     document: &PatchDocument,
     mode: PatchMode,
 ) -> anyhow::Result<PatchResponse> {
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
     let mut file_states = BTreeMap::<PathBuf, FileState>::new();
     let mut applied_edits = Vec::<PatchEdit>::new();
     let mut previews = Vec::<PatchPreview>::new();
@@ -217,7 +219,7 @@ pub fn apply_patch_document(
 
     for (operation_index, operation) in document.operations.iter().enumerate() {
         match apply_operation(
-            project_root,
+            &project_root,
             operation,
             operation_index,
             &mut file_states,
@@ -462,7 +464,7 @@ fn resolve_target_file(project_root: &Path, operation: &PatchOperation) -> Resul
             }
             let fallback = project_root.join("src/main.aic");
             if fallback.exists() {
-                return Ok(fallback);
+                return Ok(machine_paths::canonical_machine_path_buf(&fallback));
             }
             Err("add_function requires `target_file` when `src/main.aic` is missing".to_string())
         }
@@ -529,7 +531,7 @@ fn resolve_explicit_file(project_root: &Path, raw: &str) -> Result<PathBuf, Stri
     };
 
     if path.exists() {
-        Ok(path)
+        Ok(machine_paths::canonical_machine_path_buf(&path))
     } else {
         Err(format!("target file does not exist: {}", path.display()))
     }
@@ -546,7 +548,7 @@ fn resolve_symbol_file(
     let mut files = symbols
         .iter()
         .filter(|symbol| symbol.kind == kind && symbol.name == symbol_name)
-        .map(|symbol| PathBuf::from(&symbol.location.file))
+        .map(|symbol| machine_paths::canonical_machine_path_buf(Path::new(&symbol.location.file)))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -1246,7 +1248,7 @@ fn summarize_error_diagnostics(diagnostics: &[crate::diagnostics::Diagnostic]) -
 }
 
 fn display_path(path: &Path) -> String {
-    path.to_string_lossy().to_string()
+    machine_paths::canonical_machine_path(path)
 }
 
 fn document_error_response(path: &Path, mode: PatchMode, message: String) -> PatchResponse {
@@ -1859,8 +1861,9 @@ fn with_test_temp_root<T>(root: &Path, op: impl FnOnce() -> T) -> T {
 
 #[cfg(test)]
 fn with_test_write_prepare_failure<T>(path: &Path, op: impl FnOnce() -> T) -> T {
+    let canonical = machine_paths::canonical_machine_path_buf(path);
     let scope = TEST_WRITE_PREPARE_FAIL_PATH.with(|slot| TestWritePrepareFailureScope {
-        previous: slot.replace(Some(path.to_path_buf())),
+        previous: slot.replace(Some(canonical)),
     });
     let output = op();
     drop(scope);
@@ -2013,6 +2016,12 @@ mod tests {
         assert_eq!(preview.mode, "preview");
         assert_eq!(preview.conflicts.len(), 0);
         assert!(!preview.files_changed.is_empty());
+        let expected_file = crate::machine_paths::canonical_machine_path(&source_path);
+        assert_eq!(preview.files_changed[0], expected_file);
+        assert!(preview
+            .applied_edits
+            .iter()
+            .all(|edit| edit.file == preview.files_changed[0]));
         assert!(
             format_patch_response_text(&preview).contains("patch preview"),
             "text formatter should summarize preview"

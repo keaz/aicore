@@ -21,6 +21,13 @@ fn run_aic(args: &[&str]) -> std::process::Output {
         .expect("run aic")
 }
 
+fn canonical_slash(path: &std::path::Path) -> String {
+    fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
 fn run_aic_in_dir(cwd: &std::path::Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_aic"))
         .args(args)
@@ -3371,11 +3378,16 @@ fn patch_command_example_fixture_preview_and_apply_are_deterministic() {
             .len()
             >= 3
     );
+    let expected_main = canonical_slash(&source_path);
     assert!(preview_json["previews"]
         .as_array()
         .expect("previews")
         .iter()
-        .all(|preview| preview["file"] == "./src/main.aic"));
+        .all(|preview| preview["file"].as_str() == Some(expected_main.as_str())));
+    assert_eq!(
+        preview_json["files_changed"][0].as_str(),
+        Some(expected_main.as_str())
+    );
 
     let after_preview = fs::read_to_string(&source_path).expect("read source after preview");
     assert_eq!(after_preview, original, "preview must not mutate source");

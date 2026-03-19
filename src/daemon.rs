@@ -18,6 +18,7 @@ use crate::codegen::{
 use crate::contracts::lower_runtime_asserts;
 use crate::diagnostics::Diagnostic;
 use crate::driver::{has_errors, run_frontend_with_options, FrontendOptions, FrontendOutput};
+use crate::machine_paths;
 use crate::package_workflow::{
     compute_package_checksum_for_path, native_link_config, resolve_dependency_context,
     NativeLinkConfig, PackageOptions,
@@ -306,13 +307,13 @@ impl DaemonState {
         let input = request_path(params, "input")?;
         let source = fs::read_to_string(&input)
             .with_context(|| format!("failed to read input '{}'", input.display()))?;
-        let input_name = input.to_string_lossy().to_string();
+        let input_name = normalize_path(&input);
         let (program, diagnostics) = parser::parse(&source, &input_name);
         let ast_items = program.as_ref().map_or(0, |ast| ast.items.len());
         Ok(json!({
             "protocol_version": DAEMON_PROTOCOL_VERSION,
             "phase": "parse",
-            "input": normalize_path(&canonical_or_self(input)),
+            "input": input_name,
             "ok": !has_errors(&diagnostics),
             "ast_items": ast_items,
             "diagnostics": diagnostics,
@@ -802,11 +803,11 @@ fn resolve_project_root(path: &Path) -> PathBuf {
 }
 
 fn canonical_or_self(path: PathBuf) -> PathBuf {
-    fs::canonicalize(&path).unwrap_or(path)
+    machine_paths::canonical_machine_path_buf(&path)
 }
 
 fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    machine_paths::canonical_machine_path(path)
 }
 
 fn classify_daemon_error(method: &str, err: &anyhow::Error) -> ClassifiedDaemonError {

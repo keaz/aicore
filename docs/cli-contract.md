@@ -44,6 +44,16 @@ Published patch authoring schema:
   - `build` -> `docs/agent-tooling/schemas/build-response.schema.json`
 - Other machine-readable CLI commands map to their corresponding protocol schemas via `aic contract --json` `surface_schemas[]`.
 
+## Machine Path Policy
+
+Machine-facing filesystem paths (protocol path fields and diagnostic span files) follow one normalization policy:
+
+- absolute path form
+- canonical existing-prefix resolution (including symlink resolution for existing filesystem segments)
+- `/` as the only path separator in emitted JSON
+
+Session lock symbol file segments stay project-relative by design, but still use `/` separators.
+
 ## Exit codes
 
 - `0`: success

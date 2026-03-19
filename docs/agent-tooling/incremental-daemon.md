@@ -57,7 +57,7 @@ Each request is a single JSON line. Each response is a single JSON line.
 
 - `protocol_version`: protocol envelope version (`1.0`)
 - `phase`: fixed value `parse`
-- `input`: normalized source path
+- `input`: canonical machine path (absolute, symlink-resolved existing prefix, `/` separators)
 - `ok`: `true` when parser diagnostics contain no errors
 - `ast_items`: parsed top-level item count (`0` when no AST is produced)
 - `diagnostics`: parser diagnostics
@@ -76,6 +76,7 @@ Each request is a single JSON line. Each response is a single JSON line.
 - `cache_hit`: whether artifact build was reused
 - `frontend_cache_hit`: whether frontend output was reused
 - `has_errors`: compatibility mirror of `!ok`
+- `input` / `output`: canonical machine paths (absolute, symlink-resolved existing prefix, `/` separators)
 - `output_sha256`: artifact digest for parity verification
 - `diagnostics`: build/codegen diagnostics (if any)
 - `duration_ms`: wall time for the request

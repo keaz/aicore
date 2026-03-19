@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::diagnostics::Diagnostic;
+use crate::machine_paths;
 use crate::package_workflow::{compute_package_checksum_for_path, generate_and_write_lockfile};
 use crate::span::Span;
 
@@ -358,7 +359,7 @@ fn diag(code: &str, message: impl Into<String>, file: &Path) -> Diagnostic {
     Diagnostic::error(
         code,
         message.into(),
-        &file.to_string_lossy(),
+        &machine_paths::canonical_machine_path(file),
         Span::new(0, 0),
     )
 }
@@ -373,11 +374,11 @@ fn diag_with_help(
 }
 
 fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    machine_paths::normalize_separators_path(path)
 }
 
 fn canonical_or_self(path: PathBuf) -> PathBuf {
-    fs::canonicalize(&path).unwrap_or(path)
+    machine_paths::canonical_machine_path_buf(&path)
 }
 
 fn registry_root(override_root: Option<&Path>) -> Result<PathBuf, Diagnostic> {

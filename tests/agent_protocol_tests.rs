@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use jsonschema::JSONSchema;
@@ -38,9 +38,13 @@ fn assert_valid_against_schema(schema_path: &str, payload: &Value, context: &str
 }
 
 fn run_daemon_requests(requests: &[Value]) -> Vec<Value> {
+    run_daemon_requests_in_cwd(repo_root().as_path(), requests)
+}
+
+fn run_daemon_requests_in_cwd(cwd: &Path, requests: &[Value]) -> Vec<Value> {
     let mut child = Command::new(env!("CARGO_BIN_EXE_aic"))
         .arg("daemon")
-        .current_dir(repo_root())
+        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -69,6 +73,10 @@ fn run_daemon_requests(requests: &[Value]) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).expect("decode daemon response"))
         .collect::<Vec<_>>()
+}
+
+fn slash_normalized(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 #[test]
@@ -725,6 +733,183 @@ fn cli_check_and_diag_json_validate_against_diagnostics_schema() {
         &diag_json,
         "diag diagnostics json",
     );
+}
+
+#[test]
+fn daemon_check_paths_are_stable_for_relative_and_absolute_inputs() {
+    let dir = tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+    fs::write(
+        project.join("src/main.aic"),
+        "module demo.path;\nfn main() -> Int {\n    let x = 1\n    x\n}\n",
+    )
+    .expect("write source");
+    fs::write(
+        project.join("aic.toml"),
+        "[package]\nname = \"path_stability\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+
+    let absolute_input = project.join("src/main.aic");
+    let canonical_input = fs::canonicalize(&absolute_input).expect("canonical input");
+    let canonical_label = slash_normalized(&canonical_input);
+
+    let responses = run_daemon_requests_in_cwd(
+        &project,
+        &[
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "check",
+                "params": {
+                    "input": "src/main.aic"
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "check",
+                "params": {
+                    "input": absolute_input
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "shutdown",
+                "params": {}
+            }),
+        ],
+    );
+    assert_eq!(responses.len(), 3);
+
+    let relative_result = &responses[0]["result"];
+    let absolute_result = &responses[1]["result"];
+    for result in [relative_result, absolute_result] {
+        assert_eq!(result["input"], canonical_label);
+        let diagnostics = result["diagnostics"].as_array().expect("diagnostics array");
+        assert!(!diagnostics.is_empty(), "expected parse diagnostics");
+        let span_file = diagnostics[0]["spans"][0]["file"]
+            .as_str()
+            .expect("diagnostic span file");
+        assert_eq!(span_file, canonical_label);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn daemon_check_paths_resolve_symlinked_entrypoints_to_canonical_targets() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    let symlink_root = dir.path().join("project-link");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+    fs::write(
+        project.join("src/main.aic"),
+        "module demo.path;\nfn main() -> Int {\n    let x = 1\n    x\n}\n",
+    )
+    .expect("write source");
+    fs::write(
+        project.join("aic.toml"),
+        "[package]\nname = \"path_symlink\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+    symlink(&project, &symlink_root).expect("create symlink");
+
+    let canonical_input = fs::canonicalize(project.join("src/main.aic")).expect("canonical input");
+    let canonical_label = slash_normalized(&canonical_input);
+
+    let responses = run_daemon_requests_in_cwd(
+        &symlink_root,
+        &[
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "check",
+                "params": {
+                    "input": "src/main.aic"
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "shutdown",
+                "params": {}
+            }),
+        ],
+    );
+    assert_eq!(responses.len(), 2);
+    let result = &responses[0]["result"];
+    assert_eq!(result["input"], canonical_label);
+    let span_file = result["diagnostics"][0]["spans"][0]["file"]
+        .as_str()
+        .expect("diagnostic span file");
+    assert_eq!(span_file, canonical_label);
+    assert!(
+        !result["input"]
+            .as_str()
+            .expect("input path")
+            .contains("/project-link/"),
+        "symlink form should not leak into canonical machine path"
+    );
+}
+
+#[test]
+fn query_and_symbols_emit_canonical_project_root_and_symbol_file_paths() {
+    let dir = tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+    fs::write(
+        project.join("src/main.aic"),
+        "module demo.path;\nfn helper() -> Int {\n    1\n}\nfn main() -> Int {\n    helper()\n}\n",
+    )
+    .expect("write source");
+    fs::write(
+        project.join("aic.toml"),
+        "[package]\nname = \"query_paths\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+
+    let canonical_root = slash_normalized(&fs::canonicalize(&project).expect("canonical root"));
+    let canonical_main = slash_normalized(
+        &fs::canonicalize(project.join("src/main.aic")).expect("canonical source"),
+    );
+
+    let query = run_aic(&[
+        "query",
+        "--project",
+        project.to_str().expect("project path str"),
+        "--kind",
+        "function",
+        "--name",
+        "main",
+        "--json",
+    ]);
+    assert_eq!(query.status.code(), Some(0));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query json");
+    assert_eq!(query_json["project_root"], canonical_root);
+    let query_symbols = query_json["symbols"].as_array().expect("query symbols");
+    assert!(!query_symbols.is_empty());
+    assert!(query_symbols
+        .iter()
+        .all(|symbol| symbol["location"]["file"] == canonical_main));
+
+    let symbols = run_aic(&[
+        "symbols",
+        "--project",
+        project.to_str().expect("project path str"),
+        "--json",
+    ]);
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
+    assert_eq!(symbols_json["project_root"], canonical_root);
+    assert!(symbols_json["symbols"]
+        .as_array()
+        .expect("symbols array")
+        .iter()
+        .any(|symbol| symbol["location"]["file"] == canonical_main));
 }
 
 #[test]

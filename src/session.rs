@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::cli_contract::CLI_CONTRACT_VERSION;
 use crate::diagnostics::Diagnostic;
 use crate::driver::{has_errors, run_frontend_with_options, FrontendOptions};
+use crate::machine_paths;
 use crate::package_workflow::read_manifest;
 use crate::patch_protocol::{self, PatchDocument, PatchOperation};
 use crate::symbol_query::{self, SymbolKind, SymbolRecord};
@@ -260,9 +261,10 @@ pub fn create_session(
     label: Option<&str>,
     now_ms: Option<u64>,
 ) -> anyhow::Result<SessionCreateResponse> {
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
     let label = label.map(str::trim).filter(|value| !value.is_empty());
     let now_ms = now_ms.unwrap_or_else(current_time_ms);
-    with_state_mut(project_root, |state| {
+    with_state_mut(&project_root, |state| {
         let id = format!("sess-{:04}", state.next_session_seq);
         state.next_session_seq += 1;
         state.sessions.push(StoredSession {
@@ -290,7 +292,8 @@ pub fn list_sessions(
     project_root: &Path,
     now_ms: Option<u64>,
 ) -> anyhow::Result<SessionListResponse> {
-    let state = load_state(project_root)?;
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
+    let state = load_state(&project_root)?;
     let now_ms = now_ms.unwrap_or_else(current_time_ms);
     let sessions = state
         .sessions
@@ -335,6 +338,7 @@ pub fn acquire_lock(
     operation_id: Option<&str>,
     now_ms: Option<u64>,
 ) -> anyhow::Result<SessionLockResponse> {
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
     if lease_ms == 0 {
         bail!("--lease-ms must be greater than 0");
     }
@@ -343,13 +347,13 @@ pub fn acquire_lock(
         bail!("session id must not be empty");
     }
 
-    let target = resolve_cli_target(project_root, target_tokens)?;
+    let target = resolve_cli_target(&project_root, target_tokens)?;
     let now_ms = now_ms.unwrap_or_else(current_time_ms);
     let operation_id = operation_id
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    with_state_mut(project_root, |state| {
+    with_state_mut(&project_root, |state| {
         ensure_session_exists(state, session_id)?;
         let mut reclaimed_from = None;
         if let Some(index) = state
@@ -418,15 +422,16 @@ pub fn release_lock(
     target_tokens: &[String],
     now_ms: Option<u64>,
 ) -> anyhow::Result<SessionLockResponse> {
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
     let session_id = session_id.trim();
     if session_id.is_empty() {
         bail!("session id must not be empty");
     }
 
-    let target = resolve_cli_target(project_root, target_tokens)?;
+    let target = resolve_cli_target(&project_root, target_tokens)?;
     let now_ms = now_ms.unwrap_or_else(current_time_ms);
 
-    with_state_mut(project_root, |state| {
+    with_state_mut(&project_root, |state| {
         ensure_session_exists(state, session_id)?;
         let Some(index) = state
             .locks
@@ -489,7 +494,8 @@ pub fn detect_conflicts(
     project_root: &Path,
     plan_path: &Path,
 ) -> anyhow::Result<SessionConflictResponse> {
-    let plan = analyze_plan(project_root, plan_path, false, None)?;
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
+    let plan = analyze_plan(&project_root, plan_path, false, None)?;
     Ok(SessionConflictResponse {
         protocol_version: CLI_CONTRACT_VERSION.to_string(),
         phase: SESSION_PHASE.to_string(),
@@ -507,7 +513,8 @@ pub fn validate_merge(
     offline: bool,
     now_ms: Option<u64>,
 ) -> anyhow::Result<SessionMergeResponse> {
-    let plan = analyze_plan(project_root, plan_path, true, now_ms)?;
+    let project_root = machine_paths::canonical_machine_path_buf(project_root);
+    let plan = analyze_plan(&project_root, plan_path, true, now_ms)?;
     let operations = summarize_operations(&plan.operations);
     let mut conflicts = plan.conflicts;
     if !conflicts.is_empty() {
@@ -526,7 +533,7 @@ pub fn validate_merge(
         });
     }
 
-    let temp = copy_project_to_temp(project_root)?;
+    let temp = copy_project_to_temp(&project_root)?;
     let temp_root = temp.path.as_path();
     let mut merged_files = BTreeSet::new();
     for operation in &plan.operations {
@@ -1590,13 +1597,16 @@ fn resolve_support_path(project_root: &Path, raw: &str) -> PathBuf {
 }
 
 fn relativize_path(project_root: &Path, path: &Path) -> String {
-    path.strip_prefix(project_root)
-        .map(display_path)
-        .unwrap_or_else(|_| display_path(path))
+    let canonical_root = machine_paths::canonical_machine_path_buf(project_root);
+    let canonical_path = machine_paths::canonical_machine_path_buf(path);
+    if let Ok(relative) = canonical_path.strip_prefix(&canonical_root) {
+        return machine_paths::normalize_separators_path(relative);
+    }
+    machine_paths::canonical_machine_path(&canonical_path)
 }
 
 fn display_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    machine_paths::canonical_machine_path(path)
 }
 
 #[cfg(test)]
