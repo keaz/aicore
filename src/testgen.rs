@@ -186,7 +186,12 @@ pub fn generate(
 ) -> anyhow::Result<TestgenResponse> {
     let mut response = generate_tests(project_root, strategy, target_tokens, seed)?;
     if let Some(dir) = emit_dir {
-        materialize_artifacts(&mut response.artifacts, dir)?;
+        let resolved_emit_dir = if dir.is_absolute() {
+            dir.to_path_buf()
+        } else {
+            project_root.join(dir)
+        };
+        materialize_artifacts(&mut response.artifacts, project_root, &resolved_emit_dir)?;
     }
     Ok(response)
 }
@@ -986,9 +991,22 @@ fn collect_named_types(ty: &TypeExpr, out: &mut BTreeSet<String>) {
     }
 }
 
-fn materialize_artifacts(artifacts: &mut [TestgenArtifact], emit_dir: &Path) -> anyhow::Result<()> {
+fn materialize_artifacts(
+    artifacts: &mut [TestgenArtifact],
+    project_root: &Path,
+    emit_dir: &Path,
+) -> anyhow::Result<()> {
+    let emit_dir_rel = emit_dir
+        .strip_prefix(project_root)
+        .ok()
+        .filter(|path| !path.as_os_str().is_empty());
     for artifact in artifacts {
-        let destination = emit_dir.join(&artifact.path_hint);
+        let artifact_hint = Path::new(&artifact.path_hint);
+        let artifact_tail = emit_dir_rel
+            .and_then(|prefix| artifact_hint.strip_prefix(prefix).ok())
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(artifact_hint);
+        let destination = emit_dir.join(artifact_tail);
         let parent = destination.parent().ok_or_else(|| {
             anyhow!(
                 "cannot materialize artifact `{}` without a parent directory",
@@ -1007,7 +1025,13 @@ fn materialize_artifacts(artifacts: &mut [TestgenArtifact], emit_dir: &Path) -> 
                 destination.display()
             )
         })?;
-        artifact.written_path = Some(destination.to_string_lossy().to_string());
+        artifact.written_path = Some(
+            destination
+                .strip_prefix(project_root)
+                .unwrap_or(&destination)
+                .to_string_lossy()
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -1356,6 +1380,8 @@ fn is_builtin_type(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{derive_boundary_cases, generate, generate_tests, TestgenStrategy};
     use crate::attr_test_runner::run_attribute_tests;
     use crate::parser;
@@ -1521,6 +1547,45 @@ mod tests {
         .expect("second response");
 
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn testgen_emit_dir_is_resolved_from_project_root_without_duplicate_prefixes() {
+        let project = tempdir().expect("tempdir");
+        write_testgen_fixture(project.path());
+
+        let response = generate(
+            project.path(),
+            TestgenStrategy::Boundary,
+            &["function".to_string(), "normalize_age".to_string()],
+            19,
+            Some(Path::new("tests/generated")),
+        )
+        .expect("generate boundary into tests/generated");
+
+        let artifact = response
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == "attribute-test-fixture")
+            .expect("boundary artifact");
+        assert_eq!(
+            artifact.written_path.as_deref(),
+            Some("tests/generated/boundary_normalize_age.aic")
+        );
+        assert!(
+            project
+                .path()
+                .join("tests/generated/boundary_normalize_age.aic")
+                .exists(),
+            "expected materialized artifact in project-relative tests/generated"
+        );
+        assert!(
+            !project
+                .path()
+                .join("tests/generated/tests/generated/boundary_normalize_age.aic")
+                .exists(),
+            "testgen must not duplicate the tests/generated prefix"
+        );
     }
 
     #[test]

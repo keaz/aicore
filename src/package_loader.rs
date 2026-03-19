@@ -472,7 +472,16 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
             .to_string();
 
         if path.is_dir() {
-            if name == ".git" || name == "target" || name == ".aic-cache" {
+            if matches!(
+                name.as_str(),
+                ".git"
+                    | "target"
+                    | ".aic"
+                    | ".aic-cache"
+                    | ".aic-checkpoints"
+                    | ".aic-replay"
+                    | ".aic-sessions"
+            ) {
                 continue;
             }
             collect_aic_files(&path, out)?;

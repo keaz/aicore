@@ -92,6 +92,18 @@ fn copy_patch_protocol_fixture() -> tempfile::TempDir {
     project
 }
 
+fn copy_task_cli_tooling_fixture() -> tempfile::TempDir {
+    let project = tempdir().expect("tempdir");
+    copy_dir_recursive(
+        &repo_root().join("examples/e7/task_cli_tooling"),
+        project.path(),
+    );
+    let _ = fs::remove_dir_all(project.path().join(".aic-cache"));
+    let _ = fs::remove_dir_all(project.path().join(".aic-replay"));
+    let _ = fs::remove_file(project.path().join("test_results.json"));
+    project
+}
+
 fn normalize_help_snapshot(text: &str) -> String {
     text.lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
@@ -332,6 +344,41 @@ fn write_context_fixture(root: &std::path::Path) {
         ),
     )
     .expect("write context tests fixture");
+}
+
+fn write_directory_template_literal_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"template_dir_fixture\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write template fixture manifest");
+    fs::write(
+        root.join("src/render.aic"),
+        concat!(
+            "module demo.template.render;\n",
+            "\n",
+            "pub fn render_value(value: Int) -> String {\n",
+            "    let value_text = int_to_string(value);\n",
+            "    f\"value={value_text}\"\n",
+            "}\n",
+        ),
+    )
+    .expect("write template render source");
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module demo.template.main;\n",
+            "import std.io;\n",
+            "import demo.template.render;\n",
+            "\n",
+            "fn main() -> Int effects { io } capabilities { io } {\n",
+            "    io.println_str(render_value(7));\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write template main source");
 }
 
 fn write_synthesize_fixture(root: &std::path::Path) {
@@ -2079,6 +2126,225 @@ fn testgen_command_reports_actionable_strategy_target_failures() {
         stderr.contains("strategy `boundary` requires a function target"),
         "expected actionable diagnostic, got stderr={stderr}"
     );
+}
+
+#[test]
+fn task_cli_tooling_example_exercises_new_feature_workflow() {
+    let project = copy_task_cli_tooling_fixture();
+
+    let query = run_aic_in_dir(
+        project.path(),
+        &[
+            "query",
+            "--project",
+            ".",
+            "--kind",
+            "function",
+            "--name",
+            "validate*",
+            "--has-contract",
+            "--json",
+        ],
+    );
+    assert_eq!(query.status.code(), Some(0));
+    let query_json: Value = serde_json::from_slice(&query.stdout).expect("query json");
+    assert_eq!(query_json["command"], "query");
+    assert_eq!(query_json["matched_symbols"], 1);
+    assert_eq!(query_json["symbols"][0]["name"], "validate_task_index");
+
+    let symbols = run_aic_in_dir(project.path(), &["symbols", "--project", ".", "--json"]);
+    assert_eq!(symbols.status.code(), Some(0));
+    let symbols_json: Value = serde_json::from_slice(&symbols.stdout).expect("symbols json");
+    assert_eq!(symbols_json["command"], "symbols");
+    assert!(symbols_json["symbol_count"].as_u64().unwrap_or(0) >= 5);
+    assert!(symbols_json["symbols"]
+        .as_array()
+        .expect("symbols array")
+        .iter()
+        .any(|symbol| {
+            symbol["name"] == "mark_done" && symbol["contracts"]["requires"] == "index >= 0"
+        }));
+
+    let context = run_aic_in_dir(
+        project.path(),
+        &[
+            "context",
+            "--project",
+            ".",
+            "--for",
+            "function",
+            "mark_done",
+            "--depth",
+            "2",
+            "--limit",
+            "5",
+            "--json",
+        ],
+    );
+    assert_eq!(context.status.code(), Some(0));
+    let context_json: Value = serde_json::from_slice(&context.stdout).expect("context json");
+    assert_eq!(context_json["phase"], "context");
+    assert_eq!(context_json["target"]["name"], "mark_done");
+    assert_eq!(context_json["contracts"]["requires"], "index >= 0");
+
+    let synthesize = run_aic_in_dir(
+        project.path(),
+        &[
+            "synthesize",
+            "--from",
+            "spec",
+            "validate_task_index",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(synthesize.status.code(), Some(0));
+    let synth_json: Value = serde_json::from_slice(&synthesize.stdout).expect("synthesize json");
+    assert_eq!(synth_json["phase"], "synthesize");
+    assert_eq!(synth_json["target"], "validate_task_index");
+    assert_eq!(
+        synth_json["artifacts"]
+            .as_array()
+            .expect("synth artifacts")
+            .len(),
+        2
+    );
+
+    let testgen = run_aic_in_dir(
+        project.path(),
+        &[
+            "testgen",
+            "--strategy",
+            "boundary",
+            "--for",
+            "function",
+            "validate_task_index",
+            "--project",
+            ".",
+            "--emit-dir",
+            "tests/generated",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        testgen.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&testgen.stdout),
+        String::from_utf8_lossy(&testgen.stderr)
+    );
+    let testgen_json: Value = serde_json::from_slice(&testgen.stdout).expect("testgen json");
+    assert_eq!(testgen_json["phase"], "testgen");
+    assert_eq!(
+        testgen_json["artifacts"][0]["written_path"],
+        "tests/generated/boundary_validate_task_index.aic"
+    );
+    assert!(project
+        .path()
+        .join("tests/generated/boundary_validate_task_index.aic")
+        .exists());
+    assert!(!project
+        .path()
+        .join("tests/generated/tests/generated/boundary_validate_task_index.aic")
+        .exists());
+
+    let patch_preview = run_aic_in_dir(
+        project.path(),
+        &[
+            "patch",
+            "--preview",
+            "patches/add_storage_hint.json",
+            "--project",
+            ".",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        patch_preview.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&patch_preview.stdout),
+        String::from_utf8_lossy(&patch_preview.stderr)
+    );
+    let patch_json: Value =
+        serde_json::from_slice(&patch_preview.stdout).expect("patch preview json");
+    assert_eq!(patch_json["phase"], "patch");
+    assert_eq!(patch_json["ok"], true);
+    assert_eq!(
+        patch_json["previews"]
+            .as_array()
+            .expect("patch previews")
+            .len(),
+        1
+    );
+
+    let checkpoint = run_aic_in_dir(
+        project.path(),
+        &["checkpoint", "create", "--project", ".", "--json"],
+    );
+    assert_eq!(checkpoint.status.code(), Some(0));
+    let checkpoint_json: Value =
+        serde_json::from_slice(&checkpoint.stdout).expect("checkpoint json");
+    assert_eq!(checkpoint_json["phase"], "checkpoint");
+    assert_eq!(checkpoint_json["checkpoint"]["id"], "ckpt-0001");
+
+    let storage_path = project.path().join("task_cli.db");
+    let storage_owned = storage_path.to_string_lossy().to_string();
+    let project_arg = project.path().to_string_lossy().to_string();
+    let add = run_aic_with_env(
+        &[
+            "run",
+            &project_arg,
+            "--",
+            "add",
+            "write",
+            "release",
+            "notes",
+        ],
+        &[("AIC_TASK_CLI_FILE", &storage_owned)],
+    );
+    assert_eq!(add.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&add.stdout), "task added\n");
+
+    let list = run_aic_with_env(
+        &["run", &project_arg, "--", "list"],
+        &[("AIC_TASK_CLI_FILE", &storage_owned)],
+    );
+    assert_eq!(list.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout),
+        "0. [ ] write release notes\n"
+    );
+
+    let done = run_aic_with_env(
+        &["run", &project_arg, "--", "done", "0"],
+        &[("AIC_TASK_CLI_FILE", &storage_owned)],
+    );
+    assert_eq!(done.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&done.stdout), "task completed\n");
+
+    let stats = run_aic_with_env(
+        &["run", &project_arg, "--", "stats"],
+        &[("AIC_TASK_CLI_FILE", &storage_owned)],
+    );
+    assert_eq!(stats.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&stats.stdout),
+        "total=1 open=0 done=1\n"
+    );
+
+    let tests = run_aic_in_dir(project.path(), &["test", ".", "--json"]);
+    assert_eq!(
+        tests.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&tests.stdout),
+        String::from_utf8_lossy(&tests.stderr)
+    );
+    let tests_json: Value = serde_json::from_slice(&tests.stdout).expect("test json");
+    assert_eq!(tests_json["failed"], 0);
+    assert_eq!(tests_json["passed"], 5);
 }
 
 #[test]
@@ -7144,6 +7410,36 @@ fn template_literal_example_supports_double_braces_and_is_ci_wired() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}
+
+#[test]
+fn template_literals_work_in_directory_mode_projects() {
+    let project = tempdir().expect("project");
+    write_directory_template_literal_fixture(project.path());
+
+    let check = run_aic_in_dir(project.path(), &["check", "."]);
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let check_stderr = String::from_utf8_lossy(&check.stderr);
+    assert!(
+        !check_stderr.contains("E2102"),
+        "directory-mode template literal check must not emit private intrinsic diagnostics:\n{check_stderr}"
+    );
+
+    let run = run_aic_in_dir(project.path(), &["run", "."]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "value=7\n");
 }
 
 #[test]

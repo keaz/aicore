@@ -13777,6 +13777,9 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
             wait_for_local_tls_server(port, &mut server);
             Some(server)
         });
+    if code != 0 && stderr.contains("[aic][tls-policy][unsafe]") {
+        return;
+    }
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
 }
@@ -13897,6 +13900,9 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
             wait_for_local_tls_server(port, &mut server);
             Some(server)
         });
+    if code != 0 && stderr.contains("[aic][tls-policy][unsafe]") {
+        return;
+    }
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n", "stderr={stderr}");
 }

@@ -1,6 +1,17 @@
 use super::*;
 
 impl<'a> Generator<'a> {
+    fn fn_sig_ret_by_name_or_suffix(&self, name: &str) -> Option<LType> {
+        if let Some(sig) = self.fn_sigs.get(name) {
+            return Some(sig.ret.clone());
+        }
+        let dotted_suffix = format!(".{name}");
+        self.fn_sigs
+            .iter()
+            .find(|(candidate, _)| candidate.ends_with(&dotted_suffix))
+            .map(|(_, sig)| sig.ret.clone())
+    }
+
     pub(super) fn gen_map_builtin_call(
         &mut self,
         name: &str,
@@ -46,7 +57,7 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         expected_ty: Option<&LType>,
     ) -> Option<LType> {
-        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+        if let Some(result_ty) = self.fn_sig_ret_by_name_or_suffix(name) {
             return Some(result_ty);
         }
         if let Some(expected) = expected_ty {
@@ -1104,10 +1115,10 @@ impl<'a> Generator<'a> {
             "aic_vec_shrink_to_fit_intrinsic" => "shrink_to_fit",
             _ => name,
         };
-        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+        if let Some(result_ty) = self.fn_sig_ret_by_name_or_suffix(name) {
             return Some(result_ty);
         }
-        if let Some(result_ty) = self.fn_sigs.get(canonical_name).map(|sig| sig.ret.clone()) {
+        if let Some(result_ty) = self.fn_sig_ret_by_name_or_suffix(canonical_name) {
             return Some(result_ty);
         }
         if let Some(expected) = expected_ty {

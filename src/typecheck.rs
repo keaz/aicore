@@ -1456,11 +1456,15 @@ impl<'a> Checker<'a> {
         {
             return false;
         }
+        let template_desugar_intrinsic = matches!(
+            name,
+            "aic_vec_new_intrinsic" | "aic_vec_push_intrinsic" | "aic_string_format_intrinsic"
+        );
         let Some(source) = self.source.as_ref() else {
-            return true;
+            return !template_desugar_intrinsic;
         };
         if span.end > source.len() || span.start >= span.end {
-            return true;
+            return !template_desugar_intrinsic;
         }
         source[span.start..span.end].contains(name)
     }

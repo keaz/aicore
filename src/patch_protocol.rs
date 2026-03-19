@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1453,10 +1455,10 @@ fn copy_tree(source_root: &Path, destination_root: &Path) -> anyhow::Result<()> 
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or_default();
-        if matches!(
-            name,
-            ".git" | "target" | ".aic-checkpoints" | ".aic-sessions"
-        ) {
+        if source_path == destination_root || name.starts_with("aicore-patch-") {
+            continue;
+        }
+        if should_skip_validation_workspace_entry(name) {
             continue;
         }
         let destination_path = destination_root.join(entry.file_name());
@@ -1490,6 +1492,19 @@ fn copy_tree(source_root: &Path, destination_root: &Path) -> anyhow::Result<()> 
     Ok(())
 }
 
+fn should_skip_validation_workspace_entry(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | "target"
+            | ".aic"
+            | ".aic-cache"
+            | ".aic-checkpoints"
+            | ".aic-replay"
+            | ".aic-sessions"
+    )
+}
+
 fn fresh_temp_workspace(tag: &str) -> PathBuf {
     static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
     let pid = std::process::id();
@@ -1498,7 +1513,40 @@ fn fresh_temp_workspace(tag: &str) -> PathBuf {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let seq = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    #[cfg(test)]
+    if let Some(root) = TEST_TEMP_ROOT.with(|slot| slot.borrow().clone()) {
+        return root.join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"));
+    }
     std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_TEMP_ROOT: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+struct TestTempRootScope {
+    previous: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Drop for TestTempRootScope {
+    fn drop(&mut self) {
+        TEST_TEMP_ROOT.with(|slot| {
+            slot.replace(self.previous.take());
+        });
+    }
+}
+
+#[cfg(test)]
+fn with_test_temp_root<T>(root: &Path, op: impl FnOnce() -> T) -> T {
+    let scope = TEST_TEMP_ROOT.with(|slot| TestTempRootScope {
+        previous: slot.replace(Some(root.to_path_buf())),
+    });
+    let output = op();
+    drop(scope);
+    output
 }
 
 pub fn format_patch_response_text(response: &PatchResponse) -> String {
@@ -1550,8 +1598,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        apply_patch_document, format_patch_response_text, PatchDocument, PatchMode, PatchOperation,
-        PatchParamSpec,
+        apply_patch_document, copy_tree, format_patch_response_text, PatchDocument, PatchMode,
+        PatchOperation, PatchParamSpec,
     };
 
     #[test]
@@ -1860,5 +1908,90 @@ mod tests {
             fs::read_to_string(&second_path).expect("read second after failed write"),
             second_original
         );
+    }
+
+    #[test]
+    fn copy_tree_skips_transient_validation_workspace_state() {
+        let source = tempdir().expect("source");
+        let destination = tempdir().expect("destination");
+        fs::create_dir_all(source.path().join("src")).expect("mkdir src");
+        fs::create_dir_all(source.path().join(".aic-cache/harness")).expect("mkdir cache");
+        fs::create_dir_all(source.path().join(".aic-replay")).expect("mkdir replay");
+        fs::write(
+            source.path().join("src/main.aic"),
+            "module demo.patch;\nfn main() -> Int {\n    0\n}\n",
+        )
+        .expect("write source main");
+        fs::write(
+            source.path().join(".aic-cache/harness/ignored.aic"),
+            "module ignored.cache;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("write cached file");
+        fs::write(source.path().join(".aic-replay/session.json"), "{}\n")
+            .expect("write replay file");
+
+        copy_tree(source.path(), destination.path()).expect("copy tree");
+
+        assert!(
+            destination.path().join("src/main.aic").exists(),
+            "expected source files to be copied"
+        );
+        assert!(
+            !destination.path().join(".aic-cache").exists(),
+            "validation workspace copy must skip .aic-cache"
+        );
+        assert!(
+            !destination.path().join(".aic-replay").exists(),
+            "validation workspace copy must skip replay artifacts"
+        );
+    }
+
+    #[test]
+    fn patch_preview_succeeds_when_tmpdir_points_inside_project_root() {
+        let dir = tempdir().expect("tempdir");
+        let src_dir = dir.path().join("src");
+        fs::create_dir_all(&src_dir).expect("mkdir src");
+        fs::create_dir_all(dir.path().join(".aic-cache/harness")).expect("mkdir cache");
+        let source_path = src_dir.join("main.aic");
+        fs::write(
+            &source_path,
+            concat!(
+                "module demo.patch;\n",
+                "fn main() -> Int {\n",
+                "    0\n",
+                "}\n",
+            ),
+        )
+        .expect("write source");
+        fs::write(
+            dir.path().join(".aic-cache/harness/ignored.aic"),
+            "module ignored.cache;\nfn main() -> Int {\n    0\n}\n",
+        )
+        .expect("write cached source");
+
+        let document = PatchDocument {
+            operations: vec![PatchOperation::AddFunction {
+                target_file: Some("src/main.aic".to_string()),
+                after_symbol: Some("main".to_string()),
+                function: super::PatchFunctionSpec {
+                    name: "helper".to_string(),
+                    params: Vec::new(),
+                    return_type: "Int".to_string(),
+                    body: "1".to_string(),
+                    effects: Vec::new(),
+                    capabilities: Vec::new(),
+                    requires: None,
+                    ensures: None,
+                },
+            }],
+        };
+
+        let preview = super::with_test_temp_root(dir.path(), || {
+            apply_patch_document(dir.path(), &document, PatchMode::Preview)
+        })
+        .expect("preview response");
+
+        assert!(preview.ok, "conflicts: {:#?}", preview.conflicts);
+        assert_eq!(preview.conflicts.len(), 0);
     }
 }
