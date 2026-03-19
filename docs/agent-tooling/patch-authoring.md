@@ -147,10 +147,13 @@ Common conflict kinds:
 - `overlap`: two operations target the same semantic location
 - `validate`: patched source no longer parses
 - `validate_semantics`: patched source parses but fails frontend type/effect validation
-- `write`: apply mode hit an IO failure; earlier writes were rolled back
+- `write_prepare`: failed to stage temporary patch output before commit
+- `precondition`: source changed between planning and commit; apply aborted before writes
+- `commit`: atomic commit/replace phase failed; rollback attempted automatically
 
 ## Determinism and safety
 
 - `preview` never mutates the workspace.
 - `apply` writes only when every operation is valid.
-- Multi-file apply is transactional: if a later file write fails, earlier patched files are restored.
+- `apply` uses staged temp files plus atomic rename commit per target file.
+- Multi-file apply is transactional: precondition/prepare failures abort before commit and commit failures trigger deterministic rollback to the original workspace state.

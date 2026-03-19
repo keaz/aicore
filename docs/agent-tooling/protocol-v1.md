@@ -189,7 +189,8 @@ Behavior:
 - patch documents follow `docs/agent-tooling/schemas/patch-request.schema.json`
 - supported operation kinds are `add_function`, `modify_match_arm`, and `add_field`
 - `preview` computes deterministic `applied_edits[]` and `previews[]` without filesystem writes
-- `apply` is transactional across touched files; later write failures trigger rollback of earlier writes
+- `apply` stages temporary outputs and uses atomic rename commit per touched file
+- apply precondition/prepare failures (`precondition`, `write_prepare`) abort before commit, and commit failures (`commit`) trigger rollback
 - overlapping semantic targets are rejected as `conflicts[].kind = "overlap"` before any write
 - parse-invalid or type/effect-invalid candidate states are rejected with stable `conflicts[]` entries that include `operation_index`, `message`, and optional `file`
 

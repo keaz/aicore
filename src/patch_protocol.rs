@@ -2,6 +2,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1266,13 +1267,21 @@ fn document_error_response(path: &Path, mode: PatchMode, message: String) -> Pat
     }
 }
 
+#[derive(Debug, Clone)]
+struct StagedPatchWrite {
+    path: PathBuf,
+    staged_path: PathBuf,
+    backup_path: PathBuf,
+    expected_original: String,
+    operation_index: usize,
+}
+
 fn write_changed_files_transactionally(
     changed_paths: &[PathBuf],
     file_states: &BTreeMap<PathBuf, FileState>,
     applied_edits: &[PatchEdit],
 ) -> Result<(), PatchConflict> {
-    let mut written = Vec::<(PathBuf, String)>::new();
-
+    let mut staged_writes = Vec::<StagedPatchWrite>::new();
     for path in changed_paths {
         let state = file_states.get(path).ok_or_else(|| PatchConflict {
             operation_index: 0,
@@ -1286,35 +1295,246 @@ fn write_changed_files_transactionally(
             .map(|edit| edit.operation_index)
             .max()
             .unwrap_or(0);
-
-        if let Err(err) = fs::write(path, &state.current) {
-            let rollback_errors = rollback_written_files(&written);
-            let mut message = format!("failed to write patched file {}: {err}", path.display());
-            if !rollback_errors.is_empty() {
-                message.push_str("; rollback also failed for ");
-                message.push_str(&rollback_errors.join(", "));
-            }
+        if should_simulate_write_prepare_failure(path) {
             return Err(PatchConflict {
                 operation_index,
-                kind: "write".to_string(),
-                message,
+                kind: "write_prepare".to_string(),
+                message: format!("simulated write-prepare failure for {}", display_path(path)),
                 file: Some(display_path(path)),
             });
         }
-        written.push((path.clone(), state.original.clone()));
+
+        let on_disk = fs::read_to_string(path).map_err(|err| PatchConflict {
+            operation_index,
+            kind: "precondition".to_string(),
+            message: format!(
+                "failed to read precondition state for {}: {err}",
+                path.display()
+            ),
+            file: Some(display_path(path)),
+        })?;
+        if on_disk != state.original {
+            return Err(PatchConflict {
+                operation_index,
+                kind: "precondition".to_string(),
+                message: format!(
+                    "precondition failed: file changed before apply commit for {}",
+                    path.display()
+                ),
+                file: Some(display_path(path)),
+            });
+        }
+
+        let staged_path =
+            allocate_peer_temp_path(path, "stage", operation_index).map_err(|err| {
+                PatchConflict {
+                    operation_index,
+                    kind: "write_prepare".to_string(),
+                    message: err,
+                    file: Some(display_path(path)),
+                }
+            })?;
+        write_temp_file(&staged_path, &state.current).map_err(|err| PatchConflict {
+            operation_index,
+            kind: "write_prepare".to_string(),
+            message: format!(
+                "failed to stage patch output for {}: {err}",
+                staged_path.display()
+            ),
+            file: Some(display_path(path)),
+        })?;
+
+        let backup_path =
+            allocate_peer_temp_path(path, "backup", operation_index).map_err(|err| {
+                PatchConflict {
+                    operation_index,
+                    kind: "write_prepare".to_string(),
+                    message: err,
+                    file: Some(display_path(path)),
+                }
+            })?;
+        staged_writes.push(StagedPatchWrite {
+            path: path.clone(),
+            staged_path,
+            backup_path,
+            expected_original: state.original.clone(),
+            operation_index,
+        });
+    }
+
+    run_before_commit_hook(changed_paths);
+
+    for staged in &staged_writes {
+        let on_disk = fs::read_to_string(&staged.path).map_err(|err| PatchConflict {
+            operation_index: staged.operation_index,
+            kind: "precondition".to_string(),
+            message: format!(
+                "failed to read precondition state for {}: {err}",
+                staged.path.display()
+            ),
+            file: Some(display_path(&staged.path)),
+        })?;
+        if on_disk != staged.expected_original {
+            cleanup_staged_outputs(&staged_writes);
+            return Err(PatchConflict {
+                operation_index: staged.operation_index,
+                kind: "precondition".to_string(),
+                message: format!(
+                    "precondition failed: file changed before commit for {}",
+                    staged.path.display()
+                ),
+                file: Some(display_path(&staged.path)),
+            });
+        }
+    }
+
+    if let Err(conflict) = commit_staged_writes(&staged_writes) {
+        cleanup_staged_outputs(&staged_writes);
+        return Err(conflict);
+    }
+
+    cleanup_backup_outputs(&staged_writes);
+    cleanup_staged_outputs(&staged_writes);
+    Ok(())
+}
+
+fn commit_staged_writes(staged_writes: &[StagedPatchWrite]) -> Result<(), PatchConflict> {
+    let mut moved_to_backup = Vec::<usize>::new();
+    for (index, staged) in staged_writes.iter().enumerate() {
+        if let Err(err) = fs::rename(&staged.path, &staged.backup_path) {
+            let rollback_errors = rollback_backups(staged_writes, &moved_to_backup);
+            let mut message = format!(
+                "commit phase failed while creating backup for {}: {err}",
+                staged.path.display()
+            );
+            if !rollback_errors.is_empty() {
+                message.push_str("; rollback failed for ");
+                message.push_str(&rollback_errors.join(", "));
+            }
+            return Err(PatchConflict {
+                operation_index: staged.operation_index,
+                kind: "commit".to_string(),
+                message,
+                file: Some(display_path(&staged.path)),
+            });
+        }
+        moved_to_backup.push(index);
+    }
+
+    for (index, staged) in staged_writes.iter().enumerate() {
+        if should_simulate_commit_failure(index) {
+            let rollback_errors = rollback_backups(staged_writes, &moved_to_backup);
+            let mut message = format!(
+                "simulated commit failure while replacing {}",
+                staged.path.display()
+            );
+            if !rollback_errors.is_empty() {
+                message.push_str("; rollback failed for ");
+                message.push_str(&rollback_errors.join(", "));
+            }
+            return Err(PatchConflict {
+                operation_index: staged.operation_index,
+                kind: "commit".to_string(),
+                message,
+                file: Some(display_path(&staged.path)),
+            });
+        }
+        if let Err(err) = fs::rename(&staged.staged_path, &staged.path) {
+            let rollback_errors = rollback_backups(staged_writes, &moved_to_backup);
+            let mut message = format!(
+                "commit phase failed while replacing {}: {err}",
+                staged.path.display()
+            );
+            if !rollback_errors.is_empty() {
+                message.push_str("; rollback failed for ");
+                message.push_str(&rollback_errors.join(", "));
+            }
+            return Err(PatchConflict {
+                operation_index: staged.operation_index,
+                kind: "commit".to_string(),
+                message,
+                file: Some(display_path(&staged.path)),
+            });
+        }
     }
 
     Ok(())
 }
 
-fn rollback_written_files(written: &[(PathBuf, String)]) -> Vec<String> {
+fn rollback_backups(staged_writes: &[StagedPatchWrite], moved_to_backup: &[usize]) -> Vec<String> {
     let mut failures = Vec::new();
-    for (path, original) in written.iter().rev() {
-        if let Err(err) = fs::write(path, original) {
-            failures.push(format!("{} ({err})", path.display()));
+    for index in moved_to_backup.iter().copied().rev() {
+        let staged = &staged_writes[index];
+        if staged.path.exists() {
+            if let Err(err) = fs::remove_file(&staged.path) {
+                failures.push(format!(
+                    "{} (failed to remove partial target: {err})",
+                    staged.path.display()
+                ));
+                continue;
+            }
+        }
+        if staged.backup_path.exists() {
+            if let Err(err) = fs::rename(&staged.backup_path, &staged.path) {
+                failures.push(format!("{} ({err})", staged.path.display()));
+            }
         }
     }
     failures
+}
+
+fn cleanup_staged_outputs(staged_writes: &[StagedPatchWrite]) {
+    for staged in staged_writes {
+        let _ = fs::remove_file(&staged.staged_path);
+    }
+}
+
+fn cleanup_backup_outputs(staged_writes: &[StagedPatchWrite]) {
+    for staged in staged_writes {
+        let _ = fs::remove_file(&staged.backup_path);
+    }
+}
+
+fn allocate_peer_temp_path(
+    target: &Path,
+    role: &str,
+    operation_index: usize,
+) -> Result<PathBuf, String> {
+    let parent = target.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve parent directory for {}",
+            target.display()
+        )
+    })?;
+    let file_name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("patch");
+    let pid = std::process::id();
+    for _ in 0..32 {
+        let sequence = PATCH_WRITE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(
+            ".{file_name}.aic-patch-{role}-{pid}-{operation_index}-{sequence}.tmp"
+        ));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "failed to allocate temporary {role} path for {}",
+        target.display()
+    ))
+}
+
+fn write_temp_file(path: &Path, content: &str) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(path)?;
+    file.write_all(content.as_bytes())?;
+    file.flush()?;
+    file.sync_all()?;
+    Ok(())
 }
 
 fn validate_semantics(
@@ -1510,6 +1730,44 @@ fn should_skip_validation_workspace_entry(name: &str) -> bool {
     )
 }
 
+static PATCH_WRITE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(not(test))]
+fn should_simulate_write_prepare_failure(_path: &Path) -> bool {
+    false
+}
+
+#[cfg(test)]
+fn should_simulate_write_prepare_failure(path: &Path) -> bool {
+    TEST_WRITE_PREPARE_FAIL_PATH.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|candidate| candidate == path)
+    })
+}
+
+#[cfg(not(test))]
+fn should_simulate_commit_failure(_index: usize) -> bool {
+    false
+}
+
+#[cfg(test)]
+fn should_simulate_commit_failure(index: usize) -> bool {
+    TEST_COMMIT_FAIL_INDEX.with(|slot| slot.borrow().as_ref().is_some_and(|value| *value == index))
+}
+
+#[cfg(not(test))]
+fn run_before_commit_hook(_changed_paths: &[PathBuf]) {}
+
+#[cfg(test)]
+fn run_before_commit_hook(changed_paths: &[PathBuf]) {
+    TEST_BEFORE_COMMIT_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow().as_ref() {
+            (hook)(changed_paths);
+        }
+    });
+}
+
 fn fresh_temp_workspace(tag: &str) -> PathBuf {
     static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
     let pid = std::process::id();
@@ -1528,6 +1786,9 @@ fn fresh_temp_workspace(tag: &str) -> PathBuf {
 #[cfg(test)]
 thread_local! {
     static TEST_TEMP_ROOT: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    static TEST_WRITE_PREPARE_FAIL_PATH: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    static TEST_COMMIT_FAIL_INDEX: RefCell<Option<usize>> = const { RefCell::new(None) };
+    static TEST_BEFORE_COMMIT_HOOK: RefCell<Option<Box<dyn Fn(&[PathBuf])>>> = RefCell::new(None);
 }
 
 #[cfg(test)]
@@ -1545,9 +1806,84 @@ impl Drop for TestTempRootScope {
 }
 
 #[cfg(test)]
+struct TestWritePrepareFailureScope {
+    previous: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Drop for TestWritePrepareFailureScope {
+    fn drop(&mut self) {
+        TEST_WRITE_PREPARE_FAIL_PATH.with(|slot| {
+            slot.replace(self.previous.take());
+        });
+    }
+}
+
+#[cfg(test)]
+struct TestCommitFailureScope {
+    previous: Option<usize>,
+}
+
+#[cfg(test)]
+impl Drop for TestCommitFailureScope {
+    fn drop(&mut self) {
+        TEST_COMMIT_FAIL_INDEX.with(|slot| {
+            slot.replace(self.previous.take());
+        });
+    }
+}
+
+#[cfg(test)]
+struct TestBeforeCommitHookScope {
+    previous: Option<Box<dyn Fn(&[PathBuf])>>,
+}
+
+#[cfg(test)]
+impl Drop for TestBeforeCommitHookScope {
+    fn drop(&mut self) {
+        TEST_BEFORE_COMMIT_HOOK.with(|slot| {
+            slot.replace(self.previous.take());
+        });
+    }
+}
+
+#[cfg(test)]
 fn with_test_temp_root<T>(root: &Path, op: impl FnOnce() -> T) -> T {
     let scope = TEST_TEMP_ROOT.with(|slot| TestTempRootScope {
         previous: slot.replace(Some(root.to_path_buf())),
+    });
+    let output = op();
+    drop(scope);
+    output
+}
+
+#[cfg(test)]
+fn with_test_write_prepare_failure<T>(path: &Path, op: impl FnOnce() -> T) -> T {
+    let scope = TEST_WRITE_PREPARE_FAIL_PATH.with(|slot| TestWritePrepareFailureScope {
+        previous: slot.replace(Some(path.to_path_buf())),
+    });
+    let output = op();
+    drop(scope);
+    output
+}
+
+#[cfg(test)]
+fn with_test_commit_failure<T>(index: usize, op: impl FnOnce() -> T) -> T {
+    let scope = TEST_COMMIT_FAIL_INDEX.with(|slot| TestCommitFailureScope {
+        previous: slot.replace(Some(index)),
+    });
+    let output = op();
+    drop(scope);
+    output
+}
+
+#[cfg(test)]
+fn with_test_before_commit_hook<T>(
+    hook: impl Fn(&[PathBuf]) + 'static,
+    op: impl FnOnce() -> T,
+) -> T {
+    let scope = TEST_BEFORE_COMMIT_HOOK.with(|slot| TestBeforeCommitHookScope {
+        previous: slot.replace(Some(Box::new(hook))),
     });
     let output = op();
     drop(scope);
@@ -1840,7 +2176,7 @@ mod tests {
     }
 
     #[test]
-    fn patch_write_failure_rolls_back_prior_writes() {
+    fn patch_write_prepare_failure_leaves_workspace_unchanged() {
         let dir = tempdir().expect("tempdir");
         let first_dir = dir.path().join("a");
         let second_dir = dir.path().join("z");
@@ -1853,12 +2189,6 @@ mod tests {
         let second_original = "fn main() -> Int {\n    2\n}\n";
         fs::write(&first_path, first_original).expect("write first source");
         fs::write(&second_path, second_original).expect("write second source");
-
-        let mut second_permissions = fs::metadata(&second_path)
-            .expect("second metadata")
-            .permissions();
-        second_permissions.set_readonly(true);
-        fs::set_permissions(&second_path, second_permissions).expect("lock second file");
 
         let document = PatchDocument {
             operations: vec![
@@ -1893,18 +2223,13 @@ mod tests {
             ],
         };
 
-        let response =
-            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("apply response");
-
-        let mut unlocked = fs::metadata(&second_path)
-            .expect("second metadata after apply")
-            .permissions();
-        unlocked.set_readonly(false);
-        fs::set_permissions(&second_path, unlocked).expect("unlock second file");
+        let response = super::with_test_write_prepare_failure(&second_path, || {
+            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("apply response")
+        });
 
         assert!(!response.ok);
         assert_eq!(response.conflicts.len(), 1);
-        assert_eq!(response.conflicts[0].kind, "write");
+        assert_eq!(response.conflicts[0].kind, "write_prepare");
         assert_eq!(
             fs::read_to_string(&first_path).expect("read first after rollback"),
             first_original
@@ -1912,6 +2237,119 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&second_path).expect("read second after failed write"),
             second_original
+        );
+    }
+
+    #[test]
+    fn patch_commit_failure_restores_original_files() {
+        let dir = tempdir().expect("tempdir");
+        let first_dir = dir.path().join("a");
+        let second_dir = dir.path().join("b");
+        fs::create_dir_all(&first_dir).expect("mkdir first");
+        fs::create_dir_all(&second_dir).expect("mkdir second");
+
+        let first_path = first_dir.join("one.aic");
+        let second_path = second_dir.join("two.aic");
+        let first_original = "fn main() -> Int {\n    1\n}\n";
+        let second_original = "fn main() -> Int {\n    2\n}\n";
+        fs::write(&first_path, first_original).expect("write first source");
+        fs::write(&second_path, second_original).expect("write second source");
+
+        let document = PatchDocument {
+            operations: vec![
+                PatchOperation::AddFunction {
+                    target_file: Some("a/one.aic".to_string()),
+                    after_symbol: Some("main".to_string()),
+                    function: super::PatchFunctionSpec {
+                        name: "helper_one".to_string(),
+                        params: Vec::new(),
+                        return_type: "Int".to_string(),
+                        body: "1".to_string(),
+                        effects: Vec::new(),
+                        capabilities: Vec::new(),
+                        requires: None,
+                        ensures: None,
+                    },
+                },
+                PatchOperation::AddFunction {
+                    target_file: Some("b/two.aic".to_string()),
+                    after_symbol: Some("main".to_string()),
+                    function: super::PatchFunctionSpec {
+                        name: "helper_two".to_string(),
+                        params: Vec::new(),
+                        return_type: "Int".to_string(),
+                        body: "2".to_string(),
+                        effects: Vec::new(),
+                        capabilities: Vec::new(),
+                        requires: None,
+                        ensures: None,
+                    },
+                },
+            ],
+        };
+
+        let response = super::with_test_commit_failure(0, || {
+            apply_patch_document(dir.path(), &document, PatchMode::Apply).expect("apply response")
+        });
+
+        assert!(!response.ok);
+        assert_eq!(response.conflicts.len(), 1);
+        assert_eq!(response.conflicts[0].kind, "commit");
+        assert_eq!(
+            fs::read_to_string(&first_path).expect("read first after commit rollback"),
+            first_original
+        );
+        assert_eq!(
+            fs::read_to_string(&second_path).expect("read second after commit rollback"),
+            second_original
+        );
+    }
+
+    #[test]
+    fn patch_precondition_failure_blocks_commit_when_file_changes_mid_apply() {
+        let dir = tempdir().expect("tempdir");
+        let src_dir = dir.path().join("src");
+        fs::create_dir_all(&src_dir).expect("mkdir src");
+        let source_path = src_dir.join("main.aic");
+
+        let original = "module demo.patch;\nfn main() -> Int {\n    0\n}\n";
+        fs::write(&source_path, original).expect("write source");
+
+        let document = PatchDocument {
+            operations: vec![PatchOperation::AddFunction {
+                target_file: Some("src/main.aic".to_string()),
+                after_symbol: Some("main".to_string()),
+                function: super::PatchFunctionSpec {
+                    name: "helper".to_string(),
+                    params: Vec::new(),
+                    return_type: "Int".to_string(),
+                    body: "1".to_string(),
+                    effects: Vec::new(),
+                    capabilities: Vec::new(),
+                    requires: None,
+                    ensures: None,
+                },
+            }],
+        };
+
+        let concurrent_path = source_path.clone();
+        let concurrent_contents = "module demo.patch;\nfn main() -> Int {\n    41\n}\n".to_string();
+        let response = super::with_test_before_commit_hook(
+            move |_changed| {
+                fs::write(&concurrent_path, &concurrent_contents).expect("mutate before commit");
+            },
+            || {
+                apply_patch_document(dir.path(), &document, PatchMode::Apply)
+                    .expect("apply response")
+            },
+        );
+
+        assert!(!response.ok);
+        assert_eq!(response.conflicts.len(), 1);
+        assert_eq!(response.conflicts[0].kind, "precondition");
+        assert_eq!(
+            fs::read_to_string(&source_path).expect("read source after precondition conflict"),
+            "module demo.patch;\nfn main() -> Int {\n    41\n}\n"
         );
     }
 

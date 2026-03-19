@@ -588,7 +588,10 @@ Patch behavior:
 - `apply` writes only after every operation parses cleanly and the patched project passes frontend type/effect validation
 - semantically invalid intermediate states are rejected as `conflicts[].kind = "validate_semantics"` with the failing `operation_index`
 - overlapping semantic targets are rejected as `conflicts[].kind = "overlap"` before any write is attempted
-- apply writes are transactional across touched files and roll back previously written files if a later write fails
+- apply uses staged temp outputs plus atomic rename commit per touched file
+- apply is all-or-nothing across touched files:
+  - `write_prepare` / `precondition` conflicts abort before commit
+  - `commit` conflicts trigger rollback to original file contents
 
 ## `aic checkpoint` output modes
 
