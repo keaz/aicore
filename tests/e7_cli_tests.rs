@@ -6448,6 +6448,85 @@ fn daemon_session_methods_round_trip_locking_and_conflict_reports() {
 }
 
 #[test]
+fn daemon_error_taxonomy_is_machine_readable_and_stable() {
+    let demo = tempdir().expect("demo");
+    write_incremental_daemon_demo(demo.path());
+    let project = tempdir().expect("session project");
+    write_session_fixture(project.path());
+
+    let app_entry = demo.path().join("app/src/main.aic");
+    let missing_input = demo.path().join("app/src/does_not_exist.aic");
+
+    let mut daemon = DaemonHarness::spawn(&repo_root());
+
+    let unknown_method = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 30,
+        "method": "unknown.method",
+        "params": {}
+    }));
+    assert_eq!(unknown_method["error"]["code"], -32601);
+    assert_eq!(unknown_method["error"]["data"]["kind"], "method_not_found");
+    assert_eq!(unknown_method["error"]["data"]["retryable"], false);
+    assert_eq!(unknown_method["error"]["data"]["param"], Value::Null);
+
+    let malformed_params = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 31,
+        "method": "check",
+        "params": {}
+    }));
+    assert_eq!(malformed_params["error"]["code"], -32602);
+    assert_eq!(malformed_params["error"]["data"]["kind"], "invalid_param");
+    assert_eq!(malformed_params["error"]["data"]["param"], "input");
+    assert_eq!(malformed_params["error"]["data"]["retryable"], false);
+
+    let missing_file = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 32,
+        "method": "check",
+        "params": {
+            "input": missing_input.to_string_lossy(),
+            "offline": false
+        }
+    }));
+    assert_eq!(missing_file["error"]["code"], -32602);
+    assert_eq!(missing_file["error"]["data"]["kind"], "file_not_found");
+    assert_eq!(missing_file["error"]["data"]["retryable"], false);
+
+    let session_failure = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 33,
+        "method": "session.lock.acquire",
+        "params": {
+            "project": project.path().to_string_lossy(),
+            "session_id": "sess-9999",
+            "target": ["function", "handle_result"],
+            "lease_ms": 1000,
+            "now_ms": 100
+        }
+    }));
+    assert_eq!(session_failure["error"]["code"], -32602);
+    assert_eq!(
+        session_failure["error"]["data"]["kind"],
+        "session_lock_conflict"
+    );
+    assert_eq!(session_failure["error"]["data"]["retryable"], true);
+
+    let check_ok = daemon.request(&json!({
+        "jsonrpc": "2.0",
+        "id": 34,
+        "method": "check",
+        "params": {
+            "input": app_entry.to_string_lossy()
+        }
+    }));
+    assert!(check_ok.get("error").is_none(), "check_ok={check_ok:#}");
+
+    daemon.shutdown();
+}
+
+#[test]
 fn pkg_trust_policy_enforces_signatures_and_emits_audit_records() {
     let registry = tempdir().expect("registry");
     let package = tempdir().expect("package");
@@ -7942,6 +8021,14 @@ fn session_docs_and_contract_references_are_consistent() {
     assert!(
         daemon_doc.contains("session.create"),
         "incremental daemon doc missing session.create reference"
+    );
+    assert!(
+        daemon_doc.contains("error.data.kind"),
+        "incremental daemon doc missing daemon error taxonomy contract"
+    );
+    assert!(
+        daemon_doc.contains("session_lock_conflict"),
+        "incremental daemon doc missing session_lock_conflict taxonomy entry"
     );
 }
 

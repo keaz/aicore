@@ -91,6 +91,49 @@ impl BuildKind {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct DaemonErrorData {
+    kind: &'static str,
+    retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    param: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DaemonErrorKind {
+    ParseError,
+    InvalidRequest,
+    MethodNotFound,
+    InvalidParam,
+    FileNotFound,
+    FrontendFailed,
+    SessionLockConflict,
+    Internal,
+}
+
+impl DaemonErrorKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ParseError => "parse_error",
+            Self::InvalidRequest => "invalid_request",
+            Self::MethodNotFound => "method_not_found",
+            Self::InvalidParam => "invalid_param",
+            Self::FileNotFound => "file_not_found",
+            Self::FrontendFailed => "frontend_failed",
+            Self::SessionLockConflict => "session_lock_conflict",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ClassifiedDaemonError {
+    code: i64,
+    data: DaemonErrorData,
+}
+
 pub fn run_stdio() -> anyhow::Result<()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -115,7 +158,17 @@ pub fn run_stdio() -> anyhow::Result<()> {
             Err(err) => {
                 write_response(
                     &mut writer,
-                    &rpc_error(Value::Null, -32700, format!("invalid JSON payload: {err}")),
+                    &rpc_error(
+                        Value::Null,
+                        -32700,
+                        format!("invalid JSON payload: {err}"),
+                        DaemonErrorData {
+                            kind: DaemonErrorKind::ParseError.as_str(),
+                            retryable: false,
+                            param: None,
+                            details: Some(json!({ "stage": "json_decode" })),
+                        },
+                    ),
                 )?;
                 continue;
             }
@@ -127,7 +180,17 @@ pub fn run_stdio() -> anyhow::Result<()> {
             None => {
                 write_response(
                     &mut writer,
-                    &rpc_error(id, -32600, "invalid request: missing method"),
+                    &rpc_error(
+                        id,
+                        -32600,
+                        "invalid request: missing method",
+                        DaemonErrorData {
+                            kind: DaemonErrorKind::InvalidRequest.as_str(),
+                            retryable: false,
+                            param: Some("method".to_string()),
+                            details: Some(json!({ "field": "method" })),
+                        },
+                    ),
                 )?;
                 continue;
             }
@@ -186,7 +249,23 @@ pub fn run_stdio() -> anyhow::Result<()> {
                 )?;
                 break;
             }
-            _ => Err(anyhow::anyhow!("method not found: {method}")),
+            _ => {
+                write_response(
+                    &mut writer,
+                    &rpc_error(
+                        id,
+                        -32601,
+                        format!("method not found: {method}"),
+                        DaemonErrorData {
+                            kind: DaemonErrorKind::MethodNotFound.as_str(),
+                            retryable: false,
+                            param: None,
+                            details: Some(json!({ "method": method })),
+                        },
+                    ),
+                )?;
+                continue;
+            }
         };
 
         match result {
@@ -201,13 +280,11 @@ pub fn run_stdio() -> anyhow::Result<()> {
                 )?;
             }
             Err(err) => {
-                let code =
-                    if method == "check" || method == "build" || method.starts_with("session.") {
-                        -32602
-                    } else {
-                        -32601
-                    };
-                write_response(&mut writer, &rpc_error(id, code, err.to_string()))?;
+                let classified = classify_daemon_error(method, &err);
+                write_response(
+                    &mut writer,
+                    &rpc_error(id, classified.code, err.to_string(), classified.data),
+                )?;
             }
         }
     }
@@ -690,6 +767,108 @@ fn normalize_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+fn classify_daemon_error(method: &str, err: &anyhow::Error) -> ClassifiedDaemonError {
+    let message = err.to_string();
+    let param = extract_param_name(&message);
+
+    if method.starts_with("session.")
+        && (message.contains("unknown session")
+            || message.contains("lock conflict")
+            || message.contains("lock owner mismatch"))
+    {
+        return ClassifiedDaemonError {
+            code: -32602,
+            data: DaemonErrorData {
+                kind: DaemonErrorKind::SessionLockConflict.as_str(),
+                retryable: true,
+                param: None,
+                details: Some(json!({ "method": method })),
+            },
+        };
+    }
+
+    if is_parameter_error(&message, param.is_some()) {
+        return ClassifiedDaemonError {
+            code: -32602,
+            data: DaemonErrorData {
+                kind: DaemonErrorKind::InvalidParam.as_str(),
+                retryable: false,
+                param,
+                details: Some(json!({ "method": method })),
+            },
+        };
+    }
+
+    if has_not_found_cause(err) {
+        return ClassifiedDaemonError {
+            code: -32602,
+            data: DaemonErrorData {
+                kind: DaemonErrorKind::FileNotFound.as_str(),
+                retryable: false,
+                param: None,
+                details: Some(json!({ "method": method })),
+            },
+        };
+    }
+
+    if method == "check" || method == "build" {
+        return ClassifiedDaemonError {
+            code: -32602,
+            data: DaemonErrorData {
+                kind: DaemonErrorKind::FrontendFailed.as_str(),
+                retryable: false,
+                param: None,
+                details: Some(json!({ "method": method })),
+            },
+        };
+    }
+
+    ClassifiedDaemonError {
+        code: -32602,
+        data: DaemonErrorData {
+            kind: DaemonErrorKind::Internal.as_str(),
+            retryable: false,
+            param: None,
+            details: Some(json!({ "method": method })),
+        },
+    }
+}
+
+fn extract_param_name(message: &str) -> Option<String> {
+    if let Some(param) = message.strip_prefix("missing string parameter: ") {
+        return Some(param.trim().to_string());
+    }
+    if let Some(param) = message.strip_prefix("missing array parameter: ") {
+        return Some(param.trim().to_string());
+    }
+    if let Some(tail) = message.split("parameter '").nth(1) {
+        if let Some(param) = tail.split('\'').next() {
+            if !param.trim().is_empty() {
+                return Some(param.trim().to_string());
+            }
+        }
+    }
+    if message.contains("unsupported artifact") {
+        return Some("artifact".to_string());
+    }
+    None
+}
+
+fn is_parameter_error(message: &str, has_param_name: bool) -> bool {
+    has_param_name
+        || message.contains("requires a target selector")
+        || message.contains("requires a symbol name")
+        || message.contains("requires a non-empty")
+}
+
+fn has_not_found_cause(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io_err| io_err.kind() == std::io::ErrorKind::NotFound)
+    })
+}
+
 fn write_response(writer: &mut impl Write, value: &Value) -> anyhow::Result<()> {
     serde_json::to_writer(&mut *writer, value)?;
     writer.write_all(b"\n")?;
@@ -697,20 +876,23 @@ fn write_response(writer: &mut impl Write, value: &Value) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn rpc_error(id: Value, code: i64, message: impl Into<String>) -> Value {
+fn rpc_error(id: Value, code: i64, message: impl Into<String>, data: DaemonErrorData) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "error": {
             "code": code,
             "message": message.into(),
+            "data": data,
         }
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::BuildKind;
+    use super::{classify_daemon_error, BuildKind, DaemonErrorKind};
+    use anyhow::anyhow;
+    use std::io;
 
     #[test]
     fn parses_supported_build_kind_values() {
@@ -723,5 +905,42 @@ mod tests {
     fn rejects_unknown_build_kind() {
         let err = BuildKind::parse(Some("dll")).expect_err("unknown kind should fail");
         assert!(err.to_string().contains("unsupported artifact"));
+    }
+
+    #[test]
+    fn classifies_missing_param_errors_with_param_name() {
+        let err = anyhow!("missing string parameter: input");
+        let classified = classify_daemon_error("check", &err);
+        assert_eq!(classified.code, -32602);
+        assert_eq!(classified.data.kind, DaemonErrorKind::InvalidParam.as_str());
+        assert_eq!(classified.data.param.as_deref(), Some("input"));
+    }
+
+    #[test]
+    fn classifies_missing_files_as_file_not_found() {
+        let err = anyhow!(io::Error::new(io::ErrorKind::NotFound, "missing input"));
+        let classified = classify_daemon_error("check", &err);
+        assert_eq!(classified.code, -32602);
+        assert_eq!(classified.data.kind, DaemonErrorKind::FileNotFound.as_str());
+    }
+
+    #[test]
+    fn classifies_unknown_session_errors_as_session_lock_conflict() {
+        let err = anyhow!("unknown session `sess-9999`");
+        let classified = classify_daemon_error("session.lock.acquire", &err);
+        assert_eq!(classified.code, -32602);
+        assert_eq!(
+            classified.data.kind,
+            DaemonErrorKind::SessionLockConflict.as_str()
+        );
+        assert!(classified.data.retryable);
+    }
+
+    #[test]
+    fn unknown_non_frontend_failures_fall_back_to_internal_kind() {
+        let err = anyhow!("unexpected daemon stats failure");
+        let classified = classify_daemon_error("stats", &err);
+        assert_eq!(classified.code, -32602);
+        assert_eq!(classified.data.kind, DaemonErrorKind::Internal.as_str());
     }
 }

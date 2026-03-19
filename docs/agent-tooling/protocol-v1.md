@@ -117,6 +117,7 @@ See `docs/agent-tooling/incremental-daemon.md` for:
 
 - daemon methods (`check`, `build`, `stats`, `shutdown`)
 - session methods (`session.create`, `session.list`, `session.lock.acquire`, `session.lock.release`, `session.conflicts`, `session.merge`)
+- stable daemon JSON-RPC error taxonomy via `error.data.kind`
 - cache invalidation rules based on content hashes
 - warm/cold parity verification via `output_sha256`
 - troubleshooting common daemon failures

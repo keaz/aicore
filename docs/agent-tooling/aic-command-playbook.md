@@ -112,7 +112,7 @@ Reasoning metadata notes:
 | `aic diff --semantic <old> <new>` | Semantic API delta between versions | Deterministic JSON report |
 | `aic lsp` | Language-server mode for editors/agents | JSON-RPC over stdio |
 | `aic debug dap [--adapter <path>]` | Debug adapter bridge | DAP process bridge |
-| `aic daemon` | Incremental check/build JSON-RPC server | JSON-RPC over stdio |
+| `aic daemon` | Incremental check/build JSON-RPC server | JSON-RPC over stdio with stable `error.data.kind` taxonomy |
 | `aic test [path] [--json]` | Fixture + attribute/property test harness | Text/JSON harness report |
 | `aic contract --json` | CLI protocol negotiation/compatibility | Contract JSON |
 | `aic release ...` | Manifest/SBOM/provenance/policy/LTS/security ops | Text/JSON release outputs |

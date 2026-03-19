@@ -127,6 +127,7 @@ Any dependency source change causes fingerprint changes and forces a cache miss.
 
 - `examples/agent/incremental_demo/`
 - Request script: `examples/agent/incremental_demo/requests/check_build_shutdown.jsonl`
+- Error taxonomy script: `examples/agent/incremental_demo/requests/error_taxonomy.jsonl`
 
 Run:
 
@@ -136,7 +137,34 @@ aic daemon < examples/agent/incremental_demo/requests/check_build_shutdown.jsonl
 
 ## Failure handling
 
-- Invalid JSON payloads return JSON-RPC parse errors (`code = -32700`).
-- Missing/invalid parameters return request errors (`code = -32602`).
-- Unknown methods return method errors (`code = -32601`).
+- Every JSON-RPC error response includes `error.data` with this stable shape:
+
+```json
+{
+  "kind": "invalid_param",
+  "retryable": false,
+  "param": "input",
+  "details": {
+    "method": "check"
+  }
+}
+```
+
+- Stable `error.data.kind` values:
+  - `parse_error`: request payload was not valid JSON.
+  - `invalid_request`: required JSON-RPC envelope fields were missing.
+  - `method_not_found`: unknown method name.
+  - `invalid_param`: request envelope was valid, but parameters were missing/invalid.
+  - `file_not_found`: referenced source/plan/file path could not be resolved.
+  - `frontend_failed`: frontend/build pipeline failed for a valid request.
+  - `session_lock_conflict`: session lock/session ownership prerequisites were not met.
+  - `internal`: fallback for unknown/unclassified daemon failures.
+
+- `retryable` indicates whether immediate remediation/retry is expected to be useful.
+- `param` is present when a specific parameter is invalid.
+- `details` is optional method-scoped context for deterministic agent remediation.
+
+- Invalid JSON payloads return parse errors (`code = -32700`, `kind = "parse_error"`).
+- Missing/invalid parameters return request errors (`code = -32602`, `kind = "invalid_param"`).
+- Unknown methods return method errors (`code = -32601`, `kind = "method_not_found"`).
 - Session/lock/merge business conflicts stay in the `result` payload with `ok: false`; they do not use JSON-RPC `error`.

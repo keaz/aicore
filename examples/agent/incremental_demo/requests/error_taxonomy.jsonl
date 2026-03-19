@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","id":10,"method":"unknown.method","params":{}}
+{"jsonrpc":"2.0","id":11,"method":"check","params":{}}
+{"jsonrpc":"2.0","id":12,"method":"check","params":{"input":"examples/agent/incremental_demo/app/src/does_not_exist.aic"}}
+{"jsonrpc":"2.0","id":13,"method":"session.lock.acquire","params":{"project":"examples/e7/session_protocol","session_id":"sess-9999","target":["function","handle_result"],"lease_ms":1000,"now_ms":1000}}
+{"jsonrpc":"2.0","id":14,"method":"shutdown","params":{}}
