@@ -67,6 +67,22 @@ intrinsic fn aic_bytes_byte_at_intrinsic(data: String, index: Int) -> UInt8;
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[UInt8]) -> String;
 
+/// `aic_string_byte_substring_intrinsic` in `std.bytes`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.bytes` and call `aic_string_byte_substring_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn aic_string_byte_substring_intrinsic(data: String, start: Int, end: Int) -> String {
+    ""
+}
+
 /// `aic_bytes_len_intrinsic` in `std.bytes`.
 ///
 /// ## Example
@@ -322,7 +338,7 @@ fn byte_slice(data: Bytes, start: Int, end: Int) -> Result[Bytes, BytesError] {
         out
     } else {
         let out: Result[Bytes, BytesError] = Ok(Bytes {
-            data: aic_string_substring_intrinsic(data.data, start, end),
+            data: aic_string_byte_substring_intrinsic(data.data, start, end),
         });
         out
     }

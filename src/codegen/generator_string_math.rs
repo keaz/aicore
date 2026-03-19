@@ -16,6 +16,7 @@ impl<'a> Generator<'a> {
             "index_of" | "aic_string_index_of_intrinsic" => "index_of",
             "last_index_of" | "aic_string_last_index_of_intrinsic" => "last_index_of",
             "substring" | "aic_string_substring_intrinsic" => "substring",
+            "byte_substring" | "aic_string_byte_substring_intrinsic" => "byte_substring",
             "char_at" | "aic_string_char_at_intrinsic" => "char_at",
             "split" | "aic_string_split_intrinsic" => "split",
             "split_first" | "aic_string_split_first_intrinsic" => "split_first",
@@ -116,7 +117,17 @@ impl<'a> Generator<'a> {
                 ))
             }
             "substring" if self.sig_matches_shape(name, &["String", "Int", "Int"], "String") => {
-                Some(self.gen_string_substring_call(args, span, fctx))
+                Some(self.gen_string_substring_call(args, span, "aic_rt_string_substring", fctx))
+            }
+            "byte_substring"
+                if self.sig_matches_shape(name, &["String", "Int", "Int"], "String") =>
+            {
+                Some(self.gen_string_substring_call(
+                    args,
+                    span,
+                    "aic_rt_string_byte_substring",
+                    fctx,
+                ))
             }
             "char_at" if self.sig_matches_shape(name, &["String", "Int"], "Option[String]") => {
                 Some(self.gen_string_char_at_call(name, args, span, fctx))
@@ -1112,6 +1123,7 @@ impl<'a> Generator<'a> {
         &mut self,
         args: &[ir::Expr],
         span: crate::span::Span,
+        runtime_symbol: &str,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         if args.len() != 3 {
@@ -1143,8 +1155,8 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
         fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
         fctx.lines.push(format!(
-            "  call void @aic_rt_string_substring(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
-            s_ptr, s_len, s_cap, start_repr, end_repr, out_ptr_slot, out_len_slot
+            "  call void @{}(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            runtime_symbol, s_ptr, s_len, s_cap, start_repr, end_repr, out_ptr_slot, out_len_slot
         ));
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }

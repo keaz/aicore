@@ -565,6 +565,10 @@ fn is_valid_utf8(data: Bytes) -> Bool {
 /// // Import `std.string` and call `byte_length` with module-specific arguments.
 /// ```
 ///
+/// Returns the UTF-8 byte length. For explicit byte-offset slicing/indexing,
+/// use `std.bytes.from_string(...)` with `std.bytes.byte_slice(...)` and
+/// `std.bytes.byte_at(...)`.
+///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
 ///
@@ -677,6 +681,9 @@ fn last_index_of(s: String, needle: String) -> Option[Int] {
 /// // Import `std.string` and call `substring` with module-specific arguments.
 /// ```
 ///
+/// `start` and `end` are Unicode scalar indexes (not byte offsets). Bounds are
+/// clamped to the string scalar length.
+///
 /// ## Effects
 /// See the function signature for required effects and capabilities.
 ///
@@ -692,6 +699,9 @@ fn substring(s: String, start: Int, end: Int) -> String {
 /// ```aic
 /// // Import `std.string` and call `char_at` with module-specific arguments.
 /// ```
+///
+/// `index` is a Unicode scalar index (not a byte offset). Returns `None` when
+/// the scalar index is out of range.
 ///
 /// ## Effects
 /// See the function signature for required effects and capabilities.

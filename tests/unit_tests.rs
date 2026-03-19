@@ -8595,8 +8595,8 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
         "std/bytes.aic byte_at must bridge Bytes.data into runtime intrinsic"
     );
     assert!(
-        bytes_source.contains("aic_string_substring_intrinsic(data.data, start, end)"),
-        "std/bytes.aic byte_slice must use string substring intrinsic on byte indices"
+        bytes_source.contains("aic_string_byte_substring_intrinsic(data.data, start, end)"),
+        "std/bytes.aic byte_slice must use byte substring intrinsic on byte indices"
     );
     assert!(
         bytes_source.contains("aic_bytes_from_byte_values_intrinsic(values)"),

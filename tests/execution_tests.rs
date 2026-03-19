@@ -1913,6 +1913,12 @@ fn main() -> Int effects { io } capabilities { io  } {
     let sub_oob_ok = if len(substring("abc", 9, 12)) == 0 { 1 } else { 0 };
     let char_ok = if opt_string_len(char_at("abc", 1)) == 1 { 1 } else { 0 };
     let char_oob_ok = if opt_string_len(char_at("abc", 9)) == 0 { 1 } else { 0 };
+    let unicode = "é🙂z";
+    let sub_unicode_ok = if byte_length(substring(unicode, 0, 2)) == 6 { 1 } else { 0 };
+    let sub_unicode_tail_ok = if byte_length(substring(unicode, 1, 9)) == 5 { 1 } else { 0 };
+    let char_unicode_first_ok = if opt_string_len(char_at(unicode, 0)) == 2 { 1 } else { 0 };
+    let char_unicode_second_ok = if opt_string_len(char_at(unicode, 1)) == 4 { 1 } else { 0 };
+    let char_unicode_oob_ok = if opt_string_len(char_at(unicode, 3)) == 0 { 1 } else { 0 };
 
     let split_ok = if vec_len(split("GET /api/users HTTP/1.1", " ")) == 3 { 1 } else { 0 };
     let split_first_ok =
@@ -1961,6 +1967,11 @@ fn main() -> Int effects { io } capabilities { io  } {
         sub_oob_ok +
         char_ok +
         char_oob_ok +
+        sub_unicode_ok +
+        sub_unicode_tail_ok +
+        char_unicode_first_ok +
+        char_unicode_second_ok +
+        char_unicode_oob_ok +
         split_ok +
         split_first_ok +
         split_first_none_ok +
@@ -1981,7 +1992,7 @@ fn main() -> Int effects { io } capabilities { io  } {
         join_ok +
         join_empty_ok;
 
-    if score == 29 {
+    if score == 34 {
         print_int(42);
     } else {
         print_int(0);

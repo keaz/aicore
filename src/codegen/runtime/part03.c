@@ -77,6 +77,73 @@ void aic_rt_string_substring(
     if (out_len != NULL) {
         *out_len = 0;
     }
+    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
+        !aic_rt_string_utf8_is_valid(s_ptr, (size_t)s_len)) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+    long clamped_start = start < 0 ? 0 : start;
+    long clamped_end = end < 0 ? 0 : end;
+    if (clamped_end <= clamped_start) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t n = (size_t)s_len;
+    size_t cursor = 0;
+    long scalar_index = 0;
+    size_t start_byte = n;
+    size_t end_byte = n;
+
+    while (cursor < n) {
+        if (scalar_index == clamped_start && start_byte == n) {
+            start_byte = cursor;
+        }
+        if (scalar_index == clamped_end) {
+            end_byte = cursor;
+            break;
+        }
+        size_t width =
+            aic_rt_string_utf8_valid_prefix((const unsigned char*)(s_ptr + cursor), n - cursor);
+        if (width == 0) {
+            width = 1;
+        }
+        cursor += width;
+        scalar_index += 1;
+    }
+
+    if (start_byte == n) {
+        start_byte = clamped_start <= scalar_index ? cursor : n;
+    }
+    if (end_byte == n) {
+        end_byte = clamped_end <= scalar_index ? cursor : n;
+    }
+    if (end_byte <= start_byte) {
+        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        return;
+    }
+
+    size_t part_len = end_byte - start_byte;
+    char* out = aic_rt_copy_bytes(s_ptr + start_byte, part_len);
+    aic_rt_write_string_out(out_ptr, out_len, out);
+}
+
+void aic_rt_string_byte_substring(
+    const char* s_ptr,
+    long s_len,
+    long s_cap,
+    long start,
+    long end,
+    char** out_ptr,
+    long* out_len
+) {
+    (void)s_cap;
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
         aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
         return;
@@ -113,12 +180,29 @@ long aic_rt_string_char_at(
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) || index < 0 || index >= s_len) {
+    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
+        !aic_rt_string_utf8_is_valid(s_ptr, (size_t)s_len) || index < 0) {
         return 0;
     }
-    char* out = aic_rt_copy_bytes(s_ptr + index, 1);
-    aic_rt_write_string_out(out_ptr, out_len, out);
-    return out != NULL ? 1 : 0;
+
+    size_t n = (size_t)s_len;
+    size_t cursor = 0;
+    long scalar_index = 0;
+    while (cursor < n) {
+        size_t width =
+            aic_rt_string_utf8_valid_prefix((const unsigned char*)(s_ptr + cursor), n - cursor);
+        if (width == 0) {
+            return 0;
+        }
+        if (scalar_index == index) {
+            char* out = aic_rt_copy_bytes(s_ptr + cursor, width);
+            aic_rt_write_string_out(out_ptr, out_len, out);
+            return out != NULL ? 1 : 0;
+        }
+        cursor += width;
+        scalar_index += 1;
+    }
+    return 0;
 }
 
 long aic_rt_bytes_byte_at(const char* data_ptr, long data_len, long data_cap, long index) {

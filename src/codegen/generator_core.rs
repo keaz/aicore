@@ -95,6 +95,9 @@ impl<'a> Generator<'a> {
         text.push_str(
             "declare void @aic_rt_string_substring(i8*, i64, i64, i64, i64, i8**, i64*)\n",
         );
+        text.push_str(
+            "declare void @aic_rt_string_byte_substring(i8*, i64, i64, i64, i64, i8**, i64*)\n",
+        );
         text.push_str("declare i64 @aic_rt_string_char_at(i8*, i64, i64, i64, i8**, i64*)\n");
         text.push_str(
             "declare void @aic_rt_string_split(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
