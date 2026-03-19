@@ -136,9 +136,10 @@ aic session merge examples/e7/session_protocol/plans/valid_plan.json --project e
 Behavior:
 
 - `create` persists deterministic session ids under `.aic-sessions/state.json`
-- `lock acquire` enforces exclusive symbol ownership with reclaimable expiry leases
+- `lock acquire` enforces exclusive symbol ownership with reclaimable expiry leases and stale crashed-owner state-lock recovery
 - `conflicts` reports overlap and ownership problems as structured `conflicts[]`, not transport errors
 - `merge` applies a plan inside an isolated temp workspace, rejects individually invalid patch documents as structured `conflicts[]`, and rejects type/effect-invalid combined state as structured `diagnostics[]`
+- state-lock timeout errors include lock metadata and remediation guidance for deterministic operator recovery
 
 ## Structured patch workflow (AG-T7)
 

@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":20,"method":"session.create","params":{"project":"examples/e7/session_protocol","label":"recover-stale-lock"}}
+{"jsonrpc":"2.0","id":21,"method":"shutdown","params":{}}

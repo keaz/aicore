@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -20,8 +21,10 @@ const SESSION_PHASE: &str = "session";
 const SESSIONS_DIR_NAME: &str = ".aic-sessions";
 const STATE_FILE_NAME: &str = "state.json";
 const STATE_LOCK_NAME: &str = ".state.lock";
+const STATE_LOCK_SCHEMA_VERSION: u32 = 1;
 const LOCK_WAIT_RETRIES: usize = 200;
 const LOCK_WAIT_INTERVAL_MS: u64 = 5;
+const DEFAULT_STALE_LOCK_TTL_MS: u64 = 120_000;
 const DEFAULT_LEASE_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,6 +208,35 @@ struct StateLockGuard {
 #[derive(Debug)]
 struct TempWorkspace {
     path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct StateLockMetadata {
+    schema_version: u32,
+    pid: u32,
+    host: String,
+    created_ms: u64,
+    process_hint: String,
+}
+
+#[derive(Debug, Clone)]
+struct LockObservation {
+    summary: String,
+}
+
+impl StateLockMetadata {
+    fn current() -> Self {
+        let pid = std::process::id();
+        let host = current_host_identifier();
+        let created_ms = current_time_ms();
+        Self {
+            schema_version: STATE_LOCK_SCHEMA_VERSION,
+            pid,
+            host: host.clone(),
+            created_ms,
+            process_hint: format!("pid={pid}@{host}"),
+        }
+    }
 }
 
 impl Drop for StateLockGuard {
@@ -1248,15 +1280,40 @@ fn with_state_mut<T>(
 }
 
 fn acquire_state_lock(project_root: &Path) -> anyhow::Result<StateLockGuard> {
+    acquire_state_lock_with_options(
+        project_root,
+        LOCK_WAIT_RETRIES,
+        LOCK_WAIT_INTERVAL_MS,
+        stale_lock_ttl_ms(),
+    )
+}
+
+fn acquire_state_lock_with_options(
+    project_root: &Path,
+    retries: usize,
+    wait_interval_ms: u64,
+    stale_lock_ttl_ms: u64,
+) -> anyhow::Result<StateLockGuard> {
     let path = sessions_root(project_root).join(STATE_LOCK_NAME);
-    for _ in 0..LOCK_WAIT_RETRIES {
+    let mut last_observation = None;
+    for _ in 0..retries {
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
-                writeln!(file, "{}", std::process::id()).ok();
+                let metadata = StateLockMetadata::current();
+                write_lock_metadata(&mut file, &metadata)?;
                 return Ok(StateLockGuard { path });
             }
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                thread::sleep(Duration::from_millis(LOCK_WAIT_INTERVAL_MS));
+                if let Some(observation) = inspect_and_reclaim_state_lock(&path, stale_lock_ttl_ms)
+                {
+                    if observation.summary.starts_with("reclaimed stale lock") {
+                        eprintln!("aic session: {} ({})", observation.summary, path.display());
+                        last_observation = Some(observation.summary);
+                        continue;
+                    }
+                    last_observation = Some(observation.summary);
+                }
+                thread::sleep(Duration::from_millis(wait_interval_ms));
             }
             Err(err) => {
                 return Err(err)
@@ -1264,10 +1321,140 @@ fn acquire_state_lock(project_root: &Path) -> anyhow::Result<StateLockGuard> {
             }
         }
     }
+    let observation = last_observation.unwrap_or_else(|| "lock metadata unavailable".to_string());
     bail!(
-        "timed out waiting for session state lock {}",
-        path.display()
+        "timed out waiting for session state lock {} ({observation}); if owner is no longer running, remove the lock file and retry",
+        path.display(),
     )
+}
+
+fn write_lock_metadata(file: &mut fs::File, metadata: &StateLockMetadata) -> anyhow::Result<()> {
+    let encoded = serde_json::to_vec(metadata).context("failed to encode lock metadata")?;
+    file.write_all(&encoded)
+        .context("failed to write lock metadata")?;
+    file.flush().context("failed to flush lock metadata")?;
+    Ok(())
+}
+
+fn inspect_and_reclaim_state_lock(path: &Path, stale_lock_ttl_ms: u64) -> Option<LockObservation> {
+    let now_ms = current_time_ms();
+    match read_lock_metadata(path) {
+        Ok(metadata) => {
+            let age_ms = now_ms.saturating_sub(metadata.created_ms);
+            let same_host = metadata.host == current_host_identifier();
+            let alive = if same_host {
+                process_is_alive(metadata.pid)
+            } else {
+                None
+            };
+            let stale_by_pid = same_host && matches!(alive, Some(false));
+            let stale_by_age =
+                same_host && age_ms > stale_lock_ttl_ms && !matches!(alive, Some(true));
+            if stale_by_pid || stale_by_age {
+                if reclaim_state_lock_file(path) {
+                    let reason = if stale_by_pid {
+                        "owner process is no longer alive"
+                    } else {
+                        "lock age exceeded stale TTL"
+                    };
+                    return Some(LockObservation {
+                        summary: format!(
+                            "reclaimed stale lock pid={} host={} age_ms={} reason={reason}",
+                            metadata.pid, metadata.host, age_ms
+                        ),
+                    });
+                }
+            }
+            let alive_status = match alive {
+                Some(true) => "alive",
+                Some(false) => "dead",
+                None => "unknown",
+            };
+            Some(LockObservation {
+                summary: format!(
+                    "lock owner pid={} host={} age_ms={} alive={alive_status}",
+                    metadata.pid, metadata.host, age_ms
+                ),
+            })
+        }
+        Err(reason) => Some(LockObservation {
+            summary: format!("malformed lock metadata: {reason}"),
+        }),
+    }
+}
+
+fn reclaim_state_lock_file(path: &Path) -> bool {
+    let reclaimed = path.with_file_name(format!(
+        "{}.reclaimed-{}-{}",
+        STATE_LOCK_NAME,
+        std::process::id(),
+        current_time_ms()
+    ));
+    match fs::rename(path, &reclaimed) {
+        Ok(()) => {
+            let _ = fs::remove_file(reclaimed);
+            true
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => false,
+    }
+}
+
+fn read_lock_metadata(path: &Path) -> Result<StateLockMetadata, String> {
+    let raw = fs::read_to_string(path).map_err(|err| err.to_string())?;
+    match serde_json::from_str::<StateLockMetadata>(&raw) {
+        Ok(metadata) => Ok(metadata),
+        Err(json_err) => {
+            let trimmed = raw.trim();
+            if let Ok(pid) = trimmed.parse::<u32>() {
+                return Ok(StateLockMetadata {
+                    schema_version: 0,
+                    pid,
+                    host: current_host_identifier(),
+                    created_ms: 0,
+                    process_hint: "legacy_pid_only".to_string(),
+                });
+            }
+            Err(format!("{} (raw: {})", json_err, trimmed))
+        }
+    }
+}
+
+fn stale_lock_ttl_ms() -> u64 {
+    std::env::var("AIC_SESSION_LOCK_STALE_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_STALE_LOCK_TTL_MS)
+}
+
+fn current_host_identifier() -> String {
+    std::env::var("HOSTNAME")
+        .ok()
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "unknown-host".to_string())
+}
+
+fn process_is_alive(pid: u32) -> Option<bool> {
+    if pid == std::process::id() {
+        return Some(true);
+    }
+    #[cfg(unix)]
+    {
+        return Command::new("kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .map(|status| status.success());
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 fn write_state(project_root: &Path, state: &SessionState) -> anyhow::Result<()> {
@@ -1447,6 +1634,77 @@ mod tests {
             ),
         )
         .expect("write source");
+    }
+
+    fn write_state_lock_metadata(root: &Path, metadata: &StateLockMetadata) {
+        let sessions_root = root.join(SESSIONS_DIR_NAME);
+        fs::create_dir_all(&sessions_root).expect("create sessions dir");
+        let lock_path = sessions_root.join(STATE_LOCK_NAME);
+        let encoded = serde_json::to_vec(metadata).expect("encode lock metadata");
+        fs::write(&lock_path, encoded).expect("write lock metadata");
+    }
+
+    #[test]
+    fn orphan_state_lock_file_is_reclaimed_automatically() {
+        let dir = tempdir().expect("tempdir");
+        write_session_fixture(dir.path());
+        write_state_lock_metadata(
+            dir.path(),
+            &StateLockMetadata {
+                schema_version: STATE_LOCK_SCHEMA_VERSION,
+                pid: u32::MAX,
+                host: current_host_identifier(),
+                created_ms: current_time_ms(),
+                process_hint: "orphan-test".to_string(),
+            },
+        );
+
+        let created = create_session(dir.path(), Some("auto-recover"), Some(100))
+            .expect("session create should reclaim stale lock");
+        assert_eq!(created.session.id, "sess-0001");
+        assert!(!sessions_root(dir.path()).join(STATE_LOCK_NAME).exists());
+    }
+
+    #[test]
+    fn live_state_lock_is_not_reclaimed_and_timeout_contains_metadata() {
+        let dir = tempdir().expect("tempdir");
+        write_session_fixture(dir.path());
+        let pid = std::process::id();
+        write_state_lock_metadata(
+            dir.path(),
+            &StateLockMetadata {
+                schema_version: STATE_LOCK_SCHEMA_VERSION,
+                pid,
+                host: current_host_identifier(),
+                created_ms: 0,
+                process_hint: "live-lock-test".to_string(),
+            },
+        );
+
+        let err = acquire_state_lock_with_options(dir.path(), 3, 1, 1)
+            .expect_err("live owner lock should not be reclaimed");
+        let text = err.to_string();
+        assert!(text.contains("timed out waiting for session state lock"));
+        assert!(text.contains("pid="));
+        assert!(text.contains("alive=alive"));
+        assert!(text.contains("remove the lock file and retry"));
+        assert!(sessions_root(dir.path()).join(STATE_LOCK_NAME).exists());
+    }
+
+    #[test]
+    fn malformed_lock_metadata_falls_back_to_retry_with_guidance() {
+        let dir = tempdir().expect("tempdir");
+        write_session_fixture(dir.path());
+        let sessions_root = sessions_root(dir.path());
+        fs::create_dir_all(&sessions_root).expect("create sessions dir");
+        fs::write(sessions_root.join(STATE_LOCK_NAME), b"not-json").expect("write malformed lock");
+
+        let err = acquire_state_lock_with_options(dir.path(), 3, 1, 1)
+            .expect_err("malformed lock metadata should not be reclaimed automatically");
+        let text = err.to_string();
+        assert!(text.contains("malformed lock metadata"));
+        assert!(text.contains("remove the lock file and retry"));
+        assert!(sessions_root.join(STATE_LOCK_NAME).exists());
     }
 
     #[test]

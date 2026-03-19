@@ -8030,6 +8030,10 @@ fn session_docs_and_contract_references_are_consistent() {
         daemon_doc.contains("session_lock_conflict"),
         "incremental daemon doc missing session_lock_conflict taxonomy entry"
     );
+    assert!(
+        daemon_doc.contains("session_lock_recovery.jsonl"),
+        "incremental daemon doc missing stale-lock recovery example fixture"
+    );
 }
 
 #[test]

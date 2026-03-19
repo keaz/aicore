@@ -120,6 +120,8 @@ Session state includes:
 - deterministic session registry under `.aic-sessions/state.json`
 - project-relative symbol keys (`kind`, module/name, file, span start) for lock identity
 - lease expiry timestamps (`expires_ms`) for reclaim decisions
+- lock metadata under `.aic-sessions/.state.lock` (`pid`, `host`, `created_ms`, `process_hint`)
+- stale lock self-healing for crashed owners (dead PID on same host), while preserving live owners
 
 Any dependency source change causes fingerprint changes and forces a cache miss.
 
@@ -128,11 +130,18 @@ Any dependency source change causes fingerprint changes and forces a cache miss.
 - `examples/agent/incremental_demo/`
 - Request script: `examples/agent/incremental_demo/requests/check_build_shutdown.jsonl`
 - Error taxonomy script: `examples/agent/incremental_demo/requests/error_taxonomy.jsonl`
+- Stale-lock recovery script: `examples/agent/incremental_demo/requests/session_lock_recovery.jsonl`
 
 Run:
 
 ```bash
 aic daemon < examples/agent/incremental_demo/requests/check_build_shutdown.jsonl
+```
+
+For stale-lock recovery workflows, first seed a stale `.aic-sessions/.state.lock`, then run:
+
+```bash
+aic daemon < examples/agent/incremental_demo/requests/session_lock_recovery.jsonl
 ```
 
 ## Failure handling
@@ -167,4 +176,5 @@ aic daemon < examples/agent/incremental_demo/requests/check_build_shutdown.jsonl
 - Invalid JSON payloads return parse errors (`code = -32700`, `kind = "parse_error"`).
 - Missing/invalid parameters return request errors (`code = -32602`, `kind = "invalid_param"`).
 - Unknown methods return method errors (`code = -32601`, `kind = "method_not_found"`).
+- Session state-lock timeouts include the latest observed lock metadata (`pid`, `host`, `age/alive` status, or malformed metadata summary) plus explicit remediation guidance.
 - Session/lock/merge business conflicts stay in the `result` payload with `ok: false`; they do not use JSON-RPC `error`.
