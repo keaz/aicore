@@ -131,6 +131,9 @@ In `src/codegen/mod.rs`:
   - rollout scope is runtime map storage (`AicMapEntryStorage`) without language-level API changes
   - benchmark toggle: `AIC_RT_DISABLE_MAP_SSO=1` forces heap-only storage path
 - runtime panic ABI: `aic_rt_panic(ptr, len, cap, line, column)`
+- string runtime intrinsics surface deterministic panic payloads for invalid input/alloc/overflow:
+  - `AIC_RT_STRING_ERROR|api=<name>|code=<CODE>|detail=<detail>`
+  - valid empty-string results are preserved and are no longer used as failure sentinels
 - `aic build --debug-info` emits debug metadata and source-mapped panic locations
 - `aic build --opt-level <LEVEL>` accepts `0..3` (`O0..O3`)
 - `aic build --release` defaults optimization to `O2` unless overridden with `--opt-level`/`-O`

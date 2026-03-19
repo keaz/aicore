@@ -28,3 +28,18 @@ cargo run --quiet --bin aic -- run examples/data/string_encoding.aic
 ```
 
 Expected output: `42`.
+
+## Failure Example (Deterministic Diagnostics)
+
+```aic
+import std.string;
+
+fn main() -> Int {
+    let _value = repeat("ab", -1);
+    0
+}
+```
+
+Runtime exits with panic diagnostics containing:
+
+- `AIC_RT_STRING_ERROR|api=repeat|code=INVALID_INPUT|detail=negative-repeat-count`

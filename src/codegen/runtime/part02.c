@@ -1586,6 +1586,33 @@ static char* aic_rt_copy_bytes(const char* src, size_t len) {
     return out;
 }
 
+void aic_rt_panic(const char* ptr, long len, long cap, long line, long column);
+
+static void aic_rt_string_runtime_panic(const char* api, const char* code, const char* detail) {
+    const char* safe_api = api == NULL ? "unknown" : api;
+    const char* safe_code = code == NULL ? "UNKNOWN" : code;
+    const char* safe_detail = detail == NULL ? "unknown" : detail;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "AIC_RT_STRING_ERROR|api=%s|code=%s|detail=%s",
+        safe_api,
+        safe_code,
+        safe_detail
+    );
+    if (written < 0) {
+        const char* fallback = "AIC_RT_STRING_ERROR|api=unknown|code=INTERNAL|detail=format_failed";
+        long fallback_len = (long)strlen(fallback);
+        aic_rt_panic(fallback, fallback_len, fallback_len, 0, 0);
+    }
+    size_t message_len = (size_t)written;
+    if (message_len >= sizeof(message)) {
+        message_len = sizeof(message) - 1;
+    }
+    aic_rt_panic(message, (long)message_len, (long)message_len, 0, 0);
+}
+
 static int aic_rt_path_is_sep(char ch) {
     return ch == '/' || ch == '\\';
 }
@@ -1621,6 +1648,42 @@ static void aic_rt_write_string_out(char** out_ptr, long* out_len, char* owned) 
     } else {
         free(owned);
     }
+}
+
+static char* aic_rt_string_copy_or_panic(
+    const char* api,
+    const char* detail,
+    const char* src,
+    size_t len
+) {
+    char* out = aic_rt_copy_bytes(src, len);
+    if (out == NULL) {
+        aic_rt_string_runtime_panic(api, "ALLOC_FAILURE", detail);
+    }
+    return out;
+}
+
+static void aic_rt_string_write_out_or_panic(
+    const char* api,
+    const char* detail,
+    char** out_ptr,
+    long* out_len,
+    char* owned
+) {
+    if (owned == NULL) {
+        aic_rt_string_runtime_panic(api, "ALLOC_FAILURE", detail);
+    }
+    aic_rt_write_string_out(out_ptr, out_len, owned);
+}
+
+static void aic_rt_string_write_empty_or_panic(const char* api, char** out_ptr, long* out_len) {
+    aic_rt_string_write_out_or_panic(
+        api,
+        "empty-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes("", 0)
+    );
 }
 
 static int aic_rt_string_is_space(char ch) {
@@ -4924,28 +4987,34 @@ void aic_rt_string_bytes_to_string_lossy(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_to_string_lossy", "INVALID_INPUT", "invalid-byte-slice");
         return;
     }
 
     size_t n = (size_t)data_len;
     if (n == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("bytes_to_string_lossy", out_ptr, out_len);
         return;
     }
     if (aic_rt_string_utf8_is_valid(data_ptr, n)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes(data_ptr, n));
+        aic_rt_string_write_out_or_panic(
+            "bytes_to_string_lossy",
+            "utf8-copy-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes(data_ptr, n)
+        );
         return;
     }
     if (n > (SIZE_MAX - 1) / 3) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_to_string_lossy", "OVERFLOW", "replacement-buffer-overflow");
         return;
     }
 
     size_t cap = n * 3;
     char* out = (char*)malloc(cap + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_to_string_lossy", "ALLOC_FAILURE", "replacement-buffer-allocation");
         return;
     }
 

@@ -1966,7 +1966,7 @@ fn main() -> Int effects { io } capabilities { io  } {
     let upper_unmapped_ok = if byte_length(to_upper("ß")) == 2 { 1 } else { 0 };
     let replace_ok = if len(replace("a-b-c", "-", "/")) == 5 { 1 } else { 0 };
     let repeat_ok = if len(repeat("ab", 3)) == 6 { 1 } else { 0 };
-    let repeat_neg_ok = if len(repeat("ab", -2)) == 0 { 1 } else { 0 };
+    let repeat_zero_ok = if len(repeat("ab", 0)) == 0 { 1 } else { 0 };
 
     let parse_ok = if result_int_or(parse_int("  -42 "), 0) == -42 { 1 } else { 0 };
     let parse_bad_ok = result_err_non_empty(parse_int("12x"));
@@ -2012,7 +2012,7 @@ fn main() -> Int effects { io } capabilities { io  } {
         upper_unmapped_ok +
         replace_ok +
         repeat_ok +
-        repeat_neg_ok +
+        repeat_zero_ok +
         parse_ok +
         parse_bad_ok +
         parse_overflow_ok +
@@ -2213,6 +2213,46 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     });
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_string_repeat_negative_count_surfaces_structured_runtime_error() {
+    let src = r#"
+import std.string;
+
+fn main() -> Int {
+    let _value = repeat("ab", -1);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains(
+            "AIC_RT_STRING_ERROR|api=repeat|code=INVALID_INPUT|detail=negative-repeat-count"
+        ),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_string_repeat_overflow_surfaces_structured_runtime_error() {
+    let src = r#"
+import std.string;
+
+fn main() -> Int {
+    let _value = repeat("ab", 9223372036854775807);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "");
+    assert!(
+        stderr.contains("AIC_RT_STRING_ERROR|api=repeat|code=OVERFLOW|detail=output-size-overflow"),
+        "stderr={stderr}"
+    );
 }
 
 #[test]

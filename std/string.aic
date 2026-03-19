@@ -35,6 +35,16 @@ enum EncodingError {
     BufferTooSmall,
 }
 
+/// Runtime failure model for string-producing intrinsics:
+///
+/// - `substring`, `byte_substring`, `trim`, `trim_start`, `trim_end`, `to_upper`,
+///   `to_lower`, `replace`, `repeat`, `bytes_to_string_lossy`, `join`, and `format`
+///   panic for invalid runtime input and allocation/overflow failures.
+/// - Panic diagnostics are deterministic and machine-consumable:
+///   `AIC_RT_STRING_ERROR|api=<name>|code=<CODE>|detail=<detail>`.
+/// - Valid empty results (for example `substring("abc", 2, 2)` or `repeat("x", 0)`)
+///   still return `""`.
+
 /// `aic_string_len_intrinsic` in `std.string`.
 ///
 /// ## Example

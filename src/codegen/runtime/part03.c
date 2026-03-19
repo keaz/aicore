@@ -79,13 +79,13 @@ void aic_rt_string_substring(
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
         !aic_rt_string_utf8_is_valid(s_ptr, (size_t)s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("substring", "INVALID_INPUT", "invalid-utf8-input");
         return;
     }
     long clamped_start = start < 0 ? 0 : start;
     long clamped_end = end < 0 ? 0 : end;
     if (clamped_end <= clamped_start) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("substring", out_ptr, out_len);
         return;
     }
 
@@ -119,12 +119,17 @@ void aic_rt_string_substring(
         end_byte = clamped_end <= scalar_index ? cursor : n;
     }
     if (end_byte <= start_byte) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("substring", out_ptr, out_len);
         return;
     }
 
     size_t part_len = end_byte - start_byte;
-    char* out = aic_rt_copy_bytes(s_ptr + start_byte, part_len);
+    char* out = aic_rt_string_copy_or_panic(
+        "substring",
+        "substring-copy-allocation",
+        s_ptr + start_byte,
+        part_len
+    );
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
@@ -145,7 +150,7 @@ void aic_rt_string_byte_substring(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("byte_substring", "INVALID_INPUT", "invalid-byte-slice");
         return;
     }
     long clamped_start = start < 0 ? 0 : start;
@@ -157,11 +162,16 @@ void aic_rt_string_byte_substring(
         clamped_end = s_len;
     }
     if (clamped_end <= clamped_start) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("byte_substring", out_ptr, out_len);
         return;
     }
     size_t part_len = (size_t)(clamped_end - clamped_start);
-    char* out = aic_rt_copy_bytes(s_ptr + clamped_start, part_len);
+    char* out = aic_rt_string_copy_or_panic(
+        "byte_substring",
+        "substring-copy-allocation",
+        s_ptr + clamped_start,
+        part_len
+    );
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
@@ -195,9 +205,14 @@ long aic_rt_string_char_at(
             return 0;
         }
         if (scalar_index == index) {
-            char* out = aic_rt_copy_bytes(s_ptr + cursor, width);
+            char* out = aic_rt_string_copy_or_panic(
+                "char_at",
+                "char-copy-allocation",
+                s_ptr + cursor,
+                width
+            );
             aic_rt_write_string_out(out_ptr, out_len, out);
-            return out != NULL ? 1 : 0;
+            return 1;
         }
         cursor += width;
         scalar_index += 1;
@@ -245,24 +260,24 @@ void aic_rt_bytes_from_byte_values(
         *out_len = 0;
     }
     if (values_len < 0 || (values_len > 0 && values_ptr == NULL)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_ints", "INVALID_INPUT", "invalid-values-slice");
         return;
     }
 
     size_t count = (size_t)values_len;
     if (count == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("bytes_from_ints", out_ptr, out_len);
         return;
     }
     if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_ints", "OVERFLOW", "byte-count-overflow");
         return;
     }
 
     const int64_t* values = (const int64_t*)values_ptr;
     char* out = (char*)malloc(count + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_ints", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
 
@@ -270,7 +285,7 @@ void aic_rt_bytes_from_byte_values(
         int64_t value = values[i];
         if (value < 0 || value > 255) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("bytes_from_ints", "INVALID_INPUT", "value-out-of-byte-range");
             return;
         }
         out[i] = (char)(unsigned char)value;
@@ -301,24 +316,24 @@ void aic_rt_bytes_from_u8_values(
         *out_len = 0;
     }
     if (values_len < 0 || (values_len > 0 && values_ptr == NULL)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_u8", "INVALID_INPUT", "invalid-values-slice");
         return;
     }
 
     if (values_len == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("bytes_from_u8", out_ptr, out_len);
         return;
     }
 
     size_t count = (size_t)values_len;
     if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_u8", "OVERFLOW", "byte-count-overflow");
         return;
     }
 
     char* out = (char*)malloc(count + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("bytes_from_u8", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
 
@@ -354,7 +369,7 @@ void aic_rt_string_split(
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
         !aic_rt_string_slice_valid(delimiter_ptr, delimiter_len)) {
-        aic_rt_string_write_vec_out(out_ptr, out_count, NULL, 0);
+        aic_rt_string_runtime_panic("split", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
 
@@ -373,13 +388,13 @@ void aic_rt_string_split(
         }
     }
     if (part_count > (size_t)LONG_MAX) {
-        aic_rt_string_write_vec_out(out_ptr, out_count, NULL, 0);
+        aic_rt_string_runtime_panic("split", "OVERFLOW", "segment-count-overflow");
         return;
     }
 
     AicString* items = (AicString*)calloc(part_count, sizeof(AicString));
     if (items == NULL) {
-        aic_rt_string_write_vec_out(out_ptr, out_count, NULL, 0);
+        aic_rt_string_runtime_panic("split", "ALLOC_FAILURE", "segment-vector-allocation");
         return;
     }
 
@@ -389,7 +404,7 @@ void aic_rt_string_split(
         char* only = aic_rt_copy_bytes(s_ptr, text_len);
         if (only == NULL) {
             aic_rt_string_free_parts(items, out_index);
-            aic_rt_string_write_vec_out(out_ptr, out_count, NULL, 0);
+            aic_rt_string_runtime_panic("split", "ALLOC_FAILURE", "single-segment-allocation");
             return;
         }
         items[0].ptr = only;
@@ -404,7 +419,7 @@ void aic_rt_string_split(
             char* seg = aic_rt_copy_bytes(s_ptr + cursor, seg_len);
             if (seg == NULL) {
                 aic_rt_string_free_parts(items, out_index);
-                aic_rt_string_write_vec_out(out_ptr, out_count, NULL, 0);
+                aic_rt_string_runtime_panic("split", "ALLOC_FAILURE", "segment-allocation");
                 return;
             }
             items[out_index].ptr = seg;
@@ -491,14 +506,19 @@ void aic_rt_string_trim(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("trim", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     size_t start = 0;
     size_t end = 0;
     aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &start, &end);
-    char* out = aic_rt_copy_bytes(s_ptr + start, end - start);
-    aic_rt_write_string_out(out_ptr, out_len, out);
+    aic_rt_string_write_out_or_panic(
+        "trim",
+        "trim-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(s_ptr + start, end - start)
+    );
 }
 
 void aic_rt_string_trim_start(
@@ -516,14 +536,19 @@ void aic_rt_string_trim_start(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("trim_start", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     size_t start = 0;
     size_t ignored_end = 0;
     aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &start, &ignored_end);
-    char* out = aic_rt_copy_bytes(s_ptr + start, (size_t)s_len - start);
-    aic_rt_write_string_out(out_ptr, out_len, out);
+    aic_rt_string_write_out_or_panic(
+        "trim_start",
+        "trim-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(s_ptr + start, (size_t)s_len - start)
+    );
 }
 
 void aic_rt_string_trim_end(
@@ -541,14 +566,19 @@ void aic_rt_string_trim_end(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("trim_end", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     size_t ignored_start = 0;
     size_t end = 0;
     aic_rt_string_trim_bounds(s_ptr, (size_t)s_len, &ignored_start, &end);
-    char* out = aic_rt_copy_bytes(s_ptr, end);
-    aic_rt_write_string_out(out_ptr, out_len, out);
+    aic_rt_string_write_out_or_panic(
+        "trim_end",
+        "trim-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(s_ptr, end)
+    );
 }
 
 void aic_rt_string_to_upper(
@@ -566,14 +596,14 @@ void aic_rt_string_to_upper(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_upper", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     size_t n = (size_t)s_len;
     if (!aic_rt_string_utf8_is_valid(s_ptr, n)) {
         char* out = (char*)malloc(n + 1);
         if (out == NULL) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_upper", "ALLOC_FAILURE", "ascii-fallback-allocation");
             return;
         }
         for (size_t i = 0; i < n; ++i) {
@@ -589,13 +619,13 @@ void aic_rt_string_to_upper(
         return;
     }
     if (n > (SIZE_MAX - 1) / 4) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_upper", "OVERFLOW", "output-buffer-overflow");
         return;
     }
     size_t max_out = n * 4 + 1;
     char* out = (char*)malloc(max_out);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_upper", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
     size_t cursor = 0;
@@ -605,7 +635,7 @@ void aic_rt_string_to_upper(
         size_t width = aic_rt_char_decode_utf8((const unsigned char*)(s_ptr + cursor), n - cursor, &codepoint);
         if (width == 0) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_upper", "INVALID_INPUT", "invalid-utf8-decode");
             return;
         }
         uint32_t mapped = aic_rt_unicode_simple_to_upper(codepoint);
@@ -613,7 +643,7 @@ void aic_rt_string_to_upper(
         size_t encoded_len = aic_rt_char_encode_utf8(mapped, encoded);
         if (encoded_len == 0 || out_cursor > max_out - 1 - encoded_len) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_upper", "OVERFLOW", "utf8-encode-overflow");
             return;
         }
         memcpy(out + out_cursor, encoded, encoded_len);
@@ -639,14 +669,14 @@ void aic_rt_string_to_lower(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_lower", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     size_t n = (size_t)s_len;
     if (!aic_rt_string_utf8_is_valid(s_ptr, n)) {
         char* out = (char*)malloc(n + 1);
         if (out == NULL) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_lower", "ALLOC_FAILURE", "ascii-fallback-allocation");
             return;
         }
         for (size_t i = 0; i < n; ++i) {
@@ -662,13 +692,13 @@ void aic_rt_string_to_lower(
         return;
     }
     if (n > (SIZE_MAX - 1) / 4) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_lower", "OVERFLOW", "output-buffer-overflow");
         return;
     }
     size_t max_out = n * 4 + 1;
     char* out = (char*)malloc(max_out);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("to_lower", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
     size_t cursor = 0;
@@ -678,7 +708,7 @@ void aic_rt_string_to_lower(
         size_t width = aic_rt_char_decode_utf8((const unsigned char*)(s_ptr + cursor), n - cursor, &codepoint);
         if (width == 0) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_lower", "INVALID_INPUT", "invalid-utf8-decode");
             return;
         }
         uint32_t mapped = aic_rt_unicode_simple_to_lower(codepoint);
@@ -686,7 +716,7 @@ void aic_rt_string_to_lower(
         size_t encoded_len = aic_rt_char_encode_utf8(mapped, encoded);
         if (encoded_len == 0 || out_cursor > max_out - 1 - encoded_len) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("to_lower", "OVERFLOW", "utf8-encode-overflow");
             return;
         }
         memcpy(out + out_cursor, encoded, encoded_len);
@@ -722,11 +752,17 @@ void aic_rt_string_replace(
     if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
         !aic_rt_string_slice_valid(from_ptr, from_len) ||
         !aic_rt_string_slice_valid(to_ptr, to_len)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("replace", "INVALID_INPUT", "invalid-string-slice");
         return;
     }
     if (from_len == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes(s_ptr, (size_t)s_len));
+        aic_rt_string_write_out_or_panic(
+            "replace",
+            "copy-source-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes(s_ptr, (size_t)s_len)
+        );
         return;
     }
 
@@ -744,7 +780,13 @@ void aic_rt_string_replace(
         cursor = (size_t)pos + from_n;
     }
     if (matches == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes(s_ptr, text_len));
+        aic_rt_string_write_out_or_panic(
+            "replace",
+            "copy-source-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes(s_ptr, text_len)
+        );
         return;
     }
 
@@ -753,7 +795,7 @@ void aic_rt_string_replace(
         size_t delta = to_n - from_n;
         if (delta > 0) {
             if (matches > (SIZE_MAX - out_bytes) / delta) {
-                aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                aic_rt_string_runtime_panic("replace", "OVERFLOW", "output-size-overflow");
                 return;
             }
             out_bytes += matches * delta;
@@ -763,13 +805,13 @@ void aic_rt_string_replace(
         out_bytes -= matches * delta;
     }
     if (out_bytes > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("replace", "OVERFLOW", "output-size-overflow");
         return;
     }
 
     char* out = (char*)malloc(out_bytes + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("replace", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
     size_t in_pos = 0;
@@ -815,24 +857,32 @@ void aic_rt_string_repeat(
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) || count <= 0 || s_len <= 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+    if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
+        aic_rt_string_runtime_panic("repeat", "INVALID_INPUT", "invalid-string-slice");
+        return;
+    }
+    if (count < 0) {
+        aic_rt_string_runtime_panic("repeat", "INVALID_INPUT", "negative-repeat-count");
+        return;
+    }
+    if (count == 0 || s_len <= 0) {
+        aic_rt_string_write_empty_or_panic("repeat", out_ptr, out_len);
         return;
     }
     size_t n = (size_t)s_len;
     size_t reps = (size_t)count;
     if (n > 0 && reps > SIZE_MAX / n) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("repeat", "OVERFLOW", "output-size-overflow");
         return;
     }
     size_t out_bytes = n * reps;
     if (out_bytes > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("repeat", "OVERFLOW", "output-size-overflow");
         return;
     }
     char* out = (char*)malloc(out_bytes + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("repeat", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
     size_t pos = 0;
@@ -1027,11 +1077,16 @@ void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
     char buffer[64];
     int written = snprintf(buffer, sizeof(buffer), "%ld", value);
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("int_to_string", "INTERNAL", "snprintf-failed");
         return;
     }
-    char* out = aic_rt_copy_bytes(buffer, (size_t)written);
-    aic_rt_write_string_out(out_ptr, out_len, out);
+    aic_rt_string_write_out_or_panic(
+        "int_to_string",
+        "output-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(buffer, (size_t)written)
+    );
 }
 
 void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) {
@@ -1042,21 +1097,39 @@ void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) 
         *out_len = 0;
     }
     if (isnan(value)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("NaN", 3));
+        aic_rt_string_write_out_or_panic(
+            "float_to_string",
+            "output-copy-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes("NaN", 3)
+        );
         return;
     }
     if (isinf(value)) {
         if (value < 0.0) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("-inf", 4));
+            aic_rt_string_write_out_or_panic(
+                "float_to_string",
+                "output-copy-allocation",
+                out_ptr,
+                out_len,
+                aic_rt_copy_bytes("-inf", 4)
+            );
         } else {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("inf", 3));
+            aic_rt_string_write_out_or_panic(
+                "float_to_string",
+                "output-copy-allocation",
+                out_ptr,
+                out_len,
+                aic_rt_copy_bytes("inf", 3)
+            );
         }
         return;
     }
     char buffer[64];
     int written = snprintf(buffer, sizeof(buffer), "%.17g", value);
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("float_to_string", "INTERNAL", "snprintf-failed");
         return;
     }
     int has_decimal = 0;
@@ -1071,15 +1144,32 @@ void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) 
         buffer[written++] = '0';
         buffer[written] = '\0';
     }
-    char* out = aic_rt_copy_bytes(buffer, (size_t)written);
-    aic_rt_write_string_out(out_ptr, out_len, out);
+    aic_rt_string_write_out_or_panic(
+        "float_to_string",
+        "output-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(buffer, (size_t)written)
+    );
 }
 
 void aic_rt_string_bool_to_string(long value, char** out_ptr, long* out_len) {
     if (value != 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("true", 4));
+        aic_rt_string_write_out_or_panic(
+            "bool_to_string",
+            "output-copy-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes("true", 4)
+        );
     } else {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("false", 5));
+        aic_rt_string_write_out_or_panic(
+            "bool_to_string",
+            "output-copy-allocation",
+            out_ptr,
+            out_len,
+            aic_rt_copy_bytes("false", 5)
+        );
     }
 }
 
@@ -1210,23 +1300,23 @@ void aic_rt_char_from_chars(
         *out_len = 0;
     }
     if (chars_len < 0 || (chars_len > 0 && chars_ptr == NULL)) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("char_from_chars", "INVALID_INPUT", "invalid-char-slice");
         return;
     }
 
     size_t count = (size_t)chars_len;
     if (count == 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_write_empty_or_panic("char_from_chars", out_ptr, out_len);
         return;
     }
     if (count > (SIZE_MAX - 1) / 4) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("char_from_chars", "OVERFLOW", "output-size-overflow");
         return;
     }
 
     char* out = (char*)malloc(count * 4 + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("char_from_chars", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
 
@@ -1245,7 +1335,7 @@ void aic_rt_char_from_chars(
         }
         if (out_pos > SIZE_MAX - width - 1) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("char_from_chars", "OVERFLOW", "output-size-overflow");
             return;
         }
         memcpy(out + out_pos, encoded, width);
@@ -1256,7 +1346,7 @@ void aic_rt_char_from_chars(
     if (out_len != NULL) {
         if (out_pos > (size_t)LONG_MAX) {
             free(out);
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("char_from_chars", "OVERFLOW", "output-size-overflow");
             return;
         }
         *out_len = (long)out_pos;
@@ -1287,11 +1377,15 @@ void aic_rt_string_join(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(separator_ptr, separator_len) || parts_len < 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("join", "INVALID_INPUT", "invalid-join-input");
         return;
     }
-    if (parts_len == 0 || parts_ptr == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+    if (parts_len == 0) {
+        aic_rt_string_write_empty_or_panic("join", out_ptr, out_len);
+        return;
+    }
+    if (parts_ptr == NULL) {
+        aic_rt_string_runtime_panic("join", "INVALID_INPUT", "missing-parts-pointer");
         return;
     }
 
@@ -1303,31 +1397,31 @@ void aic_rt_string_join(
         long part_len_long = parts[i].len;
         const char* part_ptr = parts[i].ptr;
         if (part_len_long < 0 || (part_len_long > 0 && part_ptr == NULL)) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("join", "INVALID_INPUT", "invalid-part-slice");
             return;
         }
         size_t part_len = (size_t)part_len_long;
         if (total > SIZE_MAX - part_len) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("join", "OVERFLOW", "output-size-overflow");
             return;
         }
         total += part_len;
         if (i + 1 < count) {
             if (total > SIZE_MAX - sep_len) {
-                aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                aic_rt_string_runtime_panic("join", "OVERFLOW", "output-size-overflow");
                 return;
             }
             total += sep_len;
         }
     }
     if (total > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("join", "OVERFLOW", "output-size-overflow");
         return;
     }
 
     char* out = (char*)malloc(total + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("join", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
     size_t pos = 0;
@@ -1365,7 +1459,7 @@ void aic_rt_string_format(
         *out_len = 0;
     }
     if (!aic_rt_string_slice_valid(template_ptr, template_len) || args_len < 0) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("format", "INVALID_INPUT", "invalid-format-input");
         return;
     }
 
@@ -1374,7 +1468,7 @@ void aic_rt_string_format(
     const AicString* args = NULL;
     if (arg_count > 0) {
         if (args_ptr == NULL) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("format", "INVALID_INPUT", "missing-args-pointer");
             return;
         }
         args = (const AicString*)(const void*)args_ptr;
@@ -1382,7 +1476,7 @@ void aic_rt_string_format(
             long arg_len_long = args[idx].len;
             const char* arg_ptr = args[idx].ptr;
             if (arg_len_long < 0 || (arg_len_long > 0 && arg_ptr == NULL)) {
-                aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                aic_rt_string_runtime_panic("format", "INVALID_INPUT", "invalid-arg-slice");
                 return;
             }
         }
@@ -1410,14 +1504,14 @@ void aic_rt_string_format(
                 if (index < arg_count) {
                     size_t arg_len = (size_t)args[index].len;
                     if (total > SIZE_MAX - arg_len) {
-                        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                        aic_rt_string_runtime_panic("format", "OVERFLOW", "output-size-overflow");
                         return;
                     }
                     total += arg_len;
                 } else {
                     size_t placeholder_len = cursor - in_pos + 1;
                     if (total > SIZE_MAX - placeholder_len) {
-                        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+                        aic_rt_string_runtime_panic("format", "OVERFLOW", "output-size-overflow");
                         return;
                     }
                     total += placeholder_len;
@@ -1427,7 +1521,7 @@ void aic_rt_string_format(
             }
         }
         if (total == SIZE_MAX) {
-            aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+            aic_rt_string_runtime_panic("format", "OVERFLOW", "output-size-overflow");
             return;
         }
         total += 1;
@@ -1435,13 +1529,13 @@ void aic_rt_string_format(
     }
 
     if (total > (size_t)LONG_MAX) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("format", "OVERFLOW", "output-size-overflow");
         return;
     }
 
     char* out = (char*)malloc(total + 1);
     if (out == NULL) {
-        aic_rt_write_string_out(out_ptr, out_len, aic_rt_copy_bytes("", 0));
+        aic_rt_string_runtime_panic("format", "ALLOC_FAILURE", "output-buffer-allocation");
         return;
     }
 
