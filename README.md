@@ -135,15 +135,27 @@ AICore has a **strong, static type system** with **no implicit coercions** and *
 
 #### Primitive Types
 
-| Type     | Description                             |
-|----------|-----------------------------------------|
-| `Int`    | 64-bit signed integer                   |
-| `Float`  | 64-bit floating point                   |
-| `Bool`   | Boolean (`true` / `false`)              |
-| `String` | UTF-8 string                            |
-| `Char`   | Unicode scalar value                    |
-| `Bytes`  | Binary payload type for IO/networking   |
-| `()`     | Unit type (void equivalent)             |
+| Family | Types | Notes |
+|--------|-------|-------|
+| Signed integers | `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128` | `Int` is the general integer type and currently uses signed 64-bit range. |
+| Unsigned integers | `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128` | Fixed-width unsigned numeric primitives. |
+| Size-family integers | `ISize`, `USize`, `UInt` | `ISize`/`USize` use deterministic 64-bit semantics; `UInt` is a compatibility alias for `USize`. |
+| Floating point | `Float32`, `Float64`, `Float` | `Float` is a compatibility alias for `Float64`. |
+| Other scalar/text primitives | `Bool`, `Char`, `String`, `Bytes`, `()` | `Char` is a Unicode scalar value; `String` is UTF-8 text; `Bytes` is the binary payload type used by filesystem and networking APIs. |
+
+Literal forms follow the same surface:
+
+- Integer suffixes: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`
+- Float suffixes: `f32`, `f64`
+- Unsuffixed integer literals default to `Int`
+- Unsuffixed float literals default to `Float` (`Float64`) unless context narrows them to `Float32`
+
+Additional first-class type forms supported by the checker:
+
+- Tuple types and literals such as `(Int, String)` and `(1, "x")`, with field access via `.0`, `.1`, ...
+- Reference wrappers `Ref[T]` and `RefMut[T]`, produced by `&x` and `&mut x`
+- Async and callable wrappers such as `Async[T]` and `Fn(Int, String) -> Bool`
+- Runtime-dispatch trait objects via `dyn Trait`
 
 #### Structs
 
@@ -405,7 +417,7 @@ pub struct User {
 
 ## Standard Library
 
-AICore's standard library is organized into focused modules for IO/filesystem, networking and protocols, collections and text, runtime support, and process/environment access. The current public surface is documented and compatibility-checked in [docs/std-api/index.md](docs/std-api/index.md).
+AICore's standard library is organized into focused modules for IO/filesystem, networking and protocols, collections and text, runtime support, and process/environment access. The public surface is compatibility-checked against `docs/std-api-baseline.json` and summarized in [docs/std-api/index.md](docs/std-api/index.md).
 
 - IO and filesystem: `std.io`, `std.fs`, `std.path`, `std.bytes`, `std.buffer`
 - Networking and protocols: `std.net`, `std.http`, `std.http_server`, `std.tls`, `std.router`
@@ -491,7 +503,7 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 | IR-first pipeline | ✅ Implemented |
 | Deterministic parser/formatter | ✅ Implemented |
 | Structured diagnostics JSON (`code`, spans, fixes) | ✅ Implemented |
-| Type checker (Int/Bool/Float/String/Unit, functions, enums, structs) | ✅ Implemented |
+| Type checker (rich scalar types, tuples, functions, refs, `dyn Trait`, enums, structs) | ✅ Implemented |
 | Effect checker (`io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`) | ✅ Implemented |
 | Contracts (`requires`, `ensures`, `invariant`) | ✅ Implemented |
 | Match + exhaustiveness (Bool/Option/Result + enums) | ✅ Implemented |
@@ -611,7 +623,7 @@ aic lsp                     # Start LSP server
 aic daemon                  # Start incremental check/build daemon
 aic explain <code>          # Explain diagnostic code (e.g. E2001)
 aic lock [path]             # Generate lockfile/checksums for project/workspace
-aic pkg publish|search|install  # Package management
+aic pkg <publish|search|install> ...  # Package management
 aic std-compat --check      # Std library compatibility/deprecation lint
 aic verify-intrinsics       # Verify intrinsic bindings
 aic diff --semantic <old> <new> # Semantic API/change diff in JSON
@@ -619,7 +631,7 @@ aic contract --json         # Emit CLI contract for tool negotiation
 aic release manifest        # Reproducibility manifest
 aic release sbom            # Generate SBOM
 aic release policy --check  # Enforce release/LTS policy gates
-aic run <file> --sandbox    # Sandboxed execution (none|ci|strict)
+aic run <file> --sandbox <none|ci|strict>  # Sandboxed execution
 aic check <file> --sarif    # SARIF diagnostics export
 ```
 
