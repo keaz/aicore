@@ -6,7 +6,7 @@ AICore is an **agent-native, IR-first programming language** designed for **huma
 
 The canonical source of truth is **IR** (`aic ir --emit json`), while text syntax is a deterministic view (`aic fmt`).
 
-Project note: AICore has been developed mainly using **GPT-5.3-Codex** for implementation work, with human review and validation.
+Project note: AICore was written mainly using **ChatGPT Codex**, with human review and validation.
 
 ---
 
