@@ -27,6 +27,8 @@ Use this when an agent must:
 - Workspace flow: `examples/pkg/workspace_demo/`
 - FFI declaration pattern: `examples/pkg/ffi_zlib.aic`
 
+The consumer import flow now demonstrates `std.http` request/response construction and header validation without any fake network I/O.
+
 ## Determinism contract
 
 - Resolver picks the highest compatible semver version from a sorted candidate list.

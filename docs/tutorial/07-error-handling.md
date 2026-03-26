@@ -29,7 +29,7 @@ fn render(v: Result[Int, Int]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(render(double_checked(21)));
     0
 }

@@ -2,6 +2,7 @@
 
 This file is the agent-facing reference for the current IO runtime surface.
 Source of truth is the current repository state in `std/*.aic` and runtime lowering in `src/codegen/mod.rs`.
+It includes the direct IO primitives plus the current control-plane modules used by app startup and request dispatch (`std.http_server`, `std.router`, and `std.config`).
 
 ## Scope
 
@@ -14,6 +15,7 @@ Covered modules:
 - `std.path`
 - `std.proc`
 - `std.net`
+- `std.pool`
 - `std.tls`
 - `std.time`
 - `std.signal`
@@ -23,6 +25,9 @@ Covered modules:
 - `std.log`
 - `std.buffer`
 - `std.crypto`
+- `std.config`
+- `std.http_server`
+- `std.router`
 
 ## Wave 5A Numeric Adoption Artifacts
 
@@ -115,6 +120,8 @@ Notes:
 - `read_char` expects a single UTF-8 scalar value from one input line.
 - Existing `Result[..., IoError]` APIs are unchanged; context chaining is opt-in via `from_*_error_with_context(...)`.
 - Context chain format is append-only and flattened as text (for example: `open config -> fs.NotFound -> io.EndOfInput -> bootstrap`).
+- Reader/writer coverage is broader than the top-level print/read helpers: `Reader`, `Writer`, `MockReader`, `MockWriter`, `TcpReader`, `file_reader`, `file_writer`, `file_appender`, `tcp_connect_reader`, `tcp_connect_writer`, `read_stream`, `read_stream_optional`, `write_stream`, `flush_stream`, `close_reader`, `close_writer`, and `stream_copy` are part of the current surface.
+- The mock APIs are intended for deterministic tests and agent fixtures, while `stream_copy` is the stable adapter for reader-to-writer piping.
 
 ## `std.error_context`
 
@@ -187,8 +194,12 @@ fn set_readonly(path: String, readonly: Bool) -> Result[Bool, FsError] effects {
 Notes:
 
 - File-handle table capacity is bounded (`1024` runtime slots).
+- `read_bytes` / `write_bytes` / `append_bytes` are the binary-oriented boundary APIs.
+- `open_*` and `file_*` are the current handle lifecycle APIs; always pair `open_*` with `file_close`.
 - `walk_dir` currently exposes count-only `Vec` payload semantics in codegen; use `vec_len(...)` as the stable operation.
 - `list_dir` returns concrete directory entry strings.
+- `temp_file` and `temp_dir` return absolute paths.
+- `create_symlink`, `read_symlink`, and `set_readonly` expose platform-sensitive path metadata controls explicitly.
 - Windows caveats:
   - `create_symlink` may fail with privilege-related errors.
   - `read_symlink` currently returns `FsError::Io`.
@@ -228,6 +239,41 @@ Notes:
 
 - Invalid variable names (empty or containing `=`) map to `EnvError::InvalidInput`.
 - `args` and `all_vars` return snapshots of process state at call time.
+- `home_dir`, `temp_dir`, `os_name`, and `arch` are the stable metadata helpers used by config/bootstrap code.
+
+## `std.http_server`, `std.router`, and `std.config`
+
+These modules are part of the current IO-adjacent surface and are used by server startup, request dispatch, and configuration loading flows.
+
+```aic
+// std.http_server
+fn listen(addr: String) -> Result[Int, ServerError] effects { net }
+fn accept(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net }
+fn read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }
+fn write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net }
+fn close(handle: Int) -> Result[Bool, ServerError] effects { net }
+fn response(status: UInt16, headers: Map[String, String], body: String) -> ResponseView
+fn text_response(status: UInt16, body: String) -> ResponseView
+fn json_response(status: UInt16, body: String) -> ResponseView
+fn header(resp: ResponseView, name: String) -> Option[String]
+
+// std.router
+fn new_router() -> Result[Router, RouterError]
+fn add(router: Router, method: String, pattern: String, route_id: Int) -> Result[Router, RouterError]
+fn match_route(router: Router, method: String, path: String) -> Result[Option[RouteMatch], RouterError]
+
+// std.config
+fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects { fs }
+fn load_env_prefix(prefix: String) -> Map[String, String] effects { env }
+fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String
+fn require(config: Map[String, String], key: String) -> Result[String, ConfigError]
+```
+
+Notes:
+
+- `std.http_server` stays synchronous; it is the transport-side companion to `std.http`.
+- `std.router` provides deterministic route registration and matching for request dispatch.
+- `std.config` composes `std.fs`, `std.json`, and `std.env` for startup config loading without pretending to be a network API.
 
 ## `std.set`
 
@@ -339,7 +385,8 @@ Notes:
 - Public wrappers validate runtime `Int` values at boundary conversion points (`UInt32` handles and `Int32` exit status).
 - Spawned-handle table capacity is bounded (`64` runtime slots).
 - Windows caveats:
-  - Process APIs are available on Windows (`spawn`, `wait`, `kill`, `is_running`, `run_with`, `run_timeout`, `pipe_chain`).
+  - Process APIs are available on Windows, but `spawn`, `run`, `run_with`, `run_timeout`, `pipe`, and `pipe_chain` can still surface `ProcError::Io` for backend/runtime failures.
+  - `wait`, `kill`, and `is_running` can surface `ProcError::UnknownProcess` when the handle is not valid on the current host.
   - `run_with` environment overrides currently reject entries containing `"` or line breaks with `ProcError::InvalidInput`.
   - Command behavior follows `cmd.exe /C` semantics for shell syntax and exit-status propagation.
 

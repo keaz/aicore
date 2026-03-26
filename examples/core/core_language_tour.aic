@@ -1,0 +1,36 @@
+module examples.core.core_language_tour;
+import std.io;
+
+struct Counter {
+    left: Int,
+    right: Int,
+} invariant true
+
+impl Counter {
+    fn total(self) -> Int {
+        self.left + self.right
+    }
+}
+
+trait Summable[T] {
+    fn sum(self: T) -> Int;
+}
+
+impl Summable[Counter] {
+    fn sum(self: Counter) -> Int {
+        self.total()
+    }
+}
+
+fn keep[T](value: T) -> T where T: Summable {
+    value
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let counter = Counter { left: 20, right: 22 };
+    let tuple = (counter.left, counter.right);
+    let via_method = counter.total();
+    let via_trait = keep(counter).sum();
+    print_int(tuple.0 + tuple.1 + via_method + via_trait - 84);
+    0
+}

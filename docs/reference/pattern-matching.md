@@ -19,8 +19,10 @@ pattern_atom    = "_"
                | "true"
                | "false"
                | "(" ")"
+               | tuple_pattern
                | variant_pattern ;
 
+tuple_pattern   = "(" pattern ("," pattern)+ ","? ")" ;
 variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
                | ident ;
 ```
@@ -44,7 +46,9 @@ variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
   - guarded arms are typed, but they do not count toward exhaustiveness coverage
 - Exhaustiveness diagnostics are emitted when unguarded coverage is incomplete for supported domains.
 - Redundant arm detection marks unreachable arms when earlier coverage already subsumes them.
+- Tuple patterns destructure by position and use the same comma-based shape as tuple literals.
 - Variant disambiguation at parse time:
   - identifier with payload syntax `Name(...)` is variant pattern
   - bare uppercase identifier is treated as zero-arg variant pattern
   - bare lowercase identifier is treated as variable-binding pattern
+- Backend note: guarded match arms are type-checked today, but some lowering paths still reject them with `E5023`.

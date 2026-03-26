@@ -31,7 +31,7 @@ fn fold(x: Wrap[Pair]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(fold(Full(Pair { left: 20, right: 22 })));
     0
 }

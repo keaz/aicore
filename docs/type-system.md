@@ -3,12 +3,16 @@
 - Strong static typing.
 - No general implicit casts/coercions.
 - Types:
-  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Float`, `Bool`, `String`, `()`
+  - `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `ISize`, `USize`, `UInt`, `Float32`, `Float64`, `Float`, `Bool`, `Char`, `String`, `Bytes`, `()`
   - named structs/enums
-  - parametric surface syntax for ADTs (`Option[T]`, `Result[T,E]`)
-  - compiler-managed async wrapper `Async[T]` for `async fn` call results
+  - parametric surface syntax for ADTs (`Option[T]`, `Result[T,E]`) and wrapper types (`Async[T]`, `Ref[T]`, `RefMut[T]`)
+  - tuple types and literals (`(T, U)`, `(1, "x")`)
+  - function types (`Fn(T) -> U`)
+  - trait-object types (`dyn Trait`)
 - Generic parameters support trait bounds (`T: Trait` and `T: TraitA + TraitB`).
+- Function and trait method signatures also accept `where` clauses, and inline bounds are equivalent to `where` bounds.
 - Trait bounds are satisfied only through explicit `impl Trait[Type];` declarations.
+- Traits can declare methods, and inherent/trait impl blocks can define method bodies.
 - Match exhaustiveness checking for Bool/Option/Result/enums.
 - Match overlap/dead-arm detection with deterministic diagnostics.
 - Pattern bindings are unique within a single pattern tree.
@@ -16,6 +20,7 @@
 - Pattern-or bindings must have compatible types across alternatives.
 - Match guards (`if <expr>`) must type-check to `Bool`.
 - Guarded arms do not satisfy exhaustiveness coverage.
+- Tuple projections use numeric field syntax (`.0`, `.1`, ...).
 - `await` requires `Async[T]` and is valid only inside `async fn`.
 - Result propagation `expr?` requires `expr: Result[T, E]` and enclosing return type `Result[U, E]`.
 - `?` never performs implicit error conversion; mismatched `E` types are diagnostics.

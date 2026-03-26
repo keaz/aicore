@@ -1,9 +1,32 @@
 module pkg.consume_http_client;
 
+import std.http;
 import std.io;
 import http_client.main;
 
-fn main() -> Int effects { io } capabilities { io } {
-    print_int(http_client.main.get_status_code());
+fn failure() -> Int {
+    1
+}
+
+fn emit_report(method_label: String, status_text: String) -> Int effects { io } capabilities { io } {
+    print_str(method_label);
+    print_str(" ");
+    println_str(status_text);
     0
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    match http_client.main.health_request() {
+        Ok(request) => match http_client.main.ok_response() {
+            Ok(response) => match method_name(request.method) {
+                Ok(method_label) => match status_reason(response.status) {
+                    Ok(status_text) => emit_report(method_label, status_text),
+                    Err(_) => failure(),
+                },
+                Err(_) => failure(),
+            },
+            Err(_) => failure(),
+        },
+        Err(_) => failure(),
+    }
 }

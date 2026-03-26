@@ -72,6 +72,8 @@ Lockfile migration behavior:
 
 Example consumer source: `examples/pkg/consume_http_client.aic`
 
+The example package demonstrates `std.http` request/response construction and header validation without pretending to perform network I/O.
+
 ## Private Registries, Scopes, and Mirrors (PKG-T2)
 
 `aic pkg` can load registry settings from `aic.registry.json` in the project root (or `--registry-config` / `AIC_PKG_REGISTRY_CONFIG`).

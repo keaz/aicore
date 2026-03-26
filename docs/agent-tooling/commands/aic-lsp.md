@@ -4,13 +4,13 @@ Related docs:
 - [Agent-First aic Command Playbook](../aic-command-playbook.md)
 - [`docs/cli-contract.md`](../../cli-contract.md)
 - [`examples/agent/lsp_workflow.json`](../../../examples/agent/lsp_workflow.json)
-- [`src/lsp.rs`](../../src/lsp.rs)
+- [`src/lsp.rs`](../../../src/lsp.rs)
 
 ## What it does
 
 `aic lsp` starts the AICore language server over stdio using JSON-RPC 2.0.
 
-Implementation source: [`src/lsp.rs`](../../src/lsp.rs).
+Implementation source: [`src/lsp.rs`](../../../src/lsp.rs).
 
 ## When to use
 

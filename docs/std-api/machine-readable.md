@@ -6,7 +6,7 @@ This document defines the machine-readable contract for std API snapshots produc
 cargo run --quiet --bin aic -- std-compat
 ```
 
-The command prints JSON matching `/Users/kasunranasinghe/Projects/Rust/aicore/src/std_policy.rs` data structures.
+The command prints JSON matching `src/std_policy.rs` data structures.
 
 ## `aic doc` outputs (human-readable + machine-readable)
 
@@ -81,7 +81,7 @@ Recommended CI assertions:
 Example CI command:
 
 ```bash
-cargo run --quiet --bin aic -- std-compat --check --baseline /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json
 ```
 
 ## Updating the baseline intentionally

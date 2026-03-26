@@ -3,13 +3,13 @@
 Related docs:
 - [Agent-First aic Command Playbook](../aic-command-playbook.md)
 - [`docs/cli-contract.md`](../../cli-contract.md)
-- [`src/semantic_diff.rs`](../../src/semantic_diff.rs)
+- [`src/semantic_diff.rs`](../../../src/semantic_diff.rs)
 
 ## What it does
 
 `aic diff --semantic <old-file> <new-file>` compares semantic function-level API behavior between two AIC inputs and emits deterministic JSON.
 
-Implementation source: [`src/semantic_diff.rs`](../../src/semantic_diff.rs).
+Implementation source: [`src/semantic_diff.rs`](../../../src/semantic_diff.rs).
 
 ## When to use
 

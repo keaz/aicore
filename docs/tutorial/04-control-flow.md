@@ -15,7 +15,7 @@ Use `if`, `match`, `while`, `loop`, `break`, and `continue`.
 ```aic
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let mut n = 9;
     let mut acc = 0;
     while n > 0 {

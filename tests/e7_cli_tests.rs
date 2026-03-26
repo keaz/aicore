@@ -8292,7 +8292,7 @@ fn command_deep_dive_guides_are_linked_and_cover_bootstrap_editor_and_diff_loops
     }
 
     for expected in [
-        "[`src/semantic_diff.rs`](../../src/semantic_diff.rs)",
+        "[`src/semantic_diff.rs`](../../../src/semantic_diff.rs)",
         "--fail-on-breaking",
         "## Pre/post refactor snapshot workflow",
         "aic diff --semantic before/main.aic src/main.aic --fail-on-breaking",

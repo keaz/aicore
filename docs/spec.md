@@ -10,7 +10,7 @@
 
 ## 2. Concrete syntax
 
-Grammar contract version: `mvp-grammar-v6` (see `docs/syntax.md`).
+Grammar contract version: `mvp-grammar-v7` (see `docs/syntax.md`).
 
 ### 2.1 Modules and imports
 
@@ -27,14 +27,16 @@ fn main() -> Int {
 
 - `module` is optional for single-file inputs.
 - `import` is explicit and deterministic.
-- Unqualified symbol lookup is limited to the current module plus directly imported modules.
+- Unqualified symbol lookup is limited to the current module plus directly imported modules' public symbols.
 - Qualified calls use `<module_tail>.<symbol>(...)` (e.g. `math.add(...)`).
 - Transitive imports are not implicitly re-exported.
+- Cross-module symbols must be marked `pub`.
 
 ### 2.2 Types
 
 - Builtins: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Float`, `Bool`, `String`, `()`
 - Standard-library binary payload type: `Bytes` (declared in `std.bytes`)
+- Additional surface forms include tuples `(T, U, ...)`, `Char`, `Int128`, `UInt128`, `ISize`, `USize`, `UInt`, `dyn Trait`, `Fn(...) -> ...`, `Async[T]`, `Ref[T]`, and `RefMut[T]`.
 - Named types: `MyType`
 - Generic types: `Option[Int]`, `Result[Int, String]`
 - Generic arity is checked statically (`Option[Int, Int]` is invalid).
@@ -53,7 +55,7 @@ fn abs(x: Int) -> Int requires true ensures result >= 0 {
     if x >= 0 { x } else { 0 - x }
 }
 
-fn read_line() -> String effects { io } {
+fn read_line() -> String effects { io } capabilities { io } {
     "todo"
 }
 
@@ -67,7 +69,7 @@ async fn use_fetch() -> Int {
 
 intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs };
 
-fn file_exists(path: String) -> Bool effects { fs } {
+fn file_exists(path: String) -> Bool effects { fs } capabilities { fs } {
     aic_fs_exists_intrinsic(path)
 }
 
@@ -77,11 +79,15 @@ impl Sortable[Int];
 fn pick[T: Sortable](a: T, b: T) -> T {
     a
 }
+
+fn pick_where[T](a: T, b: T) -> T where T: Sortable {
+    a
+}
 ```
 
 - Functions are pure by default.
 - `async fn` declares asynchronous call boundaries.
-- Effects are explicit: `effects { io, fs, net, time, rand }`.
+- Effects and capabilities are explicit: `effects { io, fs, net, time, rand } capabilities { io, fs, net, time, rand }`.
 - `intrinsic fn ...;` declares runtime-bound signature-only APIs (no function body).
 - Intrinsic declarations may declare effects and are serialized in IR/JSON with `is_intrinsic` and `intrinsic_abi` metadata.
 - Calls to `async fn` produce `Async[T]` values that must be consumed with `await`.
@@ -90,6 +96,7 @@ fn pick[T: Sortable](a: T, b: T) -> T {
 - Bindings are immutable unless declared with `let mut`.
 - Generic function parameters are inferred from call arguments.
 - Generic parameters may include explicit trait bounds: `T: TraitA + TraitB`.
+- Function and trait method signatures may also use `where` clauses; inline and `where` bounds are semantically equivalent and may be mixed.
 - Contracts:
   - `requires <bool-expr>`
   - `ensures <bool-expr>`
@@ -111,6 +118,8 @@ enum Option[T] {
 
 - Marker traits are declared with `trait Name[T, ...];`.
 - Concrete implementations are declared with `impl Name[ConcreteType, ...];`.
+- Traits may also declare methods, and trait impl blocks may provide method bodies.
+- Inherent impl blocks support methods and associated call syntax.
 - Bounded generics are validated at call sites; missing impls are diagnostics.
 - Conflicting duplicate impls for the same `(trait, type args)` are rejected deterministically.
 
@@ -157,6 +166,8 @@ Rules:
 - Multiple mutable borrows of the same binding are rejected.
 - Assignments while active borrows exist are rejected.
 - Borrows are lexical: borrows introduced in nested blocks do not escape that block.
+- Tuple values use `(a, b, ...)` and tuple fields project as `.0`, `.1`, ...; single parenthesized expressions remain grouping.
+- Method calls use `value.method(...)`, and associated calls use `Type::method(...)`.
 - Or-pattern alternatives must bind the same names with compatible types.
 - Match guards must type-check as `Bool`.
 - Guarded arms do not count toward exhaustiveness coverage.

@@ -1,13 +1,13 @@
-# Regex Runtime (`std.regex`)
+# Data/Text Runtime Index (`std.regex` and related data modules)
 
-This document defines the `std.regex` API contract implemented for `[DT-T1] std regex engine integration`.
+This page preserves the `std.regex` API contract implemented for `[DT-T1] std regex engine integration` and acts as a compatibility index for the broader data/text stack.
 
-For the consolidated DT stack guide (regex/json/serde/url/http/datetime + cookbook), see:
+For the focused DT stack guides (regex/json/serde/url/http/datetime + cookbook), see:
 
 - `docs/data-text/README.md`
 - `docs/data-text/cookbook.md`
 
-## Module surface
+## Regex module surface
 
 ```aic
 module std.regex;
@@ -79,8 +79,12 @@ Behavior notes:
 
 ## Example
 
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/log_parse_regex.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/regex_capture_groups.aic`
+- `examples/data/log_parse_regex.aic`
+- `examples/data/regex_capture_groups.aic`
+
+## Compatibility appendices
+
+The remaining sections are cross-module notes retained for compatibility with older doc links. New work should start from `docs/data-text/README.md`.
 
 ## Serde Derive Lite (`std.json`) - DT-T3
 
@@ -122,7 +126,7 @@ Notes:
 
 ### Example
 
-See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/serde_models.aic`.
+See `examples/data/serde_models.aic`.
 
 ## URL + HTTP Types (`std.url`, `std.http`) - DT-T4
 
@@ -183,7 +187,7 @@ Behavior:
 
 ### Example
 
-See `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/http_types.aic`.
+See `examples/data/http_types.aic`.
 
 ## Date Time Formatting and Parsing (`std.time`) - DT-T5
 
@@ -207,4 +211,4 @@ Behavior:
 
 Example:
 
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/audit_timestamps.aic`
+- `examples/data/audit_timestamps.aic`

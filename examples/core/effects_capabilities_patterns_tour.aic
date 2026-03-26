@@ -1,0 +1,24 @@
+module examples.core.effects_capabilities_patterns_tour;
+import std.io;
+
+fn parse_positive(x: Int) -> Result[Int, Int] {
+    if x >= 0 { Ok(x) } else { Err(0 - x) }
+}
+
+fn render(value: Result[Int, Int]) -> Int {
+    match value {
+        Ok(v) => v,
+        Err(err) => err,
+    }
+}
+
+fn emit(value: Int) -> Int effects { io } capabilities { io } {
+    print_int(value);
+    value
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let score = render(parse_positive(42));
+    emit(score);
+    0
+}

@@ -28,13 +28,16 @@ path           = ident ("." ident)* ;
 item           = item_visibility? (fn_decl | unsafe_fn_decl | extern_fn_decl | intrinsic_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl) ;
 item_visibility = "pub" | "priv" | "pub" "(" "crate" ")" ;
 
-fn_decl           = async_prefix? "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
-unsafe_fn_decl    = "unsafe" "fn" ident generics? "(" params? ")" "->" type effects? contracts? block ;
+fn_decl           = async_prefix? "fn" ident generics? "(" params? ")" "->" type where_clause? effects? capabilities? contracts? block ;
+unsafe_fn_decl    = "unsafe" "fn" ident generics? "(" params? ")" "->" type where_clause? effects? capabilities? contracts? block ;
 extern_fn_decl    = "extern" string "fn" ident "(" params? ")" "->" type ";" ;
 intrinsic_fn_decl = "intrinsic" "fn" ident "(" params? ")" "->" type effects? ";" ;
 async_prefix      = "async" ;
 effects           = "effects" "{" effect_list? "}" ;
+capabilities      = "capabilities" "{" effect_list? "}" ;
 effect_list       = ident ("," ident)* ","? ;
+where_clause      = "where" where_item ("," where_item)* ;
+where_item        = ident ":" trait_bounds ;
 contracts         = (requires_clause | ensures_clause)* ;
 requires_clause   = "requires" expr ;
 ensures_clause    = "ensures" expr ;
@@ -46,8 +49,11 @@ enum_decl      = "enum" ident generics? "{" variants? "}" ;
 variants       = variant ("," variant)* ","? ;
 variant        = ident ("(" type ")")? ;
 
-trait_decl     = "trait" ident generics? ";" ;
-impl_decl      = "impl" ident "[" type ("," type)* ","? "]" ";" ;
+trait_decl     = "trait" ident generics? (";" | "{" trait_method_sig* "}") ;
+trait_method_sig = async_prefix? unsafe_prefix? "fn" ident generics? "(" params? ")" "->" type where_clause? effects? capabilities? ";" ;
+unsafe_prefix  = "unsafe" ;
+impl_decl      = "impl" type (";" | "{" impl_method* "}") ;
+impl_method    = async_prefix? unsafe_prefix? "fn" ident generics? "(" params? ")" "->" type where_clause? effects? capabilities? contracts? block ;
 
 generics       = "[" generic_param ("," generic_param)* ","? "]" ;
 generic_param  = ident trait_bounds? ;
@@ -62,13 +68,16 @@ field_visibility = item_visibility ;
 ## Type grammar
 
 ```ebnf
-type           = unit_type | named_type | hole_type ;
+type           = unit_type | tuple_type | named_type | hole_type ;
 unit_type      = "(" ")" ;
+tuple_type     = "(" type ("," type)+ ","? ")" ;
 named_type     = type_name type_args? ;
 type_name      = ident ("::" ident)* ;
 type_args      = "[" type ("," type)* ","? "]" ;
 hole_type      = "_" ;
 ```
+
+Additional surface type forms accepted by the checker include `dyn Trait`, `Fn(...) -> ...`, `Async[T]`, `Ref[T]`, and `RefMut[T]`; see `docs/reference/types.md` for the full surface list.
 
 ## Statement grammar
 
@@ -101,7 +110,7 @@ borrow_prefix  = "&" "mut"? ;
 postfix_expr   = primary_expr (call_suffix | field_suffix | try_suffix)* ;
 call_suffix    = "(" arg_list? ")" ;
 arg_list       = expr ("," expr)* ","? ;
-field_suffix   = "." ident ;
+field_suffix   = "." ident | "." int ;
 try_suffix     = "?" ;
 
 primary_expr   = int
@@ -148,10 +157,12 @@ pattern_atom   = "_"
                | string
                | bool
                | unit_pattern
+               | tuple_pattern
                | struct_pattern
                | variant_pattern ;
 
 unit_pattern   = "(" ")" ;
+tuple_pattern   = "(" pattern ("," pattern)+ ","? ")" ;
 ident_pattern  = ident ;
 struct_pattern = ident "{" struct_field_pattern ("," struct_field_pattern)* ("," "..")? "}"
                | ident "{" ".." "}" ;
@@ -163,6 +174,7 @@ Pattern disambiguation:
 - bare uppercase identifier is treated as a zero-arg variant pattern
 - bare lowercase identifier is treated as a variable binding pattern
 - string (`"GET"`) and char (`'a'`) literals are valid match patterns
+- tuple patterns use the same comma-separated parentheses form as tuple literals
 - struct destructuring supports shorthand (`User { age }`), explicit binding (`age: years`), and rest (`..`)
 - `|` inside patterns is pattern-or; logical-or in expressions remains `||`
 - match guards (`if <expr>`) are checked as `Bool` expressions
@@ -219,6 +231,13 @@ Struct default values:
 Result propagation:
 - `expr?` is a postfix propagation operator.
 - `expr?` requires `expr: Result[T, E]` and an enclosing function return type `Result[U, E]`.
+
+Modules, tuples, and methods:
+- `import` is explicit; imported modules expose public symbols only.
+- Tuple types and tuple literals use parentheses with commas; a single parenthesized expression remains grouping.
+- Tuple field access uses numeric indices after `.` (`t.0`, `t.1`, ...).
+- Method calls use `value.method(...)`; associated calls use `Type::method(...)`.
+- Traits may declare methods, and impl blocks may provide method bodies.
 
 Mutability and references:
 - Bindings are immutable by default; use `let mut name = ...;` for reassignment.

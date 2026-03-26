@@ -7,8 +7,9 @@ This page describes the surface type grammar and the type relations enforced in 
 ## Grammar
 
 ```ebnf
-type           = unit_type | named_type | dyn_type | fn_type ;
+type           = unit_type | tuple_type | named_type | dyn_type | fn_type ;
 unit_type      = "(" ")" ;
+tuple_type     = "(" type ("," type)+ ","? ")" ;
 named_type     = type_name type_args? ;
 dyn_type       = "dyn" type_name ;
 type_name      = ident ("::" ident)* ;
@@ -20,10 +21,10 @@ type_list      = type ("," type)* ","? ;
 
 ## Semantics and Rules
 
-- Primitive built-in types are `Int`, `Float`, `Bool`, `String`, and `()`.
+- Primitive built-in types include `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `ISize`, `USize`, `UInt`, `Float32`, `Float64`, `Float`, `Bool`, `Char`, `String`, `Bytes`, and `()`.
 - User-defined nominal types come from `struct` and `enum` declarations.
 - The checker is strict: there are no implicit casts or coercions between unrelated types.
-- Generic type arity is validated for all known generic families, including built-ins such as `Option`, `Result`, `Async`, `Ref`, and `RefMut`.
+- Generic type arity is validated for all known generic families, including built-ins such as `Option`, `Result`, `Async`, `Ref`, `RefMut`, and tuple wrappers.
 - Function values use `Fn[...]` internally; surface syntax `Fn(A, B) -> R` is parsed and lowered into that shape.
 - Borrow expressions synthesize wrapper types:
   - `&x` has type `Ref[T]`
@@ -33,4 +34,5 @@ type_list      = type ("," type)* ","? ;
 - Postfix `?` requires `Result[T, E]` and preserves `T` while checking `E` compatibility with the enclosing function return type.
 - Type inference is local and deterministic. When inference cannot resolve a concrete type, the checker reports an error and uses unresolved internal marker `<?>` for continued analysis.
 - `null` is forbidden both as a symbol and as a type fragment; use `Option[T]` for absence.
+- Tuple types use `(T, U, ...)`; a single parenthesized type remains grouping.
 - Extern C-ABI signatures currently accept only C-compatible scalar/value forms for parameters and returns (`Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()`, with no unresolved generics).

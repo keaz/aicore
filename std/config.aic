@@ -12,6 +12,7 @@ import std.json;
 import std.map;
 import std.result;
 import std.string;
+import std.vec;
 
 /// `ConfigError` is a `enum` in `std.config`.
 ///
@@ -239,21 +240,27 @@ fn load_json(path: String) -> Result[Map[String, String], ConfigError] effects {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
-    let mut config: Map[String, String] = new_map();
+    let mut config: Map[String, String] = map.new_map();
+    let vars = all_vars();
     let prefix_len = len(prefix);
+    let mut index = 0;
 
-    for entry in all_vars() {
-        if string.starts_with(entry.key, prefix) {
-            let key_len = len(entry.key);
-            if key_len > prefix_len {
-                let key = substring(entry.key, prefix_len, key_len);
-                config = insert(config, key, entry.value);
+    while index < vec.vec_len(vars) {
+        match vec.get(vars, index) {
+            Some(entry) => if string.starts_with(entry.key, prefix) {
+                let key_len = len(entry.key);
+                if key_len > prefix_len {
+                    let key = substring(entry.key, prefix_len, key_len);
+                    config = map.insert(config, key, entry.value);
+                } else {
+                    ()
+                }
             } else {
                 ()
-            }
-        } else {
-            ()
+            },
+            None => (),
         };
+        index = index + 1;
     };
 
     config
@@ -272,7 +279,7 @@ fn load_env_prefix(prefix: String) -> Map[String, String] effects { env } {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String {
-    match get(config, key) {
+    match map.get(config, key) {
         Some(value) => value,
         None => fallback,
     }
@@ -291,7 +298,7 @@ fn get_or_default(config: Map[String, String], key: String, fallback: String) ->
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn require(config: Map[String, String], key: String) -> Result[String, ConfigError] {
-    match get(config, key) {
+    match map.get(config, key) {
         Some(value) => Ok(value),
         None => Err(MissingKey()),
     }

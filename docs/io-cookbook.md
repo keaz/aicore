@@ -50,6 +50,23 @@ References:
 - `examples/io/file_processor.aic`
 - `examples/io/line_reader.aic`
 
+## 2b. Buffered Copy With `stream_copy`
+
+Use `std.io.stream_copy` when you want to move bytes between a reader and writer without hand-rolling the loop.
+
+```aic
+import std.io;
+
+fn relay(reader: Reader, writer: Writer) -> Int effects { io } {
+    match stream_copy(reader, writer) {
+        Ok(count) => count,
+        Err(_) => 0,
+    }
+}
+```
+
+Reference: `examples/io/stream_copy.aic`.
+
 ## 3. Tee-Style Logging (stdout + stderr + file)
 
 Use stdout for user-facing status, stderr for operator diagnostics, and `std.fs` for persistent logs.
@@ -192,10 +209,40 @@ fn connect_or_skip(addr: String) -> Int effects { net } {
 
 Current runtime caveats to account for:
 
-- Windows `std.net`: currently returns `NetError::Io`.
-- Windows `std.proc`: `spawn/run_with/run_timeout/pipe_chain` can return `ProcError::Io`; `wait/kill/is_running` return `ProcError::UnknownProcess`.
+- Windows `std.net`: backend/runtime failures can surface as `NetError::Io`.
+- Windows `std.proc`: `spawn`, `run`, `run_with`, `run_timeout`, `pipe`, and `pipe_chain` can surface `ProcError::Io`; `wait`, `kill`, and `is_running` can surface `ProcError::UnknownProcess`.
+- Windows `std.signal`: unsupported and returns `SignalError::UnsupportedPlatform`.
 
-## 10. TLS Client Handshake + Typed Fallback
+## 10. HTTP Server and Router Validation
+
+Use `std.http_server` for synchronous request/response shaping and `std.router` for deterministic route matching; pair them with `std.config` when request-driven startup config must be loaded before accepting traffic.
+
+```aic
+import std.http_server;
+import std.router;
+import std.config;
+
+fn ready() -> Int effects { net, fs, env } {
+    let cfg = load_env_prefix("APP_");
+    let _ = cfg;
+    let router0 = match new_router() {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+    let router1 = match add(router0, "GET", "/health", 1) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+    let response = text_response(200, "ready");
+    let _ = router1;
+    let _ = response;
+    1
+}
+```
+
+Reference: `examples/io/http_router.aic` and `examples/io/config_loading.aic`.
+
+## 11. TLS Client Handshake + Typed Fallback
 
 Use `std.tls` for encrypted transport and branch on `TlsError` for deterministic behavior in environments that do not provide TLS backend support.
 
@@ -227,7 +274,7 @@ fn tls_probe(addr: String, host: String) -> Int effects { net } {
 Reference: `examples/io/tls_connect.aic`.
 Policy: `docs/security-ops/tls-policy.v1.json`.
 
-## 11. Unified Secure Error Contract
+## 12. Unified Secure Error Contract
 
 Normalize module-specific errors to machine-readable secure error metadata for deterministic branching.
 
@@ -246,7 +293,7 @@ fn protocol_category_or_unknown(v: Result[Int, BufferError]) -> String {
 Reference: `examples/io/secure_error_contract.aic`.
 Contract: `docs/errors/secure-networking-error-contract.v1.json`.
 
-## 12. Postgres TLS/SCRAM Canonical Replay
+## 13. Postgres TLS/SCRAM Canonical Replay
 
 Use the canonical replay example when implementing production-style secure protocol clients with deterministic failure semantics.
 

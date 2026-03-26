@@ -21,7 +21,7 @@ keyword    = "module" | "import" | "async" | "extern" | "unsafe" | "fn" |
              "let" | "mut" | "return" |
              "if" | "else" | "match" | "while" | "loop" | "break" | "continue" |
              "true" | "false" | "await" |
-             "requires" | "ensures" | "invariant" | "effects" | "null" ;
+             "requires" | "ensures" | "invariant" | "effects" | "capabilities" | "null" ;
 ```
 
 ### Top-level grammar
@@ -33,8 +33,8 @@ import_decl    = "import" path ";" ;
 path           = ident ("." ident)* ;
 
 item           = fn_decl | extern_fn_decl | intrinsic_fn_decl | unsafe_fn_decl | struct_decl | enum_decl | trait_decl | impl_decl ;
-fn_decl        = "async"? "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
-unsafe_fn_decl = "unsafe" "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
+fn_decl        = "async"? "fn" ident generics? "(" params? ")" "->" type where_clause? effects_clause? capabilities_clause? contract_clause* block ;
+unsafe_fn_decl = "unsafe" "fn" ident generics? "(" params? ")" "->" type where_clause? effects_clause? capabilities_clause? contract_clause* block ;
 extern_fn_decl = "extern" string "fn" ident generics? "(" params? ")" "->" type ";" ;
 intrinsic_fn_decl = "intrinsic" "fn" ident "(" params? ")" "->" type effects_clause? ";" ;
 
@@ -44,6 +44,9 @@ params         = param ("," param)* ","? ;
 param          = ident ":" type ;
 
 effects_clause = "effects" "{" ident ("," ident)* ","? "}" ;
+capabilities_clause = "capabilities" "{" ident ("," ident)* ","? "}" ;
+where_clause   = "where" where_item ("," where_item)* ;
+where_item     = ident ":" ident ("+" ident)* ;
 contract_clause = "requires" expr | "ensures" expr ;
 
 struct_decl    = "struct" ident generics? "{" field ("," field)* ","? "}" ("invariant" expr)? ;
@@ -53,10 +56,10 @@ enum_decl      = "enum" ident generics? "{" variant ("," variant)* ","? "}" ;
 variant        = ident | ident "(" type ")" ;
 
 trait_decl     = "trait" ident generics? (";" | "{" trait_method_sig* "}") ;
-trait_method_sig = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type effects_clause? ";" ;
+trait_method_sig = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type where_clause? effects_clause? capabilities_clause? ";" ;
 
 impl_decl      = "impl" type (";" | "{" impl_method* "}") ;
-impl_method    = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type effects_clause? contract_clause* block ;
+impl_method    = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type where_clause? effects_clause? capabilities_clause? contract_clause* block ;
 ```
 
 ### Expression precedence
@@ -79,6 +82,7 @@ highest
 - Parsing is deterministic and single-pass with explicit error recovery at item and statement boundaries.
 - `module` is optional for entry files, but non-entry modules loaded through imports must declare `module ...;`.
 - `import` is explicit; transitive imports are not automatically visible.
+- Imported modules expose public symbols only.
 - `if` is an expression and always requires an `else` branch.
 - `while`, `loop`, `break`, and `continue` are expressions, not special statement-only forms.
 - Assignment is statement-only (`name = expr;`), never an expression.
@@ -91,6 +95,8 @@ highest
   - inherent blocks for named type heads (`impl User { ... }`, `impl Status { ... }`)
   - trait impl declarations (`impl Score[Meter];`) and trait impl blocks (`impl Score[Meter] { ... }`)
 - Inherent `impl` blocks are valid for both structs and enums.
+- Tuple types and tuple literals use parentheses with commas; a single parenthesized expression remains grouping.
+- Tuple field access uses numeric indices after `.` (`t.0`, `t.1`, ...).
 - `|` is overloaded with context:
   - in expressions, `|...| -> ... { ... }` starts a closure
   - in patterns, `p1 | p2` is an or-pattern

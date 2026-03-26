@@ -78,6 +78,6 @@ Like fs byte APIs, these wrappers keep `Bytes` in stdlib-facing signatures and b
 
 ## Examples
 
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/bytes_api_roundtrip.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/net_bytes_pipeline.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/data/bytes_random_access.aic`
+- `examples/data/bytes_api_roundtrip.aic`
+- `examples/data/net_bytes_pipeline.aic`
+- `examples/data/bytes_random_access.aic`

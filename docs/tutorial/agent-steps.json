@@ -41,7 +41,7 @@
         {
           "step_id": "01.5",
           "action": "verify_concept",
-          "assertion": "main returns Int and declares effects { io } when calling std.io functions"
+          "assertion": "main returns Int and declares effects { io } plus capabilities { io } when calling std.io functions"
         }
       ]
     },
@@ -125,7 +125,7 @@
         {
           "step_id": "03.5",
           "action": "verify_concept",
-          "assertion": "await is used only inside async functions and async calls preserve effect requirements"
+          "assertion": "await is used only inside async functions and async calls preserve effect and capability requirements"
         }
       ]
     },
@@ -351,7 +351,7 @@
         {
           "step_id": "08.7",
           "action": "verify_concept",
-          "assertion": "effects must be declared by callers and contracts enforce requires or ensures obligations"
+          "assertion": "effects and matching capabilities must be declared by callers, and contracts enforce requires or ensures obligations"
         }
       ]
     },
@@ -362,6 +362,7 @@
       "example_files": [
         "examples/e2/multi_file_app/src/main.aic",
         "examples/e2/multi_file_app/src/math.aic",
+        "examples/e2/explicit_imports.aic",
         "examples/pkg/consume_http_client.aic"
       ],
       "steps": [
@@ -395,13 +396,13 @@
         {
           "step_id": "09.5",
           "action": "run_command",
-          "command": "aic check examples/pkg/consume_http_client.aic",
+          "command": "aic check examples/e2/explicit_imports.aic",
           "expect_exit_code": 0
         },
         {
           "step_id": "09.6",
           "action": "run_command",
-          "command": "aic run examples/pkg/consume_http_client.aic",
+          "command": "aic run examples/e2/explicit_imports.aic",
           "expect_exit_code": 0,
           "expect_stdout_contains": [
             "42"
@@ -409,8 +410,23 @@
         },
         {
           "step_id": "09.7",
+          "action": "run_command",
+          "command": "aic check examples/pkg/consume_http_client.aic",
+          "expect_exit_code": 0
+        },
+        {
+          "step_id": "09.8",
+          "action": "run_command",
+          "command": "aic run examples/pkg/consume_http_client.aic",
+          "expect_exit_code": 0,
+          "expect_stdout_contains": [
+            "GET OK"
+          ]
+        },
+        {
+          "step_id": "09.9",
           "action": "verify_concept",
-          "assertion": "module imports are explicit and package-provided modules can be called via fully qualified names"
+          "assertion": "module imports are explicit, exported symbols need pub, and package-provided modules can be called via fully qualified names"
         }
       ]
     },
@@ -453,7 +469,7 @@
         {
           "step_id": "10.5",
           "action": "verify_concept",
-          "assertion": "IO modules require explicit effect declarations that match the called runtime APIs"
+          "assertion": "IO modules require explicit effect and capability declarations that match the called runtime APIs"
         }
       ]
     }

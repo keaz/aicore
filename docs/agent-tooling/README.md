@@ -2,8 +2,6 @@
 
 Machine-first reference for agent-native, IR-first compiler, diagnostic, and editor integration.
 
-Development note: this project has been developed mainly using **GPT-5.3-Codex** as the primary implementation agent.
-
 ## Versioned protocol
 
 - Protocol contract: [protocol-v1.md](protocol-v1.md)
@@ -99,7 +97,13 @@ Before merging command/feature documentation updates:
 4. Verify examples/command snippets use current flag shapes (`aic <command> --help`).
 5. Keep guaranteed behavior in `docs/reference/*`; keep forward-looking items in `docs/reference/open-issue-contracts.md`.
 
-## Epic #62 proof-of-completion checklist (open)
+## Maintainer notes
+
+The notes below are for release and epic maintenance. Most contributors can ignore them.
+
+Development note: this project has been developed mainly using **GPT-5.3-Codex** as the primary implementation agent.
+
+### Epic #62 proof-of-completion checklist (open)
 
 Use this checklist when preparing closure evidence for epic `#62`. Keep the epic open until every item below is complete and evidenced.
 

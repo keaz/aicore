@@ -35,7 +35,7 @@ postfix_expr   = primary_expr (call_suffix | field_suffix | try_suffix)* ;
 call_suffix    = "(" arg_list? ")" ;
 arg_list       = call_arg ("," call_arg)* ","? ;
 call_arg       = ident ":" expr | expr ;
-field_suffix   = "." ident ;
+field_suffix   = "." ident | "." int ;
 try_suffix     = "?" ;
 
 primary_expr   = literal
@@ -93,11 +93,14 @@ hex_int        = "0x" hexdigit+ ;
   - when mixed, positional arguments must come first; otherwise `E1092` is reported
   - named arguments can be supplied in any order and are matched by parameter name
   - unknown named arguments report `E1213` and include nearest-name suggestions
+- Method calls are parsed as postfix field access followed by `(...)` and resolve during type checking.
 - Call resolution rejects ambiguous unqualified names when multiple modules export the same symbol.
 - Calls to `unsafe fn` or `extern` declarations require an explicit unsafe boundary (`unsafe fn` context or `unsafe { ... }`).
 - `await` is valid only inside `async fn` and requires `Async[T]`.
 - Postfix `?` is valid only on `Result[T, E]` and requires enclosing return type compatibility `Result[_, E]`.
 - Struct literals require all fields exactly once; missing, duplicate, and unknown fields are diagnostics.
 - Field access requires a struct type and a declared field.
+- Tuple values use the same parentheses form as grouping expressions: one element groups, two or more elements build a tuple.
+- Tuple field access uses numeric indices (`.0`, `.1`, ...).
 - Match guards must have type `Bool`.
 - Effectful calls contribute to effect usage; in contract contexts, any effectful call is rejected.

@@ -17,7 +17,7 @@ async fn ping(x: Int) -> Int {
     x + 1
 }
 
-async fn main() -> Int effects { io } {
+async fn main() -> Int effects { io } capabilities { io } {
     let value = await ping(41);
     print_int(value);
     0
@@ -36,4 +36,4 @@ Expected output:
 
 ## What to remember
 - Return the final expression directly for concise functions.
-- Keep effect declarations on async functions the same way as normal functions.
+- Keep effect and capability declarations on async functions the same way as normal functions.

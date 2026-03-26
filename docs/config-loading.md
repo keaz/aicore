@@ -12,6 +12,7 @@ This document defines the contract for loading application configuration from JS
 - `std.map` for deterministic key/value storage
 
 It targets a common workflow: load base config from file, then apply env overrides.
+It is intentionally separate from the network/runtime surface (`std.http_server`, `std.router`) and does not perform any fake network IO.
 
 ## Types
 
@@ -69,9 +70,10 @@ Reference example: `examples/io/config_loading.aic`
 The example demonstrates:
 
 - JSON file config load
-- prefixed env overlay (`APP_...`)
-- deterministic override merge (env values replace file values on same key)
 - required/missing key handling
+- deterministic fallback behavior for optional keys
+
+For `load_env_prefix` composition patterns, see the `std.config` API notes above and the config-loading pattern in `docs/io-cookbook.md`.
 
 ## Current limitations
 

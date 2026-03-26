@@ -3,6 +3,7 @@
 See also the complete IO runtime guide: `docs/io-runtime/README.md`.
 
 This document is the implementation and usage contract for `std.fs`.
+It covers the current surface: byte APIs, file-handle APIs, directory helpers, symlink operations, and readonly toggles.
 
 ## Overview
 
@@ -10,6 +11,10 @@ This document is the implementation and usage contract for `std.fs`.
 - `null` is never used in source-level APIs.
 - Fallible APIs return `Result[_, FsError]`.
 - Error categories are stable and deterministic across platforms.
+- `read_bytes` / `write_bytes` / `append_bytes` are the binary-oriented boundary APIs.
+- `open_read` / `open_write` / `open_append` and `file_read_line` / `file_write_str` / `file_close` are the handle lifecycle APIs.
+- `mkdir`, `mkdir_all`, `rmdir`, `list_dir`, `walk_dir`, `temp_file`, and `temp_dir` cover directory and temp-path workflows.
+- `create_symlink`, `read_symlink`, and `set_readonly` are explicit and may fail differently by platform.
 
 ## Types
 
@@ -58,8 +63,12 @@ fn temp_dir(prefix: String) -> Result[String, FsError] effects { fs }
 Notes:
 
 - `Bool` results for write/copy/move/delete are success flags (`true` on success).
+- `read_bytes`, `write_bytes`, and `append_bytes` are the binary-oriented path helpers.
+- Always pair `open_*` with `file_close` in long-lived flows.
 - `walk_dir` returns a `Vec[String]` snapshot shape; `vec_len` is currently the primary utility in MVP.
 - `temp_file` and `temp_dir` return absolute paths.
+- `list_dir` returns concrete directory entry strings.
+- `create_symlink`, `read_symlink`, and `set_readonly` expose platform-sensitive path controls explicitly.
 
 ## Effect Enforcement
 

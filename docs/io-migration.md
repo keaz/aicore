@@ -117,15 +117,15 @@ Migration action:
 
 Use these maintained examples as migration anchors:
 
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/interactive_greeter.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/file_processor.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/log_tee.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/env_config.aic`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/examples/io/subprocess_pipeline.aic`
+- `examples/io/interactive_greeter.aic`
+- `examples/io/file_processor.aic`
+- `examples/io/log_tee.aic`
+- `examples/io/env_config.aic`
+- `examples/io/subprocess_pipeline.aic`
 
 ## Migration Checklist
 
-1. Align function signatures with `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`.
+1. Align function signatures with `docs/io-api-reference.md`.
 2. Add missing effects and re-run typecheck.
 3. Add typed `Result` handling for all new fallible APIs.
 4. Update examples to compile (`aic check`) and run where deterministic.

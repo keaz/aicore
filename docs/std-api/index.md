@@ -5,22 +5,22 @@ This page defines how AICore standard-library API documentation is generated and
 ## Source of truth
 
 - `std/*.aic` (including `std/bytes.aic`): canonical API declarations.
-- `/Users/kasunranasinghe/Projects/Rust/aicore/src/std_policy.rs`: snapshot collector and compatibility comparator.
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json`: machine-readable baseline consumed by `aic std-compat`.
+- `src/std_policy.rs`: snapshot collector and compatibility comparator.
+- `docs/std-api-baseline.json`: machine-readable baseline consumed by `aic std-compat`.
 
 ## Generation workflow
 
-1. Update std modules under `/Users/kasunranasinghe/Projects/Rust/aicore/std`.
+1. Update std modules under `std/`.
 2. Regenerate snapshot:
 
 ```bash
-cargo run --quiet --bin aic -- std-compat > /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+cargo run --quiet --bin aic -- std-compat > docs/std-api-baseline.json
 ```
 
 3. Validate compatibility against baseline:
 
 ```bash
-cargo run --quiet --bin aic -- std-compat --check --baseline /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json
 ```
 
 4. If `--check` reports `E6002`, either:
@@ -73,26 +73,38 @@ Current baseline snapshot (`schema_version: 1`) covers these modules:
 
 | Module |
 |---|
+| `std.buffer` |
 | `std.bytes` |
+| `std.char` |
 | `std.concurrent` |
+| `std.config` |
+| `std.crypto` |
 | `std.deque` |
 | `std.env` |
+| `std.error_context` |
 | `std.fs` |
 | `std.http` |
 | `std.http_server` |
 | `std.io` |
+| `std.iterator` |
 | `std.json` |
 | `std.map` |
+| `std.math` |
 | `std.net` |
+| `std.numeric` |
 | `std.option` |
 | `std.path` |
+| `std.pool` |
 | `std.proc` |
 | `std.rand` |
 | `std.regex` |
 | `std.result` |
 | `std.retry` |
 | `std.router` |
+| `std.secure_errors` |
 | `std.string` |
+| `std.set` |
+| `std.signal` |
 | `std.tls` |
 | `std.time` |
 | `std.url` |
@@ -101,13 +113,13 @@ Current baseline snapshot (`schema_version: 1`) covers these modules:
 For exact symbol totals and kind distribution, query the baseline directly:
 
 ```bash
-jq -r '.symbols | length' /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
-jq -r '.symbols | group_by(.kind)[] | "\(.[0].kind): \(length)"' /Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api-baseline.json
+jq -r '.symbols | length' docs/std-api-baseline.json
+jq -r '.symbols | group_by(.kind)[] | "\(.[0].kind): \(length)"' docs/std-api-baseline.json
 ```
 
 ## Signature policy
 
-Documented signatures must match snapshot rendering rules from `/Users/kasunranasinghe/Projects/Rust/aicore/src/std_policy.rs`:
+Documented signatures must match snapshot rendering rules from `src/std_policy.rs`:
 
 - Functions: `name[generics](params) -> Ret effects { ... }`
 - Structs: `Name[generics] { field: Type, ... }`
@@ -163,15 +175,15 @@ Example style:
 ```aic
 module demo.main;
 
-fn main() -> Result[String, FsError] effects { fs } {
-  std.fs.read_file("README.md")
+fn main() -> Result[String, FsError] effects { fs } capabilities { fs } {
+  std.fs.read_text("README.md")
 }
 ```
 
 ## Related docs
 
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/data-bytes.md`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api/tls.md`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-api/machine-readable.md`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/std-compatibility.md`
-- `/Users/kasunranasinghe/Projects/Rust/aicore/docs/io-api-reference.md`
+- `docs/data-bytes.md`
+- `docs/std-api/tls.md`
+- `docs/std-api/machine-readable.md`
+- `docs/std-compatibility.md`
+- `docs/io-api-reference.md`

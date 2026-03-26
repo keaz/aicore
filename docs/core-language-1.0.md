@@ -7,7 +7,10 @@ This guide is the implementation-facing contract for Core Language features (`CL
 Core Language 1.0 in AICore includes:
 
 - `async fn` / `await` with `Async[T]` typing
-- traits + impls + bounded generics (`T: Trait`)
+- tuples (`(T, U)`) with projection and destructuring
+- traits + impls + trait methods + bounded generics (`T: Trait`)
+- inherent methods and method call syntax (`value.method(...)`, `Type::method(...)`)
+- generic `where` clauses on functions and trait methods
 - Result propagation operator (`expr?`)
 - explicit mutability (`let mut`) + assignment + borrow forms (`&x`, `&mut x`)
 - pattern matching 1.0:
@@ -41,6 +44,10 @@ fn pick[T: Order](a: T, b: T) -> T {
     a
 }
 
+fn pick_where[T](a: T, b: T) -> T where T: Order {
+    a
+}
+
 fn select(x: Option[Int], allow: Bool) -> Int {
     match x {
         None | Some(_) if allow => 1,
@@ -49,8 +56,11 @@ fn select(x: Option[Int], allow: Bool) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
-    let mut v = checked_inc(41)?;
+fn main() -> Int effects { io } capabilities { io } {
+    let mut v = match checked_inc(41) {
+        Ok(next) => next,
+        Err(_) => 0,
+    };
     v = v + 1;
     print_int(select(Some(v), true));
     0
@@ -108,6 +118,7 @@ Backend note:
 
 - LLVM backend currently rejects guarded match lowering with `E5023`.
 - `aic check` supports guard typing/exhaustiveness analysis.
+- Guarded matches are still type-checked even when backend lowering is unavailable.
 
 ## Diagnostics You Will See Often
 
@@ -148,7 +159,11 @@ cargo test --test golden_tests golden_case16_match_or_guard
 
 - `examples/core/async_ping.aic`
 - `examples/core/trait_sort.aic`
+- `examples/e1/syntax_showcase.aic`
 - `examples/core/result_propagation.aic`
 - `examples/core/mut_vec.aic`
+- `examples/core/core_language_tour.aic`
+- `examples/core/traits_and_dispatch_tour.aic`
+- `examples/core/effects_capabilities_patterns_tour.aic`
 - `examples/core/pattern_or.aic`
 - `examples/core/pattern_guard_check.aic`

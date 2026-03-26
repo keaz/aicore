@@ -4,7 +4,7 @@
 Declare side effects explicitly and enforce behavior with contracts.
 
 ## Syntax you need
-- Effects: `fn f() -> T effects { io, fs } { ... }`
+- Effects: `fn f() -> T effects { io, fs } capabilities { io, fs } { ... }`
 - Preconditions: `requires <bool-expr>`
 - Postconditions: `ensures <bool-expr>` (`result` is available in `ensures`)
 - Struct invariants: `struct X { ... } invariant <bool-expr>`
@@ -18,7 +18,7 @@ fn abs(x: Int) -> Int ensures result >= 0 {
     if x >= 0 { x } else { 0 - x }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(abs(-7));
     0
 }
@@ -39,12 +39,12 @@ Expected output:
 module examples.e4.effect_decl;
 import std.io;
 
-fn noisy() -> () effects { time, io, fs } {
+fn noisy() -> () effects { time, io, fs } capabilities { time, io, fs } {
     print_int(1);
     ()
 }
 
-fn main() -> Int effects { fs, io, time } {
+fn main() -> Int effects { fs, io, time } capabilities { fs, io, time } {
     noisy();
     0
 }
@@ -63,4 +63,5 @@ Expected output:
 ## What to remember
 - Functions are pure by default.
 - The caller must declare all effects required by callees, including transitive paths.
+- The caller must also carry the matching capabilities.
 - Contracts are checked statically when possible and enforced at runtime when obligations remain.

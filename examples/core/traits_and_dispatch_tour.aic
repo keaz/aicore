@@ -1,0 +1,34 @@
+module examples.core.traits_and_dispatch_tour;
+import std.io;
+
+trait Score[T] {
+    fn score(self: T) -> Int;
+}
+
+struct Meter {
+    value: Int,
+}
+
+struct Bonus {
+    value: Int,
+}
+
+impl Score[Meter] {
+    fn score(self: Meter) -> Int {
+        self.value + 1
+    }
+}
+
+impl Score[Bonus] {
+    fn score(self: Bonus) -> Int {
+        self.value + 2
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let meter = Meter { value: 20 };
+    let bonus = Bonus { value: 19 };
+    let total = meter.score() + bonus.score();
+    print_int(total);
+    0
+}

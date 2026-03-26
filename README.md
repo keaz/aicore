@@ -10,8 +10,31 @@ Project note: AICore has been developed mainly using **GPT-5.3-Codex** for imple
 
 ---
 
+## Start Here
+
+- New to the project: start with [Local machine setup](docs/local-machine-setup.md), then open the [docs index](docs/index.md).
+- Writing your first program: jump to [Stdlib + IO quick start](#stdlib--io-quick-start) and [Hello World](#hello-world).
+- Exploring the language: use [Language Overview](#language-overview) and [Standard Library](#standard-library).
+- Looking for runnable material: open [Examples](examples/README.md) and [Tests](tests/README.md).
+- Working on agent/tooling flows: use [Agent tooling docs](docs/agent-tooling/README.md).
+
+## Stdlib + IO Quick Start
+
+- [Stdlib API index](docs/std-api/index.md)
+- [IO API reference](docs/io-api-reference.md)
+- [IO runtime guide](docs/io-runtime/README.md)
+- [IO cookbook](docs/io-cookbook.md)
+- [Data/Text stack guide](docs/data-text/README.md)
+- [Config loading guide](docs/config-loading.md)
+- [Examples index](examples/README.md)
+- [Tests index](tests/README.md)
+
+---
+
 ## Table of Contents
 
+- [Start Here](#start-here)
+- [Stdlib + IO Quick Start](#stdlib--io-quick-start)
 - [Why AICore?](#why-aicore)
 - [Language Overview](#language-overview)
   - [Modules and Imports](#modules-and-imports)
@@ -35,7 +58,7 @@ Project note: AICore has been developed mainly using **GPT-5.3-Codex** for imple
   - [Prerequisites](#prerequisites)
   - [Build](#build)
   - [Hello World](#hello-world)
-- [CLI Reference](#cli-reference)
+- [Common Commands](#common-commands)
 - [AI-Agent Documentation](#ai-agent-documentation)
 - [Local CI with Make](#local-ci-with-make)
 - [GitHub Actions](#github-actions)
@@ -88,15 +111,15 @@ fn add(a: Int, b: Int) -> Int {
     a + b
 }
 
-fn greet(name: String) -> () effects { io } {
-    print(f"Hello, {name}!")
+fn greet(name: String) -> () effects { io } capabilities { io } {
+    println_str(f"Hello, {name}!")
 }
 ```
 
 AICore also supports `async fn`, `intrinsic fn` (runtime-bound FFI stubs), `unsafe fn`, and `extern fn` declarations:
 
 ```aic
-async fn fetch_data(url: String) -> String effects { net } {
+async fn fetch_data(url: String) -> String effects { net } capabilities { net } {
     // async body
     "data"
 }
@@ -228,14 +251,14 @@ Every function has an explicit (or empty) effect set. Calling a function with ef
 fn add(a: Int, b: Int) -> Int { a + b }
 
 // IO function — must declare `io` effect
-fn greet() -> () effects { io } {
-    print("hello")
+fn greet() -> () effects { io } capabilities { io } {
+    println_str("hello")
 }
 
 // Multiple effects
-fn fetch_and_log(url: String) -> String effects { net, io } {
+fn fetch_and_log(url: String) -> String effects { net, io } capabilities { net, io } {
     let data = http_get(url);
-    print(data);
+    println_str(data);
     data
 }
 ```
@@ -285,13 +308,13 @@ struct PositiveInt {
 ### Async / Await
 
 ```aic
-async fn fetch_user(id: Int) -> String effects { net } {
+async fn fetch_user(id: Int) -> String effects { net } capabilities { net } {
     http_get(f"/users/{int_to_string(id)}")
 }
 
-async fn main() -> () effects { net, io } {
+async fn main() -> () effects { net, io } capabilities { net, io } {
     let user = await fetch_user(42);
-    print(user);
+    println_str(user);
 }
 ```
 
@@ -309,10 +332,14 @@ fn parse_port(s: String) -> Result[Int, String] {
     if n > 0 { Ok(n) } else { Err("port must be positive") }
 }
 
-fn load_config(path: String) -> Result[Config, String] effects { fs } {
-    let text = read_to_string(path)?;
-    let port = parse_port(text)?;
-    Ok(Config { port: port })
+fn load_config(path: String) -> Result[Config, FsError] effects { fs } capabilities { fs } {
+    match read_text(path) {
+        Ok(text) => match parse_port(text) {
+            Ok(port) => Ok(Config { port: port }),
+            Err(_) => Err(InvalidInput()),
+        },
+        Err(err) => Err(err),
+    }
 }
 ```
 
@@ -378,42 +405,13 @@ pub struct User {
 
 ## Standard Library
 
-AICore ships with a comprehensive standard library covering IO, networking, concurrency, data structures, and more.
+AICore's standard library is organized into focused modules for IO/filesystem, networking and protocols, collections and text, runtime support, and process/environment access. The current public surface is documented and compatibility-checked in [docs/std-api/index.md](docs/std-api/index.md).
 
-| Module           | Description                                                        |
-|------------------|--------------------------------------------------------------------|
-| `std.io`         | Console IO, formatted output, file reading/writing                 |
-| `std.fs`         | Filesystem operations (read, write, copy, move, delete, walk, temp)|
-| `std.net`        | TCP/UDP networking, HTTP client                                    |
-| `std.tls`        | TLS streams, handshake, and certificate-aware secure transport      |
-| `std.http`       | HTTP request/response types                                        |
-| `std.http_server`| HTTP server primitives                                             |
-| `std.concurrent` | Channels, mutexes, task spawning, async coordination               |
-| `std.string`     | String manipulation and conversion                                 |
-| `std.vec`        | Dynamic arrays (vectors)                                           |
-| `std.map`        | Key-value hash maps                                                |
-| `std.set`        | Hash sets                                                          |
-| `std.deque`      | Double-ended queues                                                |
-| `std.option`     | `Option[T]` type and utilities                                     |
-| `std.result`     | `Result[T, E]` type and utilities                                  |
-| `std.math`       | Mathematical functions                                             |
-| `std.time`       | Time, durations, timestamps, and scheduling                        |
-| `std.rand`       | Random number generation                                           |
-| `std.regex`      | Regular expression matching, find, capture, replace                 |
-| `std.json`       | JSON parsing and serialization                                     |
-| `std.env`        | Environment variable access                                        |
-| `std.proc`       | Process spawning and management                                    |
-| `std.path`       | File path manipulation                                             |
-| `std.bytes`      | Binary payload type for IO and networking                          |
-| `std.buffer`     | Byte buffer for binary protocol handling                           |
-| `std.char`       | Unicode character utilities                                        |
-| `std.url`        | URL parsing                                                        |
-| `std.log`        | Structured logging                                                 |
-| `std.config`     | Configuration loading                                              |
-| `std.signal`     | OS signal handling                                                 |
-| `std.retry`      | Retry policies with backoff strategies                             |
-| `std.router`     | HTTP request routing                                               |
-| `std.error_context` | Contextual error wrapping                                       |
+- IO and filesystem: `std.io`, `std.fs`, `std.path`, `std.bytes`, `std.buffer`
+- Networking and protocols: `std.net`, `std.http`, `std.http_server`, `std.tls`, `std.router`
+- Collections and text: `std.string`, `std.regex`, `std.json`, `std.vec`, `std.map`, `std.set`, `std.deque`
+- Runtime and utility: `std.concurrent`, `std.time`, `std.rand`, `std.env`, `std.proc`, `std.log`, `std.config`, `std.signal`, `std.retry`, `std.option`, `std.result`, `std.math`, `std.numeric`, `std.iterator`, `std.pool`, `std.char`, `std.url`, `std.error_context`
+- Security and integrity: `std.crypto`, `std.secure_errors`
 
 ---
 
@@ -437,7 +435,7 @@ AICore ships with a comprehensive standard library covering IO, networking, conc
 module examples.effects_reject;
 import std.io;
 
-fn io_fn() -> () effects { io } {
+fn io_fn() -> () effects { io } capabilities { io } {
     print_int(1)
 }
 
@@ -472,7 +470,7 @@ fn maybe_even(x: Int) -> Option[Int] {
     if x % 2 == 0 { Some(x) } else { None() }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let out = match maybe_even(42) {
         None => 0,
         Some(n) => n,
@@ -504,7 +502,7 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 | Mutability + borrow discipline (`let mut`, `&`/`&mut`) | ✅ Implemented |
 | Generics (deterministic instantiation + codegen) | ✅ Implemented |
 | LLVM backend (native via clang) | ✅ Implemented |
-| Standard library (30+ modules) | ✅ Implemented |
+| Standard library (focused module set) | ✅ Implemented |
 | Package lock/checksum/offline cache | ✅ Implemented |
 | LSP server (diagnostics/hover/definition/format) | ✅ Implemented |
 | Incremental daemon | ✅ Implemented |
@@ -572,8 +570,8 @@ Create a file `hello.aic`:
 module hello;
 import std.io;
 
-fn main() -> Int effects { io } {
-    print("Hello, AICore!");
+fn main() -> Int effects { io } capabilities { io } {
+    println_str("Hello, AICore!");
     0
 }
 ```
@@ -593,7 +591,9 @@ cargo run -- build hello.aic -o hello
 
 ---
 
-## CLI Reference
+## Common Commands
+
+For the full surface, use `aic --help` and `aic <command> --help`. The commands below are the common entry points, not an exhaustive command index.
 
 ```bash
 aic init <project>          # Initialize a new project (no local std copy)
@@ -629,7 +629,9 @@ aic check <file> --sarif    # SARIF diagnostics export
 
 For agent-first usage guidance (feature selection, command strategy, and workflow playbooks):
 
+- [Docs index](docs/index.md)
 - [Agent tooling docs index](docs/agent-tooling/README.md)
+- [Examples docs index](docs/examples/README.md)
 - [Language feature playbook](docs/agent-tooling/language-feature-playbook.md)
 - [CLI command playbook](docs/agent-tooling/aic-command-playbook.md)
 - [aic init deep dive](docs/agent-tooling/commands/aic-init.md)
@@ -687,7 +689,7 @@ This installs:
 
 ```
 ├── src/          # Compiler implementation (lexer, parser, type checker, codegen)
-├── std/          # Standard library modules (30+ modules)
+├── std/          # Standard library modules
 ├── examples/     # Runnable and checker-focused examples
 ├── docs/         # Language spec, syntax reference, agent recipes, tutorials
 │   ├── agent-recipes/        # Executable agent workflow recipes
@@ -705,15 +707,22 @@ This installs:
 
 ## Test Suite
 
-| Category | Count | Location |
-|----------|-------|----------|
-| Core unit tests | 94 | `src/*` library tests |
-| Unit integration tests | 72 | `tests/unit_tests.rs` |
-| Golden tests | 16 | `tests/golden_tests.rs` |
-| Execution tests | 22 | `tests/execution_tests.rs` |
-| CLI contract tests | 5 | `tests/e7_cli_tests.rs` |
-| LSP smoke tests | 2 | `tests/lsp_smoke_tests.rs` |
-| E8 verification tests | 11 total / 10 active | `tests/e8_*` |
+Use the test families below to pick the smallest stable check that covers your change:
+
+- Core language and stdlib behavior: `tests/unit_tests.rs`
+- Parser, formatter, and snapshot stability: `tests/golden_tests.rs`
+- Runtime and backend execution: `tests/execution_tests.rs`
+- CLI contract and workflow checks: `tests/e7_cli_tests.rs`, `tests/suggest_contracts_cli_tests.rs`
+- LSP/editor smoke coverage: `tests/lsp_smoke_tests.rs`
+- Verification, fuzz, and perf gates: `tests/e8_*`, `tests/fuzz/`
+
+Common commands:
+
+- `make ci` for the full local gate
+- `make test-e7` for CLI and docs-as-tests coverage
+- `make test-e8` for verification gates
+- `cargo test --locked --test execution_tests` for runtime changes
+- `cargo test --locked --test unit_tests` for language or stdlib changes
 
 ---
 

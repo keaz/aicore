@@ -212,7 +212,7 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 - Current behavior:
   - Inline trait bounds on generics are available, including multi-bounds (`T: A + B`).
-  - Function-level `where` clauses are implemented (including multi-bound forms).
+  - Function and trait-method `where` clauses are implemented (including multi-bound forms).
   - Inline and `where` bounds can be mixed on the same declaration.
 - Target behavior:
   - Extend `where`-clause support to additional declaration forms only if/when that scope is explicitly adopted.

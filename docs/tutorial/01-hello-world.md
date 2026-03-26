@@ -5,7 +5,7 @@ Write and run a minimal AIC program, and understand the entry point shape.
 
 ## Syntax you need
 - `import std.io;` brings IO APIs like `print_int` into scope.
-- `fn main() -> Int effects { io } { ... }` is the executable entry function.
+- `fn main() -> Int effects { io } capabilities { io } { ... }` is the executable entry function.
 - Statements end with `;`.
 - The last expression in a block is the return value when it has no trailing `;`.
 
@@ -13,7 +13,7 @@ Write and run a minimal AIC program, and understand the entry point shape.
 ```aic
 import std.io;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     print_int(42);
     0
 }
@@ -31,4 +31,4 @@ Expected output:
 
 ## What to remember
 - AIC functions are pure by default.
-- Any call to `std.io` requires `effects { io }` on the caller.
+- Any call to `std.io` requires both `effects { io }` and `capabilities { io }` on the caller.

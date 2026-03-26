@@ -6,26 +6,23 @@ struct Pair[T, U] {
     right: U,
 } invariant true
 
-enum Maybe[T] {
-    None,
-    Some(T),
+trait Measurable[T] {
+    fn score(self: T) -> Int;
 }
 
-fn id[T](x: T) -> T {
-    x
+impl Measurable[Pair[Int, Int]] {
+    fn score(self: Pair[Int, Int]) -> Int {
+        self.left + self.right
+    }
 }
 
-fn classify(x: Int) -> Int effects { io } requires x >= 0 ensures result >= 0 {
-    let y = if x > 0 { x } else { 0 };
-    let tagged = Some(y);
-    let out = match tagged {
-        Some(v) => v,
-        None => 0,
-    };
-    print_int(out);
-    out
+fn keep[T](value: T) -> T where T: Measurable {
+    value
 }
 
-fn main() -> Int effects { io } {
-    classify(7)
+fn main() -> Int effects { io } capabilities { io } {
+    let pair = Pair { left: 20, right: 22 };
+    let tuple = (pair.left, pair.right);
+    print_int(tuple.0 + tuple.1 + keep(pair).score() - 42);
+    0
 }

@@ -3,7 +3,7 @@
 Related docs:
 - [Agent-First aic Command Playbook](../aic-command-playbook.md)
 - [`docs/cli-contract.md`](../../cli-contract.md)
-- [`src/project.rs`](../../src/project.rs)
+- [`src/project.rs`](../../../src/project.rs)
 
 ## What it does
 
@@ -15,7 +15,7 @@ Related docs:
 - `docs/`
 - `tests/`
 
-Implementation source: [`src/project.rs`](../../src/project.rs).
+Implementation source: [`src/project.rs`](../../../src/project.rs).
 
 Starter program intent in `src/main.aic`:
 - module declaration (`module sample.main;`)

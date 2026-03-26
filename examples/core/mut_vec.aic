@@ -2,12 +2,12 @@ import std.io;
 import std.vec;
 
 fn grow(v: Vec[Int]) -> Vec[Int] {
-    let next: Vec[Int] = Vec { ptr: v.ptr, len: v.len + 1, cap: v.cap };
-    next
+    vec.push(v, 2)
 }
 
-fn main() -> Int effects { io } capabilities { io  } {
-    let mut v: Vec[Int] = Vec { ptr: 0, len: 1, cap: 4 };
+fn main() -> Int effects { io } capabilities { io } {
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 1);
     v = grow(v);
     print_int(vec_len(v));
     0

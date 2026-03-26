@@ -1,5 +1,25 @@
 module http_client.main;
 
-pub fn get_status_code() -> Int {
-    42
+import std.http;
+import std.vec;
+
+pub fn health_header() -> Result[HttpHeader, HttpError] {
+    header("content-type", "application/json")
+}
+
+pub fn health_request() -> Result[HttpRequest, HttpError] {
+    match parse_method("GET") {
+        Ok(method) => match health_header() {
+            Ok(content_type) => request(method, "/health", vec.vec_of(content_type), ""),
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(err),
+    }
+}
+
+pub fn ok_response() -> Result[HttpResponseView, HttpError] {
+    match health_header() {
+        Ok(content_type) => response(200, vec.vec_of(content_type), "{\"ok\":true}"),
+        Err(err) => Err(err),
+    }
 }

@@ -9,7 +9,7 @@ Before changing IO code:
 
 1. Confirm target APIs in `docs/io-api-reference.md`.
 2. Confirm effect requirements for all edited functions.
-3. Confirm platform caveats for `std.proc`, `std.net`, and `std.tls`.
+3. Confirm platform caveats for `std.proc`, `std.net`, `std.signal`, and `std.tls`.
 4. Confirm TLS policy contract in `docs/security-ops/tls-policy.v1.json`.
 5. Confirm unified secure error contract in `docs/errors/secure-networking-error-contract.v1.json`.
 6. Confirm Postgres TLS/SCRAM deterministic replay contract in `docs/security-ops/postgres-tls-scram-replay.v1.json`.
@@ -23,6 +23,9 @@ Declare effects before writing body logic.
 - `std.env` => `effects { env }` (and `fs` for cwd/home/temp_dir)
 - `std.proc` => `effects { proc, env }` for `run/spawn/pipe/...`
 - `std.net` => `effects { net }`
+- `std.http_server` => `effects { net }`
+- `std.router` => no effects
+- `std.config` => `effects { fs }` / `effects { env }` depending on helper
 - `std.tls` => `effects { net }`
 - `std.time` => `effects { time }`
 - `std.rand` => `effects { rand }`
@@ -46,17 +49,20 @@ Treat error enums as control-flow boundaries, not exceptions.
 
 - Linux/macOS:
   - full runtime behavior for documented `std.io/fs/env/path/time/rand`.
-  - `std.proc`, `std.net`, and `std.concurrent` implementations are active.
+  - `std.proc`, `std.net`, `std.http_server`, `std.router`, and `std.concurrent` implementations are active.
 - Windows:
   - `aic build --target x86_64-windows` allows non-std `net`/`tls` usage; the backend links `ws2_32` and uses the shared proc/net/concurrency runtime.
   - Windows CI smoke covers `std.proc` lifecycle paths, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
+  - `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`.
   - `std.tls` remains backend-dependent; async TLS APIs stay partial where backend availability or pressure accounting is not yet uniform.
   - `std.signal` remains unsupported and returns `SignalError::UnsupportedPlatform`.
+  - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.
 - Postgres TLS/SCRAM replay reference (`examples/io/postgres_tls_scram_reference.aic`):
   - deterministic and CI-safe (no external network dependency).
   - secure-flow error compatibility still maps via `PoolErrorContract` when normalizing into `std.secure_errors`.
 - Runtime connection pooling is available via `std.pool` (`new_pool/acquire/release/discard/pool_stats/close_pool`).
 - See `docs/io-runtime/connection-pool.md` and `examples/io/connection_pool.aic` for agent-safe callback typing and lifecycle patterns.
+- `std.config` is the deterministic file/env composition layer for app bootstrap; use it when request handling needs startup config before serving traffic.
 
 ## 5. Resource Lifecycle Rules
 
@@ -92,6 +98,8 @@ cargo run --quiet --bin aic -- check examples/io/tls_policy_defaults.aic
 cargo run --quiet --bin aic -- check examples/io/secure_error_contract.aic
 cargo run --quiet --bin aic -- check examples/io/postgres_tls_scram_reference.aic
 cargo run --quiet --bin aic -- check examples/io/connection_pool.aic
+cargo run --quiet --bin aic -- check examples/io/http_router.aic
+cargo run --quiet --bin aic -- check examples/io/config_loading.aic
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic
 cargo run --quiet --bin aic -- run examples/io/connection_pool.aic
 cargo run --quiet --bin aic -- run examples/io/postgres_tls_scram_reference.aic -- bad-cert

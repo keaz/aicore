@@ -2,7 +2,7 @@ import std.io;
 import std.map;
 import std.vec;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let mut sum_range = 0;
     for i in 0..6 {
         if i == 1 {

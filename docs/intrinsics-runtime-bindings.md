@@ -31,6 +31,8 @@ Validate with:
 aic verify-intrinsics std --json
 ```
 
+The verification set covers runtime-bound IO-adjacent modules such as `std.io`, `std.fs`, `std.env`, `std.proc`, `std.net`, `std.tls`, `std.http_server`, and `std.router`. Higher-level composition modules like `std.config` remain wrapper logic over those bindings.
+
 ## PROD-T1 Acceptance Coverage
 
 `[PROD-T1]` requires real runtime behavior for networking, crypto, and concurrency intrinsics.
@@ -45,6 +47,7 @@ These acceptance checks are wired into repository tests/examples:
 - `spawn(|| -> Int { 42 })` runs on runtime-backed task execution:
   - `tests/execution_tests.rs::exec_concurrency_spawn_join_generic_closure_capture_is_stable`
   - `tests/execution_tests.rs::exec_prod_t1_intrinsics_runtime_smoke`
+- `std.http_server` request/response helpers and `std.router` dispatch helpers are covered by the current runtime-backed REST examples and router conformance checks.
 - Intrinsic binding completeness over the standard library:
   - `tests/e7_cli_tests.rs::verify_intrinsics_std_runtime_bindings_emit_stable_json`
   - `aic verify-intrinsics std --json`

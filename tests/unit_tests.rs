@@ -5819,12 +5819,17 @@ fn unit_std_config_env_prefix_and_missing_key_paths_present() {
 
     assert!(source
         .contains("fn load_env_prefix(prefix: String) -> Map[String, String] effects { env }"));
+    assert!(source.contains("let vars = all_vars();"));
+    assert!(source.contains("while index < vec.vec_len(vars) {"));
+    assert!(source.contains("match vec.get(vars, index) {"));
     assert!(source.contains("string.starts_with(entry.key, prefix)"));
     assert!(source.contains("substring(entry.key, prefix_len, key_len)"));
+    assert!(source.contains("config = map.insert(config, key, entry.value);"));
 
     assert!(source.contains(
         "fn get_or_default(config: Map[String, String], key: String, fallback: String) -> String"
     ));
+    assert!(source.contains("match map.get(config, key) {"));
     assert!(source.contains("Some(value) => value"));
     assert!(source.contains("None => fallback"));
 
@@ -5833,6 +5838,18 @@ fn unit_std_config_env_prefix_and_missing_key_paths_present() {
     ));
     assert!(source.contains("Some(value) => Ok(value)"));
     assert!(source.contains("None => Err(MissingKey())"));
+}
+
+#[test]
+fn unit_config_loading_example_uses_std_config_surface() {
+    let source = fs::read_to_string("examples/io/config_loading.aic")
+        .expect("read examples/io/config_loading.aic");
+
+    assert!(source.contains("fn main() -> Int effects { io, fs } capabilities { io, fs }"));
+    assert!(source.contains("match config.load_json(path) {"));
+    assert!(source.contains("config.get_or_default(file_config, \"HOST\", \"\")"));
+    assert!(source.contains("config.require(file_config, \"PORT\")"));
+    assert!(source.contains("config.require(file_config, \"MISSING_REQUIRED\")"));
 }
 
 #[test]
