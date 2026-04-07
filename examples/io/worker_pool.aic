@@ -72,6 +72,11 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
     let rx = pair.1;
     let m: Mutex[Int] = new_mutex(0);
     let rw: RwLock[Vec[Int]] = new_rwlock(vec.vec_of(40));
+    let m_set: Mutex[Int] = Mutex { handle: m.handle };
+    let m_read: Mutex[Int] = Mutex { handle: m.handle };
+    let rw_write: RwLock[Vec[Int]] = RwLock { handle: rw.handle };
+    let rw_read: RwLock[Vec[Int]] = RwLock { handle: rw.handle };
+    let rw_close: RwLock[Vec[Int]] = RwLock { handle: rw.handle };
 
     let r1 = unwrap_int(join_task(t1));
     let r2 = unwrap_int(join_task(t2));
@@ -94,11 +99,11 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
         Err(_) => 0,
     };
 
-    let _release = set_mutex_value(m, a + b);
-    let total = read_mutex_value(m);
+    let _release = set_mutex_value(m_set, a + b);
+    let total = read_mutex_value(m_read);
 
-    let write_ok = append_rwlock_value(rw, 2);
-    let rw_tail = match read_lock(rw) {
+    let write_ok = append_rwlock_value(rw_write, 2);
+    let rw_tail = match read_lock(rw_read) {
         Ok(values) => match vec.get(values, 1) {
             Some(v) => v,
             None => 0,
@@ -108,7 +113,7 @@ fn main() -> Int effects { io, concurrency, env } capabilities { io, concurrency
 
     let _close_tx = close_sender(tx);
     let _close_rx = close_receiver(rx);
-    let _close_rw = close_rwlock(rw);
+    let _close_rw = close_rwlock(rw_close);
 
     if sent1 + sent2 == 2 && total == 42 && write_ok == 1 && rw_tail == 2 {
         print_int(42);

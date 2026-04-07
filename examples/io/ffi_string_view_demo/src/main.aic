@@ -1,0 +1,14 @@
+module ffi_string_view_demo.main;
+
+import std.io;
+
+extern "C" fn ffi_string_len(s: String) -> Int;
+
+fn prefixed_len(input: String) -> Int {
+    unsafe { ffi_string_len(input) }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    print_int(prefixed_len("ffi:core"));
+    0
+}

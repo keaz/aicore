@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use aicore::codegen::{
     compile_with_clang, compile_with_clang_artifact, compile_with_clang_artifact_with_options,
-    emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions,
+    emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
     OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
@@ -218,7 +218,7 @@ fn assert_unsupported_map_key_diagnostic(source: &str) {
                 diags.iter().any(|d| {
                     d.code == "E5011"
                         && d.message
-                            .contains("supports only map keys String, Int, and Bool")
+                            .contains("supports only map keys String, Bytes, Int, UInt64, and Bool")
                 }),
                 "diags={diags:#?}"
             );
@@ -610,6 +610,31 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
     let base = 41;
     let add = |x: Int| -> Int { x + base };
     print_int(add(1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_closure_parameter_inferred_from_context_runs() {
+    let src = r#"
+import std.io;
+
+struct Mapper[T] { apply: T }
+
+fn apply_mapper(mapper: Mapper[Fn(Int) -> Int], value: Int) -> Int {
+    let apply = mapper.apply;
+    apply(value)
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mapper: Mapper[Fn(Int) -> Int] = Mapper {
+        apply: |x| -> Int { x + 1 }
+    };
+    print_int(apply_mapper(mapper, 41));
     0
 }
 "#;
@@ -1605,41 +1630,58 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
-fn exec_match_guard_backend_reports_e5023() {
-    let source = r#"
+fn exec_match_guards_across_bool_enum_and_tuple() {
+    let src = r#"
 import std.io;
 
-fn f(x: Bool, allow: Bool) -> Int {
+enum Score {
+    Empty,
+    Full(Int),
+}
+
+fn score_bool(x: Bool, allow: Bool) -> Int {
     match x {
-        true if allow => 1,
-        false => 0,
-        _ => 2,
+        true if allow => 5,
+        true => 6,
+        false if allow => 7,
+        false => 8,
+    }
+}
+
+fn score_enum(x: Score, allow: Bool) -> Int {
+    match x {
+        Full(v) if allow => v,
+        Full(_) => 9,
+        Empty if allow => 10,
+        Empty => 11,
+    }
+}
+
+fn score_tuple(pair: (Int, Bool), allow: Bool) -> Int {
+    match pair {
+        (value, true) if allow => value,
+        (value, true) => value + 1,
+        (_, false) if allow => 12,
+        (_, false) => 13,
     }
 }
 
 fn main() -> Int effects { io } capabilities { io  } {
-    print_int(f(true, true));
+    let total =
+        score_bool(true, false) +
+        score_bool(false, true) +
+        score_enum(Full(9), false) +
+        score_enum(Empty(), true) +
+        score_tuple((4, true), true) +
+        score_tuple((5, true), false);
+    print_int(total);
     0
 }
 "#;
 
-    let dir = tempdir().expect("tempdir");
-    let src = dir.path().join("main.aic");
-    fs::write(&src, source).expect("write source");
-
-    let front = run_frontend(&src).expect("frontend");
-    assert!(
-        !has_errors(&front.diagnostics),
-        "diagnostics: {:#?}",
-        front.diagnostics
-    );
-
-    let lowered = lower_runtime_asserts(&front.ir);
-    let diags = match emit_llvm(&lowered, &src.to_string_lossy()) {
-        Ok(_) => panic!("expected backend error"),
-        Err(diags) => diags,
-    };
-    assert!(diags.iter().any(|d| d.code == "E5023"), "diags={diags:#?}");
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
 }
 
 #[test]
@@ -3916,6 +3958,206 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
 }
 
 #[test]
+fn exec_map_string_bool_value_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[String, Bool] = map.new_map();
+    let m1 = map.insert(m0, "b", true);
+    let m2 = map.insert(m1, "a", false);
+    let m3 = map.insert(m2, "c", true);
+    let m4 = map.insert(m3, "b", false);
+    let m5 = map.remove(m4, "a");
+
+    let b_value = match map.get(m5, "b") {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+    let keys_ok = if opt_int_or(string.index_of(string.join(map.keys(m5), ","), "b,c"), -1) == 0 { 1 } else { 0 };
+
+    let values = map.values(m5);
+    let v0_ok = match vec.get(values, 0) { Some(v) => if v { 0 } else { 1 }, None => 0 };
+    let v1_ok = match vec.get(values, 1) { Some(v) => bool_to_int(v), None => 0 };
+
+    let entries = map.entries(m5);
+    let e0_ok = match vec.get(entries, 0) {
+        Some(entry) => if opt_int_or(string.index_of(entry.key, "b"), -1) == 0 && !entry.value { 1 } else { 0 },
+        None => 0,
+    };
+    let e1_ok = match vec.get(entries, 1) {
+        Some(entry) => if opt_int_or(string.index_of(entry.key, "c"), -1) == 0 && entry.value { 1 } else { 0 },
+        None => 0,
+    };
+
+    if b_value + keys_ok + v0_ok + v1_ok + e0_ok + e1_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_map_string_u64_value_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let beta_initial: UInt64 = 20u64;
+    let alpha_value: UInt64 = 1u64;
+    let gamma_value: UInt64 = 3u64;
+    let beta_final: UInt64 = 200u64;
+    let m0: Map[String, UInt64] = map.new_map();
+    let m1 = map.insert(m0, "b", beta_initial);
+    let m2 = map.insert(m1, "a", alpha_value);
+    let m3 = map.insert(m2, "c", gamma_value);
+    let m4 = map.insert(m3, "b", beta_final);
+    let m5 = map.remove(m4, "a");
+
+    let amount_ok = match map.get(m5, "b") {
+        Some(value) => if value == beta_final { 1 } else { 0 },
+        None => 0,
+    };
+    let keys_ok = if opt_int_or(string.index_of(string.join(map.keys(m5), ","), "b,c"), -1) == 0 { 1 } else { 0 };
+
+    let values = map.values(m5);
+    let v0_ok = match vec.get(values, 0) { Some(v) => if v == beta_final { 1 } else { 0 }, None => 0 };
+    let v1_ok = match vec.get(values, 1) { Some(v) => if v == gamma_value { 1 } else { 0 }, None => 0 };
+
+    let entries = map.entries(m5);
+    let e0_ok = match vec.get(entries, 0) {
+        Some(entry) => if opt_int_or(string.index_of(entry.key, "b"), -1) == 0 && entry.value == beta_final { 1 } else { 0 },
+        None => 0,
+    };
+    let e1_ok = match vec.get(entries, 1) {
+        Some(entry) => if opt_int_or(string.index_of(entry.key, "c"), -1) == 0 && entry.value == gamma_value { 1 } else { 0 },
+        None => 0,
+    };
+
+    if amount_ok + keys_ok + v0_ok + v1_ok + e0_ok + e1_ok == 6 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_map_int_bool_value_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[Int, Bool] = map.new_map();
+    let m1 = map.insert(m0, 20, true);
+    let m2 = map.insert(m1, 10, false);
+    let m3 = map.insert(m2, 30, true);
+    let m4 = map.insert(m3, 20, false);
+    let m5 = map.remove(m4, 10);
+
+    let v20_ok = match map.get(m5, 20) {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+
+    let keys = map.keys(m5);
+    let k0_ok = match vec.get(keys, 0) { Some(v) => if v == 20 { 1 } else { 0 }, None => 0 };
+    let k1_ok = match vec.get(keys, 1) { Some(v) => if v == 30 { 1 } else { 0 }, None => 0 };
+
+    let values = map.values(m5);
+    let v0_ok = match vec.get(values, 0) { Some(v) => if v { 0 } else { 1 }, None => 0 };
+    let v1_ok = match vec.get(values, 1) { Some(v) => bool_to_int(v), None => 0 };
+
+    let entries = map.entries(m5);
+    let e0_ok = match vec.get(entries, 0) {
+        Some(entry) => if entry.key == 20 && !entry.value { 1 } else { 0 },
+        None => 0,
+    };
+    let e1_ok = match vec.get(entries, 1) {
+        Some(entry) => if entry.key == 30 && entry.value { 1 } else { 0 },
+        None => 0,
+    };
+
+    if v20_ok + k0_ok + k1_ok + v0_ok + v1_ok + e0_ok + e1_ok == 7 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_map_bytes_value_shape_is_supported() {
+    let src = r#"
+import std.bytes;
+import std.io;
+import std.map;
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[String, Bytes] = map.new_map();
+    let m1 = map.insert(m0, "alpha", bytes.from_string("one"));
+    let ok = match map.get(m1, "alpha") {
+        Some(value) => if bytes.compare_bytes(value, bytes.from_string("one")) == 0 { 1 } else { 0 },
+        None => 0,
+    };
+    if ok == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
 fn exec_map_bool_int_key_ops_are_deterministic() {
     let src = r#"
 import std.io;
@@ -3948,6 +4190,59 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
     let size_ok = if map.size(removed) == 1 { 1 } else { 0 };
 
     if k0 == 2 && k1 == 1 && v_true == 70 && v_false == 9 && has_true + removed_ok + size_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+
+    assert_program_prints_42(src);
+}
+
+#[test]
+fn exec_map_bool_bool_ops_are_deterministic() {
+    let src = r#"
+import std.io;
+import std.map;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m0: Map[Bool, Bool] = map.new_map();
+    let m1 = map.insert(m0, true, true);
+    let m2 = map.insert(m1, false, false);
+    let m3 = map.insert(m2, true, false);
+    let m4 = map.insert(m3, false, true);
+
+    let v_true_ok = match map.get(m4, true) {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+    let v_false_ok = match map.get(m4, false) {
+        Some(value) => bool_to_int(value),
+        None => 0,
+    };
+
+    let values = map.values(m4);
+    let v0_ok = match vec.get(values, 0) { Some(v) => bool_to_int(v), None => 0 };
+    let v1_ok = match vec.get(values, 1) { Some(v) => if v { 0 } else { 1 }, None => 0 };
+
+    let entries = map.entries(m4);
+    let e0_ok = match vec.get(entries, 0) {
+        Some(entry) => if !entry.key && entry.value { 1 } else { 0 },
+        None => 0,
+    };
+    let e1_ok = match vec.get(entries, 1) {
+        Some(entry) => if entry.key && !entry.value { 1 } else { 0 },
+        None => 0,
+    };
+
+    if v_true_ok + v_false_ok + v0_ok + v1_ok + e0_ok + e1_ok == 6 {
         print_int(42);
     } else {
         print_int(0);
@@ -12434,6 +12729,87 @@ fn main() -> Int {
         stderr.contains("ensures failed in bad_return"),
         "stderr={stderr}"
     );
+}
+
+#[test]
+fn exec_extern_c_string_view_parameter_round_trips_through_native_stub() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("ffi_string_view.aic");
+    let source = r#"import std.io;
+
+extern "C" fn ffi_string_len(s: String) -> Int;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let tagged = "ffi:core";
+    print_int(unsafe { ffi_string_len(tagged) });
+    0
+}
+"#;
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+
+    let c_stub = dir.path().join("ffi_string_view.c");
+    fs::write(
+        &c_stub,
+        r#"#include <stdint.h>
+
+int64_t ffi_string_len(const char* ptr, int64_t len, int64_t cap) {
+    (void)ptr;
+    (void)cap;
+    return len;
+}
+"#,
+    )
+    .expect("write c stub");
+
+    let c_obj = dir.path().join("ffi_string_view.o");
+    let compile_obj = Command::new("clang")
+        .arg("-O0")
+        .arg("-c")
+        .arg(&c_stub)
+        .arg("-o")
+        .arg(&c_obj)
+        .output()
+        .expect("compile c object");
+    assert!(
+        compile_obj.status.success(),
+        "clang stderr={}",
+        String::from_utf8_lossy(&compile_obj.stderr)
+    );
+
+    let exe = dir.path().join("ffi_string_view_demo");
+    compile_with_clang_artifact_with_options(
+        &llvm.llvm_ir,
+        &exe,
+        dir.path(),
+        ArtifactKind::Exe,
+        CompileOptions {
+            link: LinkOptions {
+                objects: vec![c_obj],
+                ..LinkOptions::default()
+            },
+            ..CompileOptions::default()
+        },
+    )
+    .expect("clang build");
+
+    let output = Command::new(&exe).output().expect("run exe");
+    assert_eq!(
+        output.status.code().unwrap_or(1),
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "8\n");
 }
 
 #[test]

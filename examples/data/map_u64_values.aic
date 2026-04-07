@@ -1,0 +1,70 @@
+module example.data.map_u64_values;
+
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { env, io } {
+    let beta_initial: UInt64 = 20u64;
+    let alpha_value: UInt64 = 1u64;
+    let gamma_value: UInt64 = 3u64;
+    let beta_final: UInt64 = 200u64;
+    let by_name0: Map[String, UInt64] = map.new_map();
+    let by_name1 = map.insert(by_name0, "beta", beta_initial);
+    let by_name2 = map.insert(by_name1, "alpha", alpha_value);
+    let by_name3 = map.insert(by_name2, "gamma", gamma_value);
+    let by_name4 = map.insert(by_name3, "beta", beta_final);
+    let by_name = map.remove(by_name4, "alpha");
+
+    let name_ok = match map.get(by_name, "beta") {
+        Some(value) => if value == beta_final { 1 } else { 0 },
+        None => 0,
+    };
+    let name_keys_ok =
+        if opt_int_or(string.index_of(string.join(map.keys(by_name), ","), "beta,gamma"), -1) == 0 {
+            1
+        } else {
+            0
+        };
+
+    let name_values = map.values(by_name);
+    let name_values_ok =
+        match vec.get(name_values, 0) {
+            Some(v0) => match vec.get(name_values, 1) {
+                Some(v1) => if v0 == beta_final && v1 == gamma_value { 1 } else { 0 },
+                None => 0,
+            },
+            None => 0,
+        };
+
+    let name_entries = map.entries(by_name);
+    let name_entry0_ok =
+        match vec.get(name_entries, 0) {
+            Some(entry) => if entry.key == "beta" && entry.value == beta_final { 1 } else { 0 },
+            None => 0,
+        };
+    let name_entry1_ok =
+        match vec.get(name_entries, 1) {
+            Some(entry) => if entry.key == "gamma" && entry.value == gamma_value { 1 } else { 0 },
+            None => 0,
+        };
+    let name_entries_ok = if name_entry0_ok + name_entry1_ok == 2 { 1 } else { 0 };
+
+    let score = name_ok + name_keys_ok + name_values_ok + name_entries_ok;
+
+    if score == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

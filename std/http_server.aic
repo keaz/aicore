@@ -6,8 +6,13 @@
 /// ```
 module std.http_server;
 
+import std.bytes;
 import std.map;
+import std.net;
+import std.option;
 import std.result;
+import std.string;
+import std.vec;
 
 /// `ServerError` is a `enum` in `std.http_server`.
 ///
@@ -69,6 +74,38 @@ struct ResponseView {
     body: String,
 }
 
+/// `RequestHead` exposes request metadata for body-stream processing.
+struct RequestHead {
+    method: String,
+    path: String,
+    query: Map[String, String],
+    headers: Map[String, String],
+    content_length: Int,
+    chunked: Bool,
+}
+
+/// `RequestBodyReader` tracks deterministic chunked reads over request body bytes.
+struct RequestBodyReader {
+    head: RequestHead,
+    body: Bytes,
+    cursor: Int,
+    chunk_bytes: Int,
+}
+
+/// `RequestBodyStep` represents one deterministic read step.
+struct RequestBodyStep {
+    reader: RequestBodyReader,
+    chunk: Option[Bytes],
+}
+
+/// `ResponseBodyWriter` tracks deterministic fixed-length streaming response writes.
+struct ResponseBodyWriter {
+    conn: Int,
+    timeout_ms: Int,
+    expected_bytes: Int,
+    sent_bytes: Int,
+}
+
 /// `aic_http_server_listen_intrinsic` in `std.http_server`.
 ///
 /// ## Example
@@ -81,11 +118,7 @@ struct ResponseView {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net } {
-    let _addr = addr;
-    let out: Result[Int, ServerError] = Err(Net());
-    out
-}
+intrinsic fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net };
 
 /// `aic_http_server_accept_intrinsic` in `std.http_server`.
 ///
@@ -99,12 +132,7 @@ fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] ef
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net } {
-    let _listener = listener;
-    let _timeout_ms = timeout_ms;
-    let out: Result[Int, ServerError] = Err(Net());
-    out
-}
+intrinsic fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net };
 
 /// `aic_http_server_read_request_intrinsic` in `std.http_server`.
 ///
@@ -118,13 +146,7 @@ fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[In
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
-    let _conn = conn;
-    let _max_bytes = max_bytes;
-    let _timeout_ms = timeout_ms;
-    let out: Result[Request, ServerError] = Err(InvalidRequest());
-    out
-}
+intrinsic fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net };
 
 /// `aic_http_server_write_response_intrinsic` in `std.http_server`.
 ///
@@ -138,12 +160,7 @@ fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms:
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net } {
-    let _conn = conn;
-    let _response = response;
-    let out: Result[Int, ServerError] = Err(Net());
-    out
-}
+intrinsic fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };
 
 /// `aic_http_server_close_intrinsic` in `std.http_server`.
 ///
@@ -157,11 +174,7 @@ fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Re
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net } {
-    let _handle = handle;
-    let out: Result[Bool, ServerError] = Err(Net());
-    out
-}
+intrinsic fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net };
 
 /// `aic_http_server_text_response_intrinsic` in `std.http_server`.
 ///
@@ -303,6 +316,301 @@ fn close(handle: Int) -> Result[Bool, ServerError] effects { net } {
     aic_http_server_close_intrinsic(handle)
 }
 
+/// `read_request_stream` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `read_request_stream` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn read_request_stream(
+    conn: Int,
+    max_bytes: Int,
+    timeout_ms: Int,
+    chunk_bytes: Int,
+) -> Result[RequestBodyReader, ServerError] effects { net } {
+    match read_request(conn, max_bytes, timeout_ms) {
+        Ok(request) => Ok(http_server_request_body_reader_from_request(request, chunk_bytes)),
+        Err(err) => Err(err),
+    }
+}
+
+/// `request_stream_head` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `request_stream_head` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn request_stream_head(reader: RequestBodyReader) -> RequestHead {
+    reader.head
+}
+
+/// `request_stream_done` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `request_stream_done` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn request_stream_done(reader: RequestBodyReader) -> Bool {
+    reader.cursor >= bytes.byte_len(reader.body)
+}
+
+/// `request_stream_read_next` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `request_stream_read_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn request_stream_read_next(reader: RequestBodyReader) -> Result[RequestBodyStep, ServerError] {
+    let chunk_bytes = http_server_positive_chunk_bytes(reader.chunk_bytes);
+    let body_len = bytes.byte_len(reader.body);
+    if reader.cursor >= body_len {
+        Ok(RequestBodyStep {
+            reader: reader,
+            chunk: None(),
+        })
+    } else {
+        let remaining = body_len - reader.cursor;
+        let next_end = if remaining < chunk_bytes {
+            body_len
+        } else {
+            reader.cursor + chunk_bytes
+        };
+        match bytes.byte_slice(reader.body, reader.cursor, next_end) {
+            Ok(chunk) => Ok(RequestBodyStep {
+                reader: RequestBodyReader {
+                    head: reader.head,
+                    body: reader.body,
+                    cursor: next_end,
+                    chunk_bytes: chunk_bytes,
+                },
+                chunk: Some(chunk),
+            }),
+            Err(_) => Err(Internal()),
+        }
+    }
+}
+
+/// `begin_streaming_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `begin_streaming_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn begin_streaming_response(
+    conn: Int,
+    status: UInt16,
+    headers: Map[String, String],
+    content_length: Int,
+    timeout_ms: Int,
+) -> Result[ResponseBodyWriter, ServerError] effects { net } {
+    if content_length < 0 {
+        Err(InvalidHeader())
+    } else {
+        let wire = http_server_streaming_response_wire_text(status, headers, content_length);
+        match http_server_send_bytes(conn, bytes.from_string(wire), timeout_ms) {
+            Ok(_) => Ok(ResponseBodyWriter {
+                conn: conn,
+                timeout_ms: timeout_ms,
+                expected_bytes: content_length,
+                sent_bytes: 0,
+            }),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+/// `write_streaming_response_chunk` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `write_streaming_response_chunk` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn write_streaming_response_chunk(
+    writer: ResponseBodyWriter,
+    chunk: Bytes,
+) -> Result[ResponseBodyWriter, ServerError] effects { net } {
+    let chunk_len = bytes.byte_len(chunk);
+    let remaining = writer.expected_bytes - writer.sent_bytes;
+    if chunk_len > remaining {
+        Err(BodyTooLarge())
+    } else {
+        match http_server_send_bytes(writer.conn, chunk, writer.timeout_ms) {
+            Ok(written) => if written != chunk_len {
+                Err(Internal())
+            } else {
+                Ok(ResponseBodyWriter {
+                    conn: writer.conn,
+                    timeout_ms: writer.timeout_ms,
+                    expected_bytes: writer.expected_bytes,
+                    sent_bytes: writer.sent_bytes + written,
+                })
+            },
+            Err(err) => Err(err),
+        }
+    }
+}
+
+/// `finish_streaming_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `finish_streaming_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn finish_streaming_response(writer: ResponseBodyWriter) -> Result[Int, ServerError] effects { net } {
+    if writer.sent_bytes != writer.expected_bytes {
+        Err(InvalidRequest())
+    } else {
+        Ok(writer.sent_bytes)
+    }
+}
+
+/// `async_accept_submit` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_accept_submit` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {
+    net.async_accept_submit(listener, timeout_ms)
+}
+
+/// `async_accept_wait` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_accept_wait` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_accept_wait(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    net.async_wait_int(op, timeout_ms)
+}
+
+/// `async_accept` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_accept` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {
+    net.async_accept(listener, timeout_ms)
+}
+
+/// `async_read_request` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_read_request` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
+    read_request(conn, max_bytes, timeout_ms)
+}
+
+/// `async_write_response` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_write_response` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net } {
+    write_response(conn, response)
+}
+
+/// `async_serve` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `async_serve` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn async_serve(
+    listener: Int,
+    max_bytes: Int,
+    accept_timeout_ms: Int,
+    io_timeout_ms: Int,
+    handler: Fn(Request) -> ResponseView,
+) -> Result[Int, ServerError] effects { net } {
+    match accept(listener, accept_timeout_ms) {
+        Ok(conn) => async_serve_connection(conn, max_bytes, io_timeout_ms, handler),
+        Err(err) => Err(err),
+    }
+}
+
 /// `response` in `std.http_server`.
 ///
 /// ## Example
@@ -405,6 +713,165 @@ fn header(resp: ResponseView, name: String) -> Option[String] {
     aic_map_get_intrinsic(resp.headers, name)
 }
 
+/// `http_server_positive_chunk_bytes` normalizes nonpositive chunk sizes to `1`.
+fn http_server_positive_chunk_bytes(chunk_bytes: Int) -> Int {
+    if chunk_bytes <= 0 {
+        1
+    } else {
+        chunk_bytes
+    }
+}
+
+/// `http_server_request_body_reader_from_request` materializes a deterministic body reader from a buffered request.
+fn http_server_request_body_reader_from_request(request: Request, chunk_bytes: Int) -> RequestBodyReader {
+    let body = bytes.from_string(request.body);
+    let head = http_server_request_head_from_request(request, body, false);
+    RequestBodyReader {
+        head: head,
+        body: body,
+        cursor: 0,
+        chunk_bytes: http_server_positive_chunk_bytes(chunk_bytes),
+    }
+}
+
+/// `http_server_request_head_from_request` derives streaming-safe request metadata from a buffered request payload.
+fn http_server_request_head_from_request(
+    request: Request,
+    body: Bytes,
+    chunked: Bool,
+) -> RequestHead {
+    RequestHead {
+        method: request.method,
+        path: request.path,
+        query: request.query,
+        headers: request.headers,
+        content_length: bytes.byte_len(body),
+        chunked: chunked,
+    }
+}
+
+/// `http_server_streaming_response_wire_text` renders the HTTP status line and headers for fixed-length streaming responses.
+fn http_server_streaming_response_wire_text(
+    status: UInt16,
+    headers: Map[String, String],
+    content_length: Int,
+) -> String {
+    let status_text = http_server_status_reason_text(status);
+    let status_line = string.format(
+        "HTTP/1.1 {0} {1}\r\n",
+        vec.append(vec.vec_of(string.int_to_string(http_server_status_to_int(status))), vec.vec_of(status_text)),
+    );
+    let header_lines = http_server_header_lines(headers);
+    let content_line = string.format(
+        "content-length: {0}\r\n\r\n",
+        vec.vec_of(string.int_to_string(content_length)),
+    );
+    string.join(
+        vec.append(
+            vec.append(vec.vec_of(status_line), vec.vec_of(header_lines)),
+            vec.vec_of(content_line),
+        ),
+        "",
+    )
+}
+
+/// `http_server_header_lines` formats deterministic CRLF-delimited header lines from a response header map.
+fn http_server_header_lines(headers: Map[String, String]) -> String {
+    let entries = map.entries(headers);
+    let mut lines: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < entries.len {
+        let entry = match vec.get(entries, index) {
+            Some(value) => value,
+            None => MapEntry {
+                key: "",
+                value: "",
+            },
+        };
+        let line = string.format(
+            "{0}: {1}\r\n",
+            vec.append(vec.vec_of(entry.key), vec.vec_of(entry.value)),
+        );
+        lines = vec.push(lines, line);
+        index = index + 1;
+    };
+    string.join(lines, "")
+}
+
+/// `http_server_status_reason_text` maps bounded status codes to their HTTP reason phrases.
+fn http_server_status_reason_text(status: UInt16) -> String {
+    if status == 100u16 {
+        "Continue"
+    } else if status == 101u16 {
+        "Switching Protocols"
+    } else if status == 200u16 {
+        "OK"
+    } else if status == 201u16 {
+        "Created"
+    } else if status == 202u16 {
+        "Accepted"
+    } else if status == 204u16 {
+        "No Content"
+    } else if status == 301u16 {
+        "Moved Permanently"
+    } else if status == 302u16 {
+        "Found"
+    } else if status == 304u16 {
+        "Not Modified"
+    } else if status == 400u16 {
+        "Bad Request"
+    } else if status == 401u16 {
+        "Unauthorized"
+    } else if status == 403u16 {
+        "Forbidden"
+    } else if status == 404u16 {
+        "Not Found"
+    } else if status == 408u16 {
+        "Request Timeout"
+    } else if status == 409u16 {
+        "Conflict"
+    } else if status == 413u16 {
+        "Payload Too Large"
+    } else if status == 415u16 {
+        "Unsupported Media Type"
+    } else if status == 500u16 {
+        "Internal Server Error"
+    } else if status == 502u16 {
+        "Bad Gateway"
+    } else if status == 503u16 {
+        "Service Unavailable"
+    } else {
+        ""
+    }
+}
+
+/// `http_server_send_bytes` sends raw response bytes and maps transport errors into `ServerError`.
+fn http_server_send_bytes(
+    conn: Int,
+    payload: Bytes,
+    timeout_ms: Int,
+) -> Result[Int, ServerError] effects { net } {
+    match net.tcp_send_timeout(conn, payload, timeout_ms) {
+        Ok(written) => Ok(written),
+        Err(err) => Err(http_server_net_error_to_server_error(err)),
+    }
+}
+
+/// `http_server_net_error_to_server_error` normalizes lower-level network failures into server-facing error variants.
+fn http_server_net_error_to_server_error(err: NetError) -> ServerError {
+    match err {
+        Timeout => Timeout(),
+        ConnectionClosed => ConnectionClosed(),
+        InvalidInput => InvalidRequest(),
+        Cancelled => Internal(),
+        PermissionDenied => Net(),
+        Refused => Net(),
+        AddressInUse => Net(),
+        Io => Net(),
+        NotFound => Net(),
+    }
+}
+
 /// `http_server_status_from_int` validates and converts runtime `Int` status to bounded `UInt16`.
 fn http_server_status_from_int(status: Int) -> Result[UInt16, ServerError] {
     if status < 0 || status > 65535 {
@@ -472,4 +939,28 @@ fn http_server_status_to_int(status: UInt16) -> Int {
         out = out + 1;
     };
     out
+}
+
+/// `async_serve_connection` serves one async request/response exchange and always closes the accepted connection.
+fn async_serve_connection(
+    conn: Int,
+    max_bytes: Int,
+    timeout_ms: Int,
+    handler: Fn(Request) -> ResponseView,
+) -> Result[Int, ServerError] effects { net } {
+    let served = match async_read_request(conn, max_bytes, timeout_ms) {
+        Ok(request) => async_write_response(conn, handler(request)),
+        Err(err) => Err(err),
+    };
+    let closed = close(conn);
+    match served {
+        Ok(written) => match closed {
+            Ok(_) => Ok(written),
+            Err(err) => Err(err),
+        },
+        Err(err) => match closed {
+            Ok(_) => Err(err),
+            Err(_) => Err(err),
+        },
+    }
 }

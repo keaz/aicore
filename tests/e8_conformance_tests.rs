@@ -147,8 +147,10 @@ fn route_param_or_empty(router: Router, method: String, path: String, key: Strin
 }
 
 fn request_ok(router: Router, req: Request) -> Int {
-    let route_value = route_id(router, req.method, req.path);
-    let id = route_param_or_empty(router, req.method, req.path, "id");
+    let route_router: Router = Router { handle: router.handle };
+    let param_router: Router = Router { handle: router.handle };
+    let route_value = route_id(route_router, req.method, req.path);
+    let id = route_param_or_empty(param_router, req.method, req.path, "id");
     let route_ok = if route_value == 200 && string.contains(id, "42") && len(id) == 2 {
         1
     } else {
@@ -366,20 +368,27 @@ fn main() -> Int effects { io } capabilities { io } {
         Err(_) => router3,
     };
 
-    let static_ok = if route_id(router4, "GET", "/users/me") == 10 { 1 } else { 0 };
-    let param_ok = if route_id(router4, "GET", "/users/42") == 20 &&
-        str_eq(route_param_or_empty(router4, "GET", "/users/42", "id"), "42") == 1 {
+    let static_router: Router = Router { handle: router4.handle };
+    let param_route_router: Router = Router { handle: router4.handle };
+    let param_value_router: Router = Router { handle: router4.handle };
+    let wildcard_route_router: Router = Router { handle: router4.handle };
+    let wildcard_param_router: Router = Router { handle: router4.handle };
+    let method_router: Router = Router { handle: router4.handle };
+
+    let static_ok = if route_id(static_router, "GET", "/users/me") == 10 { 1 } else { 0 };
+    let param_ok = if route_id(param_route_router, "GET", "/users/42") == 20 &&
+        str_eq(route_param_or_empty(param_value_router, "GET", "/users/42", "id"), "42") == 1 {
         1
     } else {
         0
     };
-    let wildcard_ok = if route_id(router4, "GET", "/users/42/profile") == 30 &&
-        len(route_param_or_empty(router4, "GET", "/users/42/profile", "id")) == 0 {
+    let wildcard_ok = if route_id(wildcard_route_router, "GET", "/users/42/profile") == 30 &&
+        len(route_param_or_empty(wildcard_param_router, "GET", "/users/42/profile", "id")) == 0 {
         1
     } else {
         0
     };
-    let method_fallback_ok = if route_id(router4, "POST", "/users/42/profile") == 40 {
+    let method_fallback_ok = if route_id(method_router, "POST", "/users/42/profile") == 40 {
         1
     } else {
         0

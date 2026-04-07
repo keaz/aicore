@@ -2,16 +2,17 @@
 
 See also: [Spec](../spec.md), [Type System](../type-system.md), [Architecture](../architecture.md), [Contributing](../contributing.md), [Syntax](./syntax.md), [Types](./types.md), [Generics](./generics.md), [Memory](./memory.md), [Effects](./effects.md)
 
-This page is an AI-agent-facing contract for language issues that are still open or only partially completed:
+This page is an AI-agent-facing contract for residual follow-up work in language areas that historically tracked through GitHub issues.
 
-- `#128` `[LANG-T4] Tuple types`
-- `#130` `[LANG-T6] Struct methods and method call syntax`
-- `#136` `[TYPE-T1] Trait method declarations and dynamic dispatch`
-- `#137` `[TYPE-T2] Borrow checker completeness`
-- `#138` `[TYPE-T3] Generic type constraints and where clauses`
-- `#139` `[TYPE-T4] Improved type inference`
+- Historical issue lineage:
+  - `#128` `[LANG-T4] Tuple types` (closed)
+  - `#130` `[LANG-T6] Struct methods and method call syntax` (closed)
+  - `#136` `[TYPE-T1] Trait method declarations and dynamic dispatch` (closed)
+  - `#137` `[TYPE-T2] Borrow checker completeness` (closed)
+  - `#138` `[TYPE-T3] Generic type constraints and where clauses` (closed)
+  - `#139` `[TYPE-T4] Improved type inference` (closed)
 
-The sections below intentionally separate `Current behavior` from `Target behavior`. `Target behavior` captures remaining work, not necessarily full feature creation from zero.
+The sections below intentionally separate `Current behavior` from `Target behavior`. `Target behavior` captures remaining follow-up work and future-proofing notes, not evidence that the historical epics above are still open.
 
 ## Issue #128: Tuple types
 
@@ -177,6 +178,8 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 - Current behavior:
   - `E1263`-`E1269` cover current alias/mutability failures.
+  - `E1277` reports use-after-move for the currently implemented move-tracking subset.
+  - `E1278` reports moves attempted while an overlapping borrow is active.
 - Target behavior:
   - Keep existing code meanings stable.
   - Add dedicated diagnostics for:

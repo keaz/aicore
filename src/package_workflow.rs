@@ -1302,7 +1302,15 @@ fn collect_checksum_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> any
             .unwrap_or_default();
 
         if path.is_dir() {
-            if name == ".git" || name == "target" || name == CACHE_DIR_NAME {
+            if matches!(
+                name,
+                ".git"
+                    | "target"
+                    | CACHE_DIR_NAME
+                    | ".aic-checkpoints"
+                    | ".aic-replay"
+                    | ".aic-sessions"
+            ) {
                 continue;
             }
             collect_checksum_files(root, &path, out)?;

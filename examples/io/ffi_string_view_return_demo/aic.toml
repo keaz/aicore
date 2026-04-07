@@ -1,0 +1,7 @@
+[package]
+name = "ffi_string_view_return_demo"
+version = "0.1.0"
+main = "src/main.aic"
+
+[native]
+objects = ["native/ffi_string_return.o"]

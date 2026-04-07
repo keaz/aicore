@@ -1,0 +1,178 @@
+module example.io.http_server_streaming_api;
+
+import std.bytes;
+import std.http_server;
+import std.io;
+import std.map;
+import std.net;
+import std.string;
+
+fn empty_reader() -> RequestBodyReader {
+    RequestBodyReader {
+        head: RequestHead {
+            method: "",
+            path: "",
+            query: map.new_map(),
+            headers: map.new_map(),
+            content_length: 0,
+            chunked: false,
+        },
+        body: bytes.empty(),
+        cursor: 0,
+        chunk_bytes: 1,
+    }
+}
+
+fn main() -> Int effects { io, net } capabilities { io, net } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let client = match tcp_connect(addr, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let server = match accept(listener, 1000) {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+
+    let request_wire = "POST /stream HTTP/1.1\r\nHost: localhost\r\nContent-Length: 11\r\n\r\nhello world";
+    let sent = match tcp_send(client, bytes.from_string(request_wire)) {
+        Ok(value) => value,
+        Err(_) => 0,
+    };
+
+    let reader = match read_request_stream(server, 4096, 1000, 4) {
+        Ok(value) => value,
+        Err(_) => empty_reader(),
+    };
+    let head = request_stream_head(reader);
+    let head_ok = if len(head.method) == 4 &&
+        len(head.path) == 7 &&
+        head.content_length == 11 &&
+        head.chunked == false {
+        1
+    } else {
+        0
+    };
+
+    let mut current = reader;
+    let mut collected = bytes.empty();
+    let mut done = false;
+    while !done {
+        let step = match request_stream_read_next(current) {
+            Ok(value) => value,
+            Err(_) => RequestBodyStep {
+                reader: empty_reader(),
+                chunk: None(),
+            },
+        };
+        current = step.reader;
+        let chunk = match step.chunk {
+            Some(value) => value,
+            None => bytes.empty(),
+        };
+        let chunk_len = bytes.byte_len(chunk);
+        if chunk_len > 0 {
+            collected = bytes.concat(collected, chunk);
+        } else {
+            done = true;
+        };
+    };
+    let request_done = if request_stream_done(current) { 1 } else { 0 };
+    let request_text = match bytes.to_string(collected) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let request_ok = if len(request_text) == 11 && string.contains(request_text, "hello world") {
+        1
+    } else {
+        0
+    };
+
+    let mut headers0: Map[String, String] = map.new_map();
+    headers0 = map.insert(headers0, "content-type", "text/plain; charset=utf-8");
+    let writer0 = match begin_streaming_response(server, 200u16, headers0, 11, 1000) {
+        Ok(value) => value,
+        Err(_) => ResponseBodyWriter {
+            conn: server,
+            timeout_ms: 1000,
+            expected_bytes: 11,
+            sent_bytes: 0,
+        },
+    };
+    let writer1 = match write_streaming_response_chunk(writer0, bytes.from_string("hello ")) {
+        Ok(value) => value,
+        Err(_) => writer0,
+    };
+    let writer2 = match write_streaming_response_chunk(writer1, bytes.from_string("world")) {
+        Ok(value) => value,
+        Err(_) => writer1,
+    };
+    let finished = match finish_streaming_response(writer2) {
+        Ok(value) => value,
+        Err(_) => 0,
+    };
+
+    let mut wire = bytes.empty();
+    let mut wire_done = false;
+    while !wire_done {
+        let next = match tcp_recv(client, 4096, 1000) {
+            Ok(value) => value,
+            Err(_) => bytes.empty(),
+        };
+        let next_len = bytes.byte_len(next);
+        if next_len <= 0 {
+            wire_done = true;
+        } else {
+            wire = bytes.concat(wire, next);
+            let wire_so_far = match bytes.to_string(wire) {
+                Ok(value) => value,
+                Err(_) => "",
+            };
+            wire_done = string.contains(wire_so_far, "hello world");
+        };
+    };
+    let wire_text = match bytes.to_string(wire) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    let response_ok = if string.contains(wire_text, "HTTP/1.1 200 OK") &&
+        string.contains(wire_text, "content-length: 11") &&
+        string.contains(wire_text, "hello world") {
+        1
+    } else {
+        0
+    };
+
+    let closed_client = match tcp_close(client) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if sent > 0 &&
+        head_ok == 1 &&
+        request_done == 1 &&
+        request_ok == 1 &&
+        finished == 11 &&
+        response_ok == 1 &&
+        closed_client + closed_server + closed_listener == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -1,0 +1,16 @@
+import std.io;
+
+struct BoxedInt { value: Int }
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mut b = BoxedInt { value: 1 };
+    if true {
+        let moved = b;
+        moved.value
+    } else {
+        0
+    };
+    b = BoxedInt { value: 42 };
+    print_int(b.value);
+    0
+}

@@ -1,0 +1,120 @@
+import std.io;
+import std.net;
+import std.http_server;
+import std.map;
+import std.string;
+import std.bytes;
+
+fn string_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && string.contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn request_ok(req: Request) -> Int {
+    let mode = match map.get(req.query, "mode") {
+        Some(v) => v,
+        None => "",
+    };
+    let method_ok = string_eq(req.method, "GET");
+    let path_ok = string_eq(req.path, "/async");
+    let mode_ok = string_eq(mode, "direct");
+    if method_ok == 1 && path_ok == 1 && mode_ok == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let listener = match http_server.listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let client1 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server1 = match http_server.async_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let sent1 = match tcp_send(
+        client1,
+        bytes.from_string("GET /async?mode=direct HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+    ) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let parsed1 = match http_server.async_read_request(server1, 4096, 1000) {
+        Ok(req) => request_ok(req),
+        Err(_) => 0,
+    };
+    let wrote1 = match async_write_response(server1, text_response(200, "async hello")) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let wire1 = match tcp_recv(client1, 512, 1000) {
+        Ok(text) => text,
+        Err(_) => bytes.empty(),
+    };
+    let wire1_text = bytes.to_string_lossy(wire1);
+    let wire1_ok = if string.contains(wire1_text, "HTTP/1.1 200 OK") && string.ends_with(wire1_text, "async hello") {
+        1
+    } else {
+        0
+    };
+
+    let close1 =
+        (match tcp_close(client1) { Ok(_) => 1, Err(_) => 0 }) +
+        (match http_server.close(server1) { Ok(_) => 1, Err(_) => 0 });
+
+    let client2 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let sent2 = match tcp_send(
+        client2,
+        bytes.from_string("GET /serve?mode=handler HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+    ) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let served2 = match async_serve(listener, 4096, 1000, 1000, |req: Request| -> ResponseView {
+        let _req = req;
+        text_response(200, "served async")
+    }) {
+        Ok(n) => n,
+        Err(_) => 0,
+    };
+    let wire2 = match tcp_recv(client2, 512, 1000) {
+        Ok(text) => text,
+        Err(_) => bytes.empty(),
+    };
+    let wire2_text = bytes.to_string_lossy(wire2);
+    let wire2_ok = if string.contains(wire2_text, "HTTP/1.1 200 OK")
+        && string.ends_with(wire2_text, "served async") {
+        1
+    } else {
+        0
+    };
+
+    let close2 =
+        (match tcp_close(client2) { Ok(_) => 1, Err(_) => 0 }) +
+        (match http_server.close(listener) { Ok(_) => 1, Err(_) => 0 });
+
+    if sent1 > 0 && parsed1 == 1 && wrote1 > 0 && wire1_ok == 1 && close1 == 2 &&
+        sent2 > 0 && served2 > 0 && wire2_ok == 1 && close2 == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

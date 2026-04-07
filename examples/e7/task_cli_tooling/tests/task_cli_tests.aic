@@ -1,0 +1,57 @@
+module taskcli.tests.task_cli;
+
+import std.string;
+import std.vec;
+import taskcli.commands;
+import taskcli.model;
+import taskcli.store;
+import taskcli.validators;
+
+fn argv3(a: String, b: String, c: String) -> Vec[String] {
+    let mut out: Vec[String] = vec.new_vec();
+    out = vec.push(out, a);
+    out = vec.push(out, b);
+    vec.push(out, c)
+}
+
+#[test]
+fn test_parse_command_add_collects_title() -> () {
+    let parsed = parse_command(argv3("task-cli", "add", "write"));
+    match parsed {
+        Ok(command) => match command {
+            Add(title) => assert(string.starts_with(title, "write") && string.len(title) == 5),
+            _ => assert(false),
+        },
+        Err(_) => assert(false),
+    }
+}
+
+#[test]
+fn test_mark_done_updates_matching_task() -> () {
+    let empty: Vec[Task] = vec.new_vec();
+    let base = vec.push(empty, Task {
+        id: 0,
+        done: false,
+        title: "ship example",
+    });
+    let updated = mark_done(base, 0);
+    match updated {
+        Ok(tasks) => match vec.get(tasks, 0) {
+            Some(task) => assert(task.done),
+            None => assert(false),
+        },
+        Err(_) => assert(false),
+    }
+}
+
+#[test]
+fn test_validate_title_rejects_blank() -> () {
+    let result = validate_title("   ");
+    match result {
+        Ok(_) => assert(false),
+        Err(err) => match err {
+            Usage(message) => assert(string.starts_with(message, "task-cli commands:")),
+            _ => assert(false),
+        },
+    }
+}

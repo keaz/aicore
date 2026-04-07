@@ -1,0 +1,177 @@
+module taskcli.store;
+
+import std.fs;
+import std.option;
+import std.string;
+import std.vec;
+import taskcli.model;
+import taskcli.validators;
+
+fn task_fallback() -> Task {
+    Task {
+        id: 0,
+        done: false,
+        title: "",
+    }
+}
+
+fn task_or(tasks: Vec[Task], index: Int) -> Task {
+    vec.get(tasks, index).unwrap_or(task_fallback())
+}
+
+fn string_or(values: Vec[String], index: Int) -> String {
+    vec.get(values, index).unwrap_or("")
+}
+
+fn push_parsed_task(tasks: Vec[Task], line: String) -> Vec[Task] {
+    match parse_task(line) {
+        Some(task) => vec.push(tasks, task),
+        None => tasks,
+    }
+}
+
+fn next_task_id(tasks: Vec[Task]) -> Int {
+    let mut next = 0;
+    for task in tasks {
+        if task.id >= next {
+            next = task.id + 1;
+        } else {
+            ()
+        };
+    };
+    next
+}
+
+fn encode_task(task: Task) -> String {
+    let done = if task.done { "1" } else { "0" };
+    let id_text = int_to_string(task.id);
+    f"{id_text}|{done}|{task.title}"
+}
+
+fn encode_tasks(tasks: Vec[Task]) -> String {
+    let mut lines: Vec[String] = vec.new_vec();
+    for task in tasks {
+        lines = vec.push(lines, encode_task(task));
+    };
+    string.join(lines, "\n")
+}
+
+fn parse_done_flag(raw: String) -> Bool {
+    let trimmed = string.trim(raw);
+    string.starts_with(trimmed, "1") && string.len(trimmed) == 1
+}
+
+fn parse_task(line: String) -> Option[Task] {
+    let trimmed = string.trim(line);
+    if string.len(trimmed) == 0 {
+        None()
+    } else {
+        let parts = string.split(trimmed, "|");
+        let mut part_count = 0;
+        let mut id_text = "";
+        let mut done_text = "";
+        let mut title_text = "";
+        for part in parts {
+            if part_count == 0 {
+                id_text = part;
+            } else if part_count == 1 {
+                done_text = part;
+            } else if part_count == 2 {
+                title_text = part;
+            } else {
+                ()
+            };
+            part_count = part_count + 1;
+        };
+        if part_count != 3 {
+            None()
+        } else {
+            match string.parse_int(id_text) {
+                Ok(id) => Some(Task {
+                    id: id,
+                    done: parse_done_flag(done_text),
+                    title: title_text,
+                }),
+                Err(_) => None(),
+            }
+        }
+    }
+}
+
+fn parse_task_file_text(text: String) -> Vec[Task] {
+    let mut tasks: Vec[Task] = vec.new_vec();
+    for line in string.split(text, "\n") {
+        tasks = push_parsed_task(tasks, line);
+    };
+    tasks
+}
+
+pub fn load_tasks(path: String) -> Result[Vec[Task], TaskCliError] effects { fs } capabilities { fs } {
+    match fs.read_text(path) {
+        Ok(text) => Ok(parse_task_file_text(text)),
+        Err(_) => Ok(vec.new_vec()),
+    }
+}
+
+pub fn save_tasks(path: String, tasks: Vec[Task]) -> Result[Bool, TaskCliError] effects { fs } capabilities { fs } {
+    match fs.write_text(path, encode_tasks(tasks)) {
+        Ok(_) => Ok(true),
+        Err(_) => Err(Storage(f"unable to write {path}")),
+    }
+}
+
+fn add_validated_task(tasks: Vec[Task], normalized: String) -> Vec[Task] {
+    let mut updated: Vec[Task] = vec.new_vec();
+    let mut next = 0;
+    for task in tasks {
+        if task.id >= next {
+            next = task.id + 1;
+        } else {
+            ()
+        };
+        updated = vec.push(updated, task);
+    };
+    vec.push(updated, Task {
+        id: next,
+        done: false,
+        title: normalized,
+    })
+}
+
+pub fn add_task(tasks: Vec[Task], title: String) -> Result[Vec[Task], TaskCliError] {
+    let normalized = string.trim(title);
+    match validate_title(normalized) {
+        Ok(_) => Ok(add_validated_task(tasks, normalized)),
+        Err(err) => Err(err),
+    }
+}
+
+fn mark_done_loaded(tasks: Vec[Task], index: Int) -> Result[Vec[Task], TaskCliError] {
+    let mut updated: Vec[Task] = vec.new_vec();
+    let mut found = false;
+    for task in tasks {
+        if task.id == index {
+            found = true;
+            updated = vec.push(updated, Task {
+                id: task.id,
+                done: true,
+                title: task.title,
+            });
+        } else {
+            updated = vec.push(updated, task);
+        };
+    };
+    if found {
+        Ok(updated)
+    } else {
+        let index_text = int_to_string(index);
+        Err(InvalidIndex(f"task {index_text} does not exist"))
+    }
+}
+
+pub fn mark_done(tasks: Vec[Task], index: Int) -> Result[Vec[Task], TaskCliError] requires index >= 0 {
+    match validate_task_index(index) {
+        Ok(_) => mark_done_loaded(tasks, index),
+        Err(err) => Err(err),
+    }
+}

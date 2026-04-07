@@ -1,0 +1,137 @@
+module example.data.map_bool_values;
+
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
+    match v {
+        Some(value) => value,
+        None => fallback,
+    }
+}
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io } capabilities { env, io } {
+    let by_name0: Map[String, Bool] = map.new_map();
+    let by_name1 = map.insert(by_name0, "beta", true);
+    let by_name2 = map.insert(by_name1, "alpha", false);
+    let by_name3 = map.insert(by_name2, "gamma", true);
+    let by_name4 = map.insert(by_name3, "beta", false);
+    let by_name = map.remove(by_name4, "alpha");
+
+    let by_id0: Map[Int, Bool] = map.new_map();
+    let by_id1 = map.insert(by_id0, 20, true);
+    let by_id2 = map.insert(by_id1, 10, false);
+    let by_id3 = map.insert(by_id2, 30, true);
+    let by_id4 = map.insert(by_id3, 20, false);
+    let by_id = map.remove(by_id4, 10);
+
+    let by_flag0: Map[Bool, Bool] = map.new_map();
+    let by_flag1 = map.insert(by_flag0, true, true);
+    let by_flag2 = map.insert(by_flag1, false, false);
+    let by_flag3 = map.insert(by_flag2, true, false);
+    let by_flag = map.insert(by_flag3, false, true);
+
+    let name_ok = match map.get(by_name, "beta") {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+    let name_keys_ok =
+        if opt_int_or(string.index_of(string.join(map.keys(by_name), ","), "beta,gamma"), -1) == 0 {
+            1
+        } else {
+            0
+        };
+    let name_values = map.values(by_name);
+    let name_values_ok =
+        match vec.get(name_values, 0) {
+            Some(v0) => match vec.get(name_values, 1) {
+                Some(v1) => if !v0 && v1 { 1 } else { 0 },
+                None => 0,
+            },
+            None => 0,
+        };
+    let name_entries_ok = if vec_len(map.entries(by_name)) == 2 { 1 } else { 0 };
+
+    let id_ok = match map.get(by_id, 20) {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+    let id_values = map.values(by_id);
+    let id_values_ok =
+        match vec.get(id_values, 0) {
+            Some(v0) => match vec.get(id_values, 1) {
+                Some(v1) => if !v0 && v1 { 1 } else { 0 },
+                None => 0,
+            },
+            None => 0,
+        };
+    let id_entries = map.entries(by_id);
+    let id_entry0_ok =
+        match vec.get(id_entries, 0) {
+            Some(entry) => if entry.key == 20 && !entry.value { 1 } else { 0 },
+            None => 0,
+        };
+    let id_entry1_ok =
+        match vec.get(id_entries, 1) {
+            Some(entry) => if entry.key == 30 && entry.value { 1 } else { 0 },
+            None => 0,
+        };
+    let id_entries_ok = if id_entry0_ok + id_entry1_ok == 2 { 1 } else { 0 };
+
+    let flag_true_ok = match map.get(by_flag, true) {
+        Some(value) => if value { 0 } else { 1 },
+        None => 0,
+    };
+    let flag_false_ok = match map.get(by_flag, false) {
+        Some(value) => bool_to_int(value),
+        None => 0,
+    };
+    let flag_values = map.values(by_flag);
+    let flag_values_ok =
+        match vec.get(flag_values, 0) {
+            Some(v0) => match vec.get(flag_values, 1) {
+                Some(v1) => if v0 && !v1 { 1 } else { 0 },
+                None => 0,
+            },
+            None => 0,
+        };
+    let flag_entries = map.entries(by_flag);
+    let flag_entry0_ok =
+        match vec.get(flag_entries, 0) {
+            Some(entry) => if !entry.key && entry.value { 1 } else { 0 },
+            None => 0,
+        };
+    let flag_entry1_ok =
+        match vec.get(flag_entries, 1) {
+            Some(entry) => if entry.key && !entry.value { 1 } else { 0 },
+            None => 0,
+        };
+    let flag_entries_ok = if flag_entry0_ok + flag_entry1_ok == 2 { 1 } else { 0 };
+
+    let score =
+        name_ok +
+        name_keys_ok +
+        name_values_ok +
+        name_entries_ok +
+        id_ok +
+        id_values_ok +
+        id_entries_ok +
+        flag_true_ok +
+        flag_false_ok +
+        flag_values_ok +
+        flag_entries_ok;
+
+    if score == 11 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

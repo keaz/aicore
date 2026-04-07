@@ -165,3 +165,5 @@ fn demo() -> Int {
 - `E1267`: mutable borrow of immutable binding
 - `E1268`: borrow target is not a local binding
 - `E1269`: assignment type mismatch
+- `E1277`: use-after-move of a local binding
+- `E1278`: move attempted while an overlapping borrow is active

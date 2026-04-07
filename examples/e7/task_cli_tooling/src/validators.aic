@@ -1,0 +1,17 @@
+module taskcli.validators;
+
+import std.string;
+import taskcli.model;
+
+pub fn validate_task_index(index: Int) -> Result[Bool, TaskCliError] requires index >= 0 {
+    Ok(true)
+}
+
+pub fn validate_title(title: String) -> Result[Bool, TaskCliError] {
+    let trimmed = string.trim(title);
+    if string.len(trimmed) > 0 {
+        Ok(true)
+    } else {
+        Err(Usage(usage_text()))
+    }
+}

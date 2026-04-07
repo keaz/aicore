@@ -1,0 +1,3 @@
+[package]
+name = "task_cli_tooling"
+main = "src/main.aic"

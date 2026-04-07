@@ -1,0 +1,151 @@
+import std.bytes;
+import std.io;
+import std.map;
+import std.option;
+import std.string;
+import std.vec;
+
+fn bool_to_int(v: Bool) -> Int {
+    if v { 1 } else { 0 }
+}
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let m_u64_bool_0: Map[UInt64, Bool] = map.new_map();
+    let k7: UInt64 = 7u64;
+    let k42: UInt64 = 42u64;
+    let k99: UInt64 = 99u64;
+    let m_u64_bool_1 = map.insert(m_u64_bool_0, k7, true);
+    let m_u64_bool_2 = map.insert(m_u64_bool_1, k42, false);
+    let m_u64_bool_3 = map.insert(m_u64_bool_2, k99, true);
+    let m_u64_bool = map.remove(m_u64_bool_3, k42);
+
+    let u64_bool_score =
+        bool_to_int(map.contains_key(m_u64_bool, k7)) +
+        bool_to_int(!map.contains_key(m_u64_bool, k42)) +
+        match map.get(m_u64_bool, k99) {
+            Some(value) => bool_to_int(value),
+            None => 0,
+        } +
+        match vec.get(map.keys(m_u64_bool), 0) {
+            Some(value) => if value == k7 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.keys(m_u64_bool), 1) {
+            Some(value) => if value == k99 { 1 } else { 0 },
+            None => 0,
+        } +
+        if vec.vec_len(map.values(m_u64_bool)) == 2 { 1 } else { 0 } +
+        if vec.vec_len(map.entries(m_u64_bool)) == 2 { 1 } else { 0 };
+
+    let m_bytes_string_0: Map[Bytes, String] = map.new_map();
+    let m_bytes_string_1 = map.insert(m_bytes_string_0, bytes.from_string("bb"), "two");
+    let m_bytes_string_2 = map.insert(m_bytes_string_1, bytes.from_string("aa"), "one");
+    let m_bytes_string_3 = map.insert(m_bytes_string_2, bytes.from_string("cc"), "three");
+    let m_bytes_string = map.remove(m_bytes_string_3, bytes.from_string("bb"));
+
+    let bytes_string_score =
+        bool_to_int(map.contains_key(m_bytes_string, bytes.from_string("aa"))) +
+        bool_to_int(!map.contains_key(m_bytes_string, bytes.from_string("bb"))) +
+        match map.get(m_bytes_string, bytes.from_string("cc")) {
+            Some(value) => if value == "three" { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.keys(m_bytes_string), 0) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("aa")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.values(m_bytes_string), 1) {
+            Some(value) => if value == "three" { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.entries(m_bytes_string), 0) {
+            Some(entry) => if bytes.compare_bytes(entry.key, bytes.from_string("aa")) == 0 && entry.value == "one" { 1 } else { 0 },
+            None => 0,
+        };
+
+    let m_string_bytes_0: Map[String, Bytes] = map.new_map();
+    let m_string_bytes_1 = map.insert(m_string_bytes_0, "bb", bytes.from_string("two"));
+    let m_string_bytes_2 = map.insert(m_string_bytes_1, "aa", bytes.from_string("one"));
+    let m_string_bytes_3 = map.insert(m_string_bytes_2, "cc", bytes.from_string("three"));
+    let m_string_bytes = map.remove(m_string_bytes_3, "bb");
+
+    let string_bytes_score =
+        bool_to_int(map.contains_key(m_string_bytes, "aa")) +
+        bool_to_int(!map.contains_key(m_string_bytes, "bb")) +
+        match map.get(m_string_bytes, "aa") {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("one")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.keys(m_string_bytes), 1) {
+            Some(value) => if value == "cc" { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.values(m_string_bytes), 0) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("one")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.entries(m_string_bytes), 1) {
+            Some(entry) => if entry.key == "cc" && bytes.compare_bytes(entry.value, bytes.from_string("three")) == 0 { 1 } else { 0 },
+            None => 0,
+        };
+
+    let m_bytes_bytes_0: Map[Bytes, Bytes] = map.new_map();
+    let m_bytes_bytes_1 = map.insert(m_bytes_bytes_0, bytes.from_string("bb"), bytes.from_string("two"));
+    let m_bytes_bytes_2 = map.insert(m_bytes_bytes_1, bytes.from_string("aa"), bytes.from_string("one"));
+    let m_bytes_bytes_3 = map.insert(m_bytes_bytes_2, bytes.from_string("cc"), bytes.from_string("three"));
+    let m_bytes_bytes = map.remove(m_bytes_bytes_3, bytes.from_string("bb"));
+
+    let bytes_bytes_score =
+        bool_to_int(map.contains_key(m_bytes_bytes, bytes.from_string("aa"))) +
+        bool_to_int(!map.contains_key(m_bytes_bytes, bytes.from_string("bb"))) +
+        match map.get(m_bytes_bytes, bytes.from_string("cc")) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("three")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.keys(m_bytes_bytes), 0) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("aa")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.values(m_bytes_bytes), 1) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("three")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.entries(m_bytes_bytes), 0) {
+            Some(entry) => if bytes.compare_bytes(entry.key, bytes.from_string("aa")) == 0 && bytes.compare_bytes(entry.value, bytes.from_string("one")) == 0 { 1 } else { 0 },
+            None => 0,
+        };
+
+    let m_u64_bytes_0: Map[UInt64, Bytes] = map.new_map();
+    let m_u64_bytes_1 = map.insert(m_u64_bytes_0, k7, bytes.from_string("two"));
+    let m_u64_bytes_2 = map.insert(m_u64_bytes_1, k42, bytes.from_string("one"));
+    let m_u64_bytes_3 = map.insert(m_u64_bytes_2, k99, bytes.from_string("three"));
+    let m_u64_bytes = map.remove(m_u64_bytes_3, k42);
+
+    let u64_bytes_score =
+        bool_to_int(map.contains_key(m_u64_bytes, k7)) +
+        bool_to_int(!map.contains_key(m_u64_bytes, k42)) +
+        match map.get(m_u64_bytes, k99) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("three")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.keys(m_u64_bytes), 1) {
+            Some(value) => if value == k99 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.values(m_u64_bytes), 0) {
+            Some(value) => if bytes.compare_bytes(value, bytes.from_string("two")) == 0 { 1 } else { 0 },
+            None => 0,
+        } +
+        match vec.get(map.entries(m_u64_bytes), 1) {
+            Some(entry) => if entry.key == k99 && bytes.compare_bytes(entry.value, bytes.from_string("three")) == 0 { 1 } else { 0 },
+            None => 0,
+        };
+
+    let score = u64_bool_score + bytes_string_score + string_bytes_score + bytes_bytes_score + u64_bytes_score;
+    if score == 31 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

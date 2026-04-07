@@ -1,0 +1,169 @@
+module taskcli.main;
+
+import std.env;
+import std.fs;
+import std.option;
+import std.io;
+import std.string;
+import std.vec;
+import taskcli.commands;
+import taskcli.model;
+import taskcli.store;
+
+fn task_fallback() -> Task {
+    Task {
+        id: 0,
+        done: false,
+        title: "",
+    }
+}
+
+fn task_or(tasks: Vec[Task], index: Int) -> Task {
+    vec.get(tasks, index).unwrap_or(task_fallback())
+}
+
+fn report_error(err: TaskCliError) -> Int effects { io } capabilities { io } {
+    io.println_str(render_error(err));
+    1
+}
+
+fn report_parse_error(err: TaskCliError) -> Int effects { io } capabilities { io } {
+    io.println_str(render_error(err));
+    io.println_str(usage_text());
+    1
+}
+
+fn report_load_error(err: TaskCliError) -> Result[Vec[Task], Int] effects { io } capabilities { io } {
+    io.println_str(render_error(err));
+    Err(1)
+}
+
+fn list_loaded_tasks(tasks: Vec[Task]) -> Int effects { io } capabilities { io } {
+    let mut printed_any = false;
+    for task in tasks {
+        printed_any = true;
+        io.println_str(render_task(task));
+    };
+    if !printed_any {
+        io.println_str("No tasks yet.");
+    } else {
+        ()
+    };
+    0
+}
+
+fn count_done(tasks: Vec[Task]) -> Int {
+    let mut total_done = 0;
+    for task in tasks {
+        if task.done {
+            total_done = total_done + 1;
+        } else {
+            ()
+        };
+    };
+    total_done
+}
+
+fn report_stats(tasks: Vec[Task]) -> Int effects { io } capabilities { io } {
+    let mut total = 0;
+    let mut done = 0;
+    for task in tasks {
+        total = total + 1;
+        if task.done {
+            done = done + 1;
+        } else {
+            ()
+        };
+    };
+    io.println_str(render_summary(total, done));
+    0
+}
+
+fn report_saved(label: String) -> Int effects { io } capabilities { io } {
+    io.println_str(label);
+    0
+}
+
+fn storage_path() -> String effects { env } capabilities { env } {
+    let configured = match env.get("AIC_TASK_CLI_FILE") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+
+    if string.len(string.trim(configured)) > 0 {
+        configured
+    } else {
+        "task_cli.db"
+    }
+}
+
+fn load_or_print(path: String) -> Result[Vec[Task], Int] effects { io, fs } capabilities { io, fs } {
+    match load_tasks(path) {
+        Ok(tasks) => Ok(tasks),
+        Err(err) => report_load_error(err),
+    }
+}
+
+fn run_help() -> Int effects { io } capabilities { io } {
+    io.println_str(usage_text());
+    0
+}
+
+fn run_list(path: String) -> Int effects { io, fs } capabilities { io, fs } {
+    match load_or_print(path) {
+        Ok(tasks) => list_loaded_tasks(tasks),
+        Err(code) => code,
+    }
+}
+
+fn run_stats(path: String) -> Int effects { io, fs } capabilities { io, fs } {
+    match load_or_print(path) {
+        Ok(tasks) => report_stats(tasks),
+        Err(code) => code,
+    }
+}
+
+fn save_updated(path: String, updated: Vec[Task], label: String) -> Int effects { io, fs } capabilities { io, fs } {
+    match save_tasks(path, updated) {
+        Ok(_) => report_saved(label),
+        Err(err) => report_error(err),
+    }
+}
+
+fn run_add(path: String, title: String) -> Int effects { io, fs } capabilities { io, fs } {
+    match load_or_print(path) {
+        Ok(tasks) => match add_task(tasks, title) {
+            Ok(updated) => save_updated(path, updated, "task added"),
+            Err(err) => report_error(err),
+        },
+        Err(code) => code,
+    }
+}
+
+fn run_done(path: String, index: Int) -> Int effects { io, fs } capabilities { io, fs } {
+    match load_or_print(path) {
+        Ok(tasks) => match mark_done(tasks, index) {
+            Ok(updated) => save_updated(path, updated, "task completed"),
+            Err(err) => report_error(err),
+        },
+        Err(code) => code,
+    }
+}
+
+fn run_command(command: TaskCommand, path: String) -> Int effects { io, fs } capabilities { io, fs } {
+    match command {
+        Help => run_help(),
+        List => run_list(path),
+        Stats => run_stats(path),
+        Add(title) => run_add(path, title),
+        Done(index) => run_done(path, index),
+    }
+}
+
+fn main() -> Int effects { io, env, fs } capabilities { io, env, fs } {
+    let path = storage_path();
+    match parse_command(env.args()) {
+        Ok(command) => run_command(command, path),
+        Err(err) => report_parse_error(err),
+    }
+}

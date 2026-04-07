@@ -187,7 +187,7 @@ Notes:
   - `Option.unwrap_or`, `Option.map`, `Option.and_then`
   - `Result.unwrap_or`, `Result.map`, `Result.and_then`
   - method chains use standard static method dispatch (`value.map(...).and_then(...).unwrap_or(...)`)
-- Current backend support for set/map key paths includes `String`, `Int`, and `Bool`; unsupported key kinds emit deterministic backend diagnostic `E5011` with explicit supported-key guidance.
+- Current backend support for set/map key paths includes `String`, `Bytes`, `Int`, `UInt64`, and `Bool`; unsupported key kinds emit deterministic backend diagnostic `E5011` with explicit supported-key guidance.
 - `std.fs` now exposes production-facing APIs with typed failures:
   - `read_text`, `write_text`, `append_text`, `copy`, `move`, `delete`
   - `metadata`, `walk_dir`, `temp_file`, `temp_dir`

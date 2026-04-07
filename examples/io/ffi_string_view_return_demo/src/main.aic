@@ -1,0 +1,11 @@
+module ffi_string_view_return_demo.main;
+
+import std.io;
+import std.string;
+
+extern "C" fn ffi_string_repeat(seed: String, times: Int) -> String;
+
+fn main() -> Int effects { io } capabilities { io  } {
+    print_int(len(unsafe { ffi_string_repeat("ff", 4) }));
+    0
+}

@@ -1,0 +1,4 @@
+spec fn validate_task_index(index: Int) -> Result[Bool, TaskCliError] {
+    requires index >= 0
+    ensures result == Ok(true)
+}

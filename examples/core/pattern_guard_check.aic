@@ -1,11 +1,45 @@
-fn select(x: Bool, allow: Bool) -> Int {
+import std.io;
+
+enum Score {
+    Empty,
+    Full(Int),
+}
+
+fn score_bool(x: Bool, allow: Bool) -> Int {
     match x {
-        true if allow => 1,
-        false => 0,
-        _ => 2,
+        true if allow => 5,
+        true => 6,
+        false if allow => 7,
+        false => 8,
     }
 }
 
-fn main() -> Int {
-    select(true, true)
+fn score_enum(x: Score, allow: Bool) -> Int {
+    match x {
+        Full(v) if allow => v,
+        Full(_) => 9,
+        Empty if allow => 10,
+        Empty => 11,
+    }
+}
+
+fn score_tuple(pair: (Int, Bool), allow: Bool) -> Int {
+    match pair {
+        (value, true) if allow => value,
+        (value, true) => value + 1,
+        (_, false) if allow => 12,
+        (_, false) => 13,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io  } {
+    let total =
+        score_bool(true, false) +
+        score_bool(false, true) +
+        score_enum(Full(9), false) +
+        score_enum(Empty(), true) +
+        score_tuple((4, true), true) +
+        score_tuple((5, true), false);
+    print_int(total);
+    0
 }

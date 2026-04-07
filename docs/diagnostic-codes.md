@@ -59,6 +59,8 @@ Recent core-language additions:
 - `E1274`: `break` expression type does not match enclosing loop break type.
 - `E1275`: `break` used outside loop context.
 - `E1276`: `continue` used outside loop context.
+- `E1277`: use of moved value.
+- `E1278`: move attempted while an overlapping borrow is active.
 - `E1280`: closure parameter type must be explicit.
 - `E1281`: closure body type does not match declared closure return type.
 - `E1282`: generic function value cannot be used without specialization.
@@ -85,7 +87,7 @@ Recent core-language additions:
 - `E2126`: workspace package dependency cycle detected.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
-- `E5023`: backend does not yet lower guarded match arms.
+- `E5023`: backend const evaluation hit a cycle or an unsupported initializer form.
 - `E5024`: backend extern wrapper/link ABI mismatch or unsupported extern lowering.
 - `E5025`: backend encountered `break` outside a loop.
 - `E5026`: backend encountered `continue` outside a loop.
@@ -116,7 +118,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E2007` | Unknown capability name in a function signature. | Use only known capabilities: `io, fs, net, time, rand, env, proc, concurrency`. |
 | `E2008` | Duplicate capability listed in one function signature. | Remove duplicates; keep one declaration per capability. |
 | `E2009` | Missing capability authority for declared or transitive effects. | Add `capabilities { ... }` to match required effect authority and thread capability boundaries across callers. |
-| `E5023` | Backend hit a guarded `match` arm (guard lowering not supported yet). | Hoist guard logic outside `match` or remove guards in codegen-targeted paths. |
+| `E5023` | Backend const evaluation hit a cycle or an unsupported initializer form. | Keep `const` initializers to backend-supported literal/arithmetic forms or break the constant dependency cycle. |
 | `E5024` | Unsupported extern backend lowering path (currently only `extern \"C\"` is supported). | Use `extern \"C\"` plain signatures and wrapper functions. |
 | `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |
 | `E5026` | `continue` reached backend outside loop context. | Ensure `continue` is only emitted inside `loop`/`while`. |

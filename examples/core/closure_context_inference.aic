@@ -1,0 +1,12 @@
+import std.io;
+
+struct Mapper[T] { apply: T }
+
+fn main() -> Int effects { io, env } capabilities { io, env } {
+    let mapper: Mapper[Fn(Int) -> Int] = Mapper {
+        apply: |x| -> Int { x + 1 }
+    };
+    let apply = mapper.apply;
+    print_int(apply(41));
+    0
+}

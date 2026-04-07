@@ -1593,6 +1593,46 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
             ret: "Bool",
         }],
     },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_listen_intrinsic",
+        runtime_symbol: "aic_rt_http_server_listen",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String"],
+            ret: "Result[Int, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_accept_intrinsic",
+        runtime_symbol: "aic_rt_http_server_accept",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int"],
+            ret: "Result[Int, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_read_request_intrinsic",
+        runtime_symbol: "aic_rt_http_server_read_request",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[Request, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_write_response_intrinsic",
+        runtime_symbol: "aic_rt_http_server_write_response",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Response"],
+            ret: "Result[Int, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_close_intrinsic",
+        runtime_symbol: "aic_rt_http_server_close",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int"],
+            ret: "Result[Bool, ServerError]",
+        }],
+    },
 ];
 
 pub fn intrinsic_binding_expectations() -> &'static [IntrinsicBindingExpectation] {

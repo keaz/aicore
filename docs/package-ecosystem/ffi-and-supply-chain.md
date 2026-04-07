@@ -18,6 +18,7 @@ Safety rules:
 - extern declarations must remain plain (`E2121`)
 - extern calls require explicit `unsafe` boundary (`E2122`)
 - unsupported ABI types are rejected (`E2123`)
+- raw value coverage includes the existing fixed-width scalars for params/returns, plus `String` parameters as the current target's `ptr-len-cap` view
 
 Manifest native link configuration:
 
@@ -28,7 +29,7 @@ search_paths = ["native"]
 objects = ["native/add.o"]
 ```
 
-Reference source: `examples/pkg/ffi_zlib.aic`.
+Reference sources: `examples/pkg/ffi_zlib.aic`, `examples/io/ffi_string_view_demo/`.
 
 ## Provenance and trust policy
 

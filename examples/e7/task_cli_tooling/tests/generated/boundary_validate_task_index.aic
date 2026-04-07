@@ -1,0 +1,28 @@
+module generated.testgen.boundary.validate_task_index;
+
+import std.string;
+import taskcli.model;
+
+enum TaskCliError {
+    Usage(String),
+    InvalidCommand(String),
+    InvalidIndex(String),
+    Storage(String),
+}
+
+fn validate_task_index(index: Int) -> Result[Bool, TaskCliError] requires index >= 0 {
+    Ok(true)
+}
+
+#[test]
+fn test_validate_task_index_boundary_accepts_index_ge_0() -> () {
+    let out = validate_task_index(0);
+    assert(true);
+}
+
+#[test]
+#[should_panic]
+fn test_validate_task_index_boundary_rejects_index_ge_0() -> () {
+    let rejected = validate_task_index(-1);
+    rejected;
+}

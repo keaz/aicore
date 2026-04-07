@@ -52,6 +52,121 @@ impl<'a> Generator<'a> {
         true
     }
 
+    fn gen_match_guard_branch(
+        &mut self,
+        guard: &ir::Expr,
+        pass_label: &str,
+        fail_label: &str,
+        fctx: &mut FnCtx,
+    ) -> Option<()> {
+        let guard_value = self.gen_expr(guard, fctx)?;
+        if guard_value.ty != LType::Bool {
+            self.diagnostics.push(Diagnostic::error(
+                "E5015",
+                "match guard must be Bool in codegen",
+                self.file,
+                guard.span,
+            ));
+            return None;
+        }
+
+        let guard_repr = guard_value.repr.unwrap_or_else(|| "0".to_string());
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            guard_repr, pass_label, fail_label
+        ));
+        Some(())
+    }
+
+    fn bind_enum_match_pattern_for_variant(
+        &mut self,
+        pattern: &ir::Pattern,
+        scrutinee: &Value,
+        layout: &EnumLayoutType,
+        variant_idx: usize,
+        fctx: &mut FnCtx,
+    ) -> Option<()> {
+        let variant = &layout.variants[variant_idx];
+        match &pattern.kind {
+            ir::PatternKind::Var(binding) => {
+                let ptr = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca {}", ptr, llvm_type(&scrutinee.ty)));
+                fctx.lines.push(format!(
+                    "  store {} {}, {}* {}",
+                    llvm_type(&scrutinee.ty),
+                    scrutinee
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&scrutinee.ty)),
+                    llvm_type(&scrutinee.ty),
+                    ptr
+                ));
+                fctx.vars.last_mut().expect("scope").insert(
+                    binding.clone(),
+                    Local {
+                        symbol: None,
+                        ty: scrutinee.ty.clone(),
+                        ptr,
+                    },
+                );
+            }
+            ir::PatternKind::Variant { args, .. } => {
+                if let (Some(payload_ty), Some(binding_pat)) = (&variant.payload, args.first()) {
+                    match &binding_pat.kind {
+                        ir::PatternKind::Var(name) => {
+                            let payload = self.new_temp();
+                            fctx.lines.push(format!(
+                                "  {} = extractvalue {} {}, {}",
+                                payload,
+                                llvm_type(&scrutinee.ty),
+                                scrutinee
+                                    .repr
+                                    .clone()
+                                    .unwrap_or_else(|| default_value(&scrutinee.ty)),
+                                variant_idx + 1
+                            ));
+                            let ptr = self.new_temp();
+                            fctx.lines.push(format!(
+                                "  {} = alloca {}",
+                                ptr,
+                                llvm_type(payload_ty)
+                            ));
+                            fctx.lines.push(format!(
+                                "  store {} {}, {}* {}",
+                                llvm_type(payload_ty),
+                                payload,
+                                llvm_type(payload_ty),
+                                ptr
+                            ));
+                            fctx.vars.last_mut().expect("scope").insert(
+                                name.clone(),
+                                Local {
+                                    symbol: None,
+                                    ty: payload_ty.clone(),
+                                    ptr,
+                                },
+                            );
+                        }
+                        ir::PatternKind::Wildcard => {}
+                        _ => {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E5017",
+                                "enum payload pattern codegen supports var or wildcard payload",
+                                self.file,
+                                binding_pat.span,
+                            ));
+                            return None;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Some(())
+    }
+
     pub(super) fn build_no_payload_enum_with_tag(
         &mut self,
         layout: &EnumLayoutType,
@@ -1380,17 +1495,8 @@ impl<'a> Generator<'a> {
         expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    "E5023",
-                    "match guards are not supported by LLVM backend yet",
-                    self.file,
-                    guard.span,
-                )
-                .with_help("remove the guard or evaluate guard logic outside the match"),
-            );
-            return None;
+        if arms.iter().any(|arm| arm.guard.is_some()) {
+            return self.gen_match_bool_with_guards(scrutinee, arms, expected_ty, fctx);
         }
 
         let Some((true_arm, true_pattern)) = arms.iter().find_map(|arm| {
@@ -1509,6 +1615,198 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_match_bool_with_guards(
+        &mut self,
+        scrutinee: Value,
+        arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let true_candidates = arms
+            .iter()
+            .filter_map(|arm| {
+                self.select_bool_pattern(&arm.pattern, true)
+                    .map(|pattern| (arm, pattern))
+            })
+            .collect::<Vec<_>>();
+        let false_candidates = arms
+            .iter()
+            .filter_map(|arm| {
+                self.select_bool_pattern(&arm.pattern, false)
+                    .map(|pattern| (arm, pattern))
+            })
+            .collect::<Vec<_>>();
+
+        if true_candidates.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "non-exhaustive bool match reached codegen for `true` branch",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+        if false_candidates.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "non-exhaustive bool match reached codegen for `false` branch",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+
+        let then_label = self.new_label("match_true");
+        let else_label = self.new_label("match_false");
+        let default_label = self.new_label("match_guard_default");
+        let cont_label = self.new_label("match_cont");
+
+        let true_eval_labels = (1..true_candidates.len())
+            .map(|idx| self.new_label(&format!("match_true_guard_{idx}")))
+            .collect::<Vec<_>>();
+        let false_eval_labels = (1..false_candidates.len())
+            .map(|idx| self.new_label(&format!("match_false_guard_{idx}")))
+            .collect::<Vec<_>>();
+
+        let mut result_ty: Option<LType> = None;
+        let mut result_slot: Option<String> = None;
+
+        let cond_repr = scrutinee.repr.unwrap_or_else(|| "0".to_string());
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            cond_repr, then_label, else_label
+        ));
+
+        let saved_scope = fctx.vars.clone();
+        let saved_drop_scopes = fctx.drop_scopes.clone();
+        let saved_terminated = fctx.terminated;
+
+        let mut true_terminated = true;
+        for (idx, (arm, selected_pattern)) in true_candidates.iter().enumerate() {
+            let eval_label = if idx == 0 {
+                then_label.clone()
+            } else {
+                true_eval_labels[idx - 1].clone()
+            };
+            let next_label = if idx < true_eval_labels.len() {
+                true_eval_labels[idx].clone()
+            } else {
+                default_label.clone()
+            };
+
+            fctx.vars = saved_scope.clone();
+            fctx.drop_scopes = saved_drop_scopes.clone();
+            fctx.terminated = false;
+            fctx.lines.push(format!("{}:", eval_label));
+            fctx.current_label = eval_label.clone();
+            self.bind_bool_match_pattern(selected_pattern, true, fctx);
+
+            if let Some(guard) = arm.guard.as_ref() {
+                let body_label = self.new_label(&format!("match_true_body_{idx}"));
+                self.gen_match_guard_branch(guard, &body_label, &next_label, fctx)?;
+                fctx.lines.push(format!("{}:", body_label));
+                fctx.current_label = body_label;
+            }
+
+            let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
+            let arm_terminated = fctx.terminated;
+            if !arm_terminated {
+                true_terminated = false;
+                if let Some(value) = arm_value {
+                    let _ = self.store_match_arm_value(
+                        value,
+                        arm.span,
+                        expected_ty,
+                        &mut result_slot,
+                        &mut result_ty,
+                        fctx,
+                    );
+                }
+                fctx.lines.push(format!("  br label %{}", cont_label));
+            }
+        }
+
+        let mut false_terminated = true;
+        for (idx, (arm, selected_pattern)) in false_candidates.iter().enumerate() {
+            let eval_label = if idx == 0 {
+                else_label.clone()
+            } else {
+                false_eval_labels[idx - 1].clone()
+            };
+            let next_label = if idx < false_eval_labels.len() {
+                false_eval_labels[idx].clone()
+            } else {
+                default_label.clone()
+            };
+
+            fctx.vars = saved_scope.clone();
+            fctx.drop_scopes = saved_drop_scopes.clone();
+            fctx.terminated = false;
+            fctx.lines.push(format!("{}:", eval_label));
+            fctx.current_label = eval_label.clone();
+            self.bind_bool_match_pattern(selected_pattern, false, fctx);
+
+            if let Some(guard) = arm.guard.as_ref() {
+                let body_label = self.new_label(&format!("match_false_body_{idx}"));
+                self.gen_match_guard_branch(guard, &body_label, &next_label, fctx)?;
+                fctx.lines.push(format!("{}:", body_label));
+                fctx.current_label = body_label;
+            }
+
+            let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
+            let arm_terminated = fctx.terminated;
+            if !arm_terminated {
+                false_terminated = false;
+                if let Some(value) = arm_value {
+                    let _ = self.store_match_arm_value(
+                        value,
+                        arm.span,
+                        expected_ty,
+                        &mut result_slot,
+                        &mut result_ty,
+                        fctx,
+                    );
+                }
+                fctx.lines.push(format!("  br label %{}", cont_label));
+            }
+        }
+
+        fctx.vars = saved_scope;
+        fctx.drop_scopes = saved_drop_scopes;
+        fctx.terminated = saved_terminated;
+
+        fctx.lines.push(format!("{}:", default_label));
+        fctx.lines.push("  unreachable".to_string());
+
+        if true_terminated && false_terminated {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        fctx.lines.push(format!("{}:", cont_label));
+        if let (Some(slot), Some(result_ty)) = (result_slot, result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
     pub(super) fn gen_match_enum(
         &mut self,
         scrutinee: Value,
@@ -1517,17 +1815,8 @@ impl<'a> Generator<'a> {
         expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    "E5023",
-                    "match guards are not supported by LLVM backend yet",
-                    self.file,
-                    guard.span,
-                )
-                .with_help("remove the guard or evaluate guard logic outside the match"),
-            );
-            return None;
+        if arms.iter().any(|arm| arm.guard.is_some()) {
+            return self.gen_match_enum_with_guards(scrutinee, layout, arms, expected_ty, fctx);
         }
 
         let mut selected_arms = Vec::new();
@@ -1727,6 +2016,176 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_match_enum_with_guards(
+        &mut self,
+        scrutinee: Value,
+        layout: &EnumLayoutType,
+        arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let mut variant_candidates = Vec::with_capacity(layout.variants.len());
+        for variant in &layout.variants {
+            let candidates = arms
+                .iter()
+                .filter_map(|arm| {
+                    self.select_enum_pattern(&arm.pattern, &variant.name)
+                        .map(|pattern| (arm, pattern))
+                })
+                .collect::<Vec<_>>();
+            if candidates.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5016",
+                    format!(
+                        "non-exhaustive enum match reached codegen for '{}' variant '{}'",
+                        layout.repr, variant.name
+                    ),
+                    self.file,
+                    crate::span::Span::new(0, 0),
+                ));
+                return None;
+            }
+            variant_candidates.push(candidates);
+        }
+
+        let mut result_ty: Option<LType> = None;
+        let mut result_slot: Option<String> = None;
+
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&scrutinee.ty),
+            scrutinee
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&scrutinee.ty))
+        ));
+
+        let default_label = self.new_label("match_guard_default");
+        let cont_label = self.new_label("match_cont");
+        let case_labels = layout
+            .variants
+            .iter()
+            .map(|variant| self.new_label(&format!("match_{}", variant.name.to_lowercase())))
+            .collect::<Vec<_>>();
+
+        fctx.lines
+            .push(format!("  switch i32 {}, label %{} [", tag, default_label));
+        for (idx, label) in case_labels.iter().enumerate() {
+            fctx.lines
+                .push(format!("    i32 {}, label %{}", idx, label));
+        }
+        fctx.lines.push("  ]".to_string());
+
+        let saved_scope = fctx.vars.clone();
+        let saved_drop_scopes = fctx.drop_scopes.clone();
+        let saved_terminated = fctx.terminated;
+
+        let mut terminated_all = true;
+        for (variant_idx, candidates) in variant_candidates.iter().enumerate() {
+            let extra_eval_labels = (1..candidates.len())
+                .map(|idx| {
+                    self.new_label(&format!(
+                        "match_{}_guard_{}",
+                        layout.variants[variant_idx].name.to_lowercase(),
+                        idx
+                    ))
+                })
+                .collect::<Vec<_>>();
+
+            for (idx, (arm, selected_pattern)) in candidates.iter().enumerate() {
+                let eval_label = if idx == 0 {
+                    case_labels[variant_idx].clone()
+                } else {
+                    extra_eval_labels[idx - 1].clone()
+                };
+                let next_label = if idx < extra_eval_labels.len() {
+                    extra_eval_labels[idx].clone()
+                } else {
+                    default_label.clone()
+                };
+
+                fctx.vars = saved_scope.clone();
+                fctx.drop_scopes = saved_drop_scopes.clone();
+                fctx.terminated = false;
+                fctx.lines.push(format!("{}:", eval_label));
+                fctx.current_label = eval_label.clone();
+
+                self.bind_enum_match_pattern_for_variant(
+                    selected_pattern,
+                    &scrutinee,
+                    layout,
+                    variant_idx,
+                    fctx,
+                )?;
+
+                if let Some(guard) = arm.guard.as_ref() {
+                    let body_label = self.new_label(&format!(
+                        "match_{}_body_{}",
+                        layout.variants[variant_idx].name.to_lowercase(),
+                        idx
+                    ));
+                    self.gen_match_guard_branch(guard, &body_label, &next_label, fctx)?;
+                    fctx.lines.push(format!("{}:", body_label));
+                    fctx.current_label = body_label;
+                }
+
+                let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
+                let arm_terminated = fctx.terminated;
+                if !arm_terminated {
+                    terminated_all = false;
+                    if let Some(value) = arm_value {
+                        let _ = self.store_match_arm_value(
+                            value,
+                            arm.span,
+                            expected_ty,
+                            &mut result_slot,
+                            &mut result_ty,
+                            fctx,
+                        );
+                    }
+                    fctx.lines.push(format!("  br label %{}", cont_label));
+                }
+            }
+        }
+
+        fctx.vars = saved_scope;
+        fctx.drop_scopes = saved_drop_scopes;
+        fctx.terminated = saved_terminated;
+
+        fctx.lines.push(format!("{}:", default_label));
+        fctx.lines.push("  unreachable".to_string());
+
+        if terminated_all {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        fctx.lines.push(format!("{}:", cont_label));
+        if let (Some(slot), Some(result_ty)) = (result_slot, result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
     pub(super) fn gen_match_tuple(
         &mut self,
         scrutinee: Value,
@@ -1744,17 +2203,8 @@ impl<'a> Generator<'a> {
             ));
             return None;
         }
-        if let Some(guard) = arms.iter().find_map(|arm| arm.guard.as_ref()) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    "E5023",
-                    "match guards are not supported by LLVM backend yet",
-                    self.file,
-                    guard.span,
-                )
-                .with_help("remove the guard or evaluate guard logic outside the match"),
-            );
-            return None;
+        if arms.iter().any(|arm| arm.guard.is_some()) {
+            return self.gen_match_tuple_with_guards(scrutinee, layout, arms, expected_ty, fctx);
         }
         if arms.is_empty() {
             self.diagnostics.push(Diagnostic::error(
@@ -1834,6 +2284,134 @@ impl<'a> Generator<'a> {
             ));
         }
         fctx.lines.push(format!("  br label %{}", cont_label));
+
+        fctx.lines.push(format!("{}:", cont_label));
+        if let (Some(slot), Some(result_ty)) = (result_slot, result_ty) {
+            let reg = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                reg,
+                llvm_type(&result_ty),
+                llvm_type(&result_ty),
+                slot
+            ));
+            Some(Value {
+                ty: result_ty,
+                repr: Some(reg),
+            })
+        } else {
+            Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            })
+        }
+    }
+
+    fn gen_match_tuple_with_guards(
+        &mut self,
+        scrutinee: Value,
+        layout: &StructLayoutType,
+        arms: &[ir::MatchArm],
+        expected_ty: Option<&LType>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if base_type_name(&layout.repr) != TUPLE_INTERNAL_NAME {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "tuple match codegen received non-tuple layout",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+        if arms.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E5016",
+                "tuple match has no arms during codegen",
+                self.file,
+                crate::span::Span::new(0, 0),
+            ));
+            return None;
+        }
+
+        let cond_labels = (0..arms.len())
+            .map(|idx| self.new_label(&format!("match_tuple_cond_{idx}")))
+            .collect::<Vec<_>>();
+        let arm_labels = (0..arms.len())
+            .map(|idx| self.new_label(&format!("match_tuple_arm_{idx}")))
+            .collect::<Vec<_>>();
+        let default_label = self.new_label("match_tuple_guard_default");
+        let cont_label = self.new_label("match_tuple_cont");
+
+        let mut result_ty: Option<LType> = None;
+        let mut result_slot: Option<String> = None;
+
+        let saved_scope = fctx.vars.clone();
+        let saved_drop_scopes = fctx.drop_scopes.clone();
+        let saved_terminated = fctx.terminated;
+
+        let mut terminated_all = true;
+        fctx.lines.push(format!("  br label %{}", cond_labels[0]));
+        for (idx, arm) in arms.iter().enumerate() {
+            let next_label = if idx + 1 < arms.len() {
+                cond_labels[idx + 1].clone()
+            } else {
+                default_label.clone()
+            };
+
+            fctx.lines.push(format!("{}:", cond_labels[idx]));
+            fctx.current_label = cond_labels[idx].clone();
+            let cond = self.pattern_condition_for_tuple_match(&arm.pattern, &scrutinee, fctx)?;
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                cond, arm_labels[idx], next_label
+            ));
+
+            fctx.vars = saved_scope.clone();
+            fctx.drop_scopes = saved_drop_scopes.clone();
+            fctx.terminated = false;
+            fctx.lines.push(format!("{}:", arm_labels[idx]));
+            fctx.current_label = arm_labels[idx].clone();
+            self.bind_tuple_match_pattern(&arm.pattern, &scrutinee, fctx)?;
+
+            if let Some(guard) = arm.guard.as_ref() {
+                let body_label = self.new_label(&format!("match_tuple_body_{idx}"));
+                self.gen_match_guard_branch(guard, &body_label, &next_label, fctx)?;
+                fctx.lines.push(format!("{}:", body_label));
+                fctx.current_label = body_label;
+            }
+
+            let arm_value = self.gen_expr_with_expected(&arm.body, expected_ty, fctx);
+            let arm_terminated = fctx.terminated;
+            if !arm_terminated {
+                terminated_all = false;
+                if let Some(value) = arm_value {
+                    let _ = self.store_match_arm_value(
+                        value,
+                        arm.span,
+                        expected_ty,
+                        &mut result_slot,
+                        &mut result_ty,
+                        fctx,
+                    );
+                }
+                fctx.lines.push(format!("  br label %{}", cont_label));
+            }
+        }
+
+        fctx.vars = saved_scope;
+        fctx.drop_scopes = saved_drop_scopes;
+        fctx.terminated = saved_terminated;
+
+        fctx.lines.push(format!("{}:", default_label));
+        fctx.lines.push("  unreachable".to_string());
+
+        if terminated_all {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
 
         fctx.lines.push(format!("{}:", cont_label));
         if let (Some(slot), Some(result_ty)) = (result_slot, result_ty) {

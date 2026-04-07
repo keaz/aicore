@@ -1,0 +1,20 @@
+{
+  "operations": [
+    {
+      "kind": "add_function",
+      "target_file": "src/model.aic",
+      "after_symbol": "usage_text",
+      "function": {
+        "name": "storage_hint",
+        "params": [
+          {
+            "name": "path",
+            "ty": "String"
+          }
+        ],
+        "return_type": "String",
+        "body": "$\"store={path}\""
+      }
+    }
+  ]
+}

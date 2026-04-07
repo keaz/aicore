@@ -126,8 +126,9 @@ Rules enforced by diagnostics:
 
 - only `extern "C"` is supported (`E2120`, backend guard `E5024`)
 - extern signatures must be plain declarations (no async/generics/effects/contracts) (`E2121`)
-- currently supported raw C ABI scalar types are `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()` (`E2123`)
+- currently supported raw C ABI value types are `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()` (`E2123`)
 - calls to `extern` (and `unsafe fn`) require an explicit unsafe boundary (`unsafe { ... }` or `unsafe fn`) (`E2122`)
+- extern parameters additionally accept `String`, using the current target's `ptr-len-cap` value layout at the C boundary; see `docs/llvm-backend.md` for the exact LLVM shape.
 
 ### Manifest linkage
 
@@ -146,7 +147,7 @@ Link semantics:
 - `search_paths`: emitted as `-L<path>`; relative paths are resolved from the project root.
 - `objects`: extra object files passed directly to the linker; relative paths are resolved from the project root.
 
-Example source file: `examples/pkg/ffi_zlib.aic`
+Example source files: `examples/pkg/ffi_zlib.aic`, `examples/io/ffi_string_view_demo/`
 
 ## Registry Provenance And Trust Policy (PKG-T4)
 

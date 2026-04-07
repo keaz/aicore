@@ -17,7 +17,7 @@ This document defines the runtime model used by async networking APIs in `std.ne
 | `std.net` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Runtime async reactor in `src/codegen/runtime/part04.c` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable`, `exec_net_async_queue_backpressure_and_shutdown` |
 | `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
 | `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
-| Async HTTP-server API surface | Unsupported | `std/http_server.aic` exposes synchronous APIs only; no `http_server.async_*` surface exists |
+| Async HTTP-server API surface | Supported | `std.http_server` async accept + compatibility read/write/serve wrappers in `std/http_server.aic` + runnable example `examples/io/http_server_async_api.aic` |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
 | Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
 
@@ -60,6 +60,15 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `tls_async_shutdown() -> Result[Bool, TlsError]`
 - Convenience wrappers: `tls_async_send`, `tls_async_recv`
 
+`std/http_server.aic` now exposes:
+
+- `async_accept_submit(listener, timeout_ms) -> Result[AsyncIntOp, NetError]`
+- `async_accept_wait(op, timeout_ms) -> Result[Int, NetError]`
+- `async_accept(listener, timeout_ms) -> Result[Int, NetError]`
+- `async_read_request(conn, max_bytes, timeout_ms) -> Result[Request, ServerError]`
+- `async_write_response(conn, response) -> Result[Int, ServerError]`
+- `async_serve(listener, max_bytes, accept_timeout_ms, io_timeout_ms, handler) -> Result[Int, ServerError]`
+
 Language-level bridge:
 
 - `await` now also accepts submit results directly:
@@ -74,6 +83,9 @@ Language-level bridge:
   - `async_accept(listener, timeout_ms)` = `async_accept_submit(listener, timeout_ms)` then `async_wait_int(op, timeout_ms)`
   - `async_tcp_send(handle, payload, timeout_ms)` = `async_tcp_send_submit(handle, payload)` then `async_wait_int(op, timeout_ms)`
   - `async_tcp_recv(handle, max_bytes, timeout_ms)` = `async_tcp_recv_submit(handle, max_bytes, timeout_ms)` then `async_wait_string(op, timeout_ms)`
+- `std.http_server.async_accept_*` delegates directly to `std.net` async accept handles and preserves `NetError`.
+- `std.http_server.async_read_request` and `std.http_server.async_write_response` are compatibility wrappers over the existing synchronous HTTP server request/response APIs.
+- `std.http_server.async_serve(...)` composes accept + async read + handler dispatch + async write, then closes the accepted connection before returning.
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
@@ -142,6 +154,7 @@ let socket = match accepted {
 - CI also includes `examples/io/async_await_submit_bridge.aic` in both check and run gates.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
+- CI also includes `examples/io/http_server_async_api.aic` in both check and run gates for async HTTP server coverage.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Runnable pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 - Perf gate baseline is `benchmarks/service_baseline/async-net-gate.v1.json`:

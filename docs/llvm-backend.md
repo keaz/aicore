@@ -96,6 +96,8 @@ Wave 1 extension contract (`#317`):
   - `Int`, `ISize`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`
   - `USize`/`UInt`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`
   - `Float32`, `Float64`, `Float`, `Bool`, `Char`, `()`
+- Supported extern C non-scalar value view in the current native target contract:
+  - `String` parameters as `{ i8*, i64, i64 }`
 - Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
 
 Wave numeric contract (`#317`, `#318`, `#319`, `#320`):
@@ -114,6 +116,7 @@ Wave numeric contract (`#317`, `#318`, `#319`, `#320`):
 ### String ABI (`ptr-len-cap`)
 
 - AIC `String` -> `{ i8*, i64, i64 }`
+- extern `String` parameters reuse the same value layout on the current native target
 - Runtime receives string values as scalar args: `(ptr, len, cap)`
 
 Runtime helpers:

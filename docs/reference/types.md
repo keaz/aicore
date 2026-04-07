@@ -36,3 +36,4 @@ type_list      = type ("," type)* ","? ;
 - `null` is forbidden both as a symbol and as a type fragment; use `Option[T]` for absence.
 - Tuple types use `(T, U, ...)`; a single parenthesized type remains grouping.
 - Extern C-ABI signatures currently accept only C-compatible scalar/value forms for parameters and returns (`Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()`, with no unresolved generics).
+- Extern C-ABI parameters additionally accept `String` as the current target's `ptr-len-cap` value view (`{ i8*, i64, i64 }` in LLVM); keep native consumers aligned with that layout.

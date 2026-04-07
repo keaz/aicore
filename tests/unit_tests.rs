@@ -109,6 +109,18 @@ fn assert_delegate_call(
                         "`{function_name}` should call `{delegate_name}`"
                     );
                 }
+                aicore::ast::ExprKind::FieldAccess { base, field } => match &base.kind {
+                    aicore::ast::ExprKind::Var(module_name) => {
+                        assert_eq!(
+                            format!("{module_name}.{field}"),
+                            delegate_name,
+                            "`{function_name}` should call `{delegate_name}`"
+                        );
+                    }
+                    _ => panic!(
+                        "`{function_name}` delegate field access base must be a variable name"
+                    ),
+                },
                 _ => panic!("`{function_name}` delegate callee must be a variable name"),
             }
             assert_eq!(
@@ -1056,6 +1068,49 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_closure_parameter_is_inferred_from_struct_field_context() {
+    let src = r#"
+struct Mapper[T] { apply: T }
+
+fn main() -> Int {
+    let mapper: Mapper[Fn(Int) -> Int] = Mapper {
+        apply: |x| -> Int { x + 1 }
+    };
+    let apply = mapper.apply;
+    apply(41)
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_closure_parameter_requires_concrete_struct_field_context() {
+    let src = r#"
+struct Mapper[T] { apply: T }
+
+fn main() -> Int {
+    let _mapper = Mapper {
+        apply: |x| -> Int { x + 1 }
+    };
+    0
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        out.diagnostics.iter().any(|d| d.code == "E1280"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_zero_arg_closure_typechecks() {
     let src = r#"
 fn apply(f: Fn() -> Int) -> Int {
@@ -1311,11 +1366,43 @@ fn wrap(x: Int) -> Int {
 }
 
 #[test]
+fn unit_extern_signature_accepts_string_view_parameter() {
+    let src = r#"
+extern "C" fn c_strlen_view(s: String) -> Int;
+
+fn wrap(s: String) -> Int {
+    unsafe { c_strlen_view(s) }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_extern_signature_accepts_string_view_return_type() {
+    let src = r#"
+extern "C" fn c_get_name() -> String;
+
+fn wrap() -> String {
+    unsafe { c_get_name() }
+}
+"#;
+    let ir = lower(src);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_extern_signature_rejects_non_c_abi_types() {
     let src = r#"
-extern "C" fn c_strlen(s: String) -> Int;
-fn wrap(s: String) -> Int {
-    unsafe { c_strlen(s) }
+extern "C" fn c_take_bytes(s: Bytes) -> Int;
+fn wrap(s: Bytes) -> Int {
+    unsafe { c_take_bytes(s) }
 }
 "#;
     let ir = lower(src);
@@ -1323,6 +1410,25 @@ fn wrap(s: String) -> Int {
     assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
     let out = check(&ir, &res, "unit.aic");
     assert!(out.diagnostics.iter().any(|d| d.code == "E2123"));
+}
+
+#[test]
+fn unit_extern_string_view_signatures_scalarize_raw_llvm_decls() {
+    let src = r#"
+extern "C" fn c_strlen_view(s: String) -> Int;
+
+fn main() -> Int { 0 }
+"#;
+    let (program, diags) = parse(src, "extern_string_view.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let output = emit_llvm(&ir, "extern_string_view.aic").expect("llvm");
+    assert!(output
+        .llvm_ir
+        .contains("declare i64 @c_strlen_view(i8*, i64, i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("define i64 @aic_c_strlen_view({ i8*, i64, i64 } %arg0)"));
 }
 
 #[test]
@@ -1592,7 +1698,7 @@ fn main() -> Int {
 }
 
 #[test]
-fn unit_use_after_move_reports_e1270() {
+fn unit_use_after_move_reports_e1277() {
     let src = r#"
 struct BoxedInt { value: Int }
 
@@ -1605,11 +1711,58 @@ fn main() -> Int {
     let ir = lower(src);
     let (res, _) = resolve(&ir, "unit.aic");
     let out = check(&ir, &res, "unit.aic");
-    assert!(out.diagnostics.iter().any(|d| d.code == "E1270"));
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1277"));
 }
 
 #[test]
-fn unit_move_while_borrowed_reports_e1271() {
+fn unit_use_after_move_across_if_join_reports_e1277() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    if true {
+        let moved = b;
+        moved.value
+    } else {
+        0
+    };
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1277"));
+}
+
+#[test]
+fn unit_use_after_move_across_match_join_reports_e1277() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    match true {
+        true => if true {
+            let moved = b;
+            moved.value
+        } else {
+            0
+        },
+        false => 0,
+    };
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1277"));
+}
+
+#[test]
+fn unit_move_while_borrowed_reports_e1278() {
     let src = r#"
 struct BoxedInt { value: Int }
 
@@ -1623,7 +1776,117 @@ fn main() -> Int {
     let ir = lower(src);
     let (res, _) = resolve(&ir, "unit.aic");
     let out = check(&ir, &res, "unit.aic");
-    assert!(out.diagnostics.iter().any(|d| d.code == "E1271"));
+    assert!(out.diagnostics.iter().any(|d| d.code == "E1278"));
+}
+
+#[test]
+fn unit_use_after_move_across_by_value_call_is_not_enforced_yet() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn take_box(x: BoxedInt) -> Int {
+    x.value
+}
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let moved = take_box(b);
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1277"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_move_into_by_value_call_while_borrowed_is_not_enforced_yet() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn take_box(x: BoxedInt) -> Int {
+    x.value
+}
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let keep = &b;
+    take_box(b)
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1278"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_reinitialize_after_by_value_call_move_is_allowed() {
+    let src = r#"
+struct BoxedInt { value: Int }
+
+fn take_box(x: BoxedInt) -> Int {
+    x.value
+}
+
+fn main() -> Int {
+    let mut b = BoxedInt { value: 1 };
+    let first = take_box(b);
+    b = BoxedInt { value: first + 1 };
+    b.value
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| matches!(
+            d.code.as_str(),
+            "E1263" | "E1264" | "E1265" | "E1277" | "E1278"
+        )),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_resource_protocol_handle_calls_do_not_count_as_moves() {
+    let src = r#"
+struct TlsStream { handle: Int }
+enum TlsError { Io }
+
+fn tls_async_send_submit(stream: TlsStream, timeout_ms: Int) -> Result[Int, TlsError] effects { net } {
+    Ok(stream.handle + timeout_ms)
+}
+
+fn tls_async_recv_submit(stream: TlsStream, timeout_ms: Int) -> Result[Int, TlsError] effects { net } {
+    Ok(stream.handle + timeout_ms)
+}
+
+fn main() -> Int {
+    let stream = TlsStream { handle: 1 };
+    let _sent = tls_async_send_submit(stream, 10);
+    let _recv = tls_async_recv_submit(stream, 20);
+    stream.handle
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1277"),
+        "diags={:#?}",
+        out.diagnostics
+    );
 }
 
 #[test]
@@ -1681,7 +1944,7 @@ fn main() -> Int {
     assert!(
         !out.diagnostics.iter().any(|d| matches!(
             d.code.as_str(),
-            "E1263" | "E1264" | "E1265" | "E1270" | "E1271"
+            "E1263" | "E1264" | "E1265" | "E1277" | "E1278"
         )),
         "diags={:#?}",
         out.diagnostics
@@ -4797,6 +5060,7 @@ fn unit_extern_abi_docs_track_fixed_width_scalar_contract() {
                 && doc.contains("`UInt64`")
                 && doc.contains("`Float`")
                 && doc.contains("`Char`")
+                && doc.contains("`String`")
                 && doc.contains("`()`"),
             "{name} must document fixed-width extern scalar coverage"
         );
@@ -5392,6 +5656,10 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
 #[test]
 fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
     let source = fs::read_to_string("std/http_server.aic").expect("read std/http_server.aic");
+    let async_doc =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    let rest_doc = fs::read_to_string("docs/ai-agent-rest-guide.md")
+        .expect("read docs/ai-agent-rest-guide.md");
 
     assert_delegate_call(
         &source,
@@ -5471,6 +5739,88 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
         "error_response",
         "text_response",
         2,
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_listen_intrinsic(addr: String) -> Result[Int, ServerError] effects { net };"
+        ),
+        "std/http_server.aic listen runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) -> Result[Int, ServerError] effects { net };"
+        ),
+        "std/http_server.aic accept runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net };"
+        ),
+        "std/http_server.aic read_request runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };"
+        ),
+        "std/http_server.aic write_response runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net };"
+        ),
+        "std/http_server.aic close runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "fn async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency } {\n    net.async_accept_submit(listener, timeout_ms)"
+        ),
+        "std/http_server.aic must expose async_accept_submit over the runtime-backed net async accept API"
+    );
+    assert!(
+        source.contains(
+            "fn async_accept_wait(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency } {\n    net.async_wait_int(op, timeout_ms)"
+        ),
+        "std/http_server.aic must expose async_accept_wait over the runtime-backed net async wait API"
+    );
+    assert!(
+        source.contains(
+            "fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+        ),
+        "std/http_server.aic must expose async_accept convenience wrapper"
+    );
+    assert!(
+        source.contains(
+            "fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+        ),
+        "std/http_server.aic must expose async_read_request convenience wrapper"
+    );
+    assert!(
+        source.contains(
+            "fn async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net }"
+        ),
+        "std/http_server.aic must expose async_write_response convenience wrapper"
+    );
+    assert!(
+        source.contains(
+            "fn async_serve(\n    listener: Int,\n    max_bytes: Int,\n    accept_timeout_ms: Int,\n    io_timeout_ms: Int,\n    handler: Fn(Request) -> ResponseView,\n) -> Result[Int, ServerError] effects { net }"
+        ),
+        "std/http_server.aic must expose async_serve convenience wrapper"
+    );
+    assert!(
+        async_doc.contains("| Async HTTP-server API surface | Supported |")
+            && async_doc.contains("`std.http_server` async accept + compatibility read/write/serve wrappers"),
+        "docs/async-event-loop.md must mark the async HTTP server surface as supported with implementation notes"
+    );
+    assert!(
+        rest_doc
+            .contains("| Native async HTTP server APIs (`std.http_server.async_*`) | Supported |")
+            && rest_doc
+                .contains("compatibility request/response wrappers in `std/http_server.aic`"),
+        "docs/ai-agent-rest-guide.md must mark native async HTTP server APIs as supported"
+    );
+    assert!(
+        rest_doc.contains("examples/io/http_server_async_api.aic"),
+        "docs/ai-agent-rest-guide.md must reference the async HTTP server example"
     );
 }
 
@@ -6576,6 +6926,14 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _srv_json = http_server.json_response(200, "{\"ok\":true}");
     let _srv_err = http_server.error_response(500, "boom");
     let _srv_hdr = http_server.header(_srv_json, "content-type");
+    let _srv_async_accept_submit = http_server.async_accept_submit(1, 1);
+    let _srv_async_accept_wait = http_server.async_accept_wait(AsyncIntOp { handle: 1 }, 1);
+    let _srv_async_accept = http_server.async_accept(1, 1);
+    let _srv_async_read = http_server.async_read_request(1, 1024, 1);
+    let _srv_async_write = http_server.async_write_response(1, http_server.text_response(204, ""));
+    let _srv_async_serve = http_server.async_serve(1, 1024, 1, 1, |req| -> ResponseView {
+        http_server.text_response(200, req.path)
+    });
     let _router_new = router.new_router();
     let _router_add = router.add(Router { handle: 1 }, "GET", "/health", 1);
     let _router_match = router.match_route(Router { handle: 1 }, "GET", "/health");
@@ -9527,6 +9885,7 @@ fn unit_map_set_key_support_is_documented_and_execution_covered() {
     for test_name in [
         "fn exec_map_int_string_key_ops_are_deterministic()",
         "fn exec_map_bool_int_key_ops_are_deterministic()",
+        "fn exec_map_bytes_value_shape_is_supported()",
         "fn exec_set_int_ops_are_deterministic()",
         "fn exec_set_bool_ops_are_deterministic()",
         "fn exec_set_float_keys_report_explicit_unsupported_key_diagnostic()",
@@ -9537,19 +9896,34 @@ fn unit_map_set_key_support_is_documented_and_execution_covered() {
         );
     }
 
+    let backend_tests = fs::read_to_string("tests/map_backend_expansion_tests.rs")
+        .expect("read tests/map_backend_expansion_tests.rs");
+    for test_name in [
+        "fn map_u64_bool_backend_paths_work()",
+        "fn map_bytes_string_backend_paths_work()",
+        "fn map_string_bytes_backend_paths_work()",
+        "fn set_unsupported_float_keys_report_e5011_without_unknown_local_cascade()",
+    ] {
+        assert!(
+            backend_tests.contains(test_name),
+            "backend coverage must include expanded map/set key and value support: {test_name}"
+        );
+    }
+
     let io_ref =
         fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
     assert!(
         io_ref.contains(
-            "Supported key specializations for map/set paths are `String`, `Int`, and `Bool`."
+            "Supported key specializations for map/set paths are `String`, `Bytes`, `Int`, `UInt64`, and `Bool`."
         ),
-        "io api reference must document supported scalar map/set key kinds"
+        "io api reference must document expanded map/set key kinds"
     );
 
     let agent_impl = fs::read_to_string("docs/ai-agent-implementation.md")
         .expect("read docs/ai-agent-implementation.md");
     assert!(
-        agent_impl.contains("set/map key paths includes `String`, `Int`, and `Bool`"),
+        agent_impl
+            .contains("set/map key paths includes `String`, `Bytes`, `Int`, `UInt64`, and `Bool`"),
         "ai-agent implementation doc must describe expanded map/set key support"
     );
 }

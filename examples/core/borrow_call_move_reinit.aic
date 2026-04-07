@@ -1,0 +1,15 @@
+import std.io;
+
+struct BoxedInt { value: Int }
+
+fn take_box(x: BoxedInt) -> Int {
+    x.value
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut b = BoxedInt { value: 1 };
+    let first = take_box(b);
+    b = BoxedInt { value: first + 41 };
+    print_int(b.value);
+    0
+}

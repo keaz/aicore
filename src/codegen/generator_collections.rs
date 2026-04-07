@@ -117,12 +117,16 @@ impl<'a> Generator<'a> {
     ) -> Option<i64> {
         match key_ty {
             "String" => Some(1),
+            "Bytes" => Some(1),
             "Int" => Some(2),
+            "UInt64" => Some(2),
             "Bool" => Some(3),
             _ => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5011",
-                    format!("{context} supports only map keys String, Int, and Bool"),
+                    format!(
+                        "{context} supports only map keys String, Bytes, Int, UInt64, and Bool"
+                    ),
                     self.file,
                     span,
                 ));
@@ -139,17 +143,60 @@ impl<'a> Generator<'a> {
     ) -> Option<i64> {
         match value_ty {
             "String" => Some(1),
+            "Bytes" => Some(1),
             "Int" => Some(2),
+            "Bool" => Some(3),
+            "UInt64" => Some(4),
             _ => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5011",
-                    format!("{context} supports only map values String and Int"),
+                    format!(
+                        "{context} supports only map values String, Bytes, Int, Bool, and UInt64"
+                    ),
                     self.file,
                     span,
                 ));
                 None
             }
         }
+    }
+
+    fn is_bytes_type_name(ty: &str) -> bool {
+        base_type_name(ty) == "Bytes"
+    }
+
+    fn map_key_string_parts(
+        &mut self,
+        value: &Value,
+        key_ty: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        if Self::is_bytes_type_name(key_ty) {
+            self.bytes_parts(value, context, span, fctx)
+        } else {
+            self.string_parts(value, span, fctx)
+        }
+    }
+
+    fn map_value_string_parts(
+        &mut self,
+        value: &Value,
+        value_ty: &str,
+        context: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<(String, String, String)> {
+        if Self::is_bytes_type_name(value_ty) {
+            self.bytes_parts(value, context, span, fctx)
+        } else {
+            self.string_parts(value, span, fctx)
+        }
+    }
+
+    fn ensure_map_bool_runtime_decl(&mut self, decl: &str) {
+        self.extern_decls.insert(decl.to_string());
     }
 
     pub(super) fn build_map_value_from_handle(
@@ -418,8 +465,10 @@ impl<'a> Generator<'a> {
         let value_kind = self.map_value_kind(&value_ty, "insert", span)?;
         match (key_kind, value_kind) {
             (1, 1) => {
-                let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
-                let (vptr, vlen, vcap) = self.string_parts(&value, args[2].span, fctx)?;
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "insert", args[1].span, fctx)?;
+                let (vptr, vlen, vcap) =
+                    self.map_value_string_parts(&value, &value_ty, "insert", args[2].span, fctx)?;
                 let _err = self.new_temp();
                 fctx.lines.push(format!(
                     "  {} = call i64 @aic_rt_map_insert_string(i64 {}, i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
@@ -427,7 +476,8 @@ impl<'a> Generator<'a> {
                 ));
             }
             (2, 1) => {
-                let (vptr, vlen, vcap) = self.string_parts(&value, args[2].span, fctx)?;
+                let (vptr, vlen, vcap) =
+                    self.map_value_string_parts(&value, &value_ty, "insert", args[2].span, fctx)?;
                 let key_i64 = key.repr.clone().unwrap_or_else(|| "0".to_string());
                 let _err = self.new_temp();
                 fctx.lines.push(format!(
@@ -436,7 +486,8 @@ impl<'a> Generator<'a> {
                 ));
             }
             (3, 1) => {
-                let (vptr, vlen, vcap) = self.string_parts(&value, args[2].span, fctx)?;
+                let (vptr, vlen, vcap) =
+                    self.map_value_string_parts(&value, &value_ty, "insert", args[2].span, fctx)?;
                 let key_bool = key.repr.clone().unwrap_or_else(|| "0".to_string());
                 let key_i64 = self.new_temp();
                 fctx.lines
@@ -448,7 +499,8 @@ impl<'a> Generator<'a> {
                 ));
             }
             (1, 2) => {
-                let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "insert", args[1].span, fctx)?;
                 let _err = self.new_temp();
                 fctx.lines.push(format!(
                     "  {} = call i64 @aic_rt_map_insert_int(i64 {}, i8* {}, i64 {}, i64 {}, i64 {})",
@@ -482,6 +534,60 @@ impl<'a> Generator<'a> {
                     _err,
                     handle,
                     key_i64,
+                    value.repr.clone().unwrap_or_else(|| "0".to_string())
+                ));
+            }
+            (1, 3) => {
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "insert", args[1].span, fctx)?;
+                let value_bool = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                let value_i64 = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = zext i1 {} to i64", value_i64, value_bool));
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_insert_int(i64 {}, i8* {}, i64 {}, i64 {}, i64 {})",
+                    _err, handle, kptr, klen, kcap, value_i64
+                ));
+            }
+            (2, 3) => {
+                let key_i64 = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                let value_bool = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                let value_i64 = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = zext i1 {} to i64", value_i64, value_bool));
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_insert_int_int_key(i64 {}, i64 {}, i64 {})",
+                    _err, handle, key_i64, value_i64
+                ));
+            }
+            (3, 3) => {
+                let key_bool = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                let key_i64 = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = zext i1 {} to i64", key_i64, key_bool));
+                let value_bool = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                let value_i64 = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = zext i1 {} to i64", value_i64, value_bool));
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_insert_int_bool_key(i64 {}, i64 {}, i64 {})",
+                    _err, handle, key_i64, value_i64
+                ));
+            }
+            (1, 4) => {
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "insert", args[1].span, fctx)?;
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_insert_int(i64 {}, i8* {}, i64 {}, i64 {}, i64 {})",
+                    _err,
+                    handle,
+                    kptr,
+                    klen,
+                    kcap,
                     value.repr.clone().unwrap_or_else(|| "0".to_string())
                 ));
             }
@@ -537,7 +643,8 @@ impl<'a> Generator<'a> {
                 let found = self.new_temp();
                 match key_kind {
                     1 => {
-                        let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
+                        let (kptr, klen, kcap) =
+                            self.map_key_string_parts(&key, &key_ty, "get", args[1].span, fctx)?;
                         fctx.lines.push(format!(
                             "  {} = call i64 @aic_rt_map_get_string(i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
                             found, handle, kptr, klen, kcap, out_ptr_slot, out_len_slot
@@ -567,7 +674,20 @@ impl<'a> Generator<'a> {
                     .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
                 let payload =
                     self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
-                self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+                if Self::is_bytes_type_name(&value_ty) {
+                    let bytes_ty = self.parse_type_repr("Bytes", span)?;
+                    let bytes_payload =
+                        self.build_bytes_value_from_data(&bytes_ty, payload, "get", span, fctx)?;
+                    self.wrap_option_with_condition(
+                        &result_ty,
+                        bytes_payload,
+                        &found_bool,
+                        span,
+                        fctx,
+                    )
+                } else {
+                    self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+                }
             }
             2 => {
                 let out_value_slot = self.new_temp();
@@ -576,7 +696,8 @@ impl<'a> Generator<'a> {
                 let found = self.new_temp();
                 match key_kind {
                     1 => {
-                        let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
+                        let (kptr, klen, kcap) =
+                            self.map_key_string_parts(&key, &key_ty, "get", args[1].span, fctx)?;
                         fctx.lines.push(format!(
                             "  {} = call i64 @aic_rt_map_get_int(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
                             found, handle, kptr, klen, kcap, out_value_slot
@@ -611,6 +732,103 @@ impl<'a> Generator<'a> {
                 ));
                 let payload = Value {
                     ty: LType::Int,
+                    repr: Some(out_value),
+                };
+                self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+            }
+            3 => {
+                let out_value_slot = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca i64", out_value_slot));
+                let found = self.new_temp();
+                match key_kind {
+                    1 => {
+                        let (kptr, klen, kcap) =
+                            self.map_key_string_parts(&key, &key_ty, "get", args[1].span, fctx)?;
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+                            found, handle, kptr, klen, kcap, out_value_slot
+                        ));
+                    }
+                    2 => {
+                        let key_i64 = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int_int_key(i64 {}, i64 {}, i64* {})",
+                            found, handle, key_i64, out_value_slot
+                        ));
+                    }
+                    3 => {
+                        let key_bool = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                        let key_i64 = self.new_temp();
+                        fctx.lines
+                            .push(format!("  {} = zext i1 {} to i64", key_i64, key_bool));
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int_bool_key(i64 {}, i64 {}, i64* {})",
+                            found, handle, key_i64, out_value_slot
+                        ));
+                    }
+                    _ => unreachable!(),
+                }
+                let found_bool = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
+                let out_value = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i64, i64* {}",
+                    out_value, out_value_slot
+                ));
+                let bool_value = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = icmp ne i64 {}, 0", bool_value, out_value));
+                let payload = Value {
+                    ty: LType::Bool,
+                    repr: Some(bool_value),
+                };
+                self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
+            }
+            4 => {
+                let out_value_slot = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca i64", out_value_slot));
+                let found = self.new_temp();
+                match key_kind {
+                    1 => {
+                        let (kptr, klen, kcap) =
+                            self.map_key_string_parts(&key, &key_ty, "get", args[1].span, fctx)?;
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int(i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+                            found, handle, kptr, klen, kcap, out_value_slot
+                        ));
+                    }
+                    2 => {
+                        let key_i64 = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int_int_key(i64 {}, i64 {}, i64* {})",
+                            found, handle, key_i64, out_value_slot
+                        ));
+                    }
+                    3 => {
+                        let key_bool = key.repr.clone().unwrap_or_else(|| "0".to_string());
+                        let key_i64 = self.new_temp();
+                        fctx.lines
+                            .push(format!("  {} = zext i1 {} to i64", key_i64, key_bool));
+                        fctx.lines.push(format!(
+                            "  {} = call i64 @aic_rt_map_get_int_bool_key(i64 {}, i64 {}, i64* {})",
+                            found, handle, key_i64, out_value_slot
+                        ));
+                    }
+                    _ => unreachable!(),
+                }
+                let found_bool = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = icmp ne i64 {}, 0", found_bool, found));
+                let out_value = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i64, i64* {}",
+                    out_value, out_value_slot
+                ));
+                let payload = Value {
+                    ty: LType::UInt64,
                     repr: Some(out_value),
                 };
                 self.wrap_option_with_condition(&result_ty, payload, &found_bool, span, fctx)
@@ -664,7 +882,8 @@ impl<'a> Generator<'a> {
         let found = self.new_temp();
         match key_kind {
             1 => {
-                let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "contains_key", args[1].span, fctx)?;
                 fctx.lines.push(format!(
                     "  {} = call i64 @aic_rt_map_contains(i64 {}, i8* {}, i64 {}, i64 {})",
                     found, handle, kptr, klen, kcap
@@ -738,7 +957,8 @@ impl<'a> Generator<'a> {
         let _err = self.new_temp();
         match key_kind {
             1 => {
-                let (kptr, klen, kcap) = self.string_parts(&key, args[1].span, fctx)?;
+                let (kptr, klen, kcap) =
+                    self.map_key_string_parts(&key, &key_ty, "remove", args[1].span, fctx)?;
                 fctx.lines.push(format!(
                     "  {} = call i64 @aic_rt_map_remove(i64 {}, i8* {}, i64 {}, i64 {})",
                     _err, handle, kptr, klen, kcap
@@ -969,6 +1189,56 @@ impl<'a> Generator<'a> {
                 ));
                 self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
             }
+            4 => {
+                let out_items_slot = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca i64*", out_items_slot));
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_values_int(i64 {}, i64** {}, i64* {})",
+                    _err, handle, out_items_slot, out_count_slot
+                ));
+                let out_items_i64 = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i64*, i64** {}",
+                    out_items_i64, out_items_slot
+                ));
+                let out_items = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = bitcast i64* {} to i8*",
+                    out_items, out_items_i64
+                ));
+                let out_count = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i64, i64* {}",
+                    out_count, out_count_slot
+                ));
+                self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
+            }
+            3 => {
+                self.ensure_map_bool_runtime_decl(
+                    "declare i64 @aic_rt_map_values_bool(i64, i8**, i64*)",
+                );
+                let out_items_slot = self.new_temp();
+                fctx.lines
+                    .push(format!("  {} = alloca i8*", out_items_slot));
+                let _err = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = call i64 @aic_rt_map_values_bool(i64 {}, i8** {}, i64* {})",
+                    _err, handle, out_items_slot, out_count_slot
+                ));
+                let out_items = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i8*, i8** {}",
+                    out_items, out_items_slot
+                ));
+                let out_count = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = load i64, i64* {}",
+                    out_count, out_count_slot
+                ));
+                self.build_vec_value_from_raw_i8_ptr(&result_ty, &out_items, &out_count, span, fctx)
+            }
             _ => unreachable!(),
         }
     }
@@ -1012,8 +1282,25 @@ impl<'a> Generator<'a> {
             (1, 2) => "aic_rt_map_entries_int",
             (2, 2) => "aic_rt_map_entries_int_int_key",
             (3, 2) => "aic_rt_map_entries_int_bool_key",
+            (1, 3) => "aic_rt_map_entries_bool",
+            (2, 3) => "aic_rt_map_entries_bool_int_key",
+            (3, 3) => "aic_rt_map_entries_bool_bool_key",
+            (1, 4) => "aic_rt_map_entries_int",
+            (2, 4) => "aic_rt_map_entries_int_int_key",
+            (3, 4) => "aic_rt_map_entries_int_bool_key",
             _ => unreachable!(),
         };
+        match runtime_fn {
+            "aic_rt_map_entries_bool"
+            | "aic_rt_map_entries_bool_int_key"
+            | "aic_rt_map_entries_bool_bool_key" => {
+                self.ensure_map_bool_runtime_decl(&format!(
+                    "declare i64 @{}(i64, i8**, i64*)",
+                    runtime_fn
+                ));
+            }
+            _ => {}
+        }
         fctx.lines.push(format!(
             "  {} = call i64 @{}(i64 {}, i8** {}, i64* {})",
             _err, runtime_fn, handle, out_items_slot, out_count_slot

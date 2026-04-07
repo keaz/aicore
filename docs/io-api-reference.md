@@ -274,6 +274,7 @@ Notes:
 - `std.http_server` stays synchronous; it is the transport-side companion to `std.http`.
 - `std.router` provides deterministic route registration and matching for request dispatch.
 - `std.config` composes `std.fs`, `std.json`, and `std.env` for startup config loading without pretending to be a network API.
+- Current `std.map` execution support covers `map.new_map`, `insert`, `get`, `values`, and `entries` for `Map[K, V]` with `K` in `String`/`Int`/`Bool` and `V` in `String`/`Int`/`Bool`/`UInt64`.
 
 ## `std.set`
 
@@ -297,7 +298,7 @@ Notes:
 
 - `add`/`has`/`discard` are the supported mutator/query APIs.
 - `to_vec` is deterministic and returns members in ascending key order.
-- Supported key specializations for map/set paths are `String`, `Int`, and `Bool`.
+- Supported key specializations for map/set paths are `String`, `Bytes`, `Int`, `UInt64`, and `Bool`.
 - Unsupported key kinds remain deterministic and emit backend diagnostic `E5011` with explicit key-support guidance.
 
 ## `std.log`

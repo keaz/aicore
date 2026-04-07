@@ -1132,7 +1132,10 @@ fn copy_tree_recursive(src: &Path, dst: &Path) -> Result<(), Diagnostic> {
             continue;
         };
 
-        if name == ".git" || name == "target" || name == ".aic-cache" {
+        if matches!(
+            name,
+            ".git" | "target" | ".aic-cache" | ".aic-checkpoints" | ".aic-replay" | ".aic-sessions"
+        ) {
             continue;
         }
 

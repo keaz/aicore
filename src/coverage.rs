@@ -150,7 +150,10 @@ fn should_skip_dir(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|part| part.to_str()) else {
         return false;
     };
-    matches!(name, ".git" | "target" | ".aic-cache")
+    matches!(
+        name,
+        ".git" | "target" | ".aic-cache" | ".aic-checkpoints" | ".aic-replay" | ".aic-sessions"
+    )
 }
 
 fn is_aic_file(path: &Path) -> bool {

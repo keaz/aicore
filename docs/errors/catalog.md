@@ -205,6 +205,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1274` | Break expression type does not match loop break type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1275` | Break used outside loop context. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1276` | Continue used outside loop context. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
+| `E1277` | Use of moved value. | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; x.value }` | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; y.value }` |
+| `E1278` | Move attempted while the value is actively borrowed. | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let keep = &x; let y = x; y.value }` | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; y.value }` |
 | `E1280` | Closure parameter type must be explicit. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1281` | Closure body type does not match declared closure return type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1282` | Generic function value requires explicit specialization. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
@@ -279,7 +281,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E5020` | Code generation or runtime-lowering diagnostic. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5021` | Backend lowering failed for invalid question-mark operand/result layout. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5022` | Backend lowering failed for incompatible function Result return layout. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
-| `E5023` | Backend does not lower guarded match arms. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
+| `E5023` | Backend const evaluation hit a cycle or unsupported initializer form. | `const BAD: Int = if true { 1 } else { 2 }; fn main() -> Int { BAD }` | `const GOOD: Int = 1; fn main() -> Int { GOOD }` |
 | `E5024` | Backend extern wrapper/link ABI mismatch or unsupported extern lowering. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5025` | Backend encountered break outside loop context. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5026` | Backend encountered continue outside loop context. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |

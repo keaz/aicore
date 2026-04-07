@@ -51,4 +51,4 @@ variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
   - identifier with payload syntax `Name(...)` is variant pattern
   - bare uppercase identifier is treated as zero-arg variant pattern
   - bare lowercase identifier is treated as variable-binding pattern
-- Backend note: guarded match arms are type-checked today, but some lowering paths still reject them with `E5023`.
+- Backend note: guarded match arms lower for `Bool`, tuple, and enum-like ADT matches in the current LLVM backend coverage.

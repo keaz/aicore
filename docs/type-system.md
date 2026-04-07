@@ -39,6 +39,9 @@
   - `E1270`: non-`Bool` guard expression
   - `E1271`: or-pattern binding name-set mismatch
   - `E1272`: or-pattern binding type mismatch
+- Move diagnostics:
+  - `E1277`: use of moved value
+  - `E1278`: cannot move while borrowed
 - `null` is forbidden; absence is modeled only via `Option[T]`.
 - Unknown symbols and type mismatches are reported with structured diagnostics.
 - `Float` is a compatibility alias to `Float64`.

@@ -1,0 +1,55 @@
+module taskcli.model;
+
+import std.string;
+
+pub struct Task {
+    pub id: Int,
+    pub done: Bool,
+    pub title: String,
+} invariant id >= 0
+
+pub enum TaskCommand {
+    Help,
+    List,
+    Stats,
+    Add(String),
+    Done(Int),
+}
+
+pub enum TaskCliError {
+    Usage(String),
+    InvalidCommand(String),
+    InvalidIndex(String),
+    Storage(String),
+}
+
+pub fn done_marker(task: Task) -> String {
+    if task.done { "x" } else { " " }
+}
+
+pub fn render_task(task: Task) -> String {
+    let id_text = int_to_string(task.id);
+    let marker = if task.done { "x" } else { " " };
+    f"{id_text}. [{marker}] {task.title}"
+}
+
+pub fn render_summary(total: Int, done: Int) -> String {
+    let open = total - done;
+    let total_text = int_to_string(total);
+    let open_text = int_to_string(open);
+    let done_text = int_to_string(done);
+    f"total={total_text} open={open_text} done={done_text}"
+}
+
+pub fn render_error(err: TaskCliError) -> String {
+    match err {
+        Usage(message) => f"usage: {message}",
+        InvalidCommand(command) => f"invalid command: {command}",
+        InvalidIndex(message) => f"invalid index: {message}",
+        Storage(message) => f"storage error: {message}",
+    }
+}
+
+pub fn usage_text() -> String {
+    "task-cli commands: help | list | stats | add <title> | done <id>"
+}

@@ -1,0 +1,81 @@
+module taskcli.commands;
+
+import std.option;
+import std.string;
+import std.vec;
+import taskcli.model;
+
+fn validate_nonnegative_index(value: Int) -> Result[Int, TaskCliError] {
+    if value >= 0 {
+        Ok(value)
+    } else {
+        Err(InvalidIndex("expected a non-negative task id"))
+    }
+}
+
+fn parse_done_index(raw: String) -> Result[Int, TaskCliError] {
+    let parsed = string.parse_int(string.trim(raw));
+    match parsed {
+        Ok(value) => validate_nonnegative_index(value),
+        Err(_) => Err(InvalidIndex("expected a numeric task id")),
+    }
+}
+
+pub fn parse_command(argv: Vec[String]) -> Result[TaskCommand, TaskCliError] {
+    let mut argc = 0;
+    let mut command = "";
+    let mut title_parts: Vec[String] = vec.new_vec();
+    let mut done_raw = "";
+
+    for arg in argv {
+        if argc == 1 {
+            command = string.trim(arg);
+        } else if argc >= 2 {
+            if string.starts_with(command, "add") && string.len(command) == 3 {
+                let part = string.trim(arg);
+                if string.len(part) > 0 {
+                    title_parts = vec.push(title_parts, part);
+                } else {
+                    ()
+                };
+            } else if argc == 2 && string.starts_with(command, "done") && string.len(command) == 4 {
+                done_raw = arg;
+            } else {
+                ()
+            };
+        } else {
+            ()
+        };
+        argc = argc + 1;
+    };
+
+    if argc <= 1 {
+        Ok(Help())
+    } else {
+        if string.starts_with(command, "help") && string.len(command) == 4 {
+            Ok(Help())
+        } else if string.starts_with(command, "list") && string.len(command) == 4 {
+            Ok(List())
+        } else if string.starts_with(command, "stats") && string.len(command) == 5 {
+            Ok(Stats())
+        } else if string.starts_with(command, "add") && string.len(command) == 3 {
+            let title = string.trim(string.join(title_parts, " "));
+            if string.len(title) > 0 {
+                Ok(Add(title))
+            } else {
+                Err(Usage(usage_text()))
+            }
+        } else if string.starts_with(command, "done") && string.len(command) == 4 {
+            if argc <= 2 {
+                Err(Usage(usage_text()))
+            } else {
+                match parse_done_index(done_raw) {
+                    Ok(index) => Ok(Done(index)),
+                    Err(err) => Err(err),
+                }
+            }
+        } else {
+            Err(InvalidCommand(command))
+        }
+    }
+}

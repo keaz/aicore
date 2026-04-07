@@ -997,15 +997,32 @@ impl<'a> Generator<'a> {
             let raw_params = sig
                 .params
                 .iter()
-                .map(llvm_type)
+                .flat_map(|ty| match ty {
+                    LType::String => vec!["i8*".to_string(), "i64".to_string(), "i64".to_string()],
+                    _ => vec![llvm_type(ty)],
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.extern_decls.insert(format!(
-                "declare {} @{}({})",
-                llvm_type(&sig.ret),
-                raw_symbol,
-                raw_params
-            ));
+            if sig.ret == LType::String {
+                self.extern_decls.insert(format!(
+                    "declare void @{}({}* sret({}){})",
+                    raw_symbol,
+                    llvm_type(&sig.ret),
+                    llvm_type(&sig.ret),
+                    if raw_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", raw_params)
+                    }
+                ));
+            } else {
+                self.extern_decls.insert(format!(
+                    "declare {} @{}({})",
+                    llvm_type(&sig.ret),
+                    raw_symbol,
+                    raw_params
+                ));
+            }
 
             let wrapper_name = self.llvm_name_for_function(func);
             let wrapper_params = sig
@@ -1015,14 +1032,6 @@ impl<'a> Generator<'a> {
                 .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let call_args = sig
-                .params
-                .iter()
-                .enumerate()
-                .map(|(idx, ty)| format!("{} %arg{}", llvm_type(ty), idx))
-                .collect::<Vec<_>>()
-                .join(", ");
-
             self.out.push(format!(
                 "define {} @{}({}) {{",
                 llvm_type(&sig.ret),
@@ -1030,10 +1039,68 @@ impl<'a> Generator<'a> {
                 wrapper_params
             ));
             self.out.push("entry:".to_string());
+            let mut call_args = Vec::new();
+            for (idx, ty) in sig.params.iter().enumerate() {
+                if *ty == LType::String {
+                    let ptr = self.new_temp();
+                    let len = self.new_temp();
+                    let cap = self.new_temp();
+                    self.out.push(format!(
+                        "  {} = extractvalue {} %arg{}, 0",
+                        ptr,
+                        llvm_type(ty),
+                        idx
+                    ));
+                    self.out.push(format!(
+                        "  {} = extractvalue {} %arg{}, 1",
+                        len,
+                        llvm_type(ty),
+                        idx
+                    ));
+                    self.out.push(format!(
+                        "  {} = extractvalue {} %arg{}, 2",
+                        cap,
+                        llvm_type(ty),
+                        idx
+                    ));
+                    call_args.push(format!("i8* {}", ptr));
+                    call_args.push(format!("i64 {}", len));
+                    call_args.push(format!("i64 {}", cap));
+                } else {
+                    call_args.push(format!("{} %arg{}", llvm_type(ty), idx));
+                }
+            }
+            let call_args = call_args.join(", ");
             if sig.ret == LType::Unit {
                 self.out
                     .push(format!("  call void @{}({})", raw_symbol, call_args));
                 self.out.push("  ret void".to_string());
+            } else if sig.ret == LType::String {
+                let raw_slot = self.new_temp();
+                self.out
+                    .push(format!("  {} = alloca {}", raw_slot, llvm_type(&sig.ret)));
+                self.out.push(format!(
+                    "  call void @{}({}* sret({}) {}{})",
+                    raw_symbol,
+                    llvm_type(&sig.ret),
+                    llvm_type(&sig.ret),
+                    raw_slot,
+                    if call_args.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", call_args)
+                    }
+                ));
+                let raw_loaded = self.new_temp();
+                self.out.push(format!(
+                    "  {} = load {}, {}* {}",
+                    raw_loaded,
+                    llvm_type(&sig.ret),
+                    llvm_type(&sig.ret),
+                    raw_slot
+                ));
+                self.out
+                    .push(format!("  ret {} {}", llvm_type(&sig.ret), raw_loaded));
             } else {
                 let out = self.new_temp();
                 self.out.push(format!(
@@ -1419,7 +1486,42 @@ impl<'a> Generator<'a> {
                         None
                     };
                     let value = self.gen_expr_with_expected(expr, expected.as_ref(), fctx);
-                    let Some(value) = value else { continue };
+                    let Some(value) = value else {
+                        // Preserve the local slot shape after a failed initializer so
+                        // later statements do not cascade into unrelated unknown-local
+                        // diagnostics while backend errors are already being reported.
+                        if let Some(expected) = expected.clone() {
+                            let ptr = self.new_temp();
+                            fctx.lines
+                                .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
+                            fctx.lines.push(format!(
+                                "  store {} {}, {}* {}",
+                                llvm_type(&expected),
+                                default_value(&expected),
+                                llvm_type(&expected),
+                                ptr
+                            ));
+                            fctx.vars.last_mut().expect("scope").insert(
+                                name.clone(),
+                                Local {
+                                    symbol: Some(*symbol),
+                                    ty: expected.clone(),
+                                    ptr: ptr.clone(),
+                                },
+                            );
+                            if let Some(scope) = fctx.drop_scopes.last_mut() {
+                                scope.locals.insert(
+                                    *symbol,
+                                    DropSlot {
+                                        ty: expected,
+                                        ptr,
+                                        skip_resource_cleanup: true,
+                                    },
+                                );
+                            }
+                        }
+                        continue;
+                    };
                     let expected = expected.or_else(|| Some(value.ty.clone()));
                     let Some(expected) = expected else {
                         continue;
@@ -2707,7 +2809,7 @@ impl<'a> Generator<'a> {
                 params,
                 ret_type,
                 body,
-            } => self.gen_closure_value(params, *ret_type, body, expr.span, fctx),
+            } => self.gen_closure_value(params, *ret_type, body, expected_ty, expr.span, fctx),
             ir::ExprKind::If {
                 cond,
                 then_block,
@@ -5238,6 +5340,7 @@ impl<'a> Generator<'a> {
         params: &[ir::ClosureParam],
         ret_type: ir::TypeId,
         body: &ir::Block,
+        expected_ty: Option<&LType>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
@@ -5256,9 +5359,24 @@ impl<'a> Generator<'a> {
             captures.push((name, local));
         }
 
+        let inferred_param_tys = match expected_ty {
+            Some(LType::Fn(layout)) if layout.params.len() == params.len() => {
+                Some(layout.params.clone())
+            }
+            _ => None,
+        };
+
         let mut param_tys = Vec::new();
-        for param in params {
-            let Some(ty_id) = param.ty else {
+        for (idx, param) in params.iter().enumerate() {
+            let ty = if let Some(ty_id) = param.ty {
+                self.type_from_id(ty_id, param.span)?
+            } else if let Some(inferred) = inferred_param_tys
+                .as_ref()
+                .and_then(|tys| tys.get(idx))
+                .cloned()
+            {
+                inferred
+            } else {
                 self.diagnostics.push(Diagnostic::error(
                     "E5033",
                     format!(
@@ -5270,7 +5388,6 @@ impl<'a> Generator<'a> {
                 ));
                 return None;
             };
-            let ty = self.type_from_id(ty_id, param.span)?;
             param_tys.push(ty);
         }
         let ret = self.type_from_id(ret_type, span)?;

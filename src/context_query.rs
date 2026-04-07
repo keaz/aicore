@@ -597,7 +597,15 @@ fn collect_context_aic_files(root: &Path, out: &mut Vec<std::path::PathBuf>) -> 
         if path.is_dir() {
             if matches!(
                 path.file_name().and_then(|value| value.to_str()),
-                Some(".git" | "target" | ".aic" | ".aic-cache")
+                Some(
+                    ".git"
+                        | "target"
+                        | ".aic"
+                        | ".aic-cache"
+                        | ".aic-checkpoints"
+                        | ".aic-replay"
+                        | ".aic-sessions"
+                )
             ) {
                 continue;
             }

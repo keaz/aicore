@@ -67,7 +67,7 @@ This matrix captures implementation state as of the current code/tests and shoul
 | Capability | Status | Evidence anchor |
 |---|---|---|
 | `std.http_server` synchronous server APIs | Supported | Runtime implementations in `src/codegen/runtime/part05.c` + execution test `exec_http_server_parses_request_and_emits_http11_response` |
-| Native async HTTP server APIs (`std.http_server.async_*`) | Unsupported | No async HTTP-server API surface in `std/http_server.aic` |
+| Native async HTTP server APIs (`std.http_server.async_*`) | Supported | Reactor-backed async accept plus compatibility request/response wrappers in `std/http_server.aic` + runnable example `examples/io/http_server_async_api.aic` |
 | HTTP request parsing breadth | Partial | Parser currently accepts HTTP/1.0 + HTTP/1.1, recognized method set, and bounded receive-loop `Content-Length` body handling in `aic_rt_http_server_read_request` |
 | Router dispatch (`exact`, `:param`, trailing `*`, deterministic first-match) | Supported | Runtime router implementation in `part05.c` + execution test `exec_router_matches_paths_params_and_order` |
 | JSON helpers used by REST workflows | Supported | `std/json.aic` APIs + execution test `exec_json_roundtrip_and_object_operations` |
@@ -117,6 +117,7 @@ routing examples/io/http_router.aic
 json_roundtrip examples/data/config_json.aic
 error_paths examples/data/url_http_negative_cases.aic
 async_event_loop examples/io/async_net_event_loop.aic
+async_http_server examples/io/http_server_async_api.aic
 async_submit_bridge examples/io/async_await_submit_bridge.aic
 <!-- rest-guide:examples:end -->
 
@@ -128,6 +129,7 @@ aic check examples/io/http_router.aic
 aic check examples/data/config_json.aic
 aic check examples/data/url_http_negative_cases.aic
 aic check examples/io/async_net_event_loop.aic
+aic check examples/io/http_server_async_api.aic
 aic check examples/io/async_await_submit_bridge.aic
 <!-- docs-test:end -->
 
