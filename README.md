@@ -538,7 +538,7 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 | `std.net` async submit/wait/cancel/poll/wait-many/shutdown/pressure | Supported | Event-loop runtime is covered by execution tests and runnable examples (`examples/io/async_*`). |
 | `std.fs` async submit/wait/cancel/poll/wait-many/shutdown/pressure | Supported | Task-backed async filesystem handles are covered by execution tests and runnable examples (`examples/io/fs_async_*`). |
 | `await` submit bridge (`await Result[Async*Op, NetError|TlsError|FsError]`) | Supported | Lowered to reactor poll helpers for net/tls and task-join helpers for fs; covered by tests/examples. |
-| `std.tls` async submit/wait lifecycle | Partial | API surface is implemented and tested; runtime pressure reports queue metrics as `0` and backend-dependent TLS behavior is handled with typed fallback paths. |
+| `std.tls` async submit/wait lifecycle | Supported | Slot-backed TLS async runtime reports active and occupied-slot pressure snapshots, and execution tests cover timeout/cancel/shutdown paths; builds without a TLS backend still fail with typed fallback paths. |
 | REST + async runtime on Windows | Partial | Shared net/async runtime backend and Windows smoke coverage exist for client-runtime paths, but REST/server-oriented async execution coverage remains primarily non-Windows. |
 
 ---

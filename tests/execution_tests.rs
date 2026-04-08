@@ -9331,12 +9331,15 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     let after_ok = if after.active_ops == 0 && after.queue_depth == 0 { 1 } else { 0 };
 
     let tls_ok = match tls_async_runtime_pressure() {
-        Ok(value) => if value.queue_depth == 0 && value.queue_limit == 0 && value.op_limit == 4 {
+        Ok(value) => if value.active_ops == 0 &&
+            value.queue_depth == 0 &&
+            value.queue_limit == 4 &&
+            value.op_limit == 4 {
             1
         } else {
             0
         },
-        Err(err) => if tls_code(err) == 5 { 1 } else { 0 },
+        Err(_) => 0,
     };
 
     let shutdown_ok = match async_shutdown() {
@@ -15164,7 +15167,6 @@ import std.vec;
 fn bool_to_int(value: Bool) -> Int {
     if value { 1 } else { 0 }
 }
-
 fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
     match env.get(key) {
         Ok(value) => value,
@@ -15254,6 +15256,176 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
 
     let addr_env = format!("127.0.0.1:{port}");
     let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
+    let (code, stdout, stderr) =
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
+        });
+    if code != 0 && stderr.contains("[aic][tls-policy][unsafe]") {
+        return;
+    }
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_tls_async_pressure_shutdown_and_backpressure_are_deterministic() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if !(backend_enabled && openssl_cli_available) {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.net;
+import std.env;
+import std.time;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn pressure_ok(value: AsyncRuntimePressure, active: Int, depth: Int, limit: Int) -> Int {
+    if value.active_ops == active
+        && value.queue_depth == depth
+        && value.op_limit == limit
+        && value.queue_limit == limit {
+        1
+    } else {
+        0
+    }
+}
+
+fn pressure_u32_ok(value: AsyncRuntimePressureU32, active: UInt32, depth: UInt32, limit: UInt32) -> Int {
+    if value.active_ops == active
+        && value.queue_depth == depth
+        && value.op_limit == limit
+        && value.queue_limit == limit {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, net, env, concurrency, time } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    let cfg = TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    };
+
+    let result = match tls_connect_addr(addr, cfg, 5000) {
+        Err(_) => 0,
+        Ok(stream) => if true {
+            let baseline_ok = match tls_async_runtime_pressure() {
+                Ok(value) => pressure_ok(value, 0, 0, 1),
+                Err(_) => 0,
+            };
+            let baseline_u32_ok = match tls_async_runtime_pressure_u32() {
+                Ok(value) => pressure_u32_ok(value, 0u32, 0u32, 1u32),
+                Err(_) => 0,
+            };
+
+            let op = match tls_async_recv_submit(stream, 64, 200) {
+                Ok(value) => value,
+                Err(_) => AsyncStringOp { handle: 0 },
+            };
+
+            let inflight_ok = match tls_async_runtime_pressure() {
+                Ok(value) => pressure_ok(value, 1, 1, 1),
+                Err(_) => 0,
+            };
+            let saturated_ok = match tls_async_recv_submit(stream, 64, 50) {
+                Ok(_) => 0,
+                Err(err) => if tls_code(err) == 8 { 1 } else { 0 },
+            };
+
+            let shutdown_ok = match tls_async_shutdown() {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            let cancelled_ok = match tls_async_wait_string(op, 500) {
+                Ok(_) => 0,
+                Err(err) => if tls_code(err) == 9 { 1 } else { 0 },
+            };
+
+            sleep_ms(1000);
+
+            let after_ok = match tls_async_runtime_pressure() {
+                Ok(value) => pressure_ok(value, 0, 0, 1),
+                Err(_) => 0,
+            };
+            let close_ok = match tls_close(stream) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+
+            let score = baseline_ok * 10000000
+                + baseline_u32_ok * 1000000
+                + inflight_ok * 100000
+                + saturated_ok * 10000
+                + shutdown_ok * 1000
+                + cancelled_ok * 100
+                + after_ok * 10
+                + close_ok;
+            if score == 11111111 {
+                42
+            } else {
+                score
+            }
+        } else {
+            0
+        },
+    };
+
+    print_int(result);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls pressure listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [
+        ("AIC_TLS_ADDR", addr_env.as_str()),
+        ("AIC_RT_LIMIT_TLS_ASYNC_OPS", "1"),
+        ("AIC_RT_LIMIT_TLS_HANDLES", "4"),
+        ("AIC_RT_LIMIT_NET_HANDLES", "8"),
+    ];
     let (code, stdout, stderr) =
         compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
             generate_local_tls_cert(root);

@@ -281,7 +281,7 @@ fn main() -> Int effects { net } capabilities { net } {
 - `tls_async_poll_*` maps pending ops to `Ok(None())` using zero-timeout wait probes.
 - `tls_async_wait_many_*` returns the first-ready result with deterministic index selection across arbitrary operation sets.
 - `tls_async_wait_any_*` remains a compatibility wrapper over `tls_async_wait_many_*`.
-- `tls_async_runtime_pressure` reports runtime load snapshots for adaptive orchestration (`queue_depth`/`queue_limit` are `0` on current TLS backend).
+- `tls_async_runtime_pressure` reports slot-backed runtime load snapshots for adaptive orchestration (`queue_depth` mirrors occupied TLS async slots and `queue_limit` mirrors the configured TLS async slot limit).
 - Phase-1 fixed-width wrappers (`*_u32`) migrate non-negative byte-count, frame-length, selection-index, and pressure-counter domains.
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.

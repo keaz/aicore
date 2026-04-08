@@ -47,7 +47,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
 - Windows: `std.proc`, `std.net`, and `std.concurrent` use the shared runtime backend and are validated by Windows CI smoke coverage for proc lifecycle, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
 - Windows: `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`; branch on typed errors instead of assuming success.
-- Windows: `std.tls` remains backend-dependent, and async TLS pressure reporting is still partial (`queue_depth = 0`, `queue_limit = 0`).
+- Windows: `std.tls` remains backend-dependent; when the TLS backend is available, async pressure snapshots report occupied-slot depth and configured slot limit rather than a separate reactor queue.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.
 

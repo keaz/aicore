@@ -19,7 +19,7 @@ This document defines the runtime model used by async submit/wait APIs in `std.n
 | `std.fs` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Task-backed runtime bridge in `std/fs.aic` + `src/codegen/runtime/part03.c` + execution tests `exec_fs_async_submit_wait_roundtrip`, `exec_fs_async_runtime_backpressure_is_deterministic`, `exec_fs_async_wait_timeout_retry_is_stable` |
 | `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
 | `await` submit bridge for fs async handles | Supported | Task-join helper (`aic_rt_conc_join_value`) + execution test `exec_async_await_fs_submit_bridge_roundtrip` |
-| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
+| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Slot-backed TLS async runtime reports active and occupied-slot pressure, and execution tests cover timeout/cancel/shutdown/backpressure paths against a local TLS harness |
 | Async HTTP-server API surface | Supported | request/response I/O now uses dedicated async runtime intrinsics in `src/codegen/runtime/part05.c`, and `async_serve` composes through native async accept/read/write helpers |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
 | Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
@@ -185,7 +185,8 @@ let socket = match accepted {
 - Fs async submission is bounded by `AIC_RT_LIMIT_FS_ASYNC_OPS`; saturation returns `FsError::Timeout`.
 - `async_runtime_pressure` snapshots expose `active_ops`, `queue_depth`, `op_limit`, and `queue_limit`.
 - `std.fs.async_runtime_pressure` snapshots expose active fs task count and configured fs async op limit; current task-backed backend reports `queue_depth = 0` and `queue_limit = 0`.
-- `tls_async_runtime_pressure` snapshots expose `active_ops` and `op_limit`; current TLS runtime reports `queue_depth = 0` and `queue_limit = 0`.
+- `tls_async_runtime_pressure` snapshots expose active in-flight ops plus occupied-slot pressure.
+- TLS uses slot-backed worker capacity rather than the net reactor queue, so `queue_depth` mirrors occupied TLS async slots and `queue_limit` mirrors the configured TLS async slot limit.
 - All failures map through existing `NetError` code mapping.
 
 ## CI and Perf Gate Mapping

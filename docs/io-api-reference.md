@@ -795,7 +795,7 @@ Notes:
   - `tls_async_wait_int` / `tls_async_wait_string`
   - `tls_async_cancel_*` / `tls_async_poll_*` / `tls_async_wait_many_*`
   - `tls_async_wait_any_*` compatibility wrappers over `tls_async_wait_many_*` for two-op selection
-  - `tls_async_runtime_pressure` for runtime capacity snapshots (`queue_depth` and `queue_limit` are `0` on current TLS backend)
+  - `tls_async_runtime_pressure` for slot-backed runtime capacity snapshots (`queue_depth` mirrors occupied TLS async slots and `queue_limit` mirrors the configured TLS async slot limit)
   - convenience wrappers `tls_async_send` / `tls_async_recv`
   - phase-1 fixed-width wrappers (`*_u32`) for byte-count, frame-length, selection-index, and pressure-counter domains.
 - `byte_stream_send_timeout` applies timeout-bounded writes across TCP and TLS streams.

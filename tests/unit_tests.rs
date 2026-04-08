@@ -5382,6 +5382,70 @@ fn unit_tls_docs_include_async_submit_wait_bytes_contract() {
 }
 
 #[test]
+fn unit_tls_async_pressure_docs_match_slot_backed_runtime_contract() {
+    let readme = fs::read_to_string("README.md").expect("read README.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    let io_api =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let tls_api = fs::read_to_string("docs/std-api/tls.md").expect("read docs/std-api/tls.md");
+    let rest_guide = fs::read_to_string("docs/ai-agent-rest-guide.md")
+        .expect("read docs/ai-agent-rest-guide.md");
+    let io_runtime =
+        fs::read_to_string("docs/io-runtime/README.md").expect("read docs/io-runtime/README.md");
+
+    assert!(
+        readme.contains("| `std.tls` async submit/wait lifecycle | Supported |"),
+        "README support matrix must mark TLS async lifecycle as supported"
+    );
+    assert!(
+        async_runtime
+            .contains("| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Supported |"),
+        "async runtime matrix must mark TLS async lifecycle as supported"
+    );
+    assert!(
+        rest_guide.contains("| TLS async reactor APIs (`tls_async_*`) | Supported |"),
+        "REST guide matrix must mark TLS async APIs as supported"
+    );
+    assert!(
+        !async_runtime.contains(
+            "`tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`"
+        ),
+        "async-event-loop must not describe TLS pressure as fixed zero placeholders"
+    );
+    assert!(
+        !io_api.contains("queue_depth` and `queue_limit` are `0` on current TLS backend"),
+        "io-api-reference must not describe TLS pressure as fixed zero placeholders"
+    );
+    assert!(
+        !tls_api.contains("`queue_depth`/`queue_limit` are `0` on current TLS backend"),
+        "std TLS API docs must not describe TLS pressure as fixed zero placeholders"
+    );
+    assert!(
+        !io_runtime.contains(
+            "async TLS pressure reporting is still partial (`queue_depth = 0`, `queue_limit = 0`)"
+        ),
+        "io runtime README must not describe TLS pressure as fixed zero placeholders"
+    );
+    assert!(
+        async_runtime.contains("occupied-slot pressure")
+            && async_runtime.contains("queue_depth` mirrors occupied TLS async slots")
+            && async_runtime.contains("queue_limit` mirrors the configured TLS async slot limit"),
+        "async runtime docs must describe TLS pressure as slot-backed capacity"
+    );
+    assert!(
+        io_api.contains("`queue_depth` mirrors occupied TLS async slots")
+            && io_api.contains("`queue_limit` mirrors the configured TLS async slot limit"),
+        "io api reference must describe TLS pressure as slot-backed capacity"
+    );
+    assert!(
+        tls_api.contains("`queue_depth` mirrors occupied TLS async slots")
+            && tls_api.contains("`queue_limit` mirrors the configured TLS async slot limit"),
+        "std TLS API docs must describe TLS pressure as slot-backed capacity"
+    );
+}
+
+#[test]
 fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
     let runtime_doc =
         fs::read_to_string("docs/io-concurrency-runtime.md").expect("read io concurrency runtime");
